@@ -1,0 +1,1440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SHIRE | Operational Intelligence</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&family=Instrument+Serif:ital@0;1&family=Inter+Tight:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&display=swap" rel="stylesheet">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <style>
+        :root {
+            --font-display: 'Instrument Serif', serif;
+            --font-body: 'Inter Tight', sans-serif;
+            --font-data: 'Geist Mono', monospace;
+
+            /* THEME - Lighter, consistent backgrounds */
+            --bg-base: #0a0a0a;
+            --bg-elevated: #0f0f0f;
+            --bg-gradient-cool: linear-gradient(180deg, #0a0a0a 0%, #0c0c0c 100%);
+            --bg-gradient-warm: linear-gradient(180deg, #0a0a0a 0%, #0c0c0c 100%);
+            --bg-gradient-neutral: linear-gradient(180deg, #0a0a0a 0%, #0c0c0c 100%);
+
+            --glass: rgba(20, 20, 20, 0.6);
+            --glass-card: rgba(30, 30, 35, 0.4);
+            --border: rgba(255, 255, 255, 0.08);
+            --border-light: rgba(255, 255, 255, 0.15);
+
+            /* ACCENTS */
+            --ice-blue: #a5b4fc;
+            --gold: #d4a854;
+            --status-good: #4ade80;
+            --status-bad: #ef4444;
+
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg-base);
+            color: #ededed;
+            font-family: var(--font-body);
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+
+        /* --- LABEL MONO (Typography utility) --- */
+        .label-mono {
+            font-family: var(--font-data);
+            font-size: 0.7rem;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 1.5rem;
+            display: inline-block;
+        }
+
+        /* --- ACCENT TEXT --- */
+        .accent { color: var(--ice-blue); }
+        .accent-gold { color: var(--gold); }
+
+        /* --- GLOBAL FX --- */
+        .global-noise {
+            position: fixed; inset: 0; pointer-events: none; z-index: 9999; opacity: 0.035;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+        }
+
+        .ambient-field { position: absolute; inset: 0; pointer-events: none; z-index: 0; opacity: 0.5; mix-blend-mode: screen; }
+        .ambient-video { background: radial-gradient(ellipse at bottom center, rgba(165, 180, 252, 0.1) 0%, transparent 70%); }
+        .ambient-metrics { background: radial-gradient(circle at center, rgba(20, 20, 20, 0.8) 0%, transparent 80%); }
+        .ambient-ring { background: radial-gradient(circle at center, rgba(212, 168, 84, 0.08) 0%, transparent 60%); }
+
+        /* --- NAVBAR --- */
+        .nav-glass {
+            position: fixed; top: 0; left: 0; width: 100%;
+            padding: 1.2rem 3rem;
+            display: flex; justify-content: space-between; align-items: center; z-index: 100;
+            transition: all 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+            background: linear-gradient(to bottom, rgba(0,0,0,0.4), transparent);
+        }
+        .nav-glass.scrolled {
+            background: rgba(5, 5, 5, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(255,255,255,0.05); padding: 1rem 3rem;
+        }
+        .brand-logo {
+            font-family: var(--font-display); font-size: 1.6rem; color: #fff;
+            letter-spacing: 0.02em;
+        }
+        .nav-links { display: flex; gap: 2.5rem; }
+        .nav-item { font-size: 0.9rem; color: rgba(255,255,255,0.7); text-decoration: none; transition: color 0.3s; }
+        .nav-item:hover { color: #fff; }
+        .nav-cta {
+            font-size: 0.85rem; color: #fff; background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 0.6rem 1.4rem; border-radius: 99px; text-decoration: none;
+            transition: all 0.3s; font-weight: 500;
+        }
+        .nav-cta:hover { background: rgba(255, 255, 255, 0.2); border-color: #fff; transform: translateY(-1px); }
+
+        /* --- HERO --- */
+        .art-layer {
+            position: fixed; inset: 0; z-index: -2;
+            background-image: url('Gemini_Generated_Image_r4dzzvr4dzzvr4dz.png');
+            background-size: cover; background-position: center; opacity: 0.5;
+            mask-image: radial-gradient(circle at 50% 40%, black 20%, transparent 80%);
+            -webkit-mask-image: radial-gradient(circle at 50% 40%, black 20%, transparent 80%);
+        }
+
+        /* Hero gradient overlay - minimal shading */
+        .hero-overlay {
+            position: fixed; inset: 0; z-index: -1;
+            background: linear-gradient(to right, rgba(5,5,5,0.3) 0%, rgba(5,5,5,0.15) 40%, rgba(5,5,5,0.0) 100%);
+            pointer-events: none;
+        }
+
+        #fog-canvas { position: fixed; inset: 0; z-index: -1; mix-blend-mode: overlay; opacity: 0.3; pointer-events: none; }
+
+        .hero-section {
+            min-height: 100vh; display: grid; grid-template-columns: 0.8fr 1.2fr; align-items: center;
+            padding: 0 4rem; gap: 5rem; position: relative; z-index: 10;
+        }
+        .hero-content { padding-top: 4rem; }
+        h1 { font-family: var(--font-display); font-size: 5.5rem; line-height: 0.95; font-weight: 400; margin-bottom: 1.5rem; letter-spacing: -0.03em; }
+        .italic-accent { font-family: var(--font-display); font-style: italic; color: #fff; padding-right: 0.15em; }
+        .hero-subtitle { font-size: 1.05rem; line-height: 1.6; color: rgba(255, 255, 255, 0.7); margin-bottom: 2.5rem; max-width: 480px; font-weight: 300; }
+        .cta-group { display: flex; gap: 1.5rem; align-items: center; }
+        .btn-primary { background: #fff; color: #000; padding: 0.9rem 1.8rem; border-radius: 8px; font-weight: 500; text-decoration: none; transition: transform 0.2s; }
+        .btn-primary:hover { transform: translateY(-2px); }
+        .btn-secondary { color: #fff; display: flex; align-items: center; gap: 0.5rem; text-decoration: none; opacity: 0.8; transition: opacity 0.2s; }
+        .btn-secondary:hover { opacity: 1; }
+        .play-icon-small { width: 24px; height: 24px; border: 1px solid rgba(255,255,255,0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; }
+
+        /* HERO DASHBOARD */
+        .dashboard-wrapper { position: relative; perspective: 2000px; }
+        .glass-dash {
+            width: 100%; aspect-ratio: 16/10; background: var(--glass);
+            backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px);
+            border: 1px solid var(--border); border-radius: 12px;
+            box-shadow: 0 0 0 1px rgba(0,0,0,0.2), 0 20px 50px -10px rgba(0,0,0,0.6);
+            display: grid; grid-template-columns: 60px 1fr 240px; overflow: hidden;
+        }
+        .dash-sidebar { border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding-top: 1.5rem; gap: 1.5rem; }
+        .dash-icon { width: 24px; height: 24px; opacity: 0.4; }
+        .dash-icon.active { opacity: 1; color: #fff; }
+        .dash-map { position: relative; background: rgba(0,0,0,0.2); padding: 20px; }
+        .map-header { display: flex; justify-content: space-between; font-family: var(--font-data); font-size: 0.7rem; color: #666; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 0.1em; }
+        .tables-layout { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .table-node {
+            aspect-ratio: 1; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 2px;
+            padding: 12px; display: flex; flex-direction: column; justify-content: space-between; transition: all 0.2s;
+        }
+        .table-node:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.2); }
+        .node-id { font-family: var(--font-display); font-style: italic; font-size: 1.2rem; opacity: 0.6; }
+        .node-status-dot { width: 6px; height: 6px; border-radius: 50%; align-self: flex-end; }
+        .clean .node-status-dot { background: var(--status-good); box-shadow: 0 0 8px var(--status-good); }
+        .busy .node-status-dot { background: var(--status-bad); box-shadow: 0 0 8px var(--status-bad); }
+        .dash-panel { border-left: 1px solid var(--border); background: rgba(0,0,0,0.1); padding: 20px; display: flex; flex-direction: column; font-family: var(--font-data); }
+        .panel-title { font-size: 0.7rem; color: #666; margin-bottom: 1rem; text-transform: uppercase; }
+        .log-feed { display: flex; flex-direction: column; gap: 12px; opacity: 0.8; }
+        .log-item { display: flex; flex-direction: column; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+        .log-time { font-size: 0.65rem; color: #555; }
+        .log-msg { font-size: 0.75rem; color: #ccc; }
+        .highlight { color: var(--status-good); }
+
+        /* --- VIDEO SECTION --- */
+        .video-section {
+            background: var(--bg-gradient-cool); position: relative; z-index: 20;
+            padding: 5rem 2rem 4rem 2rem; display: flex; flex-direction: column; align-items: center;
+        }
+
+        .video-header-stack {
+            text-align: center; margin-bottom: 3rem; max-width: 800px;
+            position: relative; z-index: 2;
+        }
+        .section-intro { font-family: var(--font-data); font-size: 0.7rem; color: var(--gold); margin-bottom: 1.5rem; letter-spacing: 0.1em; text-transform: uppercase; }
+        .video-headline { font-family: var(--font-display); font-size: 3.5rem; color: #fff; margin-bottom: 1.5rem; line-height: 1; }
+        .section-body { color: #888; font-size: 1.05rem; line-height: 1.6; }
+
+        .video-container {
+            width: 100%; max-width: 1100px; aspect-ratio: 21/9;
+            background: #080808; border-radius: 4px; border: 1px solid var(--border);
+            position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 20px 60px -15px rgba(0,0,0,0.5); z-index: 10;
+        }
+        .play-circle {
+            width: 80px; height: 80px; background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            transition: transform 0.3s, background 0.3s; z-index: 10;
+        }
+        .video-container:hover .play-circle { transform: scale(1.1); background: rgba(255,255,255,0.1); }
+
+        .btn-glass-large {
+            margin-top: 2.5rem;
+            padding: 0.9rem 2rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border-radius: 2px; font-weight: 500; text-decoration: none;
+            transition: all 0.3s ease;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .btn-glass-large:hover {
+            background: rgba(255, 255, 255, 0.08); border-color: rgba(255,255,255,0.3);
+            transform: translateY(-2px);
+        }
+
+        /* --- FEATURE SECTIONS --- */
+        .features-section {
+            background: var(--bg-gradient-neutral); position: relative; z-index: 20;
+            padding: 4rem 4rem; overflow: hidden;
+        }
+
+        .features-section:nth-child(even) {
+            background: var(--bg-gradient-warm);
+        }
+
+        .features-grid {
+            max-width: 1100px; margin: 0 auto; width: 100%;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 3rem;
+            align-items: center;
+        }
+        .features-grid.reverse { direction: rtl; }
+        .features-grid.reverse > * { direction: ltr; }
+
+        .features-content { display: flex; flex-direction: column; }
+
+        .features-headline {
+            font-family: var(--font-display); font-size: 3rem; color: #fff;
+            line-height: 1; margin-bottom: 1.5rem; letter-spacing: -0.02em;
+        }
+        .features-subtitle {
+            font-family: var(--font-body); font-size: 1.05rem; color: #888;
+            line-height: 1.6; margin-bottom: 2.5rem; max-width: 450px;
+        }
+
+        .features-list { display: flex; flex-direction: column; }
+
+        .feature-item {
+            padding: 1.25rem 0; border-top: 1px solid rgba(255,255,255,0.08);
+        }
+        .feature-item:last-child { border-bottom: 1px solid rgba(255,255,255,0.08); }
+
+        .feature-item-title {
+            font-family: var(--font-body); font-size: 1rem; color: #fff;
+            font-weight: 500; margin-bottom: 0.4rem;
+        }
+        .feature-item-desc {
+            font-family: var(--font-body); font-size: 0.9rem; color: #666;
+            line-height: 1.5;
+        }
+
+        /* Mock Device Frames */
+        .mock-device {
+            position: relative; width: 100%; aspect-ratio: 4/3;
+            background: rgba(10, 10, 10, 0.9); border: 1px solid var(--border);
+            border-radius: 4px; overflow: hidden;
+            box-shadow: 0 20px 60px -15px rgba(0,0,0,0.6);
+        }
+        .mock-device-bar {
+            height: 32px; background: rgba(0,0,0,0.5); border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; padding: 0 12px; gap: 6px;
+        }
+        .mock-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.1); }
+        .mock-dot.red { background: #ff5f57; }
+        .mock-dot.yellow { background: #ffbd2e; }
+        .mock-dot.green { background: #28c840; }
+
+        .mock-device-content {
+            padding: 20px; height: calc(100% - 36px); position: relative;
+            display: flex; flex-direction: column; gap: 16px;
+        }
+
+        /* Mock Floor Plan */
+        .mock-floor-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+            flex: 1;
+        }
+        .mock-table {
+            aspect-ratio: 1; background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+            border-radius: 2px; display: flex; flex-direction: column; justify-content: space-between;
+            padding: 8px; transition: all 0.3s;
+        }
+        .mock-table:hover { background: rgba(255,255,255,0.06); border-color: var(--border-light); }
+        .mock-table-id { font-family: var(--font-display); font-style: italic; font-size: 1rem; color: #666; }
+        .mock-table-status { width: 6px; height: 6px; border-radius: 50%; align-self: flex-end; }
+        .mock-table.occupied .mock-table-status { background: var(--status-bad); box-shadow: 0 0 8px var(--status-bad); }
+        .mock-table.clean .mock-table-status { background: var(--status-good); box-shadow: 0 0 8px var(--status-good); }
+        .mock-table.dirty .mock-table-status { background: var(--gold); box-shadow: 0 0 8px var(--gold); }
+
+        /* Mock iPad Task View */
+        .mock-ipad {
+            position: relative; width: 100%; aspect-ratio: 4/3;
+            background: #0a0a0a; border: 1px solid var(--border);
+            border-radius: 4px; overflow: hidden; padding: 12px;
+            box-shadow: 0 20px 60px -15px rgba(0,0,0,0.6);
+        }
+        .mock-ipad-inner {
+            width: 100%; height: 100%; background: #111; border-radius: 2px;
+            overflow: hidden; display: flex; flex-direction: column;
+        }
+        .mock-ipad-header {
+            padding: 16px 20px; border-bottom: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .mock-ipad-title { font-family: var(--font-display); font-size: 1.3rem; color: #fff; }
+        .mock-ipad-time { font-family: var(--font-data); font-size: 0.75rem; color: #666; }
+
+        .mock-task-list { padding: 14px; display: flex; flex-direction: column; gap: 10px; flex: 1; overflow: hidden; }
+        .mock-task {
+            background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+            border-radius: 2px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center;
+            transition: all 0.3s;
+        }
+        .mock-task:hover { background: rgba(255,255,255,0.06); border-color: var(--border-light); }
+        .mock-task-info { display: flex; flex-direction: column; gap: 3px; }
+        .mock-task-label { font-family: var(--font-data); font-size: 0.6rem; color: var(--gold); text-transform: uppercase; letter-spacing: 0.05em; }
+        .mock-task-text { font-family: var(--font-body); font-size: 0.85rem; color: #fff; }
+        .mock-task-meta { font-family: var(--font-data); font-size: 0.65rem; color: #666; }
+        .mock-task-action {
+            padding: 6px 12px; background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+            border-radius: 2px; font-family: var(--font-data); font-size: 0.65rem; color: #fff;
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+
+        .mock-seat-btn {
+            margin: 14px; padding: 12px 20px; background: #fff; color: #000;
+            border-radius: 2px; font-family: var(--font-body); font-weight: 600;
+            text-align: center; font-size: 0.9rem;
+        }
+
+        /* Mock Analytics */
+        .mock-analytics {
+            position: relative; width: 100%; aspect-ratio: 4/3;
+            background: #0a0a0a; border: 1px solid var(--border);
+            border-radius: 4px; overflow: hidden;
+            box-shadow: 0 20px 60px -15px rgba(0,0,0,0.6);
+        }
+        .mock-analytics-header {
+            padding: 16px; border-bottom: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .mock-analytics-title { font-family: var(--font-display); font-size: 1.1rem; color: #fff; }
+        .mock-analytics-tabs { display: flex; gap: 14px; }
+        .mock-tab { font-family: var(--font-data); font-size: 0.65rem; color: #666; text-transform: uppercase; letter-spacing: 0.05em; }
+        .mock-tab.active { color: var(--ice-blue); }
+
+        .mock-analytics-body { padding: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .mock-stat-card {
+            background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+            border-radius: 2px; padding: 14px;
+        }
+        .mock-stat-label { font-family: var(--font-data); font-size: 0.6rem; color: #666; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+        .mock-stat-value { font-family: var(--font-display); font-size: 1.8rem; color: #fff; }
+        .mock-stat-value.good { color: var(--status-good); }
+        .mock-stat-value.gold { color: var(--gold); }
+
+        .mock-chart {
+            grid-column: span 2; height: 100px; background: rgba(255,255,255,0.02);
+            border: 1px solid var(--border); border-radius: 2px; padding: 14px;
+            display: flex; align-items: flex-end; gap: 6px;
+        }
+        .mock-bar { flex: 1; background: var(--ice-blue); border-radius: 1px 1px 0 0; opacity: 0.6; }
+
+        /* Background image for device mocks */
+        .mock-bg-image {
+            position: absolute; inset: 0; z-index: 0;
+            background-size: cover; background-position: center;
+            opacity: 0.15; filter: blur(1px);
+        }
+
+        @media (max-width: 900px) {
+            .features-grid { grid-template-columns: 1fr; gap: 2rem; }
+            .features-grid.reverse { direction: ltr; }
+            .features-headline { font-size: 2.5rem; }
+            .mock-device, .mock-ipad, .mock-analytics { max-width: 100%; }
+        }
+
+        /* --- METRICS SECTION --- */
+        .metrics-section {
+            padding: 5rem 4rem;
+            background: var(--bg-gradient-warm);
+            position: relative;
+            z-index: 15;
+            display: flex; flex-direction: column; align-items: center;
+        }
+
+        .metrics-bg-grid {
+            position: absolute; inset: 0; pointer-events: none; opacity: 0.08;
+            background-size: 40px 40px;
+            background-image:
+                linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px);
+            mask-image: radial-gradient(circle at 50% 50%, black 30%, transparent 70%);
+            -webkit-mask-image: radial-gradient(circle at 50% 50%, black 30%, transparent 70%);
+        }
+
+        .metrics-intro { margin-bottom: 3rem; text-align: center; position: relative; z-index: 2; }
+
+        .metrics-headline {
+            font-family: var(--font-display); font-size: 3.5rem; color: #fff; margin-bottom: 0.75rem; line-height: 1;
+        }
+        .metrics-sub { font-family: var(--font-body); color: #666; font-size: 1rem; }
+
+        .bento-grid {
+            max-width: 1100px; margin: 0 auto; width: 100%;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(2, 220px);
+            gap: 12px;
+            position: relative; z-index: 2;
+        }
+
+        .metric-card {
+            background: linear-gradient(180deg, rgba(20, 20, 25, 0.6) 0%, rgba(15, 15, 18, 0.6) 100%);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1.5rem;
+            display: flex; flex-direction: column; justify-content: space-between;
+            transition: all 0.3s ease; position: relative; overflow: hidden;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-3px);
+            border-color: var(--border-light);
+            box-shadow: 0 10px 30px -10px rgba(0,0,0,0.4);
+        }
+
+        .card-wide { grid-column: span 2; }
+        .card-small { grid-column: span 1; }
+
+        .m-value {
+            font-family: var(--font-display); font-size: 4rem; font-weight: 400;
+            line-height: 0.9; letter-spacing: -0.02em; margin-bottom: 0.5rem;
+            color: #fff; display: flex; align-items: baseline;
+        }
+        .m-suffix { font-family: var(--font-display); font-size: 2rem; opacity: 0.6; margin-left: 4px; font-style: italic;}
+        .m-label {
+            font-family: var(--font-data); font-size: 0.65rem;
+            color: #888; text-transform: uppercase; letter-spacing: 0.1em;
+            border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.75rem; width: 100%;
+        }
+        .gold-text { color: var(--gold); text-shadow: 0 0 20px rgba(212, 168, 84, 0.2); }
+
+        .quote-block { height: 100%; display: flex; flex-direction: column; justify-content: space-between; }
+        .quote-text {
+            font-family: var(--font-display); font-size: 1.6rem; line-height: 1.15; color: #ddd;
+            margin-bottom: 1rem;
+        }
+        .quote-author { display: flex; align-items: center; gap: 10px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.75rem; }
+        .author-pic { width: 28px; height: 28px; border-radius: 50%; background: #333; border: 1px solid #444; }
+        .author-info { display: flex; flex-direction: column; }
+        .author-name { font-family: var(--font-data); font-size: 0.7rem; color: #fff; text-transform: uppercase; letter-spacing: 0.05em; }
+        .author-role { font-family: var(--font-data); font-size: 0.6rem; color: #666; }
+
+        /* --- TEAM SECTION (BOXED LAYOUT from indexreplica) --- */
+        .team-section {
+            position: relative;
+            z-index: 15;
+            background: var(--bg-base);
+            min-height: auto;
+            padding: 6rem 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .team-section-header {
+            width: 100%;
+            max-width: 1200px;
+            margin-bottom: 2rem;
+        }
+
+        .team-title-outer {
+            font-family: var(--font-body);
+            font-size: 1rem;
+            color: #888;
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        /* The Box Container */
+        .team-box-container {
+            width: 100%;
+            max-width: 1200px;
+            background-color: #111111;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: row;
+            overflow: hidden;
+            box-shadow: 0 4px 50px rgba(0,0,0,0.5);
+        }
+
+        /* Left Side: Team Grid */
+        .team-left-panel {
+            flex: 1;
+            padding: 3rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            border-right: 1px solid var(--border);
+        }
+
+        .team-header-box {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 1.5rem;
+        }
+
+        .team-title {
+            font-family: var(--font-display);
+            font-size: 1.8rem;
+            color: #fff;
+        }
+
+        .team-grid-boxed {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        .team-card-box {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .team-img-box {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            margin-bottom: 12px;
+            border-radius: 4px;
+        }
+
+        .team-img-box img {
+            width: 100%; height: 100%; object-fit: cover;
+            filter: grayscale(100%) contrast(1.1);
+            transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+        }
+        .team-card-box:hover .team-img-box img { filter: grayscale(0%); transform: scale(1.05); }
+
+        .team-name-box { color: #fff; font-family: var(--font-body); font-weight: 500; font-size: 1.1rem; }
+        .team-role-box { color: #666; font-family: var(--font-data); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+
+        /* Right Side: Ship Image + Logos */
+        .team-right-panel {
+            flex: 1.2;
+            position: relative;
+            background-color: #151515;
+            min-height: 500px;
+        }
+
+        .ship-bg {
+            position: absolute; inset: 0;
+            background-image: url('Gemini_Generated_Image_n0t2qyn0t2qyn0t2.png');
+            background-size: cover; background-position: center 40%;
+            filter: sepia(0.2) contrast(1.1);
+        }
+
+
+        @media (max-width: 900px) {
+            .team-box-container { flex-direction: column; }
+            .team-left-panel { padding: 2rem; border-right: none; border-bottom: 1px solid var(--border); }
+            .team-right-panel { min-height: 300px; flex: none; }
+            .team-section-header { padding: 0 1rem; }
+        }
+
+
+        /* --- RING SECTION (With Feature Cards) --- */
+        .ring-section {
+            position: relative;
+            min-height: 100vh;
+            background: var(--bg-base);
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+        #ring-canvas { position: absolute; inset: 0; z-index: 1; }
+
+        .ring-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+
+        .ring-title {
+            position: absolute;
+            top: 4%;
+            text-align: center;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+
+        .ring-label {
+            font-family: var(--font-data);
+            font-size: 0.7rem;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 1rem;
+        }
+
+        .ring-headline {
+            font-family: var(--font-display);
+            font-size: 3rem;
+            color: var(--gold);
+            text-shadow: 0 0 60px rgba(212, 168, 84, 0.3);
+            line-height: 1.1;
+        }
+        .ring-headline .italic-accent { color: #f0d080; }
+
+        /* Feature Cards around the ring */
+        .feature-cards-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .feature-card {
+            position: absolute;
+            width: 200px;
+            padding: 1.2rem 1.4rem;
+            background: rgba(10, 10, 10, 0.4);
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(12px);
+            border-radius: 4px;
+            pointer-events: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            background: rgba(15, 15, 15, 0.9);
+            border-color: rgba(212, 168, 84, 0.5);
+            z-index: 10;
+        }
+
+        .feature-label {
+            font-family: var(--font-data);
+            font-size: 0.65rem;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .feature-name {
+            font-family: var(--font-display);
+            font-size: 1.3rem;
+            color: #fff;
+        }
+
+        .feature-details {
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .feature-card:hover .feature-details {
+            max-height: 120px;
+            opacity: 1;
+            margin-top: 8px;
+            padding-top: 8px;
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            font-family: var(--font-data);
+            font-size: 0.65rem;
+        }
+
+        .fc-1 { top: 22%; left: 12%; }
+        .fc-2 { top: 22%; right: 12%; text-align: right; align-items: flex-end; }
+        .fc-3 { bottom: 22%; left: 12%; }
+        .fc-4 { bottom: 22%; right: 12%; text-align: right; align-items: flex-end; }
+        .fc-2 .detail-row, .fc-4 .detail-row { flex-direction: row-reverse; }
+
+        /* Tooltip for dashboard */
+        .tooltip-card {
+            position: fixed; background: rgba(10, 10, 10, 0.95);
+            border: 1px solid var(--border); padding: 10px; border-radius: 2px;
+            pointer-events: none; opacity: 0; transform: scale(0.95);
+            transition: opacity 0.2s, transform 0.2s; z-index: 1000; width: 160px;
+        }
+        .tooltip-card.visible { opacity: 1; transform: scale(1); }
+        .tt-row { display: flex; justify-content: space-between; font-family: var(--font-data); font-size: 0.65rem; margin-bottom: 5px; }
+        .tt-label { color: #666; } .tt-val { color: #fff; }
+
+        @media (max-width: 900px) {
+            .hero-section { grid-template-columns: 1fr; padding-top: 120px; gap: 3rem; }
+            .glass-dash { display: none; }
+            .bento-grid { grid-template-columns: 1fr; grid-template-rows: auto; }
+            .card-wide, .card-small { grid-column: span 1; }
+            h1 { font-size: 3.5rem; }
+        }
+
+        /* --- FOOTER (YC Style - Continuous Flow) --- */
+        .yc-footer {
+            position: relative;
+            background: var(--bg-base);
+            padding: 6rem 4rem 2rem 4rem;
+            overflow: hidden;
+        }
+
+        .footer-grid {
+            display: grid;
+            grid-template-columns: 1.5fr 1fr 1fr 1fr;
+            gap: 4rem;
+            position: relative;
+            z-index: 10;
+            max-width: 1400px;
+        }
+
+        .footer-brand {
+            font-family: var(--font-display);
+            font-size: 1.4rem;
+            color: #fff;
+            margin-bottom: 0.75rem;
+        }
+
+        .footer-copy {
+            font-size: 0.75rem;
+            color: #444;
+        }
+
+        .footer-head {
+            font-family: var(--font-data);
+            font-size: 0.65rem;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 1.25rem;
+        }
+
+        .footer-link {
+            display: block;
+            color: #888;
+            text-decoration: none;
+            font-size: 0.85rem;
+            margin-bottom: 0.6rem;
+            transition: color 0.2s;
+        }
+        .footer-link:hover { color: #fff; }
+
+        .pitch-deck {
+            color: #fff;
+            font-family: var(--font-data);
+            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid #333;
+            padding: 8px 12px;
+            width: fit-content;
+            border-radius: 2px;
+            text-decoration: none;
+            transition: border-color 0.2s;
+        }
+        .pitch-deck:hover { border-color: #666; }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--status-good);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .yc-badge {
+            margin-top: 1rem;
+            font-size: 0.75rem;
+            color: #444;
+        }
+
+        .watermark {
+            position: absolute;
+            bottom: -2vw;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: var(--font-body);
+            font-weight: 800;
+            font-size: 22vw;
+            line-height: 0.8;
+            color: #fff;
+            opacity: 0.12;
+            pointer-events: none;
+            z-index: 1;
+            letter-spacing: -0.05em;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.4; }
+            50% { opacity: 1; }
+            100% { opacity: 0.4; }
+        }
+
+        @media (max-width: 900px) {
+            .footer-grid { grid-template-columns: 1fr 1fr; gap: 2rem; }
+            .watermark { font-size: 30vw; }
+        }
+    </style>
+</head>
+<body>
+    <div class="global-noise"></div>
+
+    <div class="tooltip-card" id="tooltip">
+        <div class="tt-row" style="border-bottom: 1px solid #333; padding-bottom:4px; margin-bottom:8px;">
+            <span class="tt-val" id="tt-id" style="font-family: var(--font-display);">TABLE 04</span>
+            <span class="tt-val" style="color: var(--status-good);">● Live</span>
+        </div>
+        <div class="tt-row"><span class="tt-label">Status</span><span class="tt-val" id="tt-status">Occupied</span></div>
+        <div class="tt-row"><span class="tt-label">Server</span><span class="tt-val" id="tt-server">Tyler P.</span></div>
+        <div class="tt-row"><span class="tt-label">Timer</span><span class="tt-val" id="tt-time">12:04</span></div>
+    </div>
+
+    <div class="art-layer"></div>
+    <div class="hero-overlay"></div>
+    <canvas id="fog-canvas"></canvas>
+
+    <nav class="nav-glass" id="navbar">
+        <div class="brand-logo">SHIRE</div>
+        <div class="nav-links">
+            <a href="/host/" class="nav-item">Host UI</a>
+            <a href="/dashboard/" class="nav-item">Dashboard</a>
+            <a href="#about" class="nav-item">About</a>
+        </div>
+        <a href="/host/" class="nav-cta">Get Started</a>
+    </nav>
+
+    <section class="hero-section">
+        <div class="hero-content">
+            <h1>See <span class="italic-accent accent">through</span><br>the fog.</h1>
+            <p class="hero-subtitle">
+                Turn chaotic video feeds into structured operational data. The first computer vision platform designed to optimize restaurant throughput and waiter latency in real-time.
+            </p>
+            <div class="cta-group">
+                <a href="/dashboard/" class="btn-primary">View Dashboard</a>
+                <a href="/host/" class="btn-secondary">Launch Host UI</a>
+            </div>
+        </div>
+        <div class="dashboard-wrapper">
+            <div class="glass-dash">
+                <div class="dash-sidebar">
+                    <div class="dash-icon active">●</div><div class="dash-icon">■</div><div class="dash-icon">▲</div>
+                </div>
+                <div class="dash-map">
+                    <div class="map-header"><span>Floor 1 • Main Dining</span><span>Latency: 12ms</span></div>
+                    <div class="tables-layout" id="gridContainer"></div>
+                </div>
+                <div class="dash-panel">
+                    <div class="panel-title">System Activity</div>
+                    <div class="log-feed">
+                        <div class="log-item"><span class="log-time">12:04 PM</span><span class="log-msg"><span class="highlight">Table 06</span> seated</span></div>
+                        <div class="log-item"><span class="log-time">12:03 PM</span><span class="log-msg">Server Tyler clocked in</span></div>
+                        <div class="log-item"><span class="log-time">12:02 PM</span><span class="log-msg">High Latency (Zone B)</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="video-section">
+        <div class="ambient-field ambient-video"></div>
+        <div class="video-header-stack">
+            <div class="label-mono">The Platform</div>
+            <h2 class="video-headline">Total <span class="italic-accent accent">Operational</span> Clarity</h2>
+            <p class="section-body">
+                Stop relying on gut instinct. The Shire turns video into value. An integrated view of your entire floor plan, staff performance, and customer flow.
+            </p>
+        </div>
+
+        <div class="video-container" id="videoTrigger">
+            <div class="play-circle">▶</div>
+            <img src="https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?q=80&w=2940&auto=format&fit=crop" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:-1; filter: brightness(0.4) contrast(1.2);">
+        </div>
+
+        <a href="#" class="btn-glass-large">
+            <span>Watch the Demo</span>
+            <span class="play-icon-small" style="width:20px; height:20px; font-size:8px;">▶</span>
+        </a>
+    </section>
+
+    <!-- FEATURE SECTION 1: VISION AI -->
+    <section class="features-section">
+        <div class="features-grid">
+            <div class="features-content">
+                <div class="label-mono">Computer Vision</div>
+                <h2 class="features-headline">Vision AI for the <span class="italic-accent accent">Physical</span> World</h2>
+                <p class="features-subtitle">
+                    Turn chaotic CCTV feeds into structured operational data. Our AI sees what humans miss, tracking every table and guest in real-time.
+                </p>
+                <div class="features-list">
+                    <div class="feature-item">
+                        <div class="feature-item-title">Table Segmentation</div>
+                        <div class="feature-item-desc">Automatically detect and track every table in your floor plan. No manual setup required.</div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-item-title">People Detection</div>
+                        <div class="feature-item-desc">Real-time occupancy tracking with 99.7% accuracy. Know exactly who's seated where.</div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-item-title">State Classification</div>
+                        <div class="feature-item-desc">Instant detection of table states: occupied, empty-clean, empty-dirty. Eliminate guesswork.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="mock-device">
+                <div class="mock-device-bar">
+                    <div class="mock-dot red"></div>
+                    <div class="mock-dot yellow"></div>
+                    <div class="mock-dot green"></div>
+                </div>
+                <div class="mock-device-content">
+                    <div style="display:flex; justify-content:space-between; font-family:var(--font-data); font-size:0.7rem; color:#666; text-transform:uppercase; letter-spacing:0.1em;">
+                        <span>Floor 1 • Main Dining</span>
+                        <span style="color:var(--status-good);">● Live</span>
+                    </div>
+                    <div class="mock-floor-grid">
+                        <div class="mock-table occupied"><div class="mock-table-id">01</div><div class="mock-table-status"></div></div>
+                        <div class="mock-table clean"><div class="mock-table-id">02</div><div class="mock-table-status"></div></div>
+                        <div class="mock-table occupied"><div class="mock-table-id">03</div><div class="mock-table-status"></div></div>
+                        <div class="mock-table dirty"><div class="mock-table-id">04</div><div class="mock-table-status"></div></div>
+                        <div class="mock-table clean"><div class="mock-table-id">05</div><div class="mock-table-status"></div></div>
+                        <div class="mock-table occupied"><div class="mock-table-id">06</div><div class="mock-table-status"></div></div>
+                        <div class="mock-table occupied"><div class="mock-table-id">07</div><div class="mock-table-status"></div></div>
+                        <div class="mock-table clean"><div class="mock-table-id">08</div><div class="mock-table-status"></div></div>
+                    </div>
+                    <div style="display:flex; gap:16px; font-family:var(--font-data); font-size:0.65rem;">
+                        <div style="display:flex; align-items:center; gap:6px;"><div style="width:8px;height:8px;border-radius:50%;background:var(--status-good);"></div><span style="color:#666;">Clean</span></div>
+                        <div style="display:flex; align-items:center; gap:6px;"><div style="width:8px;height:8px;border-radius:50%;background:var(--status-bad);"></div><span style="color:#666;">Occupied</span></div>
+                        <div style="display:flex; align-items:center; gap:6px;"><div style="width:8px;height:8px;border-radius:50%;background:var(--gold);"></div><span style="color:#666;">Needs Bussing</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FEATURE SECTION 2: SMART ROUTING -->
+    <section class="features-section">
+        <div class="features-grid reverse">
+            <div class="features-content">
+                <div class="label-mono">Operations</div>
+                <h2 class="features-headline">Intelligent <span class="italic-accent accent">Routing</span> Engine</h2>
+                <p class="features-subtitle">
+                    Automate the decisions that slow your floor down. Let AI handle the logistics so your team can focus on hospitality.
+                </p>
+                <div class="features-list">
+                    <div class="feature-item">
+                        <div class="feature-item-title">Host Recommendations</div>
+                        <div class="feature-item-desc">Optimal table assignments based on party size, server workload, and section balance.</div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-item-title">Waiter Assignment</div>
+                        <div class="feature-item-desc">Fair tip distribution algorithm that prioritizes both efficiency and equity across your team.</div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-item-title">Cleaner Dispatch</div>
+                        <div class="feature-item-desc">Automatic alerts when tables need bussing. Minimize turnover time and maximize covers.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="mock-ipad">
+                <div class="mock-ipad-inner">
+                    <div class="mock-ipad-header">
+                        <div class="mock-ipad-title">Host Station</div>
+                        <div class="mock-ipad-time">12:34 PM</div>
+                    </div>
+                    <div class="mock-task-list">
+                        <div class="mock-task">
+                            <div class="mock-task-info">
+                                <div class="mock-task-label">Next Action</div>
+                                <div class="mock-task-text">Seat party of 4 at Table 02</div>
+                                <div class="mock-task-meta">Server: Tyler P. • Zone A</div>
+                            </div>
+                            <div class="mock-task-action">Confirm</div>
+                        </div>
+                        <div class="mock-task">
+                            <div class="mock-task-info">
+                                <div class="mock-task-label">Pending</div>
+                                <div class="mock-task-text">Table 04 ready for bussing</div>
+                                <div class="mock-task-meta">Waiting: 2m 14s</div>
+                            </div>
+                            <div class="mock-task-action">Assign</div>
+                        </div>
+                        <div class="mock-task">
+                            <div class="mock-task-info">
+                                <div class="mock-task-label">Queue</div>
+                                <div class="mock-task-text">Party of 2 waiting</div>
+                                <div class="mock-task-meta">Est. wait: 8 min</div>
+                            </div>
+                            <div class="mock-task-action">View</div>
+                        </div>
+                    </div>
+                    <div class="mock-seat-btn">+ Seat New Party</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FEATURE SECTION 3: ANALYTICS -->
+    <section class="features-section">
+        <div class="features-grid">
+            <div class="features-content">
+                <div class="label-mono">Analytics</div>
+                <h2 class="features-headline">Actionable <span class="italic-accent accent">Analytics</span></h2>
+                <p class="features-subtitle">
+                    Stop guessing, start knowing. Deep insights into every aspect of your operation, from staff performance to kitchen throughput.
+                </p>
+                <div class="features-list">
+                    <div class="feature-item">
+                        <div class="feature-item-title">Staff Performance</div>
+                        <div class="feature-item-desc">Track throughput, latency, and efficiency per server. Identify training opportunities.</div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-item-title">Kitchen Intelligence</div>
+                        <div class="feature-item-desc">Order grouping, item forecasting, and inventory predictions. Know what to prep before the rush.</div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-item-title">Business Integrations</div>
+                        <div class="feature-item-desc">Connect to POS, scheduling, and supplier systems for end-to-end visibility.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="mock-analytics">
+                <div class="mock-analytics-header">
+                    <div class="mock-analytics-title">Performance Dashboard</div>
+                    <div class="mock-analytics-tabs">
+                        <span class="mock-tab active">Today</span>
+                        <span class="mock-tab">Week</span>
+                        <span class="mock-tab">Month</span>
+                    </div>
+                </div>
+                <div class="mock-analytics-body">
+                    <div class="mock-stat-card">
+                        <div class="mock-stat-label">Avg Table Turn</div>
+                        <div class="mock-stat-value good">42<span style="font-size:1rem;opacity:0.6;margin-left:4px;">min</span></div>
+                    </div>
+                    <div class="mock-stat-card">
+                        <div class="mock-stat-label">Service Latency</div>
+                        <div class="mock-stat-value">1.2<span style="font-size:1rem;opacity:0.6;margin-left:4px;">min</span></div>
+                    </div>
+                    <div class="mock-stat-card">
+                        <div class="mock-stat-label">Covers Today</div>
+                        <div class="mock-stat-value gold">247</div>
+                    </div>
+                    <div class="mock-stat-card">
+                        <div class="mock-stat-label">Revenue / Hour</div>
+                        <div class="mock-stat-value">$1.4<span style="font-size:1rem;opacity:0.6;margin-left:4px;">k</span></div>
+                    </div>
+                    <div class="mock-chart">
+                        <div class="mock-bar" style="height:30%;"></div>
+                        <div class="mock-bar" style="height:45%;"></div>
+                        <div class="mock-bar" style="height:60%;"></div>
+                        <div class="mock-bar" style="height:85%;"></div>
+                        <div class="mock-bar" style="height:100%;background:var(--gold);opacity:0.8;"></div>
+                        <div class="mock-bar" style="height:90%;"></div>
+                        <div class="mock-bar" style="height:75%;"></div>
+                        <div class="mock-bar" style="height:50%;"></div>
+                        <div class="mock-bar" style="height:35%;"></div>
+                        <div class="mock-bar" style="height:20%;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="metrics-section">
+        <div class="metrics-bg-grid"></div>
+        <div class="ambient-field ambient-metrics"></div>
+        
+        <div class="metrics-intro">
+            <div class="label-mono">Performance</div>
+            <h2 class="metrics-headline">Real, <span class="italic-accent accent">Measurable</span> Results</h2>
+            <p class="metrics-sub">Designed for scale. Proven in the field.</p>
+        </div>
+
+        <div class="bento-grid">
+            <div class="metric-card card-small">
+                <div>
+                    <div class="m-value gold-text"><span class="counter" data-target="3.7">0</span><span class="m-suffix">x</span></div>
+                </div>
+                <div class="m-label">Lead Velocity</div>
+            </div>
+            
+            <div class="metric-card card-small">
+                <div>
+                    <div class="m-value"><span class="counter" data-target="4.1">0</span><span class="m-suffix">x</span></div>
+                </div>
+                <div class="m-label">Campaign ROI</div>
+            </div>
+
+            <div class="metric-card card-wide">
+                <div class="quote-block">
+                    <div class="quote-text">
+                        "The Shire showed us exactly where our bottlenecks were. It's like having a GM watching every table, 24/7."
+                    </div>
+                    <div class="quote-author">
+                        <div class="author-pic"></div>
+                        <div class="author-info">
+                            <span class="author-name">Sam Patel</span>
+                            <span class="author-role">VP Marketing // OAK & VINE</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="metric-card card-wide">
+                <div class="quote-block">
+                    <div class="quote-text">
+                        "The most sophisticated vision platform we have deployed. It delivered actionable plans that drove real revenue."
+                    </div>
+                    <div class="quote-author">
+                        <div class="author-pic"></div>
+                        <div class="author-info">
+                            <span class="author-name">Elena Hayes</span>
+                            <span class="author-role">Head of Growth // ATLAS</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="metric-card card-small">
+                <div>
+                    <div class="m-value"><span class="counter" data-target="60">0</span><span class="m-suffix">h</span></div>
+                </div>
+                <div class="m-label">Saved Weekly</div>
+            </div>
+
+            <div class="metric-card card-small">
+                <div>
+                    <div class="m-value gold-text"><span class="counter" data-target="2.3">0</span><span class="m-suffix">x</span></div>
+                </div>
+                <div class="m-label">LIV Increase</div>
+            </div>
+        </div>
+
+        <a href="#" class="btn-glass-large" style="margin-top: 5rem;">
+            <span>Start Free Trial</span>
+        </a>
+    </section>
+
+    <section class="team-section">
+        <div class="team-section-header">
+            <h2 class="team-title-outer">Meet our team</h2>
+        </div>
+
+        <div class="team-box-container">
+            <div class="team-left-panel">
+                <div class="team-grid-boxed">
+                    <div class="team-card-box">
+                        <div class="team-img-box">
+                            <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face" alt="Aryah Oztanir">
+                        </div>
+                        <div class="team-name-box">Aryah Oztanir</div>
+                        <div class="team-role-box">Co-Founder</div>
+                    </div>
+
+                    <div class="team-card-box">
+                        <div class="team-img-box">
+                            <img src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&h=400&fit=crop&crop=face" alt="Ajay Misra">
+                        </div>
+                        <div class="team-name-box">Ajay Misra</div>
+                        <div class="team-role-box">Co-Founder</div>
+                    </div>
+
+                    <div class="team-card-box">
+                        <div class="team-img-box">
+                            <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop&crop=face" alt="Sandith Ganhewage">
+                        </div>
+                        <div class="team-name-box">Sandith Ganhewage</div>
+                        <div class="team-role-box">Founding Team</div>
+                    </div>
+
+                    <div class="team-card-box">
+                        <div class="team-img-box">
+                            <img src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&fit=crop&crop=face" alt="Sina Dehghani">
+                        </div>
+                        <div class="team-name-box">Sina Dehghani</div>
+                        <div class="team-role-box">Founding Team</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="team-right-panel">
+                <div class="ship-bg"></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="ring-section">
+        <div class="ambient-field ambient-ring"></div>
+        <canvas id="ring-canvas"></canvas>
+        <div class="ring-overlay">
+            <div class="ring-title">
+                <div class="label-mono" style="color:var(--gold);">The Ecosystem</div>
+                <h2 class="ring-headline">One Platform to <span class="italic-accent">Rule</span> Them All</h2>
+            </div>
+            <div class="feature-cards-container">
+                <div class="feature-card fc-1">
+                    <div class="feature-label">Vision AI</div>
+                    <div class="feature-name">Floor Awareness</div>
+                    <div class="feature-details">
+                        <div class="detail-row"><span class="detail-label">Accuracy</span><span class="detail-value" style="color:var(--status-good)">99.7%</span></div>
+                    </div>
+                </div>
+                <div class="feature-card fc-2">
+                    <div class="feature-label">Analytics</div>
+                    <div class="feature-name">Table Turnover</div>
+                    <div class="feature-details">
+                        <div class="detail-row"><span class="detail-label">Impact</span><span class="detail-value" style="color:var(--status-good)">-8min</span></div>
+                    </div>
+                </div>
+                <div class="feature-card fc-3">
+                    <div class="feature-label">Operations</div>
+                    <div class="feature-name">Staff Efficiency</div>
+                    <div class="feature-details">
+                        <div class="detail-row"><span class="detail-label">Response</span><span class="detail-value">1.2min</span></div>
+                    </div>
+                </div>
+                <div class="feature-card fc-4">
+                    <div class="feature-label">Revenue</div>
+                    <div class="feature-name">Optimization</div>
+                    <div class="feature-details">
+                        <div class="detail-row"><span class="detail-label">Impact</span><span class="detail-value" style="color:var(--status-good)">+$12k/mo</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="yc-footer">
+        <div class="footer-grid">
+            <div>
+                <div class="footer-brand">SHIRE</div>
+                <div class="footer-copy">&copy; 2026 Shire Intelligence</div>
+            </div>
+            <div>
+                <div class="footer-head">Platform</div>
+                <a href="#" class="footer-link">Vision AI</a>
+                <a href="#" class="footer-link">Routing</a>
+                <a href="#" class="footer-link">Integrations</a>
+            </div>
+            <div>
+                <div class="footer-head">Company</div>
+                <a href="#" class="footer-link">Manifesto</a>
+                <a href="#" class="footer-link">Careers</a>
+                <a href="#" class="footer-link">Contact</a>
+            </div>
+            <div>
+                <div class="footer-head">Investors</div>
+                <a href="#" class="pitch-deck">
+                    <div class="status-dot"></div> Series A Memo
+                </a>
+                <div class="yc-badge">Y Combinator W26</div>
+            </div>
+        </div>
+        <div class="watermark">SHIRE</div>
+    </footer>
+
+    <script>
+        // JS LOGIC
+        const tooltip = document.getElementById('tooltip');
+
+        // Scroll nav effect
+        window.addEventListener('scroll', () => {
+            const nav = document.getElementById('navbar');
+            if (window.scrollY > 50) nav.classList.add('scrolled');
+            else nav.classList.remove('scrolled');
+        });
+
+        // Tooltip position tracking
+        document.addEventListener('mousemove', (e) => {
+            gsap.to(tooltip, { x: e.clientX + 20, y: e.clientY + 20, duration: 0.15 });
+        });
+
+        // DASHBOARD GRID
+        const gridContainer = document.getElementById('gridContainer');
+        const tables = [
+            { id: '04', status: 'clean', server: '--' }, { id: '05', status: 'busy', server: 'Tyler' },
+            { id: '06', status: 'busy', server: 'Sarah' }, { id: '07', status: 'busy', server: 'Tyler' },
+            { id: '08', status: 'clean', server: '--' }, { id: '09', status: 'clean', server: '--' }
+        ];
+
+        tables.forEach(t => {
+            const node = document.createElement('div');
+            node.className = `table-node ${t.status}`;
+            node.innerHTML = `<div class="node-id">${t.id}</div><div class="node-status-dot"></div>`;
+            node.addEventListener('mouseenter', () => {
+                tooltip.classList.add('visible');
+                document.getElementById('tt-id').innerText = `TABLE ${t.id}`;
+                document.getElementById('tt-status').innerText = t.status.toUpperCase();
+                document.getElementById('tt-server').innerText = t.server;
+                const now = new Date();
+                document.getElementById('tt-time').innerText = `${now.getHours()}:${now.getMinutes()}`;
+            });
+            node.addEventListener('mouseleave', () => {
+                tooltip.classList.remove('visible');
+            });
+            gridContainer.appendChild(node);
+        });
+
+        // FOG (Layer 1)
+        const canvas1 = document.getElementById('fog-canvas');
+        const scene1 = new THREE.Scene();
+        const camera1 = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        const renderer1 = new THREE.WebGLRenderer({ canvas: canvas1, alpha: true });
+        renderer1.setSize(window.innerWidth, window.innerHeight);
+        const mat1 = new THREE.ShaderMaterial({
+            uniforms: { uTime: { value: 0 } },
+            fragmentShader: `
+                uniform float uTime;
+                float random (in vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123); }
+                float noise (in vec2 st) {
+                    vec2 i = floor(st); vec2 f = fract(st);
+                    float a = random(i); float b = random(i + vec2(1.0, 0.0));
+                    float c = random(i + vec2(0.0, 1.0)); float d = random(i + vec2(1.0, 1.0));
+                    vec2 u = f * f * (3.0 - 2.0 * f);
+                    return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+                }
+                void main() {
+                    vec2 st = gl_FragCoord.xy / 1000.0;
+                    float n = noise(st * 3.0 + vec2(uTime * 0.1));
+                    gl_FragColor = vec4(0.9, 0.95, 1.0, n * 0.3);
+                }
+            `,
+            vertexShader: `void main() { gl_Position = vec4( position, 1.0 ); }`,
+            transparent: true
+        });
+        scene1.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat1));
+
+        // GOLD RING (Layer 2)
+        const canvas2 = document.getElementById('ring-canvas');
+        const renderer2 = new THREE.WebGLRenderer({ canvas: canvas2, alpha: true, antialias: true });
+        renderer2.setSize(window.innerWidth, window.innerHeight);
+        const scene2 = new THREE.Scene();
+        const camera2 = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 1000);
+        camera2.position.z = 25; camera2.position.y = 1;
+
+        const ringGeometry = new THREE.TorusGeometry(8, 2.5, 30, 150);
+        const particlesMaterial = new THREE.PointsMaterial({ color: 0xd4a854, size: 0.12, transparent: true, opacity: 0.85 });
+        const torusParticles = new THREE.Points(ringGeometry, particlesMaterial);
+        
+        torusParticles.rotation.x = Math.PI / 2; 
+
+        scene2.add(torusParticles);
+
+        const wireframeMaterial = new THREE.MeshBasicMaterial({ color: 0xd4a854, wireframe: true, transparent: true, opacity: 0.06 });
+        const wireframeRing = new THREE.Mesh(ringGeometry, wireframeMaterial);
+        wireframeRing.rotation.x = Math.PI / 2; 
+        scene2.add(wireframeRing);
+
+        const clock = new THREE.Clock();
+        function animate() {
+            const t = clock.getElapsedTime();
+            mat1.uniforms.uTime.value = t;
+            renderer1.render(scene1, camera1);
+            
+            torusParticles.rotation.x = (Math.PI / 2) + Math.sin(t * 0.2) * 0.2; 
+            torusParticles.rotation.y = t * 0.1; 
+            
+            wireframeRing.rotation.x = torusParticles.rotation.x;
+            wireframeRing.rotation.y = torusParticles.rotation.y;
+            
+            renderer2.render(scene2, camera2);
+            requestAnimationFrame(animate);
+        }
+        window.addEventListener('resize', () => {
+            renderer1.setSize(window.innerWidth, window.innerHeight);
+            renderer2.setSize(window.innerWidth, window.innerHeight);
+            camera2.aspect = window.innerWidth / window.innerHeight;
+            camera2.updateProjectionMatrix();
+        });
+        animate();
+
+        // SCROLL REVEAL for ring section
+        const ringObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if(entry.isIntersecting) {
+                    gsap.to('.ring-title', { opacity: 1, y: 0, duration: 1, ease: 'power2.out' });
+                    gsap.to('.feature-card', { opacity: 1, y: 0, duration: 0.8, stagger: 0.15, ease: 'power2.out', delay: 0.4 });
+                    ringObserver.unobserve(entry.target);
+                }
+            });
+        }, { threshold: 0.3 });
+        ringObserver.observe(document.querySelector('.ring-section'));
+
+        // Metric Counters
+        const metricObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if(entry.isIntersecting) {
+                   const counters = entry.target.querySelectorAll('.counter');
+                   
+                   counters.forEach(counter => {
+                       const target = parseFloat(counter.getAttribute('data-target'));
+                       const duration = 1.5;
+                       gsap.to(counter, {
+                           innerHTML: target,
+                           duration: duration,
+                           snap: { innerHTML: 0.1 },
+                           onUpdate: function() {
+                               this.targets()[0].innerHTML = Math.round(this.targets()[0].innerHTML * 10) / 10;
+                           }
+                       });
+                   });
+                   metricObserver.unobserve(entry.target);
+                }
+            });
+        }, { threshold: 0.3 });
+        metricObserver.observe(document.querySelector('.metrics-section'));
+
+    </script>
+</body>
+</html>

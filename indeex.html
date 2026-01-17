@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shire | Command Interface</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* --------------------------------------------------------------------------
+           DESIGN TOKENS & VARIABLES
+           -------------------------------------------------------------------------- */
+        :root {
+            /* --- PALETTE: "Liquid Data" --- */
+            --bg-void: #000000;
+            --bg-depth: #0A0A0A;
+            --bg-surface: #121212;
+
+            /* Functional States */
+            --s-clean: #FFFFFF;
+            --s-clean-glow: rgba(255, 255, 255, 0.6);
+
+            --s-reserved: #0A84FF;
+            /* Apple Blue */
+            --s-reserved-dim: rgba(10, 132, 255, 0.1);
+
+            --s-dirty: #FF453A;
+            /* Apple Red */
+            --s-dirty-dim: rgba(255, 69, 58, 0.15);
+
+            --s-occupied: #2C2C2E;
+            --s-occupied-txt: #8E8E93;
+
+            /* Text */
+            --txt-primary: #FFFFFF;
+            --txt-secondary: rgba(255, 255, 255, 0.55);
+            --txt-tertiary: rgba(255, 255, 255, 0.3);
+
+            /* Glass Physics */
+            --glass-heavy: rgba(20, 20, 20, 0.85);
+            --glass-medium: rgba(30, 30, 30, 0.60);
+            --glass-light: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-highlight: rgba(255, 255, 255, 0.03);
+            --blur-deep: 40px;
+            --blur-med: 20px;
+
+            /* Animation Curves */
+            --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+            --ease-elastic: cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        /* --------------------------------------------------------------------------
+           GLOBAL RESET & UTILITIES
+           -------------------------------------------------------------------------- */
+        * {
+            box-sizing: border-box;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-void);
+            color: var(--txt-primary);
+            font-family: 'Inter', sans-serif;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Scrollbar Styling (Webkit) */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* --------------------------------------------------------------------------
+           LAYOUT GRID
+           -------------------------------------------------------------------------- */
+        .viewport {
+            width: 100%;
+            height: 100%;
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            /* Sidebar | Map */
+            grid-template-rows: 60px 1fr 80px;
+            /* Header | Main | Dock */
+            background: radial-gradient(circle at 80% 20%, #1a1a1a 0%, #000000 70%);
+        }
+
+        /* --------------------------------------------------------------------------
+           HEADER (Spans Full Width)
+           -------------------------------------------------------------------------- */
+        .app-header {
+            grid-column: 1 / -1;
+            grid-row: 1 / 2;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            border-bottom: 1px solid var(--glass-border);
+            background: rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(10px);
+            z-index: 100;
+        }
+
+        .brand-cluster {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-logo {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            background: linear-gradient(to bottom, #fff, #888);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .live-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: rgba(50, 215, 75, 0.1);
+            border: 1px solid rgba(50, 215, 75, 0.3);
+            border-radius: 100px;
+            font-size: 10px;
+            font-weight: 600;
+            color: #32D74B;
+        }
+
+        .live-dot {
+            width: 4px;
+            height: 4px;
+            background: #32D74B;
+            border-radius: 50%;
+            box-shadow: 0 0 6px #32D74B;
+            animation: pulse 2s infinite;
+        }
+
+        /* --------------------------------------------------------------------------
+           LEFT SIDEBAR (Glass Panel)
+           -------------------------------------------------------------------------- */
+        .sidebar {
+            grid-column: 1 / 2;
+            grid-row: 2 / -1;
+            background: var(--glass-heavy);
+            backdrop-filter: blur(var(--blur-deep));
+            -webkit-backdrop-filter: blur(var(--blur-deep));
+            border-right: 1px solid var(--glass-border);
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            gap: 32px;
+            position: relative;
+            z-index: 50;
+        }
+
+        /* Sidebar Section Headers */
+        .section-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--txt-tertiary);
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Reservation Card Style */
+        .res-card {
+            background: var(--glass-light);
+            border: 1px solid transparent;
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.2s var(--ease-out-expo);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .res-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.1);
+            transform: translateX(4px);
+        }
+
+        .res-card.active {
+            background: rgba(10, 132, 255, 0.15);
+            border-color: var(--s-reserved);
+        }
+
+        .res-time {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--s-reserved);
+            margin-bottom: 4px;
+        }
+
+        .res-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--txt-primary);
+        }
+
+        .res-detail {
+            font-size: 12px;
+            color: var(--txt-secondary);
+            margin-top: 2px;
+        }
+
+        /* Log Feed */
+        .log-feed {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            overflow-y: auto;
+            max-height: 300px;
+            mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+        }
+
+        .log-item {
+            display: flex;
+            gap: 12px;
+            font-size: 12px;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+
+        .log-item:hover {
+            opacity: 1;
+        }
+
+        .log-time {
+            color: var(--txt-tertiary);
+            font-variant-numeric: tabular-nums;
+            min-width: 40px;
+        }
+
+        .log-txt {
+            color: var(--txt-secondary);
+            line-height: 1.4;
+        }
+
+        .highlight {
+            color: var(--s-clean);
+            font-weight: 500;
+        }
+
+        /* --------------------------------------------------------------------------
+           MAIN MAP AREA
+           -------------------------------------------------------------------------- */
+        .map-stage {
+            grid-column: 2 / -1;
+            grid-row: 2 / -1;
+            position: relative;
+            overflow: hidden;
+            /* Architectural Grid Background */
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 60px 60px;
+        }
+
+        /* Floating Filter Tabs */
+        .map-filters {
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+        }
+
+        .filter-chip {
+            padding: 8px 16px;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            border-radius: 100px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--txt-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-chip.active {
+            background: var(--s-clean);
+            color: black;
+            border-color: var(--s-clean);
+        }
+
+        /* --------------------------------------------------------------------------
+           TABLE COMPONENTS (The Core Visuals)
+           -------------------------------------------------------------------------- */
+        .table-entity {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.4s var(--ease-elastic);
+            transform-origin: center center;
+            cursor: pointer;
+        }
+
+        .table-entity:hover {
+            transform: scale(1.05);
+            z-index: 20;
+        }
+
+        /* SHAPES */
+        .shape-core {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+            position: relative;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(4px);
+        }
+
+        .circle {
+            border-radius: 50%;
+        }
+
+        .rect {
+            border-radius: 12px;
+        }
+
+        .booth {
+            border-radius: 4px 4px 16px 16px;
+        }
+
+        /* STATE: CLEAN */
+        .state-clean .shape-core {
+            background: radial-gradient(circle at 30% 30%, #fff 0%, #d1d1d6 100%);
+            color: #000;
+            border: 1px solid white;
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.1);
+        }
+
+        /* STATE: OCCUPIED */
+        .state-occupied .shape-core {
+            background: var(--s-occupied);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--s-occupied-txt);
+        }
+
+        /* STATE: RESERVED */
+        .state-reserved .shape-core {
+            background: rgba(10, 132, 255, 0.05);
+            border: 2px solid var(--s-reserved);
+            color: var(--s-reserved);
+            box-shadow: 0 0 15px rgba(10, 132, 255, 0.1);
+        }
+
+        /* STATE: DIRTY */
+        .state-dirty .shape-core {
+            background: rgba(255, 69, 58, 0.05);
+            border: 1px solid var(--s-dirty);
+            color: var(--s-dirty);
+            animation: breathe-red 4s infinite ease-in-out;
+        }
+
+        /* WAITERS & TIMERS (The "Left Stuff" integration) */
+        .waiter-dot {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            width: 22px;
+            height: 22px;
+            background: #1C1C1E;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 9px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 5;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .timer-tag {
+            position: absolute;
+            bottom: -24px;
+            background: #000;
+            border: 1px solid #333;
+            color: var(--txt-secondary);
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 6px;
+            white-space: nowrap;
+            opacity: 0;
+            transform: translateY(-5px);
+            transition: all 0.2s;
+        }
+
+        .table-entity:hover .timer-tag,
+        .state-occupied .timer-tag {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* --------------------------------------------------------------------------
+           BOTTOM FLOATING DOCK (Actions)
+           -------------------------------------------------------------------------- */
+        .action-dock {
+            grid-column: 2 / -1;
+            grid-row: 3 / -1;
+            align-self: end;
+            margin: 0 24px 24px 24px;
+            height: 64px;
+            background: var(--glass-medium);
+            backdrop-filter: blur(var(--blur-med));
+            border: 1px solid var(--glass-border);
+            border-radius: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 8px 0 24px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .dock-stats {
+            display: flex;
+            gap: 24px;
+        }
+
+        .stat-unit {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-val {
+            font-size: 18px;
+            font-weight: 600;
+            color: white;
+            line-height: 1;
+        }
+
+        .stat-lbl {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: var(--txt-tertiary);
+            margin-top: 4px;
+        }
+
+        .btn-seat {
+            height: 48px;
+            padding: 0 32px;
+            background: var(--s-clean);
+            color: black;
+            border: none;
+            border-radius: 100px;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+            transition: transform 0.2s;
+        }
+
+        .btn-seat:hover {
+            transform: scale(1.02);
+        }
+
+        .btn-seat:active {
+            transform: scale(0.96);
+        }
+
+        /* --------------------------------------------------------------------------
+           ANIMATIONS
+           -------------------------------------------------------------------------- */
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+                box-shadow: 0 0 6px #32D74B;
+            }
+
+            50% {
+                opacity: 0.5;
+                box-shadow: 0 0 0 #32D74B;
+            }
+
+            100% {
+                opacity: 1;
+                box-shadow: 0 0 6px #32D74B;
+            }
+        }
+
+        @keyframes breathe-red {
+
+            0%,
+            100% {
+                border-color: rgba(255, 69, 58, 0.4);
+                box-shadow: 0 0 0 rgba(255, 69, 58, 0);
+            }
+
+            50% {
+                border-color: rgba(255, 69, 58, 1);
+                box-shadow: 0 0 15px rgba(255, 69, 58, 0.15);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="viewport">
+
+        <header class="app-header">
+            <div class="brand-cluster">
+                <div class="brand-logo">SHIRE</div>
+                <div class="live-badge">
+                    <div class="live-dot"></div>
+                    LIVE
+                </div>
+            </div>
+            <div style="font-size: 14px; font-variant-numeric: tabular-nums; color: var(--txt-secondary);">
+                FRI 12:45 PM
+            </div>
+        </header>
+
+        <aside class="sidebar">
+
+            <div>
+                <div class="section-label">
+                    <span>Upcoming</span>
+                    <span>3 Total</span>
+                </div>
+
+                <div class="res-card active">
+                    <div class="res-time">7:00 PM</div>
+                    <div class="res-name">The Cameron Party</div>
+                    <div class="res-detail">6 Guests • Table 202</div>
+                </div>
+
+                <div class="res-card">
+                    <div class="res-time">7:15 PM</div>
+                    <div class="res-name">Miller</div>
+                    <div class="res-detail">2 Guests • Unassigned</div>
+                </div>
+
+                <div class="res-card">
+                    <div class="res-time">7:30 PM</div>
+                    <div class="res-name">Tech Corp Dinner</div>
+                    <div class="res-detail">8 Guests • VIP</div>
+                </div>
+            </div>
+
+            <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+                <div class="section-label">
+                    <span>System Log</span>
+                    <span style="opacity:0.5">Realtime</span>
+                </div>
+                <div class="log-feed">
+                    <div class="log-item">
+                        <span class="log-time">12:44</span>
+                        <span class="log-txt"><span class="highlight">JD</span> seated Table 101 (2p)</span>
+                    </div>
+                    <div class="log-item">
+                        <span class="log-time">12:42</span>
+                        <span class="log-txt">Table 203 marked <span style="color:var(--s-dirty)">Dirty</span></span>
+                    </div>
+                    <div class="log-item">
+                        <span class="log-time">12:40</span>
+                        <span class="log-txt">Reservation <span class="highlight">#4921</span> confirmed via SMS</span>
+                    </div>
+                    <div class="log-item">
+                        <span class="log-time">12:35</span>
+                        <span class="log-txt"><span class="highlight">MK</span> clocked in</span>
+                    </div>
+                    <div class="log-item">
+                        <span class="log-time">12:31</span>
+                        <span class="log-txt">Table 302 course 2 fired</span>
+                    </div>
+                </div>
+            </div>
+
+        </aside>
+
+        <main class="map-stage" id="floorCanvas">
+
+            <div class="map-filters">
+                <div class="filter-chip active">Main Floor</div>
+                <div class="filter-chip">Patio</div>
+                <div class="filter-chip">Private</div>
+            </div>
+
+        </main>
+
+        <div class="action-dock">
+            <div class="dock-stats">
+                <div class="stat-unit">
+                    <span class="stat-val">82%</span>
+                    <span class="stat-lbl">Capacity</span>
+                </div>
+                <div class="stat-unit">
+                    <span class="stat-val">12m</span>
+                    <span class="stat-lbl">Avg Wait</span>
+                </div>
+                <div class="stat-unit">
+                    <span class="stat-val" style="color: #32D74B;">+15%</span>
+                    <span class="stat-lbl">Turn Rate</span>
+                </div>
+            </div>
+            <button class="btn-seat">Seat Cameron (6)</button>
+        </div>
+    </div>
+
+    <script>
+        // CONFIGURATION: The "Mental Model"
+        // 0-100 coordinates relative to map stage
+        const tables = [
+            // --- Center Cluster (High Tops) ---
+            { id: 101, x: 20, y: 20, w: 70, h: 70, type: 'circle', state: 'occupied', seats: 2, waiter: 'JD', time: '1h 05m' },
+            { id: 102, x: 32, y: 20, w: 70, h: 70, type: 'circle', state: 'clean', seats: 2, waiter: null, time: null },
+            { id: 103, x: 44, y: 20, w: 70, h: 70, type: 'circle', state: 'occupied', seats: 4, waiter: 'JD', time: '20m' },
+            { id: 104, x: 56, y: 20, w: 70, h: 70, type: 'circle', state: 'dirty', seats: 4, waiter: 'JD', time: '5m' },
+
+            // --- Window Booths (Left) ---
+            { id: 201, x: 5, y: 15, w: 90, h: 80, type: 'booth', state: 'reserved', seats: 4, waiter: 'MK', time: '7:00 PM' },
+            { id: 202, x: 5, y: 35, w: 90, h: 80, type: 'booth', state: 'occupied', seats: 4, waiter: 'MK', time: '45m' },
+            { id: 203, x: 5, y: 55, w: 90, h: 80, type: 'booth', state: 'clean', seats: 4, waiter: null, time: null },
+
+            // --- Large Tables (Right) ---
+            { id: 301, x: 70, y: 20, w: 120, h: 80, type: 'rect', state: 'occupied', seats: 8, waiter: 'AS', time: '12m' },
+            { id: 302, x: 70, y: 45, w: 120, h: 80, type: 'rect', state: 'dirty', seats: 6, waiter: 'AS', time: '2m' },
+
+            // --- The "VIP" Round ---
+            { id: 400, x: 40, y: 60, w: 100, h: 100, type: 'circle', state: 'clean', seats: 5, waiter: null, time: null },
+        ];
+
+        const canvas = document.getElementById('floorCanvas');
+
+        function render() {
+            tables.forEach(t => {
+                // Container
+                const el = document.createElement('div');
+                el.className = `table-entity state-${t.state}`;
+                el.style.left = t.x + '%';
+                el.style.top = t.y + '%';
+                el.style.width = t.w + 'px';
+                el.style.height = t.h + 'px';
+
+                // Core Shape
+                const shape = document.createElement('div');
+                shape.className = `shape-core ${t.type}`;
+                shape.innerText = t.id;
+
+                // Waiter Badge
+                if (t.waiter) {
+                    const w = document.createElement('div');
+                    w.className = 'waiter-dot';
+                    w.innerText = t.waiter;
+                    el.appendChild(w);
+                }
+
+                // Info Tag
+                const tag = document.createElement('div');
+                tag.className = 'timer-tag';
+
+                if (t.state === 'clean') tag.innerText = `${t.seats} Seats`;
+                else if (t.state === 'reserved') tag.innerText = t.time;
+                else if (t.state === 'dirty') tag.innerText = 'Needs Bussing';
+                else tag.innerText = t.time; // Occupied time
+
+                el.appendChild(shape);
+                el.appendChild(tag);
+
+                canvas.appendChild(el);
+            });
+        }
+
+        render();
+    </script>
+</body>
+
+</html>
