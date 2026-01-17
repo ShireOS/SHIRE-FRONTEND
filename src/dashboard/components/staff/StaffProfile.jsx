@@ -10,15 +10,75 @@ import {
   MessageSquare,
   Calendar,
   Check,
-  Lightbulb
+  Lightbulb,
+  Loader2,
+  WifiOff,
+  RefreshCw
 } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { staff } from '../../data/mockData'
+import { useStaffProfileWithStatus } from '../../hooks/useStaffData'
 
 export function StaffProfile() {
   const navigate = useNavigate()
   const { id } = useParams()
-  const member = staff.find(s => s.id === id) || staff[0]
+  const { member, isLoading, isError, error, refetch } = useStaffProfileWithStatus(id)
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <button
+          onClick={() => navigate('/staff')}
+          className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 mb-6 transition-colors"
+        >
+          <ArrowLeft size={18} />
+          Back to Staff
+        </button>
+        <Card>
+          <CardContent className="p-12 text-center">
+            <Loader2 size={32} className="animate-spin text-blue-600 mx-auto mb-4" />
+            <p className="text-gray-600 font-medium">Loading profile...</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Error state
+  if (isError || !member) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <button
+          onClick={() => navigate('/staff')}
+          className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 mb-6 transition-colors"
+        >
+          <ArrowLeft size={18} />
+          Back to Staff
+        </button>
+        <Card>
+          <CardContent className="p-8">
+            <div className="text-center">
+              <WifiOff size={40} className="text-red-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Cannot Load Profile</h3>
+              <p className="text-gray-600 mb-4">{error?.message || 'Staff member not found'}</p>
+
+              {error && (
+                <div className="bg-gray-50 rounded-lg p-4 text-left mb-4 max-w-md mx-auto">
+                  <p className="text-xs font-mono text-gray-500 mb-1">Debug Info:</p>
+                  <p className="text-xs font-mono text-gray-700">Status: {error?.status || 'N/A'}</p>
+                  <p className="text-xs font-mono text-gray-700">Endpoint: {error?.endpoint || 'N/A'}</p>
+                </div>
+              )}
+
+              <Button onClick={refetch} icon={<RefreshCw size={16} />}>
+                Try Again
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {

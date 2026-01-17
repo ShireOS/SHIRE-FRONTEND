@@ -9,6 +9,7 @@ export default defineConfig({
       '@': resolve(__dirname, './src'),
       '@host': resolve(__dirname, './src/host'),
       '@dashboard': resolve(__dirname, './src/dashboard'),
+      '@shared': resolve(__dirname, './src/shared'),
     },
   },
   build: {

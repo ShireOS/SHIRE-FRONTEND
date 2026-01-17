@@ -12,12 +12,16 @@ import {
   Sparkles,
   TrendingUp,
   TrendingDown,
-  Minus
+  Minus,
+  RefreshCw,
+  Loader2,
+  WifiOff
 } from 'lucide-react'
-import { staff } from '../../data/mockData'
+import { useStaffWithStatus } from '../../hooks/useStaffData'
 
 export function StaffTable() {
   const navigate = useNavigate()
+  const { staff, isLoading, isError, error, refetch } = useStaffWithStatus()
   const [sortField, setSortField] = useState('tips')
   const [sortDir, setSortDir] = useState('desc')
   const [searchQuery, setSearchQuery] = useState('')
@@ -30,6 +34,50 @@ export function StaffTable() {
       setSortField(field)
       setSortDir('desc')
     }
+  }
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="p-12 text-center">
+          <Loader2 size={32} className="animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600 font-medium">Loading staff data...</p>
+          <p className="text-sm text-gray-400 mt-1">Connecting to backend API</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // Show error state with debugging info
+  if (isError) {
+    return (
+      <Card>
+        <CardContent className="p-8">
+          <div className="text-center">
+            <WifiOff size={40} className="text-red-500 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Cannot Connect to Backend</h3>
+            <p className="text-gray-600 mb-4">{error?.message || 'Unknown error'}</p>
+
+            {/* Debug info */}
+            <div className="bg-gray-50 rounded-lg p-4 text-left mb-4 max-w-md mx-auto">
+              <p className="text-xs font-mono text-gray-500 mb-1">Debug Info:</p>
+              <p className="text-xs font-mono text-gray-700">Status: {error?.status || 'N/A'}</p>
+              <p className="text-xs font-mono text-gray-700">Endpoint: {error?.endpoint || 'N/A'}</p>
+              {error?.details && (
+                <p className="text-xs font-mono text-gray-700 mt-1 break-all">
+                  Details: {typeof error.details === 'string' ? error.details : JSON.stringify(error.details)}
+                </p>
+              )}
+            </div>
+
+            <Button onClick={refetch} icon={<RefreshCw size={16} />}>
+              Try Again
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    )
   }
 
   const filteredStaff = staff
