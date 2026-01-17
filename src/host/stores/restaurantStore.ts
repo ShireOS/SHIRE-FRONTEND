@@ -77,7 +77,7 @@ export const useRestaurantStore = create<RestaurantState>((set, get) => ({
   serverMode: 'sections',
   rightPanelCollapsed: false,
   activeTab: 'waitlist',
-  theme: 'dark',
+  theme: 'light',
 
   // Undo history
   undoHistory: [],

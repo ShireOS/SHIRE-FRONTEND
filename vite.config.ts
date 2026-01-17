@@ -1,9 +1,45 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
 
+// Custom plugin to log API config on startup
+function apiConfigLogger() {
+  return {
+    name: 'api-config-logger',
+    configureServer() {
+      // Load env vars
+      const env = loadEnv('development', process.cwd(), 'VITE_')
+
+      const apiUrl = env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
+      const useMock = env.VITE_USE_MOCK_DATA === 'true'
+      const restaurantId = env.VITE_RESTAURANT_ID || 'default'
+
+      console.log('')
+      console.log('\x1b[44m\x1b[37m === SHIRE API CONFIG === \x1b[0m')
+      console.log('\x1b[36m API Base URL:\x1b[0m', apiUrl)
+      console.log('\x1b[36m Restaurant ID:\x1b[0m', restaurantId)
+      console.log('\x1b[36m Mock Data Mode:\x1b[0m', useMock ? '\x1b[33mON (no API calls)\x1b[0m' : '\x1b[32mOFF (calling real API)\x1b[0m')
+      console.log('')
+
+      if (!useMock) {
+        console.log('\x1b[33m ⚠️  Backend must be running at:\x1b[0m', apiUrl)
+        console.log('\x1b[90m    If not running, set VITE_USE_MOCK_DATA=true in .env.development\x1b[0m')
+        console.log('')
+        console.log('\x1b[35m 📅 Scheduling Features:\x1b[0m')
+        console.log('\x1b[90m    • Auto-selects "Mimosas" restaurant\x1b[0m')
+        console.log('\x1b[90m    • AI schedule generation via /schedules/run\x1b[0m')
+        console.log('\x1b[90m    • Coverage gap detection & labor tracking\x1b[0m')
+      } else {
+        console.log('\x1b[32m ✓ Using mock data - no backend required\x1b[0m')
+      }
+      console.log('\x1b[44m\x1b[37m ========================= \x1b[0m')
+      console.log('')
+    }
+  }
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), apiConfigLogger()],
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),

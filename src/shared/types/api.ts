@@ -38,11 +38,24 @@ export interface RecentShift {
   section_name: string | null
 }
 
-export interface WaiterDashboard {
+// Profile nested inside dashboard response
+export interface WaiterProfile {
   id: string
   name: string
+  email?: string
+  phone?: string | null
   tier: string // 'strong' | 'standard' | 'developing'
   tenure_years: number
+  total_shifts?: number
+  total_covers?: number
+  total_tips?: number
+  is_active?: boolean
+  created_at?: string
+}
+
+// Actual dashboard response structure from backend
+export interface WaiterDashboard {
+  profile: WaiterProfile
   stats: WaiterStats
   trends: TrendDataPoint[]
   insights: WaiterInsights | null
@@ -52,10 +65,11 @@ export interface WaiterDashboard {
 export interface WaiterListItem {
   id: string
   name: string
-  role?: string
-  tenure_years: number
+  email?: string
   tier: string
-  stats: WaiterStats
+  tenure_years: number
+  is_active?: boolean
+  stats?: WaiterStats
 }
 
 // ========== Frontend-Adapted Types ==========
@@ -102,4 +116,208 @@ export interface ApiError {
   message: string
   details?: unknown
   endpoint?: string
+}
+
+// ========== Menu Analytics Types ==========
+// Types for menu ranking, scoring, and 86 management
+
+export interface MenuItemRanked {
+  id: string
+  name: string
+  category: string | null
+  price: number
+  cost: number
+  is_available: boolean
+  combined_score: number // 0-100
+  demand_score: number // 0-100
+  margin_pct: number
+  orders_per_day: number
+  times_ordered: number
+  rank: number
+}
+
+export interface MenuItemRankingResponse {
+  restaurant_id: string
+  analysis_period_days: number
+  total_items: number
+  items: MenuItemRanked[]
+}
+
+export interface MenuItem86Recommendation {
+  id: string
+  name: string
+  category: string | null
+  price: number
+  combined_score: number
+  demand_score: number
+  margin_pct: number
+  orders_per_day: number
+  reason: string
+}
+
+export interface MenuItem86RecommendationResponse {
+  restaurant_id: string
+  analysis_period_days: number
+  score_threshold: number
+  total_recommendations: number
+  recommendations: MenuItem86Recommendation[]
+}
+
+export interface MenuItem86Response {
+  success: boolean
+  item_id: string
+  name: string
+  is_available: boolean
+  message: string
+}
+
+export interface MenuItem86dItem {
+  id: string
+  name: string
+  category: string | null
+  price: number | null
+  is_available: boolean
+  updated_at: string | null
+}
+
+export interface MenuItem86dListResponse {
+  restaurant_id: string
+  total_86d: number
+  items: MenuItem86dItem[]
+}
+
+export interface Restaurant {
+  id: string
+  name: string
+  timezone: string
+  config: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+// ========== Scheduling Types ==========
+// Types for staff scheduling, availability, and AI generation
+
+// Backend response types
+export interface Schedule {
+  id: string
+  restaurant_id: string
+  week_start_date: string
+  status: 'draft' | 'published' | 'archived'
+  generated_by: 'manual' | 'engine' | 'suggestion'
+  version: number
+  items: ScheduleItem[]
+  created_at: string
+}
+
+export interface ScheduleItem {
+  id: string
+  schedule_id: string
+  waiter_id: string
+  role: string
+  section_id?: string | null
+  shift_date: string
+  shift_start: string
+  shift_end: string
+  source: 'manual' | 'engine' | 'suggestion'
+  preference_match_score?: number | null
+  fairness_impact_score?: number | null
+}
+
+export interface ScheduleRun {
+  id: string
+  run_status: 'running' | 'completed' | 'failed'
+  schedule_id?: string | null
+  error_message?: string | null
+  summary_metrics?: {
+    items_created: number
+    total_hours: number
+    coverage_pct: number
+    fairness_gini: number
+    preference_avg: number
+  } | null
+}
+
+export interface StaffingRequirement {
+  id: string
+  restaurant_id: string
+  day_of_week: number // 0=Mon, 6=Sun
+  start_time: string
+  end_time: string
+  role: string
+  min_staff: number
+  max_staff: number
+  is_prime_shift: boolean
+  notes?: string | null
+}
+
+export interface Availability {
+  id: string
+  waiter_id: string
+  day_of_week: number // 0=Mon, 6=Sun
+  start_time: string
+  end_time: string
+  availability_type: 'available' | 'unavailable' | 'preferred'
+  notes?: string | null
+}
+
+export interface Preferences {
+  waiter_id: string
+  preferred_roles: string[]
+  preferred_shift_types: string[]
+  preferred_sections?: string[] | null
+  max_shifts_per_week?: number | null
+  max_hours_per_week?: number | null
+  min_hours_per_week?: number | null
+  avoid_clopening: boolean
+  notes?: string | null
+}
+
+// Frontend-adapted types for schedule display
+export type AvailabilityStatus = 'available' | 'preferred' | 'unavailable'
+
+export interface ShiftCell {
+  itemId: string
+  displayTime: string // "4-11pm"
+  startTime: string
+  endTime: string
+  role: string
+  hours: number
+  preferenceScore?: number
+  fairnessScore?: number
+  source: 'manual' | 'engine' | 'suggestion'
+}
+
+export interface StaffScheduleRow {
+  waiterId: string
+  name: string
+  role: string
+  shifts: (ShiftCell | null)[] // 7 days (Mon-Sun)
+  availability: AvailabilityStatus[] // 7 days
+  totalHours: number
+}
+
+export interface CoverageGap {
+  day: string
+  dayIndex: number
+  timeSlot: string
+  role: string
+  scheduled: number
+  required: number
+  shortage: number
+}
+
+export interface FrontendSchedule {
+  id: string
+  weekOf: string // "Jan 6-12"
+  weekStartDate: Date
+  status: 'draft' | 'published' | 'archived'
+  days: string[] // ['MON', 'TUE', 'WED', ...]
+  dayTypes: ('slow' | 'avg' | 'busy')[]
+  staff: StaffScheduleRow[]
+  laborCost: number
+  laborPercent: number
+  coverageGaps: CoverageGap[]
+  warnings: string[]
+  totalHours: number
 }

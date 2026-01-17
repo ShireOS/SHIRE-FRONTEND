@@ -6,6 +6,8 @@ export const API_CONFIG = {
   timeout: 10000, // 10 seconds
   useMockData: import.meta.env.VITE_USE_MOCK_DATA === 'true',
   restaurantId: import.meta.env.VITE_RESTAURANT_ID || 'default',
+  // Debug mode - always true in dev
+  debug: import.meta.env.DEV,
 }
 
 export const getApiUrl = (endpoint: string): string => {
@@ -13,11 +15,18 @@ export const getApiUrl = (endpoint: string): string => {
   return url
 }
 
-// Log config on startup (only in dev)
+// ===========================================
+// DEBUG LOGGING - Check your browser console!
+// ===========================================
 if (import.meta.env.DEV) {
-  console.log('[API Config]', {
-    baseUrl: API_CONFIG.baseUrl,
-    useMockData: API_CONFIG.useMockData,
-    restaurantId: API_CONFIG.restaurantId,
-  })
+  console.log('%c=== SHIRE API CONFIG ===', 'background: #3B82F6; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;')
+  console.log('%cAPI Base URL:', 'color: #10B981; font-weight: bold;', API_CONFIG.baseUrl)
+  console.log('%cRestaurant ID:', 'color: #10B981; font-weight: bold;', API_CONFIG.restaurantId)
+  console.log('%cMock Data Mode:', 'color: #10B981; font-weight: bold;', API_CONFIG.useMockData ? 'ON (no API calls)' : 'OFF (calling real API)')
+  console.log('%cDebug Mode:', 'color: #10B981; font-weight: bold;', API_CONFIG.debug ? 'ON' : 'OFF')
+  console.log('')
+  console.log('%c⚠️  If you see "Failed to fetch" errors:', 'color: #F59E0B; font-weight: bold;')
+  console.log('%c   1. Make sure your backend is running at:', 'color: #6B7280;', API_CONFIG.baseUrl)
+  console.log('%c   2. Or set VITE_USE_MOCK_DATA=true in .env.development to use mock data', 'color: #6B7280;')
+  console.log('%c=============================', 'background: #3B82F6; color: white; padding: 4px 8px; border-radius: 4px;')
 }
