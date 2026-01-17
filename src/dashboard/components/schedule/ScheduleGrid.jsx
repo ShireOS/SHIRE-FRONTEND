@@ -1,66 +1,149 @@
 import { Card, CardContent } from '../shared/Card'
 import { Badge } from '../shared/Badge'
-import { schedule } from '../../data/mockData'
 
 const dayTypeStyles = {
   slow: 'text-gray-500 bg-gray-100',
   avg: 'text-blue-600 bg-blue-100',
-  busy: 'text-orange-600 bg-orange-100'
+  busy: 'text-orange-600 bg-orange-100',
 }
 
-export function ScheduleGrid() {
+/**
+ * Get cell background style based on availability status
+ */
+function getAvailabilityStyle(status) {
+  switch (status) {
+    case 'preferred':
+      return 'bg-green-50 hover:bg-green-100'
+    case 'unavailable':
+      return 'bg-gray-100 hover:bg-gray-150'
+    default:
+      return 'hover:bg-gray-50'
+  }
+}
+
+/**
+ * Get shift badge style based on day type and source
+ */
+function getShiftBadgeStyle(dayType, source) {
+  let baseStyle = 'inline-block px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors'
+
+  if (source === 'engine') {
+    baseStyle += ' ring-2 ring-purple-200'
+  }
+
+  if (dayType === 'busy') {
+    return `${baseStyle} bg-orange-50 text-orange-700 hover:bg-orange-100`
+  }
+  return `${baseStyle} bg-blue-50 text-blue-700 hover:bg-blue-100`
+}
+
+export function ScheduleGrid({ schedule, onShiftClick, onCellClick }) {
+  if (!schedule) return null
+
   return (
     <Card>
       <CardContent className="p-0 overflow-x-auto">
         <table className="w-full min-w-[800px]">
           <thead>
             <tr className="border-b border-gray-100">
-              <th className="text-left py-4 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider w-24">
+              <th className="text-left py-4 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">
                 Staff
               </th>
               {schedule.days.map((day, idx) => (
-                <th key={day} className="text-center py-4 px-2 min-w-[100px]">
-                  <div className="text-xs font-semibold text-gray-500 uppercase mb-1">{day}</div>
+                <th key={day} className="text-center py-4 px-2 min-w-[120px]">
+                  <div className="text-xs font-semibold text-gray-500 uppercase mb-1">
+                    {day}
+                  </div>
                   <Badge
-                    variant={schedule.dayTypes[idx] === 'slow' ? 'neutral' : schedule.dayTypes[idx] === 'avg' ? 'info' : 'warning'}
+                    variant={
+                      schedule.dayTypes[idx] === 'slow'
+                        ? 'neutral'
+                        : schedule.dayTypes[idx] === 'avg'
+                        ? 'info'
+                        : 'warning'
+                    }
                     className="text-[10px] px-2 py-0.5"
                   >
-                    {schedule.dayTypes[idx].charAt(0).toUpperCase() + schedule.dayTypes[idx].slice(1)}
+                    {schedule.dayTypes[idx].charAt(0).toUpperCase() +
+                      schedule.dayTypes[idx].slice(1)}
                   </Badge>
                 </th>
               ))}
+              <th className="text-center py-4 px-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                Total
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {schedule.staff.map((staffMember) => (
-              <tr key={staffMember.name} className="hover:bg-gray-50 transition-colors">
+            {schedule.staff.map((staffRow) => (
+              <tr key={staffRow.waiterId} className="transition-colors">
                 <td className="py-4 px-4">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-gradient-to-br from-gray-200 to-gray-300 rounded-full flex items-center justify-center text-xs font-medium text-gray-600">
-                      {staffMember.name.charAt(0)}
+                      {staffRow.name.charAt(0)}
                     </div>
-                    <span className="text-sm font-medium text-gray-900">{staffMember.name}</span>
+                    <div>
+                      <span className="text-sm font-medium text-gray-900 block">
+                        {staffRow.name}
+                      </span>
+                      <span className="text-xs text-gray-500">{staffRow.role}</span>
+                    </div>
                   </div>
                 </td>
-                {staffMember.shifts.map((shift, idx) => (
-                  <td key={idx} className="py-4 px-2 text-center">
-                    {shift === 'OFF' ? (
-                      <span className="text-xs text-gray-400">OFF</span>
-                    ) : (
-                      <div className="inline-flex items-center gap-1">
-                        <span className={`
-                          inline-block px-3 py-1.5 rounded-lg text-sm font-medium
-                          ${schedule.dayTypes[idx] === 'busy' ? 'bg-orange-50 text-orange-700' : 'bg-blue-50 text-blue-700'}
-                        `}>
-                          {shift}
+                {staffRow.shifts.map((shift, dayIdx) => {
+                  const availability = staffRow.availability[dayIdx]
+                  const cellStyle = getAvailabilityStyle(availability)
+
+                  return (
+                    <td
+                      key={dayIdx}
+                      className={`py-4 px-2 text-center transition-colors ${cellStyle}`}
+                      onClick={() => onCellClick && onCellClick(staffRow, dayIdx)}
+                    >
+                      {shift ? (
+                        <div className="inline-flex flex-col items-center gap-1">
+                          <span
+                            className={getShiftBadgeStyle(
+                              schedule.dayTypes[dayIdx],
+                              shift.source
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onShiftClick && onShiftClick(shift)
+                            }}
+                            title={
+                              shift.source === 'engine'
+                                ? `AI Generated - Pref: ${shift.preferenceScore?.toFixed(0) || 'N/A'}%`
+                                : 'Manual'
+                            }
+                          >
+                            {shift.displayTime}
+                          </span>
+                          {shift.source === 'engine' && (
+                            <span className="text-[10px] text-purple-600 font-medium">
+                              AI
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span
+                          className={`text-xs ${
+                            availability === 'unavailable'
+                              ? 'text-gray-400'
+                              : 'text-gray-300 hover:text-gray-500'
+                          }`}
+                        >
+                          {availability === 'unavailable' ? 'N/A' : '--'}
                         </span>
-                        {staffMember.isTraining?.[idx] && (
-                          <span className="w-4 h-4 bg-purple-500 rounded-full flex items-center justify-center text-white text-[10px]">T</span>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                ))}
+                      )}
+                    </td>
+                  )
+                })}
+                <td className="py-4 px-2 text-center">
+                  <span className="text-sm font-semibold text-gray-700">
+                    {staffRow.totalHours.toFixed(1)}h
+                  </span>
+                </td>
               </tr>
             ))}
           </tbody>
