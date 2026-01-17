@@ -20,7 +20,8 @@
     "paths": {
       "@/*": ["./src/*"],
       "@host/*": ["./src/host/*"],
-      "@dashboard/*": ["./src/dashboard/*"]
+      "@dashboard/*": ["./src/dashboard/*"],
+      "@shared/*": ["./src/shared/*"]
     }
   },
   "include": ["src"]

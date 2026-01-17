@@ -1,10 +1,47 @@
-import { ChevronRight, Star, AlertTriangle } from 'lucide-react'
+import { ChevronRight, Star, AlertTriangle, Loader2, WifiOff, RefreshCw } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { staffToday } from '../../data/mockData'
+import { useStaffTodayWithStatus } from '../../hooks/useStaffData'
 
 export function StaffLeaderboard() {
   const navigate = useNavigate()
-  const topTips = Math.max(...staffToday.map(s => s.tips))
+  const { staffToday, isLoading, isError, error, refetch } = useStaffTodayWithStatus()
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="h-full p-6 rounded-lg bg-surface border border-border shadow-card">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="font-semibold text-lg text-primary">Staff Rank</h3>
+        </div>
+        <div className="flex items-center justify-center py-8">
+          <Loader2 size={24} className="animate-spin text-gray-400" />
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
+  if (isError) {
+    return (
+      <div className="h-full p-6 rounded-lg bg-surface border border-border shadow-card">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="font-semibold text-lg text-primary">Staff Rank</h3>
+        </div>
+        <div className="text-center py-4">
+          <WifiOff size={24} className="text-red-400 mx-auto mb-2" />
+          <p className="text-xs text-gray-500 mb-2">{error?.message || 'Cannot load'}</p>
+          <button
+            onClick={refetch}
+            className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 mx-auto"
+          >
+            <RefreshCw size={12} /> Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const topTips = staffToday.length > 0 ? Math.max(...staffToday.map(s => s.tips)) : 1
 
   return (
     <div className="h-full p-6 rounded-lg bg-surface border border-border shadow-card">
