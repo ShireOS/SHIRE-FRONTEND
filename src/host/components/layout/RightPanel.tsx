@@ -1,9 +1,12 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight, Activity, Users, TrendingUp, RotateCcw, X } from 'lucide-react'
+import { useEffect } from 'react'
 import { useRestaurantStore } from '../../stores/restaurantStore'
 import { ActivityFeed } from '../activity/ActivityFeed'
 import { cn } from '../../lib/cn'
 import type { Server } from '../../types'
+
+const RESTAURANT_ID = import.meta.env.VITE_RESTAURANT_ID || 'default'
 
 export function RightPanel() {
   const collapsed = useRestaurantStore((s) => s.rightPanelCollapsed)
@@ -13,6 +16,23 @@ export function RightPanel() {
   const tables = useRestaurantStore((s) => s.tables)
   const selectedServerId = useRestaurantStore((s) => s.selectedServerId)
   const setSelectedServer = useRestaurantStore((s) => s.setSelectedServer)
+  const demoActive = useRestaurantStore((s) => s.demoActive)
+  const fetchDemoSummary = useRestaurantStore((s) => s.fetchDemoSummary)
+
+  // Poll demo summary every 10 seconds when demo is active
+  useEffect(() => {
+    if (!demoActive) return
+
+    // Fetch immediately when demo starts
+    fetchDemoSummary(RESTAURANT_ID)
+
+    // Then poll every 10 seconds
+    const interval = setInterval(() => {
+      fetchDemoSummary(RESTAURANT_ID)
+    }, 10000)
+
+    return () => clearInterval(interval)
+  }, [demoActive, fetchDemoSummary])
 
   const unreadCount = activity.filter((a) => !a.read && a.priority === 'high').length
 
