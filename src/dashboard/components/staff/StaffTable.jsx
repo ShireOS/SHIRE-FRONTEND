@@ -24,7 +24,7 @@ import { API_CONFIG } from '../../../shared/api/config'
 export function StaffTable() {
   const navigate = useNavigate()
 
-  // Auto-select Mimosas restaurant
+  // Auto-select first restaurant (which is Mimosas)
   const [restaurantId, setRestaurantId] = useState(null)
   const { data: restaurants } = useRestaurants()
 
@@ -39,7 +39,7 @@ export function StaffTable() {
       })))
       console.groupEnd()
 
-      // SELECT FIRST RESTAURANT (not Mimosas specifically - try all!)
+      // SELECT FIRST RESTAURANT (Mimosas)
       const selectedRestaurant = restaurants[0]
       console.log('[StaffTable] 🎯 Auto-selecting FIRST restaurant:', selectedRestaurant.name, selectedRestaurant.id)
       setRestaurantId(selectedRestaurant.id)
