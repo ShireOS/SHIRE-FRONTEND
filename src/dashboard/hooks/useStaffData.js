@@ -10,8 +10,8 @@ export { useWaiterList, useStaffToday, useWaiterDashboard }
  * Hook for StaffTable component
  * Returns staff list with loading/error state
  */
-export function useStaffWithStatus() {
-  const { data, loading, error, refetch } = useWaiterList()
+export function useStaffWithStatus(restaurantId) {
+  const { data, loading, error, refetch } = useWaiterList(restaurantId)
 
   return {
     staff: data || [],

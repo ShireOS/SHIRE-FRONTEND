@@ -9,13 +9,13 @@ import type { StaffMember } from '../types/api'
 /**
  * Fetch all waiters for the restaurant and transform to frontend format
  */
-export function useWaiterList() {
+export function useWaiterList(restaurantId?: string) {
   const fetchFn = useCallback(async (): Promise<StaffMember[]> => {
-    const data = await restaurantApi.getWaiters()
+    const data = await restaurantApi.getWaiters(restaurantId)
     return data.map(transformWaiterListItem)
-  }, [])
+  }, [restaurantId])
 
-  return useApiQuery(fetchFn, [])
+  return useApiQuery(fetchFn, [restaurantId])
 }
 
 /**
