@@ -36,7 +36,7 @@ function addWeeks(dateStr, weeks) {
 }
 
 export function Schedule() {
-  // Restaurant selection (auto-select Mimosas)
+  // Restaurant selection (auto-select first restaurant, which is Mimosas)
   const [restaurantId, setRestaurantId] = useState(null)
   const { data: restaurants, loading: loadingRestaurants } = useRestaurants()
 
@@ -51,7 +51,7 @@ export function Schedule() {
       })))
       console.groupEnd()
 
-      // SELECT FIRST RESTAURANT (not Mimosas specifically - try all!)
+      // SELECT FIRST RESTAURANT (Mimosas)
       const selectedRestaurant = restaurants[0]
       console.log('[Schedule] 🎯 Auto-selecting FIRST restaurant:', selectedRestaurant.name, selectedRestaurant.id)
       setRestaurantId(selectedRestaurant.id)
