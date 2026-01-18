@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { chatApi } from '../api/chatApi'
 import { saveMessages, loadMessages, clearMessages as clearStoredMessages } from '../utils/chatStorage'
 import { API_CONFIG } from '../api/config'
-import type { ChatMessage, StreamChunk, ApiError } from '../types/api'
+import type { ChatMessage, ApiError } from '../types/api'
 
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -63,37 +63,33 @@ export function useChat() {
     setMessages(prev => [...prev, assistantMessage])
 
     try {
-      await chatApi.sendMessage(
-        API_CONFIG.restaurantId,
+      await chatApi.sendMessageStream(
         content.trim(),
-        messages, // Send conversation history
-        (chunk: StreamChunk) => {
-          if (chunk.type === 'start') {
-            // Stream started
-            if (import.meta.env.DEV) {
-              console.log('[Chat] Stream started')
-            }
-          } else if (chunk.type === 'content' && chunk.content) {
-            // Update message content with new chunk
+        messages.map(m => ({ role: m.role, content: m.content })), // Send conversation history
+        {
+          onToken: (token: string) => {
+            // Update message content with new token
             setMessages(prev =>
               prev.map(msg =>
                 msg.id === assistantMessageId
-                  ? { ...msg, content: msg.content + chunk.content }
+                  ? { ...msg, content: msg.content + token }
                   : msg
               )
             )
-          } else if (chunk.type === 'done') {
+          },
+          onComplete: () => {
             // Stream completed
             setIsStreaming(false)
             setStreamingMessageId(null)
             if (import.meta.env.DEV) {
               console.log('[Chat] Stream completed')
             }
-          } else if (chunk.type === 'error') {
-            // Error in stream
+          },
+          onError: (err: Error) => {
+            // Handle API errors
             setError({
               status: 500,
-              message: chunk.message || 'An error occurred during streaming'
+              message: err.message || 'An error occurred during streaming'
             })
             setIsStreaming(false)
             setStreamingMessageId(null)
@@ -101,14 +97,7 @@ export function useChat() {
             setMessages(prev => prev.filter(msg => msg.id !== assistantMessageId))
           }
         },
-        (apiError: ApiError) => {
-          // Handle API errors
-          setError(apiError)
-          setIsStreaming(false)
-          setStreamingMessageId(null)
-          // Remove the empty assistant message
-          setMessages(prev => prev.filter(msg => msg.id !== assistantMessageId))
-        }
+        API_CONFIG.restaurantId
       )
     } catch (err) {
       console.error('[Chat] Unexpected error:', err)

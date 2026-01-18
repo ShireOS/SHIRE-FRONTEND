@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Play, Pause } from 'lucide-react'
+import { X, Play } from 'lucide-react'
 import { useRestaurantStore } from '../../stores/restaurantStore'
 import { DemoWebSocket } from '../../../shared/services/websocket'
 import { mockTables, mockGuests, mockReservations, mockServers, mockSections, mockActivity, mockRecommendations } from '../../data/mockData'
@@ -135,7 +135,7 @@ export function VideoViewer({ isOpen, onClose, videoPath, restaurantId }: VideoV
           {/* Header */}
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-lg font-display text-primary">Demo Video</h3>
+              <h3 className="text-lg font-display text-primary">Live Feed</h3>
               <p className="text-sm text-secondary">Computer vision processing in real-time</p>
             </div>
             <button
@@ -175,7 +175,7 @@ export function VideoViewer({ isOpen, onClose, videoPath, restaurantId }: VideoV
             <div className="mt-4 p-3 glass-panel-flat rounded-lg">
               <div className="flex items-center gap-2 text-sm">
                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-primary">Demo active - Tables updating in real-time</span>
+                <span className="text-primary">Live - Tables updating in real-time</span>
               </div>
             </div>
           )}

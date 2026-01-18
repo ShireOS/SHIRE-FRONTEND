@@ -16,7 +16,7 @@ export function DemoStatusBanner() {
         <div
           className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}
         />
-        <span className="font-medium">Demo Mode</span>
+        <span className="font-medium">Live Mode</span>
       </div>
 
       {/* Demo Info */}

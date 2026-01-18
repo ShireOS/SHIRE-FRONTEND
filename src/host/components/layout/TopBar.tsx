@@ -109,7 +109,7 @@ export function TopBar({ onOpenVideoViewer }: TopBarProps) {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               className="w-8 h-8 rounded-lg flex items-center justify-center text-secondary hover:text-primary hover:bg-[rgba(var(--bg-hover),0.5)] transition-colors"
-              title="Watch demo video"
+              title="Watch live feed"
             >
               <Video className="w-4 h-4" />
             </motion.button>

@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { scheduleApi } from '../api/scheduleApi'
-import type { ScheduleRun, Schedule } from '../types/api'
+import type { ScheduleRun } from '../types/api'
 
 interface UseSchedulingEngineResult {
   runScheduler: (

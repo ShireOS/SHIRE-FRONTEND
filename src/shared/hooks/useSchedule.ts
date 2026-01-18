@@ -45,9 +45,10 @@ export function useSchedule(
 
       // Transform to frontend format
       return transformSchedule(schedule, staff, allAvailability)
-    } catch (error) {
+    } catch (error: unknown) {
       // If 404 or no schedule, return null (not an error)
-      if (error?.status === 404 || error?.status === 422) {
+      const apiError = error as { status?: number }
+      if (apiError?.status === 404 || apiError?.status === 422) {
         console.log('[useSchedule] No schedule exists yet for this week')
         return null
       }

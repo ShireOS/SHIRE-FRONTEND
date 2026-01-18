@@ -18,7 +18,6 @@ import type {
   StaffingRequirement,
   Availability,
   AvailabilityStatus,
-  ScheduleReasoning,
 } from '../types/api'
 
 /**
@@ -182,7 +181,6 @@ export function transformWaiterListItem(data: WaiterListItem): StaffMember {
     console.log('[Transform] Converting waiter:', {
       id: data.id.slice(0, 8) + '...',
       name: data.name,
-      role: data.role,
       tier: data.tier,
       hasStats: !!data.stats,
       tips: data.stats?.tips ?? 0,
@@ -477,15 +475,10 @@ export function detectCoverageGaps(
   if (!schedule) return []
 
   const gaps: CoverageGap[] = []
-  const weekStartDate = schedule.weekStartDate
 
   // Group requirements by day and time
   for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
     const dayRequirements = requirements.filter((r) => r.day_of_week === dayIndex)
-    const dayDate = new Date(weekStartDate)
-    dayDate.setDate(weekStartDate.getDate() + dayIndex)
-    const dayDateStr = dayDate.toISOString().split('T')[0]
-
     for (const req of dayRequirements) {
       // Count how many staff are scheduled for this time slot and role
       const scheduled = schedule.staff.filter((staffRow) => {

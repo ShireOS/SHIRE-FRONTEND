@@ -135,37 +135,75 @@
         .btn-secondary:hover { opacity: 1; }
         .play-icon-small { width: 24px; height: 24px; border: 1px solid rgba(255,255,255,0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; }
 
-        /* HERO DASHBOARD */
+        /* HERO VIDEO GRID */
         .dashboard-wrapper { position: relative; perspective: 2000px; }
-        .glass-dash {
-            width: 100%; aspect-ratio: 16/10; background: var(--glass);
+        .hero-video-grid {
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            grid-template-rows: repeat(2, 1fr);
+            gap: 8px;
+            background: var(--glass);
             backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px);
-            border: 1px solid var(--border); border-radius: 12px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
             box-shadow: 0 0 0 1px rgba(0,0,0,0.2), 0 20px 50px -10px rgba(0,0,0,0.6);
-            display: grid; grid-template-columns: 60px 1fr 240px; overflow: hidden;
+            padding: 8px;
+            overflow: hidden;
         }
-        .dash-sidebar { border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding-top: 1.5rem; gap: 1.5rem; }
-        .dash-icon { width: 24px; height: 24px; opacity: 0.4; }
-        .dash-icon.active { opacity: 1; color: #fff; }
-        .dash-map { position: relative; background: rgba(0,0,0,0.2); padding: 20px; }
-        .map-header { display: flex; justify-content: space-between; font-family: var(--font-data); font-size: 0.7rem; color: #666; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 0.1em; }
-        .tables-layout { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-        .table-node {
-            aspect-ratio: 1; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 2px;
-            padding: 12px; display: flex; flex-direction: column; justify-content: space-between; transition: all 0.2s;
+        .hero-video-cell {
+            position: relative;
+            aspect-ratio: 16/9;
+            background: rgba(0,0,0,0.4);
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.05);
         }
-        .table-node:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.2); }
-        .node-id { font-family: var(--font-display); font-style: italic; font-size: 1.2rem; opacity: 0.6; }
-        .node-status-dot { width: 6px; height: 6px; border-radius: 50%; align-self: flex-end; }
-        .clean .node-status-dot { background: var(--status-good); box-shadow: 0 0 8px var(--status-good); }
-        .busy .node-status-dot { background: var(--status-bad); box-shadow: 0 0 8px var(--status-bad); }
-        .dash-panel { border-left: 1px solid var(--border); background: rgba(0,0,0,0.1); padding: 20px; display: flex; flex-direction: column; font-family: var(--font-data); }
-        .panel-title { font-size: 0.7rem; color: #666; margin-bottom: 1rem; text-transform: uppercase; }
-        .log-feed { display: flex; flex-direction: column; gap: 12px; opacity: 0.8; }
-        .log-item { display: flex; flex-direction: column; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.03); }
-        .log-time { font-size: 0.65rem; color: #555; }
-        .log-msg { font-size: 0.75rem; color: #ccc; }
-        .highlight { color: var(--status-good); }
+        .hero-video-cell video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            filter: brightness(0.6);
+            pointer-events: none;
+        }
+        .hero-video-cell video::-webkit-media-controls,
+        .hero-video-cell video::-webkit-media-controls-enclosure,
+        .hero-video-cell video::-webkit-media-controls-panel,
+        .hero-video-cell video::-webkit-media-controls-play-button,
+        .hero-video-cell video::-webkit-media-controls-start-playback-button {
+            display: none !important;
+            -webkit-appearance: none;
+            opacity: 0;
+            pointer-events: none;
+        }
+        .hero-video-cell .video-label {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            font-family: var(--font-data);
+            font-size: 0.65rem;
+            color: rgba(255,255,255,0.6);
+            background: rgba(0,0,0,0.5);
+            padding: 4px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .hero-video-cell .live-dot {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 8px;
+            height: 8px;
+            background: var(--status-good);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--status-good);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
 
         /* --- VIDEO SECTION --- */
         .video-section {
@@ -865,21 +903,34 @@
             </div>
         </div>
         <div class="dashboard-wrapper">
-            <div class="glass-dash">
-                <div class="dash-sidebar">
-                    <div class="dash-icon active">●</div><div class="dash-icon">■</div><div class="dash-icon">▲</div>
+            <div class="hero-video-grid">
+                <div class="hero-video-cell">
+                    <video autoplay muted loop playsinline>
+                        <source src="/demovids/demo1.mp4" type="video/mp4">
+                    </video>
+                    <span class="video-label">Camera 1</span>
+                    <span class="live-dot"></span>
                 </div>
-                <div class="dash-map">
-                    <div class="map-header"><span>Floor 1 • Main Dining</span><span>Latency: 12ms</span></div>
-                    <div class="tables-layout" id="gridContainer"></div>
+                <div class="hero-video-cell">
+                    <video autoplay muted loop playsinline>
+                        <source src="/demovids/demo2.mp4" type="video/mp4">
+                    </video>
+                    <span class="video-label">Camera 2</span>
+                    <span class="live-dot"></span>
                 </div>
-                <div class="dash-panel">
-                    <div class="panel-title">System Activity</div>
-                    <div class="log-feed">
-                        <div class="log-item"><span class="log-time">12:04 PM</span><span class="log-msg"><span class="highlight">Table 06</span> seated</span></div>
-                        <div class="log-item"><span class="log-time">12:03 PM</span><span class="log-msg">Server Tyler clocked in</span></div>
-                        <div class="log-item"><span class="log-time">12:02 PM</span><span class="log-msg">High Latency (Zone B)</span></div>
-                    </div>
+                <div class="hero-video-cell">
+                    <video autoplay muted loop playsinline>
+                        <source src="/demovids/demo3.mp4" type="video/mp4">
+                    </video>
+                    <span class="video-label">Camera 3</span>
+                    <span class="live-dot"></span>
+                </div>
+                <div class="hero-video-cell">
+                    <video autoplay muted loop playsinline>
+                        <source src="/demovids/demo4.mp4" type="video/mp4">
+                    </video>
+                    <span class="video-label">Camera 4</span>
+                    <span class="live-dot"></span>
                 </div>
             </div>
         </div>
@@ -1434,6 +1485,26 @@
             });
         }, { threshold: 0.3 });
         metricObserver.observe(document.querySelector('.metrics-section'));
+
+        // Force autoplay hero videos - aggressive approach
+        document.querySelectorAll('.hero-video-cell video').forEach(video => {
+            video.muted = true;
+            video.playsInline = true;
+            video.setAttribute('playsinline', '');
+            video.setAttribute('muted', '');
+            video.removeAttribute('controls');
+
+            const forcePlay = () => {
+                video.play().catch(() => {});
+            };
+
+            forcePlay();
+            video.addEventListener('canplay', forcePlay);
+            video.addEventListener('loadeddata', forcePlay);
+            video.addEventListener('pause', () => {
+                if (!video.ended) forcePlay();
+            });
+        });
 
     </script>
 </body>
