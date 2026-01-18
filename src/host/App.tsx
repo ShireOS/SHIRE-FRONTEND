@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { TopBar } from './components/layout/TopBar'
 import { SmartCarousel } from './components/layout/SmartCarousel'
 import { LeftPanel } from './components/layout/LeftPanel'
@@ -8,7 +8,8 @@ import { DemoStatusBanner } from './components/demo/DemoStatusBanner'
 import { MultiCameraView } from './components/demo/MultiCameraView'
 import { useRestaurantStore } from './stores/restaurantStore'
 
-const RESTAURANT_ID = import.meta.env.VITE_RESTAURANT_ID || '550e8400-e29b-41d4-a716-446655440000'
+// Use the correct Mimosas restaurant ID
+const RESTAURANT_ID = import.meta.env.VITE_RESTAURANT_ID || 'c74e9278-1ccb-4f75-bc2f-eacf054db608'
 
 // Configure 9 camera feeds (cam-2 through cam-11, skipping cam-1 and cam-10)
 const CAMERAS = [
@@ -26,12 +27,31 @@ const CAMERAS = [
 function App() {
   const theme = useRestaurantStore((s) => s.theme)
   const [videoViewerOpen, setVideoViewerOpen] = useState(false)
+  const demoInitialized = useRef(false)
+
+  const initializeFromBackend = useRestaurantStore((s) => s.initializeFromBackend)
+  const startDemo = useRestaurantStore((s) => s.startDemo)
 
   // Initialize theme class on document
   useEffect(() => {
     document.documentElement.classList.remove('dark', 'light')
     document.documentElement.classList.add(theme)
   }, [theme])
+
+  // Auto-start demo on mount (runs once)
+  useEffect(() => {
+    if (demoInitialized.current) return
+    demoInitialized.current = true
+
+    const initAndStartDemo = async () => {
+      console.log('[App] Auto-initializing and starting demo...')
+      await initializeFromBackend(RESTAURANT_ID)
+      await startDemo(RESTAURANT_ID)
+      console.log('[App] Demo started automatically')
+    }
+
+    initAndStartDemo()
+  }, [initializeFromBackend, startDemo])
 
   return (
     <div className="w-full h-full flex flex-col bg-base">

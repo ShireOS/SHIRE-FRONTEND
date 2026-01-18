@@ -1,0 +1,9 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/host/(.*)", "destination": "/host/index.html" },
+    { "source": "/dashboard/(.*)", "destination": "/dashboard/index.html" },
+    { "source": "/((?!assets/).*)", "destination": "/index.html" }
+  ]
+}

@@ -362,6 +362,7 @@ export const useRestaurantStore = create<RestaurantState>((set, get) => ({
         restaurant_id: restaurantId,
         speed: 1.0,
         overwrite: true,
+        loop: true,  // Continuous loop
         mapping_mode: 'auto',
         seed_shift_snapshot: {
           enabled: true,
@@ -430,31 +431,44 @@ export const useRestaurantStore = create<RestaurantState>((set, get) => ({
   },
 
   handleTableStateUpdate: (event) => {
+    const newStatus = mapBackendState(event.state)
+
     set((state) => ({
       tables: state.tables.map((t) => {
         // Match by table_id or by parsing table_number
         const isMatch = t.id === event.table_id || t.number === parseInt(event.table_number.replace('T', ''))
 
-        return isMatch
-          ? {
-              ...t,
-              status: mapBackendState(event.state),
-              cvConfidence: event.confidence,
-              _justUpdated: true,
-            }
-          : { ...t, _justUpdated: false }
+        if (!isMatch) {
+          return { ...t, _justUpdated: false }
+        }
+
+        // Only flash if the actual STATUS changed, not just confidence
+        const stateChanged = t.status !== newStatus
+
+        return {
+          ...t,
+          status: newStatus,
+          cvConfidence: event.confidence,
+          _justUpdated: stateChanged,  // Only flash on actual state change
+        }
       }),
       lastCvUpdate: new Date(event.timestamp),
     }))
 
-    // Log activity
-    get().addActivity({
-      type: 'cv_alert',
-      message: `CV: Table ${event.table_number} → ${event.state} (${Math.round(event.confidence * 100)}%)`,
-      priority: 'low',
-    })
+    // Always log confidence changes to console
+    console.log(`[CV] Table ${event.table_number}: ${event.state} (${Math.round(event.confidence * 100)}%)`)
 
-    console.log('[Store] Table state updated:', event.table_number, event.state)
+    // Only add activity feed entry on actual state changes
+    const table = get().tables.find(t =>
+      t.id === event.table_id || t.number === parseInt(event.table_number.replace('T', ''))
+    )
+    if (table && table._justUpdated) {
+      get().addActivity({
+        type: 'cv_alert',
+        message: `CV: Table ${event.table_number} → ${event.state}`,
+        priority: 'low',
+      })
+    }
   },
 
   setWsConnected: (connected) => {
