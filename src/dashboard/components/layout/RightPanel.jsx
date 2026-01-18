@@ -1,27 +1,7 @@
-import { useState } from 'react'
-import { Sparkles, ChevronRight } from 'lucide-react'
+import { ChevronRight, Sparkles } from 'lucide-react'
 import { quickStats, alerts } from '../../data/mockData'
-import { ChatInterface } from '../chat/ChatInterface'
 
-export function RightPanel() {
-  const [isExpanded, setIsExpanded] = useState(false)
-
-  const handleExpand = () => {
-    setIsExpanded(true)
-  }
-
-  const handleMinimize = () => {
-    setIsExpanded(false)
-  }
-
-  if (isExpanded) {
-    return (
-      <aside className="w-96 bg-white border-l border-gray-100 flex flex-col h-screen">
-        <ChatInterface onMinimize={handleMinimize} />
-      </aside>
-    )
-  }
-
+export function RightPanel({ onOpenChat }) {
   return (
     <aside className="w-80 bg-gray-50/50 border-l border-gray-100 p-4 space-y-4 overflow-y-auto">
       {/* AI Chat Preview - Premium Card */}
@@ -41,7 +21,7 @@ export function RightPanel() {
           <p className="text-xs text-gray-400 mb-1">Last insight:</p>
           <p className="text-sm text-gray-700 leading-relaxed">"Consider calling an extra server for 7-9pm tonight."</p>
           <button
-            onClick={handleExpand}
+            onClick={onOpenChat}
             className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-all"
           >
             Open Chat
