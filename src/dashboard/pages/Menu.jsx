@@ -2,16 +2,18 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent } from '../components/shared/Card'
 import { Button } from '../components/shared/Button'
 import { Badge } from '../components/shared/Badge'
-import { Ban, AlertTriangle, TrendingUp, Loader2 } from 'lucide-react'
+import { Ban, AlertTriangle, TrendingUp, TrendingDown, Loader2, ShoppingCart, X, Minus, Trash2 } from 'lucide-react'
 import {
   useMenuTopRankings,
   useMenuBottomRankings,
   useMenu86Recommendations,
   useMenu86dItems,
   useRestaurants,
+  usePricingRecommendations,
 } from '../../shared/hooks/useMenuAnalytics'
 import { menuApi } from '../../shared/api/menuApi'
 import { API_CONFIG } from '../../shared/api/config'
+import { useShoppingList } from '../../shared/hooks/useInventory'
 
 // Score Badge Component
 function ScoreBadge({ score }) {
@@ -37,6 +39,7 @@ function ScoreBadge({ score }) {
 export function Menu() {
   const [restaurantId, setRestaurantId] = useState(API_CONFIG.restaurantId)
   const [actionLoading, setActionLoading] = useState(false)
+  const [showPricingModal, setShowPricingModal] = useState(false)
 
   // Fetch restaurants
   const { data: restaurants } = useRestaurants()
@@ -81,6 +84,12 @@ export function Menu() {
   } = useMenu86Recommendations(restaurantId, 30, 25)
 
   const { data: items86d, refetch: refetch86d } = useMenu86dItems(restaurantId)
+
+  // Fetch shopping list data
+  const { data: shoppingList, loading: loadingInventory } = useShoppingList(restaurantId, 7, 30)
+
+  // Fetch pricing recommendations
+  const { data: pricingRecs, loading: loadingPricing } = usePricingRecommendations(restaurantId, 30)
 
   // Log loaded data
   useEffect(() => {
@@ -276,12 +285,18 @@ export function Menu() {
 
         {/* Right Sidebar - 1 column */}
         <div className="space-y-6">
-          {/* 86 Recommendations */}
-          <Card>
+          {/* 86 Recommendations - Clickable for Pricing Modal */}
+          <Card
+            className="cursor-pointer hover:shadow-md transition-shadow"
+            onClick={() => setShowPricingModal(true)}
+          >
             <CardContent className="p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <AlertTriangle size={18} className="text-amber-500" />
-                <h3 className="font-semibold text-gray-900">86 Recommendations</h3>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle size={18} className="text-amber-500" />
+                  <h3 className="font-semibold text-gray-900">86 Recommendations</h3>
+                </div>
+                <span className="text-xs text-gray-400">Click for pricing insights →</span>
               </div>
 
               {recommendations && recommendations.total_recommendations > 0 ? (
@@ -302,7 +317,10 @@ export function Menu() {
                         variant="outline"
                         size="sm"
                         className="w-full text-xs"
-                        onClick={() => handle86(item.id, item.name)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handle86(item.id, item.name)
+                        }}
                         disabled={actionLoading}
                       >
                         {actionLoading ? 'Processing...' : '86 This Item'}
@@ -395,8 +413,222 @@ export function Menu() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Optimized Restock */}
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <ShoppingCart size={18} className="text-emerald-500" />
+                  <h3 className="font-semibold text-gray-900">Optimized Restock</h3>
+                </div>
+                {shoppingList && (
+                  <Badge variant="success">{shoppingList.total_items} items</Badge>
+                )}
+              </div>
+
+              {loadingInventory ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="animate-spin text-gray-400" size={20} />
+                </div>
+              ) : shoppingList && shoppingList.ingredients.length > 0 ? (
+                <>
+                  {/* Total Cost Summary */}
+                  <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-100 mb-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm text-gray-600">Optimized Order</span>
+                        <p className="text-xs text-gray-500">
+                          {shoppingList.forecast_period_days}-day forecast based on sales
+                        </p>
+                      </div>
+                      <span className="text-lg font-bold text-emerald-700">
+                        ${shoppingList.total_cost.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Ingredient List */}
+                  <div className="space-y-3 max-h-72 overflow-y-auto">
+                    {shoppingList.ingredients.slice(0, 8).map((item) => {
+                      // Calculate days left and stock percentage
+                      const daysLeft = item.avg_daily_usage > 0
+                        ? Math.floor(item.current_stock / item.avg_daily_usage)
+                        : 99
+                      const stockPct = Math.min((item.current_stock / item.par_level) * 100, 100)
+                      const barColor = stockPct < 25
+                        ? 'bg-red-500'
+                        : stockPct < 50
+                        ? 'bg-amber-500'
+                        : 'bg-emerald-500'
+
+                      return (
+                        <div
+                          key={item.ingredient_id}
+                          className="p-3 bg-white rounded-lg border border-gray-200 shadow-sm"
+                        >
+                          {/* Header row */}
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-gray-900">
+                              {item.name}
+                            </span>
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                              daysLeft <= 2
+                                ? 'bg-red-100 text-red-700'
+                                : daysLeft <= 5
+                                ? 'bg-amber-100 text-amber-700'
+                                : 'bg-gray-100 text-gray-600'
+                            }`}>
+                              {daysLeft <= 0 ? 'Out' : `${daysLeft}d left`}
+                            </span>
+                          </div>
+
+                          {/* Stock level bar */}
+                          <div className="mb-2">
+                            <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                              <span>Stock: {item.current_stock.toFixed(1)} / {item.par_level} {item.unit}</span>
+                              <span>{Math.round(stockPct)}%</span>
+                            </div>
+                            <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full ${barColor} rounded-full transition-all`}
+                                style={{ width: `${stockPct}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Order details */}
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-500">
+                              Order {item.quantity_to_order.toFixed(1)} {item.unit}
+                            </span>
+                            <span className="font-medium text-gray-700">
+                              ${item.total_cost.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {shoppingList.ingredients.length > 8 && (
+                    <p className="text-xs text-gray-500 text-center mt-3">
+                      +{shoppingList.ingredients.length - 8} more items
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-gray-500">Stock levels optimal</p>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
+
+      {/* Pricing Recommendations Modal */}
+      {showPricingModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Menu Optimization</h2>
+                <p className="text-sm text-gray-500">AI-powered pricing recommendations</p>
+              </div>
+              <button
+                onClick={() => setShowPricingModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-full"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-4 overflow-y-auto max-h-[60vh]">
+              {loadingPricing ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="animate-spin text-gray-400" size={24} />
+                </div>
+              ) : pricingRecs?.recommendations?.length > 0 ? (
+                <div className="space-y-3">
+                  {pricingRecs.recommendations.map((rec) => (
+                    <div
+                      key={rec.item_id}
+                      className={`p-4 rounded-lg border ${
+                        rec.action === 'increase'
+                          ? 'bg-green-50 border-green-200'
+                          : rec.action === 'decrease'
+                          ? 'bg-amber-50 border-amber-200'
+                          : rec.action === 'remove'
+                          ? 'bg-red-50 border-red-200'
+                          : 'bg-gray-50 border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            {rec.action === 'increase' && (
+                              <TrendingUp size={16} className="text-green-600" />
+                            )}
+                            {rec.action === 'decrease' && (
+                              <TrendingDown size={16} className="text-amber-600" />
+                            )}
+                            {rec.action === 'remove' && (
+                              <Trash2 size={16} className="text-red-600" />
+                            )}
+                            {rec.action === 'maintain' && (
+                              <Minus size={16} className="text-gray-600" />
+                            )}
+                            <span className="font-medium text-gray-900">{rec.item_name}</span>
+                            <span className="text-xs text-gray-500">{rec.category}</span>
+                          </div>
+                          <p className="text-sm text-gray-600 mt-1">{rec.reason}</p>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm text-gray-500">
+                            ${rec.current_price.toFixed(2)}
+                          </div>
+                          {rec.suggested_price &&
+                            rec.suggested_price !== rec.current_price && (
+                              <div
+                                className={`font-semibold ${
+                                  rec.action === 'increase'
+                                    ? 'text-green-600'
+                                    : rec.action === 'decrease'
+                                    ? 'text-amber-600'
+                                    : 'text-gray-600'
+                                }`}
+                              >
+                                → ${rec.suggested_price.toFixed(2)}
+                              </div>
+                            )}
+                        </div>
+                      </div>
+                      {rec.expected_revenue_impact && (
+                        <div className="mt-2 text-xs text-gray-500">
+                          Expected impact:{' '}
+                          <span className="font-medium text-green-600">
+                            {rec.expected_revenue_impact}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-center text-gray-500 py-8">All items are optimally priced</p>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t bg-gray-50">
+              <p className="text-xs text-gray-500 text-center">
+                Based on {pricingRecs?.analysis_period_days || 30}-day sales analysis
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

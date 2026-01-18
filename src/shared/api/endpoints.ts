@@ -23,6 +23,10 @@ export const ENDPOINTS = {
   menuRankingsBottom: (restaurantId: string, lookbackDays = 30, limit = 10) =>
     `/restaurants/${restaurantId}/menu/rankings/bottom?lookback_days=${lookbackDays}&limit=${limit}`,
 
+  // Menu optimization
+  menuPricingRecommendations: (restaurantId: string, lookbackDays = 30) =>
+    `/restaurants/${restaurantId}/menu/pricing-recommendations?lookback_days=${lookbackDays}`,
+
   // 86 Management
   menu86Recommendations: (
     restaurantId: string,
@@ -69,6 +73,11 @@ export const ENDPOINTS = {
     `/reviews/${restaurantId}/ingest`,
   reviewsCategorize: (restaurantId: string) =>
     `/reviews/${restaurantId}/categorize`,
+  // Inventory endpoints
+  inventoryShoppingList: (restaurantId: string, forecastDays = 7, lookbackDays = 30) =>
+    `/restaurants/${restaurantId}/inventory/shopping-list?forecast_days=${forecastDays}&lookback_days=${lookbackDays}`,
+  inventoryStockAlerts: (restaurantId: string) =>
+    `/restaurants/${restaurantId}/inventory/stock-alerts`,
 
   // Health check
   health: () => '/healthz',

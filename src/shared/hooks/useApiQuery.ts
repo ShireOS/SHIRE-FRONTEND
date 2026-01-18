@@ -38,13 +38,33 @@ export function useApiQuery<T>(
       if (mountedRef.current) {
         setData(result)
         setError(null)
+
+        // ENHANCED LOGGING - Log successful queries
+        if (import.meta.env.DEV) {
+          console.group('[useApiQuery] ✅ Query succeeded')
+          console.log('Data Type:', Array.isArray(result) ? 'array' : typeof result)
+
+          // CRITICAL: Log count for array responses (staff data)
+          if (Array.isArray(result)) {
+            console.log('🔢 Count:', result.length)
+            if (result.length > 0 && result.length <= 3) {
+              console.log('Items:', result)
+            } else if (result.length > 0) {
+              console.log('First 3 Items:', result.slice(0, 3))
+            }
+          } else {
+            console.log('Data:', result)
+          }
+
+          console.groupEnd()
+        }
       }
     } catch (err) {
       if (mountedRef.current) {
         const apiError = err as ApiError
         setError(apiError)
         // DO NOT fall back to mock data - show the error
-        console.error('[useApiQuery] API call failed:', apiError)
+        console.error('[useApiQuery] ❌ API call failed:', apiError)
       }
     } finally {
       if (mountedRef.current) {
