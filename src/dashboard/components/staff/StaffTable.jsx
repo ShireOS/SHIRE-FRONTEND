@@ -42,8 +42,11 @@ export function StaffTable() {
 
   const { staff: allStaff, isLoading, isError, error, refetch } = useStaffWithStatus(restaurantId)
 
-  // Only show servers in staff table (servers are the ones with tips/performance metrics)
-  const staff = allStaff.filter((s) => s.role.toLowerCase() === 'server')
+  // Only show servers with actual activity (exclude those with all 0s), limit to 31
+  const staff = allStaff
+    .filter((s) => s.role.toLowerCase() === 'server')
+    .filter((s) => s.thisMonth?.tips > 0 || s.thisMonth?.covers > 0 || s.thisMonth?.revenue > 0)
+    .slice(0, 31)
 
   const [sortField, setSortField] = useState('tips')
   const [sortDir, setSortDir] = useState('desc')
