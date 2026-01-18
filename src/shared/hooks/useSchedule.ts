@@ -40,6 +40,8 @@ export function useSchedule(
 
       // Get the first schedule for the week (should only be one)
       const schedule = schedules[0]
+      console.log('[useSchedule] Raw schedule from backend:', schedule)
+      console.log('[useSchedule] Schedule has items?', schedule.items ? `YES (${schedule.items.length} items)` : 'NO - MISSING!')
 
       // Transform to frontend format
       return transformSchedule(schedule, staff, allAvailability)

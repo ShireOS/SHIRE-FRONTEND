@@ -199,6 +199,14 @@ export interface Restaurant {
 // Types for staff scheduling, availability, and AI generation
 
 // Backend response types
+
+// AI Reasoning for schedule items
+export interface ScheduleReasoning {
+  reasons: string[]
+  constraint_violations: string[]
+  confidence_score: number
+}
+
 export interface Schedule {
   id: string
   restaurant_id: string
@@ -207,7 +215,9 @@ export interface Schedule {
   generated_by: 'manual' | 'engine' | 'suggestion'
   version: number
   items: ScheduleItem[]
+  schedule_summary?: string | null  // NEW: AI-generated explanation from backend
   created_at: string
+  updated_at: string
 }
 
 export interface ScheduleItem {
@@ -222,6 +232,9 @@ export interface ScheduleItem {
   source: 'manual' | 'engine' | 'suggestion'
   preference_match_score?: number | null
   fairness_impact_score?: number | null
+  reasoning?: ScheduleReasoning | null  // NEW: Nested AI reasoning from backend
+  created_at: string
+  updated_at: string
 }
 
 export interface ScheduleRun {
@@ -286,6 +299,7 @@ export interface ShiftCell {
   preferenceScore?: number
   fairnessScore?: number
   source: 'manual' | 'engine' | 'suggestion'
+  reasoning?: ScheduleReasoning  // NEW: AI reasoning for tooltip display
 }
 
 export interface StaffScheduleRow {
@@ -320,4 +334,5 @@ export interface FrontendSchedule {
   coverageGaps: CoverageGap[]
   warnings: string[]
   totalHours: number
+  scheduleSummary?: string | null  // NEW: AI-generated reasoning from backend
 }

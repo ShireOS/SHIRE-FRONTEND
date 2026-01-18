@@ -3,13 +3,14 @@ import { Card, CardContent } from '../components/shared/Card'
 import { Button } from '../components/shared/Button'
 import { Badge } from '../components/shared/Badge'
 import { ScheduleGrid } from '../components/schedule/ScheduleGrid'
+import { AISchedulePreviewModal } from '../components/schedule/AISchedulePreviewModal'
 import { Sparkles, ChevronLeft, ChevronRight, Send, Plus, AlertTriangle, Loader2 } from 'lucide-react'
 import { useSchedule, useStaffingRequirements, useAllStaffAvailability, useCoverageGaps } from '../../shared/hooks/useSchedule'
 import { useSchedulingEngine } from '../../shared/hooks/useSchedulingEngine'
 import { useWaiterList } from '../../shared/hooks/useWaiterList'
 import { useRestaurants } from '../../shared/hooks/useMenuAnalytics'
 import { scheduleApi } from '../../shared/api/scheduleApi'
-import { detectCoverageGaps } from '../../shared/utils/dataTransformers'
+import { detectCoverageGaps, transformSchedule } from '../../shared/utils/dataTransformers'
 import { API_CONFIG } from '../../shared/api/config'
 
 /**
@@ -63,13 +64,33 @@ export function Schedule() {
   // Fetch staff availability
   const { data: allAvailability } = useAllStaffAvailability(staff || [])
 
-  // Fetch schedule data
-  const {
-    data: schedule,
-    loading: loadingSchedule,
-    error: scheduleError,
-    refetch: refetchSchedule,
-  } = useSchedule(restaurantId, currentWeek, staff || [], allAvailability || [])
+  // DON'T auto-fetch schedule - start empty, only load after AI generation
+  const [schedule, setSchedule] = useState(null)
+  const [loadingSchedule, setLoadingSchedule] = useState(false)
+
+  // Manual refetch function (called after AI apply or week navigation)
+  const refetchSchedule = async () => {
+    if (!restaurantId || !currentWeek || !staff || !allAvailability) return
+
+    setLoadingSchedule(true)
+    try {
+      const schedules = await scheduleApi.getSchedules(restaurantId, currentWeek)
+      if (schedules.length > 0) {
+        const transformed = transformSchedule(schedules[0], staff, allAvailability)
+        if (transformed && requirements) {
+          transformed.coverageGaps = detectCoverageGaps(transformed, requirements)
+        }
+        setSchedule(transformed)
+      } else {
+        setSchedule(null)
+      }
+    } catch (err) {
+      console.error('[Schedule] Error fetching schedule:', err)
+      setSchedule(null)
+    } finally {
+      setLoadingSchedule(false)
+    }
+  }
 
   // Fetch staffing requirements
   const { data: requirements } = useStaffingRequirements(restaurantId)
@@ -82,12 +103,17 @@ export function Schedule() {
 
   // AI scheduling engine
   const { runScheduler, isRunning: isGenerating } = useSchedulingEngine()
-  const [showingAISuggestion, setShowingAISuggestion] = useState(false)
+  const [showPreviewModal, setShowPreviewModal] = useState(false)
+  const [suggestedSchedule, setSuggestedSchedule] = useState(null)
+
+  // Shift editing state
+  const [editingShift, setEditingShift] = useState(null)
+  const [editingStaffRow, setEditingStaffRow] = useState(null)
+  const [showAddShift, setShowAddShift] = useState(false)
+  const [addShiftPreselect, setAddShiftPreselect] = useState({ staffId: null, date: null })
 
   const handleAISuggest = async () => {
     try {
-      setShowingAISuggestion(true)
-
       // If a draft schedule exists for this week, delete it first
       if (schedule && schedule.status === 'draft') {
         console.log('[Schedule] Deleting existing draft schedule before generating new one')
@@ -95,25 +121,30 @@ export function Schedule() {
           await scheduleApi.deleteSchedule(schedule.id)
         } catch (deleteErr) {
           console.warn('[Schedule] Could not delete draft (may not have DELETE endpoint yet):', deleteErr)
-          // Continue anyway - backend might handle it
         }
       }
 
       const result = await runScheduler(restaurantId, currentWeek)
 
       if (result.schedule_id) {
-        // Refresh schedule to show new AI-generated schedule
-        await refetchSchedule()
-        alert(
-          `AI schedule generated! ` +
-            `Created ${result.summary_metrics?.items_created || 0} shifts with ` +
-            `${result.summary_metrics?.coverage_pct?.toFixed(1) || 0}% coverage.`
-        )
+        // Fetch the generated schedule with items and reasoning
+        console.log('[Schedule] Fetching generated schedule:', result.schedule_id)
+        const newSchedule = await scheduleApi.getScheduleById(result.schedule_id)
+
+        // Transform to frontend format
+        const transformed = transformSchedule(newSchedule, staff || [], allAvailability || [])
+
+        // Add coverage gaps
+        if (transformed && requirements) {
+          transformed.coverageGaps = detectCoverageGaps(transformed, requirements)
+        }
+
+        setSuggestedSchedule(transformed)
+        setShowPreviewModal(true)  // Show preview modal
       }
     } catch (err) {
       console.error('[Schedule] AI generation failed:', err)
 
-      // Show helpful error message based on error type
       let message = 'Failed to generate AI schedule.'
       if (err?.status === 409) {
         message = 'A schedule already exists for this week. Backend needs to handle duplicate schedules - see docs/BACKEND_SCHEDULING_ISSUES.md'
@@ -122,9 +153,50 @@ export function Schedule() {
       }
 
       alert(message)
-    } finally {
-      setShowingAISuggestion(false)
     }
+  }
+
+  const handleApplySchedule = async () => {
+    // User approved the AI schedule - it's already in the DB, just close modal and refresh
+    setShowPreviewModal(false)
+    setSuggestedSchedule(null)
+    await refetchSchedule()  // This will now show the schedule in the main grid
+  }
+
+  const handleCancelSuggestion = async () => {
+    // User rejected the AI schedule - delete it from DB
+    if (suggestedSchedule) {
+      try {
+        await scheduleApi.deleteSchedule(suggestedSchedule.id)
+      } catch (err) {
+        console.warn('[Schedule] Could not delete suggestion:', err)
+      }
+    }
+    setShowPreviewModal(false)
+    setSuggestedSchedule(null)
+  }
+
+  // Shift editing handlers
+  const handleShiftClick = (shift, staffRow) => {
+    setEditingShift(shift)
+    setEditingStaffRow(staffRow)
+  }
+
+  const handleCellClick = (staffRow, dayIdx) => {
+    // Calculate the date for this day
+    const dayDate = new Date(schedule.weekStartDate)
+    dayDate.setDate(dayDate.getDate() + dayIdx)
+    const dateStr = dayDate.toISOString().split('T')[0]
+
+    setAddShiftPreselect({ staffId: staffRow.waiterId, date: dateStr })
+    setShowAddShift(true)
+  }
+
+  const handleShiftSaved = async () => {
+    setEditingShift(null)
+    setEditingStaffRow(null)
+    setShowAddShift(false)
+    await refetchSchedule()
   }
 
   // Publish schedule
@@ -148,7 +220,7 @@ export function Schedule() {
     }
   }
 
-  // Loading state
+  // Loading state (only for initial page load)
   const loading = loadingRestaurants || !restaurantId || loadingStaff
   if (loading) {
     return (
@@ -167,7 +239,7 @@ export function Schedule() {
     )
   }
 
-  // Error state (only show for critical errors, not missing schedules)
+  // Error state (only show for critical staff errors)
   if (staffError) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
@@ -242,7 +314,12 @@ export function Schedule() {
               {schedule.status.toUpperCase()}
             </Badge>
           )}
-          <Button variant="outline" size="sm" icon={<Plus size={16} />}>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<Plus size={16} />}
+            onClick={() => setShowAddShift(true)}
+          >
             Add Shift
           </Button>
         </div>
@@ -277,7 +354,11 @@ export function Schedule() {
 
       {/* Schedule Grid */}
       {schedule ? (
-        <ScheduleGrid schedule={schedule} />
+        <ScheduleGrid
+          schedule={schedule}
+          onShiftClick={handleShiftClick}
+          onCellClick={handleCellClick}
+        />
       ) : (
         <Card>
           <CardContent className="p-12 text-center">
@@ -330,6 +411,41 @@ export function Schedule() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* AI Preview Modal */}
+      {showPreviewModal && suggestedSchedule && (
+        <AISchedulePreviewModal
+          schedule={suggestedSchedule}
+          onApply={handleApplySchedule}
+          onCancel={handleCancelSuggestion}
+        />
+      )}
+
+      {/* Edit Shift Modal */}
+      {editingShift && editingStaffRow && (
+        <EditShiftModal
+          shift={editingShift}
+          staffRow={editingStaffRow}
+          allStaff={staff || []}
+          onSave={handleShiftSaved}
+          onClose={() => {
+            setEditingShift(null)
+            setEditingStaffRow(null)
+          }}
+        />
+      )}
+
+      {/* Add Shift Modal */}
+      {showAddShift && schedule && (
+        <AddShiftModal
+          scheduleId={schedule.id}
+          allStaff={staff || []}
+          preselectedStaffId={addShiftPreselect.staffId}
+          preselectedDate={addShiftPreselect.date}
+          onSave={handleShiftSaved}
+          onClose={() => setShowAddShift(false)}
+        />
       )}
     </div>
   )

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent } from '../shared/Card'
 import { Badge } from '../shared/Badge'
@@ -18,10 +18,29 @@ import {
   WifiOff
 } from 'lucide-react'
 import { useStaffWithStatus } from '../../hooks/useStaffData'
+import { useRestaurants } from '../../../shared/hooks/useMenuAnalytics'
+import { API_CONFIG } from '../../../shared/api/config'
 
 export function StaffTable() {
   const navigate = useNavigate()
-  const { staff, isLoading, isError, error, refetch } = useStaffWithStatus()
+
+  // Auto-select Mimosas restaurant
+  const [restaurantId, setRestaurantId] = useState(null)
+  const { data: restaurants } = useRestaurants()
+
+  useEffect(() => {
+    if (restaurants && restaurants.length > 0) {
+      const mimosas = restaurants.find((r) => r.name === 'Mimosas')
+      if (mimosas) {
+        console.log('[StaffTable] Auto-selecting Mimosas restaurant:', mimosas.id)
+        setRestaurantId(mimosas.id)
+      } else {
+        setRestaurantId(restaurants[0].id)
+      }
+    }
+  }, [restaurants])
+
+  const { staff, isLoading, isError, error, refetch } = useStaffWithStatus(restaurantId)
   const [sortField, setSortField] = useState('tips')
   const [sortDir, setSortDir] = useState('desc')
   const [searchQuery, setSearchQuery] = useState('')
@@ -37,12 +56,14 @@ export function StaffTable() {
   }
 
   // Show loading state
-  if (isLoading) {
+  if (!restaurantId || isLoading) {
     return (
       <Card>
         <CardContent className="p-12 text-center">
           <Loader2 size={32} className="animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600 font-medium">Loading staff data...</p>
+          <p className="text-gray-600 font-medium">
+            {!restaurantId ? 'Loading restaurants...' : 'Loading staff data...'}
+          </p>
           <p className="text-sm text-gray-400 mt-1">Connecting to backend API</p>
         </CardContent>
       </Card>

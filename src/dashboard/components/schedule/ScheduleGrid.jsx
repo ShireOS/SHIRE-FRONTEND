@@ -1,5 +1,6 @@
 import { Card, CardContent } from '../shared/Card'
 import { Badge } from '../shared/Badge'
+import { ShiftBadge } from './ShiftBadge'
 
 const dayTypeStyles = {
   slow: 'text-gray-500 bg-gray-100',
@@ -15,29 +16,13 @@ function getAvailabilityStyle(status) {
     case 'preferred':
       return 'bg-green-50 hover:bg-green-100'
     case 'unavailable':
-      return 'bg-gray-100 hover:bg-gray-150'
+      return 'bg-gray-100 cursor-not-allowed'
     default:
-      return 'hover:bg-gray-50'
+      return 'hover:bg-gray-50 cursor-pointer'
   }
 }
 
-/**
- * Get shift badge style based on day type and source
- */
-function getShiftBadgeStyle(dayType, source) {
-  let baseStyle = 'inline-block px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors'
-
-  if (source === 'engine') {
-    baseStyle += ' ring-2 ring-purple-200'
-  }
-
-  if (dayType === 'busy') {
-    return `${baseStyle} bg-orange-50 text-orange-700 hover:bg-orange-100`
-  }
-  return `${baseStyle} bg-blue-50 text-blue-700 hover:bg-blue-100`
-}
-
-export function ScheduleGrid({ schedule, onShiftClick, onCellClick }) {
+export function ScheduleGrid({ schedule, onShiftClick, onCellClick, readOnly = false }) {
   if (!schedule) return null
 
   return (
@@ -93,38 +78,29 @@ export function ScheduleGrid({ schedule, onShiftClick, onCellClick }) {
                 {staffRow.shifts.map((shift, dayIdx) => {
                   const availability = staffRow.availability[dayIdx]
                   const cellStyle = getAvailabilityStyle(availability)
+                  const isClickable = !readOnly && availability !== 'unavailable'
 
                   return (
                     <td
                       key={dayIdx}
                       className={`py-4 px-2 text-center transition-colors ${cellStyle}`}
-                      onClick={() => onCellClick && onCellClick(staffRow, dayIdx)}
+                      onClick={() => {
+                        if (isClickable && !shift && onCellClick) {
+                          onCellClick(staffRow, dayIdx)
+                        }
+                      }}
                     >
                       {shift ? (
-                        <div className="inline-flex flex-col items-center gap-1">
-                          <span
-                            className={getShiftBadgeStyle(
-                              schedule.dayTypes[dayIdx],
-                              shift.source
-                            )}
-                            onClick={(e) => {
+                        <ShiftBadge
+                          shift={shift}
+                          dayType={schedule.dayTypes[dayIdx]}
+                          onClick={(e) => {
+                            if (!readOnly && onShiftClick) {
                               e.stopPropagation()
-                              onShiftClick && onShiftClick(shift)
-                            }}
-                            title={
-                              shift.source === 'engine'
-                                ? `AI Generated - Pref: ${shift.preferenceScore?.toFixed(0) || 'N/A'}%`
-                                : 'Manual'
+                              onShiftClick(shift, staffRow)
                             }
-                          >
-                            {shift.displayTime}
-                          </span>
-                          {shift.source === 'engine' && (
-                            <span className="text-[10px] text-purple-600 font-medium">
-                              AI
-                            </span>
-                          )}
-                        </div>
+                          }}
+                        />
                       ) : (
                         <span
                           className={`text-xs ${
@@ -133,7 +109,7 @@ export function ScheduleGrid({ schedule, onShiftClick, onCellClick }) {
                               : 'text-gray-300 hover:text-gray-500'
                           }`}
                         >
-                          {availability === 'unavailable' ? 'N/A' : '--'}
+                          {availability === 'unavailable' ? 'N/A' : isClickable ? '+' : '--'}
                         </span>
                       )}
                     </td>
