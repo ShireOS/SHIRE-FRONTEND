@@ -58,6 +58,21 @@ export const ENDPOINTS = {
   staffAvailability: (waiterId: string) => `/staff/${waiterId}/availability`,
   staffPreferences: (waiterId: string) => `/staff/${waiterId}/preferences`,
 
+  // Review Management endpoints
+  reviewStats: (restaurantId: string) =>
+    `/reviews/${restaurantId}/stats`,
+  reviewSummary: (restaurantId: string) =>
+    `/reviews/${restaurantId}/summary`,
+  reviewsList: (restaurantId: string, skip = 0, limit = 50) =>
+    `/reviews/${restaurantId}/reviews?skip=${skip}&limit=${limit}`,
+  reviewsIngest: (restaurantId: string) =>
+    `/reviews/${restaurantId}/ingest`,
+  reviewsCategorize: (restaurantId: string) =>
+    `/reviews/${restaurantId}/categorize`,
+
   // Health check
   health: () => '/healthz',
+
+  // Chat/AI Assistant endpoints
+  chatMessage: (restaurantId: string) => `/chat/${restaurantId}/message`,
 }
