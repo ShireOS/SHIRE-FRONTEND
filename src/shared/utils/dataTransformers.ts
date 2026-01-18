@@ -18,6 +18,7 @@ import type {
   StaffingRequirement,
   Availability,
   AvailabilityStatus,
+  ScheduleReasoning,
 } from '../types/api'
 
 /**
@@ -289,6 +290,7 @@ export function transformScheduleItemToShiftCell(item: ScheduleItem): ShiftCell 
     preferenceScore: item.preference_match_score ?? undefined,
     fairnessScore: item.fairness_impact_score ?? undefined,
     source: item.source,
+    reasoning: item.reasoning ?? undefined,  // NEW: Pass through AI reasoning from backend
   }
 }
 
@@ -437,6 +439,7 @@ export function transformSchedule(
     coverageGaps: [], // Will be populated by detectCoverageGaps
     warnings: [],
     totalHours,
+    scheduleSummary: schedule.schedule_summary ?? null,  // NEW: AI summary from backend
   }
 }
 
