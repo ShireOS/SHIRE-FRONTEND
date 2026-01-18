@@ -162,21 +162,51 @@ export const useRestaurantStore = create<RestaurantState>((set, get) => ({
       guestId,
       guestData: guest,
     }
-    set((state) => ({
-      // Save to undo history
-      undoHistory: [...state.undoHistory, undoAction].slice(-10),
-      // Update table
-      tables: state.tables.map((t) =>
-        t.id === tableId
-          ? { ...t, status: 'occupied' as TableStatus, currentGuestId: guestId, seatedAt: new Date() }
-          : t
-      ),
-      // Remove guest from waitlist
-      guests: state.guests.filter((g) => g.id !== guestId),
-      // Clear selection
-      selectedGuestId: null,
-      selectedTableId: null,
-    }))
+
+    // Find the server assigned to this table
+    const assignedServerId = table.assignedServerId
+
+    set((state) => {
+      // Calculate new rotation: server who just got seated moves to back
+      const maxRotation = Math.max(...state.servers.map(s => s.rotationPosition))
+
+      const updatedServers = state.servers.map((server) => {
+        if (server.id === assignedServerId) {
+          // This server just got a table - increment count and move to back of rotation
+          return {
+            ...server,
+            activeTableCount: server.activeTableCount + 1,
+            rotationPosition: maxRotation + 1,
+            totalTips: server.totalTips + Math.round(guest.partySize * 8), // ~$8/person avg tip
+          }
+        } else if (server.rotationPosition > 1) {
+          // Move everyone else up in the queue
+          return {
+            ...server,
+            rotationPosition: server.rotationPosition - 1,
+          }
+        }
+        return server
+      })
+
+      return {
+        // Save to undo history
+        undoHistory: [...state.undoHistory, undoAction].slice(-10),
+        // Update table
+        tables: state.tables.map((t) =>
+          t.id === tableId
+            ? { ...t, status: 'occupied' as TableStatus, currentGuestId: guestId, seatedAt: new Date() }
+            : t
+        ),
+        // Remove guest from waitlist
+        guests: state.guests.filter((g) => g.id !== guestId),
+        // Update servers with new counts and rotation
+        servers: updatedServers,
+        // Clear selection
+        selectedGuestId: null,
+        selectedTableId: null,
+      }
+    })
 
     get().addActivity({
       type: 'seated',

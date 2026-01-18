@@ -1,44 +1,91 @@
 import type { Table, Guest, Reservation, Server, Section, ActivityItem, SmartRecommendation } from '../types'
 
-// Sections
+// Sections matching floor plan color zones
 export const mockSections: Section[] = [
-  { id: 'main', name: 'Main Dining', color: '#0A84FF', tableIds: ['t1', 't2', 't3', 't4', 't5', 't6'], serverId: 's1' },
-  { id: 'bar', name: 'Bar', color: '#FF9500', tableIds: ['t7', 't8', 't9', 't10'], serverId: 's2' },
-  { id: 'patio', name: 'Patio', color: '#34C759', tableIds: ['t11', 't12', 't13', 't14'], serverId: 's3' },
-  { id: 'private', name: 'Private', color: '#AF52DE', tableIds: ['t15', 't16'], serverId: 's4' },
+  { id: 'busser3', name: 'Section A', color: '#E07B39', tableIds: ['t1', 't2', 't3', 't8', 't9', 't10', 't11', 't12', 't13', 't14', 't16', 't17', 't18', 't19'], serverId: 's1' },
+  { id: 'busser2', name: 'Section B', color: '#F4D03F', tableIds: ['t20', 't21', 't22', 't23'], serverId: 's2' },
+  { id: 'purple', name: 'Section C', color: '#9B59B6', tableIds: ['t24', 't25', 't26', 't27', 't28', 't29', 't38', 't39', 't40', 't41'], serverId: 's3' },
+  { id: 'outdoor', name: 'Outdoor', color: '#27AE60', tableIds: ['t30', 't31', 't32', 't33', 't34', 't35', 't36', 't37'], serverId: 's4' },
+  { id: 'busser1', name: 'Section D', color: '#3498DB', tableIds: ['t42', 't43', 't44', 't45', 't46', 't47', 't48', 't49', 't50'], serverId: 's5' },
 ]
 
-// Tables
+// Tables matching floor plan layout (excluding tables 4-7 and bar stools)
 export const mockTables: Table[] = [
-  // Main Dining
-  { id: 't1', number: 1, tableNumber: 'T1', shape: 'round', capacity: 2, position: { x: 80, y: 100 }, rotation: 0, sectionId: 'main', status: 'available', assignedServerId: 's1', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.98 },
-  { id: 't2', number: 2, tableNumber: 'T2', shape: 'round', capacity: 2, position: { x: 180, y: 100 }, rotation: 0, sectionId: 'main', status: 'occupied', assignedServerId: 's1', currentGuestId: 'g1', seatedAt: new Date(Date.now() - 35 * 60000), reservedFor: null, cvConfidence: 0.96 },
-  { id: 't3', number: 3, tableNumber: 'T3', shape: 'square', capacity: 4, position: { x: 280, y: 100 }, rotation: 0, sectionId: 'main', status: 'available', assignedServerId: 's1', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.99 },
-  { id: 't4', number: 4, tableNumber: 'T4', shape: 'square', capacity: 4, position: { x: 80, y: 220 }, rotation: 0, sectionId: 'main', status: 'needs_server', assignedServerId: 's1', currentGuestId: 'g2', seatedAt: new Date(Date.now() - 5 * 60000), reservedFor: null, cvConfidence: 0.94 },
-  { id: 't5', number: 5, tableNumber: 'T5', shape: 'rectangle', capacity: 6, position: { x: 200, y: 220 }, rotation: 0, sectionId: 'main', status: 'occupied', assignedServerId: 's1', currentGuestId: 'g3', seatedAt: new Date(Date.now() - 55 * 60000), reservedFor: null, cvConfidence: 0.97 },
-  { id: 't6', number: 6, tableNumber: 'T6', shape: 'square', capacity: 4, position: { x: 340, y: 220 }, rotation: 0, sectionId: 'main', status: 'dirty', assignedServerId: 's1', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.92 },
-  // Bar
-  { id: 't7', number: 7, tableNumber: 'T7', shape: 'round', capacity: 2, position: { x: 80, y: 380 }, rotation: 0, sectionId: 'bar', status: 'occupied', assignedServerId: 's2', currentGuestId: 'g4', seatedAt: new Date(Date.now() - 20 * 60000), reservedFor: null, cvConfidence: 0.95 },
-  { id: 't8', number: 8, tableNumber: 'T8', shape: 'round', capacity: 2, position: { x: 160, y: 380 }, rotation: 0, sectionId: 'bar', status: 'available', assignedServerId: 's2', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.98 },
-  { id: 't9', number: 9, tableNumber: 'T9', shape: 'round', capacity: 2, position: { x: 240, y: 380 }, rotation: 0, sectionId: 'bar', status: 'available', assignedServerId: 's2', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.97 },
-  { id: 't10', number: 10, tableNumber: 'T10', shape: 'round', capacity: 2, position: { x: 320, y: 380 }, rotation: 0, sectionId: 'bar', status: 'occupied', assignedServerId: 's2', currentGuestId: 'g5', seatedAt: new Date(Date.now() - 45 * 60000), reservedFor: null, cvConfidence: 0.93 },
-  // Patio
-  { id: 't11', number: 11, tableNumber: 'T11', shape: 'round', capacity: 4, position: { x: 480, y: 100 }, rotation: 0, sectionId: 'patio', status: 'available', assignedServerId: 's3', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.99 },
-  { id: 't12', number: 12, tableNumber: 'T12', shape: 'round', capacity: 4, position: { x: 580, y: 100 }, rotation: 0, sectionId: 'patio', status: 'reserved', assignedServerId: 's3', currentGuestId: null, seatedAt: null, reservedFor: 'r1', cvConfidence: 0.98 },
-  { id: 't13', number: 13, tableNumber: 'T13', shape: 'square', capacity: 6, position: { x: 530, y: 200 }, rotation: 0, sectionId: 'patio', status: 'occupied', assignedServerId: 's3', currentGuestId: 'g6', seatedAt: new Date(Date.now() - 25 * 60000), reservedFor: null, cvConfidence: 0.96 },
-  { id: 't14', number: 14, tableNumber: 'T14', shape: 'round', capacity: 2, position: { x: 640, y: 200 }, rotation: 0, sectionId: 'patio', status: 'available', assignedServerId: 's3', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.97 },
-  // Private
-  { id: 't15', number: 15, tableNumber: 'T15', shape: 'rectangle', capacity: 8, position: { x: 500, y: 340 }, rotation: 0, sectionId: 'private', status: 'blocked', assignedServerId: 's4', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 1.0 },
-  { id: 't16', number: 16, tableNumber: 'T16', shape: 'rectangle', capacity: 10, position: { x: 500, y: 420 }, rotation: 0, sectionId: 'private', status: 'reserved', assignedServerId: 's4', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 1.0 },
+  // Far left column (1, 2, 3)
+  { id: 't1', number: 1, tableNumber: 'T1', shape: 'square', capacity: 4, position: { x: 30, y: 340 }, rotation: 0, sectionId: 'busser3', status: 'available', assignedServerId: 's1', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.98 },
+  { id: 't2', number: 2, tableNumber: 'T2', shape: 'square', capacity: 4, position: { x: 30, y: 260 }, rotation: 0, sectionId: 'busser3', status: 'occupied', assignedServerId: 's1', currentGuestId: 'g1', seatedAt: new Date(Date.now() - 35 * 60000), reservedFor: null, cvConfidence: 0.96 },
+  { id: 't3', number: 3, tableNumber: 'T3', shape: 'square', capacity: 4, position: { x: 30, y: 180 }, rotation: 0, sectionId: 'busser3', status: 'available', assignedServerId: 's1', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.99 },
+
+  // Pink/Orange section - Row 8-11
+  { id: 't8', number: 8, tableNumber: 'T8', shape: 'square', capacity: 4, position: { x: 100, y: 220 }, rotation: 0, sectionId: 'busser3', status: 'available', assignedServerId: 's1', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.98 },
+  { id: 't9', number: 9, tableNumber: 'T9', shape: 'square', capacity: 4, position: { x: 160, y: 220 }, rotation: 0, sectionId: 'busser3', status: 'occupied', assignedServerId: 's1', currentGuestId: 'g2', seatedAt: new Date(Date.now() - 20 * 60000), reservedFor: null, cvConfidence: 0.97 },
+  { id: 't10', number: 10, tableNumber: 'T10', shape: 'square', capacity: 4, position: { x: 220, y: 220 }, rotation: 0, sectionId: 'busser3', status: 'available', assignedServerId: 's1', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.97 },
+  { id: 't11', number: 11, tableNumber: 'T11', shape: 'square', capacity: 4, position: { x: 280, y: 220 }, rotation: 0, sectionId: 'busser3', status: 'needs_server', assignedServerId: 's1', currentGuestId: 'g3', seatedAt: new Date(Date.now() - 5 * 60000), reservedFor: null, cvConfidence: 0.94 },
+
+  // Orange section - Row 12-14
+  { id: 't12', number: 12, tableNumber: 'T12', shape: 'square', capacity: 4, position: { x: 100, y: 150 }, rotation: 0, sectionId: 'busser3', status: 'available', assignedServerId: 's1', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.98 },
+  { id: 't13', number: 13, tableNumber: 'T13', shape: 'square', capacity: 4, position: { x: 160, y: 150 }, rotation: 0, sectionId: 'busser3', status: 'occupied', assignedServerId: 's1', currentGuestId: 'g4', seatedAt: new Date(Date.now() - 45 * 60000), reservedFor: null, cvConfidence: 0.96 },
+  { id: 't14', number: 14, tableNumber: 'T14', shape: 'square', capacity: 4, position: { x: 220, y: 150 }, rotation: 0, sectionId: 'busser3', status: 'available', assignedServerId: 's1', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.97 },
+
+  // Top orange row 16-19
+  { id: 't16', number: 16, tableNumber: 'T16', shape: 'square', capacity: 4, position: { x: 100, y: 80 }, rotation: 0, sectionId: 'busser3', status: 'available', assignedServerId: 's1', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.99 },
+  { id: 't17', number: 17, tableNumber: 'T17', shape: 'square', capacity: 4, position: { x: 160, y: 80 }, rotation: 0, sectionId: 'busser3', status: 'dirty', assignedServerId: 's1', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.92 },
+  { id: 't18', number: 18, tableNumber: 'T18', shape: 'square', capacity: 4, position: { x: 220, y: 80 }, rotation: 0, sectionId: 'busser3', status: 'available', assignedServerId: 's1', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.98 },
+  { id: 't19', number: 19, tableNumber: 'T19', shape: 'square', capacity: 4, position: { x: 280, y: 80 }, rotation: 0, sectionId: 'busser3', status: 'occupied', assignedServerId: 's1', currentGuestId: 'g5', seatedAt: new Date(Date.now() - 15 * 60000), reservedFor: null, cvConfidence: 0.95 },
+
+  // Yellow center section 20-23
+  { id: 't20', number: 20, tableNumber: 'T20', shape: 'square', capacity: 4, position: { x: 350, y: 170 }, rotation: 0, sectionId: 'busser2', status: 'available', assignedServerId: 's2', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.98 },
+  { id: 't21', number: 21, tableNumber: 'T21', shape: 'rectangle', capacity: 6, position: { x: 350, y: 230 }, rotation: 0, sectionId: 'busser2', status: 'occupied', assignedServerId: 's2', currentGuestId: 'g6', seatedAt: new Date(Date.now() - 30 * 60000), reservedFor: null, cvConfidence: 0.96 },
+  { id: 't22', number: 22, tableNumber: 'T22', shape: 'square', capacity: 4, position: { x: 350, y: 110 }, rotation: 0, sectionId: 'busser2', status: 'available', assignedServerId: 's2', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.97 },
+  { id: 't23', number: 23, tableNumber: 'T23', shape: 'square', capacity: 4, position: { x: 350, y: 50 }, rotation: 0, sectionId: 'busser2', status: 'reserved', assignedServerId: 's2', currentGuestId: null, seatedAt: null, reservedFor: 'r1', cvConfidence: 0.98 },
+
+  // Top purple/center area 24-29
+  { id: 't24', number: 24, tableNumber: 'T24', shape: 'round', capacity: 4, position: { x: 440, y: 60 }, rotation: 0, sectionId: 'purple', status: 'available', assignedServerId: 's3', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.99 },
+  { id: 't25', number: 25, tableNumber: 'T25', shape: 'square', capacity: 4, position: { x: 440, y: 120 }, rotation: 0, sectionId: 'purple', status: 'occupied', assignedServerId: 's3', currentGuestId: 'g7', seatedAt: new Date(Date.now() - 25 * 60000), reservedFor: null, cvConfidence: 0.96 },
+  { id: 't26', number: 26, tableNumber: 'T26', shape: 'square', capacity: 4, position: { x: 500, y: 60 }, rotation: 0, sectionId: 'purple', status: 'available', assignedServerId: 's3', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.98 },
+  { id: 't27', number: 27, tableNumber: 'T27', shape: 'round', capacity: 4, position: { x: 560, y: 30 }, rotation: 0, sectionId: 'purple', status: 'available', assignedServerId: 's3', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.97 },
+  { id: 't28', number: 28, tableNumber: 'T28', shape: 'round', capacity: 4, position: { x: 620, y: 30 }, rotation: 0, sectionId: 'purple', status: 'occupied', assignedServerId: 's3', currentGuestId: 'g8', seatedAt: new Date(Date.now() - 40 * 60000), reservedFor: null, cvConfidence: 0.95 },
+  { id: 't29', number: 29, tableNumber: 'T29', shape: 'square', capacity: 4, position: { x: 500, y: 120 }, rotation: 0, sectionId: 'purple', status: 'available', assignedServerId: 's3', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.98 },
+
+  // Green outdoor section 30-37
+  { id: 't30', number: 30, tableNumber: 'T30', shape: 'round', capacity: 4, position: { x: 680, y: 30 }, rotation: 0, sectionId: 'outdoor', status: 'available', assignedServerId: 's4', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.99 },
+  { id: 't31', number: 31, tableNumber: 'T31', shape: 'round', capacity: 4, position: { x: 740, y: 30 }, rotation: 0, sectionId: 'outdoor', status: 'occupied', assignedServerId: 's4', currentGuestId: 'g9', seatedAt: new Date(Date.now() - 20 * 60000), reservedFor: null, cvConfidence: 0.96 },
+  { id: 't32', number: 32, tableNumber: 'T32', shape: 'round', capacity: 4, position: { x: 680, y: 90 }, rotation: 0, sectionId: 'outdoor', status: 'available', assignedServerId: 's4', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.98 },
+  { id: 't33', number: 33, tableNumber: 'T33', shape: 'round', capacity: 4, position: { x: 740, y: 90 }, rotation: 0, sectionId: 'outdoor', status: 'available', assignedServerId: 's4', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.97 },
+  { id: 't34', number: 34, tableNumber: 'T34', shape: 'round', capacity: 4, position: { x: 680, y: 150 }, rotation: 0, sectionId: 'outdoor', status: 'needs_server', assignedServerId: 's4', currentGuestId: 'g10', seatedAt: new Date(Date.now() - 8 * 60000), reservedFor: null, cvConfidence: 0.94 },
+  { id: 't35', number: 35, tableNumber: 'T35', shape: 'round', capacity: 4, position: { x: 740, y: 150 }, rotation: 0, sectionId: 'outdoor', status: 'available', assignedServerId: 's4', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.98 },
+  { id: 't36', number: 36, tableNumber: 'T36', shape: 'round', capacity: 4, position: { x: 680, y: 210 }, rotation: 0, sectionId: 'outdoor', status: 'occupied', assignedServerId: 's4', currentGuestId: 'g11', seatedAt: new Date(Date.now() - 35 * 60000), reservedFor: null, cvConfidence: 0.95 },
+  { id: 't37', number: 37, tableNumber: 'T37', shape: 'round', capacity: 4, position: { x: 740, y: 210 }, rotation: 0, sectionId: 'outdoor', status: 'available', assignedServerId: 's4', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.97 },
+
+  // Purple right section 38-41
+  { id: 't38', number: 38, tableNumber: 'T38', shape: 'round', capacity: 4, position: { x: 600, y: 150 }, rotation: 0, sectionId: 'purple', status: 'available', assignedServerId: 's3', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.98 },
+  { id: 't39', number: 39, tableNumber: 'T39', shape: 'square', capacity: 4, position: { x: 600, y: 210 }, rotation: 0, sectionId: 'purple', status: 'occupied', assignedServerId: 's3', currentGuestId: 'g12', seatedAt: new Date(Date.now() - 50 * 60000), reservedFor: null, cvConfidence: 0.96 },
+  { id: 't40', number: 40, tableNumber: 'T40', shape: 'square', capacity: 4, position: { x: 600, y: 270 }, rotation: 0, sectionId: 'purple', status: 'available', assignedServerId: 's3', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.97 },
+  { id: 't41', number: 41, tableNumber: 'T41', shape: 'round', capacity: 4, position: { x: 560, y: 300 }, rotation: 0, sectionId: 'purple', status: 'dirty', assignedServerId: 's3', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.92 },
+
+  // Bottom right orange 42-45
+  { id: 't42', number: 42, tableNumber: 'T42', shape: 'square', capacity: 4, position: { x: 620, y: 400 }, rotation: 0, sectionId: 'busser1', status: 'available', assignedServerId: 's5', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.98 },
+  { id: 't43', number: 43, tableNumber: 'T43', shape: 'square', capacity: 4, position: { x: 560, y: 400 }, rotation: 0, sectionId: 'busser1', status: 'occupied', assignedServerId: 's5', currentGuestId: 'g13', seatedAt: new Date(Date.now() - 18 * 60000), reservedFor: null, cvConfidence: 0.96 },
+  { id: 't44', number: 44, tableNumber: 'T44', shape: 'square', capacity: 4, position: { x: 500, y: 400 }, rotation: 0, sectionId: 'busser1', status: 'available', assignedServerId: 's5', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.97 },
+  { id: 't45', number: 45, tableNumber: 'T45', shape: 'round', capacity: 4, position: { x: 440, y: 380 }, rotation: 0, sectionId: 'busser1', status: 'available', assignedServerId: 's5', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.98 },
+
+  // Bottom yellow 46-47
+  { id: 't46', number: 46, tableNumber: 'T46', shape: 'rectangle', capacity: 6, position: { x: 320, y: 400 }, rotation: 0, sectionId: 'busser1', status: 'occupied', assignedServerId: 's5', currentGuestId: 'g14', seatedAt: new Date(Date.now() - 55 * 60000), reservedFor: null, cvConfidence: 0.95 },
+  { id: 't47', number: 47, tableNumber: 'T47', shape: 'rectangle', capacity: 6, position: { x: 240, y: 400 }, rotation: 0, sectionId: 'busser1', status: 'available', assignedServerId: 's5', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.97 },
+
+  // Bottom left blue 48-50
+  { id: 't48', number: 48, tableNumber: 'T48', shape: 'square', capacity: 4, position: { x: 160, y: 400 }, rotation: 0, sectionId: 'busser1', status: 'available', assignedServerId: 's5', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.98 },
+  { id: 't49', number: 49, tableNumber: 'T49', shape: 'square', capacity: 4, position: { x: 100, y: 400 }, rotation: 0, sectionId: 'busser1', status: 'reserved', assignedServerId: 's5', currentGuestId: null, seatedAt: null, reservedFor: 'r2', cvConfidence: 0.98 },
+  { id: 't50', number: 50, tableNumber: 'T50', shape: 'square', capacity: 4, position: { x: 40, y: 400 }, rotation: 0, sectionId: 'busser1', status: 'available', assignedServerId: 's5', currentGuestId: null, seatedAt: null, reservedFor: null, cvConfidence: 0.97 },
 ]
 
-// Servers
+// Servers matching floor plan sections
 export const mockServers: Server[] = [
-  { id: 's1', name: 'Sarah', initials: 'SM', color: '#0A84FF', sectionIds: ['main'], activeTableCount: 3, rotationPosition: 1, status: 'active', efficiency: 94, totalTips: 187 },
-  { id: 's2', name: 'Tyler', initials: 'TP', color: '#FF9500', sectionIds: ['bar'], activeTableCount: 2, rotationPosition: 2, status: 'active', efficiency: 88, totalTips: 142 },
-  { id: 's3', name: 'Maria', initials: 'MR', color: '#34C759', sectionIds: ['patio'], activeTableCount: 2, rotationPosition: 3, status: 'active', efficiency: 91, totalTips: 165 },
-  { id: 's4', name: 'James', initials: 'JK', color: '#AF52DE', sectionIds: ['private'], activeTableCount: 0, rotationPosition: 4, status: 'active', efficiency: 96, totalTips: 210 },
-  { id: 's5', name: 'Alex', initials: 'AL', color: '#FF453A', sectionIds: [], activeTableCount: 0, rotationPosition: 5, status: 'on_break', efficiency: 85, totalTips: 98 },
+  { id: 's1', name: 'Sarah', initials: 'SM', color: '#E07B39', sectionIds: ['busser3'], activeTableCount: 5, rotationPosition: 1, status: 'active', efficiency: 94, totalTips: 187 },
+  { id: 's2', name: 'Tyler', initials: 'TP', color: '#F4D03F', sectionIds: ['busser2'], activeTableCount: 2, rotationPosition: 2, status: 'active', efficiency: 88, totalTips: 142 },
+  { id: 's3', name: 'Maria', initials: 'MR', color: '#9B59B6', sectionIds: ['purple'], activeTableCount: 4, rotationPosition: 3, status: 'active', efficiency: 91, totalTips: 165 },
+  { id: 's4', name: 'James', initials: 'JK', color: '#27AE60', sectionIds: ['outdoor'], activeTableCount: 3, rotationPosition: 4, status: 'active', efficiency: 96, totalTips: 210 },
+  { id: 's5', name: 'Alex', initials: 'AL', color: '#3498DB', sectionIds: ['busser1'], activeTableCount: 3, rotationPosition: 5, status: 'active', efficiency: 85, totalTips: 98 },
 ]
 
 // Waitlist Guests

@@ -19,6 +19,11 @@ export function RightPanel() {
   const demoActive = useRestaurantStore((s) => s.demoActive)
   const fetchDemoSummary = useRestaurantStore((s) => s.fetchDemoSummary)
 
+  // Try to fetch demo summary on mount (in case backend has waiter data)
+  useEffect(() => {
+    fetchDemoSummary(RESTAURANT_ID)
+  }, [fetchDemoSummary])
+
   // Poll demo summary every 10 seconds when demo is active
   useEffect(() => {
     if (!demoActive) return
@@ -36,9 +41,18 @@ export function RightPanel() {
 
   const unreadCount = activity.filter((a) => !a.read && a.priority === 'high').length
 
-  // Get active servers sorted by rotation position
+  // Get active servers sorted by rotation position, with computed table counts
   const activeServers = servers
     .filter((s) => s.status === 'active')
+    .map((server) => {
+      // Calculate actual table count from tables data
+      const serverTables = tables.filter((t) => t.assignedServerId === server.id)
+      const occupiedCount = serverTables.filter((t) => t.status === 'occupied').length
+      return {
+        ...server,
+        activeTableCount: occupiedCount, // Override with actual count
+      }
+    })
     .sort((a, b) => a.rotationPosition - b.rotationPosition)
 
   // Get selected server for stats

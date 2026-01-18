@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent } from '../components/shared/Card'
 import { Button } from '../components/shared/Button'
 import { Badge } from '../components/shared/Badge'
 import { Star, Sparkles, MessageSquare, ThumbsUp, ThumbsDown, AlertCircle, CheckCircle, TrendingUp, ExternalLink, Filter, RefreshCw } from 'lucide-react'
 import { useReviewStats, useReviewSummary, useReviewsList, useCategorizeTrigger } from '@shared/hooks/useReviews'
+import { useRestaurants } from '@shared/hooks/useMenuAnalytics'
 
 const sourceIcons = {
   google: '🔍',
@@ -24,15 +25,31 @@ export function Reviews() {
   const [page, setPage] = useState(0)
   const pageSize = 50
 
-  // Fetch data from API
-  const { data: stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useReviewStats()
-  const { data: summary, loading: summaryLoading, error: summaryError, refetch: refetchSummary } = useReviewSummary()
+  // Auto-select Mimosas restaurant
+  const [restaurantId, setRestaurantId] = useState(null)
+  const { data: restaurants } = useRestaurants()
+
+  useEffect(() => {
+    if (restaurants && restaurants.length > 0 && !restaurantId) {
+      const mimosas = restaurants.find((r) => r.name === 'Mimosas')
+      if (mimosas) {
+        console.log('[Reviews] Auto-selecting Mimosas restaurant:', mimosas.id)
+        setRestaurantId(mimosas.id)
+      } else {
+        setRestaurantId(restaurants[0].id)
+      }
+    }
+  }, [restaurants, restaurantId])
+
+  // Fetch data from API with Mimosas ID
+  const { data: stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useReviewStats(restaurantId)
+  const { data: summary, loading: summaryLoading, error: summaryError, refetch: refetchSummary } = useReviewSummary(restaurantId)
   const { data: reviews, loading: reviewsLoading, error: reviewsError, refetch: refetchReviews } = useReviewsList(
-    undefined,
+    restaurantId,
     page * pageSize,
     pageSize
   )
-  const { trigger: triggerCategorize, loading: categorizing } = useCategorizeTrigger()
+  const { trigger: triggerCategorize, loading: categorizing } = useCategorizeTrigger(restaurantId)
 
   const loading = statsLoading || summaryLoading || reviewsLoading
   const error = statsError || summaryError || reviewsError
