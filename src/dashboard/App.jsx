@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
 import { RightPanel } from './components/layout/RightPanel'
+import { ChatPanel } from './components/chat/ChatPanel'
 import { Dashboard } from './pages/Dashboard'
 import { Staff } from './pages/Staff'
 import { Schedule } from './pages/Schedule'
@@ -11,6 +13,8 @@ import { Reviews } from './pages/Reviews'
 import { Settings } from './pages/Settings'
 
 export default function App() {
+  const [isChatOpen, setIsChatOpen] = useState(false)
+
   return (
     <div className="min-h-screen bg-white text-primary font-body selection:bg-black selection:text-white">
       {/* Header */}
@@ -36,8 +40,11 @@ export default function App() {
         </main>
 
         {/* Right Panel */}
-        <RightPanel />
+        <RightPanel onOpenChat={() => setIsChatOpen(true)} />
       </div>
+
+      {/* Chat Panel */}
+      <ChatPanel isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
     </div>
   )
 }

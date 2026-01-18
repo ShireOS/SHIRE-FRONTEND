@@ -23,6 +23,10 @@ export const ENDPOINTS = {
   menuRankingsBottom: (restaurantId: string, lookbackDays = 30, limit = 10) =>
     `/restaurants/${restaurantId}/menu/rankings/bottom?lookback_days=${lookbackDays}&limit=${limit}`,
 
+  // Menu optimization
+  menuPricingRecommendations: (restaurantId: string, lookbackDays = 30) =>
+    `/restaurants/${restaurantId}/menu/pricing-recommendations?lookback_days=${lookbackDays}`,
+
   // 86 Management
   menu86Recommendations: (
     restaurantId: string,
@@ -58,6 +62,26 @@ export const ENDPOINTS = {
     `/restaurants/${restaurantId}/staffing-requirements`,
   staffAvailability: (waiterId: string) => `/staff/${waiterId}/availability`,
   staffPreferences: (waiterId: string) => `/staff/${waiterId}/preferences`,
+
+  // Review Management endpoints
+  reviewStats: (restaurantId: string) =>
+    `/reviews/${restaurantId}/stats`,
+  reviewSummary: (restaurantId: string) =>
+    `/reviews/${restaurantId}/summary`,
+  reviewsList: (restaurantId: string, skip = 0, limit = 50) =>
+    `/reviews/${restaurantId}/reviews?skip=${skip}&limit=${limit}`,
+  reviewsIngest: (restaurantId: string) =>
+    `/reviews/${restaurantId}/ingest`,
+  reviewsCategorize: (restaurantId: string) =>
+    `/reviews/${restaurantId}/categorize`,
+  // Inventory endpoints
+  inventoryShoppingList: (restaurantId: string, forecastDays = 7, lookbackDays = 30) =>
+    `/restaurants/${restaurantId}/inventory/shopping-list?forecast_days=${forecastDays}&lookback_days=${lookbackDays}`,
+  inventoryStockAlerts: (restaurantId: string) =>
+    `/restaurants/${restaurantId}/inventory/stock-alerts`,
+
+  // Chat endpoints
+  chatMessage: (restaurantId: string) => `/chat/${restaurantId}/message`,
 
   // Health check
   health: () => '/healthz',
