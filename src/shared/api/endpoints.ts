@@ -43,6 +43,7 @@ export const ENDPOINTS = {
 
   // Seeding endpoints (for development)
   seedDefaultData: () => '/seed/default-data',
+  seedDemo: () => '/seed/demo',  // Creates full demo data with waiters, sections, tables relationships
   seedSampleData: (restaurantId: string, daysBack = 30) =>
     `/restaurants/${restaurantId}/seed/sample-data?days_back=${daysBack}`,
 
@@ -84,4 +85,21 @@ export const ENDPOINTS = {
 
   // Health check
   health: () => '/healthz',
+
+  // Demo endpoints
+  demoInitiate: () => '/demo/initiate',
+  demoStop: () => '/demo/stop',
+  demoStatus: () => '/demo/status',
+  demoSummary: (restaurantId: string, minCapacity = 1) =>
+    `/restaurants/${restaurantId}/demo/summary?min_capacity=${minCapacity}`,
+
+  // Host app endpoints
+  restaurantTables: (restaurantId: string) =>
+    `/restaurants/${restaurantId}/tables`,
+  restaurantSections: (restaurantId: string) =>
+    `/restaurants/${restaurantId}/sections`,
+  restaurantServers: (restaurantId: string) =>
+    `/restaurants/${restaurantId}/servers`,
+  routingRecommend: (restaurantId: string) =>
+    `/restaurants/${restaurantId}/routing/recommend`,
 }
