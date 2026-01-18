@@ -321,3 +321,95 @@ export interface FrontendSchedule {
   warnings: string[]
   totalHours: number
 }
+
+// ========== Review Management Types ==========
+// Types for Yelp review analysis and AI categorization
+
+export interface CategoryOpinions {
+  food: string
+  service: string
+  atmosphere: string
+  value: string
+  cleanliness: string
+}
+
+export interface ReviewRead {
+  id: string
+  platform: string // 'yelp'
+  rating: number // 1-5
+  text: string
+  review_date: string // ISO 8601
+  sentiment_score: number | null // -1.0 to 1.0
+  category_opinions: CategoryOpinions | null
+  overall_summary: string | null
+  needs_attention: boolean
+  status: 'pending' | 'categorized' | 'dismissed'
+  created_at: string
+}
+
+export interface RatingDistribution {
+  five_star: number
+  four_star: number
+  three_star: number
+  two_star: number
+  one_star: number
+}
+
+export interface ReviewStats {
+  overall_average: number
+  total_reviews: number
+  reviews_this_month: number
+  rating_distribution: RatingDistribution
+}
+
+export interface ReviewSummary {
+  category_opinions: CategoryOpinions
+  overall_summary: string
+  needs_attention: boolean
+}
+
+export interface ReviewCreate {
+  platform: string
+  review_identifier: string
+  rating: number
+  text: string
+  review_date: string
+}
+
+export interface IngestResponse {
+  added: number
+  total_submitted: number
+  status: 'categorizing' | 'no_new_reviews'
+}
+
+export interface CategorizationResult {
+  processed: number
+  batches: number
+  pending_remaining: number
+  message?: string
+}
+
+// ========== Chat/AI Assistant Types ==========
+// Types for the AI chatbot feature
+
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: string // ISO 8601
+}
+
+export interface ChatRequest {
+  message: string
+  history?: {
+    role: string
+    content: string
+  }[]
+}
+
+export interface StreamChunk {
+  type: 'start' | 'content' | 'done' | 'error'
+  content?: string
+  message_id?: string
+  message?: string // For error messages
+}
