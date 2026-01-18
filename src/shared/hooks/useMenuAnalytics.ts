@@ -74,3 +74,17 @@ export function useRestaurants() {
 
   return useApiQuery(fetchFn, [])
 }
+
+/**
+ * Fetch pricing optimization recommendations
+ */
+export function usePricingRecommendations(
+  restaurantId?: string,
+  lookbackDays = 30
+) {
+  const fetchFn = useCallback(async () => {
+    return menuApi.getPricingRecommendations(restaurantId, lookbackDays)
+  }, [restaurantId, lookbackDays])
+
+  return useApiQuery(fetchFn, [restaurantId, lookbackDays])
+}
