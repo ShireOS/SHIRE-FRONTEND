@@ -50,6 +50,36 @@ export function StaffTable() {
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
 
+  // ENHANCED LOGGING - Track staff data flow through component
+  useEffect(() => {
+    if (allStaff && allStaff.length > 0) {
+      console.group('[StaffTable] 📊 Data Flow Analysis')
+      console.log('Total staff from API (allStaff):', allStaff.length)
+      console.log('After server-only filter (staff):', staff.length)
+
+      // Show role breakdown
+      const roleBreakdown = allStaff.reduce((acc, s) => {
+        acc[s.role] = (acc[s.role] || 0) + 1
+        return acc
+      }, {})
+      console.log('Role Breakdown:', roleBreakdown)
+
+      // Log all staff in a table
+      console.table(
+        allStaff.map((s) => ({
+          id: s.id.slice(0, 8),
+          name: s.name,
+          role: s.role,
+          tips: s.thisMonth.tips,
+          covers: s.thisMonth.covers,
+          tenure: s.tenure,
+        }))
+      )
+
+      console.groupEnd()
+    }
+  }, [allStaff, staff])
+
   const handleSort = (field) => {
     if (sortField === field) {
       setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
