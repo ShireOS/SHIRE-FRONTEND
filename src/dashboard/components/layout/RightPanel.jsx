@@ -1,7 +1,7 @@
-import { MessageSquare, ChevronRight, Sparkles } from 'lucide-react'
+import { ChevronRight, Sparkles } from 'lucide-react'
 import { quickStats, alerts } from '../../data/mockData'
 
-export function RightPanel() {
+export function RightPanel({ onOpenChat }) {
   return (
     <aside className="w-80 bg-gray-50/50 border-l border-gray-100 p-4 space-y-4 overflow-y-auto">
       {/* AI Chat Preview - Premium Card */}
@@ -20,7 +20,10 @@ export function RightPanel() {
         <div className="p-4 bg-white">
           <p className="text-xs text-gray-400 mb-1">Last insight:</p>
           <p className="text-sm text-gray-700 leading-relaxed">"Consider calling an extra server for 7-9pm tonight."</p>
-          <button className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-all">
+          <button
+            onClick={onOpenChat}
+            className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-all"
+          >
             Open Chat
             <ChevronRight size={16} />
           </button>

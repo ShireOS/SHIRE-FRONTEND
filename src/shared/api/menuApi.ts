@@ -91,6 +91,15 @@ export const menuApi = {
     console.log(`[menuApi] Fetching 86'd items for restaurant ${id}`)
     return apiClient.get<MenuItem86dListResponse>(ENDPOINTS.menu86dItems(id))
   },
+
+  /**
+   * Get pricing optimization recommendations
+   */
+  getPricingRecommendations: (restaurantId?: string, lookbackDays = 30) => {
+    const id = restaurantId || API_CONFIG.restaurantId
+    console.log(`[menuApi] Fetching pricing recommendations for restaurant ${id}`)
+    return apiClient.get(ENDPOINTS.menuPricingRecommendations(id, lookbackDays))
+  },
 }
 
 export const restaurantApi = {

@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { Card, CardContent } from '../components/shared/Card'
 import { Button } from '../components/shared/Button'
 import { Badge } from '../components/shared/Badge'
-import { Star, Sparkles, MessageSquare, ThumbsUp, ThumbsDown, AlertCircle, CheckCircle, TrendingUp, ExternalLink, Filter } from 'lucide-react'
-import { reviews, reviewsSummary, reviewsAISynthesis } from '../data/mockData'
+import { Star, Sparkles, MessageSquare, ThumbsUp, ThumbsDown, AlertCircle, CheckCircle, TrendingUp, ExternalLink, Filter, RefreshCw } from 'lucide-react'
+import { useReviewStats, useReviewSummary, useReviewsList, useCategorizeTrigger } from '@shared/hooks/useReviews'
 
 const sourceIcons = {
   google: '🔍',
@@ -21,9 +21,79 @@ const sourceColors = {
 
 export function Reviews() {
   const [filter, setFilter] = useState('all')
+  const [page, setPage] = useState(0)
+  const pageSize = 50
 
-  // Sort reviews - negative first, then by date
-  const sortedReviews = [...reviews].sort((a, b) => {
+  // Fetch data from API
+  const { data: stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useReviewStats()
+  const { data: summary, loading: summaryLoading, error: summaryError, refetch: refetchSummary } = useReviewSummary()
+  const { data: reviews, loading: reviewsLoading, error: reviewsError, refetch: refetchReviews } = useReviewsList(
+    undefined,
+    page * pageSize,
+    pageSize
+  )
+  const { trigger: triggerCategorize, loading: categorizing } = useCategorizeTrigger()
+
+  const loading = statsLoading || summaryLoading || reviewsLoading
+  const error = statsError || summaryError || reviewsError
+
+  // Handle refresh button
+  const handleRefresh = async () => {
+    try {
+      await triggerCategorize()
+      // Refetch all data after categorization
+      refetchStats()
+      refetchSummary()
+      refetchReviews()
+    } catch (err) {
+      console.error('Categorization failed:', err)
+    }
+  }
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <RefreshCw className="w-8 h-8 animate-spin text-gray-400 mx-auto mb-2" />
+          <p className="text-gray-600">Loading reviews...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+        <h3 className="text-red-800 font-semibold mb-2">Failed to load reviews</h3>
+        <p className="text-red-600 text-sm mb-4">{error.message}</p>
+        <Button onClick={() => { refetchStats(); refetchSummary(); refetchReviews() }}>
+          Retry
+        </Button>
+      </div>
+    )
+  }
+
+  // No data state
+  if (!stats || !summary || !reviews) {
+    return <div className="text-center text-gray-500 py-12">No review data available</div>
+  }
+
+  // Transform API data to match existing UI format
+  const transformedReviews = reviews.map(review => ({
+    id: review.id,
+    source: review.platform === 'yelp' ? 'yelp' : 'internal',
+    rating: review.rating,
+    date: new Date(review.review_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    author: review.id.substring(0, 8), // Use ID prefix as author placeholder
+    text: review.text,
+    sentiment: review.needs_attention ? 'negative' :
+               (review.sentiment_score && review.sentiment_score > 0.3 ? 'positive' : 'mixed')
+  }))
+
+  // Sort: negative first, then by date
+  const sortedReviews = [...transformedReviews].sort((a, b) => {
     if (a.sentiment === 'negative' && b.sentiment !== 'negative') return -1
     if (b.sentiment === 'negative' && a.sentiment !== 'negative') return 1
     return 0
@@ -33,8 +103,29 @@ export function Reviews() {
     ? sortedReviews
     : sortedReviews.filter(r => r.sentiment === filter)
 
-  const negativeCount = reviews.filter(r => r.sentiment === 'negative').length
-  const positiveCount = reviews.filter(r => r.sentiment === 'positive').length
+  const negativeCount = transformedReviews.filter(r => r.sentiment === 'negative').length
+  const positiveCount = transformedReviews.filter(r => r.sentiment === 'positive').length
+
+  // Transform AI synthesis from summary data
+  const aiSynthesis = {
+    summary: summary.overall_summary,
+    topPraises: [
+      summary.category_opinions.food !== 'Not enough data' ? summary.category_opinions.food : '',
+      summary.category_opinions.atmosphere !== 'Not enough data' ? summary.category_opinions.atmosphere : '',
+    ].filter(Boolean).slice(0, 3),
+    topIssues: summary.needs_attention ? [
+      summary.category_opinions.service !== 'Not enough data' ? summary.category_opinions.service : '',
+      summary.category_opinions.cleanliness !== 'Not enough data' ? summary.category_opinions.cleanliness : '',
+    ].filter(Boolean).slice(0, 3) : [],
+    actionItems: summary.needs_attention ? [
+      'Review category insights and address flagged issues',
+      'Monitor negative reviews and respond promptly',
+      'Track improvement in low-scoring categories',
+    ] : [
+      'Continue maintaining high service standards',
+      'Monitor emerging trends in customer feedback',
+    ]
+  }
 
   return (
     <div>
@@ -44,9 +135,19 @@ export function Reviews() {
           <h1 className="text-2xl font-bold text-gray-900">Reviews</h1>
           <p className="text-gray-600 mt-1">Monitor feedback and improve guest experience</p>
         </div>
-        <Button variant="outline" icon={<ExternalLink size={18} />}>
-          View on Google
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            icon={<RefreshCw size={18} className={categorizing ? 'animate-spin' : ''} />}
+            onClick={handleRefresh}
+            disabled={categorizing}
+          >
+            {categorizing ? 'Processing...' : 'Refresh Analysis'}
+          </Button>
+          <Button variant="outline" icon={<ExternalLink size={18} />}>
+            View on Yelp
+          </Button>
+        </div>
       </div>
 
       {/* AI Synthesis Banner */}
@@ -58,7 +159,7 @@ export function Reviews() {
             </div>
             <div className="flex-1">
               <h3 className="font-semibold text-gray-900 mb-2">AI Review Analysis</h3>
-              <p className="text-gray-700 leading-relaxed mb-4">{reviewsAISynthesis.summary}</p>
+              <p className="text-gray-700 leading-relaxed mb-4">{aiSynthesis.summary}</p>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Top Praises */}
@@ -68,12 +169,12 @@ export function Reviews() {
                     <span className="font-medium text-gray-900">What's Working</span>
                   </div>
                   <ul className="space-y-2">
-                    {reviewsAISynthesis.topPraises.map((item, idx) => (
+                    {aiSynthesis.topPraises.length > 0 ? aiSynthesis.topPraises.map((item, idx) => (
                       <li key={idx} className="text-sm text-gray-600 flex items-start gap-2">
                         <CheckCircle size={14} className="text-green-500 mt-0.5 flex-shrink-0" />
                         {item}
                       </li>
-                    ))}
+                    )) : <li className="text-sm text-gray-400">No specific praises identified yet</li>}
                   </ul>
                 </div>
 
@@ -84,12 +185,12 @@ export function Reviews() {
                     <span className="font-medium text-gray-900">Needs Attention</span>
                   </div>
                   <ul className="space-y-2">
-                    {reviewsAISynthesis.topIssues.map((item, idx) => (
+                    {aiSynthesis.topIssues.length > 0 ? aiSynthesis.topIssues.map((item, idx) => (
                       <li key={idx} className="text-sm text-gray-600 flex items-start gap-2">
                         <AlertCircle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
                         {item}
                       </li>
-                    ))}
+                    )) : <li className="text-sm text-gray-400">No issues requiring attention</li>}
                   </ul>
                 </div>
 
@@ -100,7 +201,7 @@ export function Reviews() {
                     <span className="font-medium text-gray-900">Recommended Actions</span>
                   </div>
                   <ul className="space-y-2">
-                    {reviewsAISynthesis.actionItems.map((item, idx) => (
+                    {aiSynthesis.actionItems.map((item, idx) => (
                       <li key={idx} className="text-sm text-gray-600 flex items-start gap-2">
                         <span className="text-blue-500 font-bold">{idx + 1}.</span>
                         {item}
@@ -127,7 +228,7 @@ export function Reviews() {
                   filter === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
-                All ({reviews.length})
+                All ({transformedReviews.length})
               </button>
               <button
                 onClick={() => setFilter('negative')}
@@ -191,6 +292,29 @@ export function Reviews() {
               </Card>
             ))}
           </div>
+
+          {/* Pagination */}
+          {transformedReviews.length === pageSize && (
+            <div className="flex justify-center gap-2 mt-6">
+              <Button
+                variant="outline"
+                onClick={() => setPage(Math.max(0, page - 1))}
+                disabled={page === 0}
+              >
+                Previous
+              </Button>
+              <span className="px-4 py-2 text-sm text-gray-600">
+                Page {page + 1}
+              </span>
+              <Button
+                variant="outline"
+                onClick={() => setPage(page + 1)}
+                disabled={transformedReviews.length < pageSize}
+              >
+                Next
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Right Sidebar - 1 column */}
@@ -198,18 +322,18 @@ export function Reviews() {
           {/* Overall Rating */}
           <Card>
             <CardContent className="p-6 text-center">
-              <div className="text-5xl font-bold text-gray-900 mb-2">{reviewsSummary.avgRating}</div>
+              <div className="text-5xl font-bold text-gray-900 mb-2">{stats.overall_average.toFixed(1)}</div>
               <div className="flex items-center justify-center gap-1 mb-2">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <Star
                     key={star}
                     size={20}
-                    className={star <= Math.round(reviewsSummary.avgRating) ? 'text-amber-400 fill-amber-400' : 'text-gray-300'}
+                    className={star <= Math.round(stats.overall_average) ? 'text-amber-400 fill-amber-400' : 'text-gray-300'}
                   />
                 ))}
               </div>
-              <p className="text-sm text-gray-500">{reviewsSummary.totalReviews} total reviews</p>
-              <p className="text-xs text-gray-400 mt-1">{reviewsSummary.thisMonth} this month</p>
+              <p className="text-sm text-gray-500">{stats.total_reviews} total reviews</p>
+              <p className="text-xs text-gray-400 mt-1">{stats.reviews_this_month} this month</p>
             </CardContent>
           </Card>
 
@@ -219,8 +343,9 @@ export function Reviews() {
               <h3 className="font-semibold text-gray-900 mb-4">Rating Distribution</h3>
               <div className="space-y-3">
                 {[5, 4, 3, 2, 1].map((rating) => {
-                  const count = reviewsSummary.ratingBreakdown[rating]
-                  const percentage = (count / reviewsSummary.totalReviews) * 100
+                  const key = ['one_star', 'two_star', 'three_star', 'four_star', 'five_star'][rating - 1]
+                  const count = stats.rating_distribution[key]
+                  const percentage = stats.total_reviews > 0 ? (count / stats.total_reviews) * 100 : 0
                   return (
                     <div key={rating} className="flex items-center gap-3">
                       <div className="flex items-center gap-1 w-12">
@@ -241,26 +366,6 @@ export function Reviews() {
             </CardContent>
           </Card>
 
-          {/* By Source */}
-          <Card>
-            <CardContent className="p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">By Platform</h3>
-              <div className="space-y-3">
-                {Object.entries(reviewsSummary.bySource).map(([source, rating]) => (
-                  <div key={source} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span>{sourceIcons[source]}</span>
-                      <span className="text-sm text-gray-700 capitalize">{source}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-gray-900">{rating}</span>
-                      <Star size={14} className="text-amber-400 fill-amber-400" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>
