@@ -149,6 +149,9 @@ export function Schedule() {
         console.log('[Schedule] Fetching generated schedule:', result.schedule_id)
         const newSchedule = await scheduleApi.getScheduleById(result.schedule_id)
 
+        console.log('[Schedule] Staff count for transform:', staff?.length || 0)
+        console.log('[Schedule] Schedule has items:', newSchedule.items?.length || 0)
+
         // Transform to frontend format
         const transformed = transformSchedule(newSchedule, staff || [], allAvailability || [])
 

@@ -177,13 +177,26 @@ export function transformWaiterDashboard(data: WaiterDashboard): StaffMember {
  * Stats are now included in the list response from backend
  */
 export function transformWaiterListItem(data: WaiterListItem): StaffMember {
+  // ENHANCED LOGGING - Track transformation input/output
+  if (import.meta.env.DEV) {
+    console.log('[Transform] Converting waiter:', {
+      id: data.id.slice(0, 8) + '...',
+      name: data.name,
+      role: data.role,
+      tier: data.tier,
+      hasStats: !!data.stats,
+      tips: data.stats?.tips ?? 0,
+      covers: data.stats?.covers ?? 0,
+    })
+  }
+
   const stats = data.stats
   const tipPercent =
     stats && stats.total_sales > 0
       ? Math.round((stats.tips / stats.total_sales) * 100)
       : 0
 
-  return {
+  const staffMember: StaffMember = {
     id: data.id,
     name: data.name,
     role: 'Server',
@@ -204,6 +217,17 @@ export function transformWaiterListItem(data: WaiterListItem): StaffMember {
     recentShifts: [],
     trendData: [],
   }
+
+  if (import.meta.env.DEV) {
+    console.log('[Transform] ✅ Result:', {
+      id: staffMember.id.slice(0, 8) + '...',
+      name: staffMember.name,
+      tips: staffMember.thisMonth.tips,
+      covers: staffMember.thisMonth.covers,
+    })
+  }
+
+  return staffMember
 }
 
 /**
