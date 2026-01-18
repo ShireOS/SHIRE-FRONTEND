@@ -11,9 +11,15 @@ class ApiClient {
   ): Promise<T> {
     const url = getApiUrl(endpoint)
 
-    // Log request in dev
+    // Log request in dev - ENHANCED LOGGING
     if (import.meta.env.DEV) {
-      console.log(`[API] ${options.method || 'GET'} ${url}`)
+      console.group(`[API] ${options.method || 'GET'} ${endpoint}`)
+      console.log('Full URL:', url)
+      console.log('Headers:', { 'Content-Type': 'application/json', ...options.headers })
+      if (options.body) {
+        console.log('Body:', JSON.parse(options.body as string))
+      }
+      console.groupEnd()
     }
 
     const controller = new AbortController()
@@ -58,9 +64,23 @@ class ApiClient {
 
       const data = await response.json()
 
-      // Log successful response in dev
+      // Log successful response in dev - ENHANCED LOGGING
       if (import.meta.env.DEV) {
-        console.log(`[API] Response from ${endpoint}:`, data)
+        console.group(`[API] ✅ Response from ${endpoint}`)
+        console.log('Status:', response.status, response.statusText)
+        console.log('Response Type:', Array.isArray(data) ? 'array' : typeof data)
+
+        // CRITICAL: Log staff count if this is a staff/waiters endpoint
+        if (Array.isArray(data)) {
+          console.log('🔢 Array Length (Staff Count):', data.length)
+          if (data.length > 0) {
+            console.log('First Item Sample:', data[0])
+          }
+        } else {
+          console.log('Response Data:', data)
+        }
+
+        console.groupEnd()
       }
 
       return data
