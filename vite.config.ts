@@ -48,6 +48,12 @@ export default defineConfig({
       '@shared': resolve(__dirname, './src/shared'),
     },
   },
+  server: {
+    // Fix 416 errors for video files - ensure proper Range request handling
+    headers: {
+      'Accept-Ranges': 'bytes',
+    },
+  },
   build: {
     rollupOptions: {
       input: {

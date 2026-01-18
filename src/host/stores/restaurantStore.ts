@@ -1,6 +1,8 @@
 import { create } from 'zustand'
-import type { Table, Guest, Reservation, Server, Section, ActivityItem, SmartRecommendation, ServerMode, TableStatus } from '../types'
+import type { Table, Guest, Reservation, Server, Section, ActivityItem, SmartRecommendation, ServerMode, TableStatus, TableStateEvent, BackendTable, TableRecommendation, DemoSummaryResponse } from '../types'
 import { mockTables, mockGuests, mockReservations, mockServers, mockSections, mockActivity, mockRecommendations } from '../data/mockData'
+import { apiClient } from '../../shared/api/client'
+import { ENDPOINTS } from '../../shared/api/endpoints'
 
 interface UndoAction {
   type: 'seat' | 'unseat' | 'status_change'
@@ -35,6 +37,12 @@ interface RestaurantState {
   // Undo history
   undoHistory: UndoAction[]
 
+  // Demo state
+  demoActive: boolean
+  demoStatus: { speed: number; cameras: string[] } | null
+  wsConnected: boolean
+  lastCvUpdate: Date | null
+
   // Actions
   setSelectedTable: (id: string | null) => void
   setSelectedGuest: (id: string | null) => void
@@ -57,6 +65,15 @@ interface RestaurantState {
 
   // Activity actions
   addActivity: (activity: Omit<ActivityItem, 'id' | 'timestamp' | 'read'>) => void
+
+  // Demo actions
+  initializeFromBackend: (restaurantId: string) => Promise<void>
+  startDemo: (restaurantId: string) => Promise<void>
+  handleTableStateUpdate: (event: TableStateEvent) => void
+  setWsConnected: (connected: boolean) => void
+  getRoutingRecommendations: (restaurantId: string, partySize: number, preferences?: string[]) => Promise<TableRecommendation[]>
+  seedDemoData: () => Promise<void>
+  fetchDemoSummary: (restaurantId: string) => Promise<void>
 }
 
 export const useRestaurantStore = create<RestaurantState>((set, get) => ({
@@ -81,6 +98,12 @@ export const useRestaurantStore = create<RestaurantState>((set, get) => ({
 
   // Undo history
   undoHistory: [],
+
+  // Demo state
+  demoActive: false,
+  demoStatus: null,
+  wsConnected: false,
+  lastCvUpdate: null,
 
   // UI Actions
   setSelectedTable: (id) => set({ selectedTableId: id }),
@@ -273,4 +296,245 @@ export const useRestaurantStore = create<RestaurantState>((set, get) => ({
       activity: [newActivity, ...state.activity].slice(0, 20),
     }))
   },
+
+  // Demo actions
+  initializeFromBackend: async (restaurantId) => {
+    try {
+      // Fetch tables from backend using section-view endpoint
+      const tablesResponse = await apiClient.get<BackendTable[]>(
+        ENDPOINTS.restaurantTables(restaurantId) + '/section-view'
+      )
+
+      // Transform backend tables to frontend format
+      const transformedTables: Table[] = tablesResponse.map((bt, index) => {
+        // Use mock positions since backend doesn't provide them
+        const mockPosition = mockTables[index % mockTables.length]?.position || { x: 100, y: 100 }
+
+        return {
+          id: bt.id,
+          number: parseInt(bt.table_number.replace(/\D/g, '')) || 0, // Extract just digits
+          tableNumber: bt.table_number, // Store original (e.g., "T1", "T5")
+          shape: bt.table_type === 'booth' ? 'rectangle' : 'round',
+          capacity: bt.capacity,
+          position: mockPosition,
+          rotation: 0,
+          sectionId: mockSections.find(s => s.name === bt.section_name)?.id || 'main',
+          status: mapBackendState(bt.state),
+          assignedServerId: mockServers.find(s => s.name === bt.waiter_name)?.id || null,
+          currentGuestId: bt.party_size > 0 ? `guest-${bt.id}` : null,
+          seatedAt: bt.seated_duration_minutes > 0 ? new Date(Date.now() - bt.seated_duration_minutes * 60000) : null,
+          reservedFor: null,
+          cvConfidence: 0,
+        }
+      })
+
+      set({
+        tables: transformedTables,
+        sections: mockSections,
+        servers: mockServers,
+      })
+
+      console.log('[Store] Initialized from backend:', transformedTables.length, 'tables')
+    } catch (error) {
+      console.error('[Store] Failed to initialize from backend:', error)
+      // Fall back to mock data
+      set({
+        tables: mockTables,
+        sections: mockSections,
+        servers: mockServers,
+      })
+    }
+  },
+
+  startDemo: async (restaurantId) => {
+    try {
+      await apiClient.post(ENDPOINTS.demoInitiate(), {
+        restaurant_id: restaurantId,
+        speed: 1.0,
+        overwrite: true,
+        mapping_mode: 'auto',
+        seed_shift_snapshot: {
+          enabled: true,
+          waiters: [
+            { name: 'Sarah', section_name: 'Main Floor', tier: 'strong', composite_score: 82, tables_served: 8, current_tables: 3, total_tips: 240, total_covers: 18 },
+            { name: 'Tyler', section_name: 'Main Floor', tier: 'standard', composite_score: 62, tables_served: 6, current_tables: 2, total_tips: 180, total_covers: 12 },
+            { name: 'Maria', section_name: 'Patio', tier: 'standard', composite_score: 58, tables_served: 6, current_tables: 2, total_tips: 165, total_covers: 10 },
+            { name: 'James', section_name: 'Bar', tier: 'developing', composite_score: 42, tables_served: 2, current_tables: 0, total_tips: 40, total_covers: 4 },
+          ],
+        },
+        demos: [
+          {
+            camera_id: 'cam-1',
+            results_path: '_legacy_poc/demovids/3_Mimosas/results.json',
+          },
+        ],
+      })
+
+      set({
+        demoActive: true,
+        demoStatus: { speed: 1.0, cameras: ['cam-1'] },
+      })
+
+      console.log('[Store] Demo started with seed_shift_snapshot')
+    } catch (error) {
+      console.error('[Store] Failed to start demo:', error)
+    }
+  },
+
+  handleTableStateUpdate: (event) => {
+    set((state) => ({
+      tables: state.tables.map((t) => {
+        // Match by table_id or by parsing table_number
+        const isMatch = t.id === event.table_id || t.number === parseInt(event.table_number.replace('T', ''))
+
+        return isMatch
+          ? {
+              ...t,
+              status: mapBackendState(event.state),
+              cvConfidence: event.confidence,
+              _justUpdated: true,
+            }
+          : { ...t, _justUpdated: false }
+      }),
+      lastCvUpdate: new Date(event.timestamp),
+    }))
+
+    // Log activity
+    get().addActivity({
+      type: 'cv_alert',
+      message: `CV: Table ${event.table_number} → ${event.state} (${Math.round(event.confidence * 100)}%)`,
+      priority: 'low',
+    })
+
+    console.log('[Store] Table state updated:', event.table_number, event.state)
+  },
+
+  setWsConnected: (connected) => {
+    set({ wsConnected: connected })
+  },
+
+  getRoutingRecommendations: async (restaurantId, partySize, preferences = []) => {
+    try {
+      // Extract table_preference and location_preference from preferences array
+      const tablePrefs = ['booth', 'bar', 'table']
+      const locationPrefs = ['inside', 'outside', 'patio']
+      const tablePreference = preferences.find(p => tablePrefs.includes(p)) || 'none'
+      const locationPreference = preferences.find(p => locationPrefs.includes(p)) || 'none'
+
+      const response = await apiClient.post<any>(
+        ENDPOINTS.routingRecommend(restaurantId),
+        {
+          party_size: partySize,
+          table_preference: tablePreference,
+          location_preference: locationPreference,
+        }
+      )
+
+      // Backend returns single RouteResponse object, not array
+      if (!response.success) {
+        console.warn('[Store] No routing match:', response.message)
+        return []
+      }
+
+      // 🛡️ SAFETY CHECK: Validate table capacity
+      if (response.table_capacity < partySize) {
+        console.error(
+          `[Store] 🚨 CAPACITY MISMATCH! Backend recommended Table ${response.table_number} (${response.table_capacity}-top) for party of ${partySize}. Finding better options...`
+        )
+
+        // Fall back to manual search for suitable tables
+        const suitableTables = get().tables.filter(
+          t => t.status === 'available' && t.capacity >= partySize
+        )
+
+        if (suitableTables.length === 0) {
+          console.warn('[Store] No suitable tables found for party of', partySize)
+          return []
+        }
+
+        // Sort by best fit (closest capacity without being too large)
+        suitableTables.sort((a, b) => {
+          const fitA = a.capacity - partySize
+          const fitB = b.capacity - partySize
+          return fitA - fitB // Smaller difference = better fit
+        })
+
+        return suitableTables.slice(0, 3).map((t, idx) => ({
+          table_id: t.id,
+          table_number: t.tableNumber, // Use original backend table_number
+          score: 100 - (idx * 10), // Best fit gets highest score
+          reason: `${t.capacity}-top • Perfect fit for ${partySize}`,
+        }))
+      }
+
+      // Convert single RouteResponse to array with one recommendation
+      const recommendation: TableRecommendation = {
+        table_id: response.table_id,
+        table_number: response.table_number,
+        score: 100, // Primary recommendation
+        reason: `${response.table_type} • ${response.table_location} • Server: ${response.waiter_name}`,
+        table_capacity: response.table_capacity, // ✅ Include capacity from backend
+        table_type: response.table_type,
+        table_location: response.table_location,
+      }
+
+      return [recommendation]
+    } catch (error) {
+      console.error('[Store] Failed to get routing recommendations:', error)
+      return []
+    }
+  },
+
+  seedDemoData: async () => {
+    try {
+      console.log('[Store] Seeding demo data...')
+      await apiClient.post(ENDPOINTS.seedDemo())
+      console.log('[Store] Demo data seeded successfully')
+      // Re-initialize to load the new data
+      await get().initializeFromBackend('default')
+    } catch (error) {
+      console.error('[Store] Failed to seed demo data:', error)
+    }
+  },
+
+  fetchDemoSummary: async (restaurantId) => {
+    try {
+      const response = await apiClient.get<DemoSummaryResponse>(
+        ENDPOINTS.demoSummary(restaurantId)
+      )
+
+      // Map backend waiters to frontend Server format
+      const mappedServers: Server[] = response.waiters.map((w, index) => ({
+        id: w.waiter_id,
+        name: w.name,
+        initials: w.name.split(' ').map(n => n[0]).join('').toUpperCase(),
+        color: ['#0A84FF', '#30D158', '#FF9F0A', '#BF5AF2'][index % 4], // Cycle through colors
+        sectionIds: [w.section_id],
+        activeTableCount: w.current_tables,
+        rotationPosition: w.rank,
+        status: w.status === 'active' ? 'active' : 'off',
+        efficiency: Math.round(w.priority_score * 10), // Convert score to percentage
+        totalTips: w.current_tips,
+      }))
+
+      set({ servers: mappedServers })
+      console.log('[Store] Demo summary fetched:', mappedServers.length, 'waiters')
+    } catch (error) {
+      console.error('[Store] Failed to fetch demo summary:', error)
+    }
+  },
 }))
+
+// Helper function to map backend state to frontend TableStatus
+function mapBackendState(state: string): TableStatus {
+  const mapping: Record<string, TableStatus> = {
+    'available': 'available',
+    'clean': 'available',  // Backend uses "clean" for routing-eligible tables
+    'occupied': 'occupied',
+    'dirty': 'dirty',
+    'needs_service': 'needs_server',
+    'blocked': 'blocked',
+    'reserved': 'reserved',
+  }
+  return mapping[state] || 'available'
+}

@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion'
+import { useEffect } from 'react'
 import type { Table as TableType } from '../../types'
 import { useRestaurantStore } from '../../stores/restaurantStore'
 import { cn } from '../../lib/cn'
@@ -81,6 +82,20 @@ export function Table({ table, showSection = false }: TableProps) {
   const isSelected = selectedTableId === table.id
   const nextGuest = guests[0] // First in waitlist
 
+  // Clear justUpdated flag after animation
+  useEffect(() => {
+    if (table._justUpdated) {
+      const timer = setTimeout(() => {
+        useRestaurantStore.setState((state) => ({
+          tables: state.tables.map((t) =>
+            t.id === table.id ? { ...t, _justUpdated: false } : t
+          ),
+        }))
+      }, 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [table._justUpdated, table.id])
+
   const colors = statusColors[table.status]
   const server = servers.find((s) => s.id === table.assignedServerId)
 
@@ -122,6 +137,12 @@ export function Table({ table, showSection = false }: TableProps) {
         onClick={handleClick}
         whileHover={{ scale: 1.06 }}
         whileTap={{ scale: 0.96 }}
+        animate={{
+          boxShadow: table._justUpdated
+            ? '0 0 24px rgba(59, 130, 246, 0.8), 0 0 48px rgba(59, 130, 246, 0.4)'
+            : '0 0 0 rgba(59, 130, 246, 0)',
+        }}
+        transition={{ duration: 0.5 }}
         className={cn(
           'relative flex flex-col items-center justify-center transition-all duration-200',
           sizeClass,
