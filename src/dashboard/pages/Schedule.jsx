@@ -42,19 +42,15 @@ export function Schedule() {
 
   useEffect(() => {
     if (restaurants && restaurants.length > 0) {
-      // LOG ALL AVAILABLE RESTAURANTS
-      console.group('[Schedule] 🏢 Available Restaurants')
-      console.log('Total Restaurants:', restaurants.length)
-      console.table(restaurants.map(r => ({
-        id: r.id,
-        name: r.name,
-      })))
-      console.groupEnd()
-
-      // SELECT FIRST RESTAURANT (not Mimosas specifically - try all!)
-      const selectedRestaurant = restaurants[0]
-      console.log('[Schedule] 🎯 Auto-selecting FIRST restaurant:', selectedRestaurant.name, selectedRestaurant.id)
-      setRestaurantId(selectedRestaurant.id)
+      const mimosas = restaurants.find((r) => r.name === 'Mimosas')
+      if (mimosas) {
+        console.log('[Schedule] Auto-selecting Mimosas restaurant:', mimosas.id)
+        setRestaurantId(mimosas.id)
+      } else {
+        // Fallback to first restaurant
+        console.log('[Schedule] Mimosas not found, using first restaurant:', restaurants[0].id)
+        setRestaurantId(restaurants[0].id)
+      }
     }
   }, [restaurants])
 
@@ -116,26 +112,6 @@ export function Schedule() {
 
   // Fetch staffing requirements
   const { data: requirements } = useStaffingRequirements(restaurantId)
-
-  // ENHANCED LOGGING - Track staff available for scheduling (AFTER all data is declared)
-  useEffect(() => {
-    if (staff && staff.length > 0 && restaurantId) {
-      const mimosas = restaurants?.find((r) => r.id === restaurantId)
-      console.group('[Schedule] 📅 Staff Available for Scheduling')
-      console.log('Restaurant:', mimosas?.name || restaurantId)
-      console.log('Week:', currentWeek)
-      console.log('🔢 Total Staff Count:', staff.length)
-      console.log('Staff Sample (first 5):', staff.slice(0, 5).map(s => ({
-        id: s.id.slice(0, 8),
-        name: s.name,
-        role: s.role,
-        tenure: s.tenure,
-      })))
-      console.log('Availability Data Loaded:', allAvailability ? `${allAvailability.length} records` : 'None')
-      console.log('Requirements Loaded:', requirements ? `${requirements.length} slots` : 'None')
-      console.groupEnd()
-    }
-  }, [staff, restaurantId, restaurants, currentWeek, allAvailability, requirements])
 
   // Calculate coverage gaps
   const coverageGaps = useMemo(() => {

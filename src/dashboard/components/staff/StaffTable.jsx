@@ -17,7 +17,7 @@ import {
   Loader2,
   WifiOff
 } from 'lucide-react'
-import { useWaiterList } from '../../../shared/hooks/useWaiterList'
+import { useStaffWithStatus } from '../../hooks/useStaffData'
 import { useRestaurants } from '../../../shared/hooks/useMenuAnalytics'
 import { API_CONFIG } from '../../../shared/api/config'
 
@@ -30,69 +30,27 @@ export function StaffTable() {
 
   useEffect(() => {
     if (restaurants && restaurants.length > 0) {
-      // LOG ALL AVAILABLE RESTAURANTS
-      console.group('[StaffTable] 🏢 Available Restaurants')
-      console.log('Total Restaurants:', restaurants.length)
-      console.table(restaurants.map(r => ({
-        id: r.id,
-        name: r.name,
-      })))
-      console.groupEnd()
-
-      // SELECT FIRST RESTAURANT (not Mimosas specifically - try all!)
-      const selectedRestaurant = restaurants[0]
-      console.log('[StaffTable] 🎯 Auto-selecting FIRST restaurant:', selectedRestaurant.name, selectedRestaurant.id)
-      setRestaurantId(selectedRestaurant.id)
+      const mimosas = restaurants.find((r) => r.name === 'Mimosas')
+      if (mimosas) {
+        console.log('[StaffTable] Auto-selecting Mimosas restaurant:', mimosas.id)
+        setRestaurantId(mimosas.id)
+      } else {
+        setRestaurantId(restaurants[0].id)
+      }
     }
   }, [restaurants])
 
-  // Use SAME pattern as Schedule.jsx - useWaiterList hook
-  const { data: allStaff, loading: isLoading, error } = useWaiterList(restaurantId)
+  const { staff: allStaff, isLoading, isError, error, refetch } = useStaffWithStatus(restaurantId)
 
   // Only show servers in staff table (servers are the ones with tips/performance metrics)
-  const staff = (allStaff || []).filter((s) => s.role.toLowerCase() === 'server')
-
-  const isError = !!error
-  const refetch = () => window.location.reload() // Simple refetch for error state
+  const staff = allStaff.filter((s) => s.role.toLowerCase() === 'server')
 
   const [sortField, setSortField] = useState('tips')
   const [sortDir, setSortDir] = useState('desc')
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
 
-  // Compute filtered staff (must be before any early returns!)
-  const filteredStaff = staff
-    .filter(member => {
-      if (searchQuery && !member.name.toLowerCase().includes(searchQuery.toLowerCase())) {
-        return false
-      }
-      if (roleFilter !== 'all' && member.role !== roleFilter) {
-        return false
-      }
-      return true
-    })
-    .sort((a, b) => {
-      let aVal, bVal
-      if (sortField === 'tips') {
-        aVal = a.thisMonth.tips
-        bVal = b.thisMonth.tips
-      } else if (sortField === 'covers') {
-        aVal = a.thisMonth.covers
-        bVal = b.thisMonth.covers
-      } else if (sortField === 'efficiency') {
-        aVal = a.thisMonth.efficiency || 0
-        bVal = b.thisMonth.efficiency || 0
-      } else if (sortField === 'name') {
-        aVal = a.name
-        bVal = b.name
-      }
-      if (sortDir === 'asc') {
-        return aVal > bVal ? 1 : -1
-      }
-      return aVal < bVal ? 1 : -1
-    })
-
-  // ENHANCED LOGGING - Track staff data flow through component (BEFORE early returns!)
+  // ENHANCED LOGGING - Track staff data flow through component
   useEffect(() => {
     if (allStaff && allStaff.length > 0) {
       console.group('[StaffTable] 📊 Data Flow Analysis')
@@ -121,23 +79,6 @@ export function StaffTable() {
       console.groupEnd()
     }
   }, [allStaff, staff])
-
-  // ENHANCED LOGGING - Track filtering impact (BEFORE early returns!)
-  useEffect(() => {
-    if (staff.length > 0) {
-      console.group('[StaffTable] 🔍 Filter Impact')
-      console.log('Before filters:', staff.length)
-      console.log('After search + role filters (filteredStaff):', filteredStaff.length)
-      console.log('Active Filters:', {
-        searchQuery: searchQuery || 'none',
-        roleFilter: roleFilter,
-        sortField: sortField,
-        sortDir: sortDir,
-      })
-      console.log('Final Display Count:', filteredStaff.length, 'staff members')
-      console.groupEnd()
-    }
-  }, [staff, filteredStaff, searchQuery, roleFilter, sortField, sortDir])
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -193,6 +134,37 @@ export function StaffTable() {
       </Card>
     )
   }
+
+  const filteredStaff = staff
+    .filter(member => {
+      if (searchQuery && !member.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+        return false
+      }
+      if (roleFilter !== 'all' && member.role !== roleFilter) {
+        return false
+      }
+      return true
+    })
+    .sort((a, b) => {
+      let aVal, bVal
+      if (sortField === 'tips') {
+        aVal = a.thisMonth.tips
+        bVal = b.thisMonth.tips
+      } else if (sortField === 'covers') {
+        aVal = a.thisMonth.covers
+        bVal = b.thisMonth.covers
+      } else if (sortField === 'efficiency') {
+        aVal = a.thisMonth.efficiency || 0
+        bVal = b.thisMonth.efficiency || 0
+      } else if (sortField === 'name') {
+        aVal = a.name
+        bVal = b.name
+      }
+      if (sortDir === 'asc') {
+        return aVal > bVal ? 1 : -1
+      }
+      return aVal < bVal ? 1 : -1
+    })
 
   const SortIcon = ({ field }) => {
     if (sortField !== field) return <ChevronDown size={14} className="text-gray-300" />
