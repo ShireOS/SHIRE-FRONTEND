@@ -2,8 +2,8 @@ export function Card({ children, className = '', hover = false, onClick }) {
   return (
     <div
       className={`
-        bg-white rounded-xl border border-gray-200 shadow-sm
-        ${hover ? 'hover:shadow-md hover:border-gray-300 transition-all duration-200 cursor-pointer' : ''}
+        glass-card rounded-lg
+        ${hover ? 'hover:border-dash-gold/30 hover:shadow-gold-glow transition-all duration-200 cursor-pointer' : ''}
         ${className}
       `}
       onClick={onClick}
@@ -15,7 +15,7 @@ export function Card({ children, className = '', hover = false, onClick }) {
 
 export function CardHeader({ children, className = '' }) {
   return (
-    <div className={`px-6 py-4 border-b border-gray-100 ${className}`}>
+    <div className={`px-6 py-4 border-b border-dash-border ${className}`}>
       {children}
     </div>
   )

@@ -20,28 +20,23 @@ const navItems = [
 
 export function Sidebar() {
   return (
-    <aside className="w-64 bg-white border-r border-gray-100 flex flex-col py-6 fixed left-0 top-0 bottom-0 z-50">
+    <aside className="w-64 glass-panel border-r border-dash-border flex flex-col py-6 fixed left-0 top-0 bottom-0 z-50">
       {/* Brand */}
       <div className="px-6 mb-8">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-blue-700 text-white flex items-center justify-center font-bold text-lg rounded-xl shadow-lg">
-            S
-          </div>
-          <span className="font-bold text-gray-900 tracking-tight text-lg">Shire System</span>
-        </div>
+        <span className="font-dash-display text-2xl text-dash-cream tracking-wide">SHIRE</span>
       </div>
 
       <nav className="flex-1 px-3 space-y-1">
-        <div className="px-3 mb-3 text-[11px] uppercase tracking-wider text-gray-400 font-semibold">Menu</div>
+        <div className="px-3 mb-3 label-mono">Menu</div>
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             className={({ isActive }) => `
-              flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200
+              flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
               ${isActive
-                ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-200'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                ? 'bg-dash-gold/15 text-dash-gold border border-dash-gold/30 shadow-gold-glow'
+                : 'text-dash-secondary hover:text-dash-cream hover:bg-white/5 border border-transparent'
               }
             `}
           >
@@ -52,14 +47,14 @@ export function Sidebar() {
       </nav>
 
       {/* Footer / Settings */}
-      <div className="mt-auto px-3 pt-4 border-t border-gray-100">
+      <div className="mt-auto px-3 pt-4 border-t border-dash-border">
         <NavLink
           to="/settings"
           className={({ isActive }) => `
-            flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200
+            flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
             ${isActive
-              ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-200'
-              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'}
+              ? 'bg-dash-gold/15 text-dash-gold border border-dash-gold/30 shadow-gold-glow'
+              : 'text-dash-secondary hover:text-dash-cream hover:bg-white/5 border border-transparent'}
           `}
         >
           <Settings size={18} strokeWidth={2} />

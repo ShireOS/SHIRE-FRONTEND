@@ -14,10 +14,10 @@ const sourceIcons = {
 }
 
 const sourceColors = {
-  google: 'bg-blue-100 text-blue-700',
-  yelp: 'bg-red-100 text-red-700',
-  opentable: 'bg-orange-100 text-orange-700',
-  internal: 'bg-gray-100 text-gray-700'
+  google: 'bg-blue-500/20 text-blue-400',
+  yelp: 'bg-dash-danger/20 text-dash-danger',
+  opentable: 'bg-dash-warning/20 text-dash-warning',
+  internal: 'bg-white/10 text-dash-secondary'
 }
 
 export function Reviews() {
@@ -72,8 +72,8 @@ export function Reviews() {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
-          <RefreshCw className="w-8 h-8 animate-spin text-gray-400 mx-auto mb-2" />
-          <p className="text-gray-600">Loading reviews...</p>
+          <RefreshCw className="w-8 h-8 animate-spin text-dash-gold mx-auto mb-2" />
+          <p className="text-dash-secondary">Loading reviews...</p>
         </div>
       </div>
     )
@@ -82,9 +82,9 @@ export function Reviews() {
   // Error state
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-        <h3 className="text-red-800 font-semibold mb-2">Failed to load reviews</h3>
-        <p className="text-red-600 text-sm mb-4">{error.message}</p>
+      <div className="bg-dash-danger/10 border border-dash-danger/30 rounded-lg p-6">
+        <h3 className="text-dash-danger font-semibold mb-2">Failed to load reviews</h3>
+        <p className="text-dash-secondary text-sm mb-4">{error.message}</p>
         <Button onClick={() => { refetchStats(); refetchSummary(); refetchReviews() }}>
           Retry
         </Button>
@@ -94,7 +94,7 @@ export function Reviews() {
 
   // No data state
   if (!stats || !summary || !reviews) {
-    return <div className="text-center text-gray-500 py-12">No review data available</div>
+    return <div className="text-center text-dash-tertiary py-12">No review data available</div>
   }
 
   // Transform API data to match existing UI format
@@ -149,8 +149,10 @@ export function Reviews() {
       {/* Page Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Reviews</h1>
-          <p className="text-gray-600 mt-1">Monitor feedback and improve guest experience</p>
+          <h1 className="text-2xl font-bold text-dash-cream">
+            <span className="font-dash-display italic text-dash-gold">Reviews</span>
+          </h1>
+          <p className="text-dash-secondary mt-1">Monitor feedback and improve guest experience</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -168,59 +170,59 @@ export function Reviews() {
       </div>
 
       {/* AI Synthesis Banner */}
-      <Card className="mb-6 border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50">
+      <Card className="mb-6 border-dash-gold/30 bg-dash-gold/5">
         <CardContent className="p-6">
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Sparkles size={24} className="text-white" />
+            <div className="w-12 h-12 bg-dash-gold/20 border border-dash-gold/30 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Sparkles size={24} className="text-dash-gold" />
             </div>
             <div className="flex-1">
-              <h3 className="font-semibold text-gray-900 mb-2">AI Review Analysis</h3>
-              <p className="text-gray-700 leading-relaxed mb-4">{aiSynthesis.summary}</p>
+              <h3 className="font-semibold text-dash-cream mb-2">AI Review Analysis</h3>
+              <p className="text-dash-secondary leading-relaxed mb-4">{aiSynthesis.summary}</p>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Top Praises */}
-                <div className="bg-white/60 rounded-lg p-4 border border-green-200">
+                <div className="bg-dash-success/10 rounded-lg p-4 border border-dash-success/20">
                   <div className="flex items-center gap-2 mb-3">
-                    <ThumbsUp size={16} className="text-green-600" />
-                    <span className="font-medium text-gray-900">What's Working</span>
+                    <ThumbsUp size={16} className="text-dash-success" />
+                    <span className="font-medium text-dash-cream">What's Working</span>
                   </div>
                   <ul className="space-y-2">
                     {aiSynthesis.topPraises.length > 0 ? aiSynthesis.topPraises.map((item, idx) => (
-                      <li key={idx} className="text-sm text-gray-600 flex items-start gap-2">
-                        <CheckCircle size={14} className="text-green-500 mt-0.5 flex-shrink-0" />
+                      <li key={idx} className="text-sm text-dash-secondary flex items-start gap-2">
+                        <CheckCircle size={14} className="text-dash-success mt-0.5 flex-shrink-0" />
                         {item}
                       </li>
-                    )) : <li className="text-sm text-gray-400">No specific praises identified yet</li>}
+                    )) : <li className="text-sm text-dash-tertiary">No specific praises identified yet</li>}
                   </ul>
                 </div>
 
                 {/* Top Issues */}
-                <div className="bg-white/60 rounded-lg p-4 border border-red-200">
+                <div className="bg-dash-danger/10 rounded-lg p-4 border border-dash-danger/20">
                   <div className="flex items-center gap-2 mb-3">
-                    <ThumbsDown size={16} className="text-red-600" />
-                    <span className="font-medium text-gray-900">Needs Attention</span>
+                    <ThumbsDown size={16} className="text-dash-danger" />
+                    <span className="font-medium text-dash-cream">Needs Attention</span>
                   </div>
                   <ul className="space-y-2">
                     {aiSynthesis.topIssues.length > 0 ? aiSynthesis.topIssues.map((item, idx) => (
-                      <li key={idx} className="text-sm text-gray-600 flex items-start gap-2">
-                        <AlertCircle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
+                      <li key={idx} className="text-sm text-dash-secondary flex items-start gap-2">
+                        <AlertCircle size={14} className="text-dash-danger mt-0.5 flex-shrink-0" />
                         {item}
                       </li>
-                    )) : <li className="text-sm text-gray-400">No issues requiring attention</li>}
+                    )) : <li className="text-sm text-dash-tertiary">No issues requiring attention</li>}
                   </ul>
                 </div>
 
                 {/* Action Items */}
-                <div className="bg-white/60 rounded-lg p-4 border border-blue-200">
+                <div className="bg-dash-gold/10 rounded-lg p-4 border border-dash-gold/20">
                   <div className="flex items-center gap-2 mb-3">
-                    <TrendingUp size={16} className="text-blue-600" />
-                    <span className="font-medium text-gray-900">Recommended Actions</span>
+                    <TrendingUp size={16} className="text-dash-gold" />
+                    <span className="font-medium text-dash-cream">Recommended Actions</span>
                   </div>
                   <ul className="space-y-2">
                     {aiSynthesis.actionItems.map((item, idx) => (
-                      <li key={idx} className="text-sm text-gray-600 flex items-start gap-2">
-                        <span className="text-blue-500 font-bold">{idx + 1}.</span>
+                      <li key={idx} className="text-sm text-dash-secondary flex items-start gap-2">
+                        <span className="text-dash-gold font-bold">{idx + 1}.</span>
                         {item}
                       </li>
                     ))}
@@ -237,12 +239,12 @@ export function Reviews() {
         <div className="lg:col-span-3">
           {/* Filter Bar */}
           <div className="flex items-center gap-3 mb-4">
-            <Filter size={16} className="text-gray-400" />
+            <Filter size={16} className="text-dash-tertiary" />
             <div className="flex gap-2">
               <button
                 onClick={() => setFilter('all')}
                 className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                  filter === 'all' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  filter === 'all' ? 'bg-dash-gold text-dash-base' : 'bg-white/10 text-dash-secondary hover:bg-white/20'
                 }`}
               >
                 All ({transformedReviews.length})
@@ -250,7 +252,7 @@ export function Reviews() {
               <button
                 onClick={() => setFilter('negative')}
                 className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                  filter === 'negative' ? 'bg-red-600 text-white' : 'bg-red-50 text-red-600 hover:bg-red-100'
+                  filter === 'negative' ? 'bg-dash-danger text-white' : 'bg-dash-danger/20 text-dash-danger hover:bg-dash-danger/30'
                 }`}
               >
                 Needs Attention ({negativeCount})
@@ -258,7 +260,7 @@ export function Reviews() {
               <button
                 onClick={() => setFilter('positive')}
                 className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                  filter === 'positive' ? 'bg-green-600 text-white' : 'bg-green-50 text-green-600 hover:bg-green-100'
+                  filter === 'positive' ? 'bg-dash-success text-white' : 'bg-dash-success/20 text-dash-success hover:bg-dash-success/30'
                 }`}
               >
                 Positive ({positiveCount})
@@ -269,7 +271,7 @@ export function Reviews() {
           {/* Reviews List */}
           <div className="space-y-4">
             {filteredReviews.map((review) => (
-              <Card key={review.id} className={review.sentiment === 'negative' ? 'border-red-200 bg-red-50/30' : ''}>
+              <Card key={review.id} className={review.sentiment === 'negative' ? 'border-dash-danger/30 bg-dash-danger/5' : ''}>
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
@@ -282,7 +284,7 @@ export function Reviews() {
                             <Star
                               key={star}
                               size={14}
-                              className={star <= review.rating ? 'text-amber-400 fill-amber-400' : 'text-gray-300'}
+                              className={star <= review.rating ? 'text-dash-gold fill-dash-gold' : 'text-dash-tertiary'}
                             />
                           ))}
                         </div>
@@ -291,13 +293,13 @@ export function Reviews() {
                         <Badge variant="error">Needs Response</Badge>
                       )}
                     </div>
-                    <span className="text-sm text-gray-500">{review.date}</span>
+                    <span className="text-sm text-dash-tertiary">{review.date}</span>
                   </div>
 
-                  <p className="text-gray-700 leading-relaxed mb-3">{review.text}</p>
+                  <p className="text-dash-secondary leading-relaxed mb-3">{review.text}</p>
 
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-600">— {review.author}</span>
+                    <span className="text-sm font-medium text-dash-tertiary">— {review.author}</span>
                     {review.source !== 'internal' && (
                       <Button variant="ghost" size="sm">
                         <MessageSquare size={14} className="mr-1" />
@@ -320,7 +322,7 @@ export function Reviews() {
               >
                 Previous
               </Button>
-              <span className="px-4 py-2 text-sm text-gray-600">
+              <span className="px-4 py-2 text-sm text-dash-secondary">
                 Page {page + 1}
               </span>
               <Button
@@ -339,25 +341,25 @@ export function Reviews() {
           {/* Overall Rating */}
           <Card>
             <CardContent className="p-6 text-center">
-              <div className="text-5xl font-bold text-gray-900 mb-2">{stats.overall_average.toFixed(1)}</div>
+              <div className="text-5xl font-bold text-dash-gold mb-2">{stats.overall_average.toFixed(1)}</div>
               <div className="flex items-center justify-center gap-1 mb-2">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <Star
                     key={star}
                     size={20}
-                    className={star <= Math.round(stats.overall_average) ? 'text-amber-400 fill-amber-400' : 'text-gray-300'}
+                    className={star <= Math.round(stats.overall_average) ? 'text-dash-gold fill-dash-gold' : 'text-dash-tertiary'}
                   />
                 ))}
               </div>
-              <p className="text-sm text-gray-500">{stats.total_reviews} total reviews</p>
-              <p className="text-xs text-gray-400 mt-1">{stats.reviews_this_month} this month</p>
+              <p className="text-sm text-dash-secondary">{stats.total_reviews} total reviews</p>
+              <p className="text-xs text-dash-tertiary mt-1">{stats.reviews_this_month} this month</p>
             </CardContent>
           </Card>
 
           {/* Rating Breakdown */}
           <Card>
             <CardContent className="p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Rating Distribution</h3>
+              <h3 className="font-semibold text-dash-cream mb-4">Rating Distribution</h3>
               <div className="space-y-3">
                 {[5, 4, 3, 2, 1].map((rating) => {
                   const key = ['one_star', 'two_star', 'three_star', 'four_star', 'five_star'][rating - 1]
@@ -366,16 +368,16 @@ export function Reviews() {
                   return (
                     <div key={rating} className="flex items-center gap-3">
                       <div className="flex items-center gap-1 w-12">
-                        <span className="text-sm font-medium text-gray-700">{rating}</span>
-                        <Star size={12} className="text-amber-400 fill-amber-400" />
+                        <span className="text-sm font-medium text-dash-secondary">{rating}</span>
+                        <Star size={12} className="text-dash-gold fill-dash-gold" />
                       </div>
-                      <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
                         <div
-                          className={`h-full rounded-full ${rating >= 4 ? 'bg-green-400' : rating === 3 ? 'bg-amber-400' : 'bg-red-400'}`}
+                          className={`h-full rounded-full ${rating >= 4 ? 'bg-dash-success' : rating === 3 ? 'bg-dash-warning' : 'bg-dash-danger'}`}
                           style={{ width: `${percentage}%` }}
                         />
                       </div>
-                      <span className="text-xs text-gray-500 w-10 text-right">{count}</span>
+                      <span className="text-xs text-dash-tertiary w-10 text-right">{count}</span>
                     </div>
                   )
                 })}

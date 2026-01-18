@@ -2,26 +2,153 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --bg-app: #F9FAFB;
-  --txt-primary: #111827;
-  --txt-secondary: #6B7280;
+@layer base {
+  :root {
+    --color-scheme: dark;
+
+    /* Typography */
+    --font-display: 'Playfair Display', Georgia, serif;
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+
+    /* Background hierarchy - warm near-black */
+    --bg-base: 13 13 13;           /* #0D0D0D */
+    --bg-surface: 26 24 20;        /* #1A1814 */
+    --bg-elevated: 37 34 32;       /* #252220 */
+    --bg-hover: 40 38 34;
+
+    /* Glass effects - cinematic frosted glass */
+    --glass-bg: rgba(255, 255, 255, 0.08);
+    --glass-bg-hover: rgba(255, 255, 255, 0.12);
+    --glass-border: rgba(255, 255, 255, 0.15);
+    --glass-border-emphasis: rgba(255, 255, 255, 0.25);
+    --glass-blur: 20px;
+    --glass-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+
+    /* Text hierarchy - cream to muted */
+    --text-primary: 245 242 235;   /* #F5F2EB */
+    --text-secondary: 160 154 140; /* #A09A8C */
+    --text-tertiary: 107 102 90;   /* #6B665A */
+    --text-muted: 80 76 68;
+
+    /* Gold accent */
+    --gold: 201 169 98;            /* #C9A962 */
+    --gold-muted: 139 122 74;      /* #8B7A4A */
+    --gold-glow: 0 0 20px rgba(201, 169, 98, 0.2);
+
+    /* Status colors */
+    --status-success: 74 222 128;  /* #4ADE80 */
+    --status-warning: 251 191 36;  /* #FBBF24 */
+    --status-danger: 248 113 113;  /* #F87171 */
+    --status-neutral: 156 163 175; /* #9CA3AF */
+
+    /* Scrollbar */
+    --scrollbar-thumb: rgba(255, 255, 255, 0.1);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
+  }
 }
 
+/* Global styles */
 html {
   scroll-behavior: smooth;
-  background-color: var(--bg-app);
+  background-color: rgb(var(--bg-base));
+  color-scheme: dark;
 }
 
 body {
-  font-family: 'Inter Tight', sans-serif;
-  color: var(--txt-primary);
-  background-color: var(--bg-app);
+  font-family: var(--font-body);
+  color: rgb(var(--text-primary));
+  background-color: rgb(var(--bg-base));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom Scrollbar - refined for light mode */
+/* Glass Panel Component Classes */
+@layer components {
+  .glass-panel {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
+
+  .glass-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    transition: all 0.2s ease;
+  }
+
+  .glass-card-hover:hover {
+    border-color: var(--glass-border-emphasis);
+    transform: translateY(-2px);
+  }
+
+  /* Typography utilities */
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-mono {
+    font-family: var(--font-mono);
+  }
+
+  .label-mono {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgb(var(--text-tertiary));
+  }
+
+  /* Text colors */
+  .text-cream {
+    color: rgb(var(--text-primary));
+  }
+
+  .text-secondary-custom {
+    color: rgb(var(--text-secondary));
+  }
+
+  .text-tertiary-custom {
+    color: rgb(var(--text-tertiary));
+  }
+
+  .text-gold {
+    color: rgb(var(--gold));
+  }
+
+  /* Background colors */
+  .bg-base {
+    background-color: rgb(var(--bg-base));
+  }
+
+  .bg-surface {
+    background-color: rgb(var(--bg-surface));
+  }
+
+  .bg-elevated {
+    background-color: rgb(var(--bg-elevated));
+  }
+
+  /* Gold glow effect */
+  .gold-glow {
+    box-shadow: var(--gold-glow);
+  }
+
+  /* Terminal embed for dark inner panels */
+  .terminal-embed {
+    background-color: rgb(var(--bg-base));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+  }
+}
+
+/* Custom Scrollbar - dark theme */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -32,14 +159,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #D1D5DB;
-  /* Gray 300 */
+  background: var(--scrollbar-thumb);
   border-radius: 99px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9CA3AF;
-  /* Gray 400 */
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* Utilities */
@@ -49,4 +174,20 @@ body {
 
 .tabular-nums {
   font-variant-numeric: tabular-nums;
+}
+
+/* Gold pulse animation for LIVE indicator */
+@keyframes pulse-gold {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(201, 169, 98, 0.4);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 4px rgba(201, 169, 98, 0);
+  }
+}
+
+.animate-pulse-gold {
+  animation: pulse-gold 2s ease-in-out infinite;
 }

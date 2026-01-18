@@ -109,7 +109,7 @@ export function MultiCameraView({ isOpen, onClose, cameras, restaurantId }: Mult
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="fixed inset-8 z-50"
+        className="fixed inset-20 z-50"
       >
         <div className="glass-panel p-4 rounded-xl border border-white/10 h-full flex flex-col">
           {/* Header */}

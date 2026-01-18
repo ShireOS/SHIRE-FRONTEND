@@ -47,8 +47,8 @@ export function Dashboard() {
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
 
-      {/* Metrics Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* Metrics Strip - Single continuous glass bar */}
+      <div className="glass-card rounded-lg flex">
         {metrics.map((metric) => (
           <MetricCard key={metric.title} {...metric} />
         ))}
@@ -89,7 +89,9 @@ export function Dashboard() {
 
       {/* Row 5: Educational Cards */}
       <div>
-        <h3 className="text-lg font-semibold text-primary mb-4">Learn & Optimize</h3>
+        <h3 className="text-lg font-semibold text-dash-cream mb-4">
+          Learn & <span className="font-dash-display italic text-dash-gold">Optimize</span>
+        </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {educationalCards.map((card) => {
             const cardImage = card.title === 'Maximizing Tips' ? '/tips.png'
@@ -99,18 +101,18 @@ export function Dashboard() {
                     : null;
 
             return (
-              <Card key={card.id} hover className="overflow-hidden bg-surface border-border shadow-card">
+              <Card key={card.id} hover className="overflow-hidden">
                 {/* Image */}
-                <div className="h-32 bg-sidebar flex items-center justify-center overflow-hidden border-b border-border">
+                <div className="h-32 bg-dash-base flex items-center justify-center overflow-hidden border-b border-dash-border">
                   {cardImage ? (
-                    <img src={cardImage} alt={card.title} className="w-full h-full object-cover" />
+                    <img src={cardImage} alt={card.title} className="w-full h-full object-cover opacity-80" />
                   ) : (
-                    <BookOpen size={24} className="text-secondary" />
+                    <BookOpen size={24} className="text-dash-tertiary" />
                   )}
                 </div>
                 <CardContent className="p-4">
-                  <h4 className="font-semibold text-primary text-sm mb-1">{card.title}</h4>
-                  <p className="text-xs text-secondary leading-relaxed">{card.description}</p>
+                  <h4 className="font-semibold text-dash-cream text-sm mb-1">{card.title}</h4>
+                  <p className="text-xs text-dash-secondary leading-relaxed">{card.description}</p>
                 </CardContent>
               </Card>
             );

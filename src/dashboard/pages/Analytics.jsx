@@ -14,22 +14,24 @@ export function Analytics() {
   // Get max covers for heatmap scaling
   const maxCovers = Math.max(...peakHours.flatMap(d => Object.values(d.hours)))
 
-  // Color scale for heatmap
+  // Color scale for heatmap (dark theme)
   const getHeatColor = (value) => {
     const intensity = value / maxCovers
-    if (intensity > 0.8) return 'bg-red-500'
-    if (intensity > 0.6) return 'bg-orange-400'
-    if (intensity > 0.4) return 'bg-amber-300'
-    if (intensity > 0.2) return 'bg-yellow-200'
-    return 'bg-gray-100'
+    if (intensity > 0.8) return 'bg-dash-danger'
+    if (intensity > 0.6) return 'bg-dash-warning'
+    if (intensity > 0.4) return 'bg-dash-gold/60'
+    if (intensity > 0.2) return 'bg-dash-gold/30'
+    return 'bg-white/10'
   }
 
   return (
     <div>
       {/* Page Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
-        <p className="text-gray-600 mt-1">Deep dive into operations and revenue performance</p>
+        <h1 className="text-2xl font-bold text-dash-cream">
+          <span className="font-dash-display italic text-dash-gold">Analytics</span>
+        </h1>
+        <p className="text-dash-secondary mt-1">Deep dive into operations and revenue performance</p>
       </div>
 
       {/* Week Comparison Cards */}
@@ -38,15 +40,15 @@ export function Analytics() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500 mb-1">This Week Revenue</p>
-                <p className="text-2xl font-bold text-gray-900">${weekComparison.thisWeek.revenue.toLocaleString()}</p>
-                <div className={`flex items-center gap-1 mt-1 ${parseFloat(revenueChange) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                <p className="text-sm text-dash-tertiary mb-1">This Week Revenue</p>
+                <p className="text-2xl font-bold text-dash-cream">${weekComparison.thisWeek.revenue.toLocaleString()}</p>
+                <div className={`flex items-center gap-1 mt-1 ${parseFloat(revenueChange) >= 0 ? 'text-dash-success' : 'text-dash-danger'}`}>
                   {parseFloat(revenueChange) >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
                   <span className="text-sm font-medium">{revenueChange}% vs last week</span>
                 </div>
               </div>
-              <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-                <DollarSign size={24} className="text-green-600" />
+              <div className="w-12 h-12 bg-dash-success/20 border border-dash-success/30 rounded-xl flex items-center justify-center">
+                <DollarSign size={24} className="text-dash-success" />
               </div>
             </div>
           </CardContent>
@@ -56,15 +58,15 @@ export function Analytics() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500 mb-1">This Week Covers</p>
-                <p className="text-2xl font-bold text-gray-900">{weekComparison.thisWeek.covers}</p>
-                <div className={`flex items-center gap-1 mt-1 ${parseFloat(coversChange) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                <p className="text-sm text-dash-tertiary mb-1">This Week Covers</p>
+                <p className="text-2xl font-bold text-dash-cream">{weekComparison.thisWeek.covers}</p>
+                <div className={`flex items-center gap-1 mt-1 ${parseFloat(coversChange) >= 0 ? 'text-dash-success' : 'text-dash-danger'}`}>
                   {parseFloat(coversChange) >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
                   <span className="text-sm font-medium">{coversChange}% vs last week</span>
                 </div>
               </div>
-              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                <Users size={24} className="text-blue-600" />
+              <div className="w-12 h-12 bg-blue-500/20 border border-blue-500/30 rounded-xl flex items-center justify-center">
+                <Users size={24} className="text-blue-400" />
               </div>
             </div>
           </CardContent>
@@ -74,15 +76,15 @@ export function Analytics() {
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-500 mb-1">Avg Check</p>
-                <p className="text-2xl font-bold text-gray-900">${weekComparison.thisWeek.avgCheck.toFixed(2)}</p>
-                <div className="flex items-center gap-1 mt-1 text-green-600">
+                <p className="text-sm text-dash-tertiary mb-1">Avg Check</p>
+                <p className="text-2xl font-bold text-dash-cream">${weekComparison.thisWeek.avgCheck.toFixed(2)}</p>
+                <div className="flex items-center gap-1 mt-1 text-dash-success">
                   <TrendingUp size={14} />
                   <span className="text-sm font-medium">+$1.12 vs last week</span>
                 </div>
               </div>
-              <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                <Receipt size={24} className="text-purple-600" />
+              <div className="w-12 h-12 bg-purple-500/20 border border-purple-500/30 rounded-xl flex items-center justify-center">
+                <Receipt size={24} className="text-purple-400" />
               </div>
             </div>
           </CardContent>
@@ -95,11 +97,11 @@ export function Analytics() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Clock size={18} className="text-blue-500" />
-                <h3 className="font-semibold text-gray-900">Table Turn Times</h3>
+                <Clock size={18} className="text-blue-400" />
+                <h3 className="font-semibold text-dash-cream">Table Turn Times</h3>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-2xl font-bold text-gray-900">{tableTurns.average}min</span>
+                <span className="text-2xl font-bold text-dash-cream">{tableTurns.average}min</span>
                 <Badge variant={tableTurns.average > tableTurns.goal ? 'error' : 'success'}>
                   Goal: {tableTurns.goal}min
                 </Badge>
@@ -107,26 +109,27 @@ export function Analytics() {
             </div>
 
             {tableTurns.average > tableTurns.goal && (
-              <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg mb-4">
-                <AlertTriangle size={16} className="text-amber-600" />
-                <span className="text-sm text-amber-700">Turn times {tableTurns.average - tableTurns.goal}min above goal</span>
+              <div className="flex items-center gap-2 p-3 bg-dash-warning/10 border border-dash-warning/30 rounded-lg mb-4">
+                <AlertTriangle size={16} className="text-dash-warning" />
+                <span className="text-sm text-dash-warning">Turn times {tableTurns.average - tableTurns.goal}min above goal</span>
               </div>
             )}
 
-            <div className="h-48">
+            <div className="h-48 bg-dash-base rounded-lg p-2">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={tableTurns.byDayOfWeek}>
-                  <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9CA3AF' }} />
+                  <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B665A' }} />
                   <YAxis hide domain={[0, 70]} />
                   <Tooltip
                     formatter={(value) => [`${value} min`, 'Turn Time']}
-                    contentStyle={{ borderRadius: '8px', border: '1px solid #E5E7EB' }}
+                    contentStyle={{ borderRadius: '8px', backgroundColor: '#1A1814', border: '1px solid rgba(255,255,255,0.15)', color: '#F5F2EB' }}
+                    labelStyle={{ color: '#A09A8C' }}
                   />
                   <Bar dataKey="turnTime" radius={[4, 4, 0, 0]}>
                     {tableTurns.byDayOfWeek.map((entry, index) => (
                       <Cell
                         key={`cell-${index}`}
-                        fill={entry.turnTime > tableTurns.goal ? '#F59E0B' : '#22C55E'}
+                        fill={entry.turnTime > tableTurns.goal ? '#FBBF24' : '#4ADE80'}
                       />
                     ))}
                   </Bar>
@@ -141,41 +144,42 @@ export function Analytics() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Timer size={18} className="text-purple-500" />
-                <h3 className="font-semibold text-gray-900">Wait Times by Hour</h3>
+                <Timer size={18} className="text-purple-400" />
+                <h3 className="font-semibold text-dash-cream">Wait Times by Hour</h3>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-2xl font-bold text-gray-900">{waitTimes.average}min</span>
-                <span className="text-sm text-gray-500">avg</span>
+                <span className="text-2xl font-bold text-dash-cream">{waitTimes.average}min</span>
+                <span className="text-sm text-dash-tertiary">avg</span>
               </div>
             </div>
 
             <div className="flex items-center gap-4 mb-4">
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">Peak wait:</span>
-                <span className="font-semibold text-red-600">{waitTimes.peakWait}min</span>
+                <span className="text-sm text-dash-tertiary">Peak wait:</span>
+                <span className="font-semibold text-dash-danger">{waitTimes.peakWait}min</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">Goal:</span>
-                <span className="font-semibold text-gray-700">{waitTimes.goal}min</span>
+                <span className="text-sm text-dash-tertiary">Goal:</span>
+                <span className="font-semibold text-dash-secondary">{waitTimes.goal}min</span>
               </div>
             </div>
 
-            <div className="h-48">
+            <div className="h-48 bg-dash-base rounded-lg p-2">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={waitTimes.byHour}>
-                  <XAxis dataKey="hour" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9CA3AF' }} />
+                  <XAxis dataKey="hour" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B665A' }} />
                   <YAxis hide domain={[0, 25]} />
                   <Tooltip
                     formatter={(value) => [`${value} min`, 'Wait Time']}
-                    contentStyle={{ borderRadius: '8px', border: '1px solid #E5E7EB' }}
+                    contentStyle={{ borderRadius: '8px', backgroundColor: '#1A1814', border: '1px solid rgba(255,255,255,0.15)', color: '#F5F2EB' }}
+                    labelStyle={{ color: '#A09A8C' }}
                   />
                   <Line
                     type="monotone"
                     dataKey="wait"
-                    stroke="#8B5CF6"
+                    stroke="#C9A962"
                     strokeWidth={2}
-                    dot={{ fill: '#8B5CF6', strokeWidth: 0, r: 4 }}
+                    dot={{ fill: '#C9A962', strokeWidth: 0, r: 4 }}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -189,13 +193,13 @@ export function Analytics() {
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center gap-2 mb-4">
-              <ChefHat size={18} className="text-orange-500" />
-              <h3 className="font-semibold text-gray-900">Kitchen Speed</h3>
+              <ChefHat size={18} className="text-dash-warning" />
+              <h3 className="font-semibold text-dash-cream">Kitchen Speed</h3>
             </div>
 
             <div className="flex items-baseline gap-2 mb-4">
-              <span className="text-3xl font-bold text-gray-900">{kitchenSpeed.avgTicketTime}</span>
-              <span className="text-gray-500">min avg ticket</span>
+              <span className="text-3xl font-bold text-dash-cream">{kitchenSpeed.avgTicketTime}</span>
+              <span className="text-dash-tertiary">min avg ticket</span>
             </div>
 
             <div className="flex items-center gap-2 mb-4">
@@ -206,18 +210,18 @@ export function Analytics() {
             </div>
 
             <div className="space-y-3">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">By Station</p>
+              <p className="label-mono">By Station</p>
               {kitchenSpeed.byStation.map((station) => (
                 <div key={station.station} className="flex items-center justify-between">
-                  <span className="text-sm text-gray-700">{station.station}</span>
+                  <span className="text-sm text-dash-secondary">{station.station}</span>
                   <div className="flex items-center gap-2">
-                    <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="w-24 h-2 bg-white/10 rounded-full overflow-hidden">
                       <div
-                        className={`h-full rounded-full ${station.avgTime > 14 ? 'bg-red-400' : station.avgTime > 10 ? 'bg-amber-400' : 'bg-green-400'}`}
+                        className={`h-full rounded-full ${station.avgTime > 14 ? 'bg-dash-danger' : station.avgTime > 10 ? 'bg-dash-warning' : 'bg-dash-success'}`}
                         style={{ width: `${(station.avgTime / 20) * 100}%` }}
                       />
                     </div>
-                    <span className="text-sm font-medium text-gray-900 w-12 text-right">{station.avgTime}min</span>
+                    <span className="text-sm font-medium text-dash-cream w-12 text-right">{station.avgTime}min</span>
                   </div>
                 </div>
               ))}
@@ -229,29 +233,29 @@ export function Analytics() {
         <Card className="lg:col-span-2">
           <CardContent className="p-6">
             <div className="flex items-center gap-2 mb-4">
-              <Target size={18} className="text-red-500" />
-              <h3 className="font-semibold text-gray-900">Peak Hours Heatmap</h3>
-              <span className="text-sm text-gray-500">(covers per hour)</span>
+              <Target size={18} className="text-dash-danger" />
+              <h3 className="font-semibold text-dash-cream">Peak Hours Heatmap</h3>
+              <span className="text-sm text-dash-tertiary">(covers per hour)</span>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto bg-dash-base rounded-lg p-3">
               <table className="w-full">
                 <thead>
                   <tr>
-                    <th className="text-left text-xs font-medium text-gray-500 pb-2"></th>
+                    <th className="text-left label-mono pb-2"></th>
                     {['5pm', '6pm', '7pm', '8pm', '9pm', '10pm'].map(hour => (
-                      <th key={hour} className="text-center text-xs font-medium text-gray-500 pb-2 px-1">{hour}</th>
+                      <th key={hour} className="text-center label-mono pb-2 px-1">{hour}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {peakHours.map((dayData) => (
                     <tr key={dayData.day}>
-                      <td className="text-xs font-medium text-gray-700 py-1 pr-2">{dayData.day}</td>
+                      <td className="text-xs font-medium text-dash-secondary py-1 pr-2">{dayData.day}</td>
                       {['5pm', '6pm', '7pm', '8pm', '9pm', '10pm'].map(hour => (
                         <td key={hour} className="p-1">
                           <div
-                            className={`h-8 rounded flex items-center justify-center text-xs font-medium ${getHeatColor(dayData.hours[hour])} ${dayData.hours[hour] > maxCovers * 0.6 ? 'text-white' : 'text-gray-700'}`}
+                            className={`h-8 rounded flex items-center justify-center text-xs font-medium ${getHeatColor(dayData.hours[hour])} ${dayData.hours[hour] > maxCovers * 0.6 ? 'text-dash-base' : 'text-dash-cream'}`}
                           >
                             {dayData.hours[hour]}
                           </div>
@@ -263,14 +267,14 @@ export function Analytics() {
               </table>
             </div>
 
-            <div className="flex items-center gap-4 mt-4 text-xs text-gray-500">
+            <div className="flex items-center gap-4 mt-4 text-xs text-dash-tertiary">
               <span>Less busy</span>
               <div className="flex gap-1">
-                <div className="w-6 h-3 bg-gray-100 rounded" />
-                <div className="w-6 h-3 bg-yellow-200 rounded" />
-                <div className="w-6 h-3 bg-amber-300 rounded" />
-                <div className="w-6 h-3 bg-orange-400 rounded" />
-                <div className="w-6 h-3 bg-red-500 rounded" />
+                <div className="w-6 h-3 bg-white/10 rounded" />
+                <div className="w-6 h-3 bg-dash-gold/30 rounded" />
+                <div className="w-6 h-3 bg-dash-gold/60 rounded" />
+                <div className="w-6 h-3 bg-dash-warning rounded" />
+                <div className="w-6 h-3 bg-dash-danger rounded" />
               </div>
               <span>More busy</span>
             </div>
@@ -283,29 +287,30 @@ export function Analytics() {
         <CardContent className="p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <TrendingUp size={18} className="text-green-500" />
-              <h3 className="font-semibold text-gray-900">Monthly Revenue Trend</h3>
+              <TrendingUp size={18} className="text-dash-success" />
+              <h3 className="font-semibold text-dash-cream">Monthly Revenue Trend</h3>
             </div>
             <div className="text-right">
-              <p className="text-sm text-gray-500">Last 7 months</p>
+              <p className="text-sm text-dash-tertiary">Last 7 months</p>
             </div>
           </div>
 
-          <div className="h-64">
+          <div className="h-64 bg-dash-base rounded-lg p-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={monthlyRevenue}>
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#9CA3AF' }} />
+                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B665A' }} />
                 <YAxis
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fontSize: 12, fill: '#9CA3AF' }}
+                  tick={{ fontSize: 12, fill: '#6B665A' }}
                   tickFormatter={(value) => `$${value / 1000}k`}
                 />
                 <Tooltip
                   formatter={(value) => [`$${value.toLocaleString()}`, 'Revenue']}
-                  contentStyle={{ borderRadius: '8px', border: '1px solid #E5E7EB' }}
+                  contentStyle={{ borderRadius: '8px', backgroundColor: '#1A1814', border: '1px solid rgba(255,255,255,0.15)', color: '#F5F2EB' }}
+                  labelStyle={{ color: '#A09A8C' }}
                 />
-                <Bar dataKey="revenue" fill="#22C55E" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="revenue" fill="#C9A962" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

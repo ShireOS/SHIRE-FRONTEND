@@ -18,9 +18,9 @@ import { useShoppingList } from '../../shared/hooks/useInventory'
 // Score Badge Component
 function ScoreBadge({ score }) {
   const getColor = () => {
-    if (score >= 70) return 'bg-green-100 text-green-700'
-    if (score >= 40) return 'bg-yellow-100 text-yellow-700'
-    return 'bg-red-100 text-red-700'
+    if (score >= 70) return 'bg-dash-success/20 text-dash-success'
+    if (score >= 40) return 'bg-dash-warning/20 text-dash-warning'
+    return 'bg-dash-danger/20 text-dash-danger'
   }
 
   const getLabel = () => {
@@ -170,8 +170,8 @@ export function Menu() {
   if (loadingTop || loadingBottom) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="flex items-center gap-2 text-gray-500">
-          <Loader2 className="animate-spin" size={20} />
+        <div className="flex items-center gap-2 text-dash-secondary">
+          <Loader2 className="animate-spin text-dash-gold" size={20} />
           <span>Loading menu analytics...</span>
         </div>
       </div>
@@ -182,9 +182,9 @@ export function Menu() {
   if (errorTop || errorBottom) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <div className="text-red-500 text-center">
+        <div className="text-dash-danger text-center">
           <p className="font-semibold">Error loading menu data</p>
-          <p className="text-sm mt-1">Check that backend is running at {API_CONFIG.baseUrl}</p>
+          <p className="text-sm mt-1 text-dash-secondary">Check that backend is running at {API_CONFIG.baseUrl}</p>
         </div>
         <Button
           onClick={() => {
@@ -202,11 +202,13 @@ export function Menu() {
       {/* Page Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Menu Intelligence</h1>
-          <p className="text-gray-600 mt-1">
+          <h1 className="text-2xl font-bold text-dash-cream">
+            Menu <span className="font-dash-display italic text-dash-gold">Intelligence</span>
+          </h1>
+          <p className="text-dash-secondary mt-1">
             Analyze performance and optimize your menu
             {restaurants && (
-              <span className="text-sm text-purple-600 ml-2">
+              <span className="text-sm text-dash-gold ml-2">
                 · {restaurants.find((r) => r.id === restaurantId)?.name || 'Loading...'}
               </span>
             )}
@@ -221,9 +223,9 @@ export function Menu() {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-gray-900">All Menu Items</h3>
+                <h3 className="font-semibold text-dash-cream">All Menu Items</h3>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500">Last 30 Days</span>
+                  <span className="text-sm text-dash-tertiary">Last 30 Days</span>
                   <Badge variant="info">{allItems.length} items</Badge>
                 </div>
               </div>
@@ -231,30 +233,30 @@ export function Menu() {
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="text-left text-xs text-gray-500 uppercase tracking-wider">
-                      <th className="pb-3 font-medium">Item</th>
-                      <th className="pb-3 font-medium text-right">Sold</th>
-                      <th className="pb-3 font-medium text-right">Revenue</th>
-                      <th className="pb-3 font-medium text-right">Margin</th>
-                      <th className="pb-3 font-medium">Score</th>
+                    <tr className="border-b border-dash-border">
+                      <th className="pb-3 label-mono text-left">ITEM</th>
+                      <th className="pb-3 label-mono text-right">SOLD</th>
+                      <th className="pb-3 label-mono text-right">REVENUE</th>
+                      <th className="pb-3 label-mono text-right">MARGIN</th>
+                      <th className="pb-3 label-mono text-left">SCORE</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-dash-border">
                     {allItems.map((item) => (
-                      <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                      <tr key={item.id} className="hover:bg-white/5 transition-colors">
                         <td className="py-3">
-                          <span className="font-medium text-gray-900">{item.name}</span>
+                          <span className="font-medium text-dash-cream">{item.name}</span>
                           {item.category && (
-                            <span className="text-xs text-gray-500 ml-2">
+                            <span className="text-xs text-dash-tertiary ml-2">
                               {item.category}
                             </span>
                           )}
                         </td>
                         <td className="py-3 text-right">
-                          <span className="text-gray-700">{item.times_ordered}</span>
+                          <span className="text-dash-secondary">{item.times_ordered}</span>
                         </td>
                         <td className="py-3 text-right">
-                          <span className="font-medium text-gray-900">
+                          <span className="font-medium text-dash-cream">
                             ${(item.price * item.times_ordered).toFixed(2)}
                           </span>
                         </td>
@@ -262,10 +264,10 @@ export function Menu() {
                           <span
                             className={`font-medium ${
                               item.margin_pct >= 50
-                                ? 'text-green-600'
+                                ? 'text-dash-success'
                                 : item.margin_pct >= 30
-                                ? 'text-gray-700'
-                                : 'text-amber-600'
+                                ? 'text-dash-secondary'
+                                : 'text-dash-warning'
                             }`}
                           >
                             {item.margin_pct.toFixed(1)}%
@@ -287,16 +289,16 @@ export function Menu() {
         <div className="space-y-6">
           {/* 86 Recommendations - Clickable for Pricing Modal */}
           <Card
-            className="cursor-pointer hover:shadow-md transition-shadow"
+            className="cursor-pointer hover:border-dash-gold/30 transition-colors"
             onClick={() => setShowPricingModal(true)}
           >
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <AlertTriangle size={18} className="text-amber-500" />
-                  <h3 className="font-semibold text-gray-900">86 Recommendations</h3>
+                  <AlertTriangle size={18} className="text-dash-warning" />
+                  <h3 className="font-semibold text-dash-cream">86 Recommendations</h3>
                 </div>
-                <span className="text-xs text-gray-400">Click for pricing insights →</span>
+                <span className="text-xs text-dash-tertiary">Click for pricing insights →</span>
               </div>
 
               {recommendations && recommendations.total_recommendations > 0 ? (
@@ -304,15 +306,15 @@ export function Menu() {
                   {recommendations.recommendations.map((item) => (
                     <div
                       key={item.id}
-                      className="p-3 bg-amber-50 rounded-lg border border-amber-100"
+                      className="p-3 bg-dash-warning/10 rounded-lg border border-dash-warning/20"
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium text-gray-900">{item.name}</span>
-                        <span className="text-xs text-amber-600">
+                        <span className="font-medium text-dash-cream">{item.name}</span>
+                        <span className="text-xs text-dash-warning">
                           Score: {item.combined_score.toFixed(1)}
                         </span>
                       </div>
-                      <p className="text-xs text-gray-500 mb-2">{item.reason}</p>
+                      <p className="text-xs text-dash-secondary mb-2">{item.reason}</p>
                       <Button
                         variant="outline"
                         size="sm"
@@ -329,7 +331,7 @@ export function Menu() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-gray-500">No items recommended for removal</p>
+                <p className="text-sm text-dash-tertiary">No items recommended for removal</p>
               )}
             </CardContent>
           </Card>
@@ -338,8 +340,8 @@ export function Menu() {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center gap-2 mb-4">
-                <Ban size={18} className="text-red-500" />
-                <h3 className="font-semibold text-gray-900">Currently 86'd</h3>
+                <Ban size={18} className="text-dash-danger" />
+                <h3 className="font-semibold text-dash-cream">Currently 86'd</h3>
                 {items86d && items86d.total_86d > 0 && (
                   <Badge variant="danger">{items86d.total_86d}</Badge>
                 )}
@@ -350,12 +352,12 @@ export function Menu() {
                   {items86d.items.map((item) => (
                     <div
                       key={item.id}
-                      className="p-3 bg-red-50 rounded-lg border border-red-100"
+                      className="p-3 bg-dash-danger/10 rounded-lg border border-dash-danger/20"
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium text-gray-900">{item.name}</span>
+                        <span className="font-medium text-dash-cream">{item.name}</span>
                       </div>
-                      <p className="text-xs text-gray-500 mb-2">
+                      <p className="text-xs text-dash-secondary mb-2">
                         {item.updated_at
                           ? `Since ${new Date(item.updated_at).toLocaleDateString()}`
                           : "Recently 86'd"}
@@ -363,7 +365,7 @@ export function Menu() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="w-full text-xs text-red-600 hover:text-red-700"
+                        className="w-full text-xs text-dash-danger hover:text-dash-danger"
                         onClick={() => handleUn86(item.id, item.name)}
                         disabled={actionLoading}
                       >
@@ -373,7 +375,7 @@ export function Menu() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-gray-500">No items currently 86'd</p>
+                <p className="text-sm text-dash-tertiary">No items currently 86'd</p>
               )}
             </CardContent>
           </Card>
@@ -382,8 +384,8 @@ export function Menu() {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center gap-2 mb-4">
-                <TrendingUp size={18} className="text-green-500" />
-                <h3 className="font-semibold text-gray-900">Top Sellers (30d)</h3>
+                <TrendingUp size={18} className="text-dash-success" />
+                <h3 className="font-semibold text-dash-cream">Top Sellers (30d)</h3>
               </div>
 
               <div className="space-y-3">
@@ -393,19 +395,19 @@ export function Menu() {
                       <span
                         className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
                           idx === 0
-                            ? 'bg-amber-100 text-amber-700'
+                            ? 'bg-dash-gold/20 text-dash-gold'
                             : idx === 1
-                            ? 'bg-gray-100 text-gray-700'
+                            ? 'bg-white/10 text-dash-secondary'
                             : idx === 2
-                            ? 'bg-orange-100 text-orange-700'
-                            : 'bg-gray-50 text-gray-500'
+                            ? 'bg-dash-warning/20 text-dash-warning'
+                            : 'bg-white/5 text-dash-tertiary'
                         }`}
                       >
                         {idx + 1}
                       </span>
-                      <span className="text-sm text-gray-900">{item.name}</span>
+                      <span className="text-sm text-dash-cream">{item.name}</span>
                     </div>
-                    <span className="text-sm font-medium text-gray-600">
+                    <span className="text-sm font-medium text-dash-secondary">
                       {item.times_ordered} sold
                     </span>
                   </div>
@@ -419,8 +421,8 @@ export function Menu() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <ShoppingCart size={18} className="text-emerald-500" />
-                  <h3 className="font-semibold text-gray-900">Optimized Restock</h3>
+                  <ShoppingCart size={18} className="text-dash-success" />
+                  <h3 className="font-semibold text-dash-cream">Optimized Restock</h3>
                 </div>
                 {shoppingList && (
                   <Badge variant="success">{shoppingList.total_items} items</Badge>
@@ -429,20 +431,20 @@ export function Menu() {
 
               {loadingInventory ? (
                 <div className="flex items-center justify-center py-4">
-                  <Loader2 className="animate-spin text-gray-400" size={20} />
+                  <Loader2 className="animate-spin text-dash-tertiary" size={20} />
                 </div>
               ) : shoppingList && shoppingList.ingredients.length > 0 ? (
                 <>
                   {/* Total Cost Summary */}
-                  <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-100 mb-4">
+                  <div className="p-3 bg-dash-success/10 rounded-lg border border-dash-success/20 mb-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <span className="text-sm text-gray-600">Optimized Order</span>
-                        <p className="text-xs text-gray-500">
+                        <span className="text-sm text-dash-cream">Optimized Order</span>
+                        <p className="text-xs text-dash-tertiary">
                           {shoppingList.forecast_period_days}-day forecast based on sales
                         </p>
                       </div>
-                      <span className="text-lg font-bold text-emerald-700">
+                      <span className="text-lg font-bold text-dash-success">
                         ${shoppingList.total_cost.toFixed(2)}
                       </span>
                     </div>
@@ -457,27 +459,27 @@ export function Menu() {
                         : 99
                       const stockPct = Math.min((item.current_stock / item.par_level) * 100, 100)
                       const barColor = stockPct < 25
-                        ? 'bg-red-500'
+                        ? 'bg-dash-danger'
                         : stockPct < 50
-                        ? 'bg-amber-500'
-                        : 'bg-emerald-500'
+                        ? 'bg-dash-warning'
+                        : 'bg-dash-success'
 
                       return (
                         <div
                           key={item.ingredient_id}
-                          className="p-3 bg-white rounded-lg border border-gray-200 shadow-sm"
+                          className="p-3 bg-white/5 rounded-lg border border-dash-border"
                         >
                           {/* Header row */}
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium text-gray-900">
+                            <span className="text-sm font-medium text-dash-cream">
                               {item.name}
                             </span>
                             <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
                               daysLeft <= 2
-                                ? 'bg-red-100 text-red-700'
+                                ? 'bg-dash-danger/20 text-dash-danger'
                                 : daysLeft <= 5
-                                ? 'bg-amber-100 text-amber-700'
-                                : 'bg-gray-100 text-gray-600'
+                                ? 'bg-dash-warning/20 text-dash-warning'
+                                : 'bg-white/10 text-dash-tertiary'
                             }`}>
                               {daysLeft <= 0 ? 'Out' : `${daysLeft}d left`}
                             </span>
@@ -485,11 +487,11 @@ export function Menu() {
 
                           {/* Stock level bar */}
                           <div className="mb-2">
-                            <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                            <div className="flex items-center justify-between text-xs text-dash-tertiary mb-1">
                               <span>Stock: {item.current_stock.toFixed(1)} / {item.par_level} {item.unit}</span>
                               <span>{Math.round(stockPct)}%</span>
                             </div>
-                            <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                            <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                               <div
                                 className={`h-full ${barColor} rounded-full transition-all`}
                                 style={{ width: `${stockPct}%` }}
@@ -499,10 +501,10 @@ export function Menu() {
 
                           {/* Order details */}
                           <div className="flex items-center justify-between text-xs">
-                            <span className="text-gray-500">
+                            <span className="text-dash-tertiary">
                               Order {item.quantity_to_order.toFixed(1)} {item.unit}
                             </span>
-                            <span className="font-medium text-gray-700">
+                            <span className="font-medium text-dash-secondary">
                               ${item.total_cost.toFixed(2)}
                             </span>
                           </div>
@@ -512,13 +514,13 @@ export function Menu() {
                   </div>
 
                   {shoppingList.ingredients.length > 8 && (
-                    <p className="text-xs text-gray-500 text-center mt-3">
+                    <p className="text-xs text-dash-tertiary text-center mt-3">
                       +{shoppingList.ingredients.length - 8} more items
                     </p>
                   )}
                 </>
               ) : (
-                <p className="text-sm text-gray-500">Stock levels optimal</p>
+                <p className="text-sm text-dash-tertiary">Stock levels optimal</p>
               )}
             </CardContent>
           </Card>
@@ -527,17 +529,17 @@ export function Menu() {
 
       {/* Pricing Recommendations Modal */}
       {showPricingModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="glass-card rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden border border-dash-border">
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b">
+            <div className="flex items-center justify-between p-4 border-b border-dash-border">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Menu Optimization</h2>
-                <p className="text-sm text-gray-500">AI-powered pricing recommendations</p>
+                <h2 className="text-lg font-semibold text-dash-cream">Menu Optimization</h2>
+                <p className="text-sm text-dash-secondary">AI-powered pricing recommendations</p>
               </div>
               <button
                 onClick={() => setShowPricingModal(false)}
-                className="p-2 hover:bg-gray-100 rounded-full"
+                className="p-2 hover:bg-white/10 rounded-full text-dash-secondary hover:text-dash-cream transition-colors"
               >
                 <X size={20} />
               </button>
@@ -547,7 +549,7 @@ export function Menu() {
             <div className="p-4 overflow-y-auto max-h-[60vh]">
               {loadingPricing ? (
                 <div className="flex items-center justify-center py-8">
-                  <Loader2 className="animate-spin text-gray-400" size={24} />
+                  <Loader2 className="animate-spin text-dash-gold" size={24} />
                 </div>
               ) : pricingRecs?.recommendations?.length > 0 ? (
                 <div className="space-y-3">
@@ -556,36 +558,36 @@ export function Menu() {
                       key={rec.item_id}
                       className={`p-4 rounded-lg border ${
                         rec.action === 'increase'
-                          ? 'bg-green-50 border-green-200'
+                          ? 'bg-dash-success/10 border-dash-success/20'
                           : rec.action === 'decrease'
-                          ? 'bg-amber-50 border-amber-200'
+                          ? 'bg-dash-warning/10 border-dash-warning/20'
                           : rec.action === 'remove'
-                          ? 'bg-red-50 border-red-200'
-                          : 'bg-gray-50 border-gray-200'
+                          ? 'bg-dash-danger/10 border-dash-danger/20'
+                          : 'bg-white/5 border-dash-border'
                       }`}
                     >
                       <div className="flex items-start justify-between">
                         <div>
                           <div className="flex items-center gap-2">
                             {rec.action === 'increase' && (
-                              <TrendingUp size={16} className="text-green-600" />
+                              <TrendingUp size={16} className="text-dash-success" />
                             )}
                             {rec.action === 'decrease' && (
-                              <TrendingDown size={16} className="text-amber-600" />
+                              <TrendingDown size={16} className="text-dash-warning" />
                             )}
                             {rec.action === 'remove' && (
-                              <Trash2 size={16} className="text-red-600" />
+                              <Trash2 size={16} className="text-dash-danger" />
                             )}
                             {rec.action === 'maintain' && (
-                              <Minus size={16} className="text-gray-600" />
+                              <Minus size={16} className="text-dash-secondary" />
                             )}
-                            <span className="font-medium text-gray-900">{rec.item_name}</span>
-                            <span className="text-xs text-gray-500">{rec.category}</span>
+                            <span className="font-medium text-dash-cream">{rec.item_name}</span>
+                            <span className="text-xs text-dash-tertiary">{rec.category}</span>
                           </div>
-                          <p className="text-sm text-gray-600 mt-1">{rec.reason}</p>
+                          <p className="text-sm text-dash-secondary mt-1">{rec.reason}</p>
                         </div>
                         <div className="text-right">
-                          <div className="text-sm text-gray-500">
+                          <div className="text-sm text-dash-tertiary">
                             ${rec.current_price.toFixed(2)}
                           </div>
                           {rec.suggested_price &&
@@ -593,10 +595,10 @@ export function Menu() {
                               <div
                                 className={`font-semibold ${
                                   rec.action === 'increase'
-                                    ? 'text-green-600'
+                                    ? 'text-dash-success'
                                     : rec.action === 'decrease'
-                                    ? 'text-amber-600'
-                                    : 'text-gray-600'
+                                    ? 'text-dash-warning'
+                                    : 'text-dash-secondary'
                                 }`}
                               >
                                 → ${rec.suggested_price.toFixed(2)}
@@ -605,9 +607,9 @@ export function Menu() {
                         </div>
                       </div>
                       {rec.expected_revenue_impact && (
-                        <div className="mt-2 text-xs text-gray-500">
+                        <div className="mt-2 text-xs text-dash-tertiary">
                           Expected impact:{' '}
-                          <span className="font-medium text-green-600">
+                          <span className="font-medium text-dash-success">
                             {rec.expected_revenue_impact}
                           </span>
                         </div>
@@ -616,13 +618,13 @@ export function Menu() {
                   ))}
                 </div>
               ) : (
-                <p className="text-center text-gray-500 py-8">All items are optimally priced</p>
+                <p className="text-center text-dash-tertiary py-8">All items are optimally priced</p>
               )}
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t bg-gray-50">
-              <p className="text-xs text-gray-500 text-center">
+            <div className="p-4 border-t border-dash-border bg-dash-base/50">
+              <p className="text-xs text-dash-tertiary text-center">
                 Based on {pricingRecs?.analysis_period_days || 30}-day sales analysis
               </p>
             </div>

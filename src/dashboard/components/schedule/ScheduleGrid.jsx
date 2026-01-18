@@ -3,9 +3,9 @@ import { Badge } from '../shared/Badge'
 import { ShiftBadge } from './ShiftBadge'
 
 const dayTypeStyles = {
-  slow: 'text-gray-500 bg-gray-100',
-  avg: 'text-blue-600 bg-blue-100',
-  busy: 'text-orange-600 bg-orange-100',
+  slow: 'text-dash-tertiary bg-white/5',
+  avg: 'text-dash-secondary bg-white/10',
+  busy: 'text-dash-warning bg-dash-warning/10',
 }
 
 /**
@@ -14,11 +14,11 @@ const dayTypeStyles = {
 function getAvailabilityStyle(status) {
   switch (status) {
     case 'preferred':
-      return 'bg-green-50 hover:bg-green-100'
+      return 'bg-dash-success/10 hover:bg-dash-success/20'
     case 'unavailable':
-      return 'bg-gray-100 cursor-not-allowed'
+      return 'bg-white/5 cursor-not-allowed'
     default:
-      return 'hover:bg-gray-50 cursor-pointer'
+      return 'hover:bg-white/5 cursor-pointer'
   }
 }
 
@@ -30,13 +30,13 @@ export function ScheduleGrid({ schedule, onShiftClick, onCellClick, readOnly = f
       <CardContent className="p-0 overflow-x-auto">
         <table className="w-full min-w-[800px]">
           <thead>
-            <tr className="border-b border-gray-100">
-              <th className="text-left py-4 px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">
-                Staff
+            <tr className="border-b border-dash-border">
+              <th className="text-left py-4 px-4 label-mono w-32">
+                STAFF
               </th>
               {schedule.days.map((day, idx) => (
                 <th key={day} className="text-center py-4 px-2 min-w-[120px]">
-                  <div className="text-xs font-semibold text-gray-500 uppercase mb-1">
+                  <div className="label-mono mb-1">
                     {day}
                   </div>
                   <Badge
@@ -54,24 +54,24 @@ export function ScheduleGrid({ schedule, onShiftClick, onCellClick, readOnly = f
                   </Badge>
                 </th>
               ))}
-              <th className="text-center py-4 px-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Total
+              <th className="text-center py-4 px-2 label-mono">
+                TOTAL
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody className="divide-y divide-dash-border">
             {schedule.staff.map((staffRow) => (
-              <tr key={staffRow.waiterId} className="transition-colors">
+              <tr key={staffRow.waiterId} className="transition-colors hover:bg-white/5">
                 <td className="py-4 px-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-gradient-to-br from-gray-200 to-gray-300 rounded-full flex items-center justify-center text-xs font-medium text-gray-600">
+                    <div className="w-8 h-8 bg-white/10 border border-dash-border rounded-full flex items-center justify-center text-xs font-medium text-dash-cream">
                       {staffRow.name.charAt(0)}
                     </div>
                     <div>
-                      <span className="text-sm font-medium text-gray-900 block">
+                      <span className="text-sm font-medium text-dash-cream block">
                         {staffRow.name}
                       </span>
-                      <span className="text-xs text-gray-500">{staffRow.role}</span>
+                      <span className="text-xs text-dash-tertiary">{staffRow.role}</span>
                     </div>
                   </div>
                 </td>
@@ -105,8 +105,8 @@ export function ScheduleGrid({ schedule, onShiftClick, onCellClick, readOnly = f
                         <span
                           className={`text-xs ${
                             availability === 'unavailable'
-                              ? 'text-gray-400'
-                              : 'text-gray-300 hover:text-gray-500'
+                              ? 'text-dash-tertiary'
+                              : 'text-dash-tertiary/50 hover:text-dash-secondary'
                           }`}
                         >
                           {availability === 'unavailable' ? 'N/A' : isClickable ? '+' : '--'}
@@ -116,7 +116,7 @@ export function ScheduleGrid({ schedule, onShiftClick, onCellClick, readOnly = f
                   )
                 })}
                 <td className="py-4 px-2 text-center">
-                  <span className="text-sm font-semibold text-gray-700">
+                  <span className="text-sm font-semibold text-dash-cream">
                     {staffRow.totalHours.toFixed(1)}h
                   </span>
                 </td>

@@ -16,7 +16,7 @@ export default function App() {
   const [isChatOpen, setIsChatOpen] = useState(false)
 
   return (
-    <div className="min-h-screen bg-white text-primary font-body selection:bg-black selection:text-white">
+    <div className="min-h-screen bg-dash-base text-dash-cream font-dash-body selection:bg-dash-gold selection:text-dash-base">
       {/* Header */}
       <Header />
 

@@ -24,52 +24,53 @@ export function CenterPanel() {
       </div>
 
       {/* Floor Plan Canvas */}
-      <div className="flex-1 relative overflow-hidden">
-        {/* Section Overlays (when in sections mode) */}
-        {serverMode === 'sections' && (
-          <div className="absolute inset-0 pointer-events-none">
-            {sections.map((section) => {
-              if (activeSection && activeSection !== section.id) return null
+      <div className="flex-1 relative overflow-auto">
+        {/* Tables & Section Overlays Container */}
+        <div className="relative p-6" style={{ minWidth: '700px', minHeight: '420px' }}>
+          {/* Section Overlays (when in sections mode) */}
+          {serverMode === 'sections' && (
+            <div className="absolute inset-0 pointer-events-none">
+              {sections.map((section) => {
+                if (activeSection && activeSection !== section.id) return null
 
-              // Calculate bounds from table positions
-              const sectionTables = tables.filter((t) => t.sectionId === section.id)
-              if (sectionTables.length === 0) return null
+                // Calculate bounds from table positions
+                const sectionTables = tables.filter((t) => t.sectionId === section.id)
+                if (sectionTables.length === 0) return null
 
-              const minX = Math.min(...sectionTables.map((t) => t.position.x)) - 30
-              const maxX = Math.max(...sectionTables.map((t) => t.position.x)) + 80
-              const minY = Math.min(...sectionTables.map((t) => t.position.y)) - 30
-              const maxY = Math.max(...sectionTables.map((t) => t.position.y)) + 80
+                const minX = Math.min(...sectionTables.map((t) => t.position.x)) - 30
+                const maxX = Math.max(...sectionTables.map((t) => t.position.x)) + 80
+                const minY = Math.min(...sectionTables.map((t) => t.position.y)) - 30
+                const maxY = Math.max(...sectionTables.map((t) => t.position.y)) + 80
 
-              return (
-                <div
-                  key={section.id}
-                  className="absolute rounded-xl border-2 border-dashed"
-                  style={{
-                    left: minX,
-                    top: minY,
-                    width: maxX - minX,
-                    height: maxY - minY,
-                    borderColor: `${section.color}40`,
-                    backgroundColor: `${section.color}08`,
-                  }}
-                >
-                  <span
-                    className="absolute -top-3 left-3 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
+                return (
+                  <div
+                    key={section.id}
+                    className="absolute rounded-xl border-2 border-dashed"
                     style={{
-                      backgroundColor: section.color,
-                      color: '#000',
+                      left: minX,
+                      top: minY,
+                      width: maxX - minX,
+                      height: maxY - minY,
+                      borderColor: `${section.color}40`,
+                      backgroundColor: `${section.color}08`,
                     }}
                   >
-                    {section.name}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        )}
+                    <span
+                      className="absolute -top-3 left-3 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
+                      style={{
+                        backgroundColor: section.color,
+                        color: '#000',
+                      }}
+                    >
+                      {section.name}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
-        {/* Tables */}
-        <div className="absolute inset-0 p-6">
+          {/* Tables */}
           {filteredTables.map((table) => (
             <Table
               key={table.id}
@@ -78,20 +79,20 @@ export function CenterPanel() {
             />
           ))}
         </div>
+      </div>
 
-        {/* Legend */}
-        <div className="absolute bottom-4 right-4 glass-panel p-3">
-          <div className="text-[10px] uppercase tracking-wider text-tertiary mb-2 font-semibold">
-            Legend
-          </div>
-          <div className="space-y-1.5">
-            <LegendItem color="bg-accent-green" label="Available" />
-            <LegendItem color="bg-accent-blue" label="Occupied" />
-            <LegendItem color="bg-accent-yellow" label="Needs Server" />
-            <LegendItem color="bg-accent-brown" label="Dirty" />
-            <LegendItem color="bg-accent-purple" label="Reserved" />
-            <LegendItem color="bg-white/20" label="Blocked" />
-          </div>
+      {/* Legend - positioned outside scroll container */}
+      <div className="absolute bottom-4 right-4 glass-panel p-3 z-10">
+        <div className="text-[10px] uppercase tracking-wider text-tertiary mb-2 font-semibold">
+          Legend
+        </div>
+        <div className="space-y-1.5">
+          <LegendItem color="bg-accent-green" label="Available" />
+          <LegendItem color="bg-accent-blue" label="Occupied" />
+          <LegendItem color="bg-accent-yellow" label="Needs Server" />
+          <LegendItem color="bg-accent-brown" label="Dirty" />
+          <LegendItem color="bg-accent-purple" label="Reserved" />
+          <LegendItem color="bg-white/20" label="Blocked" />
         </div>
       </div>
 

@@ -18,8 +18,10 @@ export function Staff() {
       {/* Page Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Staff</h1>
-          <p className="text-gray-600 mt-1">Manage your team and track performance</p>
+          <h1 className="text-2xl font-bold text-dash-cream">
+            <span className="font-dash-display italic text-dash-gold">Staff</span>
+          </h1>
+          <p className="text-dash-secondary mt-1">Manage your team and track performance</p>
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" icon={<Calendar size={18} />}>

@@ -1,26 +1,27 @@
 const variants = {
-  success: 'bg-green-100 text-green-700',
-  warning: 'bg-amber-100 text-amber-700',
-  danger: 'bg-red-100 text-red-700',
-  info: 'bg-blue-100 text-blue-700',
-  neutral: 'bg-gray-100 text-gray-700',
-  purple: 'bg-purple-100 text-purple-700'
+  success: 'bg-dash-success/20 text-dash-success border border-dash-success/30',
+  warning: 'bg-dash-warning/20 text-dash-warning border border-dash-warning/30',
+  danger: 'bg-dash-danger/20 text-dash-danger border border-dash-danger/30',
+  info: 'bg-white/10 text-dash-cream border border-dash-border',
+  neutral: 'bg-white/5 text-dash-secondary border border-dash-border',
+  purple: 'bg-purple-500/20 text-purple-400 border border-purple-500/30',
+  gold: 'bg-dash-gold/20 text-dash-gold border border-dash-gold/30'
 }
 
 export function Badge({ children, variant = 'neutral', dot = false, className = '' }) {
   return (
     <span className={`
-      inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium
+      inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium
       ${variants[variant]}
       ${className}
     `}>
       {dot && (
-        <span className={`w-2 h-2 rounded-full ${
-          variant === 'success' ? 'bg-green-500' :
-          variant === 'warning' ? 'bg-amber-500' :
-          variant === 'danger' ? 'bg-red-500' :
-          variant === 'info' ? 'bg-blue-500' :
-          'bg-gray-500'
+        <span className={`w-1.5 h-1.5 rounded-full ${
+          variant === 'success' ? 'bg-dash-success' :
+          variant === 'warning' ? 'bg-dash-warning' :
+          variant === 'danger' ? 'bg-dash-danger' :
+          variant === 'gold' ? 'bg-dash-gold' :
+          'bg-dash-secondary'
         }`} />
       )}
       {children}
@@ -30,13 +31,13 @@ export function Badge({ children, variant = 'neutral', dot = false, className = 
 
 export function StatusDot({ status }) {
   const colors = {
-    occupied: 'bg-green-500',
-    needsAttention: 'bg-amber-500',
-    dirty: 'bg-red-500',
-    open: 'bg-gray-300'
+    occupied: 'bg-dash-danger',
+    needsAttention: 'bg-dash-warning',
+    dirty: 'bg-dash-neutral',
+    open: 'bg-dash-success'
   }
 
   return (
-    <span className={`w-2.5 h-2.5 rounded-full ${colors[status] || 'bg-gray-300'}`} />
+    <span className={`w-2 h-2 rounded-full ${colors[status] || 'bg-dash-neutral'}`} />
   )
 }

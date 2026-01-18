@@ -1,13 +1,15 @@
-import { ChevronRight, AlertTriangle, Crown } from 'lucide-react'
+import { ChevronRight, AlertTriangle } from 'lucide-react'
 import { reservations } from '../../data/mockData'
 
 export function ReservationTimeline() {
   return (
-    <div className="h-full p-6 rounded-lg bg-surface border border-border shadow-card">
+    <div className="h-full p-6 rounded-lg glass-card">
       <div className="flex items-center justify-between mb-6">
-        <h3 className="font-semibold text-lg text-primary">Timeline</h3>
-        <button className="text-xs font-mono font-medium text-secondary hover:text-primary flex items-center gap-1 transition-colors uppercase tracking-wider bg-app px-2 py-1 rounded border border-border">
-          Full List <ChevronRight size={12} />
+        <h3 className="font-semibold text-lg text-dash-cream font-dash-display">
+          <span className="italic text-dash-gold">Timeline</span>
+        </h3>
+        <button className="label-mono text-dash-tertiary hover:text-dash-gold flex items-center gap-1 transition-colors bg-white/5 px-3 py-1.5 rounded-lg border border-dash-border hover:border-dash-gold/30">
+          FULL LIST <ChevronRight size={12} />
         </button>
       </div>
 
@@ -17,42 +19,43 @@ export function ReservationTimeline() {
           const hasVIP = slot.parties.some(p => p.includes('VIP'))
 
           return (
-            <div key={idx} className="group">
+            <div key={idx} className="group py-3 border-b border-dash-border last:border-b-0">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-3">
-                  <span className="font-mono text-sm font-bold text-primary">{slot.time}</span>
+                  <span className="font-dash-mono text-base font-semibold text-dash-cream">{slot.time}</span>
                   {hasVIP && (
-                    <span className="flex items-center gap-1 text-[10px] bg-black text-white px-1.5 py-0.5 rounded-sm uppercase tracking-wide font-bold">
+                    <span className="flex items-center gap-1 label-mono bg-dash-gold/20 text-dash-gold px-1.5 py-0.5 rounded border border-dash-gold/30">
                       VIP
                     </span>
                   )}
                 </div>
-                <span className={`text-xs font-medium tabular-nums ${isNearCapacity ? 'text-red-600' : 'text-secondary'}`}>
+                <span className={`text-sm font-medium tabular-nums ${isNearCapacity ? 'text-dash-danger' : 'text-dash-secondary'}`}>
                   {slot.covers} covers
                 </span>
               </div>
 
-              {/* Capacity Bar - Architectural */}
-              <div className="h-1.5 w-full bg-app border border-border rounded-sm overflow-hidden mb-2 relative">
+              {/* Capacity Bar */}
+              <div className="h-1 w-full bg-white/10 border border-dash-border rounded-sm overflow-hidden mb-2">
                 <div
-                  className={`h-full transition-all ${slot.capacity >= 90 ? 'bg-red-600' :
-                      slot.capacity >= 70 ? 'bg-amber-500' :
-                        'bg-emerald-600'
-                    }`}
+                  className={`h-full transition-all ${
+                    slot.capacity >= 90 ? 'bg-dash-danger' :
+                    slot.capacity >= 70 ? 'bg-dash-warning' :
+                    'bg-dash-success'
+                  }`}
                   style={{ width: `${slot.capacity}%` }}
                 />
               </div>
 
               {/* Parties */}
-              <p className="text-xs text-secondary truncate group-hover:text-primary transition-colors">
+              <p className="text-xs text-dash-secondary truncate group-hover:text-dash-cream transition-colors">
                 {slot.parties.slice(0, 3).join(', ')}
                 {slot.parties.length > 3 && ` +${slot.parties.length - 3}`}
               </p>
 
               {slot.warning && (
-                <div className="flex items-center gap-1 mt-1 text-red-600">
+                <div className="flex items-center gap-1 mt-1 text-dash-danger">
                   <AlertTriangle size={10} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider">Capacity Warning</span>
+                  <span className="label-mono text-dash-danger">CAPACITY WARNING</span>
                 </div>
               )}
             </div>

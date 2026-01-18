@@ -11,11 +11,11 @@ const tabs = [
 ]
 
 const roleColors = {
-  owner: 'bg-purple-100 text-purple-700',
-  manager: 'bg-blue-100 text-blue-700',
-  server: 'bg-green-100 text-green-700',
-  host: 'bg-amber-100 text-amber-700',
-  kitchen: 'bg-red-100 text-red-700'
+  owner: 'bg-dash-gold/20 text-dash-gold',
+  manager: 'bg-blue-500/20 text-blue-400',
+  server: 'bg-dash-success/20 text-dash-success',
+  host: 'bg-dash-warning/20 text-dash-warning',
+  kitchen: 'bg-dash-danger/20 text-dash-danger'
 }
 
 const roleIcons = {
@@ -35,12 +35,14 @@ export function Settings() {
     <div>
       {/* Page Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="text-gray-600 mt-1">Manage your restaurant profile and team</p>
+        <h1 className="text-2xl font-bold text-dash-cream">
+          <span className="font-dash-display italic text-dash-gold">Settings</span>
+        </h1>
+        <p className="text-dash-secondary mt-1">Manage your restaurant profile and team</p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-6 border-b border-gray-200">
+      <div className="flex gap-2 mb-6 border-b border-dash-border">
         {tabs.map((tab) => {
           const Icon = tab.icon
           return (
@@ -49,8 +51,8 @@ export function Settings() {
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === tab.id
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-dash-gold text-dash-gold'
+                  : 'border-transparent text-dash-secondary hover:text-dash-cream'
               }`}
             >
               <Icon size={18} />
@@ -67,37 +69,37 @@ export function Settings() {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="font-semibold text-gray-900">Basic Information</h3>
+                <h3 className="font-semibold text-dash-cream">Basic Information</h3>
                 <Button variant="ghost" size="sm" icon={<Edit2 size={14} />}>Edit</Button>
               </div>
 
               <div className="space-y-4">
                 <div className="flex items-start gap-4">
-                  <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center text-white text-2xl font-bold">
+                  <div className="w-16 h-16 bg-dash-gold/20 border border-dash-gold/30 rounded-xl flex items-center justify-center text-dash-gold text-2xl font-bold">
                     GF
                   </div>
                   <div>
-                    <h4 className="text-xl font-semibold text-gray-900">{restaurantProfile.name}</h4>
-                    <p className="text-gray-500">Fine Dining Restaurant</p>
+                    <h4 className="text-xl font-semibold text-dash-cream">{restaurantProfile.name}</h4>
+                    <p className="text-dash-tertiary">Fine Dining Restaurant</p>
                   </div>
                 </div>
 
                 <div className="pt-4 space-y-3">
                   <div className="flex items-center gap-3">
-                    <MapPin size={18} className="text-gray-400" />
-                    <span className="text-gray-700">{restaurantProfile.address}</span>
+                    <MapPin size={18} className="text-dash-tertiary" />
+                    <span className="text-dash-secondary">{restaurantProfile.address}</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <Phone size={18} className="text-gray-400" />
-                    <span className="text-gray-700">{restaurantProfile.phone}</span>
+                    <Phone size={18} className="text-dash-tertiary" />
+                    <span className="text-dash-secondary">{restaurantProfile.phone}</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <Mail size={18} className="text-gray-400" />
-                    <span className="text-gray-700">{restaurantProfile.email}</span>
+                    <Mail size={18} className="text-dash-tertiary" />
+                    <span className="text-dash-secondary">{restaurantProfile.email}</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <Globe size={18} className="text-gray-400" />
-                    <span className="text-blue-600">{restaurantProfile.website}</span>
+                    <Globe size={18} className="text-dash-tertiary" />
+                    <span className="text-dash-gold">{restaurantProfile.website}</span>
                   </div>
                 </div>
               </div>
@@ -109,8 +111,8 @@ export function Settings() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
-                  <Clock size={18} className="text-gray-400" />
-                  <h3 className="font-semibold text-gray-900">Operating Hours</h3>
+                  <Clock size={18} className="text-dash-tertiary" />
+                  <h3 className="font-semibold text-dash-cream">Operating Hours</h3>
                 </div>
                 <Button variant="ghost" size="sm" icon={<Edit2 size={14} />}>Edit</Button>
               </div>
@@ -120,11 +122,11 @@ export function Settings() {
                   const hours = restaurantProfile.hours[day]
                   const isWeekend = day === 'saturday' || day === 'sunday'
                   return (
-                    <div key={day} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
-                      <span className={`capitalize ${isWeekend ? 'font-medium text-gray-900' : 'text-gray-700'}`}>
+                    <div key={day} className="flex items-center justify-between py-2 border-b border-dash-border last:border-0">
+                      <span className={`capitalize ${isWeekend ? 'font-medium text-dash-cream' : 'text-dash-secondary'}`}>
                         {day}
                       </span>
-                      <span className="text-gray-600">
+                      <span className="text-dash-secondary">
                         {hours.open} - {hours.close}
                       </span>
                     </div>
@@ -138,26 +140,26 @@ export function Settings() {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="font-semibold text-gray-900">Capacity</h3>
+                <h3 className="font-semibold text-dash-cream">Capacity</h3>
                 <Button variant="ghost" size="sm" icon={<Edit2 size={14} />}>Edit</Button>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-gray-50 rounded-xl text-center">
-                  <p className="text-3xl font-bold text-gray-900">{restaurantProfile.capacity.totalSeats}</p>
-                  <p className="text-sm text-gray-500">Total Seats</p>
+                <div className="p-4 bg-white/5 rounded-xl text-center border border-dash-border">
+                  <p className="text-3xl font-bold text-dash-cream">{restaurantProfile.capacity.totalSeats}</p>
+                  <p className="text-sm text-dash-tertiary">Total Seats</p>
                 </div>
-                <div className="p-4 bg-gray-50 rounded-xl text-center">
-                  <p className="text-3xl font-bold text-gray-900">{restaurantProfile.capacity.tables}</p>
-                  <p className="text-sm text-gray-500">Tables</p>
+                <div className="p-4 bg-white/5 rounded-xl text-center border border-dash-border">
+                  <p className="text-3xl font-bold text-dash-cream">{restaurantProfile.capacity.tables}</p>
+                  <p className="text-sm text-dash-tertiary">Tables</p>
                 </div>
-                <div className="p-4 bg-gray-50 rounded-xl text-center">
-                  <p className="text-3xl font-bold text-gray-900">{restaurantProfile.capacity.barSeats}</p>
-                  <p className="text-sm text-gray-500">Bar Seats</p>
+                <div className="p-4 bg-white/5 rounded-xl text-center border border-dash-border">
+                  <p className="text-3xl font-bold text-dash-cream">{restaurantProfile.capacity.barSeats}</p>
+                  <p className="text-sm text-dash-tertiary">Bar Seats</p>
                 </div>
-                <div className="p-4 bg-gray-50 rounded-xl text-center">
-                  <p className="text-3xl font-bold text-gray-900">{restaurantProfile.capacity.patioSeats}</p>
-                  <p className="text-sm text-gray-500">Patio Seats</p>
+                <div className="p-4 bg-white/5 rounded-xl text-center border border-dash-border">
+                  <p className="text-3xl font-bold text-dash-cream">{restaurantProfile.capacity.patioSeats}</p>
+                  <p className="text-sm text-dash-tertiary">Patio Seats</p>
                 </div>
               </div>
             </CardContent>
@@ -167,7 +169,7 @@ export function Settings() {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="font-semibold text-gray-900">Table Layout</h3>
+                <h3 className="font-semibold text-dash-cream">Table Layout</h3>
                 <Button variant="ghost" size="sm" icon={<Edit2 size={14} />}>Manage</Button>
               </div>
 
@@ -176,14 +178,14 @@ export function Settings() {
                   const sectionTables = restaurantProfile.tableLayout.filter(t => t.section === section)
                   if (sectionTables.length === 0) return null
                   return (
-                    <div key={section} className="flex items-center justify-between py-2 border-b border-gray-100">
-                      <span className="capitalize text-gray-700">{section} Section</span>
+                    <div key={section} className="flex items-center justify-between py-2 border-b border-dash-border">
+                      <span className="capitalize text-dash-secondary">{section} Section</span>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-500">
+                        <span className="text-sm text-dash-tertiary">
                           {sectionTables.length} tables
                         </span>
-                        <span className="text-sm text-gray-400">·</span>
-                        <span className="text-sm text-gray-500">
+                        <span className="text-sm text-dash-tertiary">·</span>
+                        <span className="text-sm text-dash-tertiary">
                           {sectionTables.reduce((sum, t) => sum + t.seats, 0)} seats
                         </span>
                       </div>
@@ -207,20 +209,20 @@ export function Settings() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold text-gray-900">{users.length}</p>
-                <p className="text-sm text-gray-500">Total Users</p>
+                <p className="text-2xl font-bold text-dash-cream">{users.length}</p>
+                <p className="text-sm text-dash-tertiary">Total Users</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold text-green-600">{users.filter(u => u.status === 'active').length}</p>
-                <p className="text-sm text-gray-500">Active</p>
+                <p className="text-2xl font-bold text-dash-success">{users.filter(u => u.status === 'active').length}</p>
+                <p className="text-sm text-dash-tertiary">Active</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold text-gray-400">{users.filter(u => u.status === 'inactive').length}</p>
-                <p className="text-sm text-gray-500">Inactive</p>
+                <p className="text-2xl font-bold text-dash-tertiary">{users.filter(u => u.status === 'inactive').length}</p>
+                <p className="text-sm text-dash-tertiary">Inactive</p>
               </CardContent>
             </Card>
             <Card>
@@ -233,32 +235,32 @@ export function Settings() {
           {/* Users Table */}
           <Card>
             <CardContent className="p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Team Members</h3>
+              <h3 className="font-semibold text-dash-cream mb-4">Team Members</h3>
 
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="text-left text-xs text-gray-500 uppercase tracking-wider border-b border-gray-100">
-                      <th className="pb-3 font-medium">User</th>
-                      <th className="pb-3 font-medium">Role</th>
-                      <th className="pb-3 font-medium">Status</th>
-                      <th className="pb-3 font-medium">Last Login</th>
-                      <th className="pb-3 font-medium text-right">Actions</th>
+                    <tr className="border-b border-dash-border">
+                      <th className="pb-3 label-mono text-left">USER</th>
+                      <th className="pb-3 label-mono text-left">ROLE</th>
+                      <th className="pb-3 label-mono text-left">STATUS</th>
+                      <th className="pb-3 label-mono text-left">LAST LOGIN</th>
+                      <th className="pb-3 label-mono text-right">ACTIONS</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-dash-border">
                     {users.map((user) => {
                       const RoleIcon = roleIcons[user.role]
                       return (
-                        <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+                        <tr key={user.id} className="hover:bg-white/5 transition-colors">
                           <td className="py-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-600 font-medium">
+                              <div className="w-10 h-10 bg-white/10 border border-dash-border rounded-full flex items-center justify-center text-dash-cream font-medium">
                                 {user.name.split(' ').map(n => n[0]).join('')}
                               </div>
                               <div>
-                                <p className="font-medium text-gray-900">{user.name}</p>
-                                <p className="text-sm text-gray-500">{user.email}</p>
+                                <p className="font-medium text-dash-cream">{user.name}</p>
+                                <p className="text-sm text-dash-tertiary">{user.email}</p>
                               </div>
                             </div>
                           </td>
@@ -273,7 +275,7 @@ export function Settings() {
                               {user.status}
                             </Badge>
                           </td>
-                          <td className="py-4 text-sm text-gray-500">
+                          <td className="py-4 text-sm text-dash-tertiary">
                             {user.lastLogin}
                           </td>
                           <td className="py-4 text-right">
@@ -291,24 +293,24 @@ export function Settings() {
           {/* Roles & Permissions */}
           <Card>
             <CardContent className="p-6">
-              <h3 className="font-semibold text-gray-900 mb-4">Roles & Permissions</h3>
+              <h3 className="font-semibold text-dash-cream mb-4">Roles & Permissions</h3>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {Object.entries(roles).map(([roleId, role]) => {
                   const RoleIcon = roleIcons[roleId]
                   const userCount = users.filter(u => u.role === roleId).length
                   return (
-                    <div key={roleId} className="p-4 border border-gray-200 rounded-xl hover:border-gray-300 transition-colors">
+                    <div key={roleId} className="p-4 border border-dash-border rounded-xl hover:border-dash-gold/30 transition-colors">
                       <div className="flex items-center justify-between mb-3">
                         <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full ${roleColors[roleId]}`}>
                           <RoleIcon size={14} />
                           <span className="font-medium">{role.label}</span>
                         </div>
-                        <span className="text-sm text-gray-500">{userCount} users</span>
+                        <span className="text-sm text-dash-tertiary">{userCount} users</span>
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {role.permissions.map((perm) => (
-                          <span key={perm} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">
+                          <span key={perm} className="px-2 py-0.5 bg-white/10 text-dash-secondary text-xs rounded">
                             {perm}
                           </span>
                         ))}

@@ -378,6 +378,8 @@ export const useRestaurantStore = create<RestaurantState>((set, get) => ({
 
   startDemo: async (restaurantId) => {
     try {
+      const DEMO_VIDEOS_PATH = '/Users/huntercameronkuperman/Downloads/demovids copy'
+
       await apiClient.post(ENDPOINTS.demoInitiate(), {
         restaurant_id: restaurantId,
         speed: 1.0,
@@ -386,26 +388,64 @@ export const useRestaurantStore = create<RestaurantState>((set, get) => ({
         seed_shift_snapshot: {
           enabled: true,
           waiters: [
-            { name: 'Sarah', section_name: 'Main Floor', tier: 'strong', composite_score: 82, tables_served: 8, current_tables: 3, total_tips: 240, total_covers: 18 },
-            { name: 'Tyler', section_name: 'Main Floor', tier: 'standard', composite_score: 62, tables_served: 6, current_tables: 2, total_tips: 180, total_covers: 12 },
-            { name: 'Maria', section_name: 'Patio', tier: 'standard', composite_score: 58, tables_served: 6, current_tables: 2, total_tips: 165, total_covers: 10 },
+            { name: 'Sarah', section_name: 'Main Dining', tier: 'strong', composite_score: 82, tables_served: 8, current_tables: 3, total_tips: 240, total_covers: 18 },
+            { name: 'Tyler', section_name: 'Main Dining', tier: 'standard', composite_score: 62, tables_served: 6, current_tables: 2, total_tips: 180, total_covers: 12 },
+            { name: 'Maria', section_name: 'Outdoor Patio', tier: 'standard', composite_score: 58, tables_served: 6, current_tables: 2, total_tips: 165, total_covers: 10 },
             { name: 'James', section_name: 'Bar', tier: 'developing', composite_score: 42, tables_served: 2, current_tables: 0, total_tips: 40, total_covers: 4 },
           ],
         },
         demos: [
           {
-            camera_id: 'cam-1',
-            results_path: '_legacy_poc/demovids/3_Mimosas/results.json',
+            camera_id: 'cam-2',
+            results_path: `${DEMO_VIDEOS_PATH}/2_Mimosas/results.json`,
+          },
+          {
+            camera_id: 'cam-3',
+            results_path: `${DEMO_VIDEOS_PATH}/3_Mimosas/results.json`,
+            table_map: { 'T5': '1', 'T0': '2', 'T2': '3', 'T6': '8', 'T1': '12', 'T10': '10', 'T9': '14', 'T3': '13', 'T4': '16', 'T7': '17', 'T8': '18' },
+          },
+          {
+            camera_id: 'cam-4',
+            results_path: `${DEMO_VIDEOS_PATH}/4_Mimosas/results.json`,
+            table_map: { 'T6': '23', 'T4': '21', 'T1': '24', 'T5': '20', 'T0': '22', 'T2': '19', 'T3': '11', 'T8': '16', 'T7': '10', 'T9': '9' },
+          },
+          {
+            camera_id: 'cam-5',
+            results_path: `${DEMO_VIDEOS_PATH}/5_Mimosas/results.json`,
+            table_map: { 'T1': '27', 'T0': '25', 'T2': '28', 'T3': '26', 'T4': '29', 'T5': '30', 'T6': '31' },
+          },
+          {
+            camera_id: 'cam-6',
+            results_path: `${DEMO_VIDEOS_PATH}/6_Mimosas/results.json`,
+            table_map: { 'T3': '34', 'T9': '35', 'T7': '36', 'T0': '38', 'T6': '39', 'T2': '40', 'T5': '41', 'T8': '37', 'T1': '32', 'T4': '33' },
+          },
+          {
+            camera_id: 'cam-7',
+            results_path: `${DEMO_VIDEOS_PATH}/7_Mimosas/results.json`,
+            table_map: { 'T2': '43', 'T0': '44', 'T4': '46', 'T5': '47', 'T3': '48', 'T1': '49', 'T6': '42', 'T7': '45', 'T8': '50' },
+          },
+          {
+            camera_id: 'cam-8',
+            results_path: `${DEMO_VIDEOS_PATH}/8_Mimosas/results.json`,
+            table_map: { 'T0': '49', 'T1': '50' },
+          },
+          {
+            camera_id: 'cam-9',
+            results_path: `${DEMO_VIDEOS_PATH}/9_Mimosas/results.json`,
+          },
+          {
+            camera_id: 'cam-11',
+            results_path: `${DEMO_VIDEOS_PATH}/11_Mimosas/results.json`,
           },
         ],
       })
 
       set({
         demoActive: true,
-        demoStatus: { speed: 1.0, cameras: ['cam-1'] },
+        demoStatus: { speed: 1.0, cameras: ['cam-2', 'cam-3', 'cam-4', 'cam-5', 'cam-6', 'cam-7', 'cam-8', 'cam-9', 'cam-11'] },
       })
 
-      console.log('[Store] Demo started with seed_shift_snapshot')
+      console.log('[Store] Demo started with 9 cameras and seed_shift_snapshot')
     } catch (error) {
       console.error('[Store] Failed to start demo:', error)
     }

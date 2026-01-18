@@ -10,17 +10,17 @@ import { useRestaurantStore } from './stores/restaurantStore'
 
 const RESTAURANT_ID = import.meta.env.VITE_RESTAURANT_ID || '550e8400-e29b-41d4-a716-446655440000'
 
-// Configure 9 camera feeds (only 4 will have videos)
+// Configure 9 camera feeds (cam-2 through cam-11, skipping cam-1 and cam-10)
 const CAMERAS = [
-  { id: 'cam-1', name: 'Camera 1', videoPath: '/demovids/demo1.mp4', active: true },
-  { id: 'cam-2', name: 'Camera 2', videoPath: '/demovids/demo2.mp4', active: true },
-  { id: 'cam-3', name: 'Camera 3', videoPath: '/demovids/demo3.mp4', active: true },
-  { id: 'cam-4', name: 'Camera 4', videoPath: '/demovids/demo4.mp4', active: true },
-  { id: 'cam-5', name: 'Camera 5', videoPath: '', active: false },
-  { id: 'cam-6', name: 'Camera 6', videoPath: '', active: false },
-  { id: 'cam-7', name: 'Camera 7', videoPath: '', active: false },
-  { id: 'cam-8', name: 'Camera 8', videoPath: '', active: false },
-  { id: 'cam-9', name: 'Camera 9', videoPath: '', active: false },
+  { id: 'cam-2', name: 'Camera 2', videoPath: '/demovids/cam1.mp4', active: true },
+  { id: 'cam-3', name: 'Camera 3', videoPath: '/demovids/cam2.mp4', active: true },
+  { id: 'cam-4', name: 'Camera 4', videoPath: '/demovids/cam3.mp4', active: true },
+  { id: 'cam-5', name: 'Camera 5', videoPath: '/demovids/cam4.mp4', active: true },
+  { id: 'cam-6', name: 'Camera 6', videoPath: '/demovids/cam5.mp4', active: true },
+  { id: 'cam-7', name: 'Camera 7', videoPath: '/demovids/cam6.mp4', active: true },
+  { id: 'cam-8', name: 'Camera 8', videoPath: '/demovids/cam7.mp4', active: true },
+  { id: 'cam-9', name: 'Camera 9', videoPath: '/demovids/cam8.mp4', active: true },
+  { id: 'cam-11', name: 'Camera 11', videoPath: '/demovids/cam9.mp4', active: true },
 ]
 
 function App() {

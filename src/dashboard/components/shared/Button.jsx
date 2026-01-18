@@ -1,10 +1,10 @@
 const variants = {
-  primary: 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm',
-  secondary: 'bg-gray-100 text-gray-700 hover:bg-gray-200',
-  outline: 'border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400',
-  ghost: 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
-  danger: 'bg-red-600 text-white hover:bg-red-700',
-  success: 'bg-green-600 text-white hover:bg-green-700'
+  primary: 'bg-dash-gold text-dash-base hover:bg-dash-gold/90 shadow-gold-glow',
+  secondary: 'bg-white/10 text-dash-cream hover:bg-white/20 border border-dash-border',
+  outline: 'border border-dash-border text-dash-cream hover:bg-white/5 hover:border-dash-gold/30',
+  ghost: 'text-dash-secondary hover:bg-white/5 hover:text-dash-cream',
+  danger: 'bg-dash-danger/20 text-dash-danger hover:bg-dash-danger/30 border border-dash-danger/30',
+  success: 'bg-dash-success/20 text-dash-success hover:bg-dash-success/30 border border-dash-success/30'
 }
 
 const sizes = {

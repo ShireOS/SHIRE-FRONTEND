@@ -4,13 +4,13 @@ import { chatApi } from '../../../shared/api/chatApi'
 import { useRestaurants } from '../../../shared/hooks/useMenuAnalytics'
 
 /**
- * Slide-out chat panel for AI assistant
+ * Slide-out chat panel for AI Concierge
  */
 export function ChatPanel({ isOpen, onClose }) {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: 'Hi! I\'m your restaurant AI assistant. Ask me about sales trends, staff performance, menu optimization, or any other insights about your restaurant.',
+      content: 'Welcome. I\'m your restaurant Concierge. Ask me about sales trends, staff performance, menu optimization, or any other insights about your restaurant.',
     },
   ])
   const [input, setInput] = useState('')
@@ -111,33 +111,35 @@ export function ChatPanel({ isOpen, onClose }) {
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/30 z-40 transition-opacity"
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity"
         onClick={onClose}
       />
 
       {/* Panel */}
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl z-50 flex flex-col animate-slide-in-right">
+      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-dash-surface border-l border-dash-border shadow-2xl z-50 flex flex-col animate-slide-in-right">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-gradient-to-r from-blue-600 to-indigo-700">
+        <div className="flex items-center justify-between p-4 glass-panel border-b border-dash-border">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-              <Sparkles size={20} className="text-white" />
+            <div className="w-10 h-10 bg-dash-gold/20 border border-dash-gold/30 rounded-lg flex items-center justify-center">
+              <Sparkles size={20} className="text-dash-gold" />
             </div>
             <div>
-              <h2 className="text-white font-semibold">AI Assistant</h2>
-              <p className="text-blue-100 text-xs">Ask anything about your restaurant</p>
+              <h2 className="text-dash-cream font-semibold">
+                <span className="font-dash-display italic text-dash-gold">Concierge</span>
+              </h2>
+              <p className="text-dash-tertiary text-xs italic">Watching your floor</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-dash-tertiary hover:text-dash-cream hover:bg-white/10 transition-colors"
           >
             <X size={20} />
           </button>
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-dash-base">
           {messages.map((message, index) => (
             <ChatMessage key={index} message={message} />
           ))}
@@ -153,11 +155,11 @@ export function ChatPanel({ isOpen, onClose }) {
           {/* Loading indicator */}
           {isStreaming && !streamingContent && (
             <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                <Bot size={16} className="text-blue-600" />
+              <div className="w-8 h-8 rounded-lg bg-dash-gold/20 border border-dash-gold/30 flex items-center justify-center flex-shrink-0">
+                <Bot size={16} className="text-dash-gold" />
               </div>
-              <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-4 py-3">
-                <Loader2 size={16} className="animate-spin text-gray-400" />
+              <div className="glass-card rounded-lg rounded-tl-sm px-4 py-3">
+                <Loader2 size={16} className="animate-spin text-dash-tertiary" />
               </div>
             </div>
           )}
@@ -166,21 +168,21 @@ export function ChatPanel({ isOpen, onClose }) {
         </div>
 
         {/* Input */}
-        <form onSubmit={handleSubmit} className="p-4 border-t border-gray-100">
+        <form onSubmit={handleSubmit} className="p-4 border-t border-dash-border bg-dash-surface">
           <div className="flex items-center gap-2">
             <input
               ref={inputRef}
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about sales, staff, menu..."
-              className="flex-1 px-4 py-3 bg-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+              placeholder="Ask anything about your restaurant..."
+              className="flex-1 px-4 py-3 bg-white/5 border border-dash-border rounded-lg text-dash-cream text-sm focus:outline-none focus:ring-1 focus:ring-dash-gold/50 focus:border-dash-gold/50 transition-all placeholder:text-dash-tertiary"
               disabled={isStreaming}
             />
             <button
               type="submit"
               disabled={!input.trim() || isStreaming}
-              className="w-11 h-11 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 rounded-xl flex items-center justify-center text-white transition-colors"
+              className="w-11 h-11 bg-dash-gold hover:bg-dash-gold/90 disabled:bg-white/10 rounded-lg flex items-center justify-center text-dash-base transition-colors"
             >
               {isStreaming ? (
                 <Loader2 size={18} className="animate-spin" />
@@ -219,26 +221,28 @@ function ChatMessage({ message, isStreaming = false }) {
   return (
     <div className={`flex items-start gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
       <div
-        className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-          isUser ? 'bg-gray-200' : 'bg-blue-100'
+        className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+          isUser
+            ? 'bg-dash-gold/20 border border-dash-gold/30'
+            : 'bg-dash-gold/20 border border-dash-gold/30'
         }`}
       >
         {isUser ? (
-          <User size={16} className="text-gray-600" />
+          <User size={16} className="text-dash-cream" />
         ) : (
-          <Bot size={16} className="text-blue-600" />
+          <Bot size={16} className="text-dash-gold" />
         )}
       </div>
       <div
-        className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+        className={`max-w-[80%] rounded-lg px-4 py-3 ${
           isUser
-            ? 'bg-blue-600 text-white rounded-tr-sm'
-            : 'bg-gray-100 text-gray-800 rounded-tl-sm'
+            ? 'bg-dash-gold text-dash-base rounded-tr-sm'
+            : 'glass-card text-dash-cream rounded-tl-sm'
         }`}
       >
         <p className="text-sm whitespace-pre-wrap">{message.content}</p>
         {isStreaming && (
-          <span className="inline-block w-1.5 h-4 bg-blue-500 ml-0.5 animate-pulse" />
+          <span className="inline-block w-1.5 h-4 bg-dash-gold ml-0.5 animate-pulse" />
         )}
       </div>
     </div>

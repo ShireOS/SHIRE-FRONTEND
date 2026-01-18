@@ -246,8 +246,8 @@ export function Schedule() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="flex items-center gap-2 text-gray-500">
-          <Loader2 className="animate-spin" size={20} />
+        <div className="flex items-center gap-2 text-dash-secondary">
+          <Loader2 className="animate-spin text-dash-gold" size={20} />
           <span>
             {loadingRestaurants
               ? 'Loading restaurants...'
@@ -264,10 +264,10 @@ export function Schedule() {
   if (staffError) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <div className="text-red-500 text-center">
+        <div className="text-dash-danger text-center">
           <p className="font-semibold">Error loading staff data</p>
-          <p className="text-sm mt-1">{staffError?.message || 'Unknown error'}</p>
-          <p className="text-xs mt-2 text-gray-500">
+          <p className="text-sm mt-1 text-dash-secondary">{staffError?.message || 'Unknown error'}</p>
+          <p className="text-xs mt-2 text-dash-tertiary">
             Check that backend is running at {API_CONFIG.baseUrl}
           </p>
         </div>
@@ -281,11 +281,13 @@ export function Schedule() {
       {/* Page Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
-          <p className="text-gray-600 mt-1">
+          <h1 className="text-2xl font-bold text-dash-cream">
+            <span className="font-dash-display italic text-dash-gold">Schedule</span>
+          </h1>
+          <p className="text-dash-secondary mt-1">
             Plan and manage your team's shifts
             {restaurants && (
-              <span className="text-sm text-purple-600 ml-2">
+              <span className="text-sm text-dash-gold ml-2">
                 · {restaurants.find((r) => r.id === restaurantId)?.name || 'Loading...'}
               </span>
             )}
@@ -319,7 +321,7 @@ export function Schedule() {
             icon={<ChevronLeft size={18} />}
             onClick={handlePrevWeek}
           />
-          <span className="text-lg font-semibold text-gray-900">
+          <span className="text-lg font-semibold text-dash-cream">
             Week of {schedule?.weekOf || currentWeek}
           </span>
           <Button
@@ -348,21 +350,21 @@ export function Schedule() {
 
       {/* Coverage Gap Warnings */}
       {coverageGaps.length > 0 && (
-        <Card className="mb-6 border-amber-200 bg-amber-50">
+        <Card className="mb-6 border-dash-warning/30 bg-dash-warning/10">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <AlertTriangle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
+              <AlertTriangle size={20} className="text-dash-warning flex-shrink-0 mt-0.5" />
               <div className="flex-1">
-                <h3 className="font-semibold text-amber-900 mb-2">Coverage Gaps Detected</h3>
+                <h3 className="font-semibold text-dash-cream mb-2">Coverage Gaps Detected</h3>
                 <div className="space-y-1">
                   {coverageGaps.slice(0, 3).map((gap, idx) => (
-                    <p key={idx} className="text-sm text-amber-800">
+                    <p key={idx} className="text-sm text-dash-secondary">
                       {gap.day} {gap.timeSlot}: Need {gap.shortage} more {gap.role}
                       {gap.shortage > 1 ? 's' : ''}
                     </p>
                   ))}
                   {coverageGaps.length > 3 && (
-                    <p className="text-sm text-amber-700 font-medium">
+                    <p className="text-sm text-dash-warning font-medium">
                       + {coverageGaps.length - 3} more gaps
                     </p>
                   )}
@@ -383,10 +385,10 @@ export function Schedule() {
       ) : (
         <Card>
           <CardContent className="p-12 text-center">
-            <div className="text-gray-400 mb-4">
+            <div className="text-dash-gold/50 mb-4">
               <Sparkles size={48} className="mx-auto" />
             </div>
-            <p className="text-gray-600 mb-4">No schedule for this week yet</p>
+            <p className="text-dash-secondary mb-4">No schedule for this week yet</p>
             <Button icon={<Sparkles size={18} />} onClick={handleAISuggest} disabled={isGenerating}>
               {isGenerating ? 'Generating...' : 'Generate with AI'}
             </Button>
@@ -397,13 +399,13 @@ export function Schedule() {
       {/* Legend & Summary */}
       {schedule && (
         <div className="mt-6 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-4 text-sm text-gray-600">
+          <div className="flex items-center gap-4 text-sm text-dash-secondary">
             <div className="flex items-center gap-2">
-              <span className="w-3 h-3 bg-green-100 border border-green-300 rounded"></span>
+              <span className="w-3 h-3 bg-dash-success/20 border border-dash-success/50 rounded"></span>
               <span>Preferred</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-3 h-3 bg-gray-200 border border-gray-400 rounded"></span>
+              <span className="w-3 h-3 bg-white/10 border border-dash-border rounded"></span>
               <span>Unavailable</span>
             </div>
             <div className="flex items-center gap-2">
@@ -416,17 +418,17 @@ export function Schedule() {
 
           <div className="flex items-center gap-6 text-sm">
             <div>
-              <span className="text-gray-500">Projected Labor Cost:</span>
-              <span className="ml-2 font-semibold text-gray-900">
+              <span className="text-dash-tertiary">Projected Labor Cost:</span>
+              <span className="ml-2 font-semibold text-dash-cream">
                 ${schedule.laborCost.toLocaleString()}
               </span>
-              <span className="ml-1 text-gray-500">
+              <span className="ml-1 text-dash-tertiary">
                 ({schedule.laborPercent.toFixed(1)}%)
               </span>
             </div>
             <div>
-              <span className="text-gray-500">Total Hours:</span>
-              <span className="ml-2 font-semibold text-gray-900">
+              <span className="text-dash-tertiary">Total Hours:</span>
+              <span className="ml-2 font-semibold text-dash-cream">
                 {schedule.totalHours.toFixed(1)}
               </span>
             </div>
