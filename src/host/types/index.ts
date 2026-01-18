@@ -12,6 +12,7 @@ export type TableShape = 'round' | 'square' | 'rectangle'
 export interface Table {
   id: string
   number: number
+  tableNumber: string // Original table_number from backend (e.g., "T1", "T5")
   shape: TableShape
   capacity: number
   position: { x: number; y: number }
@@ -23,6 +24,7 @@ export interface Table {
   seatedAt: Date | null
   reservedFor: string | null
   cvConfidence: number
+  _justUpdated?: boolean // Temporary flag for WebSocket update animation
 }
 
 // Guest types
@@ -138,3 +140,69 @@ export interface SmartRecommendation {
 
 // Server assignment mode
 export type ServerMode = 'sections' | 'rotations'
+
+// Demo and WebSocket types
+export interface TableStateEvent {
+  type: 'table.state'
+  camera_id: string
+  table_id: string
+  table_number: string
+  state: string
+  confidence: number
+  timestamp: string
+}
+
+export interface BackendTable {
+  id: string
+  table_number: string
+  capacity: number
+  table_type: string
+  location: string
+  state: string
+  section_name: string
+  waiter_name: string | null
+  party_size: number
+  seated_duration_minutes: number
+}
+
+export interface TableRecommendation {
+  table_id: string
+  table_number: string
+  score: number
+  reason: string
+  table_capacity?: number // Use this from RouteResponse to avoid mismatch
+  table_type?: string
+  table_location?: string
+}
+
+// Demo Summary types (for live waiter/table stats)
+export interface DemoSummaryTable {
+  table_id: string
+  table_number: string
+  capacity: number
+  table_type: string
+  location: string
+  section_id: string
+  section_name: string
+}
+
+export interface DemoSummaryWaiter {
+  waiter_id: string
+  name: string
+  tier: string
+  section_id: string
+  status: string
+  current_tables: number
+  current_covers: number
+  current_tips: number
+  priority_score: number
+  rank: number
+}
+
+export interface DemoSummaryResponse {
+  generated_at: string
+  routing_mode: string
+  open_tables_count: number
+  tables: DemoSummaryTable[]
+  waiters: DemoSummaryWaiter[]
+}

@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, Plus, Users, Calendar, Ban, ChevronDown, Undo2, Sun, Moon } from 'lucide-react'
+import { Search, Plus, Users, Calendar, Ban, ChevronDown, Undo2, Sun, Moon, Video } from 'lucide-react'
 import { LiveIndicator } from '../ui/LiveIndicator'
 import { AddReservationModal } from '../modals/AddReservationModal'
 import { useRestaurantStore } from '../../stores/restaurantStore'
 import { cn } from '../../lib/cn'
 
-export function TopBar() {
+interface TopBarProps {
+  onOpenVideoViewer?: () => void
+}
+
+export function TopBar({ onOpenVideoViewer }: TopBarProps) {
   const [time, setTime] = useState(new Date())
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [reservationModalOpen, setReservationModalOpen] = useState(false)
@@ -97,6 +101,19 @@ export function TopBar() {
           <div className="font-data text-secondary text-xs tabular-nums tracking-wide">
             {formatTime(time)}
           </div>
+
+          {/* Video Viewer Button */}
+          {onOpenVideoViewer && (
+            <motion.button
+              onClick={onOpenVideoViewer}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-secondary hover:text-primary hover:bg-[rgba(var(--bg-hover),0.5)] transition-colors"
+              title="Watch demo video"
+            >
+              <Video className="w-4 h-4" />
+            </motion.button>
+          )}
 
           {/* Theme Toggle */}
           <motion.button

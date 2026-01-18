@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion'
+import { forwardRef } from 'react'
 import { Users, AlertTriangle, Utensils, Clock, Calendar, User } from 'lucide-react'
 import { useRestaurantStore } from '../../stores/restaurantStore'
 import { activityItemVariants } from '../../lib/animations'
@@ -60,18 +61,19 @@ export function ActivityFeed() {
   )
 }
 
-function ActivityItemCard({
-  item,
-  formatTime,
-}: {
-  item: ActivityItem
-  formatTime: (date: Date) => string
-}) {
+const ActivityItemCard = forwardRef<
+  HTMLDivElement,
+  {
+    item: ActivityItem
+    formatTime: (date: Date) => string
+  }
+>(({ item, formatTime }, ref) => {
   const Icon = iconMap[item.type]
   const colorClass = colorMap[item.type]
 
   return (
     <motion.div
+      ref={ref}
       variants={activityItemVariants}
       initial="hidden"
       animate="visible"
@@ -96,4 +98,6 @@ function ActivityItemCard({
       </div>
     </motion.div>
   )
-}
+})
+
+ActivityItemCard.displayName = 'ActivityItemCard'
