@@ -114,3 +114,45 @@
 - Added `Accept-Ranges: bytes` header to Vite config
 - If still failing, videos may need re-encoding for proper streaming
 - Try accessing directly: `http://localhost:5173/demovids/demo1.mp4`
+
+---
+
+## NEW ISSUE: Restaurant "default" Resolution
+
+**Date**: January 18, 2026
+**Status**: BLOCKING - Wrong restaurant selected
+
+### Problem
+When frontend uses `"default"` as restaurant_id, backend returns Golden Fork data instead of Mimosas:
+
+```bash
+# Returns Golden Fork's 4 staff (wrong)
+curl http://localhost:8000/api/v1/restaurants/default/waiters | jq 'length'
+# Result: 4
+
+# Should return Mimosas's 54 staff
+curl http://localhost:8000/api/v1/restaurants/c74e9278-1ccb-4f75-bc2f-eacf054db608/waiters | jq 'length'
+# Result: 54
+```
+
+### Backend Data
+| Restaurant | ID | Staff Count | Created At |
+|------------|-----|-------------|------------|
+| Golden Fork | `090ea2b9-258e-4536-8f1e-440ef7bbebb8` | 4 | `02:12:40.044` (FIRST) |
+| Mimosas | `c74e9278-1ccb-4f75-bc2f-eacf054db608` | 54 | `02:12:40.063` (SECOND) |
+
+### Questions for Backend
+1. Can you make `"default"` resolve to Mimosas (`c74e9278-1ccb-4f75-bc2f-eacf054db608`)?
+2. Or add a `is_primary` flag to restaurants and have `"default"` return the primary one?
+3. Alternative: Should frontend stop using `"default"` and always use real UUIDs?
+
+### Impact
+- Schedule page shows 4 staff instead of 54
+- Staff availability calls go to wrong restaurant
+- AI scheduling operates on wrong restaurant data
+
+### Workaround (Frontend)
+Set explicit Mimosas UUID in `.env.development`:
+```
+VITE_RESTAURANT_ID=c74e9278-1ccb-4f75-bc2f-eacf054db608
+```
