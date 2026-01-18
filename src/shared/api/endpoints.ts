@@ -79,9 +79,9 @@ export const ENDPOINTS = {
   inventoryStockAlerts: (restaurantId: string) =>
     `/restaurants/${restaurantId}/inventory/stock-alerts`,
 
+  // Chat endpoints
+  chatMessage: (restaurantId: string) => `/chat/${restaurantId}/message`,
+
   // Health check
   health: () => '/healthz',
-
-  // Chat/AI Assistant endpoints
-  chatMessage: (restaurantId: string) => `/chat/${restaurantId}/message`,
 }
