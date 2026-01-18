@@ -335,36 +335,14 @@ export const useRestaurantStore = create<RestaurantState>((set, get) => ({
         ENDPOINTS.restaurantTables(restaurantId) + '/section-view'
       )
 
-      // Transform backend tables to frontend format
-      const transformedTables: Table[] = tablesResponse.map((bt, index) => {
-        // Use mock positions since backend doesn't provide them
-        const mockPosition = mockTables[index % mockTables.length]?.position || { x: 100, y: 100 }
-
-        return {
-          id: bt.id,
-          number: parseInt(bt.table_number.replace(/\D/g, '')) || 0, // Extract just digits
-          tableNumber: bt.table_number, // Store original (e.g., "T1", "T5")
-          shape: bt.table_type === 'booth' ? 'rectangle' : 'round',
-          capacity: bt.capacity,
-          position: mockPosition,
-          rotation: 0,
-          sectionId: mockSections.find(s => s.name === bt.section_name)?.id || 'main',
-          status: mapBackendState(bt.state),
-          assignedServerId: mockServers.find(s => s.name === bt.waiter_name)?.id || null,
-          currentGuestId: bt.party_size > 0 ? `guest-${bt.id}` : null,
-          seatedAt: bt.seated_duration_minutes > 0 ? new Date(Date.now() - bt.seated_duration_minutes * 60000) : null,
-          reservedFor: null,
-          cvConfidence: 0,
-        }
-      })
-
+      // For demo: always use mock data (50 tables) since backend tables don't match our floor plan
+      // Backend has different table numbering (B1, M1, O1) vs our mockData (T1-T50)
+      console.log('[Store] Using mock data (50 tables) for demo - backend has', tablesResponse?.length || 0, 'tables')
       set({
-        tables: transformedTables,
+        tables: mockTables,
         sections: mockSections,
         servers: mockServers,
       })
-
-      console.log('[Store] Initialized from backend:', transformedTables.length, 'tables')
     } catch (error) {
       console.error('[Store] Failed to initialize from backend:', error)
       // Fall back to mock data

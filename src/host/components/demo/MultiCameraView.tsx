@@ -127,11 +127,11 @@ export function MultiCameraView({ isOpen, onClose, cameras, restaurantId }: Mult
           </div>
 
           {/* Camera Grid - 3x3 */}
-          <div className="flex-1 grid grid-cols-3 grid-rows-3 gap-3">
+          <div className="flex-1 grid grid-cols-3 grid-rows-3 gap-3 min-h-0">
             {cameras.map((camera) => (
               <motion.div
                 key={camera.id}
-                className="relative bg-black rounded-lg overflow-hidden group"
+                className="relative bg-black rounded-lg overflow-hidden group min-h-[120px]"
                 whileHover={{ scale: selectedCamera ? 1 : 1.02 }}
               >
                 {/* Camera Label */}
@@ -157,8 +157,11 @@ export function MultiCameraView({ isOpen, onClose, cameras, restaurantId }: Mult
                     loop
                     muted
                     playsInline
-                    onError={() => {
-                      console.warn(`[Camera] Video failed to load: ${camera.videoPath}`)
+                    onLoadStart={() => console.log(`[Camera] Loading: ${camera.videoPath}`)}
+                    onLoadedData={() => console.log(`[Camera] Loaded: ${camera.videoPath}`)}
+                    onError={(e) => {
+                      const video = e.currentTarget
+                      console.error(`[Camera] Video error for ${camera.videoPath}:`, video.error?.message || 'Unknown error', video.error?.code)
                       setFailedVideos(prev => new Set([...prev, camera.id]))
                     }}
                   >
