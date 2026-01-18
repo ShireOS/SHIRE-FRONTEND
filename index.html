@@ -905,28 +905,28 @@
         <div class="dashboard-wrapper">
             <div class="hero-video-grid">
                 <div class="hero-video-cell">
-                    <video autoplay muted loop playsinline>
+                    <video autoplay muted loop playsinline webkit-playsinline preload="auto">
                         <source src="/demovids/demo1.mp4" type="video/mp4">
                     </video>
                     <span class="video-label">Camera 1</span>
                     <span class="live-dot"></span>
                 </div>
                 <div class="hero-video-cell">
-                    <video autoplay muted loop playsinline>
+                    <video autoplay muted loop playsinline webkit-playsinline preload="auto">
                         <source src="/demovids/demo2.mp4" type="video/mp4">
                     </video>
                     <span class="video-label">Camera 2</span>
                     <span class="live-dot"></span>
                 </div>
                 <div class="hero-video-cell">
-                    <video autoplay muted loop playsinline>
+                    <video autoplay muted loop playsinline webkit-playsinline preload="auto">
                         <source src="/demovids/demo3.mp4" type="video/mp4">
                     </video>
                     <span class="video-label">Camera 3</span>
                     <span class="live-dot"></span>
                 </div>
                 <div class="hero-video-cell">
-                    <video autoplay muted loop playsinline>
+                    <video autoplay muted loop playsinline webkit-playsinline preload="auto">
                         <source src="/demovids/demo4.mp4" type="video/mp4">
                     </video>
                     <span class="video-label">Camera 4</span>
@@ -946,15 +946,19 @@
             </p>
         </div>
 
-        <div class="video-container" id="videoTrigger">
-            <div class="play-circle">▶</div>
-            <img src="https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?q=80&w=2940&auto=format&fit=crop" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:-1; filter: brightness(0.4) contrast(1.2);">
+        <div class="video-container" id="videoTrigger" style="aspect-ratio: 16/9;">
+            <iframe
+                width="100%"
+                height="100%"
+                src="https://www.youtube.com/embed/bY0lnDuHfm4?rel=0&modestbranding=1"
+                title="SHIRE Demo"
+                frameborder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                referrerpolicy="strict-origin-when-cross-origin"
+                allowfullscreen
+                style="position:absolute; inset:0; border-radius:4px;">
+            </iframe>
         </div>
-
-        <a href="#" class="btn-glass-large">
-            <span>Watch the Demo</span>
-            <span class="play-icon-small" style="width:20px; height:20px; font-size:8px;">▶</span>
-        </a>
     </section>
 
     <!-- FEATURE SECTION 1: VISION AI -->
@@ -1226,33 +1230,33 @@
                 <div class="team-grid-boxed">
                     <div class="team-card-box">
                         <div class="team-img-box">
-                            <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop&crop=face" alt="Aryah Oztanir">
+                            <img src="/cameron.png" alt="Cameron Kuperman" style="object-fit: cover; object-position: center top;">
                         </div>
-                        <div class="team-name-box">Aryah Oztanir</div>
+                        <div class="team-name-box">Cameron Kuperman</div>
                         <div class="team-role-box">Co-Founder</div>
                     </div>
 
                     <div class="team-card-box">
                         <div class="team-img-box">
-                            <img src="https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=400&h=400&fit=crop&crop=face" alt="Ajay Misra">
+                            <img src="/harshith.png" alt="Harshith Guduru" style="object-fit: cover; object-position: center top;">
                         </div>
-                        <div class="team-name-box">Ajay Misra</div>
+                        <div class="team-name-box">Harshith Guduru</div>
                         <div class="team-role-box">Co-Founder</div>
                     </div>
 
                     <div class="team-card-box">
                         <div class="team-img-box">
-                            <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400&h=400&fit=crop&crop=face" alt="Sandith Ganhewage">
+                            <img src="/alex.png" alt="Alex Tabaku" style="object-fit: cover; object-position: center top;">
                         </div>
-                        <div class="team-name-box">Sandith Ganhewage</div>
+                        <div class="team-name-box">Alex Tabaku</div>
                         <div class="team-role-box">Founding Team</div>
                     </div>
 
                     <div class="team-card-box">
                         <div class="team-img-box">
-                            <img src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&fit=crop&crop=face" alt="Sina Dehghani">
+                            <img src="/ben.png" alt="Ben Tang" style="object-fit: cover; object-position: center top;">
                         </div>
-                        <div class="team-name-box">Sina Dehghani</div>
+                        <div class="team-name-box">Ben Tang</div>
                         <div class="team-role-box">Founding Team</div>
                     </div>
                 </div>
@@ -1351,31 +1355,33 @@
             gsap.to(tooltip, { x: e.clientX + 20, y: e.clientY + 20, duration: 0.15 });
         });
 
-        // DASHBOARD GRID
+        // DASHBOARD GRID (only if element exists)
         const gridContainer = document.getElementById('gridContainer');
-        const tables = [
-            { id: '04', status: 'clean', server: '--' }, { id: '05', status: 'busy', server: 'Tyler' },
-            { id: '06', status: 'busy', server: 'Sarah' }, { id: '07', status: 'busy', server: 'Tyler' },
-            { id: '08', status: 'clean', server: '--' }, { id: '09', status: 'clean', server: '--' }
-        ];
+        if (gridContainer) {
+            const tables = [
+                { id: '04', status: 'clean', server: '--' }, { id: '05', status: 'busy', server: 'Tyler' },
+                { id: '06', status: 'busy', server: 'Sarah' }, { id: '07', status: 'busy', server: 'Tyler' },
+                { id: '08', status: 'clean', server: '--' }, { id: '09', status: 'clean', server: '--' }
+            ];
 
-        tables.forEach(t => {
-            const node = document.createElement('div');
-            node.className = `table-node ${t.status}`;
-            node.innerHTML = `<div class="node-id">${t.id}</div><div class="node-status-dot"></div>`;
-            node.addEventListener('mouseenter', () => {
-                tooltip.classList.add('visible');
-                document.getElementById('tt-id').innerText = `TABLE ${t.id}`;
-                document.getElementById('tt-status').innerText = t.status.toUpperCase();
-                document.getElementById('tt-server').innerText = t.server;
-                const now = new Date();
-                document.getElementById('tt-time').innerText = `${now.getHours()}:${now.getMinutes()}`;
+            tables.forEach(t => {
+                const node = document.createElement('div');
+                node.className = `table-node ${t.status}`;
+                node.innerHTML = `<div class="node-id">${t.id}</div><div class="node-status-dot"></div>`;
+                node.addEventListener('mouseenter', () => {
+                    tooltip.classList.add('visible');
+                    document.getElementById('tt-id').innerText = `TABLE ${t.id}`;
+                    document.getElementById('tt-status').innerText = t.status.toUpperCase();
+                    document.getElementById('tt-server').innerText = t.server;
+                    const now = new Date();
+                    document.getElementById('tt-time').innerText = `${now.getHours()}:${now.getMinutes()}`;
+                });
+                node.addEventListener('mouseleave', () => {
+                    tooltip.classList.remove('visible');
+                });
+                gridContainer.appendChild(node);
             });
-            node.addEventListener('mouseleave', () => {
-                tooltip.classList.remove('visible');
-            });
-            gridContainer.appendChild(node);
-        });
+        }
 
         // FOG (Layer 1)
         const canvas1 = document.getElementById('fog-canvas');
