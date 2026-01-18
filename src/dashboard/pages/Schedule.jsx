@@ -4,8 +4,10 @@ import { Button } from '../components/shared/Button'
 import { Badge } from '../components/shared/Badge'
 import { ScheduleGrid } from '../components/schedule/ScheduleGrid'
 import { AISchedulePreviewModal } from '../components/schedule/AISchedulePreviewModal'
+import { EditShiftModal } from '../components/schedule/EditShiftModal'
+import { AddShiftModal } from '../components/schedule/AddShiftModal'
 import { Sparkles, ChevronLeft, ChevronRight, Send, Plus, AlertTriangle, Loader2 } from 'lucide-react'
-import { useSchedule, useStaffingRequirements, useAllStaffAvailability, useCoverageGaps } from '../../shared/hooks/useSchedule'
+import { useStaffingRequirements, useAllStaffAvailability, useCoverageGaps } from '../../shared/hooks/useSchedule'
 import { useSchedulingEngine } from '../../shared/hooks/useSchedulingEngine'
 import { useWaiterList } from '../../shared/hooks/useWaiterList'
 import { useRestaurants } from '../../shared/hooks/useMenuAnalytics'
@@ -55,8 +57,24 @@ export function Schedule() {
   // Week navigation
   const [currentWeek, setCurrentWeek] = useState(getWeekStart())
 
-  const handlePrevWeek = () => setCurrentWeek((prev) => addWeeks(prev, -1))
-  const handleNextWeek = () => setCurrentWeek((prev) => addWeeks(prev, 1))
+  const handlePrevWeek = () => {
+    setCurrentWeek((prev) => addWeeks(prev, -1))
+    setSchedule(null) // Clear schedule when changing weeks
+  }
+
+  const handleNextWeek = () => {
+    setCurrentWeek((prev) => addWeeks(prev, 1))
+    setSchedule(null) // Clear schedule when changing weeks
+  }
+
+  // Fetch schedule for current week when week changes (but not on mount)
+  useEffect(() => {
+    // Only fetch if we already have a schedule (user has used AI or navigated)
+    if (schedule !== null && staff && allAvailability) {
+      refetchSchedule()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentWeek])
 
   // Fetch staff list
   const { data: staff, loading: loadingStaff, error: staffError } = useWaiterList(restaurantId)

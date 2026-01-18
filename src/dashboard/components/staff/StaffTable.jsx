@@ -40,7 +40,11 @@ export function StaffTable() {
     }
   }, [restaurants])
 
-  const { staff, isLoading, isError, error, refetch } = useStaffWithStatus(restaurantId)
+  const { staff: allStaff, isLoading, isError, error, refetch } = useStaffWithStatus(restaurantId)
+
+  // Only show servers in staff table (servers are the ones with tips/performance metrics)
+  const staff = allStaff.filter((s) => s.role.toLowerCase() === 'server')
+
   const [sortField, setSortField] = useState('tips')
   const [sortDir, setSortDir] = useState('desc')
   const [searchQuery, setSearchQuery] = useState('')
