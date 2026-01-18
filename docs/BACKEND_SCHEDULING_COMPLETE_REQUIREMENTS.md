@@ -124,7 +124,18 @@ schedule_summary = response.content[0].text
 
 ---
 
-## 🎯 Required CRUD Endpoints
+## 🎯 CRITICAL: CRUD Endpoints (System is Useless Without These!)
+
+**The scheduling system CANNOT function without the ability to edit shifts.** Users need to:
+- Delete AI suggestions they don't like
+- Move shifts between staff members
+- Adjust shift times
+- Add manual shifts
+- Delete individual shifts
+
+**These endpoints are NOT optional - they are CORE FUNCTIONALITY!**
+
+---
 
 ### DELETE /schedules/{schedule_id}
 ```python
@@ -362,15 +373,17 @@ Generate visits/orders with realistic patterns:
 ## ✅ Checklist
 
 ### Immediate (Frontend is blocked without these)
-- [ ] Add `selectinload(Schedule.items).selectinload(ScheduleItem.reasoning)` to GET /schedules
-- [ ] Add `schedule_summary` field to Schedule model (db migration if needed)
-- [ ] Add `schedule_summary` to ScheduleResponse schema
-- [ ] **Generate AI summary using REAL LLM call** (Anthropic/OpenAI) - NOT cached, fresh each time
-- [ ] Verify `reasoning` is populated in schedule_items (should already be from your code)
-- [ ] Implement DELETE /schedules/{id}
-- [ ] Implement PATCH /schedule-items/{id}
-- [ ] Implement POST /schedules/{id}/items
-- [ ] Implement DELETE /schedule-items/{id}
+- [ ] **GET /schedules** - Add `selectinload(Schedule.items).selectinload(ScheduleItem.reasoning)`
+- [ ] **Schedule model** - Add `schedule_summary` field (db migration if needed)
+- [ ] **ScheduleResponse schema** - Add `schedule_summary` field
+- [ ] **LLM Integration** - Generate AI summary using REAL LLM call (Anthropic/OpenAI) - NOT cached, fresh each time
+- [ ] **Verify reasoning** - Confirm `reasoning` is populated in schedule_items (should already work from your code)
+
+### CRITICAL CRUD Endpoints (System Won't Work Without These!)
+- [ ] **DELETE /schedules/{id}** - Delete draft/suggested schedules (reject AI suggestion)
+- [ ] **PATCH /schedule-items/{id}** - Edit shift (change times, reassign staff, change role) - CRITICAL FOR EDITING!
+- [ ] **POST /schedules/{id}/items** - Add manual shift - CRITICAL FOR FILLING GAPS!
+- [ ] **DELETE /schedule-items/{id}** - Delete individual shift - CRITICAL FOR REMOVING MISTAKES!
 
 ### Demo Enhancement (Makes it look professional)
 - [ ] Expand Mimosas to 20-25 staff members
