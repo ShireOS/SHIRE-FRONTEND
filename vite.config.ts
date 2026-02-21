@@ -2,6 +2,29 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
 
+// SPA fallback for multi-page app — serve each sub-app's index.html for all its routes
+function mpaFallback() {
+  return {
+    name: 'mpa-fallback',
+    configureServer(server: any) {
+      server.middlewares.use((req: any, _res: any, next: any) => {
+        const url = req.url || ''
+        const accept = req.headers.accept || ''
+
+        // Only rewrite navigation requests (text/html), not JS/CSS/image assets
+        if (accept.includes('text/html') && !url.endsWith('.html')) {
+          if (url.startsWith('/dashboard')) {
+            req.url = '/dashboard/index.html'
+          } else if (url.startsWith('/host')) {
+            req.url = '/host/index.html'
+          }
+        }
+        next()
+      })
+    },
+  }
+}
+
 // Custom plugin to log API config on startup
 function apiConfigLogger() {
   return {
@@ -39,7 +62,7 @@ function apiConfigLogger() {
 }
 
 export default defineConfig({
-  plugins: [react(), apiConfigLogger()],
+  plugins: [react(), mpaFallback(), apiConfigLogger()],
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),

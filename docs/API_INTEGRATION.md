@@ -39,12 +39,20 @@ Then restart the dev server. The app will use the existing mock data.
 | `VITE_API_BASE_URL` | Backend API base URL | `http://localhost:8000/api/v1` |
 | `VITE_USE_MOCK_DATA` | Skip API calls, use mock data | `false` |
 | `VITE_RESTAURANT_ID` | Restaurant ID for API calls | `default` |
+| `VITE_SUPABASE_URL` | Supabase project URL | none (required for dashboard auth) |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Supabase browser publishable key | none (required for dashboard auth) |
 
 ### Environment Files
 
 - `.env.development` - Used when running `npm run dev`
 - `.env.production` - Used when running `npm run build`
 - `.env.example` - Template for reference
+
+### Supabase Auth Key Migration
+
+- `VITE_SUPABASE_ANON_KEY` is no longer used.
+- Use `VITE_SUPABASE_PUBLISHABLE_KEY` in every environment.
+- See `docs/SUPABASE_AUTH_SETUP.md` for callback URL and PKCE setup requirements.
 
 ---
 

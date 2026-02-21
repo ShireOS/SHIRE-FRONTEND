@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { AuthProvider, useRequireAuth, LoginPage, SignupPage, ForgotPasswordPage, AuthCallbackPage } from '../auth'
+import { OnboardingPage } from '../onboarding'
 import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
 import { RightPanel } from './components/layout/RightPanel'
@@ -12,8 +14,18 @@ import { Analytics } from './pages/Analytics'
 import { Reviews } from './pages/Reviews'
 import { Settings } from './pages/Settings'
 
-export default function App() {
+// Protected dashboard layout - requires auth + completed onboarding
+function DashboardLayout() {
   const [isChatOpen, setIsChatOpen] = useState(false)
+  const { isReady } = useRequireAuth({ requireOnboarding: true })
+
+  if (!isReady) {
+    return (
+      <div className="min-h-screen bg-dash-base flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-dash-gold" />
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-dash-base text-dash-cream font-dash-body selection:bg-dash-gold selection:text-dash-base">
@@ -46,5 +58,28 @@ export default function App() {
       {/* Chat Panel */}
       <ChatPanel isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <Routes>
+        {/* Auth routes - public */}
+        <Route path="/auth/login" element={<LoginPage />} />
+        <Route path="/auth/signup" element={<SignupPage />} />
+        <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
+
+        {/* Onboarding - requires auth, not completed onboarding */}
+        <Route path="/onboarding/*" element={<OnboardingPage />} />
+
+        {/* Dashboard routes - protected */}
+        <Route path="/*" element={<DashboardLayout />} />
+
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </AuthProvider>
   )
 }

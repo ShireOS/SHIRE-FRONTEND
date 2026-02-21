@@ -36,6 +36,9 @@
             --status-good: #4ade80;
             --status-bad: #ef4444;
 
+            /* SPACING */
+            --section-pad-y: 6rem;
+            --section-pad-x: 4rem;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -63,6 +66,21 @@
         /* --- ACCENT TEXT --- */
         .accent { color: var(--ice-blue); }
         .accent-gold { color: var(--gold); }
+
+        /* --- SCROLL REVEAL --- */
+        .reveal { opacity: 0; transform: translateY(30px); }
+        .reveal-child { opacity: 0; transform: translateY(20px); }
+
+        /* --- CURSOR GLOW --- */
+        #cursor-glow {
+            position: fixed; top: 0; left: 0;
+            width: 180px; height: 180px; border-radius: 50%;
+            background: radial-gradient(circle, rgba(212, 168, 84, 0.07) 0%, transparent 70%);
+            filter: blur(25px); mix-blend-mode: screen;
+            pointer-events: none; z-index: 9998;
+            opacity: 0; transition: opacity 0.3s;
+        }
+        body:hover #cursor-glow { opacity: 1; }
 
         /* --- GLOBAL FX --- */
         .global-noise {
@@ -100,7 +118,12 @@
             padding: 0.6rem 1.4rem; border-radius: 99px; text-decoration: none;
             transition: all 0.3s; font-weight: 500;
         }
-        .nav-cta:hover { background: rgba(255, 255, 255, 0.2); border-color: #fff; transform: translateY(-1px); }
+        .nav-cta:hover { background: rgba(255, 255, 255, 0.2); border-color: #fff; transform: translateY(-1px); box-shadow: 0 0 20px rgba(212, 168, 84, 0.2); }
+
+        /* --- MICRO-INTERACTIONS --- */
+        .btn-primary:active, .btn-secondary:active, .btn-glass-large:active, .nav-cta:active, .mock-seat-btn:active {
+            transform: scale(0.98);
+        }
 
         /* --- HERO --- */
         .art-layer {
@@ -150,6 +173,8 @@
             box-shadow: 0 0 0 1px rgba(0,0,0,0.2), 0 20px 50px -10px rgba(0,0,0,0.6);
             padding: 8px;
             overflow: hidden;
+            transform-style: preserve-3d;
+            will-change: transform;
         }
         .hero-video-cell {
             position: relative;
@@ -208,7 +233,7 @@
         /* --- VIDEO SECTION --- */
         .video-section {
             background: var(--bg-gradient-cool); position: relative; z-index: 20;
-            padding: 5rem 2rem 4rem 2rem; display: flex; flex-direction: column; align-items: center;
+            padding: var(--section-pad-y) var(--section-pad-x); display: flex; flex-direction: column; align-items: center;
         }
 
         .video-header-stack {
@@ -248,14 +273,95 @@
             transform: translateY(-2px);
         }
 
+        /* --- HOW IT WORKS --- */
+        .how-section {
+            padding: var(--section-pad-y) var(--section-pad-x);
+            background: var(--bg-gradient-neutral);
+            position: relative; z-index: 20;
+            display: flex; flex-direction: column; align-items: center;
+        }
+        .how-header { text-align: center; margin-bottom: 1rem; max-width: 700px; }
+        .how-subtext {
+            text-align: center; color: #666; font-size: 0.95rem;
+            margin-bottom: 4rem; max-width: 500px;
+        }
+        .how-steps {
+            display: flex; align-items: flex-start; gap: 0;
+            max-width: 900px; width: 100%; position: relative;
+        }
+        .how-step {
+            flex: 1; display: flex; flex-direction: column; align-items: center;
+            text-align: center; padding: 0 2rem; position: relative;
+        }
+        .how-step-number {
+            width: 48px; height: 48px; border-radius: 50%;
+            border: 1px solid var(--gold);
+            display: flex; align-items: center; justify-content: center;
+            font-family: var(--font-data); font-size: 0.8rem; color: var(--gold);
+            margin-bottom: 1.5rem; position: relative; z-index: 2;
+            background: var(--bg-base);
+        }
+        .how-step-title {
+            font-family: var(--font-display); font-size: 1.5rem; color: #fff;
+            margin-bottom: 0.5rem;
+        }
+        .how-step-desc {
+            font-size: 0.85rem; color: #666; line-height: 1.5; max-width: 220px;
+        }
+        .how-steps::before {
+            content: ''; position: absolute;
+            top: 24px; left: calc(16.66% + 24px); right: calc(16.66% + 24px);
+            height: 1px; background: rgba(212, 168, 84, 0.2); z-index: 1;
+        }
+
+        /* --- MANAGER INTELLIGENCE MOCK --- */
+        .mock-notification {
+            position: relative; width: 100%; aspect-ratio: 4/3;
+            background: #0a0a0a; border: 1px solid var(--border);
+            border-radius: 4px; overflow: hidden;
+            box-shadow: 0 20px 60px -15px rgba(0, 0, 0, 0.6);
+            display: flex; flex-direction: column;
+        }
+        .mock-notif-header {
+            padding: 16px; border-bottom: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .mock-notif-title { font-family: var(--font-display); font-size: 1.1rem; color: #fff; }
+        .mock-notif-badge {
+            font-family: var(--font-data); font-size: 0.6rem; color: var(--gold);
+            background: rgba(212, 168, 84, 0.1); border: 1px solid rgba(212, 168, 84, 0.2);
+            padding: 4px 10px; border-radius: 2px; text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .mock-notif-body { padding: 16px; flex: 1; display: flex; flex-direction: column; gap: 12px; }
+        .mock-alert-card {
+            background: rgba(212, 168, 84, 0.05); border: 1px solid rgba(212, 168, 84, 0.15);
+            border-radius: 2px; padding: 14px; display: flex; flex-direction: column; gap: 6px;
+        }
+        .mock-alert-title { font-family: var(--font-body); font-size: 0.9rem; color: var(--gold); font-weight: 500; }
+        .mock-alert-desc { font-family: var(--font-body); font-size: 0.8rem; color: #888; line-height: 1.4; }
+        .mock-alert-action { margin-top: 4px; display: flex; gap: 10px; }
+        .mock-alert-btn {
+            padding: 6px 14px; font-family: var(--font-data); font-size: 0.65rem;
+            text-transform: uppercase; letter-spacing: 0.05em; border-radius: 2px;
+            border: 1px solid var(--border);
+        }
+        .mock-alert-btn.primary { background: #fff; color: #000; border-color: #fff; }
+        .mock-alert-btn.secondary { background: transparent; color: #888; }
+        .mock-summary-row {
+            background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border);
+            border-radius: 2px; padding: 12px 14px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .mock-summary-label {
+            font-family: var(--font-data); font-size: 0.65rem; color: #666;
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .mock-summary-value { font-family: var(--font-display); font-size: 1.1rem; color: #fff; }
+
         /* --- FEATURE SECTIONS --- */
         .features-section {
             background: var(--bg-gradient-neutral); position: relative; z-index: 20;
-            padding: 4rem 4rem; overflow: hidden;
-        }
-
-        .features-section:nth-child(even) {
-            background: var(--bg-gradient-warm);
+            padding: var(--section-pad-y) var(--section-pad-x); overflow: hidden;
         }
 
         .features-grid {
@@ -280,7 +386,14 @@
         .features-list { display: flex; flex-direction: column; }
 
         .feature-item {
-            padding: 1.25rem 0; border-top: 1px solid rgba(255,255,255,0.08);
+            padding: 1.25rem 0 1.25rem 0; border-top: 1px solid rgba(255,255,255,0.08);
+            border-left: 2px solid transparent;
+            transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        .feature-item:hover {
+            background: rgba(255, 255, 255, 0.02);
+            padding-left: 1rem;
+            border-left-color: var(--gold);
         }
         .feature-item:last-child { border-bottom: 1px solid rgba(255,255,255,0.08); }
 
@@ -416,12 +529,15 @@
             .features-grid { grid-template-columns: 1fr; gap: 2rem; }
             .features-grid.reverse { direction: ltr; }
             .features-headline { font-size: 2.5rem; }
-            .mock-device, .mock-ipad, .mock-analytics { max-width: 100%; }
+            .mock-device, .mock-ipad, .mock-analytics, .mock-notification { max-width: 100%; }
+            .how-steps { flex-direction: column; gap: 2.5rem; align-items: center; }
+            .how-steps::before { display: none; }
+            .how-step { padding: 0; }
         }
 
         /* --- METRICS SECTION --- */
         .metrics-section {
-            padding: 5rem 4rem;
+            padding: var(--section-pad-y) var(--section-pad-x);
             background: var(--bg-gradient-warm);
             position: relative;
             z-index: 15;
@@ -460,7 +576,7 @@
             border-radius: 4px;
             padding: 1.5rem;
             display: flex; flex-direction: column; justify-content: space-between;
-            transition: all 0.3s ease; position: relative; overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); position: relative; overflow: hidden;
         }
 
         .metric-card:hover {
@@ -502,7 +618,7 @@
             z-index: 15;
             background: var(--bg-base);
             min-height: auto;
-            padding: 6rem 2rem;
+            padding: var(--section-pad-y) var(--section-pad-x);
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -751,6 +867,7 @@
         .tt-label { color: #666; } .tt-val { color: #fff; }
 
         @media (max-width: 900px) {
+            :root { --section-pad-y: 4rem; --section-pad-x: 1.5rem; }
             .hero-section { grid-template-columns: 1fr; padding-top: 120px; gap: 3rem; }
             .glass-dash { display: none; }
             .bento-grid { grid-template-columns: 1fr; grid-template-rows: auto; }
@@ -830,12 +947,6 @@
             animation: pulse 2s infinite;
         }
 
-        .yc-badge {
-            margin-top: 1rem;
-            font-size: 0.75rem;
-            color: #444;
-        }
-
         .watermark {
             position: absolute;
             bottom: -2vw;
@@ -866,6 +977,7 @@
 </head>
 <body>
     <div class="global-noise"></div>
+    <div id="cursor-glow"></div>
 
     <div class="tooltip-card" id="tooltip">
         <div class="tt-row" style="border-bottom: 1px solid #333; padding-bottom:4px; margin-bottom:8px;">
@@ -888,7 +1000,7 @@
             <a href="/dashboard/" class="nav-item">Dashboard</a>
             <a href="#about" class="nav-item">About</a>
         </div>
-        <a href="/host/" class="nav-cta">Get Started</a>
+        <a href="/dashboard/auth/signup" class="nav-cta">Get Started</a>
     </nav>
 
     <section class="hero-section">
@@ -898,8 +1010,8 @@
                 Turn chaotic video feeds into structured operational data. The first computer vision platform designed to optimize restaurant throughput and waiter latency in real-time.
             </p>
             <div class="cta-group">
-                <a href="/dashboard/" class="btn-primary">View Dashboard</a>
-                <a href="/host/" class="btn-secondary">Launch Host UI</a>
+                <a href="/dashboard/auth/signup" class="btn-primary">Get Started</a>
+                <a href="/dashboard/auth/login" class="btn-secondary">Sign In</a>
             </div>
         </div>
         <div class="dashboard-wrapper">
@@ -938,7 +1050,7 @@
 
     <section class="video-section">
         <div class="ambient-field ambient-video"></div>
-        <div class="video-header-stack">
+        <div class="video-header-stack reveal">
             <div class="label-mono">The Platform</div>
             <h2 class="video-headline">Total <span class="italic-accent accent">Operational</span> Clarity</h2>
             <p class="section-body">
@@ -946,7 +1058,7 @@
             </p>
         </div>
 
-        <div class="video-container" id="videoTrigger" style="aspect-ratio: 16/9;">
+        <div class="video-container reveal" id="videoTrigger" style="aspect-ratio: 16/9;">
             <iframe
                 width="100%"
                 height="100%"
@@ -961,31 +1073,61 @@
         </div>
     </section>
 
+    <!-- HOW IT WORKS -->
+    <section class="how-section">
+        <div class="how-header reveal">
+            <div class="label-mono">Getting Started</div>
+            <h2 class="video-headline">Live in <span class="italic-accent accent">2 Hours</span></h2>
+        </div>
+        <p class="how-subtext reveal">No new hardware. Works with your existing cameras.</p>
+        <div class="how-steps reveal">
+            <div class="how-step reveal-child">
+                <div class="how-step-number">01</div>
+                <div class="how-step-title">Connect Your Cameras</div>
+                <div class="how-step-desc">Point us at your existing CCTV feeds. RTSP, IP cameras, or cloud DVR — we handle it all.</div>
+            </div>
+            <div class="how-step reveal-child">
+                <div class="how-step-number">02</div>
+                <div class="how-step-title">We Map Your Floor</div>
+                <div class="how-step-desc">Our AI auto-detects tables, zones, and pathways. You just confirm the layout.</div>
+            </div>
+            <div class="how-step reveal-child">
+                <div class="how-step-number">03</div>
+                <div class="how-step-title">Go Live</div>
+                <div class="how-step-desc">Real-time alerts, analytics, and routing start flowing to every device immediately.</div>
+            </div>
+        </div>
+    </section>
+
     <!-- FEATURE SECTION 1: VISION AI -->
     <section class="features-section">
         <div class="features-grid">
-            <div class="features-content">
+            <div class="features-content reveal">
                 <div class="label-mono">Computer Vision</div>
                 <h2 class="features-headline">Vision AI for the <span class="italic-accent accent">Physical</span> World</h2>
                 <p class="features-subtitle">
                     Turn chaotic CCTV feeds into structured operational data. Our AI sees what humans miss, tracking every table and guest in real-time.
                 </p>
                 <div class="features-list">
-                    <div class="feature-item">
+                    <div class="feature-item reveal-child">
                         <div class="feature-item-title">Table Segmentation</div>
                         <div class="feature-item-desc">Automatically detect and track every table in your floor plan. No manual setup required.</div>
                     </div>
-                    <div class="feature-item">
+                    <div class="feature-item reveal-child">
                         <div class="feature-item-title">People Detection</div>
                         <div class="feature-item-desc">Real-time occupancy tracking with 99.7% accuracy. Know exactly who's seated where.</div>
                     </div>
-                    <div class="feature-item">
+                    <div class="feature-item reveal-child">
                         <div class="feature-item-title">State Classification</div>
                         <div class="feature-item-desc">Instant detection of table states: occupied, empty-clean, empty-dirty. Eliminate guesswork.</div>
                     </div>
+                    <div class="feature-item reveal-child">
+                        <div class="feature-item-title">Derived Performance Insights</div>
+                        <div class="feature-item-desc">Fuse what the camera sees with POS timestamps and tip data. Know exactly how each server performs — time to greet, time to deliver, dwell time, tip rate. Not self-reported. Measured.</div>
+                    </div>
                 </div>
             </div>
-            <div class="mock-device">
+            <div class="mock-device reveal">
                 <div class="mock-device-bar">
                     <div class="mock-dot red"></div>
                     <div class="mock-dot yellow"></div>
@@ -1019,28 +1161,28 @@
     <!-- FEATURE SECTION 2: SMART ROUTING -->
     <section class="features-section">
         <div class="features-grid reverse">
-            <div class="features-content">
+            <div class="features-content reveal">
                 <div class="label-mono">Operations</div>
                 <h2 class="features-headline">Intelligent <span class="italic-accent accent">Routing</span> Engine</h2>
                 <p class="features-subtitle">
                     Automate the decisions that slow your floor down. Let AI handle the logistics so your team can focus on hospitality.
                 </p>
                 <div class="features-list">
-                    <div class="feature-item">
+                    <div class="feature-item reveal-child">
                         <div class="feature-item-title">Host Recommendations</div>
                         <div class="feature-item-desc">Optimal table assignments based on party size, server workload, and section balance.</div>
                     </div>
-                    <div class="feature-item">
+                    <div class="feature-item reveal-child">
                         <div class="feature-item-title">Waiter Assignment</div>
                         <div class="feature-item-desc">Fair tip distribution algorithm that prioritizes both efficiency and equity across your team.</div>
                     </div>
-                    <div class="feature-item">
+                    <div class="feature-item reveal-child">
                         <div class="feature-item-title">Cleaner Dispatch</div>
                         <div class="feature-item-desc">Automatic alerts when tables need bussing. Minimize turnover time and maximize covers.</div>
                     </div>
                 </div>
             </div>
-            <div class="mock-ipad">
+            <div class="mock-ipad reveal">
                 <div class="mock-ipad-inner">
                     <div class="mock-ipad-header">
                         <div class="mock-ipad-title">Host Station</div>
@@ -1081,28 +1223,28 @@
     <!-- FEATURE SECTION 3: ANALYTICS -->
     <section class="features-section">
         <div class="features-grid">
-            <div class="features-content">
+            <div class="features-content reveal">
                 <div class="label-mono">Analytics</div>
                 <h2 class="features-headline">Actionable <span class="italic-accent accent">Analytics</span></h2>
                 <p class="features-subtitle">
                     Stop guessing, start knowing. Deep insights into every aspect of your operation, from staff performance to kitchen throughput.
                 </p>
                 <div class="features-list">
-                    <div class="feature-item">
+                    <div class="feature-item reveal-child">
                         <div class="feature-item-title">Staff Performance</div>
                         <div class="feature-item-desc">Track throughput, latency, and efficiency per server. Identify training opportunities.</div>
                     </div>
-                    <div class="feature-item">
+                    <div class="feature-item reveal-child">
                         <div class="feature-item-title">Kitchen Intelligence</div>
                         <div class="feature-item-desc">Order grouping, item forecasting, and inventory predictions. Know what to prep before the rush.</div>
                     </div>
-                    <div class="feature-item">
+                    <div class="feature-item reveal-child">
                         <div class="feature-item-title">Business Integrations</div>
                         <div class="feature-item-desc">Connect to POS, scheduling, and supplier systems for end-to-end visibility.</div>
                     </div>
                 </div>
             </div>
-            <div class="mock-analytics">
+            <div class="mock-analytics reveal">
                 <div class="mock-analytics-header">
                     <div class="mock-analytics-title">Performance Dashboard</div>
                     <div class="mock-analytics-tabs">
@@ -1129,16 +1271,71 @@
                         <div class="mock-stat-value">$1.4<span style="font-size:1rem;opacity:0.6;margin-left:4px;">k</span></div>
                     </div>
                     <div class="mock-chart">
-                        <div class="mock-bar" style="height:30%;"></div>
-                        <div class="mock-bar" style="height:45%;"></div>
-                        <div class="mock-bar" style="height:60%;"></div>
-                        <div class="mock-bar" style="height:85%;"></div>
-                        <div class="mock-bar" style="height:100%;background:var(--gold);opacity:0.8;"></div>
-                        <div class="mock-bar" style="height:90%;"></div>
-                        <div class="mock-bar" style="height:75%;"></div>
-                        <div class="mock-bar" style="height:50%;"></div>
-                        <div class="mock-bar" style="height:35%;"></div>
-                        <div class="mock-bar" style="height:20%;"></div>
+                        <div class="mock-bar" data-height="30%"></div>
+                        <div class="mock-bar" data-height="45%"></div>
+                        <div class="mock-bar" data-height="60%"></div>
+                        <div class="mock-bar" data-height="85%"></div>
+                        <div class="mock-bar" data-height="100%" style="background:var(--gold);opacity:0.8;"></div>
+                        <div class="mock-bar" data-height="90%"></div>
+                        <div class="mock-bar" data-height="75%"></div>
+                        <div class="mock-bar" data-height="50%"></div>
+                        <div class="mock-bar" data-height="35%"></div>
+                        <div class="mock-bar" data-height="20%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FEATURE SECTION 4: MANAGER INTELLIGENCE -->
+    <section class="features-section">
+        <div class="features-grid reverse">
+            <div class="features-content reveal">
+                <div class="label-mono">Intelligence</div>
+                <h2 class="features-headline">Intelligence That Saves You Money <span class="italic-accent accent">Tonight</span></h2>
+                <p class="features-subtitle">
+                    Not dashboards you check tomorrow. Decisions that hit your bottom line before close.
+                </p>
+                <div class="features-list">
+                    <div class="feature-item reveal-child">
+                        <div class="feature-item-title">Real-Time Labor Throttle</div>
+                        <div class="feature-item-desc">Shire reads the visual flow of the room — not just sales — to tell you exactly when to cut servers. Saves ~$200/night in wasted labor.</div>
+                    </div>
+                    <div class="feature-item reveal-child">
+                        <div class="feature-item-title">Post-Shift Auto-Debrief</div>
+                        <div class="feature-item-desc">30-second summary vs 20 minutes of pulling reports. Covers, revenue, best and worst servers, bottlenecks — auto-generated after every shift.</div>
+                    </div>
+                    <div class="feature-item reveal-child">
+                        <div class="feature-item-title">Predictive Wait Times</div>
+                        <div class="feature-item-desc">Per-table estimates from computer vision. Table 7 is on dessert (~12 min). Table 12 just got entrees (~40 min). Real answers, not guesses.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="mock-notification reveal">
+                <div class="mock-notif-header">
+                    <div class="mock-notif-title">Manager Alerts</div>
+                    <div class="mock-notif-badge">Live</div>
+                </div>
+                <div class="mock-notif-body">
+                    <div class="mock-alert-card">
+                        <div class="mock-alert-title">Rush ending — recommend cutting 2 servers</div>
+                        <div class="mock-alert-desc">Occupancy dropped to 45%. Tyler P. and Sarah M. have lowest remaining tables.</div>
+                        <div class="mock-alert-action">
+                            <div class="mock-alert-btn primary">Approve</div>
+                            <div class="mock-alert-btn secondary">Dismiss</div>
+                        </div>
+                    </div>
+                    <div class="mock-summary-row">
+                        <div class="mock-summary-label">Active Covers</div>
+                        <div class="mock-summary-value">34</div>
+                    </div>
+                    <div class="mock-summary-row">
+                        <div class="mock-summary-label">Est. Time to Close</div>
+                        <div class="mock-summary-value">1h 20m</div>
+                    </div>
+                    <div class="mock-summary-row">
+                        <div class="mock-summary-label">Labor Cost / Cover</div>
+                        <div class="mock-summary-value" style="color:var(--status-good)">$4.20</div>
                     </div>
                 </div>
             </div>
@@ -1149,28 +1346,28 @@
         <div class="metrics-bg-grid"></div>
         <div class="ambient-field ambient-metrics"></div>
         
-        <div class="metrics-intro">
+        <div class="metrics-intro reveal">
             <div class="label-mono">Performance</div>
             <h2 class="metrics-headline">Real, <span class="italic-accent accent">Measurable</span> Results</h2>
             <p class="metrics-sub">Designed for scale. Proven in the field.</p>
         </div>
 
         <div class="bento-grid">
-            <div class="metric-card card-small">
+            <div class="metric-card card-small reveal">
                 <div>
-                    <div class="m-value gold-text"><span class="counter" data-target="3.7">0</span><span class="m-suffix">x</span></div>
+                    <div class="m-value gold-text">+<span class="counter" data-target="15">0</span><span class="m-suffix">%</span></div>
                 </div>
-                <div class="m-label">Lead Velocity</div>
-            </div>
-            
-            <div class="metric-card card-small">
-                <div>
-                    <div class="m-value"><span class="counter" data-target="4.1">0</span><span class="m-suffix">x</span></div>
-                </div>
-                <div class="m-label">Campaign ROI</div>
+                <div class="m-label">More Table Turns</div>
             </div>
 
-            <div class="metric-card card-wide">
+            <div class="metric-card card-small reveal">
+                <div>
+                    <div class="m-value"><span style="font-size:2rem;opacity:0.6;">$</span><span class="counter" data-target="200">0</span></div>
+                </div>
+                <div class="m-label">Labor Saved / Night</div>
+            </div>
+
+            <div class="metric-card card-wide reveal">
                 <div class="quote-block">
                     <div class="quote-text">
                         "The Shire showed us exactly where our bottlenecks were. It's like having a GM watching every table, 24/7."
@@ -1179,39 +1376,39 @@
                         <div class="author-pic"></div>
                         <div class="author-info">
                             <span class="author-name">Sam Patel</span>
-                            <span class="author-role">VP Marketing // OAK & VINE</span>
+                            <span class="author-role">General Manager // OAK & VINE</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="metric-card card-wide">
+            <div class="metric-card card-wide reveal">
                 <div class="quote-block">
                     <div class="quote-text">
-                        "The most sophisticated vision platform we have deployed. It delivered actionable plans that drove real revenue."
+                        "The most sophisticated vision platform we have deployed. It delivered actionable intelligence that drove real revenue."
                     </div>
                     <div class="quote-author">
                         <div class="author-pic"></div>
                         <div class="author-info">
                             <span class="author-name">Elena Hayes</span>
-                            <span class="author-role">Head of Growth // ATLAS</span>
+                            <span class="author-role">Owner // ATLAS RESTAURANT</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="metric-card card-small">
+            <div class="metric-card card-small reveal">
                 <div>
-                    <div class="m-value"><span class="counter" data-target="60">0</span><span class="m-suffix">h</span></div>
+                    <div class="m-value">&lt;<span class="counter" data-target="90">0</span><span class="m-suffix">sec</span></div>
                 </div>
-                <div class="m-label">Saved Weekly</div>
+                <div class="m-label">Busser Response Time</div>
             </div>
 
-            <div class="metric-card card-small">
+            <div class="metric-card card-small reveal">
                 <div>
-                    <div class="m-value gold-text"><span class="counter" data-target="2.3">0</span><span class="m-suffix">x</span></div>
+                    <div class="m-value gold-text"><span class="counter" data-target="50">0</span><span class="m-suffix">%</span></div>
                 </div>
-                <div class="m-label">LIV Increase</div>
+                <div class="m-label">Dead Time Eliminated</div>
             </div>
         </div>
 
@@ -1221,11 +1418,11 @@
     </section>
 
     <section class="team-section">
-        <div class="team-section-header">
+        <div class="team-section-header reveal">
             <h2 class="team-title-outer">Meet our team</h2>
         </div>
 
-        <div class="team-box-container">
+        <div class="team-box-container reveal">
             <div class="team-left-panel">
                 <div class="team-grid-boxed">
                     <div class="team-card-box">
@@ -1279,30 +1476,30 @@
             <div class="feature-cards-container">
                 <div class="feature-card fc-1">
                     <div class="feature-label">Vision AI</div>
-                    <div class="feature-name">Floor Awareness</div>
+                    <div class="feature-name">Instant Busser Alerts</div>
                     <div class="feature-details">
-                        <div class="detail-row"><span class="detail-label">Accuracy</span><span class="detail-value" style="color:var(--status-good)">99.7%</span></div>
+                        <div class="detail-row"><span class="detail-label">Trigger</span><span class="detail-value" style="color:var(--status-good)">Table Empty</span></div>
                     </div>
                 </div>
                 <div class="feature-card fc-2">
-                    <div class="feature-label">Analytics</div>
-                    <div class="feature-name">Table Turnover</div>
+                    <div class="feature-label">Kitchen</div>
+                    <div class="feature-name">Kitchen Pause</div>
                     <div class="feature-details">
-                        <div class="detail-row"><span class="detail-label">Impact</span><span class="detail-value" style="color:var(--status-good)">-8min</span></div>
+                        <div class="detail-row"><span class="detail-label">Mode</span><span class="detail-value" style="color:var(--status-good)">One Tap</span></div>
                     </div>
                 </div>
                 <div class="feature-card fc-3">
-                    <div class="feature-label">Operations</div>
-                    <div class="feature-name">Staff Efficiency</div>
+                    <div class="feature-label">Labor</div>
+                    <div class="feature-name">Smart Labor Cuts</div>
                     <div class="feature-details">
-                        <div class="detail-row"><span class="detail-label">Response</span><span class="detail-value">1.2min</span></div>
+                        <div class="detail-row"><span class="detail-label">Signal</span><span class="detail-value">Visual Flow</span></div>
                     </div>
                 </div>
                 <div class="feature-card fc-4">
-                    <div class="feature-label">Revenue</div>
-                    <div class="feature-name">Optimization</div>
+                    <div class="feature-label">Intelligence</div>
+                    <div class="feature-name">Shift Debrief</div>
                     <div class="feature-details">
-                        <div class="detail-row"><span class="detail-label">Impact</span><span class="detail-value" style="color:var(--status-good)">+$12k/mo</span></div>
+                        <div class="detail-row"><span class="detail-label">Time</span><span class="detail-value" style="color:var(--status-good)">30 Seconds</span></div>
                     </div>
                 </div>
             </div>
@@ -1333,7 +1530,6 @@
                 <a href="#" class="pitch-deck">
                     <div class="status-dot"></div> Series A Memo
                 </a>
-                <div class="yc-badge">Y Combinator W26</div>
             </div>
         </div>
         <div class="watermark">SHIRE</div>
@@ -1350,10 +1546,16 @@
             else nav.classList.remove('scrolled');
         });
 
-        // Tooltip position tracking
+        // Tooltip + Cursor Glow position tracking
+        const cursorGlow = document.getElementById('cursor-glow');
         document.addEventListener('mousemove', (e) => {
             gsap.to(tooltip, { x: e.clientX + 20, y: e.clientY + 20, duration: 0.15 });
+            gsap.to(cursorGlow, { x: e.clientX - 90, y: e.clientY - 90, duration: 0.4, ease: 'power2.out' });
         });
+        // Hide cursor glow on touch devices
+        if (window.matchMedia('(hover: none)').matches && cursorGlow) {
+            cursorGlow.style.display = 'none';
+        }
 
         // DASHBOARD GRID (only if element exists)
         const gridContainer = document.getElementById('gridContainer');
@@ -1511,6 +1713,120 @@
                 if (!video.ended) forcePlay();
             });
         });
+
+        // ============================================
+        // GLOBAL SCROLL REVEAL
+        // ============================================
+        const revealObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const el = entry.target;
+                    gsap.to(el, { opacity: 1, y: 0, duration: 0.8, ease: 'power2.out' });
+                    const children = el.querySelectorAll('.reveal-child');
+                    if (children.length > 0) {
+                        gsap.to(children, { opacity: 1, y: 0, duration: 0.6, stagger: 0.12, ease: 'power2.out', delay: 0.2 });
+                    }
+                    revealObserver.unobserve(el);
+                }
+            });
+        }, { threshold: 0.15 });
+        document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
+
+        // ============================================
+        // HERO VIDEO GRID PARALLAX TILT
+        // ============================================
+        const heroSection = document.querySelector('.hero-section');
+        const videoGrid = document.querySelector('.hero-video-grid');
+        if (heroSection && videoGrid) {
+            heroSection.addEventListener('mousemove', (e) => {
+                const rect = heroSection.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                const normalX = (e.clientX - centerX) / (rect.width / 2);
+                const normalY = (e.clientY - centerY) / (rect.height / 2);
+                gsap.to(videoGrid, { rotateY: normalX * 3, rotateX: -normalY * 2, duration: 0.6, ease: 'power2.out' });
+            });
+            heroSection.addEventListener('mouseleave', () => {
+                gsap.to(videoGrid, { rotateY: 0, rotateX: 0, duration: 0.8, ease: 'power2.out' });
+            });
+        }
+
+        // ============================================
+        // ANIMATED MOCK: FLOOR PLAN TABLE STATE CYCLING
+        // ============================================
+        const mockTables = document.querySelectorAll('.mock-floor-grid .mock-table');
+        if (mockTables.length > 0) {
+            const states = ['clean', 'occupied', 'dirty'];
+            setInterval(() => {
+                const table = mockTables[Math.floor(Math.random() * mockTables.length)];
+                const currentState = states.find(s => table.classList.contains(s)) || 'clean';
+                const nextState = states[(states.indexOf(currentState) + 1) % states.length];
+                gsap.to(table, { opacity: 0.5, duration: 0.15, onComplete: () => {
+                    table.classList.remove(...states);
+                    table.classList.add(nextState);
+                    gsap.to(table, { opacity: 1, duration: 0.3 });
+                }});
+            }, 4000);
+        }
+
+        // ============================================
+        // ANIMATED MOCK: IPAD TASK LIST CYCLING
+        // ============================================
+        const taskList = document.querySelector('.mock-task-list');
+        if (taskList) {
+            const taskPool = [
+                { label: 'Next Action', text: 'Seat party of 4 at Table 02', meta: 'Server: Tyler P. \u2022 Zone A', action: 'Confirm' },
+                { label: 'Pending', text: 'Table 04 ready for bussing', meta: 'Waiting: 2m 14s', action: 'Assign' },
+                { label: 'Queue', text: 'Party of 2 waiting', meta: 'Est. wait: 8 min', action: 'View' },
+                { label: 'Alert', text: 'Table 07 dessert course done', meta: 'Check dropped 3m ago', action: 'Clear' },
+                { label: 'Next Action', text: 'Move party of 6 to patio', meta: 'Server: Sarah M. \u2022 Zone B', action: 'Confirm' },
+                { label: 'Pending', text: 'VIP arriving in 10 min', meta: 'Reservation: Nakamura', action: 'Prep' }
+            ];
+            let poolIndex = 3;
+            setInterval(() => {
+                const tasks = taskList.querySelectorAll('.mock-task');
+                if (tasks.length === 0) return;
+                const firstTask = tasks[0];
+                gsap.to(firstTask, { opacity: 0, y: -20, duration: 0.4, ease: 'power2.in', onComplete: () => {
+                    firstTask.remove();
+                    const t = taskPool[poolIndex % taskPool.length];
+                    poolIndex++;
+                    const newTask = document.createElement('div');
+                    newTask.className = 'mock-task';
+                    newTask.style.opacity = '0';
+                    newTask.style.transform = 'translateY(20px)';
+                    newTask.innerHTML = '<div class="mock-task-info"><div class="mock-task-label">' + t.label + '</div><div class="mock-task-text">' + t.text + '</div><div class="mock-task-meta">' + t.meta + '</div></div><div class="mock-task-action">' + t.action + '</div>';
+                    taskList.appendChild(newTask);
+                    gsap.to(newTask, { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out' });
+                }});
+            }, 5000);
+        }
+
+        // ============================================
+        // ANIMATED MOCK: ANALYTICS BAR GROWTH
+        // ============================================
+        const analyticsSection = document.querySelector('.mock-analytics');
+        if (analyticsSection) {
+            const bars = analyticsSection.querySelectorAll('.mock-bar');
+            bars.forEach(bar => { bar.style.height = '0%'; });
+            const analyticsObserver = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const bars = entry.target.querySelectorAll('.mock-bar');
+                        bars.forEach((bar, i) => {
+                            const targetHeight = bar.getAttribute('data-height');
+                            if (targetHeight) {
+                                gsap.to(bar, { height: targetHeight, duration: 0.8, delay: i * 0.08, ease: 'power2.out' });
+                            }
+                        });
+                        const statValues = entry.target.querySelectorAll('.mock-stat-value');
+                        gsap.from(statValues, { opacity: 0, y: 10, duration: 0.6, stagger: 0.1, ease: 'power2.out' });
+                        analyticsObserver.unobserve(entry.target);
+                    }
+                });
+            }, { threshold: 0.3 });
+            analyticsObserver.observe(analyticsSection);
+        }
 
     </script>
 </body>
