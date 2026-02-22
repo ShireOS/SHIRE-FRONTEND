@@ -9,13 +9,6 @@ interface AuthLayoutProps {
 }
 
 export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
-  const bgOptions = [
-    { id: 'abstract', dark: '/auth-dark.png', light: '/auth-light.png' },
-    { id: 'ring', dark: '/auth-ring-dark.png', light: '/auth-ring-light.png' },
-    { id: 'restaurant', dark: '/auth-rest-dark.png', light: '/auth-rest-light.png' },
-  ]
-  const [bgIndex, setBgIndex] = useState(2)
-
   // Check system preference or local storage for initial theme
   const [isDark, setIsDark] = useState(() => {
     if (typeof window !== 'undefined') {
