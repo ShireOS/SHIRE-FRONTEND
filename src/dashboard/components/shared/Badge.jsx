@@ -2,8 +2,8 @@ const variants = {
   success: 'bg-dash-success/20 text-dash-success border border-dash-success/30',
   warning: 'bg-dash-warning/20 text-dash-warning border border-dash-warning/30',
   danger: 'bg-dash-danger/20 text-dash-danger border border-dash-danger/30',
-  info: 'bg-white/10 text-dash-cream border border-dash-border',
-  neutral: 'bg-white/5 text-dash-secondary border border-dash-border',
+  info: 'bg-dash-cream/10 text-dash-cream border border-dash-border',
+  neutral: 'bg-dash-cream/5 text-dash-secondary border border-dash-border',
   purple: 'bg-purple-500/20 text-purple-400 border border-purple-500/30',
   gold: 'bg-dash-gold/20 text-dash-gold border border-dash-gold/30'
 }

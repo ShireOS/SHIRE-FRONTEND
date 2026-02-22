@@ -32,7 +32,7 @@ export function AIInsights() {
               <span className={`label-mono px-1.5 py-0.5 rounded border ${
                 insight.impact === 'high'
                   ? 'bg-dash-gold/20 border-dash-gold/30 text-dash-gold'
-                  : 'bg-white/5 border-dash-border text-dash-tertiary'
+                  : 'bg-dash-cream/5 border-dash-border text-dash-tertiary'
               }`}>
                 {insight.impact === 'high' ? 'HIGH IMPACT' : 'NORMAL'}
               </span>

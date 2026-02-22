@@ -243,7 +243,7 @@ export function Menu() {
                   </thead>
                   <tbody className="divide-y divide-dash-border">
                     {allItems.map((item) => (
-                      <tr key={item.id} className="hover:bg-white/5 transition-colors">
+                      <tr key={item.id} className="hover:bg-dash-cream/5 transition-colors">
                         <td className="py-3">
                           <span className="font-medium text-dash-cream">{item.name}</span>
                           {item.category && (
@@ -397,10 +397,10 @@ export function Menu() {
                           idx === 0
                             ? 'bg-dash-gold/20 text-dash-gold'
                             : idx === 1
-                            ? 'bg-white/10 text-dash-secondary'
+                            ? 'bg-dash-cream/10 text-dash-secondary'
                             : idx === 2
                             ? 'bg-dash-warning/20 text-dash-warning'
-                            : 'bg-white/5 text-dash-tertiary'
+                            : 'bg-dash-cream/5 text-dash-tertiary'
                         }`}
                       >
                         {idx + 1}
@@ -467,7 +467,7 @@ export function Menu() {
                       return (
                         <div
                           key={item.ingredient_id}
-                          className="p-3 bg-white/5 rounded-lg border border-dash-border"
+                          className="p-3 bg-dash-cream/5 rounded-lg border border-dash-border"
                         >
                           {/* Header row */}
                           <div className="flex items-center justify-between mb-2">
@@ -479,7 +479,7 @@ export function Menu() {
                                 ? 'bg-dash-danger/20 text-dash-danger'
                                 : daysLeft <= 5
                                 ? 'bg-dash-warning/20 text-dash-warning'
-                                : 'bg-white/10 text-dash-tertiary'
+                                : 'bg-dash-cream/10 text-dash-tertiary'
                             }`}>
                               {daysLeft <= 0 ? 'Out' : `${daysLeft}d left`}
                             </span>
@@ -491,7 +491,7 @@ export function Menu() {
                               <span>Stock: {item.current_stock.toFixed(1)} / {item.par_level} {item.unit}</span>
                               <span>{Math.round(stockPct)}%</span>
                             </div>
-                            <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div className="h-1.5 bg-dash-cream/10 rounded-full overflow-hidden">
                               <div
                                 className={`h-full ${barColor} rounded-full transition-all`}
                                 style={{ width: `${stockPct}%` }}
@@ -529,7 +529,7 @@ export function Menu() {
 
       {/* Pricing Recommendations Modal */}
       {showPricingModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-dash-base/70 flex items-center justify-center z-50">
           <div className="glass-card rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden border border-dash-border">
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-dash-border">
@@ -539,7 +539,7 @@ export function Menu() {
               </div>
               <button
                 onClick={() => setShowPricingModal(false)}
-                className="p-2 hover:bg-white/10 rounded-full text-dash-secondary hover:text-dash-cream transition-colors"
+                className="p-2 hover:bg-dash-cream/10 rounded-full text-dash-secondary hover:text-dash-cream transition-colors"
               >
                 <X size={20} />
               </button>
@@ -563,7 +563,7 @@ export function Menu() {
                           ? 'bg-dash-warning/10 border-dash-warning/20'
                           : rec.action === 'remove'
                           ? 'bg-dash-danger/10 border-dash-danger/20'
-                          : 'bg-white/5 border-dash-border'
+                          : 'bg-dash-cream/5 border-dash-border'
                       }`}
                     >
                       <div className="flex items-start justify-between">

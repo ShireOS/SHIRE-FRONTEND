@@ -27,6 +27,9 @@ interface OnboardingLayoutProps {
   onSkip?: () => void
   canGoBack?: boolean
   onBack?: () => void
+  onSwitchAccount?: () => void
+  isSwitchingAccount?: boolean
+  switchAccountError?: string | null
 }
 
 export function OnboardingLayout({
@@ -38,6 +41,9 @@ export function OnboardingLayout({
   onSkip,
   canGoBack,
   onBack,
+  onSwitchAccount,
+  isSwitchingAccount = false,
+  switchAccountError,
 }: OnboardingLayoutProps) {
   return (
     <div className="min-h-screen bg-[#0a0a0a] relative">
@@ -64,15 +70,33 @@ export function OnboardingLayout({
             </div>
           </div>
 
-          {canSkip && (
-            <button
-              onClick={onSkip}
-              className="label-mono text-[rgb(var(--gold))] hover:text-[rgb(var(--text-primary))] transition-colors tracking-[0.1em]"
-            >
-              SKIP FOR NOW
-            </button>
-          )}
+          <div className="flex items-center gap-4">
+            {onSwitchAccount && (
+              <button
+                onClick={onSwitchAccount}
+                disabled={isSwitchingAccount}
+                className="label-mono text-[rgb(var(--text-tertiary))] hover:text-[rgb(var(--text-primary))] disabled:opacity-60 disabled:cursor-not-allowed transition-colors tracking-[0.1em]"
+              >
+                {isSwitchingAccount ? 'SIGNING OUT...' : 'SWITCH ACCOUNT'}
+              </button>
+            )}
+            {canSkip && (
+              <button
+                onClick={onSkip}
+                className="label-mono text-[rgb(var(--gold))] hover:text-[rgb(var(--text-primary))] transition-colors tracking-[0.1em]"
+              >
+                SKIP FOR NOW
+              </button>
+            )}
+          </div>
         </div>
+        {switchAccountError && (
+          <div className="max-w-4xl mx-auto px-4 pb-3">
+            <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+              {switchAccountError}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Progress */}

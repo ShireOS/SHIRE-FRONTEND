@@ -3,10 +3,10 @@ import { quickStats, alerts } from '../../data/mockData'
 
 export function RightPanel({ onOpenChat }) {
   return (
-    <aside className="w-80 bg-transparent border-l border-dash-border p-4 space-y-4 overflow-y-auto">
+    <aside className="dashboard-right-rail w-80 p-4 space-y-4 overflow-y-auto">
       {/* Concierge Preview - Premium Card */}
       <div className="overflow-hidden rounded-lg glass-card">
-        <div className="p-5 bg-dash-gold/10 border-b border-dash-gold/20">
+        <div className="p-5 bg-dash-gold/10 soft-divider-bottom">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-11 h-11 bg-dash-gold/20 border border-dash-gold/30 rounded-lg flex items-center justify-center">
               <Sparkles size={20} className="text-dash-gold" />
@@ -39,16 +39,16 @@ export function RightPanel({ onOpenChat }) {
         <h3 className="text-sm font-semibold text-dash-cream mb-4">
           Quick <span className="font-dash-display italic text-dash-gold">Stats</span>
         </h3>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between py-2 border-b border-dash-border">
+        <div className="space-y-2">
+          <div className="rail-seam flex items-center justify-between py-2.5">
             <span className="text-sm text-dash-secondary">Tables Open</span>
             <span className="text-lg font-dash-display text-dash-cream tabular-nums">{quickStats.tablesOpen}</span>
           </div>
-          <div className="flex items-center justify-between py-2 border-b border-dash-border">
+          <div className="rail-seam flex items-center justify-between py-2.5">
             <span className="text-sm text-dash-secondary">Staff On</span>
             <span className="text-lg font-dash-display text-dash-cream tabular-nums">{quickStats.staffOn}</span>
           </div>
-          <div className="flex items-center justify-between py-2">
+          <div className="flex items-center justify-between py-2.5">
             <span className="text-sm text-dash-secondary">Wait List</span>
             <span className="text-lg font-dash-display text-dash-cream tabular-nums">{quickStats.waitList}</span>
           </div>
@@ -64,7 +64,7 @@ export function RightPanel({ onOpenChat }) {
           {alerts.slice(0, 3).map((alert, index) => (
             <div
               key={alert.id}
-              className={`flex items-start gap-3 p-2.5 rounded-lg bg-white/5 hover:bg-white/10 transition-all cursor-pointer ${index < alerts.slice(0, 3).length - 1 ? 'border-b border-dash-border' : ''}`}
+              className={`flex items-start gap-3 p-2.5 rounded-lg bg-dash-cream/5 hover:bg-dash-cream/10 transition-all cursor-pointer ${index < alerts.slice(0, 3).length - 1 ? 'rail-seam' : ''}`}
             >
               <span className={`w-1.5 h-1.5 mt-1.5 rounded-full flex-shrink-0 ${alert.severity === 'high' ? 'bg-dash-danger' :
                   alert.severity === 'medium' ? 'bg-dash-warning' :

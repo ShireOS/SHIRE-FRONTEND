@@ -22,9 +22,9 @@ export function MetricCard({ type, title, value, change, goal, format = 'number'
   const progress = goal ? Math.min((value / goal) * 100, 100) : 0
 
   return (
-    <div className="flex-1 px-6 py-5 border-r border-dash-border last:border-r-0">
+    <div className="metric-seam flex-1 px-6 py-5">
       <div className="flex items-start justify-between mb-3">
-        <div className="p-2 rounded-lg bg-white/5 text-dash-cream">
+        <div className="p-2 rounded-lg bg-dash-cream/5 text-dash-cream">
           <Icon size={18} strokeWidth={2} />
         </div>
         <div className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded ${
@@ -48,7 +48,7 @@ export function MetricCard({ type, title, value, change, goal, format = 'number'
             <span>PROGRESS</span>
             <span className="text-dash-secondary font-dash-mono text-[10px]">Target: {formatValue(goal)}</span>
           </div>
-          <div className="h-1 bg-white/10 rounded-sm overflow-hidden">
+          <div className="h-1 bg-dash-cream/10 rounded-sm overflow-hidden">
             <div
               className={`h-full rounded-sm transition-all duration-1000 ease-out ${
                 progress >= 100 ? 'bg-dash-success' :

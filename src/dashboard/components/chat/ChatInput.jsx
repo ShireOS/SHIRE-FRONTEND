@@ -36,7 +36,7 @@ export function ChatInput({ onSend, disabled = false }) {
   }, [input])
 
   return (
-    <form onSubmit={handleSubmit} className="flex-shrink-0 p-4 bg-white border-t border-gray-100">
+    <form onSubmit={handleSubmit} className="flex-shrink-0 p-4 bg-dash-surface soft-divider-top">
       <div className="flex items-end gap-3">
         <textarea
           ref={textareaRef}
@@ -46,18 +46,18 @@ export function ChatInput({ onSend, disabled = false }) {
           placeholder="Ask me anything about your restaurant..."
           disabled={disabled}
           rows={1}
-          className="flex-1 resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-50 disabled:cursor-not-allowed max-h-32 overflow-y-auto"
+          className="flex-1 resize-none rounded-xl bg-dash-cream/5 border border-dash-border px-4 py-3 text-sm text-dash-cream focus:outline-none focus:ring-1 focus:ring-dash-gold/50 focus:border-dash-gold/50 disabled:bg-dash-surface disabled:cursor-not-allowed max-h-32 overflow-y-auto placeholder:text-dash-tertiary"
           style={{ minHeight: '44px' }}
         />
         <button
           type="submit"
           disabled={!input.trim() || disabled}
-          className="flex-shrink-0 w-11 h-11 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl flex items-center justify-center hover:from-blue-700 hover:to-blue-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-blue-600 disabled:hover:to-blue-700"
+          className="flex-shrink-0 w-11 h-11 bg-dash-gold hover:bg-dash-gold/90 rounded-xl flex items-center justify-center transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-dash-cream/10"
         >
-          <Send size={18} className="text-white" />
+          <Send size={18} className="text-dash-base" />
         </button>
       </div>
-      <p className="text-xs text-gray-400 mt-2 px-1">
+      <p className="text-xs text-dash-tertiary mt-2 px-1">
         Press Enter to send, Shift+Enter for new line
       </p>
     </form>

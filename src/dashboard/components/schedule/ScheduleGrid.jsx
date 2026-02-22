@@ -3,8 +3,8 @@ import { Badge } from '../shared/Badge'
 import { ShiftBadge } from './ShiftBadge'
 
 const dayTypeStyles = {
-  slow: 'text-dash-tertiary bg-white/5',
-  avg: 'text-dash-secondary bg-white/10',
+  slow: 'text-dash-tertiary bg-dash-cream/5',
+  avg: 'text-dash-secondary bg-dash-cream/10',
   busy: 'text-dash-warning bg-dash-warning/10',
 }
 
@@ -16,9 +16,9 @@ function getAvailabilityStyle(status) {
     case 'preferred':
       return 'bg-dash-success/10 hover:bg-dash-success/20'
     case 'unavailable':
-      return 'bg-white/5 cursor-not-allowed'
+      return 'bg-dash-cream/5 cursor-not-allowed'
     default:
-      return 'hover:bg-white/5 cursor-pointer'
+      return 'hover:bg-dash-cream/5 cursor-pointer'
   }
 }
 
@@ -30,7 +30,7 @@ export function ScheduleGrid({ schedule, onShiftClick, onCellClick, readOnly = f
       <CardContent className="p-0 overflow-x-auto">
         <table className="w-full min-w-[800px]">
           <thead>
-            <tr className="border-b border-dash-border">
+            <tr className="schedule-row-border">
               <th className="text-left py-4 px-4 label-mono w-32">
                 STAFF
               </th>
@@ -59,12 +59,12 @@ export function ScheduleGrid({ schedule, onShiftClick, onCellClick, readOnly = f
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-dash-border">
+          <tbody className="schedule-row-divide">
             {schedule.staff.map((staffRow) => (
-              <tr key={staffRow.waiterId} className="transition-colors hover:bg-white/5">
+              <tr key={staffRow.waiterId} className="transition-colors hover:bg-dash-cream/5">
                 <td className="py-4 px-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-white/10 border border-dash-border rounded-full flex items-center justify-center text-xs font-medium text-dash-cream">
+                    <div className="w-8 h-8 bg-dash-cream/10 border border-dash-border rounded-full flex items-center justify-center text-xs font-medium text-dash-cream">
                       {staffRow.name.charAt(0)}
                     </div>
                     <div>

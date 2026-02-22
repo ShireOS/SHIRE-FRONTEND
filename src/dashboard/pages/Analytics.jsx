@@ -21,7 +21,16 @@ export function Analytics() {
     if (intensity > 0.6) return 'bg-dash-warning'
     if (intensity > 0.4) return 'bg-dash-gold/60'
     if (intensity > 0.2) return 'bg-dash-gold/30'
-    return 'bg-white/10'
+    return 'bg-dash-cream/10'
+  }
+
+  const chartTheme = {
+    axis: 'var(--dash-chart-axis)',
+    tooltipBg: 'var(--dash-chart-tooltip-bg)',
+    tooltipBorder: '1px solid var(--dash-chart-tooltip-border)',
+    tooltipText: 'var(--dash-chart-tooltip-text)',
+    tooltipLabel: 'var(--dash-chart-tooltip-label)',
+    accent: 'var(--dash-chart-accent-line)',
   }
 
   return (
@@ -118,12 +127,12 @@ export function Analytics() {
             <div className="h-48 bg-dash-base rounded-lg p-2">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={tableTurns.byDayOfWeek}>
-                  <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B665A' }} />
+                  <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: chartTheme.axis }} />
                   <YAxis hide domain={[0, 70]} />
                   <Tooltip
                     formatter={(value) => [`${value} min`, 'Turn Time']}
-                    contentStyle={{ borderRadius: '8px', backgroundColor: '#1A1814', border: '1px solid rgba(255,255,255,0.15)', color: '#F5F2EB' }}
-                    labelStyle={{ color: '#A09A8C' }}
+                    contentStyle={{ borderRadius: '8px', backgroundColor: chartTheme.tooltipBg, border: chartTheme.tooltipBorder, color: chartTheme.tooltipText }}
+                    labelStyle={{ color: chartTheme.tooltipLabel }}
                   />
                   <Bar dataKey="turnTime" radius={[4, 4, 0, 0]}>
                     {tableTurns.byDayOfWeek.map((entry, index) => (
@@ -167,19 +176,19 @@ export function Analytics() {
             <div className="h-48 bg-dash-base rounded-lg p-2">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={waitTimes.byHour}>
-                  <XAxis dataKey="hour" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B665A' }} />
+                  <XAxis dataKey="hour" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: chartTheme.axis }} />
                   <YAxis hide domain={[0, 25]} />
                   <Tooltip
                     formatter={(value) => [`${value} min`, 'Wait Time']}
-                    contentStyle={{ borderRadius: '8px', backgroundColor: '#1A1814', border: '1px solid rgba(255,255,255,0.15)', color: '#F5F2EB' }}
-                    labelStyle={{ color: '#A09A8C' }}
+                    contentStyle={{ borderRadius: '8px', backgroundColor: chartTheme.tooltipBg, border: chartTheme.tooltipBorder, color: chartTheme.tooltipText }}
+                    labelStyle={{ color: chartTheme.tooltipLabel }}
                   />
                   <Line
                     type="monotone"
                     dataKey="wait"
-                    stroke="#C9A962"
+                    stroke={chartTheme.accent}
                     strokeWidth={2}
-                    dot={{ fill: '#C9A962', strokeWidth: 0, r: 4 }}
+                    dot={{ fill: chartTheme.accent, strokeWidth: 0, r: 4 }}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -215,7 +224,7 @@ export function Analytics() {
                 <div key={station.station} className="flex items-center justify-between">
                   <span className="text-sm text-dash-secondary">{station.station}</span>
                   <div className="flex items-center gap-2">
-                    <div className="w-24 h-2 bg-white/10 rounded-full overflow-hidden">
+                    <div className="w-24 h-2 bg-dash-cream/10 rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full ${station.avgTime > 14 ? 'bg-dash-danger' : station.avgTime > 10 ? 'bg-dash-warning' : 'bg-dash-success'}`}
                         style={{ width: `${(station.avgTime / 20) * 100}%` }}
@@ -270,7 +279,7 @@ export function Analytics() {
             <div className="flex items-center gap-4 mt-4 text-xs text-dash-tertiary">
               <span>Less busy</span>
               <div className="flex gap-1">
-                <div className="w-6 h-3 bg-white/10 rounded" />
+                <div className="w-6 h-3 bg-dash-cream/10 rounded" />
                 <div className="w-6 h-3 bg-dash-gold/30 rounded" />
                 <div className="w-6 h-3 bg-dash-gold/60 rounded" />
                 <div className="w-6 h-3 bg-dash-warning rounded" />
@@ -298,19 +307,19 @@ export function Analytics() {
           <div className="h-64 bg-dash-base rounded-lg p-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={monthlyRevenue}>
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B665A' }} />
+                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: chartTheme.axis }} />
                 <YAxis
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fontSize: 12, fill: '#6B665A' }}
+                  tick={{ fontSize: 12, fill: chartTheme.axis }}
                   tickFormatter={(value) => `$${value / 1000}k`}
                 />
                 <Tooltip
                   formatter={(value) => [`$${value.toLocaleString()}`, 'Revenue']}
-                  contentStyle={{ borderRadius: '8px', backgroundColor: '#1A1814', border: '1px solid rgba(255,255,255,0.15)', color: '#F5F2EB' }}
-                  labelStyle={{ color: '#A09A8C' }}
+                  contentStyle={{ borderRadius: '8px', backgroundColor: chartTheme.tooltipBg, border: chartTheme.tooltipBorder, color: chartTheme.tooltipText }}
+                  labelStyle={{ color: chartTheme.tooltipLabel }}
                 />
-                <Bar dataKey="revenue" fill="#C9A962" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="revenue" fill={chartTheme.accent} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

@@ -1,5 +1,7 @@
+import { useCallback, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useRequireOnboarding } from '../../auth'
+import { useAuth, useRequireOnboarding } from '../../auth'
 import { useOnboarding } from '../hooks/useOnboarding'
 import { OnboardingLayout, ONBOARDING_STEPS } from '../components/OnboardingLayout'
 import { LaunchScreen } from '../components/LaunchScreen'
@@ -14,9 +16,30 @@ import { TeamStep } from './steps/TeamStep'
 
 export function OnboardingPage() {
   const { isReady } = useRequireOnboarding()
+  const { signOut } = useAuth()
+  const navigate = useNavigate()
   const onboarding = useOnboarding()
+  const [isSwitchingAccount, setIsSwitchingAccount] = useState(false)
+  const [switchAccountError, setSwitchAccountError] = useState<string | null>(null)
 
   const { currentStep, nextStep, prevStep, showLaunchScreen } = onboarding
+
+  const handleSwitchAccount = useCallback(async () => {
+    setSwitchAccountError(null)
+    setIsSwitchingAccount(true)
+
+    try {
+      await signOut()
+      navigate('/auth/login', {
+        replace: true,
+        state: { switchedAccount: true },
+      })
+    } catch {
+      setSwitchAccountError('Unable to sign out. Please try again.')
+    } finally {
+      setIsSwitchingAccount(false)
+    }
+  }, [navigate, signOut])
 
   // Loading state
   if (!isReady) {
@@ -32,7 +55,14 @@ export function OnboardingPage() {
 
   // Show launch celebration
   if (showLaunchScreen) {
-    return <LaunchScreen onboarding={onboarding} />
+    return (
+      <LaunchScreen
+        onboarding={onboarding}
+        onSwitchAccount={handleSwitchAccount}
+        isSwitchingAccount={isSwitchingAccount}
+        switchAccountError={switchAccountError}
+      />
+    )
   }
 
   // Get current step config
@@ -75,6 +105,9 @@ export function OnboardingPage() {
       onSkip={nextStep}
       canGoBack={canGoBack}
       onBack={prevStep}
+      onSwitchAccount={handleSwitchAccount}
+      isSwitchingAccount={isSwitchingAccount}
+      switchAccountError={switchAccountError}
     >
       <AnimatePresence mode="wait">
         <motion.div

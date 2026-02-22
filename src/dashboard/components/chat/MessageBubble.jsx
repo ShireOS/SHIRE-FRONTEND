@@ -14,13 +14,13 @@ export function MessageBubble({ message, isStreaming = false }) {
     return (
       <div className="flex items-start gap-3 px-4 py-3 justify-end">
         <div className="flex flex-col items-end max-w-[80%]">
-          <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl rounded-tr-md px-4 py-3">
+          <div className="bg-dash-gold text-dash-base rounded-2xl rounded-tr-md px-4 py-3">
             <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
           </div>
-          <span className="text-xs text-gray-400 mt-1 px-1">{timestamp}</span>
+          <span className="text-xs text-dash-tertiary mt-1 px-1">{timestamp}</span>
         </div>
-        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-          <User size={16} className="text-blue-600" />
+        <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-dash-gold/20 border border-dash-gold/30 flex items-center justify-center">
+          <User size={16} className="text-dash-cream" />
         </div>
       </div>
     )
@@ -28,17 +28,17 @@ export function MessageBubble({ message, isStreaming = false }) {
 
   return (
     <div className="flex items-start gap-3 px-4 py-3">
-      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center">
-        <Sparkles size={16} className="text-white" />
+      <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-dash-gold/20 border border-dash-gold/30 flex items-center justify-center">
+        <Sparkles size={16} className="text-dash-gold" />
       </div>
       <div className="flex flex-col max-w-[80%]">
-        <div className="bg-gray-100 text-gray-900 rounded-2xl rounded-tl-md px-4 py-3">
+        <div className="glass-card text-dash-cream rounded-2xl rounded-tl-md px-4 py-3">
           <p className="text-sm leading-relaxed whitespace-pre-wrap">
             {message.content}
-            {isStreaming && <span className="inline-block w-1 h-4 ml-1 bg-gray-400 animate-pulse" />}
+            {isStreaming && <span className="inline-block w-1.5 h-4 ml-0.5 bg-dash-gold animate-pulse" />}
           </p>
         </div>
-        <span className="text-xs text-gray-400 mt-1 px-1">{timestamp}</span>
+        <span className="text-xs text-dash-tertiary mt-1 px-1">{timestamp}</span>
       </div>
     </div>
   )

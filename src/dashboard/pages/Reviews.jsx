@@ -17,7 +17,7 @@ const sourceColors = {
   google: 'bg-blue-500/20 text-blue-400',
   yelp: 'bg-dash-danger/20 text-dash-danger',
   opentable: 'bg-dash-warning/20 text-dash-warning',
-  internal: 'bg-white/10 text-dash-secondary'
+  internal: 'bg-dash-cream/10 text-dash-secondary'
 }
 
 export function Reviews() {
@@ -244,7 +244,7 @@ export function Reviews() {
               <button
                 onClick={() => setFilter('all')}
                 className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                  filter === 'all' ? 'bg-dash-gold text-dash-base' : 'bg-white/10 text-dash-secondary hover:bg-white/20'
+                  filter === 'all' ? 'bg-dash-gold text-dash-base' : 'bg-dash-cream/10 text-dash-secondary hover:bg-dash-cream/20'
                 }`}
               >
                 All ({transformedReviews.length})
@@ -252,7 +252,7 @@ export function Reviews() {
               <button
                 onClick={() => setFilter('negative')}
                 className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                  filter === 'negative' ? 'bg-dash-danger text-white' : 'bg-dash-danger/20 text-dash-danger hover:bg-dash-danger/30'
+                  filter === 'negative' ? 'bg-dash-danger text-dash-cream' : 'bg-dash-danger/20 text-dash-danger hover:bg-dash-danger/30'
                 }`}
               >
                 Needs Attention ({negativeCount})
@@ -260,7 +260,7 @@ export function Reviews() {
               <button
                 onClick={() => setFilter('positive')}
                 className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                  filter === 'positive' ? 'bg-dash-success text-white' : 'bg-dash-success/20 text-dash-success hover:bg-dash-success/30'
+                  filter === 'positive' ? 'bg-dash-success text-dash-cream' : 'bg-dash-success/20 text-dash-success hover:bg-dash-success/30'
                 }`}
               >
                 Positive ({positiveCount})
@@ -371,7 +371,7 @@ export function Reviews() {
                         <span className="text-sm font-medium text-dash-secondary">{rating}</span>
                         <Star size={12} className="text-dash-gold fill-dash-gold" />
                       </div>
-                      <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+                      <div className="flex-1 h-2 bg-dash-cream/10 rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full ${rating >= 4 ? 'bg-dash-success' : rating === 3 ? 'bg-dash-warning' : 'bg-dash-danger'}`}
                           style={{ width: `${percentage}%` }}

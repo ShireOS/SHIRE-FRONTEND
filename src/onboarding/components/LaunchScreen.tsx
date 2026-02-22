@@ -4,9 +4,17 @@ import type { UseOnboardingReturn } from '../hooks/useOnboarding'
 
 interface LaunchScreenProps {
   onboarding: UseOnboardingReturn
+  onSwitchAccount?: () => void
+  isSwitchingAccount?: boolean
+  switchAccountError?: string | null
 }
 
-export function LaunchScreen({ onboarding }: LaunchScreenProps) {
+export function LaunchScreen({
+  onboarding,
+  onSwitchAccount,
+  isSwitchingAccount = false,
+  switchAccountError,
+}: LaunchScreenProps) {
   const { data, goToDashboard } = onboarding
   const [showButton, setShowButton] = useState(false)
 
@@ -19,6 +27,23 @@ export function LaunchScreen({ onboarding }: LaunchScreenProps) {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center relative overflow-hidden">
+      {onSwitchAccount && (
+        <div className="absolute top-4 right-4 z-20 flex flex-col items-end gap-2">
+          <button
+            onClick={onSwitchAccount}
+            disabled={isSwitchingAccount}
+            className="label-mono text-[rgb(var(--text-tertiary))] hover:text-[rgb(var(--text-primary))] disabled:opacity-60 disabled:cursor-not-allowed transition-colors tracking-[0.1em]"
+          >
+            {isSwitchingAccount ? 'SIGNING OUT...' : 'SWITCH ACCOUNT'}
+          </button>
+          {switchAccountError && (
+            <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 max-w-xs text-right">
+              {switchAccountError}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Gold radial glow */}
       <div
         className="absolute inset-0 pointer-events-none"
@@ -94,7 +119,8 @@ export function LaunchScreen({ onboarding }: LaunchScreenProps) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
             onClick={goToDashboard}
-            className="px-8 py-3 bg-white text-black hover:bg-gray-100 font-medium rounded-lg transition-colors text-sm"
+            disabled={isSwitchingAccount}
+            className="px-8 py-3 bg-white text-black hover:bg-gray-100 disabled:opacity-60 disabled:cursor-not-allowed font-medium rounded-lg transition-colors text-sm"
           >
             Go to Dashboard
           </motion.button>

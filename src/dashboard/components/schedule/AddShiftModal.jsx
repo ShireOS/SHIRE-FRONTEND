@@ -50,7 +50,7 @@ export function AddShiftModal({
           <div className="space-y-4">
             {/* Staff Selection */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-dash-secondary mb-1">
                 Staff Member
               </label>
               <select
@@ -66,13 +66,13 @@ export function AddShiftModal({
                 ))}
               </select>
               {selectedStaff && (
-                <p className="text-xs text-gray-500 mt-1">Role: {selectedStaff.role}</p>
+                <p className="text-xs text-dash-tertiary mt-1">Role: {selectedStaff.role}</p>
               )}
             </div>
 
             {/* Date */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+              <label className="block text-sm font-medium text-dash-secondary mb-1">Date</label>
               <input
                 type="date"
                 value={formData.shift_date}
@@ -85,7 +85,7 @@ export function AddShiftModal({
             {/* Time Inputs */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-dash-secondary mb-1">
                   Start Time
                 </label>
                 <input
@@ -97,7 +97,7 @@ export function AddShiftModal({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-dash-secondary mb-1">
                   End Time
                 </label>
                 <input
@@ -112,7 +112,7 @@ export function AddShiftModal({
 
             {/* Role Selection */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+              <label className="block text-sm font-medium text-dash-secondary mb-1">Role</label>
               <select
                 value={formData.role}
                 onChange={(e) => setFormData({ ...formData, role: e.target.value })}

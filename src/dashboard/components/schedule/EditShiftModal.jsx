@@ -65,7 +65,7 @@ export function EditShiftModal({ shift, staffRow, allStaff, onSave, onClose }) {
             </div>
             <ul className="space-y-2">
               {shift.reasoning.reasons.map((reason, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                <li key={i} className="flex items-start gap-2 text-sm text-dash-secondary">
                   <span className="text-green-600 flex-shrink-0">✓</span>
                   <span>{reason}</span>
                 </li>
@@ -101,7 +101,7 @@ export function EditShiftModal({ shift, staffRow, allStaff, onSave, onClose }) {
         <div className="space-y-4">
           {/* Staff Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-dash-secondary mb-1">
               Staff Member
             </label>
             <select
@@ -120,7 +120,7 @@ export function EditShiftModal({ shift, staffRow, allStaff, onSave, onClose }) {
           {/* Time Inputs */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-dash-secondary mb-1">
                 Start Time
               </label>
               <input
@@ -131,7 +131,7 @@ export function EditShiftModal({ shift, staffRow, allStaff, onSave, onClose }) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-dash-secondary mb-1">
                 End Time
               </label>
               <input
@@ -145,7 +145,7 @@ export function EditShiftModal({ shift, staffRow, allStaff, onSave, onClose }) {
 
           {/* Role Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+            <label className="block text-sm font-medium text-dash-secondary mb-1">Role</label>
             <select
               value={formData.role}
               onChange={(e) => setFormData({ ...formData, role: e.target.value })}

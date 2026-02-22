@@ -5,112 +5,38 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shire | Command Interface</title>
-
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        /* --------------------------------------------------------------------------
-           DESIGN TOKENS & VARIABLES
-           -------------------------------------------------------------------------- */
         :root {
-            /* --- PALETTE: "Liquid Data" --- */
-            --bg-void: #000000;
-            --bg-depth: #0A0A0A;
-            --bg-surface: #121212;
-
-            /* Functional States */
-            --s-clean: #FFFFFF;
-            --s-clean-glow: rgba(255, 255, 255, 0.6);
-
-            --s-reserved: #0A84FF;
-            /* Apple Blue */
-            --s-reserved-dim: rgba(10, 132, 255, 0.1);
-
+            --bg-void: #0a0a0c;
+            --bg-surface: #141416;
+            --s-clean: #2c2c2e;
+            --s-reserved: #8e44ad;
+            --s-occupied: #0A84FF;
             --s-dirty: #FF453A;
-            /* Apple Red */
-            --s-dirty-dim: rgba(255, 69, 58, 0.15);
-
-            --s-occupied: #2C2C2E;
-            --s-occupied-txt: #8E8E93;
-
-            /* Text */
+            --s-clean-text: #8e8e93;
             --txt-primary: #FFFFFF;
-            --txt-secondary: rgba(255, 255, 255, 0.55);
-            --txt-tertiary: rgba(255, 255, 255, 0.3);
-
-            /* Glass Physics */
-            --glass-heavy: rgba(20, 20, 20, 0.85);
-            --glass-medium: rgba(30, 30, 30, 0.60);
-            --glass-light: rgba(255, 255, 255, 0.05);
+            --txt-secondary: rgba(255, 255, 255, 0.6);
             --glass-border: rgba(255, 255, 255, 0.08);
-            --glass-highlight: rgba(255, 255, 255, 0.03);
-            --blur-deep: 40px;
-            --blur-med: 20px;
-
-            /* Animation Curves */
-            --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
-            --ease-elastic: cubic-bezier(0.34, 1.56, 0.64, 1);
+            font-family: 'Inter', sans-serif;
         }
 
-        /* --------------------------------------------------------------------------
-           GLOBAL RESET & UTILITIES
-           -------------------------------------------------------------------------- */
         * {
             box-sizing: border-box;
-            -webkit-font-smoothing: antialiased;
+            margin: 0;
+            padding: 0;
         }
 
         body {
-            margin: 0;
-            padding: 0;
-            background-color: var(--bg-void);
+            background: var(--bg-void);
             color: var(--txt-primary);
-            font-family: 'Inter', sans-serif;
             height: 100vh;
-            width: 100vw;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        /* Scrollbar Styling (Webkit) */
-        ::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        /* --------------------------------------------------------------------------
-           LAYOUT GRID
-           -------------------------------------------------------------------------- */
-        .viewport {
-            width: 100%;
-            height: 100%;
             display: grid;
             grid-template-columns: 320px 1fr;
-            /* Sidebar | Map */
             grid-template-rows: 60px 1fr 80px;
-            /* Header | Main | Dock */
-            background: radial-gradient(circle at 80% 20%, #1a1a1a 0%, #000000 70%);
+            overflow: hidden;
         }
 
-        /* --------------------------------------------------------------------------
-           HEADER (Spans Full Width)
-           -------------------------------------------------------------------------- */
         .app-header {
             grid-column: 1 / -1;
             grid-row: 1 / 2;
@@ -119,342 +45,233 @@
             justify-content: space-between;
             padding: 0 24px;
             border-bottom: 1px solid var(--glass-border);
-            background: rgba(0, 0, 0, 0.2);
+            background: rgba(10, 10, 12, 0.8);
             backdrop-filter: blur(10px);
             z-index: 100;
         }
 
-        .brand-cluster {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .brand-logo {
-            font-size: 16px;
-            font-weight: 700;
-            letter-spacing: -0.03em;
-            background: linear-gradient(to bottom, #fff, #888);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .live-badge {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 4px 10px;
-            background: rgba(50, 215, 75, 0.1);
-            border: 1px solid rgba(50, 215, 75, 0.3);
-            border-radius: 100px;
-            font-size: 10px;
-            font-weight: 600;
-            color: #32D74B;
-        }
-
-        .live-dot {
-            width: 4px;
-            height: 4px;
-            background: #32D74B;
-            border-radius: 50%;
-            box-shadow: 0 0 6px #32D74B;
-            animation: pulse 2s infinite;
-        }
-
-        /* --------------------------------------------------------------------------
-           LEFT SIDEBAR (Glass Panel)
-           -------------------------------------------------------------------------- */
         .sidebar {
             grid-column: 1 / 2;
             grid-row: 2 / -1;
-            background: var(--glass-heavy);
-            backdrop-filter: blur(var(--blur-deep));
-            -webkit-backdrop-filter: blur(var(--blur-deep));
+            background: var(--bg-surface);
             border-right: 1px solid var(--glass-border);
+            padding: 24px;
             display: flex;
             flex-direction: column;
-            padding: 24px;
-            gap: 32px;
-            position: relative;
+            gap: 24px;
             z-index: 50;
         }
 
-        /* Sidebar Section Headers */
-        .section-label {
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: var(--txt-tertiary);
-            margin-bottom: 16px;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        /* Reservation Card Style */
-        .res-card {
-            background: var(--glass-light);
-            border: 1px solid transparent;
-            border-radius: 12px;
-            padding: 12px 16px;
-            margin-bottom: 12px;
-            cursor: pointer;
-            transition: all 0.2s var(--ease-out-expo);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .res-card:hover {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: rgba(255, 255, 255, 0.1);
-            transform: translateX(4px);
-        }
-
-        .res-card.active {
-            background: rgba(10, 132, 255, 0.15);
-            border-color: var(--s-reserved);
-        }
-
-        .res-time {
-            font-size: 13px;
-            font-weight: 600;
-            color: var(--s-reserved);
-            margin-bottom: 4px;
-        }
-
-        .res-name {
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--txt-primary);
-        }
-
-        .res-detail {
-            font-size: 12px;
-            color: var(--txt-secondary);
-            margin-top: 2px;
-        }
-
-        /* Log Feed */
-        .log-feed {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            overflow-y: auto;
-            max-height: 300px;
-            mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
-        }
-
-        .log-item {
-            display: flex;
-            gap: 12px;
-            font-size: 12px;
-            opacity: 0.7;
-            transition: opacity 0.2s;
-        }
-
-        .log-item:hover {
-            opacity: 1;
-        }
-
-        .log-time {
-            color: var(--txt-tertiary);
-            font-variant-numeric: tabular-nums;
-            min-width: 40px;
-        }
-
-        .log-txt {
-            color: var(--txt-secondary);
-            line-height: 1.4;
-        }
-
-        .highlight {
-            color: var(--s-clean);
-            font-weight: 500;
-        }
-
-        /* --------------------------------------------------------------------------
-           MAIN MAP AREA
-           -------------------------------------------------------------------------- */
         .map-stage {
             grid-column: 2 / -1;
             grid-row: 2 / -1;
             position: relative;
             overflow: hidden;
-            /* Architectural Grid Background */
-            background-image:
-                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-            background-size: 60px 60px;
+            background: radial-gradient(circle at 50% 50%, #16161a 0%, #0a0a0c 100%);
+            background-image: radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
         }
 
-        /* Floating Filter Tabs */
-        .map-filters {
-            position: absolute;
-            top: 24px;
-            left: 24px;
-            display: flex;
-            gap: 8px;
-            z-index: 10;
+        .brand-logo {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
         }
 
-        .filter-chip {
-            padding: 8px 16px;
-            background: rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(10px);
-            border: 1px solid var(--glass-border);
-            border-radius: 100px;
-            font-size: 12px;
-            font-weight: 500;
+        .section-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
             color: var(--txt-secondary);
+            margin-bottom: 12px;
+            letter-spacing: 0.05em;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .res-card {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: 0.2s;
+            border: 1px solid transparent;
         }
 
-        .filter-chip.active {
-            background: var(--s-clean);
-            color: black;
-            border-color: var(--s-clean);
+        .res-card:hover {
+            background: rgba(255, 255, 255, 0.06);
         }
 
-        /* --------------------------------------------------------------------------
-           TABLE COMPONENTS (The Core Visuals)
-           -------------------------------------------------------------------------- */
+        .res-card.active {
+            border-color: var(--s-occupied);
+            background: rgba(10, 132, 255, 0.1);
+        }
+
+        .res-time {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--s-occupied);
+        }
+
+        .res-name {
+            font-size: 14px;
+            font-weight: 500;
+            margin: 4px 0 2px;
+        }
+
+        .res-detail {
+            font-size: 12px;
+            color: var(--txt-secondary);
+        }
+
         .table-entity {
             position: absolute;
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
-            transition: all 0.4s var(--ease-elastic);
-            transform-origin: center center;
+            transform-origin: center;
             cursor: pointer;
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
 
         .table-entity:hover {
             transform: scale(1.05);
-            z-index: 20;
+            z-index: 10;
         }
 
-        /* SHAPES */
-        .shape-core {
+        .table-svg {
             width: 100%;
             height: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            overflow: visible;
+        }
+
+        /* Table Shapes */
+        .shape-core {
+            fill: var(--s-clean);
+            stroke: rgba(255, 255, 255, 0.1);
+            stroke-width: 2;
+            transition: all 0.3s;
+        }
+
+        .chair {
+            fill: #2c2c2e;
+            stroke: rgba(255, 255, 255, 0.05);
+            stroke-width: 1;
+            transition: fill 0.3s;
+        }
+
+        .table-text {
+            fill: var(--s-clean-text);
+            font-family: 'Inter', sans-serif;
+            font-size: 15px;
             font-weight: 700;
-            font-size: 14px;
-            position: relative;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-            backdrop-filter: blur(4px);
+            text-anchor: middle;
+            dominant-baseline: central;
+            user-select: none;
         }
 
-        .circle {
-            border-radius: 50%;
-        }
-
-        .rect {
-            border-radius: 12px;
-        }
-
-        .booth {
-            border-radius: 4px 4px 16px 16px;
-        }
-
-        /* STATE: CLEAN */
-        .state-clean .shape-core {
-            background: radial-gradient(circle at 30% 30%, #fff 0%, #d1d1d6 100%);
-            color: #000;
-            border: 1px solid white;
-            box-shadow: 0 0 30px rgba(255, 255, 255, 0.1);
-        }
-
-        /* STATE: OCCUPIED */
+        /* State Colors */
         .state-occupied .shape-core {
-            background: var(--s-occupied);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: var(--s-occupied-txt);
+            fill: var(--s-occupied);
+            stroke: rgba(255, 255, 255, 0.2);
         }
 
-        /* STATE: RESERVED */
+        .state-occupied .table-text {
+            fill: #fff;
+        }
+
+        .state-occupied .chair {
+            fill: rgba(10, 132, 255, 0.3);
+        }
+
         .state-reserved .shape-core {
-            background: rgba(10, 132, 255, 0.05);
-            border: 2px solid var(--s-reserved);
-            color: var(--s-reserved);
-            box-shadow: 0 0 15px rgba(10, 132, 255, 0.1);
+            fill: var(--s-reserved);
+            stroke: rgba(255, 255, 255, 0.2);
         }
 
-        /* STATE: DIRTY */
+        .state-reserved .table-text {
+            fill: #fff;
+        }
+
+        .state-reserved .chair {
+            fill: rgba(142, 68, 173, 0.3);
+        }
+
         .state-dirty .shape-core {
-            background: rgba(255, 69, 58, 0.05);
-            border: 1px solid var(--s-dirty);
-            color: var(--s-dirty);
-            animation: breathe-red 4s infinite ease-in-out;
+            fill: rgba(255, 69, 58, 0.15);
+            stroke: var(--s-dirty);
+            stroke-dasharray: 4 4;
         }
 
-        /* WAITERS & TIMERS (The "Left Stuff" integration) */
-        .waiter-dot {
-            position: absolute;
-            top: -4px;
-            right: -4px;
-            width: 22px;
-            height: 22px;
-            background: #1C1C1E;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: white;
-            font-size: 9px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 5;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        .state-dirty .table-text {
+            fill: var(--s-dirty);
         }
 
-        .timer-tag {
+        /* Waiter & Info */
+        .info-tag {
             position: absolute;
-            bottom: -24px;
-            background: #000;
-            border: 1px solid #333;
-            color: var(--txt-secondary);
-            font-size: 10px;
-            padding: 2px 6px;
-            border-radius: 6px;
-            white-space: nowrap;
+            top: -20px;
+            right: -10px;
+            background: #fff;
+            color: #000;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
             opacity: 0;
-            transform: translateY(-5px);
-            transition: all 0.2s;
+            transform: translateY(5px);
+            transition: 0.2s;
+            pointer-events: none;
+            white-space: nowrap;
         }
 
-        .table-entity:hover .timer-tag,
-        .state-occupied .timer-tag {
+        .table-entity:hover .info-tag {
             opacity: 1;
             transform: translateY(0);
         }
 
-        /* --------------------------------------------------------------------------
-           BOTTOM FLOATING DOCK (Actions)
-           -------------------------------------------------------------------------- */
+        .waiter-dot {
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #222;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fff;
+            font-size: 9px;
+            font-weight: 600;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+        }
+
         .action-dock {
             grid-column: 2 / -1;
             grid-row: 3 / -1;
             align-self: end;
-            margin: 0 24px 24px 24px;
-            height: 64px;
-            background: var(--glass-medium);
-            backdrop-filter: blur(var(--blur-med));
+            justify-self: center;
+            margin-bottom: 24px;
+            background: rgba(20, 20, 22, 0.85);
+            backdrop-filter: blur(20px);
             border: 1px solid var(--glass-border);
             border-radius: 100px;
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            padding: 0 8px 0 24px;
+            padding: 8px 8px 8px 32px;
+            gap: 40px;
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            z-index: 100;
         }
 
         .dock-stats {
             display: flex;
-            gap: 24px;
+            gap: 32px;
         }
 
         .stat-unit {
@@ -465,244 +282,271 @@
         .stat-val {
             font-size: 18px;
             font-weight: 600;
-            color: white;
-            line-height: 1;
+            color: #fff;
         }
 
         .stat-lbl {
             font-size: 10px;
+            font-weight: 600;
+            color: var(--txt-secondary);
             text-transform: uppercase;
-            color: var(--txt-tertiary);
-            margin-top: 4px;
+            margin-top: 2px;
         }
 
         .btn-seat {
-            height: 48px;
-            padding: 0 32px;
-            background: var(--s-clean);
-            color: black;
+            background: #fff;
+            color: #000;
             border: none;
+            padding: 0 32px;
+            height: 48px;
             border-radius: 100px;
-            font-weight: 700;
             font-size: 14px;
+            font-weight: 700;
             cursor: pointer;
-            box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
-            transition: transform 0.2s;
+            transition: 0.2s;
+            box-shadow: 0 4px 15px rgba(255, 255, 255, 0.15);
         }
 
         .btn-seat:hover {
+            background: #f0f0f0;
             transform: scale(1.02);
         }
 
         .btn-seat:active {
-            transform: scale(0.96);
+            transform: scale(0.98);
         }
 
-        /* --------------------------------------------------------------------------
-           ANIMATIONS
-           -------------------------------------------------------------------------- */
-        @keyframes pulse {
-            0% {
-                opacity: 1;
-                box-shadow: 0 0 6px #32D74B;
-            }
-
-            50% {
-                opacity: 0.5;
-                box-shadow: 0 0 0 #32D74B;
-            }
-
-            100% {
-                opacity: 1;
-                box-shadow: 0 0 6px #32D74B;
-            }
-        }
-
-        @keyframes breathe-red {
-
-            0%,
-            100% {
-                border-color: rgba(255, 69, 58, 0.4);
-                box-shadow: 0 0 0 rgba(255, 69, 58, 0);
-            }
-
-            50% {
-                border-color: rgba(255, 69, 58, 1);
-                box-shadow: 0 0 15px rgba(255, 69, 58, 0.15);
-            }
+        .section-title {
+            position: absolute;
+            font-size: 28px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.06);
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            pointer-events: none;
+            white-space: nowrap;
         }
     </style>
 </head>
 
 <body>
-
-    <div class="viewport">
-
-        <header class="app-header">
-            <div class="brand-cluster">
-                <div class="brand-logo">SHIRE</div>
-                <div class="live-badge">
-                    <div class="live-dot"></div>
-                    LIVE
-                </div>
+    <header class="app-header">
+        <div class="brand-logo">SHIRE <span style="font-weight:400;color:var(--txt-secondary)">| Floor Plan</span></div>
+        <div style="font-size: 14px; font-weight:500; font-variant-numeric: tabular-nums;">FRI 12:45 PM</div>
+    </header>
+    <aside class="sidebar">
+        <div>
+            <div class="section-label"><span>Waitlist</span><span>3 Parties</span></div>
+            <div class="res-card active">
+                <div class="res-time">Waiting 15m</div>
+                <div class="res-name">Cameron K.</div>
+                <div class="res-detail">6 Guests • Priority</div>
             </div>
-            <div style="font-size: 14px; font-variant-numeric: tabular-nums; color: var(--txt-secondary);">
-                FRI 12:45 PM
+            <div class="res-card">
+                <div class="res-time">Waiting 5m</div>
+                <div class="res-name">Miller</div>
+                <div class="res-detail">2 Guests</div>
             </div>
-        </header>
-
-        <aside class="sidebar">
-
-            <div>
-                <div class="section-label">
-                    <span>Upcoming</span>
-                    <span>3 Total</span>
-                </div>
-
-                <div class="res-card active">
-                    <div class="res-time">7:00 PM</div>
-                    <div class="res-name">The Cameron Party</div>
-                    <div class="res-detail">6 Guests • Table 202</div>
-                </div>
-
-                <div class="res-card">
-                    <div class="res-time">7:15 PM</div>
-                    <div class="res-name">Miller</div>
-                    <div class="res-detail">2 Guests • Unassigned</div>
-                </div>
-
-                <div class="res-card">
-                    <div class="res-time">7:30 PM</div>
-                    <div class="res-name">Tech Corp Dinner</div>
-                    <div class="res-detail">8 Guests • VIP</div>
-                </div>
-            </div>
-
-            <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
-                <div class="section-label">
-                    <span>System Log</span>
-                    <span style="opacity:0.5">Realtime</span>
-                </div>
-                <div class="log-feed">
-                    <div class="log-item">
-                        <span class="log-time">12:44</span>
-                        <span class="log-txt"><span class="highlight">JD</span> seated Table 101 (2p)</span>
-                    </div>
-                    <div class="log-item">
-                        <span class="log-time">12:42</span>
-                        <span class="log-txt">Table 203 marked <span style="color:var(--s-dirty)">Dirty</span></span>
-                    </div>
-                    <div class="log-item">
-                        <span class="log-time">12:40</span>
-                        <span class="log-txt">Reservation <span class="highlight">#4921</span> confirmed via SMS</span>
-                    </div>
-                    <div class="log-item">
-                        <span class="log-time">12:35</span>
-                        <span class="log-txt"><span class="highlight">MK</span> clocked in</span>
-                    </div>
-                    <div class="log-item">
-                        <span class="log-time">12:31</span>
-                        <span class="log-txt">Table 302 course 2 fired</span>
-                    </div>
-                </div>
-            </div>
-
-        </aside>
-
-        <main class="map-stage" id="floorCanvas">
-
-            <div class="map-filters">
-                <div class="filter-chip active">Main Floor</div>
-                <div class="filter-chip">Patio</div>
-                <div class="filter-chip">Private</div>
-            </div>
-
-        </main>
-
-        <div class="action-dock">
-            <div class="dock-stats">
-                <div class="stat-unit">
-                    <span class="stat-val">82%</span>
-                    <span class="stat-lbl">Capacity</span>
-                </div>
-                <div class="stat-unit">
-                    <span class="stat-val">12m</span>
-                    <span class="stat-lbl">Avg Wait</span>
-                </div>
-                <div class="stat-unit">
-                    <span class="stat-val" style="color: #32D74B;">+15%</span>
-                    <span class="stat-lbl">Turn Rate</span>
-                </div>
-            </div>
-            <button class="btn-seat">Seat Cameron (6)</button>
         </div>
+        <div>
+            <div class="section-label"><span>Upcoming Reservations</span></div>
+            <div class="res-card">
+                <div class="res-time">1:00 PM</div>
+                <div class="res-name">Tech Corp Dinner</div>
+                <div class="res-detail">8 Guests • VIP</div>
+            </div>
+            <div class="res-card">
+                <div class="res-time">1:30 PM</div>
+                <div class="res-name">Sarah Jenkins</div>
+                <div class="res-detail">4 Guests</div>
+            </div>
+        </div>
+    </aside>
+    <main class="map-stage" id="floorCanvas">
+        <div class="section-title" style="top: 8%; left: 8%;">Main Dining</div>
+        <div class="section-title" style="top: 8%; right: 12%;">Bar Area</div>
+        <div class="section-title" style="bottom: 15%; left: 8%;">Patio</div>
+    </main>
+    <div class="action-dock">
+        <div class="dock-stats">
+            <div class="stat-unit"><span class="stat-val">82%</span><span class="stat-lbl">Capacity</span></div>
+            <div class="stat-unit"><span class="stat-val">12m</span><span class="stat-lbl">Avg Wait</span></div>
+            <div class="stat-unit"><span class="stat-val" style="color:#32D74B;">+15%</span><span class="stat-lbl">Turn
+                    Rate</span></div>
+        </div>
+        <button class="btn-seat">Seat Cameron (6)</button>
     </div>
 
     <script>
-        // CONFIGURATION: The "Mental Model"
-        // 0-100 coordinates relative to map stage
-        const tables = [
-            // --- Center Cluster (High Tops) ---
-            { id: 101, x: 20, y: 20, w: 70, h: 70, type: 'circle', state: 'occupied', seats: 2, waiter: 'JD', time: '1h 05m' },
-            { id: 102, x: 32, y: 20, w: 70, h: 70, type: 'circle', state: 'clean', seats: 2, waiter: null, time: null },
-            { id: 103, x: 44, y: 20, w: 70, h: 70, type: 'circle', state: 'occupied', seats: 4, waiter: 'JD', time: '20m' },
-            { id: 104, x: 56, y: 20, w: 70, h: 70, type: 'circle', state: 'dirty', seats: 4, waiter: 'JD', time: '5m' },
-
-            // --- Window Booths (Left) ---
-            { id: 201, x: 5, y: 15, w: 90, h: 80, type: 'booth', state: 'reserved', seats: 4, waiter: 'MK', time: '7:00 PM' },
-            { id: 202, x: 5, y: 35, w: 90, h: 80, type: 'booth', state: 'occupied', seats: 4, waiter: 'MK', time: '45m' },
-            { id: 203, x: 5, y: 55, w: 90, h: 80, type: 'booth', state: 'clean', seats: 4, waiter: null, time: null },
-
-            // --- Large Tables (Right) ---
-            { id: 301, x: 70, y: 20, w: 120, h: 80, type: 'rect', state: 'occupied', seats: 8, waiter: 'AS', time: '12m' },
-            { id: 302, x: 70, y: 45, w: 120, h: 80, type: 'rect', state: 'dirty', seats: 6, waiter: 'AS', time: '2m' },
-
-            // --- The "VIP" Round ---
-            { id: 400, x: 40, y: 60, w: 100, h: 100, type: 'circle', state: 'clean', seats: 5, waiter: null, time: null },
-        ];
-
         const canvas = document.getElementById('floorCanvas');
 
-        function render() {
+        // Table Data Config
+        // x, y are percentages. w, h are base sizes in pixels
+        const tables = [
+            // --- MAIN DINING (Top Left) ---
+            { id: 11, x: 15, y: 22, type: 'rect', w: 100, h: 60, seats: 4, state: 'clean' },
+            { id: 12, x: 28, y: 22, type: 'rect', w: 100, h: 60, seats: 4, state: 'occupied', time: '1h 10m', waiter: 'JD' },
+            { id: 13, x: 41, y: 22, type: 'rect', w: 100, h: 60, seats: 4, state: 'clean' },
+            { id: 14, x: 54, y: 22, type: 'rect', w: 100, h: 60, seats: 4, state: 'dirty', time: 'Needs Bussing' },
+
+            // --- MAIN DINING BOOTHS (Left Wall) ---
+            { id: 21, x: 8, y: 45, type: 'booth-left', w: 70, h: 80, seats: 4, state: 'occupied', time: '45m', waiter: 'MK' },
+            { id: 22, x: 8, y: 62, type: 'booth-left', w: 70, h: 80, seats: 4, state: 'reserved', time: '1:00 PM' },
+            { id: 23, x: 8, y: 79, type: 'booth-left', w: 70, h: 80, seats: 4, state: 'clean' },
+
+            // --- CENTER ROUNDS ---
+            { id: 31, x: 30, y: 55, type: 'circle', w: 110, h: 110, seats: 6, state: 'clean' },
+            { id: 32, x: 48, y: 55, type: 'circle', w: 110, h: 110, seats: 6, state: 'occupied', time: '20m', waiter: 'AS' },
+
+            // --- BAR AREA (Right Side) ---
+            { id: 41, x: 70, y: 20, type: 'circle', w: 55, h: 55, seats: 2, state: 'clean' },
+            { id: 42, x: 82, y: 20, type: 'circle', w: 55, h: 55, seats: 2, state: 'occupied', time: '10m', waiter: 'JD' },
+            { id: 43, x: 70, y: 35, type: 'circle', w: 55, h: 55, seats: 2, state: 'clean' },
+            { id: 44, x: 82, y: 35, type: 'circle', w: 55, h: 55, seats: 2, state: 'clean' },
+
+            // Bar Counter (Large Rect)
+            { id: "BAR", x: 76, y: 65, type: 'rect-vertical', w: 50, h: 220, seats: 8, state: 'occupied', time: 'Active', label: 'BAR' },
+            { id: 45, x: 92, y: 60, type: 'booth-right', w: 60, h: 70, seats: 4, state: 'clean' },
+            { id: 46, x: 92, y: 78, type: 'booth-right', w: 60, h: 70, seats: 4, state: 'occupied', time: '1h 05m', waiter: 'JD' },
+
+            // --- PATIO (Bottom Left) ---
+            { id: 51, x: 25, y: 85, type: 'diamond', w: 60, h: 60, seats: 4, state: 'clean' },
+            { id: 52, x: 38, y: 85, type: 'diamond', w: 60, h: 60, seats: 4, state: 'occupied', time: '15m', waiter: 'MK' },
+            { id: 53, x: 51, y: 85, type: 'diamond', w: 60, h: 60, seats: 4, state: 'clean' }
+        ];
+
+        function createSVGElement(tag) {
+            return document.createElementNS('http://www.w3.org/2000/svg', tag);
+        }
+
+        // Draw chairs dynamically around a shape
+        function getChairs(type, w, h, seats) {
+            let chairs = [];
+            const chairSize = 14;
+            const offset = chairSize / 2 + 6;
+
+            if (type === 'rect' || type === 'booth-left' || type === 'booth-right') {
+                const topBottomSeats = Math.ceil(seats / 2);
+                for (let i = 0; i < topBottomSeats; i++) {
+                    let cx = (w / (topBottomSeats + 1)) * (i + 1);
+                    if (type === 'rect') {
+                        chairs.push({ cx, cy: -offset, r: chairSize / 2 });
+                        chairs.push({ cx, cy: h + offset, r: chairSize / 2 });
+                    }
+                }
+                if (type === 'booth-left') {
+                    for (let i = 1; i <= 2; i++) chairs.push({ cx: w + offset, cy: (h / 3) * i, r: chairSize / 2 });
+                }
+                if (type === 'booth-right') {
+                    for (let i = 1; i <= 2; i++) chairs.push({ cx: -offset, cy: (h / 3) * i, r: chairSize / 2 });
+                }
+            } else if (type === 'circle' && w === h) {
+                const radius = w / 2 + offset;
+                const angleStep = (Math.PI * 2) / seats;
+                for (let i = 0; i < seats; i++) {
+                    chairs.push({
+                        cx: w / 2 + Math.cos(i * angleStep) * radius,
+                        cy: h / 2 + Math.sin(i * angleStep) * radius,
+                        r: chairSize / 2
+                    });
+                }
+            } else if (type === 'rect-vertical') {
+                for (let i = 1; i <= seats; i++) {
+                    chairs.push({ cx: -offset, cy: (h / (seats + 1)) * i, r: chairSize / 2 });
+                }
+            } else if (type === 'diamond') {
+                chairs.push({ cx: w / 2, cy: -offset, r: chairSize / 2 });
+                chairs.push({ cx: w / 2, cy: h + offset, r: chairSize / 2 });
+                chairs.push({ cx: -offset, cy: h / 2, r: chairSize / 2 });
+                chairs.push({ cx: w + offset, cy: h / 2, r: chairSize / 2 });
+            }
+
+            return chairs;
+        }
+
+        function renderMap() {
             tables.forEach(t => {
-                // Container
                 const el = document.createElement('div');
                 el.className = `table-entity state-${t.state}`;
-                el.style.left = t.x + '%';
-                el.style.top = t.y + '%';
+                el.style.left = `calc(${t.x}% - ${t.w / 2}px)`;
+                el.style.top = `calc(${t.y}% - ${t.h / 2}px)`;
                 el.style.width = t.w + 'px';
                 el.style.height = t.h + 'px';
 
-                // Core Shape
-                const shape = document.createElement('div');
-                shape.className = `shape-core ${t.type}`;
-                shape.innerText = t.id;
+                // Create SVG Layer
+                const svg = createSVGElement('svg');
+                svg.setAttribute('class', 'table-svg');
 
-                // Waiter Badge
-                if (t.waiter) {
-                    const w = document.createElement('div');
-                    w.className = 'waiter-dot';
-                    w.innerText = t.waiter;
-                    el.appendChild(w);
+                let shape;
+                if (t.type === 'circle') {
+                    shape = createSVGElement('circle');
+                    shape.setAttribute('cx', t.w / 2);
+                    shape.setAttribute('cy', t.h / 2);
+                    shape.setAttribute('r', t.w / 2);
+                } else {
+                    shape = createSVGElement('rect');
+                    shape.setAttribute('width', t.w);
+                    shape.setAttribute('height', t.h);
+
+                    if (t.type === 'rect' || t.type === 'rect-vertical' || t.type === 'diamond') {
+                        shape.setAttribute('rx', 8);
+                    } else if (t.type === 'booth-left') {
+                        shape.setAttribute('rx', 16);
+                        shape.setAttribute('qx', 4); // Aesthetic placeholder for complex rect
+                    } else if (t.type === 'booth-right') {
+                        shape.setAttribute('rx', 16);
+                    }
+
+                    if (t.type === 'diamond') {
+                        svg.style.transform = "rotate(45deg)";
+                    }
+                }
+                shape.setAttribute('class', 'shape-core');
+                svg.appendChild(shape);
+
+                // Add Chairs (Dynamic SVG Circles)
+                const chairs = getChairs(t.type, t.w, t.h, t.seats);
+                chairs.forEach(c => {
+                    const chair = createSVGElement('circle');
+                    chair.setAttribute('cx', c.cx);
+                    chair.setAttribute('cy', c.cy);
+                    chair.setAttribute('r', c.r);
+                    chair.setAttribute('class', 'chair');
+                    svg.appendChild(chair);
+                });
+
+                // Add Text Label
+                const text = createSVGElement('text');
+                text.setAttribute('x', t.w / 2);
+                text.setAttribute('y', t.h / 2);
+                text.setAttribute('class', 'table-text');
+                if (t.type === 'diamond') {
+                    text.setAttribute('transform', `rotate(-45 ${t.w / 2} ${t.h / 2})`);
+                }
+                text.textContent = t.label || t.id;
+                svg.appendChild(text);
+                el.appendChild(svg);
+
+                // Add HTML Info Badges Overlay
+                if (t.time || t.seats) {
+                    const info = document.createElement('div');
+                    info.className = 'info-tag';
+                    info.innerText = t.state === 'clean' ? `${t.seats} Seats` : (t.time || t.state);
+                    el.appendChild(info);
                 }
 
-                // Info Tag
-                const tag = document.createElement('div');
-                tag.className = 'timer-tag';
-
-                if (t.state === 'clean') tag.innerText = `${t.seats} Seats`;
-                else if (t.state === 'reserved') tag.innerText = t.time;
-                else if (t.state === 'dirty') tag.innerText = 'Needs Bussing';
-                else tag.innerText = t.time; // Occupied time
-
-                el.appendChild(shape);
-                el.appendChild(tag);
+                if (t.waiter) {
+                    const wBadge = document.createElement('div');
+                    wBadge.className = 'waiter-dot';
+                    wBadge.innerText = t.waiter;
+                    el.appendChild(wBadge);
+                }
 
                 canvas.appendChild(el);
             });
         }
 
-        render();
+        renderMap();
     </script>
 </body>
 

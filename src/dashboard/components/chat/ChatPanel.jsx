@@ -111,14 +111,14 @@ export function ChatPanel({ isOpen, onClose }) {
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity"
+        className="fixed inset-0 bg-dash-base/60 backdrop-blur-sm z-40 transition-opacity"
         onClick={onClose}
       />
 
       {/* Panel */}
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-dash-surface border-l border-dash-border shadow-2xl z-50 flex flex-col animate-slide-in-right">
+      <div className="dashboard-chat-rail fixed right-0 top-0 h-full w-full max-w-md shadow-2xl z-50 flex flex-col animate-slide-in-right">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 glass-panel border-b border-dash-border">
+        <div className="flex items-center justify-between p-4 glass-panel soft-divider-bottom">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-dash-gold/20 border border-dash-gold/30 rounded-lg flex items-center justify-center">
               <Sparkles size={20} className="text-dash-gold" />
@@ -132,7 +132,7 @@ export function ChatPanel({ isOpen, onClose }) {
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-dash-tertiary hover:text-dash-cream hover:bg-white/10 transition-colors"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-dash-tertiary hover:text-dash-cream hover:bg-dash-cream/10 transition-colors"
           >
             <X size={20} />
           </button>
@@ -168,7 +168,7 @@ export function ChatPanel({ isOpen, onClose }) {
         </div>
 
         {/* Input */}
-        <form onSubmit={handleSubmit} className="p-4 border-t border-dash-border bg-dash-surface">
+        <form onSubmit={handleSubmit} className="p-4 soft-divider-top bg-dash-surface">
           <div className="flex items-center gap-2">
             <input
               ref={inputRef}
@@ -176,13 +176,13 @@ export function ChatPanel({ isOpen, onClose }) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask anything about your restaurant..."
-              className="flex-1 px-4 py-3 bg-white/5 border border-dash-border rounded-lg text-dash-cream text-sm focus:outline-none focus:ring-1 focus:ring-dash-gold/50 focus:border-dash-gold/50 transition-all placeholder:text-dash-tertiary"
+              className="flex-1 px-4 py-3 bg-dash-cream/5 border border-dash-border rounded-lg text-dash-cream text-sm focus:outline-none focus:ring-1 focus:ring-dash-gold/50 focus:border-dash-gold/50 transition-all placeholder:text-dash-tertiary"
               disabled={isStreaming}
             />
             <button
               type="submit"
               disabled={!input.trim() || isStreaming}
-              className="w-11 h-11 bg-dash-gold hover:bg-dash-gold/90 disabled:bg-white/10 rounded-lg flex items-center justify-center text-dash-base transition-colors"
+              className="w-11 h-11 bg-dash-gold hover:bg-dash-gold/90 disabled:bg-dash-cream/10 rounded-lg flex items-center justify-center text-dash-base transition-colors"
             >
               {isStreaming ? (
                 <Loader2 size={18} className="animate-spin" />

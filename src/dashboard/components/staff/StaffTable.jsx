@@ -187,7 +187,7 @@ export function StaffTable() {
     <Card>
       <CardContent className="p-0">
         {/* Filters */}
-        <div className="p-4 border-b border-dash-border flex flex-wrap items-center gap-4">
+        <div className="p-4 soft-divider-bottom flex flex-wrap items-center gap-4">
           {/* Search */}
           <div className="relative flex-1 min-w-[200px]">
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-dash-tertiary" />
@@ -196,7 +196,7 @@ export function StaffTable() {
               placeholder="Search staff..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white/5 border border-dash-border rounded-lg text-sm text-dash-cream focus:outline-none focus:ring-1 focus:ring-dash-gold/50 focus:border-dash-gold/50 placeholder:text-dash-tertiary"
+              className="w-full pl-10 pr-4 py-2 bg-dash-cream/5 border border-dash-border rounded-lg text-sm text-dash-cream focus:outline-none focus:ring-1 focus:ring-dash-gold/50 focus:border-dash-gold/50 placeholder:text-dash-tertiary"
             />
           </div>
 
@@ -204,7 +204,7 @@ export function StaffTable() {
           <select
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
-            className="px-4 py-2 bg-white/5 border border-dash-border rounded-lg text-sm text-dash-cream focus:outline-none focus:ring-1 focus:ring-dash-gold/50"
+            className="px-4 py-2 bg-dash-cream/5 border border-dash-border rounded-lg text-sm text-dash-cream focus:outline-none focus:ring-1 focus:ring-dash-gold/50"
           >
             <option value="all">All Roles</option>
             <option value="Server">Servers</option>
@@ -213,7 +213,7 @@ export function StaffTable() {
           </select>
 
           {/* Time Filter */}
-          <select className="px-4 py-2 bg-white/5 border border-dash-border rounded-lg text-sm text-dash-cream focus:outline-none focus:ring-1 focus:ring-dash-gold/50">
+          <select className="px-4 py-2 bg-dash-cream/5 border border-dash-border rounded-lg text-sm text-dash-cream focus:outline-none focus:ring-1 focus:ring-dash-gold/50">
             <option>This Month</option>
             <option>This Week</option>
             <option>Last Month</option>
@@ -224,7 +224,7 @@ export function StaffTable() {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-dash-border">
+              <tr className="soft-table-head">
                 <th className="text-left py-3 px-4 label-mono">
                   RANK
                 </th>
@@ -271,12 +271,12 @@ export function StaffTable() {
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-dash-border">
+            <tbody className="soft-divider-y">
               {filteredStaff.map((member, idx) => (
                 <tr
                   key={member.id}
                   onClick={() => navigate(`/staff/${member.id}`)}
-                  className="hover:bg-white/5 cursor-pointer transition-colors"
+                  className="soft-table-row cursor-pointer"
                 >
                   <td className="py-4 px-4">
                     <span className={`text-sm font-semibold ${idx === 0 ? 'text-dash-gold' : 'text-dash-tertiary'}`}>{idx + 1}</span>
@@ -284,7 +284,7 @@ export function StaffTable() {
                   <td className="py-4 px-4">
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-medium ${
-                        idx === 0 ? 'bg-dash-gold/20 text-dash-gold border border-dash-gold/30' : 'bg-white/10 text-dash-cream border border-dash-border'
+                        idx === 0 ? 'bg-dash-gold/20 text-dash-gold border border-dash-gold/30' : 'bg-dash-cream/10 text-dash-cream soft-avatar-ring'
                       }`}>
                         {member.name.split(' ').map(n => n[0]).join('')}
                       </div>

@@ -405,7 +405,7 @@ export function Schedule() {
               <span>Preferred</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="w-3 h-3 bg-white/10 border border-dash-border rounded"></span>
+              <span className="w-3 h-3 bg-dash-cream/10 border border-dash-border rounded"></span>
               <span>Unavailable</span>
             </div>
             <div className="flex items-center gap-2">

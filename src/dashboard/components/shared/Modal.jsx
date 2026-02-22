@@ -18,24 +18,24 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', showClose
     <div className="fixed inset-0 z-50 overflow-y-auto">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/50 transition-opacity"
+        className="fixed inset-0 bg-dash-base/70 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       />
 
       {/* Modal Container */}
       <div className="flex min-h-full items-center justify-center p-4">
         <div
-          className={`relative bg-white rounded-lg shadow-xl w-full ${sizeClasses[size]}`}
+          className={`relative bg-dash-surface border border-dash-border rounded-xl shadow-2xl w-full ${sizeClasses[size]}`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
           {(title || showClose) && (
-            <div className="flex items-center justify-between p-6 border-b border-gray-100">
-              {title && <h2 className="text-xl font-semibold text-gray-900">{title}</h2>}
+            <div className="flex items-center justify-between p-6 border-b border-dash-border">
+              {title && <h2 className="text-xl font-semibold text-dash-cream">{title}</h2>}
               {showClose && (
                 <button
                   onClick={onClose}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-dash-tertiary hover:text-dash-cream hover:bg-dash-cream/10 transition-colors"
                 >
                   <X size={20} />
                 </button>
@@ -56,7 +56,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', showClose
  */
 export function ModalFooter({ children, className = '' }) {
   return (
-    <div className={`flex items-center justify-end gap-3 pt-4 border-t border-gray-100 ${className}`}>
+    <div className={`flex items-center justify-end gap-3 pt-4 border-t border-dash-border ${className}`}>
       {children}
     </div>
   )
@@ -68,7 +68,7 @@ export function ModalFooter({ children, className = '' }) {
 export function ModalSection({ title, children, className = '' }) {
   return (
     <div className={`mb-6 ${className}`}>
-      {title && <h3 className="text-sm font-semibold text-gray-700 mb-3">{title}</h3>}
+      {title && <h3 className="text-sm font-semibold text-dash-secondary mb-3">{title}</h3>}
       {children}
     </div>
   )

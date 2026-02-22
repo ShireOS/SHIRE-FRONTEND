@@ -49,10 +49,10 @@ export function AISchedulePreviewModal({ schedule, onApply, onCancel }) {
       {/* Header */}
       <div className="flex items-start gap-4 mb-6">
         <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center flex-shrink-0">
-          <Sparkles size={24} className="text-white" />
+          <Sparkles size={24} className="text-dash-cream" />
         </div>
         <div className="flex-1">
-          <h2 className="text-2xl font-bold text-gray-900">AI Schedule Suggestion</h2>
+          <h2 className="text-2xl font-bold text-dash-cream">AI Schedule Suggestion</h2>
           <p className="text-gray-600 mt-1">
             Review the AI-generated schedule for {schedule.weekOf}
           </p>
@@ -63,22 +63,22 @@ export function AISchedulePreviewModal({ schedule, onApply, onCancel }) {
       <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-lg p-5 mb-6">
         <div className="flex items-start gap-3 mb-4">
           <div className="w-10 h-10 bg-purple-500 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Sparkles size={20} className="text-white" />
+            <Sparkles size={20} className="text-dash-cream" />
           </div>
           <div className="flex-1">
-            <h3 className="font-semibold text-gray-900 mb-3">AI Scheduling Reasoning</h3>
+            <h3 className="font-semibold text-dash-cream mb-3">AI Scheduling Reasoning</h3>
 
             {/* AI-Generated Summary from Backend */}
             {schedule.scheduleSummary ? (
-              <p className="text-sm text-gray-700 leading-relaxed mb-4">
+              <p className="text-sm text-dash-secondary leading-relaxed mb-4">
                 {schedule.scheduleSummary}
               </p>
             ) : (
               /* Fallback if backend doesn't provide summary yet */
               <>
                 <div className="mb-3">
-                  <h4 className="text-xs font-semibold text-gray-700 uppercase mb-1">Overall Approach</h4>
-                  <p className="text-sm text-gray-700">
+                  <h4 className="text-xs font-semibold text-dash-secondary uppercase mb-1">Overall Approach</h4>
+                  <p className="text-sm text-dash-secondary">
                     Optimized for <strong>fairness</strong> (Gini coefficient: {schedule.fairnessGini || 'N/A'})
                     while achieving <strong>{metrics.coverageGaps === 0 ? 'full coverage' : `${((32 - metrics.coverageGaps) / 32 * 100).toFixed(0)}% coverage`}</strong>
                     {' '}and respecting <strong>{Math.round(avgConfidence * 100)}% preference match</strong>.
@@ -86,8 +86,8 @@ export function AISchedulePreviewModal({ schedule, onApply, onCancel }) {
                 </div>
 
                 <div className="mb-3">
-                  <h4 className="text-xs font-semibold text-gray-700 uppercase mb-1">Key Decisions</h4>
-                  <ul className="text-sm text-gray-700 space-y-1">
+                  <h4 className="text-xs font-semibold text-dash-secondary uppercase mb-1">Key Decisions</h4>
+                  <ul className="text-sm text-dash-secondary space-y-1">
                     <li>• Distributed {metrics.totalHours} hours across {schedule.staff.length} staff members</li>
                     <li>• Prioritized coverage during busy periods (Friday-Saturday)</li>
                     <li>• {totalViolations > 0
@@ -100,8 +100,8 @@ export function AISchedulePreviewModal({ schedule, onApply, onCancel }) {
 
                 {metrics.coverageGaps > 0 && (
                   <div className="mb-3">
-                    <h4 className="text-xs font-semibold text-gray-700 uppercase mb-1">Trade-offs</h4>
-                    <p className="text-sm text-gray-700">
+                    <h4 className="text-xs font-semibold text-dash-secondary uppercase mb-1">Trade-offs</h4>
+                    <p className="text-sm text-dash-secondary">
                       Could not meet all staffing requirements due to availability constraints.
                       {metrics.coverageGaps} time slots still need coverage.
                       Consider adjusting requirements or adding more staff availability.
@@ -157,13 +157,13 @@ export function AISchedulePreviewModal({ schedule, onApply, onCancel }) {
           <div className="bg-purple-50 rounded-lg p-4 space-y-2">
             {topReasoningExamples.map((example, idx) => (
               <div key={idx} className="flex items-start gap-2 text-sm">
-                <div className="w-5 h-5 bg-purple-500 rounded-full flex items-center justify-center flex-shrink-0 text-white text-xs font-bold">
+                <div className="w-5 h-5 bg-purple-500 rounded-full flex items-center justify-center flex-shrink-0 text-dash-cream text-xs font-bold">
                   {idx + 1}
                 </div>
                 <div>
-                  <span className="font-medium text-gray-900">{example.name}</span>
+                  <span className="font-medium text-dash-cream">{example.name}</span>
                   <span className="text-gray-600"> @ </span>
-                  <span className="text-gray-700">{example.time}</span>
+                  <span className="text-dash-secondary">{example.time}</span>
                   <span className="text-gray-600"> ({example.role})</span>
                   <p className="text-gray-600 mt-0.5">{example.reasons[0]}</p>
                 </div>
@@ -175,7 +175,7 @@ export function AISchedulePreviewModal({ schedule, onApply, onCancel }) {
 
       {/* Schedule Grid Preview */}
       <ModalSection title="Suggested Schedule">
-        <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <div className="border border-dash-border rounded-lg overflow-hidden">
           <ScheduleGrid schedule={schedule} readOnly />
         </div>
       </ModalSection>
@@ -212,7 +212,7 @@ export function AISchedulePreviewModal({ schedule, onApply, onCancel }) {
  */
 function MetricCard({ icon, label, value, subtitle, variant = 'default' }) {
   const variantStyles = {
-    default: 'bg-gray-50 border-gray-200',
+    default: 'bg-dash-surface border-dash-border',
     success: 'bg-green-50 border-green-200',
     warning: 'bg-amber-50 border-amber-200',
   }
@@ -220,9 +220,9 @@ function MetricCard({ icon, label, value, subtitle, variant = 'default' }) {
   return (
     <div className={`border rounded-lg p-4 ${variantStyles[variant]}`}>
       <div className="flex items-center gap-2 mb-2">{icon}</div>
-      <div className="text-2xl font-bold text-gray-900">{value}</div>
+      <div className="text-2xl font-bold text-dash-cream">{value}</div>
       <div className="text-xs text-gray-600">{label}</div>
-      {subtitle && <div className="text-xs text-gray-500 mt-1">{subtitle}</div>}
+      {subtitle && <div className="text-xs text-dash-tertiary mt-1">{subtitle}</div>}
     </div>
   )
 }

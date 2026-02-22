@@ -145,19 +145,19 @@ export function Settings() {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-white/5 rounded-xl text-center border border-dash-border">
+                <div className="p-4 bg-dash-cream/5 rounded-xl text-center border border-dash-border">
                   <p className="text-3xl font-bold text-dash-cream">{restaurantProfile.capacity.totalSeats}</p>
                   <p className="text-sm text-dash-tertiary">Total Seats</p>
                 </div>
-                <div className="p-4 bg-white/5 rounded-xl text-center border border-dash-border">
+                <div className="p-4 bg-dash-cream/5 rounded-xl text-center border border-dash-border">
                   <p className="text-3xl font-bold text-dash-cream">{restaurantProfile.capacity.tables}</p>
                   <p className="text-sm text-dash-tertiary">Tables</p>
                 </div>
-                <div className="p-4 bg-white/5 rounded-xl text-center border border-dash-border">
+                <div className="p-4 bg-dash-cream/5 rounded-xl text-center border border-dash-border">
                   <p className="text-3xl font-bold text-dash-cream">{restaurantProfile.capacity.barSeats}</p>
                   <p className="text-sm text-dash-tertiary">Bar Seats</p>
                 </div>
-                <div className="p-4 bg-white/5 rounded-xl text-center border border-dash-border">
+                <div className="p-4 bg-dash-cream/5 rounded-xl text-center border border-dash-border">
                   <p className="text-3xl font-bold text-dash-cream">{restaurantProfile.capacity.patioSeats}</p>
                   <p className="text-sm text-dash-tertiary">Patio Seats</p>
                 </div>
@@ -252,10 +252,10 @@ export function Settings() {
                     {users.map((user) => {
                       const RoleIcon = roleIcons[user.role]
                       return (
-                        <tr key={user.id} className="hover:bg-white/5 transition-colors">
+                        <tr key={user.id} className="hover:bg-dash-cream/5 transition-colors">
                           <td className="py-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 bg-white/10 border border-dash-border rounded-full flex items-center justify-center text-dash-cream font-medium">
+                              <div className="w-10 h-10 bg-dash-cream/10 border border-dash-border rounded-full flex items-center justify-center text-dash-cream font-medium">
                                 {user.name.split(' ').map(n => n[0]).join('')}
                               </div>
                               <div>
@@ -310,7 +310,7 @@ export function Settings() {
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {role.permissions.map((perm) => (
-                          <span key={perm} className="px-2 py-0.5 bg-white/10 text-dash-secondary text-xs rounded">
+                          <span key={perm} className="px-2 py-0.5 bg-dash-cream/10 text-dash-secondary text-xs rounded">
                             {perm}
                           </span>
                         ))}

@@ -87,6 +87,52 @@ export function MultiCameraView({ isOpen, onClose, cameras, restaurantId }: Mult
     }
   }
 
+  const ensurePlayback = (video: HTMLVideoElement | null) => {
+    if (!video) return
+
+    video.defaultMuted = true
+    video.muted = true
+    video.playsInline = true
+    video.setAttribute('muted', '')
+    video.setAttribute('playsinline', '')
+    video.setAttribute('webkit-playsinline', '')
+
+    const playPromise = video.play()
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch((error) => {
+        if (error?.name !== 'AbortError') {
+          console.warn('[Camera] Playback requires interaction:', error?.message || error)
+        }
+      })
+    }
+  }
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const triggerPlayback = () => {
+      Object.values(videoRefs.current).forEach((video) => ensurePlayback(video))
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        triggerPlayback()
+      }
+    }
+
+    const startTimer = window.setTimeout(triggerPlayback, 180)
+    window.addEventListener('focus', triggerPlayback)
+    window.addEventListener('pointerdown', triggerPlayback)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.clearTimeout(startTimer)
+      window.removeEventListener('focus', triggerPlayback)
+      window.removeEventListener('pointerdown', triggerPlayback)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [isOpen, cameras])
+
   if (!isOpen) return null
 
   return (
@@ -157,11 +203,21 @@ export function MultiCameraView({ isOpen, onClose, cameras, restaurantId }: Mult
                     loop
                     muted
                     playsInline
+                    disablePictureInPicture
+                    preload="auto"
                     onLoadStart={() => console.log(`[Camera] Loading: ${camera.videoPath}`)}
-                    onLoadedData={() => console.log(`[Camera] Loaded: ${camera.videoPath}`)}
+                    onLoadedData={(e) => {
+                      console.log(`[Camera] Loaded: ${camera.videoPath}`)
+                      ensurePlayback(e.currentTarget)
+                    }}
+                    onCanPlay={(e) => ensurePlayback(e.currentTarget)}
                     onError={(e) => {
                       const video = e.currentTarget
-                      console.error(`[Camera] Video error for ${camera.videoPath}:`, video.error?.message || 'Unknown error', video.error?.code)
+                      const errorCode = video.error?.code
+                      const reason = errorCode === 4
+                        ? 'Unsupported source/codec in this browser'
+                        : (video.error?.message || 'Unknown error')
+                      console.error(`[Camera] Video error for ${camera.videoPath}:`, reason, errorCode)
                       setFailedVideos(prev => new Set([...prev, camera.id]))
                     }}
                   >
@@ -172,7 +228,7 @@ export function MultiCameraView({ isOpen, onClose, cameras, restaurantId }: Mult
                     <div className="text-center">
                       <Video className="w-8 h-8 text-white/30 mx-auto mb-2" />
                       <span className="text-xs text-white/40">
-                        {failedVideos.has(camera.id) ? 'Video not found' : 'No feed'}
+                        {failedVideos.has(camera.id) ? 'Feed unavailable in this browser' : 'No feed'}
                       </span>
                     </div>
                   </div>
@@ -225,6 +281,10 @@ export function MultiCameraView({ isOpen, onClose, cameras, restaurantId }: Mult
                   controls
                   autoPlay
                   loop
+                  muted
+                  playsInline
+                  preload="auto"
+                  onCanPlay={(e) => ensurePlayback(e.currentTarget)}
                 />
               </div>
             </motion.div>

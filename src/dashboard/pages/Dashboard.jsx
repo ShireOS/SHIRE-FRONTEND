@@ -55,34 +55,34 @@ export function Dashboard() {
       </div>
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Floor Status - 2 cols */}
-        <div className="lg:col-span-2 min-h-[400px]">
+        <div className="lg:col-span-8 min-h-[400px]">
           <FloorStatus />
         </div>
 
         {/* Alerts Panel - 1 col */}
-        <div className="min-h-[400px]">
+        <div className="lg:col-span-4 min-h-[400px]">
           <AlertsPanel />
         </div>
 
         {/* Staff Leaderboard - 1 col */}
-        <div className="min-h-[400px]">
+        <div className="lg:col-span-5 min-h-[400px]">
           <StaffLeaderboard />
         </div>
 
         {/* Reservation Timeline - 2 cols */}
-        <div className="lg:col-span-2 min-h-[400px]">
+        <div className="lg:col-span-7 min-h-[400px]">
           <ReservationTimeline />
         </div>
 
         {/* AI Insights - 1 col */}
-        <div className="min-h-[400px]">
+        <div className="lg:col-span-4 min-h-[400px]">
           <AIInsights />
         </div>
 
         {/* Weekly Chart - 2 cols */}
-        <div className="lg:col-span-2 min-h-[400px]">
+        <div className="lg:col-span-8 min-h-[400px]">
           <WeeklyChart />
         </div>
       </div>
@@ -103,7 +103,7 @@ export function Dashboard() {
             return (
               <Card key={card.id} hover className="overflow-hidden">
                 {/* Image */}
-                <div className="h-32 bg-dash-base flex items-center justify-center overflow-hidden border-b border-dash-border">
+                <div className="h-32 bg-dash-base flex items-center justify-center overflow-hidden soft-divider-bottom">
                   {cardImage ? (
                     <img src={cardImage} alt={card.title} className="w-full h-full object-cover opacity-80" />
                   ) : (

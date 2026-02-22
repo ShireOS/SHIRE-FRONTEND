@@ -9,6 +9,13 @@ export function WeeklyChart() {
     lastWeek: weeklyTrend.lastWeek[idx]?.revenue
   }))
 
+  const chartTheme = {
+    axis: 'var(--dash-chart-axis)',
+    grid: 'var(--dash-chart-grid)',
+    muted: 'var(--dash-chart-muted-line)',
+    accent: 'var(--dash-chart-accent-line)',
+  }
+
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       return (
@@ -45,27 +52,27 @@ export function WeeklyChart() {
       </div>
 
       {/* Dark Terminal Embed for Chart */}
-      <div className="h-48 w-full bg-dash-base rounded-lg p-3 border border-white/5">
+      <div className="h-48 w-full bg-dash-base rounded-lg p-3 border border-dash-border">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
             <XAxis
               dataKey="day"
-              axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+              axisLine={{ stroke: chartTheme.grid }}
               tickLine={false}
-              tick={{ fontSize: 10, fill: '#6B665A', fontFamily: 'JetBrains Mono' }}
+              tick={{ fontSize: 10, fill: chartTheme.axis, fontFamily: 'JetBrains Mono' }}
               dy={10}
             />
             <YAxis
               axisLine={false}
               tickLine={false}
-              tick={{ fontSize: 10, fill: '#6B665A', fontFamily: 'JetBrains Mono' }}
+              tick={{ fontSize: 10, fill: chartTheme.axis, fontFamily: 'JetBrains Mono' }}
               tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
             />
-            <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.1)' }} />
+            <Tooltip content={<CustomTooltip />} cursor={{ stroke: chartTheme.grid }} />
             <Line
               type="monotone"
               dataKey="lastWeek"
-              stroke="#6B665A"
+              stroke={chartTheme.muted}
               strokeWidth={2}
               dot={false}
               strokeDasharray="4 4"
@@ -73,10 +80,10 @@ export function WeeklyChart() {
             <Line
               type="monotone"
               dataKey="thisWeek"
-              stroke="#C9A962"
+              stroke={chartTheme.accent}
               strokeWidth={2.5}
-              dot={{ r: 3, fill: '#C9A962', strokeWidth: 0 }}
-              activeDot={{ r: 5, fill: '#C9A962', strokeWidth: 0 }}
+              dot={{ r: 3, fill: chartTheme.accent, strokeWidth: 0 }}
+              activeDot={{ r: 5, fill: chartTheme.accent, strokeWidth: 0 }}
             />
           </LineChart>
         </ResponsiveContainer>

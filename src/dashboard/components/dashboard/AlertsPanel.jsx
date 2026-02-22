@@ -15,7 +15,7 @@ export function AlertsPanel() {
         <h3 className="font-semibold text-lg text-dash-cream">
           System <span className="font-dash-display italic text-dash-gold">Alerts</span>
         </h3>
-        <button className="label-mono text-dash-tertiary hover:text-dash-gold flex items-center gap-1 transition-colors bg-white/5 px-3 py-1.5 rounded-lg border border-dash-border hover:border-dash-gold/30">
+        <button className="label-mono text-dash-tertiary hover:text-dash-gold flex items-center gap-1 transition-colors bg-dash-cream/5 px-3 py-1.5 rounded-lg border border-dash-border hover:border-dash-gold/30">
           VIEW LOG <ChevronRight size={14} />
         </button>
       </div>

@@ -31,7 +31,7 @@ export function ChatInterface({ onMinimize }) {
   }
 
   return (
-    <div className="h-full flex flex-col bg-gray-50">
+    <div className="h-full flex flex-col bg-dash-surface">
       <ChatHeader
         onMinimize={onMinimize}
         onClear={handleClear}

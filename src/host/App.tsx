@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { TopBar } from './components/layout/TopBar'
 import { SmartCarousel } from './components/layout/SmartCarousel'
 import { LeftPanel } from './components/layout/LeftPanel'
@@ -7,6 +7,9 @@ import { RightPanel } from './components/layout/RightPanel'
 import { DemoStatusBanner } from './components/demo/DemoStatusBanner'
 import { MultiCameraView } from './components/demo/MultiCameraView'
 import { useRestaurantStore } from './stores/restaurantStore'
+
+// Detect if we're on the fake host demo route
+const IS_FAKE_HOST = window.location.pathname.startsWith('/fake-host-ui')
 
 // Use the correct Mimosas restaurant ID
 const RESTAURANT_ID = import.meta.env.VITE_RESTAURANT_ID || 'c74e9278-1ccb-4f75-bc2f-eacf054db608'
@@ -43,14 +46,37 @@ function App() {
     if (demoInitialized.current) return
     demoInitialized.current = true
 
-    const initAndStartDemo = async () => {
-      console.log('[App] Auto-initializing and starting demo...')
-      await initializeFromBackend(RESTAURANT_ID)
-      await startDemo(RESTAURANT_ID)
-      console.log('[App] Demo started automatically')
+    if (IS_FAKE_HOST) {
+      // Fake host mode: load Mimosas data locally and start simulation
+      import('../fake-host-ui/data/mimosasMockData').then((mimosas) => {
+        useRestaurantStore.setState({
+          tables: mimosas.mockTables,
+          guests: mimosas.mockGuests,
+          reservations: mimosas.mockReservations,
+          servers: mimosas.mockServers,
+          sections: mimosas.mockSections,
+          activity: mimosas.mockActivity,
+          recommendations: mimosas.mockRecommendations,
+          demoActive: true,
+          demoStatus: { speed: 1.0, cameras: [] },
+        })
+        console.log('[FakeHost] Mimosas data loaded - no backend needed')
+      })
+      // Start simulation
+      import('../fake-host-ui/hooks/useSimulation').then((mod) => {
+        // useSimulation is a hook, but we need the effect to run
+        // It will be called in the component tree below
+      })
+    } else {
+      // Real host mode: connect to backend
+      const initAndStartDemo = async () => {
+        console.log('[App] Auto-initializing and starting demo...')
+        await initializeFromBackend(RESTAURANT_ID)
+        await startDemo(RESTAURANT_ID)
+        console.log('[App] Demo started automatically')
+      }
+      initAndStartDemo()
     }
-
-    initAndStartDemo()
   }, [initializeFromBackend, startDemo])
 
   return (
@@ -59,7 +85,7 @@ function App() {
       <TopBar onOpenVideoViewer={() => setVideoViewerOpen(true)} />
 
       {/* Demo Status Banner */}
-      <DemoStatusBanner />
+      {!IS_FAKE_HOST && <DemoStatusBanner />}
 
       {/* Smart Carousel */}
       <SmartCarousel />
@@ -83,8 +109,18 @@ function App() {
         cameras={CAMERAS}
         restaurantId={RESTAURANT_ID}
       />
+
+      {/* Simulation runner for fake host mode */}
+      {IS_FAKE_HOST && <Suspense fallback={null}><SimulationRunner /></Suspense>}
     </div>
   )
 }
+
+// Lazy-loaded simulation runner for fake host mode (never bundled for real host)
+const SimulationRunner = lazy(() =>
+  import('../fake-host-ui/hooks/useSimulation').then((mod) => ({
+    default: () => { mod.useSimulation(); return null },
+  }))
+)
 
 export default App

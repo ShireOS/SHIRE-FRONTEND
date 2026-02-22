@@ -8,7 +8,7 @@ export function ReservationTimeline() {
         <h3 className="font-semibold text-lg text-dash-cream font-dash-display">
           <span className="italic text-dash-gold">Timeline</span>
         </h3>
-        <button className="label-mono text-dash-tertiary hover:text-dash-gold flex items-center gap-1 transition-colors bg-white/5 px-3 py-1.5 rounded-lg border border-dash-border hover:border-dash-gold/30">
+        <button className="label-mono text-dash-tertiary hover:text-dash-gold flex items-center gap-1 transition-colors bg-dash-cream/5 px-3 py-1.5 rounded-lg border border-dash-border hover:border-dash-gold/30">
           FULL LIST <ChevronRight size={12} />
         </button>
       </div>
@@ -19,7 +19,7 @@ export function ReservationTimeline() {
           const hasVIP = slot.parties.some(p => p.includes('VIP'))
 
           return (
-            <div key={idx} className="group py-3 border-b border-dash-border last:border-b-0">
+            <div key={idx} className={`group py-3 ${idx < reservations.length - 1 ? 'rail-seam' : ''}`}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-3">
                   <span className="font-dash-mono text-base font-semibold text-dash-cream">{slot.time}</span>
@@ -35,7 +35,7 @@ export function ReservationTimeline() {
               </div>
 
               {/* Capacity Bar */}
-              <div className="h-1 w-full bg-white/10 border border-dash-border rounded-sm overflow-hidden mb-2">
+              <div className="h-1 w-full bg-dash-cream/10 rounded-sm overflow-hidden mb-2 soft-progress-track">
                 <div
                   className={`h-full transition-all ${
                     slot.capacity >= 90 ? 'bg-dash-danger' :

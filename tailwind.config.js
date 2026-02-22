@@ -15,7 +15,7 @@ export default {
         data: ['Geist Mono', 'monospace'],
         mono: ['Geist Mono', 'monospace'],
         // Dashboard cinematic fonts
-        'dash-display': ['Playfair Display', 'Georgia', 'serif'],
+        'dash-display': ['Instrument Serif', 'Georgia', 'serif'],
         'dash-body': ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
         'dash-mono': ['JetBrains Mono', 'SF Mono', 'monospace'],
       },
@@ -40,20 +40,20 @@ export default {
         'ice-blue': 'rgb(var(--ice-blue) / <alpha-value>)',
         'status-good': 'rgb(var(--status-good) / <alpha-value>)',
         'accent-primary': 'rgb(var(--accent-primary) / <alpha-value>)',
-        // Dashboard cinematic dark theme colors
-        'dash-base': '#0D0D0D',
-        'dash-surface': '#1A1814',
-        'dash-elevated': '#252220',
-        'dash-border': 'rgba(255, 255, 255, 0.15)',
-        'dash-cream': '#F5F2EB',
-        'dash-secondary': '#A09A8C',
-        'dash-tertiary': '#6B665A',
-        'dash-gold': '#C9A962',
-        'dash-gold-muted': '#8B7A4A',
-        'dash-success': '#4ADE80',
-        'dash-warning': '#FBBF24',
-        'dash-danger': '#F87171',
-        'dash-neutral': '#9CA3AF',
+        // Dashboard cinematic variable theme colors
+        'dash-base': 'rgb(var(--dash-base) / <alpha-value>)',
+        'dash-surface': 'rgb(var(--dash-surface) / <alpha-value>)',
+        'dash-elevated': 'rgb(var(--dash-elevated) / <alpha-value>)',
+        'dash-border': 'var(--dash-border-color)',
+        'dash-cream': 'rgb(var(--dash-cream) / <alpha-value>)',
+        'dash-secondary': 'rgb(var(--dash-secondary) / <alpha-value>)',
+        'dash-tertiary': 'rgb(var(--dash-tertiary) / <alpha-value>)',
+        'dash-gold': 'rgb(var(--dash-gold) / <alpha-value>)',
+        'dash-gold-muted': 'rgb(var(--dash-gold-muted) / <alpha-value>)',
+        'dash-success': 'rgb(var(--dash-success) / <alpha-value>)',
+        'dash-warning': 'rgb(var(--dash-warning) / <alpha-value>)',
+        'dash-danger': 'rgb(var(--dash-danger) / <alpha-value>)',
+        'dash-neutral': 'rgb(var(--dash-neutral) / <alpha-value>)',
       },
       boxShadow: {
         'subtle': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
@@ -78,6 +78,10 @@ export default {
         }
       }
     },
+    borderColor: ({ theme }) => ({
+      ...theme('colors'),
+      DEFAULT: 'transparent',
+    }),
   },
   plugins: [],
 }

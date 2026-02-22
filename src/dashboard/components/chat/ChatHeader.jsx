@@ -5,15 +5,15 @@ import { Sparkles, ChevronRight, Trash2 } from 'lucide-react'
 
 export function ChatHeader({ onMinimize, onClear, hasMessages }) {
   return (
-    <div className="flex-shrink-0 bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-700 p-4">
+    <div className="flex-shrink-0 p-4 glass-panel soft-divider-bottom">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-            <Sparkles size={20} className="text-white" />
+          <div className="w-10 h-10 bg-dash-gold/20 border border-dash-gold/30 rounded-lg flex items-center justify-center">
+            <Sparkles size={20} className="text-dash-gold" />
           </div>
           <div>
-            <h2 className="text-white font-semibold text-base">AI Assistant</h2>
-            <p className="text-blue-100 text-xs">Ask about your restaurant</p>
+            <h2 className="text-dash-cream font-semibold text-base">AI Assistant</h2>
+            <p className="text-dash-tertiary text-xs italic">Ask about your restaurant</p>
           </div>
         </div>
 
@@ -21,18 +21,18 @@ export function ChatHeader({ onMinimize, onClear, hasMessages }) {
           {hasMessages && (
             <button
               onClick={onClear}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+              className="p-2 hover:bg-dash-cream/10 rounded-lg transition-colors"
               title="Clear conversation"
             >
-              <Trash2 size={18} className="text-white" />
+              <Trash2 size={18} className="text-dash-cream" />
             </button>
           )}
           <button
             onClick={onMinimize}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            className="p-2 hover:bg-dash-cream/10 rounded-lg transition-colors"
             title="Minimize chat"
           >
-            <ChevronRight size={20} className="text-white" />
+            <ChevronRight size={20} className="text-dash-cream" />
           </button>
         </div>
       </div>

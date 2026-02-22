@@ -80,6 +80,11 @@ export function StaffProfile() {
     )
   }
 
+  const chartTheme = {
+    axis: 'var(--dash-chart-axis)',
+    accent: 'var(--dash-chart-accent-line)',
+  }
+
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       return (
@@ -194,14 +199,14 @@ export function StaffProfile() {
                       dataKey="month"
                       axisLine={false}
                       tickLine={false}
-                      tick={{ fontSize: 11, fill: '#6B665A' }}
+                      tick={{ fontSize: 11, fill: chartTheme.axis }}
                     />
                     <YAxis hide />
                     <Tooltip content={<CustomTooltip />} />
                     <Line
                       type="monotone"
                       dataKey="tips"
-                      stroke="#C9A962"
+                      stroke={chartTheme.accent}
                       strokeWidth={2}
                       dot={false}
                     />
@@ -261,7 +266,7 @@ export function StaffProfile() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-dash-border">
+                <tr className="soft-table-head">
                   <th className="text-left py-2 label-mono">DATE</th>
                   <th className="text-left py-2 label-mono">HOURS</th>
                   <th className="text-right py-2 label-mono">COVERS</th>
@@ -269,9 +274,9 @@ export function StaffProfile() {
                   <th className="text-right py-2 label-mono">EFFICIENCY</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-dash-border">
+              <tbody className="soft-divider-y">
                 {member.recentShifts.map((shift, idx) => (
-                  <tr key={idx} className="hover:bg-white/5 transition-colors">
+                  <tr key={idx} className="soft-table-row">
                     <td className="py-3 text-sm text-dash-cream">{shift.date}</td>
                     <td className="py-3 text-sm text-dash-secondary">{shift.hours}</td>
                     <td className="py-3 text-sm text-dash-cream text-right tabular-nums">{shift.covers}</td>

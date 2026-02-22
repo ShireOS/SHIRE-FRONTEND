@@ -2,6 +2,8 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
+    { "source": "/fake-host-ui/(.*)", "destination": "/host/index.html" },
+    { "source": "/fake-dashboard-demo/(.*)", "destination": "/dashboard/index.html" },
     { "source": "/host/(.*)", "destination": "/host/index.html" },
     { "source": "/dashboard/(.*)", "destination": "/dashboard/index.html" },
     { "source": "/((?!assets/).*)", "destination": "/index.html" }

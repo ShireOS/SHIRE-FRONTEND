@@ -31,6 +31,26 @@ export function VideoViewer({ isOpen, onClose, videoPath, restaurantId }: VideoV
   const handleTableStateUpdate = useRestaurantStore((s) => s.handleTableStateUpdate)
   const setWsConnected = useRestaurantStore((s) => s.setWsConnected)
 
+  const attemptPlayback = (video: HTMLVideoElement | null) => {
+    if (!video) return
+
+    video.defaultMuted = true
+    video.muted = true
+    video.playsInline = true
+    video.setAttribute('muted', '')
+    video.setAttribute('playsinline', '')
+    video.setAttribute('webkit-playsinline', '')
+
+    const playPromise = video.play()
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch((error) => {
+        if (error?.name !== 'AbortError') {
+          console.warn('[VideoViewer] Playback requires interaction:', error?.message || error)
+        }
+      })
+    }
+  }
+
   // Start demo when video viewer opens
   useEffect(() => {
     if (isOpen && !demoStarted) {
@@ -84,7 +104,7 @@ export function VideoViewer({ isOpen, onClose, videoPath, restaurantId }: VideoV
 
       setDemoStarted(true)
       setIsPlaying(true)
-      videoRef.current?.play()
+      attemptPlayback(videoRef.current)
     } catch (error) {
       console.error('[VideoViewer] Demo init failed:', error)
       // Fallback to mock data
@@ -105,11 +125,34 @@ export function VideoViewer({ isOpen, onClose, videoPath, restaurantId }: VideoV
       if (isPlaying) {
         videoRef.current.pause()
       } else {
-        videoRef.current.play()
+        attemptPlayback(videoRef.current)
       }
       setIsPlaying(!isPlaying)
     }
   }
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const triggerPlayback = () => attemptPlayback(videoRef.current)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        triggerPlayback()
+      }
+    }
+
+    const timer = window.setTimeout(triggerPlayback, 150)
+    window.addEventListener('focus', triggerPlayback)
+    window.addEventListener('pointerdown', triggerPlayback)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('focus', triggerPlayback)
+      window.removeEventListener('pointerdown', triggerPlayback)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [isOpen, videoPath])
 
   if (!isOpen) return null
 
@@ -152,8 +195,15 @@ export function VideoViewer({ isOpen, onClose, videoPath, restaurantId }: VideoV
               ref={videoRef}
               src={videoPath}
               className="w-full h-full"
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="auto"
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
+              onCanPlay={(e) => attemptPlayback(e.currentTarget)}
+              onLoadedData={(e) => attemptPlayback(e.currentTarget)}
               controls
             >
               Your browser does not support the video tag.

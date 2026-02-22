@@ -56,8 +56,8 @@ export function SignupPage() {
 
   if (!isReady) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#d4a854]" />
+      <div className="min-h-screen bg-base flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary" />
       </div>
     )
   }
@@ -68,30 +68,34 @@ export function SignupPage() {
         title="Check your email"
         subtitle="We've sent you a verification link"
       >
-        <div className="text-center space-y-6">
-          <div className="w-16 h-16 mx-auto bg-[rgba(201,169,98,0.1)] rounded-full flex items-center justify-center">
-            <svg className="w-8 h-8 text-[rgb(var(--gold))]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="text-center space-y-8 w-full">
+          <div className="w-16 h-16 mx-auto bg-primary/10 rounded-2xl flex items-center justify-center">
+            <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
           </div>
 
           <div>
-            <p className="text-[rgb(var(--text-secondary))]">
+            <p className="text-secondary text-base">
               We've sent a verification email to:
             </p>
-            <p className="text-[rgb(var(--text-primary))] font-medium mt-1">{email}</p>
+            <p className="text-primary font-medium mt-2 text-lg">{email}</p>
           </div>
 
-          <p className="text-[rgb(var(--text-tertiary))] text-sm">
+          <p className="text-tertiary text-sm leading-relaxed">
             Click the link in the email to verify your account and complete setup.
           </p>
 
-          <div className="pt-4 border-t border-[rgba(255,255,255,0.08)]">
-            <p className="text-[rgb(var(--text-tertiary))] text-sm">
+          <div className="pt-6 border-t border-dash-border/20">
+            <p className="text-tertiary text-sm">
               Didn't receive the email?{' '}
               <button
-                onClick={handleSubmit}
-                className="text-[#d4a854] hover:text-[rgb(var(--gold))] font-medium transition-colors"
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  handleSubmit(e as any);
+                }}
+                className="text-primary hover:underline underline-offset-4 font-medium transition-colors"
               >
                 Resend verification
               </button>
@@ -100,9 +104,9 @@ export function SignupPage() {
 
           <Link
             to="/auth/login"
-            className="block text-[#d4a854] hover:text-[rgb(var(--gold))] text-sm transition-colors"
+            className="block text-secondary hover:text-primary text-sm font-medium transition-colors mt-4"
           >
-            Back to login
+            ← Back to login
           </Link>
         </div>
       </AuthLayout>
@@ -111,56 +115,36 @@ export function SignupPage() {
 
   return (
     <AuthLayout
-      title="Create your account"
+      title="Create an account"
       subtitle="Start managing your restaurant smarter"
     >
-      <div className="space-y-6">
-        <SocialLogin onGoogleClick={handleGoogleSignIn} isLoading={isLoading} />
-
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+      <div className="w-full">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-sm">
               {error}
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="firstName" className="label-mono block mb-2">
-                First name
-              </label>
-              <input
-                id="firstName"
-                type="text"
-                autoComplete="given-name"
-                required
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                className="block w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] focus:border-transparent transition-all"
-                placeholder="John"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="lastName" className="label-mono block mb-2">
-                Last name
-              </label>
-              <input
-                id="lastName"
-                type="text"
-                autoComplete="family-name"
-                required
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                className="block w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] focus:border-transparent transition-all"
-                placeholder="Doe"
-              />
-            </div>
+          <div className="space-y-1.5">
+            <label htmlFor="firstName" className="block text-sm font-semibold text-primary">
+              Name
+            </label>
+            <input
+              id="firstName"
+              type="text"
+              autoComplete="given-name"
+              required
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl bg-transparent border border-dash-border/60 hover:border-dash-border/80 text-primary placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-[15px] shadow-sm"
+              placeholder="Your name"
+            />
           </div>
 
-          <div>
-            <label htmlFor="email" className="label-mono block mb-2">
-              Email address
+          <div className="space-y-1.5">
+            <label htmlFor="email" className="block text-sm font-semibold text-primary">
+              Email
             </label>
             <input
               id="email"
@@ -169,57 +153,65 @@ export function SignupPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="block w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] focus:border-transparent transition-all"
-              placeholder="you@restaurant.com"
+              className="w-full px-4 py-3 rounded-xl bg-transparent border border-dash-border/60 hover:border-dash-border/80 text-primary placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-[15px] shadow-sm"
+              placeholder="Your email"
             />
           </div>
 
-          <div>
-            <label htmlFor="password" className="label-mono block mb-2">
+          <div className="space-y-1.5">
+            <label htmlFor="password" className="block text-sm font-semibold text-primary">
               Password
             </label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="new-password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="block w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] focus:border-transparent transition-all"
-              placeholder="At least 8 characters"
-            />
-            <p className="mt-1 text-xs text-[rgb(var(--text-tertiary))]">
-              Must be at least 8 characters
-            </p>
+            <div className="relative">
+              <input
+                id="password"
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-transparent border border-dash-border/60 hover:border-dash-border/80 text-primary placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-[15px] shadow-sm"
+                placeholder="Create a password"
+              />
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-tertiary">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
           </div>
 
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full flex justify-center py-3 px-4 rounded-lg text-sm font-medium bg-white text-black hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[rgba(212,168,84,0.5)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full py-3.5 px-4 rounded-xl text-sm font-semibold bg-[#1C1C1E] dark:bg-white text-white dark:text-black hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary focus:ring-offset-base disabled:opacity-50 transition-all mt-6 shadow-sm"
           >
             {isLoading ? (
-              <div className="flex items-center gap-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-[#d4a854]" />
+              <div className="flex items-center justify-center gap-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-px border-base" />
                 Creating account...
               </div>
             ) : (
-              'Create account'
+              'Sign up'
             )}
           </button>
 
-          <p className="text-xs text-[rgb(var(--text-tertiary))] text-center">
+          <p className="text-xs text-tertiary text-center mt-5">
             By creating an account, you agree to our{' '}
-            <a href="#" className="text-[#d4a854] hover:text-[rgb(var(--gold))] transition-colors">Terms of Service</a>
+            <a href="#" className="text-secondary hover:text-primary underline underline-offset-2 transition-colors">Terms of Service</a>
             {' '}and{' '}
-            <a href="#" className="text-[#d4a854] hover:text-[rgb(var(--gold))] transition-colors">Privacy Policy</a>
+            <a href="#" className="text-secondary hover:text-primary underline underline-offset-2 transition-colors">Privacy Policy</a>
           </p>
         </form>
 
-        <p className="text-center text-sm text-[rgb(var(--text-secondary))]">
+        <div className="mt-8">
+          <SocialLogin onGoogleClick={handleGoogleSignIn} isLoading={isLoading} />
+        </div>
+
+        <p className="mt-8 text-center text-sm font-medium text-tertiary">
           Already have an account?{' '}
-          <Link to="/auth/login" className="text-[#d4a854] hover:text-[rgb(var(--gold))] font-medium transition-colors">
+          <Link to="/auth/login" className="text-secondary hover:text-primary transition-all">
             Sign in
           </Link>
         </p>

@@ -13,7 +13,11 @@ function mpaFallback() {
 
         // Only rewrite navigation requests (text/html), not JS/CSS/image assets
         if (accept.includes('text/html') && !url.endsWith('.html')) {
-          if (url.startsWith('/dashboard')) {
+          if (url.startsWith('/fake-host-ui')) {
+            req.url = '/host/index.html'
+          } else if (url.startsWith('/fake-dashboard-demo')) {
+            req.url = '/dashboard/index.html'
+          } else if (url.startsWith('/dashboard')) {
             req.url = '/dashboard/index.html'
           } else if (url.startsWith('/host')) {
             req.url = '/host/index.html'

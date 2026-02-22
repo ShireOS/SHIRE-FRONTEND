@@ -55,13 +55,13 @@ export function StaffLeaderboard() {
         </h3>
         <button
           onClick={() => navigate('/staff')}
-          className="label-mono text-dash-tertiary hover:text-dash-gold flex items-center gap-1 transition-colors bg-white/5 px-3 py-1.5 rounded-lg border border-dash-border hover:border-dash-gold/30"
+          className="label-mono text-dash-tertiary hover:text-dash-gold flex items-center gap-1 transition-colors bg-dash-cream/5 px-3 py-1.5 rounded-lg border border-dash-border hover:border-dash-gold/30"
         >
           VIEW TEAM <ChevronRight size={12} />
         </button>
       </div>
 
-      <div className="space-y-1">
+      <div className="space-y-2">
         {staffToday.map((member) => {
           const progress = (member.tips / topTips) * 100
 
@@ -69,46 +69,50 @@ export function StaffLeaderboard() {
             <div
               key={member.id}
               onClick={() => navigate(`/staff/${member.id}`)}
-              className="group flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 cursor-pointer transition-colors border border-transparent hover:border-dash-border"
+              className="group leaderboard-row p-3.5 rounded-lg cursor-pointer transition-all duration-200"
             >
-              {/* Rank */}
-              <span className={`w-5 text-sm font-dash-mono font-bold text-center ${
-                member.rank === 1 ? 'text-dash-gold' : 'text-dash-secondary'
-              }`}>
-                {member.rank}
-              </span>
+              <div className="flex items-start gap-3">
+                <span className={`w-6 pt-1 text-base font-dash-mono font-bold text-center ${
+                  member.rank === 1 ? 'text-dash-gold' : 'text-dash-secondary'
+                }`}>
+                  {member.rank}
+                </span>
 
-              {/* Avatar - Minimal */}
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold tracking-tighter ${
-                member.rank === 1
-                  ? 'bg-dash-gold/20 text-dash-gold border border-dash-gold/30'
-                  : 'bg-white/10 text-dash-cream border border-dash-border'
-              }`}>
-                {member.name.split(' ').map(n => n[0]).join('')}
-              </div>
-
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium text-dash-cream truncate">{member.name}</p>
-                  {member.rank === 1 && <Star size={12} className="text-dash-gold fill-dash-gold" />}
-                  {member.warning && <AlertTriangle size={12} className="text-dash-danger" />}
+                <div className={`w-11 h-11 rounded-lg flex items-center justify-center text-sm font-bold tracking-tighter ${
+                  member.rank === 1
+                    ? 'bg-dash-gold/20 text-dash-gold border border-dash-gold/30'
+                    : 'bg-dash-cream/10 text-dash-cream soft-avatar-ring'
+                }`}>
+                  {member.name.split(' ').map(n => n[0]).join('')}
                 </div>
-                <div className="flex items-center gap-2 label-mono">
-                  <span>{member.covers} CVRS</span>
-                  <span>·</span>
-                  <span>${member.avgTip.toFixed(2)} AVG</span>
-                </div>
-              </div>
 
-              {/* Tips & Progress */}
-              <div className="text-right w-24">
-                <p className="text-sm font-bold text-dash-cream tabular-nums font-dash-mono">${member.tips}</p>
-                <div className="w-full h-1 bg-white/10 rounded-sm mt-1 overflow-hidden">
-                  <div
-                    className={`h-full ${member.rank === 1 ? 'bg-dash-gold' : 'bg-dash-secondary'}`}
-                    style={{ width: `${progress}%` }}
-                  />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-base font-medium text-dash-cream truncate">{member.name}</p>
+                        {member.rank === 1 && <Star size={12} className="text-dash-gold fill-dash-gold" />}
+                        {member.warning && <AlertTriangle size={12} className="text-dash-danger" />}
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-2 label-mono">
+                        <span>{member.covers} CVRS</span>
+                        <span>·</span>
+                        <span>${member.avgTip.toFixed(2)} AVG</span>
+                      </div>
+                    </div>
+
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-[30px] leading-none font-dash-display text-dash-cream tabular-nums">${member.tips}</p>
+                      <p className="label-mono mt-1">Tips</p>
+                    </div>
+                  </div>
+
+                  <div className="w-full h-1.5 bg-dash-cream/10 rounded-sm mt-2 overflow-hidden soft-progress-track">
+                    <div
+                      className={`h-full ${member.rank === 1 ? 'bg-dash-gold' : 'bg-dash-secondary'}`}
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
