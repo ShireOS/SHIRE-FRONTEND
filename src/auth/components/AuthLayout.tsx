@@ -111,44 +111,28 @@ export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
       {/* RIGHT COLUMN: Visual/Marketing Area */}
       <div className="hidden lg:flex w-1/2 bg-surface relative overflow-hidden items-center justify-center p-8">
         {/* Decorative inner container */}
-        <div className="w-full max-w-3xl h-[85vh] rounded-3xl overflow-hidden relative shadow-2xl glass-card backdrop-blur-2xl group">
+        <div className="w-full max-w-3xl h-[85vh] rounded-3xl overflow-hidden relative shadow-2xl glass-card backdrop-blur-2xl group border border-white/5">
           <img
-            src={isDark ? bgOptions[bgIndex].dark : bgOptions[bgIndex].light}
+            src={isDark ? '/auth-rest-dark.png' : '/auth-rest-light.png'}
             alt="Shire Marketing"
             className="w-full h-full object-cover transition-opacity duration-700"
-            key={`${isDark ? 'dark' : 'light'}-${bgIndex}`}
+            key={isDark ? 'dark-restaurant' : 'light-restaurant'}
           />
 
-          {/* Background Image Switcher UI */}
-          <div className="absolute top-6 right-6 z-20 flex gap-2">
-            {bgOptions.map((opt, idx) => (
-              <button
-                key={opt.id}
-                onClick={() => setBgIndex(idx)}
-                className={`w-2 h-2 rounded-full transition-all duration-300 ${bgIndex === idx
-                  ? 'bg-white w-6 shadow-[0_0_8px_rgba(255,255,255,0.6)]'
-                  : 'bg-white/40 hover:bg-white/80'
-                  }`}
-                aria-label={`Switch to ${opt.id} background`}
-              />
-            ))}
-          </div>
-
           {/* Gradient Overlay for Text Legibility if needed */}
-          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
+          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
 
           {/* Testimonial / Features Overlay */}
-          <div className="absolute bottom-12 left-12 right-12 z-10 glass-panel rounded-2xl p-6 border border-white/10 mt-auto">
+          <div className="absolute bottom-12 left-12 right-12 z-10 glass-panel rounded-2xl p-6 border border-white/10 mt-auto bg-black/40 backdrop-blur-xl">
             <div className="flex gap-4 mb-4">
-              <span className="px-3 py-1 rounded-full border border-white/20 text-white/80 text-xs font-mono backdrop-blur-md">Restaurant Intelligence</span>
-              <span className="px-3 py-1 rounded-full border border-white/20 text-white/80 text-xs font-mono backdrop-blur-md">Cloud Management</span>
+              <span className="px-3 py-1 rounded-full border border-white/20 text-white/90 text-xs font-mono backdrop-blur-md">Restaurant Intelligence</span>
             </div>
             <p className="text-white text-lg font-medium leading-relaxed mb-4">
-              "Shire has completely changed how we run our restaurants. What used to take hours every week is now fully automated."
+              "Shire is exactly the solution we've been looking for. It has completely streamlined our operations at Mimosas, making scheduling and staffing essentially run themselves. It's a game changer."
             </p>
             <div>
-              <p className="text-white/90 text-sm font-semibold">Sarah Jenkins</p>
-              <p className="text-white/60 text-xs mt-1">Operations Director @ The Grille</p>
+              <p className="text-white/90 text-sm font-semibold tracking-wide">Genta T</p>
+              <p className="text-white/60 text-xs mt-1 font-medium">Co-Owner @ Mimosas</p>
             </div>
           </div>
         </div>
