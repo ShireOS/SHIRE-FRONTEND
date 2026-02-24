@@ -65,29 +65,40 @@ function apiConfigLogger() {
   }
 }
 
-export default defineConfig({
-  plugins: [react(), mpaFallback(), apiConfigLogger()],
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, './src'),
-      '@host': resolve(__dirname, './src/host'),
-      '@dashboard': resolve(__dirname, './src/dashboard'),
-      '@shared': resolve(__dirname, './src/shared'),
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL || ''
+  const supabasePublishableKey =
+    env.VITE_SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_PUBLISHABLE_KEY || ''
+
+  return {
+    plugins: [react(), mpaFallback(), apiConfigLogger()],
+    define: {
+      __SHIRE_SUPABASE_URL__: JSON.stringify(supabaseUrl),
+      __SHIRE_SUPABASE_PUBLISHABLE_KEY__: JSON.stringify(supabasePublishableKey),
     },
-  },
-  server: {
-    // Fix 416 errors for video files - ensure proper Range request handling
-    headers: {
-      'Accept-Ranges': 'bytes',
-    },
-  },
-  build: {
-    rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'index.html'),
-        host: resolve(__dirname, 'host/index.html'),
-        dashboard: resolve(__dirname, 'dashboard/index.html'),
+    resolve: {
+      alias: {
+        '@': resolve(__dirname, './src'),
+        '@host': resolve(__dirname, './src/host'),
+        '@dashboard': resolve(__dirname, './src/dashboard'),
+        '@shared': resolve(__dirname, './src/shared'),
       },
     },
-  },
+    server: {
+      // Fix 416 errors for video files - ensure proper Range request handling
+      headers: {
+        'Accept-Ranges': 'bytes',
+      },
+    },
+    build: {
+      rollupOptions: {
+        input: {
+          main: resolve(__dirname, 'index.html'),
+          host: resolve(__dirname, 'host/index.html'),
+          dashboard: resolve(__dirname, 'dashboard/index.html'),
+        },
+      },
+    },
+  }
 })

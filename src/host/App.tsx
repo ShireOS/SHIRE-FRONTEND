@@ -62,11 +62,6 @@ function App() {
         })
         console.log('[FakeHost] Mimosas data loaded - no backend needed')
       })
-      // Start simulation
-      import('../fake-host-ui/hooks/useSimulation').then((mod) => {
-        // useSimulation is a hook, but we need the effect to run
-        // It will be called in the component tree below
-      })
     } else {
       // Real host mode: connect to backend
       const initAndStartDemo = async () => {

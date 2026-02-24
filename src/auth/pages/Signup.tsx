@@ -10,7 +10,7 @@ export function SignupPage() {
   const { isReady } = useRedirectIfAuthenticated()
 
   const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
+  const lastName = ''
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -137,7 +137,7 @@ export function SignupPage() {
               required
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl bg-transparent border border-dash-border/60 hover:border-dash-border/80 text-primary placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-[15px] shadow-sm"
+              className="w-full px-4 py-3 rounded-xl bg-white dark:bg-white/10 border border-black/10 dark:border-white/10 text-primary placeholder:text-tertiary/50 focus:outline-none focus:ring-2 focus:ring-[#36454F]/20 dark:focus:ring-white/20 transition-all text-[15px]"
               placeholder="Your name"
             />
           </div>
@@ -153,7 +153,7 @@ export function SignupPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl bg-transparent border border-dash-border/60 hover:border-dash-border/80 text-primary placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-[15px] shadow-sm"
+              className="w-full px-4 py-3 rounded-xl bg-white dark:bg-white/10 border border-black/10 dark:border-white/10 text-primary placeholder:text-tertiary/50 focus:outline-none focus:ring-2 focus:ring-[#36454F]/20 dark:focus:ring-white/20 transition-all text-[15px]"
               placeholder="Your email"
             />
           </div>
@@ -171,7 +171,7 @@ export function SignupPage() {
                 minLength={8}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-transparent border border-dash-border/60 hover:border-dash-border/80 text-primary placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-[15px] shadow-sm"
+                className="w-full px-4 py-3 rounded-xl bg-white dark:bg-white/10 border border-black/10 dark:border-white/10 text-primary placeholder:text-tertiary/50 focus:outline-none focus:ring-2 focus:ring-[#36454F]/20 dark:focus:ring-white/20 transition-all text-[15px]"
                 placeholder="Create a password"
               />
               <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-tertiary">
@@ -185,7 +185,7 @@ export function SignupPage() {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-3.5 px-4 rounded-xl text-sm font-semibold bg-[#1C1C1E] dark:bg-white text-white dark:text-black hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary focus:ring-offset-base disabled:opacity-50 transition-all mt-6 shadow-sm"
+            className="w-full py-3.5 px-4 rounded-xl text-sm font-semibold bg-[#36454F] dark:bg-white text-white dark:text-black hover:bg-[#2a363e] dark:hover:bg-white/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#36454F]/50 focus:ring-offset-base disabled:opacity-50 transition-all mt-6"
           >
             {isLoading ? (
               <div className="flex items-center justify-center gap-2">

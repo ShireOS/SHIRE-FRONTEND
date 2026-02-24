@@ -1,6 +1,14 @@
 import { useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { AuthProvider, useRequireAuth, LoginPage, SignupPage, ForgotPasswordPage, AuthCallbackPage } from '../auth'
+import {
+  AuthProvider,
+  useRequireAuth,
+  LoginPage,
+  SignupPage,
+  ForgotPasswordPage,
+  ResetPasswordPage,
+  AuthCallbackPage,
+} from '../auth'
 import { OnboardingPage } from '../onboarding'
 import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
@@ -58,6 +66,7 @@ export default function AuthenticatedDashboardApp() {
         <Route path="/auth/login" element={<LoginPage />} />
         <Route path="/auth/signup" element={<SignupPage />} />
         <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route path="/onboarding/*" element={<OnboardingPage />} />
         <Route path="/*" element={<DashboardLayout />} />

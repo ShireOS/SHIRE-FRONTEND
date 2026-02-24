@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 interface AuthLayoutProps {
   children: ReactNode
@@ -9,6 +10,7 @@ interface AuthLayoutProps {
 }
 
 export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
+  const navigate = useNavigate()
   // Check system preference or local storage for initial theme
   const [isDark, setIsDark] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -68,15 +70,17 @@ export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
       <div className="w-full lg:w-1/2 flex flex-col relative z-10 px-8 py-10 lg:px-24 justify-center">
 
         {/* Top Header - Logo */}
-        <div className="absolute top-8 left-8 lg:left-24 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded bg-primary flex items-center justify-center">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="text-base">
-                <path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
-            <span className="font-display text-2xl tracking-wide text-primary">SHIRE</span>
-          </div>
+        <div className="absolute top-8 left-8 lg:left-24 flex items-center gap-4">
+          <button
+            onClick={() => navigate(-1)}
+            className="w-8 h-8 rounded-lg bg-elevated/80 border border-black/5 dark:border-white/10 flex items-center justify-center text-secondary hover:text-primary hover:bg-elevated transition-all cursor-pointer focus:outline-none"
+            aria-label="Go back"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M19 12H5M5 12L12 19M5 12L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <span className="font-display text-2xl tracking-wide text-primary">SHIRE</span>
         </div>
 
         <motion.div

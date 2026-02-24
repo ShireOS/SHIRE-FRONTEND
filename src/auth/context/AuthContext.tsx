@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react'
-import { supabase } from '../../shared/lib/supabase'
+import { isSupabaseConfigured, supabase, supabaseConfigError } from '../../shared/lib/supabase'
 import type { User, Session, AuthError } from '@supabase/supabase-js'
 import type { Profile, Restaurant, RestaurantMember } from '../../shared/types/database'
 import { isAbortError } from '../utils/authErrors'
@@ -12,9 +12,19 @@ const isRestaurantMemberPolicyRecursion = (message: string): boolean =>
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 const AUTH_BOOTSTRAP_GUARD_MS = 12000
 const CURRENT_RESTAURANT_STORAGE_KEY = 'shire_current_restaurant'
+const AUTH_NOT_CONFIGURED_ERROR =
+  supabaseConfigError || '[Supabase] Auth is not configured for this environment.'
 
-const createDashboardAuthUrl = (path: 'callback' | 'reset-password') =>
-  `${window.location.origin}/dashboard/auth/${path}`
+const resolveAuthBasePath = (): '/dashboard' | '/host' | '/fake-host-ui' => {
+  const pathname = window.location.pathname
+
+  if (pathname.startsWith('/fake-host-ui')) return '/fake-host-ui'
+  if (pathname.startsWith('/host')) return '/host'
+  return '/dashboard'
+}
+
+const createAppAuthUrl = (path: 'callback' | 'reset-password') =>
+  `${window.location.origin}${resolveAuthBasePath()}/auth/${path}`
 
 const pickRestaurant = (
   availableRestaurants: Restaurant[],
@@ -142,6 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     restaurantId: string,
     userId: string
   ): Promise<RestaurantMember | null> => {
+    if (!isSupabaseConfigured) return null
     if (membershipQueryDisabledRef.current) return null
 
     const { data: member, error: memberError } = await supabase
@@ -160,6 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [handleMembershipError])
 
   const getSessionWithRetry = useCallback(async (): Promise<Session | null> => {
+    if (!isSupabaseConfigured) return null
     let lastAbortError: unknown = null
 
     for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -193,6 +205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // FETCH USER PROFILE
   // ----------------------------------------
   const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
+    if (!isSupabaseConfigured) return null
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -212,6 +225,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // FETCH USER'S RESTAURANTS
   // ----------------------------------------
   const fetchRestaurants = useCallback(async (userId: string): Promise<Restaurant[]> => {
+    if (!isSupabaseConfigured) return []
     setRestaurantLoading(true)
 
     try {
@@ -323,6 +337,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ----------------------------------------
   useEffect(() => {
     let mounted = true
+
+    if (!isSupabaseConfigured) {
+      setIsLoading(false)
+      initializedRef.current = true
+      console.warn('[Auth] Supabase auth disabled:', AUTH_NOT_CONFIGURED_ERROR)
+      return () => {
+        mounted = false
+      }
+    }
 
     const initializeAuth = async () => {
       try {
@@ -463,6 +486,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string,
     metadata?: SignUpMetadata
   ): Promise<AuthResult> => {
+    if (!isSupabaseConfigured) {
+      return { success: false, error: AUTH_NOT_CONFIGURED_ERROR }
+    }
+
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -473,7 +500,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             last_name: metadata?.last_name,
             phone: metadata?.phone,
           },
-          emailRedirectTo: createDashboardAuthUrl('callback'),
+          emailRedirectTo: createAppAuthUrl('callback'),
         },
       })
 
@@ -495,6 +522,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signIn = async (email: string, password: string): Promise<AuthResult> => {
+    if (!isSupabaseConfigured) {
+      return { success: false, error: AUTH_NOT_CONFIGURED_ERROR }
+    }
+
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email,
@@ -511,11 +542,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signInWithGoogle = async (): Promise<AuthResult> => {
+    if (!isSupabaseConfigured) {
+      return { success: false, error: AUTH_NOT_CONFIGURED_ERROR }
+    }
+
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: createDashboardAuthUrl('callback'),
+          redirectTo: createAppAuthUrl('callback'),
         },
       })
 
@@ -529,13 +564,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signOut = async () => {
+    if (!isSupabaseConfigured) {
+      setSession(null)
+      setUser(null)
+      resetRestaurantState()
+      return
+    }
     await supabase.auth.signOut()
   }
 
   const resetPassword = async (email: string): Promise<AuthResult> => {
+    if (!isSupabaseConfigured) {
+      return { success: false, error: AUTH_NOT_CONFIGURED_ERROR }
+    }
+
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: createDashboardAuthUrl('reset-password'),
+        redirectTo: createAppAuthUrl('reset-password'),
       })
 
       if (error) throw error
@@ -548,6 +593,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const updatePassword = async (newPassword: string): Promise<AuthResult> => {
+    if (!isSupabaseConfigured) {
+      return { success: false, error: AUTH_NOT_CONFIGURED_ERROR }
+    }
+
     try {
       const { error } = await supabase.auth.updateUser({
         password: newPassword,
@@ -567,6 +616,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ----------------------------------------
 
   const updateProfile = async (updates: Partial<Profile>) => {
+    if (!isSupabaseConfigured) throw new Error(AUTH_NOT_CONFIGURED_ERROR)
     if (!user) throw new Error('No user logged in')
 
     const { error } = await supabase

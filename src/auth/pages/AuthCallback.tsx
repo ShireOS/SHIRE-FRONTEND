@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { supabase } from '../../shared/lib/supabase'
+import { isSupabaseConfigured, supabase, supabaseConfigError } from '../../shared/lib/supabase'
 import type { EmailOtpType } from '@supabase/supabase-js'
 import { isAbortError } from '../utils/authErrors'
 
@@ -40,6 +40,10 @@ function isMissingPkceVerifierError(error: unknown): boolean {
 }
 
 async function processCallbackUrl(): Promise<void> {
+  if (!isSupabaseConfigured) {
+    throw new Error(supabaseConfigError || 'Authentication is not configured.')
+  }
+
   const url = new URL(window.location.href)
   const errorDescription = url.searchParams.get('error_description') || url.searchParams.get('error')
   if (errorDescription) {

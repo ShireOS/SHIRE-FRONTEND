@@ -104,7 +104,7 @@ export function useSimulation() {
               message,
               timestamp: new Date(),
               tableId: table.id,
-              priority: newStatus === 'needs_server' ? 'high' as const : 'low' as const,
+              priority: table.status === 'needs_server' ? 'high' as const : 'low' as const,
               read: false,
             },
             ...state.activity,
