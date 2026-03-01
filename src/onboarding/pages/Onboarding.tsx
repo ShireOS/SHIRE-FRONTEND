@@ -109,7 +109,7 @@ export function OnboardingPage() {
       isSwitchingAccount={isSwitchingAccount}
       switchAccountError={switchAccountError}
     >
-      <AnimatePresence mode="wait">
+      <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={currentStep}
           initial={{ opacity: 0, x: 30 }}

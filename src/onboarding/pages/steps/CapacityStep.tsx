@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { useAuth } from '../../../auth'
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
-import { CameraTableLabeler } from '../../components/CameraTableLabeler'
+import { FloorPlanEditor } from '../../components/FloorPlanEditor'
 
 interface CapacityStepProps {
   onboarding: UseOnboardingReturn
@@ -15,38 +16,33 @@ const CAPACITY_OPTIONS = [
 
 export function CapacityStep({ onboarding }: CapacityStepProps) {
   const { data, updateData, saveCapacity, nextStep, isLoading, error } = onboarding
-  const [showCameraLabeler, setShowCameraLabeler] = useState(false)
-  const [newSection, setNewSection] = useState('')
+  const { restaurant } = useAuth()
+  const restaurantId = restaurant.currentRestaurant?.id ?? ''
+
+  const [floorPlanMode, setFloorPlanMode] = useState<null | 'upload' | 'manual'>(null)
+  const [savedTableCount, setSavedTableCount] = useState<number | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-
     try {
       await saveCapacity()
       nextStep()
-    } catch (err) {
+    } catch {
       // Error handled by hook
     }
   }
 
-  const addSection = () => {
-    if (newSection.trim() && !data.sections.includes(newSection.trim())) {
-      updateData({ sections: [...data.sections, newSection.trim()] })
-      setNewSection('')
-    }
-  }
-
-  const removeSection = (section: string) => {
-    updateData({ sections: data.sections.filter(s => s !== section) })
-  }
-
-  if (showCameraLabeler) {
+  // Show floor plan editor full-screen
+  if (floorPlanMode) {
     return (
-      <CameraTableLabeler
-        onBack={() => setShowCameraLabeler(false)}
-        onSave={(tables) => {
-          updateData({ table_count: tables.length })
-          setShowCameraLabeler(false)
+      <FloorPlanEditor
+        restaurantId={restaurantId}
+        mode={floorPlanMode}
+        onBack={() => setFloorPlanMode(null)}
+        onSave={(count) => {
+          updateData({ table_count: count })
+          setSavedTableCount(count)
+          setFloorPlanMode(null)
         }}
       />
     )
@@ -82,7 +78,6 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
             </button>
           ))}
         </div>
-
         <div className="mt-3">
           <input
             type="number"
@@ -94,75 +89,55 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
         </div>
       </div>
 
-      {/* Table Count */}
-      <div>
-        <label className="label-mono block mb-2 text-[rgb(var(--gold))]">
-          Number of Tables <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
-        </label>
-        <div className="flex gap-3">
-          <input
-            type="number"
-            value={data.table_count || ''}
-            onChange={(e) => updateData({ table_count: parseInt(e.target.value) || null })}
-            className="flex-1 px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
-            placeholder="e.g., 25"
-          />
-          <button
-            type="button"
-            onClick={() => setShowCameraLabeler(true)}
-            className="px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-secondary))] hover:bg-[rgba(255,255,255,0.1)] hover:text-[rgb(var(--text-primary))] transition-all flex items-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            Setup from Camera
-          </button>
-        </div>
-        <p className="mt-2 text-xs text-[rgb(var(--text-tertiary))]">
-          Use camera view to visually label tables in your floor plan
-        </p>
-      </div>
-
-      {/* Sections */}
+      {/* Floor Plan */}
       <div>
         <label className="label-mono block mb-3 text-[rgb(var(--gold))]">
-          Sections <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
+          Floor Plan <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
         </label>
-        <div className="flex flex-wrap gap-2 mb-3">
-          {data.sections.map(section => (
-            <span
-              key={section}
-              className="inline-flex items-center gap-1 px-3 py-1.5 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-full text-sm text-[rgb(var(--text-secondary))]"
+
+        {savedTableCount !== null && (
+          <div className="mb-3 flex items-center gap-2 text-sm text-[rgb(var(--text-secondary))]">
+            <svg className="w-4 h-4 text-green-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            Floor plan saved · {savedTableCount} table{savedTableCount !== 1 ? 's' : ''}
+            <button
+              type="button"
+              onClick={() => setFloorPlanMode('manual')}
+              className="ml-auto text-xs text-[rgb(var(--gold))] hover:opacity-80 transition-opacity"
             >
-              {section}
-              <button
-                type="button"
-                onClick={() => removeSection(section)}
-                className="ml-1 text-[rgb(var(--text-tertiary))] hover:text-red-400"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </span>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={newSection}
-            onChange={(e) => setNewSection(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addSection())}
-            className="flex-1 px-4 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
-            placeholder="Add section (e.g., Rooftop)"
-          />
+              Edit
+            </button>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={addSection}
-            className="px-4 py-2 bg-[rgba(255,255,255,0.08)] hover:bg-[rgba(255,255,255,0.15)] text-[rgb(var(--text-primary))] rounded-lg transition-colors"
+            onClick={() => setFloorPlanMode('upload')}
+            className="p-4 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.2)] hover:bg-[rgba(255,255,255,0.06)] text-left transition-all"
           >
-            Add
+            <div className="flex items-center gap-3 mb-2">
+              <svg className="w-5 h-5 text-[rgb(var(--gold))]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span className="text-sm font-medium text-[rgb(var(--text-primary))]">Upload Image</span>
+            </div>
+            <span className="text-xs text-[rgb(var(--text-tertiary))]">AI detects tables from your floor plan photo</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setFloorPlanMode('manual')}
+            className="p-4 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.2)] hover:bg-[rgba(255,255,255,0.06)] text-left transition-all"
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <svg className="w-5 h-5 text-[rgb(var(--gold))]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+              <span className="text-sm font-medium text-[rgb(var(--text-primary))]">Draw Manually</span>
+            </div>
+            <span className="text-xs text-[rgb(var(--text-tertiary))]">Place and arrange tables on a blank canvas</span>
           </button>
         </div>
       </div>

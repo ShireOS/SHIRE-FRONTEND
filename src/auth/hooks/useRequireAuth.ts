@@ -106,11 +106,13 @@ export function useRequireOnboarding() {
       return
     }
 
-    // If onboarding IS complete (has restaurant with completed onboarding), redirect to dashboard
-    if (auth.restaurant.currentRestaurant?.onboarding_completed_at) {
-      navigate('/', { replace: true })
-      return
-    }
+    // DEV: redirect disabled so /dev-onboarding works without resetting DB each time
+    // if (auth.restaurant.currentRestaurant?.onboarding_completed_at) {
+    //   navigate('/', { replace: true })
+    //   return
+    // }
+
+    //ABOVE, PLS UNCOMMENT AFTER DEV HARSHITH
 
     // Otherwise stay here - user needs onboarding (no restaurant or incomplete)
   }, [

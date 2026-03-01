@@ -69,6 +69,9 @@ export default function AuthenticatedDashboardApp() {
         <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route path="/onboarding/*" element={<OnboardingPage />} />
+        {import.meta.env.DEV && (
+          <Route path="/dev-onboarding/*" element={<OnboardingPage />} />
+        )}
         <Route path="/*" element={<DashboardLayout />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
