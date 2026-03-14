@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useAuth } from '../../../auth'
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
 import { FloorPlanEditor } from '../../components/FloorPlanEditor'
 
@@ -16,8 +15,7 @@ const CAPACITY_OPTIONS = [
 
 export function CapacityStep({ onboarding }: CapacityStepProps) {
   const { data, updateData, saveCapacity, nextStep, isLoading, error } = onboarding
-  const { restaurant } = useAuth()
-  const restaurantId = restaurant.currentRestaurant?.id ?? ''
+  const restaurantId = onboarding.restaurantId ?? ''
 
   const [floorPlanMode, setFloorPlanMode] = useState<null | 'upload' | 'manual'>(null)
   const [savedTableCount, setSavedTableCount] = useState<number | null>(null)

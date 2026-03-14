@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useAuth } from '../../../auth'
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
 import { MenuEditor } from '../../components/MenuEditor'
 
@@ -85,8 +84,7 @@ const MENU_OPTIONS: MenuImportOption[] = [
 
 export function MenuStep({ onboarding }: MenuStepProps) {
   const { data, updateData, saveMenuProgress, nextStep, isLoading, error } = onboarding
-  const { restaurant } = useAuth()
-  const restaurantId = restaurant.currentRestaurant?.id ?? ''
+  const restaurantId = onboarding.restaurantId ?? ''
 
   const [menuMode, setMenuMode] = useState<null | 'upload' | 'manual'>(null)
   const [savedItemCount, setSavedItemCount] = useState<number | null>(null)
