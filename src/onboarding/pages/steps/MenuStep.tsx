@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
+import { MenuEditor } from '../../components/MenuEditor'
 
 interface MenuStepProps {
   onboarding: UseOnboardingReturn
@@ -18,7 +19,7 @@ const MENU_OPTIONS: MenuImportOption[] = [
   {
     id: 'upload',
     title: 'Upload Menu',
-    description: 'Upload a PDF or image of your menu. AI will extract items automatically.',
+    description: 'Upload an image of your menu. AI will extract items automatically.',
     recommended: true,
     icon: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -40,7 +41,7 @@ const MENU_OPTIONS: MenuImportOption[] = [
   {
     id: 'scrape',
     title: 'Import from Website',
-    description: 'Enter your website URL and we\'ll extract your menu.',
+    description: "Enter your website URL and we'll extract your menu.",
     icon: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
@@ -83,30 +84,10 @@ const MENU_OPTIONS: MenuImportOption[] = [
 
 export function MenuStep({ onboarding }: MenuStepProps) {
   const { data, updateData, saveMenuProgress, nextStep, isLoading, error } = onboarding
-  const [selectedOption, setSelectedOption] = useState<string>(data.menu_import_method || 'skip')
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
+  const restaurantId = onboarding.restaurantId ?? ''
 
-  const handleOptionSelect = (optionId: string) => {
-    setSelectedOption(optionId)
-    updateData({ menu_import_method: optionId as any })
-  }
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setUploadedFile(file)
-    }
-  }
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-    const file = e.dataTransfer.files?.[0]
-    if (file) {
-      setUploadedFile(file)
-    }
-  }
+  const [menuMode, setMenuMode] = useState<null | 'upload' | 'manual'>(null)
+  const [savedItemCount, setSavedItemCount] = useState<number | null>(null)
 
   const handleContinue = async () => {
     try {
@@ -117,6 +98,22 @@ export function MenuStep({ onboarding }: MenuStepProps) {
     }
   }
 
+  // Show full-screen menu editor
+  if (menuMode) {
+    return (
+      <MenuEditor
+        restaurantId={restaurantId}
+        mode={menuMode}
+        onBack={() => setMenuMode(null)}
+        onSave={(count) => {
+          updateData({ menu_import_method: menuMode })
+          setSavedItemCount(count)
+          setMenuMode(null)
+        }}
+      />
+    )
+  }
+
   return (
     <div className="space-y-8">
       {error && (
@@ -125,102 +122,67 @@ export function MenuStep({ onboarding }: MenuStepProps) {
         </div>
       )}
 
-      {/* Options grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {MENU_OPTIONS.map((option) => (
+      {/* Saved badge */}
+      {savedItemCount !== null && (
+        <div className="flex items-center gap-2 text-sm text-[rgb(var(--text-secondary))]">
+          <svg className="w-4 h-4 text-green-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          Menu saved · {savedItemCount} item{savedItemCount !== 1 ? 's' : ''}
           <button
-            key={option.id}
-            onClick={() => !option.comingSoon && handleOptionSelect(option.id)}
-            disabled={option.comingSoon}
-            className={`relative p-4 rounded-lg border text-left transition-all ${
-              selectedOption === option.id
-                ? 'border-[rgb(var(--gold))] bg-[rgba(201,169,98,0.08)] shadow-[0_0_12px_rgba(201,169,98,0.1)]'
-                : option.comingSoon
-                  ? 'border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.01)] opacity-50 cursor-not-allowed'
-                  : 'border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.2)]'
-            }`}
+            type="button"
+            onClick={() => setMenuMode('manual')}
+            className="ml-auto text-xs text-[rgb(var(--gold))] hover:opacity-80 transition-opacity"
           >
-            {option.recommended && (
-              <span className="absolute -top-2 -right-2 px-2 py-0.5 bg-[rgb(var(--gold))] text-black text-xs font-medium rounded-full">
-                Recommended
-              </span>
-            )}
-            {option.comingSoon && (
-              <span className="absolute -top-2 -right-2 px-2 py-0.5 bg-[rgba(255,255,255,0.1)] text-[rgb(var(--text-tertiary))] text-xs font-medium rounded-full">
-                Coming Soon
-              </span>
-            )}
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${
-              selectedOption === option.id ? 'bg-[rgba(201,169,98,0.15)] text-[rgb(var(--gold))]' : 'bg-[rgba(255,255,255,0.05)] text-[rgb(var(--text-tertiary))]'
-            }`}>
-              {option.icon}
-            </div>
-            <h3 className="text-[rgb(var(--text-primary))] font-medium text-sm">{option.title}</h3>
-            <p className="text-sm text-[rgb(var(--text-tertiary))] mt-1">{option.description}</p>
+            Edit
           </button>
-        ))}
-      </div>
-
-      {/* Upload zone */}
-      {selectedOption === 'upload' && (
-        <div
-          onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={handleDrop}
-          className={`p-8 border-2 border-dashed rounded-lg text-center transition-all ${
-            isDragging
-              ? 'border-[rgb(var(--gold))] bg-[rgba(201,169,98,0.05)]'
-              : 'border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.02)]'
-          }`}
-        >
-          {uploadedFile ? (
-            <div className="space-y-4">
-              <div className="w-16 h-16 mx-auto bg-[rgba(201,169,98,0.1)] rounded-full flex items-center justify-center">
-                <svg className="w-8 h-8 text-[rgb(var(--gold))]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-[rgb(var(--text-primary))] font-medium">{uploadedFile.name}</p>
-                <p className="text-sm text-[rgb(var(--text-tertiary))]">
-                  {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
-                </p>
-              </div>
-              <button
-                onClick={() => setUploadedFile(null)}
-                className="text-sm text-[#d4a854] hover:text-[rgb(var(--gold))] transition-colors"
-              >
-                Choose a different file
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="w-16 h-16 mx-auto bg-[rgba(255,255,255,0.05)] rounded-full flex items-center justify-center">
-                <svg className="w-8 h-8 text-[rgb(var(--text-tertiary))]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-[rgb(var(--text-primary))]">
-                  Drag & drop your menu here, or{' '}
-                  <label className="text-[#d4a854] hover:text-[rgb(var(--gold))] cursor-pointer transition-colors">
-                    browse
-                    <input
-                      type="file"
-                      className="hidden"
-                      accept=".pdf,.png,.jpg,.jpeg"
-                      onChange={handleFileChange}
-                    />
-                  </label>
-                </p>
-                <p className="text-sm text-[rgb(var(--text-tertiary))] mt-1">
-                  Supports PDF, PNG, JPG (max 10MB)
-                </p>
-              </div>
-            </div>
-          )}
         </div>
       )}
+
+      {/* Options grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {MENU_OPTIONS.map((option) => {
+          const isActive = option.id === 'upload' || option.id === 'manual'
+          return (
+            <button
+              key={option.id}
+              onClick={() => {
+                if (option.comingSoon) return
+                if (option.id === 'upload') { setMenuMode('upload'); return }
+                if (option.id === 'manual') { setMenuMode('manual'); return }
+                if (option.id === 'skip') {
+                  updateData({ menu_import_method: 'skip' })
+                  void handleContinue()
+                }
+              }}
+              disabled={option.comingSoon}
+              className={`relative p-4 rounded-lg border text-left transition-all ${
+                option.comingSoon
+                  ? 'border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.01)] opacity-50 cursor-not-allowed'
+                  : isActive
+                    ? 'border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.2)] hover:bg-[rgba(255,255,255,0.06)]'
+                    : 'border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.2)]'
+              }`}
+            >
+              {option.recommended && (
+                <span className="absolute -top-2 -right-2 px-2 py-0.5 bg-[rgb(var(--gold))] text-black text-xs font-medium rounded-full">
+                  Recommended
+                </span>
+              )}
+              {option.comingSoon && (
+                <span className="absolute -top-2 -right-2 px-2 py-0.5 bg-[rgba(255,255,255,0.1)] text-[rgb(var(--text-tertiary))] text-xs font-medium rounded-full">
+                  Coming Soon
+                </span>
+              )}
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-3 bg-[rgba(255,255,255,0.05)] text-[rgb(var(--text-tertiary))]">
+                {option.icon}
+              </div>
+              <h3 className="text-[rgb(var(--text-primary))] font-medium text-sm">{option.title}</h3>
+              <p className="text-sm text-[rgb(var(--text-tertiary))] mt-1">{option.description}</p>
+            </button>
+          )
+        })}
+      </div>
 
       {/* Continue button */}
       <button
@@ -231,12 +193,12 @@ export function MenuStep({ onboarding }: MenuStepProps) {
         {isLoading ? (
           <>
             <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-[#d4a854]" />
-            Processing...
+            Saving...
           </>
-        ) : selectedOption === 'skip' ? (
-          'Skip & Continue'
         ) : (
-          'Continue'
+          data.menu_import_method === 'skip' || savedItemCount === null
+            ? 'Skip & Continue'
+            : 'Continue'
         )}
       </button>
     </div>

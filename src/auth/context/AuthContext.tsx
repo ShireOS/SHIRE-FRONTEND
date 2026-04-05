@@ -464,18 +464,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Prevent indefinite splash spinner if auth bootstrap gets stuck.
   useEffect(() => {
-    if (!isLoading) return
+    if (!isLoading && !restaurantLoading) return
 
     const timer = setTimeout(() => {
       console.warn('[Auth] Bootstrap guard timeout reached; forcing ready state.')
       initializedRef.current = true
       setIsLoading(false)
+      setRestaurantLoading(false)
     }, AUTH_BOOTSTRAP_GUARD_MS)
 
     return () => {
       clearTimeout(timer)
     }
-  }, [isLoading])
+  }, [isLoading, restaurantLoading])
 
   // ----------------------------------------
   // AUTH METHODS
