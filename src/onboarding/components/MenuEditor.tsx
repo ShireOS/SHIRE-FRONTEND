@@ -31,7 +31,6 @@ const newBlankItem = (): MenuEditorItem => ({
 
 export function MenuEditor({ restaurantId, mode, onBack, onSave }: MenuEditorProps) {
   const [items, setItems] = useState<MenuEditorItem[]>([])
-  const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [phase, setPhase] = useState<Phase>(mode === 'manual' ? 'editing' : 'idle')
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -73,7 +72,6 @@ export function MenuEditor({ restaurantId, mode, onBack, onSave }: MenuEditorPro
       }
 
       const { image_url } = await uploadRes.json()
-      setImageUrl(image_url)
 
       // 2. Extract menu items
       setPhase('extracting')
@@ -264,7 +262,7 @@ export function MenuEditor({ restaurantId, mode, onBack, onSave }: MenuEditorPro
 
             {mode === 'upload' && (
               <button
-                onClick={() => { setPhase('idle'); setItems([]); setImageUrl(null) }}
+                onClick={() => { setPhase('idle'); setItems([]) }}
                 disabled={isBusy}
                 className="flex items-center gap-2 px-3 py-2 text-sm text-[rgb(var(--text-secondary))] border border-[rgba(255,255,255,0.1)] rounded-lg hover:bg-[rgba(255,255,255,0.05)] hover:text-[rgb(var(--text-primary))] disabled:opacity-40 transition-all"
               >
