@@ -122,14 +122,14 @@ export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
           {/* Testimonial / Features Overlay */}
           <div className="absolute bottom-12 left-12 right-12 z-10 glass-panel rounded-2xl p-6 border border-white/10 mt-auto bg-black/40 backdrop-blur-xl">
             <div className="flex gap-4 mb-4">
-              <span className="px-3 py-1 rounded-full border border-white/20 text-white/90 text-xs font-mono backdrop-blur-md">Restaurant Intelligence</span>
+              <span className="px-3 py-1 rounded-full border border-white/20 text-white/90 text-xs font-mono backdrop-blur-md">Live at Mimosas</span>
             </div>
             <p className="text-white text-lg font-medium leading-relaxed mb-4">
               "Shire is exactly the solution we've been looking for. It has completely streamlined our operations at Mimosas, making scheduling and staffing essentially run themselves. It's a game changer."
             </p>
             <div>
               <p className="text-white/90 text-sm font-semibold tracking-wide">Genta T</p>
-              <p className="text-white/60 text-xs mt-1 font-medium">Co-Owner @ Mimosas</p>
+              <p className="text-white/60 text-xs mt-1 font-medium">Co-Owner // Mimosas</p>
             </div>
           </div>
         </div>

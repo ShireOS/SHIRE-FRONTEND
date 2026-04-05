@@ -9,12 +9,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&family=Instrument+Serif:ital@0;1&family=Inter+Tight:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=Inter+Tight:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&display=swap"
         rel="stylesheet">
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/ScrollTrigger.min.js"></script>
 
     <style>
         :root {
@@ -252,7 +252,7 @@
             position: fixed;
             inset: 0;
             z-index: -2;
-            background-image: url('Gemini_Generated_Image_r4dzzvr4dzzvr4dz.png');
+            background-image: url('/hero/background/hero-art.jpg');
             background-size: cover;
             background-position: center;
             opacity: 0.5;
@@ -286,17 +286,18 @@
 
         .hero-content {
             padding-top: 4rem;
+            max-width: 680px;
         }
 
         h1 {
             font-family: var(--font-display);
-            font-size: 5.5rem;
-            line-height: 0.95;
+            font-size: 4.3rem;
+            line-height: 0.98;
             font-weight: 400;
-            margin-bottom: 1.5rem;
+            margin-bottom: 1.2rem;
             letter-spacing: -0.05em;
             color: #f4f1ec;
-            text-shadow: 0 12px 40px rgba(0, 0, 0, 0.65);
+            text-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
         }
 
         .italic-accent {
@@ -307,6 +308,13 @@
             letter-spacing: -0.05em;
         }
 
+        .inline-italic {
+            font-family: var(--font-display);
+            font-style: italic;
+            color: #f1ebe2;
+            letter-spacing: 0.01em;
+        }
+
         h1 .italic-accent {
             text-shadow: 0 0 50px rgba(212, 168, 84, 0.2);
         }
@@ -315,9 +323,24 @@
             font-size: 1rem;
             line-height: 1.65;
             color: var(--text-muted);
-            margin-bottom: 2.5rem;
+            margin-bottom: 2.1rem;
             max-width: 480px;
             font-weight: 400;
+        }
+
+        .hero-proof-line {
+            margin-top: 1.35rem;
+            font-family: var(--font-data);
+            font-size: 0.72rem;
+            line-height: 1.6;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.56);
+        }
+
+        .hero-proof-line .proof-break {
+            color: rgba(212, 168, 84, 0.42);
+            margin: 0 0.65rem;
         }
 
         .cta-group {
@@ -427,7 +450,9 @@
         .hero-video-cell {
             position: relative;
             aspect-ratio: 16/9;
-            background: rgba(0, 0, 0, 0.4);
+            background:
+                radial-gradient(circle at top, rgba(255, 255, 255, 0.08), transparent 55%),
+                rgba(0, 0, 0, 0.5);
             border-radius: 6px;
             overflow: hidden;
             border: 1px solid rgba(255, 255, 255, 0.05);
@@ -457,13 +482,40 @@
             pointer-events: none;
         }
 
+        .hero-video-poster {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            filter: brightness(0.6);
+            transition: opacity 0.45s ease, transform 0.45s ease;
+            will-change: opacity;
+        }
+
         .hero-video-cell video {
+            position: absolute;
+            inset: 0;
             width: 100%;
             height: 100%;
             object-fit: cover;
             filter: brightness(0.6);
             pointer-events: none;
             display: block;
+            opacity: 0;
+            transition: opacity 0.45s ease;
+        }
+
+        .hero-video-cell.is-loading .hero-video-poster {
+            transform: scale(1.01);
+        }
+
+        .hero-video-cell.is-live .hero-video-poster {
+            opacity: 0;
+        }
+
+        .hero-video-cell.is-live video {
+            opacity: 1;
         }
 
         .hero-video-cell video::-webkit-media-controls,
@@ -582,6 +634,51 @@
             z-index: 10;
         }
 
+        .video-placeholder {
+            position: absolute;
+            inset: 0;
+            border: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+            color: #fff;
+            background:
+                linear-gradient(180deg, rgba(7, 7, 9, 0.12) 0%, rgba(7, 7, 9, 0.7) 100%),
+                linear-gradient(120deg, rgba(13, 13, 16, 0.6) 0%, rgba(13, 13, 16, 0.15) 100%),
+                var(--video-preview) center/cover no-repeat;
+        }
+
+        .video-placeholder::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(circle at center, rgba(255, 255, 255, 0.08), transparent 45%),
+                linear-gradient(180deg, rgba(0, 0, 0, 0) 35%, rgba(0, 0, 0, 0.55) 100%);
+            pointer-events: none;
+        }
+
+        .video-placeholder-content {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            padding: 1.5rem;
+        }
+
+        .video-placeholder-label {
+            font-family: var(--font-data);
+            font-size: 0.72rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.78);
+        }
+
         .play-circle {
             width: 80px;
             height: 80px;
@@ -596,7 +693,8 @@
             z-index: 10;
         }
 
-        .video-container:hover .play-circle {
+        .video-container:hover .play-circle,
+        .video-placeholder:hover .play-circle {
             transform: scale(1.1);
             background: rgba(255, 255, 255, 0.1);
         }
@@ -1897,6 +1995,12 @@
             flex-direction: column;
         }
 
+        .team-grid-boxed .team-card-box:last-child {
+            grid-column: 1 / -1;
+            max-width: calc(50% - 12px);
+            justify-self: center;
+        }
+
         .team-img-box {
             width: 100%;
             aspect-ratio: 1 / 1;
@@ -1945,10 +2049,12 @@
         .ship-bg {
             position: absolute;
             inset: 0;
-            background-image: url('Gemini_Generated_Image_n0t2qyn0t2qyn0t2.png');
+            background-image:
+                linear-gradient(180deg, rgba(10, 10, 10, 0.12) 0%, rgba(10, 10, 10, 0.28) 100%),
+                url('/founders-group.png');
             background-size: cover;
-            background-position: center 40%;
-            filter: sepia(0.2) contrast(1.1);
+            background-position: center 28%;
+            filter: contrast(1.02);
         }
 
 
@@ -1961,6 +2067,10 @@
                 padding: 2rem;
                 border-right: none;
                 border-bottom: 1px solid var(--border);
+            }
+
+            .team-grid-boxed .team-card-box:last-child {
+                max-width: 100%;
             }
 
             .team-right-panel {
@@ -2097,9 +2207,22 @@
 
         .detail-row {
             display: flex;
-            justify-content: space-between;
+            align-items: flex-start;
+            justify-content: flex-start;
+            gap: 0.75rem;
             font-family: var(--font-data);
             font-size: 0.65rem;
+        }
+
+        .detail-label {
+            flex: 0 0 auto;
+            color: #b3aea6;
+        }
+
+        .detail-value {
+            margin-left: auto;
+            text-align: right;
+            min-width: 0;
         }
 
         .fc-1 {
@@ -2129,6 +2252,13 @@
         .fc-2 .detail-row,
         .fc-4 .detail-row {
             flex-direction: row-reverse;
+        }
+
+        .fc-2 .detail-value,
+        .fc-4 .detail-value {
+            margin-left: 0;
+            margin-right: auto;
+            text-align: left;
         }
 
         /* Tooltip for dashboard */
@@ -2354,7 +2484,7 @@
             }
 
             h1 {
-                font-size: 3.5rem;
+                font-size: 3.35rem;
             }
         }
 
@@ -2511,7 +2641,7 @@
             }
 
             h1 {
-                font-size: 2.8rem;
+                font-size: 2.6rem;
             }
 
             .hero-subtitle {
@@ -2624,7 +2754,7 @@
             }
 
             h1 {
-                font-size: 2.3rem;
+                font-size: 2.1rem;
                 margin-bottom: 1rem;
             }
 
@@ -2632,6 +2762,11 @@
                 font-size: 0.88rem;
                 margin-bottom: 1.8rem;
                 line-height: 1.55;
+            }
+
+            .hero-proof-line {
+                font-size: 0.62rem;
+                line-height: 1.8;
             }
 
             .cta-group {
@@ -2875,6 +3010,10 @@
                 gap: 14px;
             }
 
+            .team-grid-boxed .team-card-box:last-child {
+                max-width: 100%;
+            }
+
             .team-name-box {
                 font-size: 0.9rem;
             }
@@ -3020,20 +3159,22 @@
             <a href="/dashboard/" class="nav-item">Dashboard</a>
             <a href="#about" class="nav-item">About</a>
         </div>
-        <a href="/dashboard/auth/signup" class="nav-cta">Get Started</a>
+        <a href="mailto:founders@shireintelligence.com?subject=Book%20a%20Shire%20demo" class="nav-cta">Book a Demo</a>
     </nav>
 
     <section class="hero-section">
         <div class="hero-content">
-            <h1>See <span class="italic-accent accent">through</span><br>the fog.</h1>
+            <div class="label-mono">One Platform For The Restaurant</div>
+            <h1>Increase restaurant <span class="italic-accent accent">revenue</span> with the floor you already have.</h1>
             <p class="hero-subtitle">
-                Turn chaotic video feeds into structured operational data. The first computer vision platform designed
-                to optimize restaurant throughput and waiter latency in real-time.
+                Shire uses existing camera systems and POS data to see table flow <span class="inline-italic">in real time</span> and help restaurants
+                seat faster, route staff better, and turn tables more efficiently.
             </p>
             <div class="cta-group">
-                <a href="/dashboard/auth/signup" class="btn-primary">Get Started</a>
-                <a href="/dashboard/auth/login" class="btn-secondary">Sign In</a>
+                <a href="mailto:founders@shireintelligence.com?subject=Book%20a%20Shire%20demo" class="btn-primary">Book a Demo</a>
+                <a href="#videoTrigger" class="btn-secondary">Watch Demo</a>
             </div>
+            <div class="hero-proof-line">14% revenue increase at Mimosas <span class="proof-break">•</span> 1-2 fewer hosts on the busiest days <span class="proof-break">•</span> 2 live deployments</div>
         </div>
         <div class="dashboard-wrapper">
             <div class="hero-grid-header">
@@ -3042,30 +3183,26 @@
             </div>
             <div class="hero-video-grid">
                 <div class="hero-video-cell">
-                    <video autoplay muted defaultmuted loop playsinline webkit-playsinline disablepictureinpicture disableremoteplayback preload="auto" aria-label="Camera 1 live feed">
-                        <source src="/demovids/demo1.mp4" type="video/mp4">
-                    </video>
+                    <img class="hero-video-poster" src="/hero/posters/demo1.jpg" alt="" loading="eager" decoding="async" fetchpriority="high">
+                    <video muted defaultmuted loop playsinline webkit-playsinline disablepictureinpicture disableremoteplayback preload="none" poster="/hero/posters/demo1.jpg" data-src="/hero/videos/demo1-hero.mp4" aria-label="Camera 1 live feed"></video>
                     <span class="video-label">Camera 1</span>
                     <span class="live-dot"></span>
                 </div>
                 <div class="hero-video-cell">
-                    <video autoplay muted defaultmuted loop playsinline webkit-playsinline disablepictureinpicture disableremoteplayback preload="auto" aria-label="Camera 2 live feed">
-                        <source src="/demovids/demo2.mp4" type="video/mp4">
-                    </video>
+                    <img class="hero-video-poster" src="/hero/posters/demo2.jpg" alt="" loading="eager" decoding="async" fetchpriority="high">
+                    <video muted defaultmuted loop playsinline webkit-playsinline disablepictureinpicture disableremoteplayback preload="none" poster="/hero/posters/demo2.jpg" data-src="/hero/videos/demo2-hero.mp4" aria-label="Camera 2 live feed"></video>
                     <span class="video-label">Camera 2</span>
                     <span class="live-dot"></span>
                 </div>
                 <div class="hero-video-cell">
-                    <video autoplay muted defaultmuted loop playsinline webkit-playsinline disablepictureinpicture disableremoteplayback preload="auto" aria-label="Camera 3 live feed">
-                        <source src="/demovids/demo3.mp4" type="video/mp4">
-                    </video>
+                    <img class="hero-video-poster" src="/hero/posters/demo3.jpg" alt="" loading="eager" decoding="async">
+                    <video muted defaultmuted loop playsinline webkit-playsinline disablepictureinpicture disableremoteplayback preload="none" poster="/hero/posters/demo3.jpg" data-src="/hero/videos/demo3-hero.mp4" aria-label="Camera 3 live feed"></video>
                     <span class="video-label">Camera 3</span>
                     <span class="live-dot"></span>
                 </div>
                 <div class="hero-video-cell">
-                    <video autoplay muted defaultmuted loop playsinline webkit-playsinline disablepictureinpicture disableremoteplayback preload="auto" aria-label="Camera 4 live feed">
-                        <source src="/demovids/demo4.mp4" type="video/mp4">
-                    </video>
+                    <img class="hero-video-poster" src="/hero/posters/demo4.jpg" alt="" loading="eager" decoding="async">
+                    <video muted defaultmuted loop playsinline webkit-playsinline disablepictureinpicture disableremoteplayback preload="none" poster="/hero/posters/demo4.jpg" data-src="/hero/videos/demo4-hero.mp4" aria-label="Camera 4 live feed"></video>
                     <span class="video-label">Camera 4</span>
                     <span class="live-dot"></span>
                 </div>
@@ -3076,17 +3213,17 @@
     <section class="video-section">
         <div class="ambient-field ambient-video"></div>
         <div class="video-header-stack reveal">
-            <div class="label-mono">The Platform</div>
-            <h2 class="video-headline">Total <span class="italic-accent accent">Operational</span> Clarity</h2>
+            <div class="label-mono">What Shire Does</div>
+            <h2 class="video-headline">See what is happening on the floor.</h2>
             <p class="section-body">
-                Stop relying on gut instinct. The Shire turns video into value. An integrated view of your entire floor
-                plan, staff performance, and customer flow.
+                Shire turns live floor activity into <span class="inline-italic">usable decisions</span>. Hosts see open tables sooner, bussers move
+                faster, and managers catch bottlenecks before they cost covers or revenue.
             </p>
         </div>
 
         <div class="video-container reveal" id="videoTrigger" style="aspect-ratio: 16/9; border-radius: 16px; overflow: hidden;">
             <iframe width="100%" height="100%" src="https://www.youtube.com/embed/HGUa2AcU4hU?rel=0&modestbranding=1"
-                title="SHIRE Demo" frameborder="0"
+                title="SHIRE Demo" frameborder="0" loading="lazy"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 referrerpolicy="strict-origin-when-cross-origin" allowfullscreen
                 style="position:absolute; inset:0; border-radius: 16px;">
@@ -3098,7 +3235,7 @@
     <section class="glass-stack-section" id="stack-trigger">
         <div class="stack-section-header">
             <div class="label-mono">How It Works</div>
-            <h2 class="stack-section-title">The <span class="italic-accent accent">Intelligence</span> Stack</h2>
+            <h2 class="stack-section-title">The Intelligence <span class="italic-accent">Stack</span></h2>
         </div>
         <div class="stack-container">
 
@@ -3114,27 +3251,29 @@
                 </div>
 
                 <div class="stack-stage stage-1 active">
-                    <div class="stack-label">Phase 1: Ingestion</div>
-                    <h2 class="stack-headline">Raw Visual <br>Reality.</h2>
-                    <p class="stack-desc">Every plate, every glass, every guest. Shire's edge nodes capture the literal
-                        physical state of the table in real-time, stripping away the noise of the dining room.</p>
-                    <a href="/dashboard/auth/signup" class="stack-cta">See It Live <span class="stack-cta-arrow">↗</span></a>
+                    <div class="stack-label">Step 1: See the Floor</div>
+                    <h2 class="stack-headline">See the <br>floor.</h2>
+                    <p class="stack-desc">Shire reads the live state of every table from your existing camera system, so
+                        the host stand is no longer guessing what is open, occupied, or waiting to be cleared.</p>
+                    <a href="#videoTrigger" class="stack-cta">Watch Demo <span class="stack-cta-arrow">↗</span></a>
                 </div>
 
                 <div class="stack-stage stage-2">
-                    <div class="stack-label">Phase 2: Consolidation</div>
-                    <h2 class="stack-headline">Data from <br>the Chaos.</h2>
-                    <p class="stack-desc">As the meal progresses, the physical items stack up. To a human, it's a mess.
-                        To Shire, it's a perfectly structured dataset indicating table progression.</p>
-                    <a href="/dashboard/auth/signup" class="stack-cta">Try the Dashboard <span class="stack-cta-arrow">↗</span></a>
+                    <div class="stack-label">Step 2: Run the Shift</div>
+                    <h2 class="stack-headline">Run the <br>shift.</h2>
+                    <p class="stack-desc">As service moves, Shire connects table state, pacing, and workload so the
+                        team can spot where turns are slowing down and where <span class="inline-italic">guests are waiting too long</span>.</p>
+                    <a href="mailto:founders@shireintelligence.com?subject=Book%20a%20Shire%20demo" class="stack-cta">Book a Demo <span class="stack-cta-arrow">↗</span></a>
                 </div>
 
                 <div class="stack-stage stage-3">
-                    <div class="stack-label">Phase 3: Execution</div>
-                    <h2 class="stack-headline">The Turn <br>Directive.</h2>
-                    <p class="stack-desc">The instant the table hits the threshold, Shire translates the physical stack
-                        into a singular, undeniable routing command sent directly to the busser's wrist.</p>
-                    <a href="/dashboard/auth/signup" class="stack-cta">Get Started <span class="stack-cta-arrow">↗</span></a>
+                    <div class="stack-label">Step 3: Improve the Business</div>
+                    <h2 class="stack-headline">Improve the <br>business.</h2>
+                    <p class="stack-desc">Once Shire understands what is happening on the floor, it can connect that
+                        ground truth to staffing, scheduling, routing, pricing, POS, and manager decisions. Our thesis is that this
+                        real-time operating layer can let restaurants run <span class="inline-italic">materially leaner</span> over time without slowing
+                        service down.</p>
+                    <a href="mailto:founders@shireintelligence.com?subject=Book%20a%20Shire%20demo" class="stack-cta">Talk to Us <span class="stack-cta-arrow">↗</span></a>
                 </div>
             </div>
 
@@ -3321,34 +3460,32 @@
     <section class="features-section">
         <div class="features-grid">
             <div class="features-content reveal">
-                <div class="label-mono">Computer Vision</div>
-                <h2 class="features-headline">Vision AI for the <span class="italic-accent accent">Physical</span> World
-                </h2>
+                <div class="label-mono">Floor Intelligence</div>
+                <h2 class="features-headline">See the <span class="italic-accent accent">floor</span> in real time.</h2>
                 <p class="features-subtitle">
-                    Turn chaotic CCTV feeds into structured operational data. Our AI sees what humans miss, tracking
-                    every table and guest in real-time.
+                    Shire gives the host stand and the manager a live picture of service, using the camera systems the
+                    restaurant already has.
                 </p>
                 <div class="features-list">
                     <div class="feature-item reveal-child">
-                        <div class="feature-item-title">Table Segmentation</div>
-                        <div class="feature-item-desc">Automatically detect and track every table in your floor plan. No
-                            manual setup required.</div>
+                        <div class="feature-item-title">Live table map</div>
+                        <div class="feature-item-desc">Track what is open, occupied, and waiting to be cleared without
+                            relying on someone to update a board by hand.</div>
                     </div>
                     <div class="feature-item reveal-child">
-                        <div class="feature-item-title">People Detection</div>
-                        <div class="feature-item-desc">Real-time occupancy tracking with 99.7% accuracy. Know exactly
-                            who's seated where.</div>
+                        <div class="feature-item-title">Table-state detection</div>
+                        <div class="feature-item-desc">Turn live camera input into the table states that actually matter
+                            during service.</div>
                     </div>
                     <div class="feature-item reveal-child">
-                        <div class="feature-item-title">State Classification</div>
-                        <div class="feature-item-desc">Instant detection of table states: occupied, empty-clean,
-                            empty-dirty. Eliminate guesswork.</div>
+                        <div class="feature-item-title">Service pacing</div>
+                        <div class="feature-item-desc">See where the room is moving well and where a bottleneck is
+                            starting to slow turns down.</div>
                     </div>
                     <div class="feature-item reveal-child">
-                        <div class="feature-item-title">Derived Performance Insights</div>
-                        <div class="feature-item-desc">Fuse what the camera sees with POS timestamps and tip data. Know
-                            exactly how each server performs — time to greet, time to deliver, dwell time, tip rate. Not
-                            self-reported. Measured.</div>
+                        <div class="feature-item-title">Existing camera systems</div>
+                        <div class="feature-item-desc">Shire is designed to work with the camera coverage restaurants
+                            already have in place.</div>
                     </div>
                 </div>
             </div>
@@ -3421,27 +3558,27 @@
     <section class="features-section">
         <div class="features-grid reverse">
             <div class="features-content reveal">
-                <div class="label-mono">Operations</div>
-                <h2 class="features-headline">Intelligent <span class="italic-accent accent">Routing</span> Engine</h2>
+                <div class="label-mono">Routing</div>
+                <h2 class="features-headline">Route the team <span class="italic-accent accent">faster</span>.</h2>
                 <p class="features-subtitle">
-                    Automate the decisions that slow your floor down. Let AI handle the logistics so your team can focus
-                    on hospitality.
+                    Shire helps the floor move by recommending the next table, the right server, and the next busser
+                    action in the moments that matter most.
                 </p>
                 <div class="features-list">
                     <div class="feature-item reveal-child">
                         <div class="feature-item-title">Host Recommendations</div>
-                        <div class="feature-item-desc">Optimal table assignments based on party size, server workload,
-                            and section balance.</div>
+                        <div class="feature-item-desc">Seat parties faster with recommendations based on party size,
+                            section balance, and what is actually open right now.</div>
                     </div>
                     <div class="feature-item reveal-child">
-                        <div class="feature-item-title">Waiter Assignment</div>
-                        <div class="feature-item-desc">Fair tip distribution algorithm that prioritizes both efficiency
-                            and equity across your team.</div>
+                        <div class="feature-item-title">Server balance</div>
+                        <div class="feature-item-desc">Keep sections moving without overloading the wrong server or
+                            double-seating the floor into chaos.</div>
                     </div>
                     <div class="feature-item reveal-child">
-                        <div class="feature-item-title">Cleaner Dispatch</div>
-                        <div class="feature-item-desc">Automatic alerts when tables need bussing. Minimize turnover time
-                            and maximize covers.</div>
+                        <div class="feature-item-title">Busser dispatch + wait times</div>
+                        <div class="feature-item-desc">Clear tables sooner and give guests a more believable wait time
+                            based on what is happening on the floor.</div>
                     </div>
                 </div>
             </div>
@@ -3487,27 +3624,28 @@
     <section class="features-section">
         <div class="features-grid">
             <div class="features-content reveal">
-                <div class="label-mono">Analytics</div>
-                <h2 class="features-headline">Actionable <span class="italic-accent accent">Analytics</span></h2>
+                <div class="label-mono">Shift Intelligence</div>
+                <h2 class="features-headline">Make the right calls <span class="italic-accent accent">tonight</span>.</h2>
                 <p class="features-subtitle">
-                    Stop guessing, start knowing. Deep insights into every aspect of your operation, from staff
-                    performance to kitchen throughput.
+                    Managers should not have to run the restaurant on instinct. Shire turns floor behavior into
+                    operational intelligence that improves labor, pacing, revenue, and the next schedule.
                 </p>
                 <div class="features-list">
                     <div class="feature-item reveal-child">
-                        <div class="feature-item-title">Staff Performance</div>
-                        <div class="feature-item-desc">Track throughput, latency, and efficiency per server. Identify
-                            training opportunities.</div>
+                        <div class="feature-item-title">Shift dashboard</div>
+                        <div class="feature-item-desc">See table turns, service pace, covers, revenue, and staffing
+                            pressure in one live operating view.</div>
                     </div>
                     <div class="feature-item reveal-child">
-                        <div class="feature-item-title">Kitchen Intelligence</div>
-                        <div class="feature-item-desc">Order grouping, item forecasting, and inventory predictions. Know
-                            what to prep before the rush.</div>
+                        <div class="feature-item-title">Demand-based staffing</div>
+                        <div class="feature-item-desc">Balance sections through server routing, forecast demand before
+                            the shift, and staff to what the floor actually needs instead of gut feel. That is how
+                            restaurants can run up to 20% leaner without slowing service.</div>
                     </div>
                     <div class="feature-item reveal-child">
-                        <div class="feature-item-title">Business Integrations</div>
-                        <div class="feature-item-desc">Connect to POS, scheduling, and supplier systems for end-to-end
-                            visibility.</div>
+                        <div class="feature-item-title">Debrief + scheduling loop</div>
+                        <div class="feature-item-desc">Get a fast summary of what happened, where bottlenecks formed,
+                            and feed that learning into the next schedule around real demand.</div>
                     </div>
                 </div>
             </div>
@@ -3557,60 +3695,65 @@
         </div>
     </section>
 
-    <!-- FEATURE SECTION 4: MANAGER INTELLIGENCE -->
+    <!-- FEATURE SECTION 4: MENU INTELLIGENCE -->
     <section class="features-section">
         <div class="features-grid reverse">
             <div class="features-content reveal">
-                <div class="label-mono">Intelligence</div>
-                <h2 class="features-headline">Intelligence That Saves You Money <span
-                        class="italic-accent accent">Tonight</span></h2>
+                <div class="label-mono">Menu Intelligence</div>
+                <h2 class="features-headline">Optimize the menu, not just the <span class="italic-accent accent">floor</span>.</h2>
                 <p class="features-subtitle">
-                    Not dashboards you check tomorrow. Decisions that hit your bottom line before close.
+                    Shire uses POS data and camera-based pacing signals to learn what guests order together, how long
+                    dishes slow down the room, and where the menu is leaving profit on the table.
                 </p>
                 <div class="features-list">
                     <div class="feature-item reveal-child">
-                        <div class="feature-item-title">Real-Time Labor Throttle</div>
-                        <div class="feature-item-desc">Shire reads the visual flow of the room — not just sales — to
-                            tell you exactly when to cut servers. Saves ~$200/night in wasted labor.</div>
+                        <div class="feature-item-title">Bandit pricing tests</div>
+                        <div class="feature-item-desc">Run small pricing experiments to learn elasticity and add 1-2
+                            cents of profit per item without turning the menu into obvious surge pricing.</div>
                     </div>
                     <div class="feature-item reveal-child">
-                        <div class="feature-item-title">Post-Shift Auto-Debrief</div>
-                        <div class="feature-item-desc">30-second summary vs 20 minutes of pulling reports. Covers,
-                            revenue, best and worst servers, bottlenecks — auto-generated after every shift.</div>
+                        <div class="feature-item-title">Item pacing from cameras</div>
+                        <div class="feature-item-desc">Use CCTV plus POS timestamps to see which dishes stretch table
+                            times, slow turns, or create hidden operational drag.</div>
                     </div>
                     <div class="feature-item reveal-child">
-                        <div class="feature-item-title">Predictive Wait Times</div>
-                        <div class="feature-item-desc">Per-table estimates from computer vision. Table 7 is on dessert
-                            (~12 min). Table 12 just got entrees (~40 min). Real answers, not guesses.</div>
+                        <div class="feature-item-title">Item correlations</div>
+                        <div class="feature-item-desc">See what gets ordered together, what drives higher checks, and
+                            which pairings should be promoted, bundled, or repositioned.</div>
+                    </div>
+                    <div class="feature-item reveal-child">
+                        <div class="feature-item-title">Popularity + margin engine</div>
+                        <div class="feature-item-desc">Track which items are stars, which items are dragging margin, and
+                            where the menu can shift mix without hurting demand.</div>
                     </div>
                 </div>
             </div>
             <div class="mock-notification reveal">
                 <div class="mock-notif-header">
-                    <div class="mock-notif-title">Manager Alerts</div>
+                    <div class="mock-notif-title">Menu Intelligence</div>
                     <div class="mock-notif-badge">Live</div>
                 </div>
                 <div class="mock-notif-body">
                     <div class="mock-alert-card">
-                        <div class="mock-alert-title">Rush ending — recommend cutting 2 servers</div>
-                        <div class="mock-alert-desc">Occupancy dropped to 45%. Tyler P. and Sarah M. have lowest
-                            remaining tables.</div>
+                        <div class="mock-alert-title">Recommend raising truffle fries by $0.25 this week</div>
+                        <div class="mock-alert-desc">Demand is holding, burger attach rate is high, and projected margin
+                            lift is positive without visible drop-off in volume.</div>
                         <div class="mock-alert-action">
-                            <div class="mock-alert-btn primary">Approve</div>
-                            <div class="mock-alert-btn secondary">Dismiss</div>
+                            <div class="mock-alert-btn primary">Apply</div>
+                            <div class="mock-alert-btn secondary">Review</div>
                         </div>
                     </div>
                     <div class="mock-summary-row">
-                        <div class="mock-summary-label">Active Covers</div>
-                        <div class="mock-summary-value">34</div>
+                        <div class="mock-summary-label">Attach Rate</div>
+                        <div class="mock-summary-value">38%</div>
                     </div>
                     <div class="mock-summary-row">
-                        <div class="mock-summary-label">Est. Time to Close</div>
-                        <div class="mock-summary-value">1h 20m</div>
+                        <div class="mock-summary-label">Price Sensitivity</div>
+                        <div class="mock-summary-value">Low</div>
                     </div>
                     <div class="mock-summary-row">
-                        <div class="mock-summary-label">Labor Cost / Cover</div>
-                        <div class="mock-summary-value" style="color:var(--status-good)">$4.20</div>
+                        <div class="mock-summary-label">Projected Weekly Lift</div>
+                        <div class="mock-summary-value" style="color:var(--status-good)">+$184</div>
                     </div>
                 </div>
             </div>
@@ -3622,39 +3765,39 @@
         <div class="ambient-field ambient-metrics"></div>
 
         <div class="metrics-intro reveal">
-            <div class="label-mono">Performance</div>
-            <h2 class="metrics-headline">Real, <span class="italic-accent accent">Measurable</span> Results</h2>
-            <p class="metrics-sub">Designed for scale. Proven in the field.</p>
+            <div class="label-mono">Proof</div>
+            <h2 class="metrics-headline">Results from restaurants using <span class="italic-accent accent">Shire</span>.</h2>
+            <p class="metrics-sub">What we are seeing in live deployments right now.</p>
         </div>
 
         <div class="bento-grid">
             <div class="metric-card card-small reveal">
                 <div>
-                    <div class="m-value gold-text">+<span class="counter" data-target="15">0</span><span
+                    <div class="m-value gold-text">+<span class="counter" data-target="14">0</span><span
                             class="m-suffix">%</span></div>
                 </div>
-                <div class="m-label">More Table Turns</div>
+                <div class="m-label">Revenue Increase at Mimosas</div>
             </div>
 
             <div class="metric-card card-small reveal">
                 <div>
-                    <div class="m-value"><span style="font-size:2rem;opacity:0.6;">$</span><span class="counter"
-                            data-target="200">0</span></div>
+                    <div class="m-value">1-2<span class="m-suffix">c</span></div>
                 </div>
-                <div class="m-label">Labor Saved / Night</div>
+                <div class="m-label">More Profit Per Item</div>
             </div>
 
             <div class="metric-card card-wide reveal">
                 <div class="quote-block">
                     <div class="quote-text">
-                        "The Shire showed us exactly where our bottlenecks were. It's like having a GM watching every
-                        table, 24/7."
+                        "Shire is exactly the solution we've been looking for. It has completely streamlined our
+                        operations at Mimosas, making scheduling and staffing essentially run themselves. It's a game
+                        changer."
                     </div>
                     <div class="quote-author">
                         <div class="author-pic"></div>
                         <div class="author-info">
-                            <span class="author-name">Sam Patel</span>
-                            <span class="author-role">General Manager // OAK & VINE</span>
+                            <span class="author-name">Genta T.</span>
+                            <span class="author-role">Co-Owner // Mimosas</span>
                         </div>
                     </div>
                 </div>
@@ -3663,14 +3806,14 @@
             <div class="metric-card card-wide reveal">
                 <div class="quote-block">
                     <div class="quote-text">
-                        "The most sophisticated vision platform we have deployed. It delivered actionable intelligence
-                        that drove real revenue."
+                        Shire learns what sells together, which items are more price sensitive, and where small menu
+                        changes can increase margin without hurting demand or slowing the room down.
                     </div>
                     <div class="quote-author">
                         <div class="author-pic"></div>
                         <div class="author-info">
-                            <span class="author-name">Elena Hayes</span>
-                            <span class="author-role">Owner // ATLAS RESTAURANT</span>
+                            <span class="author-name">Menu Intelligence</span>
+                            <span class="author-role">Pricing, pacing, and cross-item learning</span>
                         </div>
                     </div>
                 </div>
@@ -3678,27 +3821,25 @@
 
             <div class="metric-card card-small reveal">
                 <div>
-                    <div class="m-value">&lt;<span class="counter" data-target="90">0</span><span
-                            class="m-suffix">sec</span></div>
+                    <div class="m-value"><span class="counter" data-target="2">0</span></div>
                 </div>
-                <div class="m-label">Busser Response Time</div>
+                <div class="m-label">Live Deployments</div>
             </div>
 
             <div class="metric-card card-small reveal">
                 <div>
-                    <div class="m-value gold-text"><span class="counter" data-target="50">0</span><span
-                            class="m-suffix">%</span></div>
+                    <div class="m-value gold-text">0</div>
                 </div>
-                <div class="m-label">Dead Time Eliminated</div>
+                <div class="m-label">New Hardware Required</div>
             </div>
         </div>
 
-        <a href="#" class="btn-glass-large" style="margin-top: 5rem;">
-            <span>Start Free Trial</span>
+        <a href="mailto:founders@shireintelligence.com?subject=Book%20a%20Shire%20demo" class="btn-glass-large" style="margin-top: 5rem;">
+            <span>Book a Demo</span>
         </a>
     </section>
 
-    <section class="team-section">
+    <section class="team-section" id="about">
         <div class="team-section-header reveal">
             <h2 class="team-title-outer">Meet our team</h2>
         </div>
@@ -3733,13 +3874,6 @@
                         <div class="team-role-box">Founding Team</div>
                     </div>
 
-                    <div class="team-card-box">
-                        <div class="team-img-box">
-                            <img src="/ben.png" alt="Ben Tang" style="object-fit: cover; object-position: center top;">
-                        </div>
-                        <div class="team-name-box">Ben Tang</div>
-                        <div class="team-role-box">Founding Team</div>
-                    </div>
                 </div>
             </div>
 
@@ -3754,48 +3888,48 @@
         <canvas id="ring-canvas"></canvas>
         <div class="ring-overlay">
             <div class="ring-title">
-                <div class="label-mono" style="color:var(--gold);">The Ecosystem</div>
+                <div class="label-mono" style="color:var(--gold);">The Operating System</div>
                 <h2 class="ring-headline">One Platform to <span class="italic-accent">Rule</span> Them All</h2>
             </div>
             <div class="feature-cards-container">
                 <div class="feature-card fc-1">
-                    <div class="feature-label">Vision AI</div>
-                    <div class="feature-name">Instant Busser Alerts</div>
+                    <div class="feature-label">Floor Ops</div>
+                    <div class="feature-name">Hosts, Seating, Bussing</div>
                     <div class="feature-details">
-                        <div class="detail-row"><span class="detail-label">Trigger</span><span class="detail-value" style="color:var(--status-good)">Table Empty</span></div>
-                        <div class="detail-row"><span class="detail-label">Latency</span><span class="detail-value">Under 2s</span></div>
+                        <div class="detail-row"><span class="detail-label">Uses</span><span class="detail-value" style="color:var(--status-good)">Live floor state</span></div>
+                        <div class="detail-row"><span class="detail-label">Improves</span><span class="detail-value">Turns + wait times</span></div>
                         <div class="detail-row" style="margin-top:6px; font-size:0.6rem; color:#9a9590; line-height:1.3; text-transform:none; letter-spacing:0;">
-                            Instantly dispatches bussers to clear tables the second guests stand up, cutting idle table time to zero and maximizing table turns.</div>
+                            The live wedge: table state, seating recommendations, busser routing, and shift flow.</div>
                     </div>
                 </div>
                 <div class="feature-card fc-2">
-                    <div class="feature-label">Kitchen</div>
-                    <div class="feature-name">Kitchen Pause</div>
+                    <div class="feature-label">Labor</div>
+                    <div class="feature-name">Scheduling + Staffing</div>
                     <div class="feature-details">
-                        <div class="detail-row"><span class="detail-label">Mode</span><span class="detail-value" style="color:var(--status-good)">Auto-Throttled</span></div>
-                        <div class="detail-row"><span class="detail-label">Buffer</span><span class="detail-value">Dynamic</span></div>
+                        <div class="detail-row"><span class="detail-label">Balances</span><span class="detail-value" style="color:var(--status-good)">Workload + demand</span></div>
+                        <div class="detail-row"><span class="detail-label">Improves</span><span class="detail-value">Schedule precision</span></div>
                         <div class="detail-row" style="margin-top:6px; font-size:0.6rem; color:#9a9590; line-height:1.3; text-transform:none; letter-spacing:0;">
-                            Automatically slows incoming tickets when the kitchen falls behind, ensuring food quality and reducing staff burnout.</div>
+                            Use real floor demand to schedule closer to what the shift actually needs.</div>
                     </div>
                 </div>
                 <div class="feature-card fc-3">
-                    <div class="feature-label">Labor</div>
-                    <div class="feature-name">Smart Labor Cuts</div>
+                    <div class="feature-label">Menu</div>
+                    <div class="feature-name">Pricing + Mix Intelligence</div>
                     <div class="feature-details">
-                        <div class="detail-row"><span class="detail-label">Signal</span><span class="detail-value">Visual Flow</span></div>
-                        <div class="detail-row"><span class="detail-label">Savings</span><span class="detail-value" style="color:var(--status-good)">~$200/night</span></div>
+                        <div class="detail-row"><span class="detail-label">Finds</span><span class="detail-value">Elasticity + bundles</span></div>
+                        <div class="detail-row"><span class="detail-label">Improves</span><span class="detail-value" style="color:var(--status-good)">Margin per item</span></div>
                         <div class="detail-row" style="margin-top:6px; font-size:0.6rem; color:#9a9590; line-height:1.3; text-transform:none; letter-spacing:0;">
-                            Analyzes real-time occupancy and server workload to recommend exact times for cutting staff, optimizing labor costs.</div>
+                            Learn what sells together, which items are underpriced, and where small changes lift profit.</div>
                     </div>
                 </div>
                 <div class="feature-card fc-4">
-                    <div class="feature-label">Intelligence</div>
-                    <div class="feature-name">Shift Debrief</div>
+                    <div class="feature-label">POS + Manager OS</div>
+                    <div class="feature-name">Payments, Debriefs, AI Assistant</div>
                     <div class="feature-details">
-                        <div class="detail-row"><span class="detail-label">Gen Time</span><span class="detail-value" style="color:var(--status-good)">30 Seconds</span></div>
-                        <div class="detail-row"><span class="detail-label">Format</span><span class="detail-value">AI Summary</span></div>
+                        <div class="detail-row"><span class="detail-label">Includes</span><span class="detail-value" style="color:var(--status-good)">Shire POS + manager workflows</span></div>
+                        <div class="detail-row"><span class="detail-label">Goal</span><span class="detail-value">Replace the software stack</span></div>
                         <div class="detail-row" style="margin-top:6px; font-size:0.6rem; color:#9a9590; line-height:1.3; text-transform:none; letter-spacing:0;">
-                            Provides a comprehensive breakdown of service flow, server bottlenecks, and actionable insights immediately after closing.</div>
+                            Shire should eventually run everything in the restaurant except service and cooking.</div>
                     </div>
                 </div>
             </div>
@@ -3832,419 +3966,581 @@
     </footer>
 
     <script>
-        // JS LOGIC
-        const tooltip = document.getElementById('tooltip');
+        document.addEventListener('DOMContentLoaded', () => {
+            const tooltip = document.getElementById('tooltip');
+            const navbar = document.getElementById('navbar');
+            const cursorGlow = document.getElementById('cursor-glow');
+            const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+            const hoverlessPointer = window.matchMedia('(hover: none)').matches;
+            const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            const shouldConserveMedia =
+                prefersReducedMotion.matches ||
+                Boolean(connection && (connection.saveData || ['slow-2g', '2g'].includes(connection.effectiveType || '')));
 
-        // Scroll nav effect
-        window.addEventListener('scroll', () => {
-            const nav = document.getElementById('navbar');
-            if (window.scrollY > 50) nav.classList.add('scrolled');
-            else nav.classList.remove('scrolled');
-        });
-
-        // Tooltip + Cursor Glow position tracking
-        const cursorGlow = document.getElementById('cursor-glow');
-        document.addEventListener('mousemove', (e) => {
-            gsap.to(tooltip, { x: e.clientX + 20, y: e.clientY + 20, duration: 0.15 });
-            gsap.to(cursorGlow, { x: e.clientX - 90, y: e.clientY - 90, duration: 0.4, ease: 'power2.out' });
-        });
-        // Hide cursor glow on touch devices
-        if (window.matchMedia('(hover: none)').matches && cursorGlow) {
-            cursorGlow.style.display = 'none';
-        }
-
-        // DASHBOARD GRID (only if element exists)
-        const gridContainer = document.getElementById('gridContainer');
-        if (gridContainer) {
-            const tables = [
-                { id: '04', status: 'clean', server: '--' }, { id: '05', status: 'busy', server: 'Tyler' },
-                { id: '06', status: 'busy', server: 'Sarah' }, { id: '07', status: 'busy', server: 'Tyler' },
-                { id: '08', status: 'clean', server: '--' }, { id: '09', status: 'clean', server: '--' }
-            ];
-
-            tables.forEach(t => {
-                const node = document.createElement('div');
-                node.className = `table-node ${t.status}`;
-                node.innerHTML = `<div class="node-id">${t.id}</div><div class="node-status-dot"></div>`;
-                node.addEventListener('mouseenter', () => {
-                    tooltip.classList.add('visible');
-                    document.getElementById('tt-id').innerText = `TABLE ${t.id}`;
-                    document.getElementById('tt-status').innerText = t.status.toUpperCase();
-                    document.getElementById('tt-server').innerText = t.server;
-                    const now = new Date();
-                    document.getElementById('tt-time').innerText = `${now.getHours()}:${now.getMinutes()}`;
-                });
-                node.addEventListener('mouseleave', () => {
-                    tooltip.classList.remove('visible');
-                });
-                gridContainer.appendChild(node);
-            });
-        }
-
-        // FOG (Layer 1)
-        const canvas1 = document.getElementById('fog-canvas');
-        const scene1 = new THREE.Scene();
-        const camera1 = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-        const renderer1 = new THREE.WebGLRenderer({ canvas: canvas1, alpha: true });
-        renderer1.setSize(window.innerWidth, window.innerHeight);
-        const mat1 = new THREE.ShaderMaterial({
-            uniforms: { uTime: { value: 0 } },
-            fragmentShader: `
-                uniform float uTime;
-                float random (in vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123); }
-                float noise (in vec2 st) {
-                    vec2 i = floor(st); vec2 f = fract(st);
-                    float a = random(i); float b = random(i + vec2(1.0, 0.0));
-                    float c = random(i + vec2(0.0, 1.0)); float d = random(i + vec2(1.0, 1.0));
-                    vec2 u = f * f * (3.0 - 2.0 * f);
-                    return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+            const runWhenIdle = (callback, timeout = 1200) => {
+                if ('requestIdleCallback' in window) {
+                    window.requestIdleCallback(callback, { timeout });
+                    return;
                 }
-                void main() {
-                    vec2 st = gl_FragCoord.xy / 1000.0;
-                    float n = noise(st * 3.0 + vec2(uTime * 0.1));
-                    gl_FragColor = vec4(0.9, 0.95, 1.0, n * 0.3);
-                }
-            `,
-            vertexShader: `void main() { gl_Position = vec4( position, 1.0 ); }`,
-            transparent: true
-        });
-        scene1.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat1));
+                window.setTimeout(callback, 250);
+            };
 
-        // GOLD RING (Layer 2)
-        const canvas2 = document.getElementById('ring-canvas');
-        const renderer2 = new THREE.WebGLRenderer({ canvas: canvas2, alpha: true, antialias: true });
-        renderer2.setSize(window.innerWidth, window.innerHeight);
-        const scene2 = new THREE.Scene();
-        const camera2 = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera2.position.z = 25; camera2.position.y = 1;
+            const runAfterFirstPaint = (callback) => {
+                window.requestAnimationFrame(() => window.requestAnimationFrame(callback));
+            };
 
-        const ringGeometry = new THREE.TorusGeometry(8, 2.5, 30, 150);
-        const particlesMaterial = new THREE.PointsMaterial({ color: 0xd4a854, size: 0.12, transparent: true, opacity: 0.85 });
-        const torusParticles = new THREE.Points(ringGeometry, particlesMaterial);
-        torusParticles.rotation.x = Math.PI / 2;
-        scene2.add(torusParticles);
+            const safeGsapTo = (target, vars) => {
+                if (!target || !window.gsap) return;
+                gsap.to(target, vars);
+            };
 
-        const wireframeMaterial = new THREE.MeshBasicMaterial({ color: 0xd4a854, wireframe: true, transparent: true, opacity: 0.06 });
-        const wireframeRing = new THREE.Mesh(ringGeometry, wireframeMaterial);
-        wireframeRing.rotation.x = Math.PI / 2;
-        scene2.add(wireframeRing);
+            if (navbar) {
+                window.addEventListener('scroll', () => {
+                    if (window.scrollY > 50) navbar.classList.add('scrolled');
+                    else navbar.classList.remove('scrolled');
+                }, { passive: true });
+            }
 
-        const clock = new THREE.Clock();
-        function animate() {
-            const t = clock.getElapsedTime();
-            mat1.uniforms.uTime.value = t;
-            renderer1.render(scene1, camera1);
-            torusParticles.rotation.x = (Math.PI / 2) + Math.sin(t * 0.2) * 0.2;
-            torusParticles.rotation.y = t * 0.1;
-            wireframeRing.rotation.x = torusParticles.rotation.x;
-            wireframeRing.rotation.y = torusParticles.rotation.y;
-            renderer2.render(scene2, camera2);
-            requestAnimationFrame(animate);
-        }
-        window.addEventListener('resize', () => {
-            renderer1.setSize(window.innerWidth, window.innerHeight);
-            renderer2.setSize(window.innerWidth, window.innerHeight);
-            camera2.aspect = window.innerWidth / window.innerHeight;
-            camera2.updateProjectionMatrix();
-        });
-        animate();
+            if (hoverlessPointer && cursorGlow) {
+                cursorGlow.style.display = 'none';
+            }
 
-        // SCROLL REVEAL for ring section
-        const ringEl = document.querySelector('.ring-section');
-        if (ringEl) {
-            const ringObserver = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        gsap.to('.ring-title', { opacity: 1, y: 0, duration: 1, ease: 'power2.out' });
-                        gsap.to('.feature-card', { opacity: 1, y: 0, duration: 0.8, stagger: 0.15, ease: 'power2.out', delay: 0.4 });
-                        ringObserver.unobserve(entry.target);
+            const initCursorTracking = () => {
+                if (!tooltip || !cursorGlow || hoverlessPointer || !window.gsap) return;
+
+                document.addEventListener('mousemove', (event) => {
+                    safeGsapTo(tooltip, { x: event.clientX + 20, y: event.clientY + 20, duration: 0.15 });
+                    safeGsapTo(cursorGlow, { x: event.clientX - 90, y: event.clientY - 90, duration: 0.4, ease: 'power2.out' });
+                }, { passive: true });
+            };
+
+            const initDashboardGrid = () => {
+                const gridContainer = document.getElementById('gridContainer');
+                if (!gridContainer) return;
+
+                const tables = [
+                    { id: '04', status: 'clean', server: '--' }, { id: '05', status: 'busy', server: 'Tyler' },
+                    { id: '06', status: 'busy', server: 'Sarah' }, { id: '07', status: 'busy', server: 'Tyler' },
+                    { id: '08', status: 'clean', server: '--' }, { id: '09', status: 'clean', server: '--' }
+                ];
+
+                tables.forEach((table) => {
+                    const node = document.createElement('div');
+                    node.className = `table-node ${table.status}`;
+                    node.innerHTML = `<div class="node-id">${table.id}</div><div class="node-status-dot"></div>`;
+                    node.addEventListener('mouseenter', () => {
+                        if (!tooltip) return;
+                        tooltip.classList.add('visible');
+                        document.getElementById('tt-id').innerText = `TABLE ${table.id}`;
+                        document.getElementById('tt-status').innerText = table.status.toUpperCase();
+                        document.getElementById('tt-server').innerText = table.server;
+                        const now = new Date();
+                        document.getElementById('tt-time').innerText = `${now.getHours()}:${now.getMinutes()}`;
+                    });
+                    node.addEventListener('mouseleave', () => {
+                        tooltip?.classList.remove('visible');
+                    });
+                    gridContainer.appendChild(node);
+                });
+            };
+
+            const initYouTubeShell = () => {
+                const shell = document.querySelector('[data-youtube-shell]');
+                const trigger = shell?.querySelector('.video-placeholder');
+                if (!(shell instanceof HTMLElement) || !(trigger instanceof HTMLButtonElement)) return;
+
+                const loadEmbed = () => {
+                    if (shell.dataset.loaded === 'true') return;
+
+                    const iframe = document.createElement('iframe');
+                    const embedUrl = trigger.dataset.youtubeEmbed || '';
+                    iframe.width = '100%';
+                    iframe.height = '100%';
+                    iframe.src = embedUrl ? `${embedUrl}&autoplay=1` : '';
+                    iframe.title = trigger.dataset.youtubeTitle || 'SHIRE Demo';
+                    iframe.frameBorder = '0';
+                    iframe.loading = 'lazy';
+                    iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+                    iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+                    iframe.allowFullscreen = true;
+                    iframe.style.position = 'absolute';
+                    iframe.style.inset = '0';
+                    iframe.style.borderRadius = '16px';
+
+                    shell.replaceChildren(iframe);
+                    shell.dataset.loaded = 'true';
+                };
+
+                trigger.addEventListener('click', loadEmbed);
+            };
+
+            const initMetricCounters = () => {
+                const metricsSection = document.querySelector('.metrics-section');
+                if (!metricsSection || !window.gsap) return;
+
+                const metricObserver = new IntersectionObserver((entries) => {
+                    entries.forEach((entry) => {
+                        if (!entry.isIntersecting) return;
+
+                        const counters = entry.target.querySelectorAll('.counter');
+                        counters.forEach((counter) => {
+                            const target = parseFloat(counter.getAttribute('data-target'));
+                            gsap.to(counter, {
+                                innerHTML: target,
+                                duration: 1.5,
+                                snap: { innerHTML: 0.1 },
+                                onUpdate: function () {
+                                    this.targets()[0].innerHTML = Math.round(this.targets()[0].innerHTML * 10) / 10;
+                                }
+                            });
+                        });
+
+                        metricObserver.unobserve(entry.target);
+                    });
+                }, { threshold: 0.3 });
+
+                metricObserver.observe(metricsSection);
+            };
+
+            const initRevealAnimations = () => {
+                if (!window.gsap) return;
+
+                const revealObserver = new IntersectionObserver((entries) => {
+                    entries.forEach((entry) => {
+                        if (!entry.isIntersecting) return;
+
+                        const element = entry.target;
+                        gsap.to(element, { opacity: 1, y: 0, duration: 0.9, ease: 'power3.out' });
+
+                        const children = element.querySelectorAll('.reveal-child');
+                        if (children.length > 0) {
+                            gsap.to(children, { opacity: 1, y: 0, duration: 0.65, stagger: 0.13, ease: 'power3.out', delay: 0.2 });
+                        }
+
+                        revealObserver.unobserve(element);
+                    });
+                }, { threshold: 0.12 });
+
+                document.querySelectorAll('.reveal').forEach((element) => revealObserver.observe(element));
+            };
+
+            const initStackAnimation = () => {
+                if (!window.gsap || !window.ScrollTrigger) return;
+
+                gsap.registerPlugin(ScrollTrigger);
+                gsap.set('.stack-obj', { xPercent: -50, yPercent: -50 });
+                gsap.set('.obj-table', { autoAlpha: 1, x: 0, y: 0, scale: 1 });
+                gsap.set('.stack-obj:not(.obj-table)', { autoAlpha: 0, x: 0, y: -220, scale: 0.98 });
+                gsap.set('.stack-label-connector', { autoAlpha: 0 });
+
+                const stackTimeline = gsap.timeline({
+                    scrollTrigger: {
+                        trigger: '#stack-trigger',
+                        start: 'top top',
+                        end: '+=1800',
+                        scrub: 1,
+                        pin: true,
                     }
                 });
-            }, { threshold: 0.3 });
-            ringObserver.observe(ringEl);
-        }
 
-        // Metric Counters
-        const metricObserver = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const counters = entry.target.querySelectorAll('.counter');
+                stackTimeline
+                    .to('#lbl-table', { autoAlpha: 1, duration: 0.5 }, 0)
+                    .to('#sp-fill-1', { height: '100%', duration: 1 })
+                    .to('#sp-dot-1', { background: 'rgba(255,255,255,0.12)', boxShadow: 'none', duration: 0.3 }, '<0.5')
+                    .to('#sp-dot-2', { background: '#d4a854', boxShadow: '0 0 8px rgba(212,168,84,0.4)', duration: 0.3 }, '<')
+                    .to('.stage-1', { autoAlpha: 0, duration: 1 }, '<')
+                    .to('.stage-2', { autoAlpha: 1, duration: 1 }, '<')
+                    .to('#so-plate-1', { autoAlpha: 1, x: 0, y: -6, scale: 0.97, duration: 1.4, ease: 'power3.out' }, '<')
+                    .to('#so-plate-2', { autoAlpha: 1, x: 2, y: -54, scale: 0.96, duration: 1.4, ease: 'power3.out' }, '-=1.15')
+                    .to('#so-glass-1', { autoAlpha: 1, x: -152, y: -60, scale: 0.97, duration: 1.4, ease: 'power3.out' }, '-=1.15')
+                    .to('#lbl-course', { autoAlpha: 1, duration: 0.6 }, '-=0.8')
+                    .to('#lbl-drink', { autoAlpha: 1, duration: 0.6 }, '-=0.5');
 
-                    counters.forEach(counter => {
-                        const target = parseFloat(counter.getAttribute('data-target'));
-                        const duration = 1.5;
-                        gsap.to(counter, {
-                            innerHTML: target,
-                            duration: duration,
-                            snap: { innerHTML: 0.1 },
-                            onUpdate: function () {
-                                this.targets()[0].innerHTML = Math.round(this.targets()[0].innerHTML * 10) / 10;
+                stackTimeline
+                    .to('#sp-fill-2', { height: '100%', duration: 1 }, '+=0.5')
+                    .to('#sp-dot-2', { background: 'rgba(255,255,255,0.12)', boxShadow: 'none', duration: 0.3 }, '<0.5')
+                    .to('#sp-dot-3', { background: '#d4a854', boxShadow: '0 0 8px rgba(212,168,84,0.4)', duration: 0.3 }, '<')
+                    .to('.stage-2', { autoAlpha: 0, duration: 1 }, '<')
+                    .to('.stage-3', { autoAlpha: 1, duration: 1 }, '<')
+                    .to('.stack-label-connector', { autoAlpha: 0, duration: 0.4 }, '<')
+                    .to(['#so-plate-1', '#so-plate-2', '#so-glass-1'], { autoAlpha: 0, y: '-=70', scale: 0.9, duration: 1.2, stagger: 0.1, ease: 'power2.out' }, '<')
+                    .to('#so-badge', { autoAlpha: 1, x: 0, y: 0, scale: 1.05, duration: 1.4, ease: 'back.out(1.15)' }, '-=0.8');
+            };
+
+            const initHeroTilt = () => {
+                if (!window.gsap) return;
+
+                const heroSection = document.querySelector('.hero-section');
+                const videoGrid = document.querySelector('.hero-video-grid');
+                if (!(heroSection instanceof HTMLElement) || !(videoGrid instanceof HTMLElement)) return;
+
+                heroSection.addEventListener('mousemove', (event) => {
+                    const rect = heroSection.getBoundingClientRect();
+                    const centerX = rect.left + rect.width / 2;
+                    const centerY = rect.top + rect.height / 2;
+                    const normalX = (event.clientX - centerX) / (rect.width / 2);
+                    const normalY = (event.clientY - centerY) / (rect.height / 2);
+                    gsap.to(videoGrid, { rotateY: normalX * 3, rotateX: -normalY * 2, duration: 0.6, ease: 'power2.out' });
+                });
+
+                heroSection.addEventListener('mouseleave', () => {
+                    gsap.to(videoGrid, { rotateY: 0, rotateX: 0, duration: 0.8, ease: 'power2.out' });
+                });
+            };
+
+            const initMockAnimations = () => {
+                if (!window.gsap) return;
+
+                const mockTables = document.querySelectorAll('.mock-floor-grid .mock-table');
+                if (mockTables.length > 0) {
+                    const states = ['clean', 'occupied', 'dirty'];
+                    window.setInterval(() => {
+                        const table = mockTables[Math.floor(Math.random() * mockTables.length)];
+                        const currentState = states.find((state) => table.classList.contains(state)) || 'clean';
+                        const nextState = states[(states.indexOf(currentState) + 1) % states.length];
+                        gsap.to(table, {
+                            opacity: 0.5,
+                            duration: 0.15,
+                            onComplete: () => {
+                                table.classList.remove(...states);
+                                table.classList.add(nextState);
+                                gsap.to(table, { opacity: 1, duration: 0.3 });
+                            }
+                        });
+                    }, 4000);
+                }
+
+                const taskList = document.querySelector('.mock-task-list');
+                if (taskList) {
+                    const taskPool = [
+                        { label: 'Next Action', text: 'Seat party of 4 at Table 02', meta: 'Server: Tyler P. \u2022 Zone A', action: 'Confirm' },
+                        { label: 'Pending', text: 'Table 04 ready for bussing', meta: 'Waiting: 2m 14s', action: 'Assign' },
+                        { label: 'Queue', text: 'Party of 2 waiting', meta: 'Est. wait: 8 min', action: 'View' },
+                        { label: 'Alert', text: 'Table 07 dessert course done', meta: 'Check dropped 3m ago', action: 'Clear' },
+                        { label: 'Next Action', text: 'Move party of 6 to patio', meta: 'Server: Sarah M. \u2022 Zone B', action: 'Confirm' },
+                        { label: 'Pending', text: 'VIP arriving in 10 min', meta: 'Reservation: Nakamura', action: 'Prep' }
+                    ];
+
+                    let poolIndex = 3;
+                    window.setInterval(() => {
+                        const tasks = taskList.querySelectorAll('.mock-task');
+                        if (tasks.length === 0) return;
+
+                        const firstTask = tasks[0];
+                        gsap.to(firstTask, {
+                            opacity: 0,
+                            y: -20,
+                            duration: 0.4,
+                            ease: 'power2.in',
+                            onComplete: () => {
+                                firstTask.remove();
+                                const task = taskPool[poolIndex % taskPool.length];
+                                poolIndex++;
+
+                                const newTask = document.createElement('div');
+                                newTask.className = 'mock-task';
+                                newTask.style.opacity = '0';
+                                newTask.style.transform = 'translateY(20px)';
+                                newTask.innerHTML = '<div class="mock-task-info"><div class="mock-task-label">' + task.label + '</div><div class="mock-task-text">' + task.text + '</div><div class="mock-task-meta">' + task.meta + '</div></div><div class="mock-task-action">' + task.action + '</div>';
+                                taskList.appendChild(newTask);
+                                gsap.to(newTask, { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out' });
+                            }
+                        });
+                    }, 5000);
+                }
+
+                const analyticsSection = document.querySelector('.mock-analytics');
+                if (analyticsSection) {
+                    const bars = analyticsSection.querySelectorAll('.mock-bar');
+                    bars.forEach((bar) => { bar.style.height = '0%'; });
+
+                    const analyticsObserver = new IntersectionObserver((entries) => {
+                        entries.forEach((entry) => {
+                            if (!entry.isIntersecting) return;
+
+                            const sectionBars = entry.target.querySelectorAll('.mock-bar');
+                            sectionBars.forEach((bar, index) => {
+                                const targetHeight = bar.getAttribute('data-height');
+                                if (targetHeight) {
+                                    gsap.to(bar, { height: targetHeight, duration: 0.8, delay: index * 0.08, ease: 'power2.out' });
+                                }
+                            });
+
+                            const statValues = entry.target.querySelectorAll('.mock-stat-value');
+                            gsap.from(statValues, { opacity: 0, y: 10, duration: 0.6, stagger: 0.1, ease: 'power2.out' });
+                            analyticsObserver.unobserve(entry.target);
+                        });
+                    }, { threshold: 0.3 });
+
+                    analyticsObserver.observe(analyticsSection);
+                }
+            };
+
+            const initRingSection = () => {
+                const ringSection = document.querySelector('.ring-section');
+                if (!(ringSection instanceof HTMLElement)) return;
+
+                let ringInitialized = false;
+
+                const initializeRingScene = () => {
+                    if (ringInitialized || !window.THREE) return;
+
+                    const canvas = document.getElementById('ring-canvas');
+                    if (!(canvas instanceof HTMLCanvasElement)) return;
+
+                    ringInitialized = true;
+
+                    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+                    const scene = new THREE.Scene();
+                    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+                    camera.position.z = 25;
+                    camera.position.y = 1;
+
+                    renderer.setSize(window.innerWidth, window.innerHeight);
+
+                    const ringGeometry = new THREE.TorusGeometry(8, 2.5, 30, 150);
+                    const particlesMaterial = new THREE.PointsMaterial({ color: 0xd4a854, size: 0.12, transparent: true, opacity: 0.85 });
+                    const torusParticles = new THREE.Points(ringGeometry, particlesMaterial);
+                    torusParticles.rotation.x = Math.PI / 2;
+                    scene.add(torusParticles);
+
+                    const wireframeMaterial = new THREE.MeshBasicMaterial({ color: 0xd4a854, wireframe: true, transparent: true, opacity: 0.06 });
+                    const wireframeRing = new THREE.Mesh(ringGeometry, wireframeMaterial);
+                    wireframeRing.rotation.x = Math.PI / 2;
+                    scene.add(wireframeRing);
+
+                    const clock = new THREE.Clock();
+                    const animate = () => {
+                        const time = clock.getElapsedTime();
+                        torusParticles.rotation.x = (Math.PI / 2) + Math.sin(time * 0.2) * 0.2;
+                        torusParticles.rotation.y = time * 0.1;
+                        wireframeRing.rotation.x = torusParticles.rotation.x;
+                        wireframeRing.rotation.y = torusParticles.rotation.y;
+                        renderer.render(scene, camera);
+                        window.requestAnimationFrame(animate);
+                    };
+
+                    window.addEventListener('resize', () => {
+                        renderer.setSize(window.innerWidth, window.innerHeight);
+                        camera.aspect = window.innerWidth / window.innerHeight;
+                        camera.updateProjectionMatrix();
+                    });
+
+                    animate();
+                };
+
+                const ringObserver = new IntersectionObserver((entries) => {
+                    entries.forEach((entry) => {
+                        if (!entry.isIntersecting) return;
+
+                        initializeRingScene();
+                        if (window.gsap) {
+                            gsap.to('.ring-title', { opacity: 1, y: 0, duration: 1, ease: 'power2.out' });
+                            gsap.to('.feature-card', { opacity: 1, y: 0, duration: 0.8, stagger: 0.15, ease: 'power2.out', delay: 0.4 });
+                        }
+
+                        ringObserver.unobserve(entry.target);
+                    });
+                }, { threshold: 0.15, rootMargin: '0px 0px 200px 0px' });
+
+                ringObserver.observe(ringSection);
+            };
+
+            const initHeroMedia = () => {
+                const heroSection = document.querySelector('.hero-section');
+                const videoCells = Array.from(document.querySelectorAll('.hero-video-cell'));
+                const heroVideos = videoCells
+                    .map((cell) => cell.querySelector('video'))
+                    .filter((video) => video instanceof HTMLVideoElement);
+
+                if (!(heroSection instanceof HTMLElement) || heroVideos.length === 0) return;
+
+                videoCells.forEach((cell, index) => {
+                    window.setTimeout(() => {
+                        cell.classList.add('visible');
+                    }, 180 + index * 110);
+                });
+
+                const syncHeroVideoAttributes = (video) => {
+                    video.defaultMuted = true;
+                    video.muted = true;
+                    video.loop = true;
+                    video.playsInline = true;
+                    video.preload = 'none';
+                    video.setAttribute('playsinline', '');
+                    video.setAttribute('webkit-playsinline', '');
+                    video.setAttribute('muted', '');
+                    video.setAttribute('loop', '');
+                    video.setAttribute('disablepictureinpicture', '');
+                    video.setAttribute('disableremoteplayback', '');
+                    video.removeAttribute('controls');
+                };
+
+                const attemptHeroPlayback = (video) => {
+                    const cell = video.closest('.hero-video-cell');
+                    const playPromise = video.play();
+
+                    if (!playPromise || typeof playPromise.then !== 'function') {
+                        cell?.classList.add('is-live');
+                        cell?.classList.remove('video-failed');
+                        video.dataset.state = 'live';
+                        return Promise.resolve(true);
+                    }
+
+                    return playPromise.then(() => {
+                        cell?.classList.add('is-live');
+                        cell?.classList.remove('video-failed');
+                        video.dataset.state = 'live';
+                        return true;
+                    }).catch((error) => {
+                        if (error?.name === 'AbortError' || error?.name === 'NotAllowedError') {
+                            return false;
+                        }
+
+                        cell?.classList.add('video-failed');
+                        video.dataset.state = 'failed';
+                        return false;
+                    });
+                };
+
+                const hydrateVideo = (video) => {
+                    const state = video.dataset.state || 'poster';
+                    if (state === 'loading' || state === 'live' || state === 'ready' || state === 'failed') {
+                        return Promise.resolve();
+                    }
+
+                    const src = video.dataset.src;
+                    const cell = video.closest('.hero-video-cell');
+                    if (!src || !cell) return Promise.resolve();
+
+                    video.dataset.state = 'loading';
+                    cell.classList.add('is-loading');
+                    video.src = src;
+                    video.load();
+
+                    return new Promise((resolve) => {
+                        let settled = false;
+                        let timeoutId = 0;
+
+                        const finish = () => {
+                            if (settled) return;
+                            settled = true;
+                            video.removeEventListener('loadeddata', onReady);
+                            video.removeEventListener('canplay', onReady);
+                            video.removeEventListener('error', onError);
+                            window.clearTimeout(timeoutId);
+                            cell.classList.remove('is-loading');
+                            resolve();
+                        };
+
+                        const onReady = () => {
+                            attemptHeroPlayback(video).finally(() => {
+                                if (video.dataset.state !== 'failed' && video.dataset.state !== 'live') {
+                                    video.dataset.state = 'ready';
+                                }
+                                finish();
+                            });
+                        };
+
+                        const onError = () => {
+                            cell.classList.add('video-failed');
+                            video.dataset.state = 'failed';
+                            finish();
+                        };
+
+                        video.addEventListener('loadeddata', onReady, { once: true });
+                        video.addEventListener('canplay', onReady, { once: true });
+                        video.addEventListener('error', onError, { once: true });
+                        timeoutId = window.setTimeout(onReady, 2500);
+                    });
+                };
+
+                const resumeLoadedVideos = () => {
+                    heroVideos.forEach((video) => {
+                        if (!video.currentSrc || video.dataset.state === 'failed') return;
+                        if (video.paused || video.ended) {
+                            attemptHeroPlayback(video);
+                        }
+                    });
+                };
+
+                let hydrationStarted = false;
+                const hydrateQueue = () => {
+                    if (hydrationStarted || shouldConserveMedia) return;
+                    hydrationStarted = true;
+
+                    let sequence = Promise.resolve();
+                    heroVideos.forEach((video) => {
+                        sequence = sequence.then(() => hydrateVideo(video));
+                    });
+                };
+
+                heroVideos.forEach((video) => {
+                    syncHeroVideoAttributes(video);
+                });
+
+                if (shouldConserveMedia) {
+                    heroVideos.forEach((video) => {
+                        const cell = video.closest('.hero-video-cell');
+                        if (!(cell instanceof HTMLElement)) return;
+
+                        const activate = () => {
+                            hydrateVideo(video).then(() => {
+                                attemptHeroPlayback(video);
+                            });
+                        };
+
+                        cell.tabIndex = 0;
+                        cell.addEventListener('click', activate);
+                        cell.addEventListener('keydown', (event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                activate();
                             }
                         });
                     });
-                    metricObserver.unobserve(entry.target);
+                    return;
                 }
-            });
-        }, { threshold: 0.3 });
-        metricObserver.observe(document.querySelector('.metrics-section'));
 
-        // ============================================
-        // HERO VIDEO GRID: ENTRANCE + AUTOPLAY
-        // ============================================
-        const videoCells = document.querySelectorAll('.hero-video-cell');
-        const heroVideos = Array.from(document.querySelectorAll('.hero-video-cell video'));
-        videoCells.forEach((cell, i) => {
-            setTimeout(() => {
-                cell.classList.add('visible');
-            }, 300 + i * 150);
-        });
+                const heroObserver = new IntersectionObserver((entries) => {
+                    entries.forEach((entry) => {
+                        if (!entry.isIntersecting) return;
 
-        const syncHeroVideoAttributes = (video) => {
-            video.defaultMuted = true;
-            video.muted = true;
-            video.autoplay = true;
-            video.loop = true;
-            video.playsInline = true;
-            video.setAttribute('playsinline', '');
-            video.setAttribute('webkit-playsinline', '');
-            video.setAttribute('muted', '');
-            video.setAttribute('autoplay', '');
-            video.setAttribute('loop', '');
-            video.setAttribute('disablepictureinpicture', '');
-            video.setAttribute('disableremoteplayback', '');
-            video.removeAttribute('controls');
-            video.style.display = 'block';
-        };
-
-        const attemptHeroVideoPlayback = (video) => {
-            const playPromise = video.play();
-            if (playPromise && typeof playPromise.catch === 'function') {
-                playPromise.catch((error) => {
-                    if (error?.name !== 'AbortError') {
-                        video.closest('.hero-video-cell')?.classList.add('video-failed');
-                    }
-                });
-            }
-        };
-
-        const playAllHeroVideos = () => {
-            heroVideos.forEach(video => {
-                syncHeroVideoAttributes(video);
-                if (video.readyState < 2) {
-                    video.load();
-                }
-                if (video.paused || video.ended) {
-                    attemptHeroVideoPlayback(video);
-                }
-            });
-        };
-
-        heroVideos.forEach(video => {
-            syncHeroVideoAttributes(video);
-            attemptHeroVideoPlayback(video);
-            video.addEventListener('loadeddata', () => attemptHeroVideoPlayback(video));
-            video.addEventListener('canplay', () => attemptHeroVideoPlayback(video));
-            video.addEventListener('pause', () => {
-                if (!video.ended && document.visibilityState === 'visible') {
-                    attemptHeroVideoPlayback(video);
-                }
-            });
-            video.addEventListener('error', () => {
-                video.closest('.hero-video-cell')?.classList.add('video-failed');
-            });
-        });
-
-        const heroVideoObserver = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting && entry.target instanceof HTMLVideoElement) {
-                    attemptHeroVideoPlayback(entry.target);
-                }
-            });
-        }, { threshold: 0.25 });
-
-        heroVideos.forEach(video => heroVideoObserver.observe(video));
-
-        ['pointerdown', 'touchstart', 'keydown', 'scroll'].forEach(eventName => {
-            window.addEventListener(eventName, playAllHeroVideos, { once: true });
-        });
-
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                playAllHeroVideos();
-            }
-        });
-
-        window.addEventListener('focus', playAllHeroVideos);
-
-        // ============================================
-        // GLOBAL SCROLL REVEAL
-        // ============================================
-        const revealObserver = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const el = entry.target;
-                    gsap.to(el, { opacity: 1, y: 0, duration: 0.9, ease: 'power3.out' });
-
-                    const children = el.querySelectorAll('.reveal-child');
-                    if (children.length > 0) {
-                        gsap.to(children, { opacity: 1, y: 0, duration: 0.65, stagger: 0.13, ease: 'power3.out', delay: 0.2 });
-                    }
-                    revealObserver.unobserve(el);
-                }
-            });
-        }, { threshold: 0.12 });
-        document.querySelectorAll('.reveal').forEach(el => revealObserver.observe(el));
-
-        // ============================================
-        // THE LITERAL STACK: GSAP SCROLLTRIGGER
-        // ============================================
-        gsap.registerPlugin(ScrollTrigger);
-
-        // Initial setup: place every object in one shared scene coordinate space.
-        gsap.set('.stack-obj', { xPercent: -50, yPercent: -50 });
-        gsap.set('.obj-table', { autoAlpha: 1, x: 0, y: 0, scale: 1 });
-        gsap.set('.stack-obj:not(.obj-table)', { autoAlpha: 0, x: 0, y: -220, scale: 0.98 });
-        gsap.set('.stack-label-connector', { autoAlpha: 0 });
-
-        const stackTl = gsap.timeline({
-            scrollTrigger: {
-                trigger: "#stack-trigger",
-                start: "top top",
-                end: "+=1800",
-                scrub: 1,
-                pin: true,
-            }
-        });
-
-        // Phase 1 -> Phase 2: plates + glass land on table
-        stackTl
-            .to('#lbl-table', { autoAlpha: 1, duration: 0.5 }, 0)
-            .to('#sp-fill-1', { height: '100%', duration: 1 })
-            .to('#sp-dot-1', { background: 'rgba(255,255,255,0.12)', boxShadow: 'none', duration: 0.3 }, "<0.5")
-            .to('#sp-dot-2', { background: '#d4a854', boxShadow: '0 0 8px rgba(212,168,84,0.4)', duration: 0.3 }, "<")
-            .to('.stage-1', { autoAlpha: 0, duration: 1 }, "<")
-            .to('.stage-2', { autoAlpha: 1, duration: 1 }, "<")
-            // Large plate: set farther back on the table plane.
-            .to('#so-plate-1', { autoAlpha: 1, x: 0, y: -6, scale: 0.97, duration: 1.4, ease: "power3.out" }, "<")
-            // Small plate: stacked above and slightly further back.
-            .to('#so-plate-2', { autoAlpha: 1, x: 2, y: -54, scale: 0.96, duration: 1.4, ease: "power3.out" }, "-=1.15")
-            // Glass: pushed back with the stack and offset left.
-            .to('#so-glass-1', { autoAlpha: 1, x: -152, y: -60, scale: 0.97, duration: 1.4, ease: "power3.out" }, "-=1.15")
-            .to('#lbl-course', { autoAlpha: 1, duration: 0.6 }, "-=0.8")
-            .to('#lbl-drink', { autoAlpha: 1, duration: 0.6 }, "-=0.5");
-
-        // Phase 2 -> Phase 3: items clear, badge lands on table
-        stackTl
-            .to('#sp-fill-2', { height: '100%', duration: 1 }, "+=0.5")
-            .to('#sp-dot-2', { background: 'rgba(255,255,255,0.12)', boxShadow: 'none', duration: 0.3 }, "<0.5")
-            .to('#sp-dot-3', { background: '#d4a854', boxShadow: '0 0 8px rgba(212,168,84,0.4)', duration: 0.3 }, "<")
-            .to('.stage-2', { autoAlpha: 0, duration: 1 }, "<")
-            .to('.stage-3', { autoAlpha: 1, duration: 1 }, "<")
-            .to('.stack-label-connector', { autoAlpha: 0, duration: 0.4 }, "<")
-            .to(['#so-plate-1', '#so-plate-2', '#so-glass-1'], { autoAlpha: 0, y: "-=70", scale: 0.9, duration: 1.2, stagger: 0.1, ease: "power2.out" }, "<")
-            // Badge: same scene center as table, so edges line up cleanly.
-            .to('#so-badge', { autoAlpha: 1, x: 0, y: 0, scale: 1.05, duration: 1.4, ease: "back.out(1.15)" }, "-=0.8");
-
-        // ============================================
-        // HERO VIDEO GRID PARALLAX TILT
-        // ============================================
-        const heroSection = document.querySelector('.hero-section');
-        const videoGrid = document.querySelector('.hero-video-grid');
-        if (heroSection && videoGrid) {
-            heroSection.addEventListener('mousemove', (e) => {
-                const rect = heroSection.getBoundingClientRect();
-                const centerX = rect.left + rect.width / 2;
-                const centerY = rect.top + rect.height / 2;
-                const normalX = (e.clientX - centerX) / (rect.width / 2);
-                const normalY = (e.clientY - centerY) / (rect.height / 2);
-                gsap.to(videoGrid, { rotateY: normalX * 3, rotateX: -normalY * 2, duration: 0.6, ease: 'power2.out' });
-            });
-            heroSection.addEventListener('mouseleave', () => {
-                gsap.to(videoGrid, { rotateY: 0, rotateX: 0, duration: 0.8, ease: 'power2.out' });
-            });
-        }
-
-        // ============================================
-        // ANIMATED MOCK: FLOOR PLAN TABLE STATE CYCLING
-        // ============================================
-        const mockTables = document.querySelectorAll('.mock-floor-grid .mock-table');
-        if (mockTables.length > 0) {
-            const states = ['clean', 'occupied', 'dirty'];
-            setInterval(() => {
-                const table = mockTables[Math.floor(Math.random() * mockTables.length)];
-                const currentState = states.find(s => table.classList.contains(s)) || 'clean';
-                const nextState = states[(states.indexOf(currentState) + 1) % states.length];
-                gsap.to(table, {
-                    opacity: 0.5, duration: 0.15, onComplete: () => {
-                        table.classList.remove(...states);
-                        table.classList.add(nextState);
-                        gsap.to(table, { opacity: 1, duration: 0.3 });
-                    }
-                });
-            }, 4000);
-        }
-
-        // ============================================
-        // ANIMATED MOCK: IPAD TASK LIST CYCLING
-        // ============================================
-        const taskList = document.querySelector('.mock-task-list');
-        if (taskList) {
-            const taskPool = [
-                { label: 'Next Action', text: 'Seat party of 4 at Table 02', meta: 'Server: Tyler P. \u2022 Zone A', action: 'Confirm' },
-                { label: 'Pending', text: 'Table 04 ready for bussing', meta: 'Waiting: 2m 14s', action: 'Assign' },
-                { label: 'Queue', text: 'Party of 2 waiting', meta: 'Est. wait: 8 min', action: 'View' },
-                { label: 'Alert', text: 'Table 07 dessert course done', meta: 'Check dropped 3m ago', action: 'Clear' },
-                { label: 'Next Action', text: 'Move party of 6 to patio', meta: 'Server: Sarah M. \u2022 Zone B', action: 'Confirm' },
-                { label: 'Pending', text: 'VIP arriving in 10 min', meta: 'Reservation: Nakamura', action: 'Prep' }
-            ];
-            let poolIndex = 3;
-            setInterval(() => {
-                const tasks = taskList.querySelectorAll('.mock-task');
-                if (tasks.length === 0) return;
-                const firstTask = tasks[0];
-                gsap.to(firstTask, {
-                    opacity: 0, y: -20, duration: 0.4, ease: 'power2.in', onComplete: () => {
-                        firstTask.remove();
-                        const t = taskPool[poolIndex % taskPool.length];
-                        poolIndex++;
-                        const newTask = document.createElement('div');
-                        newTask.className = 'mock-task';
-                        newTask.style.opacity = '0';
-                        newTask.style.transform = 'translateY(20px)';
-                        newTask.innerHTML = '<div class="mock-task-info"><div class="mock-task-label">' + t.label + '</div><div class="mock-task-text">' + t.text + '</div><div class="mock-task-meta">' + t.meta + '</div></div><div class="mock-task-action">' + t.action + '</div>';
-                        taskList.appendChild(newTask);
-                        gsap.to(newTask, { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out' });
-                    }
-                });
-            }, 5000);
-        }
-
-        // ============================================
-        // ANIMATED MOCK: ANALYTICS BAR GROWTH
-        // ============================================
-        const analyticsSection = document.querySelector('.mock-analytics');
-        if (analyticsSection) {
-            const bars = analyticsSection.querySelectorAll('.mock-bar');
-            bars.forEach(bar => { bar.style.height = '0%'; });
-            const analyticsObserver = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        const bars = entry.target.querySelectorAll('.mock-bar');
-                        bars.forEach((bar, i) => {
-                            const targetHeight = bar.getAttribute('data-height');
-                            if (targetHeight) {
-                                gsap.to(bar, { height: targetHeight, duration: 0.8, delay: i * 0.08, ease: 'power2.out' });
-                            }
+                        runAfterFirstPaint(() => {
+                            hydrateQueue();
                         });
-                        const statValues = entry.target.querySelectorAll('.mock-stat-value');
-                        gsap.from(statValues, { opacity: 0, y: 10, duration: 0.6, stagger: 0.1, ease: 'power2.out' });
-                        analyticsObserver.unobserve(entry.target);
+                        heroObserver.unobserve(entry.target);
+                    });
+                }, { threshold: 0.35 });
+
+                heroObserver.observe(heroSection);
+
+                ['pointerdown', 'touchstart', 'keydown'].forEach((eventName) => {
+                    window.addEventListener(eventName, resumeLoadedVideos, { passive: true });
+                });
+
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState === 'visible') {
+                        resumeLoadedVideos();
                     }
                 });
-            }, { threshold: 0.3 });
-            analyticsObserver.observe(analyticsSection);
-        }
 
+                window.addEventListener('focus', resumeLoadedVideos);
+            };
+
+            initHeroMedia();
+
+            runWhenIdle(() => {
+                initCursorTracking();
+                initDashboardGrid();
+                initMetricCounters();
+                initRevealAnimations();
+                initStackAnimation();
+                initHeroTilt();
+                initMockAnimations();
+                initRingSection();
+            });
+        });
     </script>
 </body>
 
