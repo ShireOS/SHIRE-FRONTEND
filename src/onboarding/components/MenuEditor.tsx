@@ -7,8 +7,9 @@ import type { MenuEditorItem } from './MenuItemsTable'
 interface MenuEditorProps {
   restaurantId: string
   mode: 'upload' | 'manual'
+  initialItems?: MenuEditorItem[]
   onBack: () => void
-  onSave: (count: number) => void
+  onSave: (items: MenuEditorItem[]) => void
 }
 
 type Phase = 'idle' | 'uploading' | 'extracting' | 'editing' | 'saving'
@@ -29,8 +30,9 @@ const newBlankItem = (): MenuEditorItem => ({
   description: '',
 })
 
-export function MenuEditor({ restaurantId, mode, onBack, onSave }: MenuEditorProps) {
-  const [items, setItems] = useState<MenuEditorItem[]>([])
+export function MenuEditor({ restaurantId, mode, initialItems, onBack, onSave }: MenuEditorProps) {
+  const [items, setItems] = useState<MenuEditorItem[]>(initialItems ?? [])
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [phase, setPhase] = useState<Phase>(mode === 'manual' ? 'editing' : 'idle')
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -148,7 +150,7 @@ export function MenuEditor({ restaurantId, mode, onBack, onSave }: MenuEditorPro
         throw new Error(err.detail || `Save failed (${res.status})`)
       }
 
-      onSave(validItems.length)
+      onSave(validItems)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
       setPhase('editing')
@@ -167,7 +169,10 @@ export function MenuEditor({ restaurantId, mode, onBack, onSave }: MenuEditorPro
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <button
-          onClick={onBack}
+          onClick={() => {
+            if (items.length > 0) onSave(items)
+            onBack()
+          }}
           disabled={isBusy}
           className="flex items-center gap-2 text-sm text-[rgb(var(--text-secondary))] hover:text-[rgb(var(--text-primary))] disabled:opacity-40 transition-colors"
         >

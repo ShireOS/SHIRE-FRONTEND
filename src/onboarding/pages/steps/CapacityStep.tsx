@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
 import { FloorPlanEditor } from '../../components/FloorPlanEditor'
+import type { FloorPlanTable } from '../../components/FloorPlanCanvas'
 
 interface CapacityStepProps {
   onboarding: UseOnboardingReturn
@@ -18,7 +19,7 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
   const restaurantId = onboarding.restaurantId ?? ''
 
   const [floorPlanMode, setFloorPlanMode] = useState<null | 'upload' | 'manual'>(null)
-  const [savedTableCount, setSavedTableCount] = useState<number | null>(null)
+  const [savedTables, setSavedTables] = useState<FloorPlanTable[]>([])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -36,15 +37,18 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
       <FloorPlanEditor
         restaurantId={restaurantId}
         mode={floorPlanMode}
+        initialTables={savedTables}
         onBack={() => setFloorPlanMode(null)}
-        onSave={(count) => {
-          updateData({ table_count: count })
-          setSavedTableCount(count)
+        onSave={(tables) => {
+          updateData({ table_count: tables.length })
+          setSavedTables(tables)
           setFloorPlanMode(null)
         }}
       />
     )
   }
+
+  const savedTableCount = savedTables.length > 0 ? savedTables.length : null
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">

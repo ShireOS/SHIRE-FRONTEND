@@ -346,6 +346,7 @@ export function useOnboarding() {
   const auth = useAuth()
   const { user, refreshRestaurants } = auth
   const currentRestaurant = auth.restaurant.currentRestaurant
+  const isRestaurantLoading = auth.restaurant.isLoading
   const navigate = useNavigate()
 
   const [currentStep, setCurrentStep] = useState(0)
@@ -468,6 +469,13 @@ export function useOnboarding() {
         return
       }
 
+      // Auth is still fetching the restaurant list — stay in loading state
+      // so we don't accidentally overwrite the localStorage draft with blank data.
+      if (isRestaurantLoading) {
+        setIsHydrating(true)
+        return
+      }
+
       setIsHydrating(true)
 
       let mergedData = toOnboardingData(INITIAL_DATA)
@@ -512,6 +520,7 @@ export function useOnboarding() {
     }
   }, [
     user?.id,
+    isRestaurantLoading,
     currentRestaurant?.id,
     currentRestaurant?.onboarding_step,
     currentRestaurant?.updated_at,
