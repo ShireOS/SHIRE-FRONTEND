@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
 import { MenuEditor } from '../../components/MenuEditor'
+import type { MenuEditorItem } from '../../components/MenuItemsTable'
 
 interface MenuStepProps {
   onboarding: UseOnboardingReturn
@@ -87,7 +88,7 @@ export function MenuStep({ onboarding }: MenuStepProps) {
   const restaurantId = onboarding.restaurantId ?? ''
 
   const [menuMode, setMenuMode] = useState<null | 'upload' | 'manual'>(null)
-  const [savedItemCount, setSavedItemCount] = useState<number | null>(null)
+  const [savedItems, setSavedItems] = useState<MenuEditorItem[]>([])
 
   const handleContinue = async () => {
     try {
@@ -104,10 +105,11 @@ export function MenuStep({ onboarding }: MenuStepProps) {
       <MenuEditor
         restaurantId={restaurantId}
         mode={menuMode}
+        initialItems={savedItems}
         onBack={() => setMenuMode(null)}
-        onSave={(count) => {
+        onSave={(items) => {
           updateData({ menu_import_method: menuMode })
-          setSavedItemCount(count)
+          setSavedItems(items)
           setMenuMode(null)
         }}
       />
@@ -123,12 +125,12 @@ export function MenuStep({ onboarding }: MenuStepProps) {
       )}
 
       {/* Saved badge */}
-      {savedItemCount !== null && (
+      {savedItems.length > 0 && (
         <div className="flex items-center gap-2 text-sm text-[rgb(var(--text-secondary))]">
           <svg className="w-4 h-4 text-green-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
-          Menu saved · {savedItemCount} item{savedItemCount !== 1 ? 's' : ''}
+          Menu saved · {savedItems.length} item{savedItems.length !== 1 ? 's' : ''}
           <button
             type="button"
             onClick={() => setMenuMode('manual')}
@@ -196,7 +198,7 @@ export function MenuStep({ onboarding }: MenuStepProps) {
             Saving...
           </>
         ) : (
-          data.menu_import_method === 'skip' || savedItemCount === null
+          data.menu_import_method === 'skip' || savedItems.length === 0
             ? 'Skip & Continue'
             : 'Continue'
         )}

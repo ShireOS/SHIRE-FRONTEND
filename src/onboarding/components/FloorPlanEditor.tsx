@@ -7,8 +7,9 @@ import type { FloorPlanTable } from './FloorPlanCanvas'
 interface FloorPlanEditorProps {
   restaurantId: string
   mode: 'upload' | 'manual'
+  initialTables?: FloorPlanTable[]
   onBack: () => void
-  onSave: (tableCount: number) => void
+  onSave: (tables: FloorPlanTable[]) => void
 }
 
 type Phase = 'idle' | 'uploading' | 'analyzing' | 'editing' | 'saving'
@@ -21,8 +22,8 @@ const getToken = async (): Promise<string> => {
 const baseUrl = (restaurantId: string) =>
   `${API_CONFIG.baseUrl}/restaurants/${restaurantId}/floor-plan`
 
-export function FloorPlanEditor({ restaurantId, mode, onBack, onSave }: FloorPlanEditorProps) {
-  const [tables, setTables] = useState<FloorPlanTable[]>([])
+export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onSave }: FloorPlanEditorProps) {
+  const [tables, setTables] = useState<FloorPlanTable[]>(initialTables ?? [])
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [phase, setPhase] = useState<Phase>(mode === 'manual' ? 'editing' : 'idle')
   const [error, setError] = useState<string | null>(null)
@@ -151,7 +152,7 @@ export function FloorPlanEditor({ restaurantId, mode, onBack, onSave }: FloorPla
         throw new Error(err.detail || `Save failed (${res.status})`)
       }
 
-      onSave(tables.length)
+      onSave(tables)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
       setPhase('editing')
@@ -179,7 +180,11 @@ export function FloorPlanEditor({ restaurantId, mode, onBack, onSave }: FloorPla
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <button
-          onClick={onBack}
+          onClick={() => {
+            // Push current tables to parent before unmounting so re-opening restores them
+            if (tables.length > 0) onSave(tables)
+            onBack()
+          }}
           disabled={isBusy}
           className="flex items-center gap-2 text-sm text-[rgb(var(--text-secondary))] hover:text-[rgb(var(--text-primary))] disabled:opacity-40 transition-colors"
         >
