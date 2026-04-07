@@ -28,6 +28,10 @@ export function SmartCarousel() {
     return tables.filter((t) => t.sectionId === sectionId && t.status === 'available')
   }
 
+  const getAvailableInsideTables = () => {
+    return tables.filter((t) => t.sectionId !== 'outdoor' && t.status === 'available')
+  }
+
   const getAvailableBooths = () => {
     return tables.filter((t) => t.shape === 'rectangle' && t.status === 'available')
   }
@@ -43,15 +47,18 @@ export function SmartCarousel() {
   // Get best recommendation
   const bestRec = recommendations.find((r) => r.type === 'seat_suggestion')
   const bestTable = bestRec?.tableId ? tables.find((t) => t.id === bestRec.tableId) : null
+  const bestGuest = bestRec?.guestId ? guests.find((guest) => guest.id === bestRec.guestId) : null
 
   // Get available tables by category
-  const patioTables = getAvailableTablesBySection('patio')
-  const mainTables = getAvailableTablesBySection('main')
+  const patioTables = getAvailableTablesBySection('outdoor')
+  const mainTables = getAvailableInsideTables()
   const boothTables = getAvailableBooths()
   const regularTables = getAvailableRoundTables()
 
-  const handleSeat = (tableId: string) => {
-    if (nextGuest) {
+  const handleSeat = (tableId: string, guestId?: string) => {
+    if (guestId) {
+      seatGuest(guestId, tableId)
+    } else if (nextGuest) {
       seatGuest(nextGuest.id, tableId)
     } else {
       setSelectedTable(tableId)
@@ -59,10 +66,10 @@ export function SmartCarousel() {
   }
 
   return (
-    <div className="h-[110px] border-b border-white/[0.06] bg-gradient-to-r from-white/[0.01] to-transparent">
+    <div className="h-[126px] xl:h-[110px] border-b border-white/[0.06] bg-gradient-to-r from-white/[0.01] to-transparent">
       <div
         ref={scrollRef}
-        className="h-full flex items-stretch gap-3 px-4 py-2.5"
+        className="h-full flex items-stretch gap-3 overflow-x-auto scrollbar-hide px-4 py-3 xl:py-2.5"
       >
         {/* Best Match - AI Recommended */}
         {bestTable && (
@@ -71,7 +78,8 @@ export function SmartCarousel() {
             label="Best Match"
             table={bestTable}
             server={getServer(bestTable)}
-            onSeat={() => handleSeat(bestTable.id)}
+            guestName={bestGuest ? `${bestGuest.name} (${bestGuest.partySize})` : undefined}
+            onSeat={() => handleSeat(bestTable.id, bestRec?.guestId)}
             variant="primary"
           />
         )}
@@ -146,6 +154,7 @@ function SeatingCard({
   availableCount,
   onSeat,
   variant = 'default',
+  guestName,
 }: {
   icon: React.ReactNode
   label: string
@@ -154,6 +163,7 @@ function SeatingCard({
   availableCount?: number
   onSeat: () => void
   variant?: 'default' | 'primary'
+  guestName?: string
 }) {
   return (
     <motion.div
@@ -162,7 +172,7 @@ function SeatingCard({
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       className={cn(
-        'card-elevated flex-1 rounded-xl p-3 flex flex-col justify-between transition-all cursor-pointer',
+        'card-elevated min-w-[150px] flex-1 rounded-xl p-3 flex flex-col justify-between transition-all cursor-pointer',
         'backdrop-blur-md border shadow-lg',
         variant === 'primary'
           ? 'border-accent-primary/40 bg-accent-primary/[0.08] hover:bg-accent-primary/[0.12] shadow-accent-primary/10'
@@ -190,25 +200,30 @@ function SeatingCard({
 
         {/* Table info */}
         <div className="flex items-center gap-1.5">
-          <span className="text-base font-bold text-primary">T{table.number}</span>
-          <span className="flex items-center gap-0.5 font-data text-[10px] text-tertiary">
+          <span className="text-[15px] font-bold leading-none text-primary">T{table.number}</span>
+          <span className="flex items-center gap-0.5 font-data text-[10px] leading-none text-tertiary">
             <Users className="w-2.5 h-2.5" />
             {table.capacity}
           </span>
         </div>
+        {guestName && (
+          <div className="mt-1 truncate text-[10px] leading-tight font-medium text-primary/80">
+            {guestName}
+          </div>
+        )}
       </div>
 
       {/* Server */}
-      <div className="flex items-center justify-between mt-1">
+      <div className="mt-2 flex items-center justify-between gap-2">
         {server ? (
-          <div className="flex items-center gap-1.5">
+          <div className="min-w-0 flex items-center gap-1.5">
             <div
               className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white shadow-sm"
               style={{ backgroundColor: server.color }}
             >
               {server.initials[0]}
             </div>
-            <span className="text-[10px] text-secondary">{server.name}</span>
+            <span className="truncate text-[10px] leading-none text-secondary">{server.name}</span>
           </div>
         ) : (
           <span className="text-[10px] text-tertiary">—</span>

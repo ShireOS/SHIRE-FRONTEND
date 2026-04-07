@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Table, Guest, Reservation, Server, Section, ActivityItem, SmartRecommendation, ServerMode, TableStatus, TableStateEvent, BackendTable, TableRecommendation, DemoSummaryResponse } from '../types'
+import type { Table, Guest, Reservation, Server, Section, ActivityItem, SmartRecommendation, ServerMode, TableStatus, TableStateEvent, BackendTable, TableRecommendation, DemoSummaryResponse, DemoScene } from '../types'
 import { mockTables, mockGuests, mockReservations, mockServers, mockSections, mockActivity, mockRecommendations } from '../data/mockData'
 import { apiClient } from '../../shared/api/client'
 import { ENDPOINTS } from '../../shared/api/endpoints'
@@ -42,6 +42,7 @@ interface RestaurantState {
   demoStatus: { speed: number; cameras: string[] } | null
   wsConnected: boolean
   lastCvUpdate: Date | null
+  demoScene: DemoScene | null
 
   // Actions
   setSelectedTable: (id: string | null) => void
@@ -74,6 +75,7 @@ interface RestaurantState {
   getRoutingRecommendations: (restaurantId: string, partySize: number, preferences?: string[]) => Promise<TableRecommendation[]>
   seedDemoData: () => Promise<void>
   fetchDemoSummary: (restaurantId: string) => Promise<void>
+  setDemoScene: (scene: DemoScene | null) => void
 }
 
 export const useRestaurantStore = create<RestaurantState>((set, get) => ({
@@ -104,6 +106,7 @@ export const useRestaurantStore = create<RestaurantState>((set, get) => ({
   demoStatus: null,
   wsConnected: false,
   lastCvUpdate: null,
+  demoScene: null,
 
   // UI Actions
   setSelectedTable: (id) => set({ selectedTableId: id }),
@@ -113,6 +116,7 @@ export const useRestaurantStore = create<RestaurantState>((set, get) => ({
   setServerMode: (mode) => set({ serverMode: mode }),
   toggleRightPanel: () => set((state) => ({ rightPanelCollapsed: !state.rightPanelCollapsed })),
   setActiveTab: (tab) => set({ activeTab: tab }),
+  setDemoScene: (scene) => set({ demoScene: scene }),
   toggleTheme: () => set((state) => {
     const newTheme = state.theme === 'dark' ? 'light' : 'dark'
     // Update document class for CSS

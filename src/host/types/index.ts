@@ -138,6 +138,19 @@ export interface SmartRecommendation {
   cvReason: string
 }
 
+export interface DemoScene {
+  id: string
+  step: number
+  totalSteps: number
+  title: string
+  description: string
+  scriptCue: string
+  highlights: string[]
+  cameraId?: string
+  cameraLabel?: string
+  cameraPath?: string
+}
+
 // Server assignment mode
 export type ServerMode = 'sections' | 'rotations'
 

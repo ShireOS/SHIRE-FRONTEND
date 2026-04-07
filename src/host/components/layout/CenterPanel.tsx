@@ -8,7 +8,6 @@ export function CenterPanel() {
   const tables = useRestaurantStore((s) => s.tables)
   const activeSection = useRestaurantStore((s) => s.activeSection)
   const serverMode = useRestaurantStore((s) => s.serverMode)
-  const sections = useRestaurantStore((s) => s.sections)
 
   // Filter tables by active section
   const filteredTables = activeSection
@@ -16,7 +15,7 @@ export function CenterPanel() {
     : tables
 
   return (
-    <div data-center-panel className="flex-1 flex flex-col h-full glass-panel-flat border-x border-white/[0.06]">
+    <div data-center-panel className="relative flex-1 flex flex-col h-full glass-panel-flat border-x border-white/[0.06]">
       {/* Header: Section Tabs + Mode Toggle */}
       <div className="border-b border-white/5">
         <SectionTabs />
@@ -24,52 +23,9 @@ export function CenterPanel() {
       </div>
 
       {/* Floor Plan Canvas */}
-      <div className="flex-1 relative overflow-auto">
-        {/* Tables & Section Overlays Container */}
-        <div className="relative p-6" style={{ minWidth: '700px', minHeight: '420px' }}>
-          {/* Section Overlays (when in sections mode) */}
-          {serverMode === 'sections' && (
-            <div className="absolute inset-0 pointer-events-none">
-              {sections.map((section) => {
-                if (activeSection && activeSection !== section.id) return null
-
-                // Calculate bounds from table positions
-                const sectionTables = tables.filter((t) => t.sectionId === section.id)
-                if (sectionTables.length === 0) return null
-
-                const minX = Math.min(...sectionTables.map((t) => t.position.x)) - 30
-                const maxX = Math.max(...sectionTables.map((t) => t.position.x)) + 80
-                const minY = Math.min(...sectionTables.map((t) => t.position.y)) - 30
-                const maxY = Math.max(...sectionTables.map((t) => t.position.y)) + 80
-
-                return (
-                  <div
-                    key={section.id}
-                    className="absolute rounded-xl border-2 border-dashed"
-                    style={{
-                      left: minX,
-                      top: minY,
-                      width: maxX - minX,
-                      height: maxY - minY,
-                      borderColor: `${section.color}40`,
-                      backgroundColor: `${section.color}08`,
-                    }}
-                  >
-                    <span
-                      className="absolute -top-3 left-3 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
-                      style={{
-                        backgroundColor: section.color,
-                        color: '#000',
-                      }}
-                    >
-                      {section.name}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
+      <div data-floor-scroll className="flex-1 relative overflow-auto">
+        {/* Tables container */}
+        <div data-floor-stage className="relative p-6" style={{ minWidth: '700px', minHeight: '420px' }}>
           {/* Tables */}
           {filteredTables.map((table) => (
             <Table
@@ -78,6 +34,9 @@ export function CenterPanel() {
               showSection={serverMode === 'sections'}
             />
           ))}
+
+          {/* Table Popover */}
+          <TablePopover />
         </div>
       </div>
 
@@ -95,9 +54,6 @@ export function CenterPanel() {
           <LegendItem color="bg-white/20" label="Blocked" />
         </div>
       </div>
-
-      {/* Table Popover */}
-      <TablePopover />
     </div>
   )
 }

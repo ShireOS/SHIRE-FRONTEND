@@ -6,94 +6,94 @@
 
 // Today's Key Metrics
 export const todayMetrics = {
-  revenue: { value: 3847, change: 14, goal: 5500 },
-  covers: { value: 168, change: 11, goal: 220 },
-  avgCheck: { value: 22.90, change: 1.8, goal: 24 },
-  avgWait: { value: 14, change: -4, goal: 10 }
+  revenue: { value: 4228, change: 11, goal: 5600 },
+  covers: { value: 185, change: 10, goal: 240 },
+  avgCheck: { value: 22.85, change: 1.4, goal: 24 },
+  avgWait: { value: 11, change: -5, goal: 10 }
 }
 
 // Table Status (50 tables: main dining 20, patio 12, bar-adjacent 8, private 4, communal 6)
 export const tables = [
   // Main Dining (Tables 1-20)
-  { id: 1, status: 'occupied', server: 'Destiny W.', covers: 4 },
-  { id: 2, status: 'occupied', server: 'Destiny W.', covers: 2 },
-  { id: 3, status: 'occupied', server: 'Marcus J.', covers: 6 },
-  { id: 4, status: 'occupied', server: 'Destiny W.', covers: 3 },
-  { id: 5, status: 'occupied', server: 'Marcus J.', covers: 4 },
-  { id: 6, status: 'occupied', server: 'Tiffany R.', covers: 2 },
-  { id: 7, status: 'needsAttention', server: 'Marcus J.', covers: 4 },
-  { id: 8, status: 'occupied', server: 'Tiffany R.', covers: 5 },
-  { id: 9, status: 'occupied', server: 'Destiny W.', covers: 2 },
-  { id: 10, status: 'occupied', server: 'Tiffany R.', covers: 4 },
-  { id: 11, status: 'occupied', server: 'Marcus J.', covers: 3 },
+  { id: 1, status: 'occupied', server: 'Adriana', covers: 4 },
+  { id: 2, status: 'occupied', server: 'Adriana', covers: 2 },
+  { id: 3, status: 'occupied', server: 'Fabian', covers: 6 },
+  { id: 4, status: 'occupied', server: 'Adriana', covers: 3 },
+  { id: 5, status: 'occupied', server: 'Fabian', covers: 4 },
+  { id: 6, status: 'occupied', server: 'Maria', covers: 2 },
+  { id: 7, status: 'needsAttention', server: 'Fabian', covers: 4 },
+  { id: 8, status: 'occupied', server: 'Maria', covers: 5 },
+  { id: 9, status: 'occupied', server: 'Adriana', covers: 2 },
+  { id: 10, status: 'occupied', server: 'Maria', covers: 4 },
+  { id: 11, status: 'occupied', server: 'Fabian', covers: 3 },
   { id: 12, status: 'open', server: null, covers: 0 },
-  { id: 13, status: 'occupied', server: 'Tiffany R.', covers: 2 },
-  { id: 14, status: 'occupied', server: 'Destiny W.', covers: 4 },
+  { id: 13, status: 'occupied', server: 'Maria', covers: 2 },
+  { id: 14, status: 'occupied', server: 'Adriana', covers: 4 },
   { id: 15, status: 'dirty', server: null, covers: 0 },
-  { id: 16, status: 'occupied', server: 'Marcus J.', covers: 2 },
+  { id: 16, status: 'occupied', server: 'Fabian', covers: 2 },
   { id: 17, status: 'dirty', server: null, covers: 0 },
-  { id: 18, status: 'occupied', server: 'Tiffany R.', covers: 6 },
-  { id: 19, status: 'occupied', server: 'Jordan K.', covers: 2 },
-  { id: 20, status: 'occupied', server: 'Destiny W.', covers: 3 },
+  { id: 18, status: 'occupied', server: 'Maria', covers: 6 },
+  { id: 19, status: 'occupied', server: 'Jaime', covers: 2 },
+  { id: 20, status: 'occupied', server: 'Adriana', covers: 3 },
   // Patio (Tables 21-32)
-  { id: 21, status: 'occupied', server: 'Carlos M.', covers: 4 },
-  { id: 22, status: 'occupied', server: 'Carlos M.', covers: 2 },
-  { id: 23, status: 'occupied', server: 'Carlos M.', covers: 6 },
+  { id: 21, status: 'occupied', server: 'Fernando', covers: 4 },
+  { id: 22, status: 'occupied', server: 'Fernando', covers: 2 },
+  { id: 23, status: 'occupied', server: 'Fernando', covers: 6 },
   { id: 24, status: 'open', server: null, covers: 0 },
-  { id: 25, status: 'occupied', server: 'Carlos M.', covers: 3 },
-  { id: 26, status: 'occupied', server: 'Carlos M.', covers: 2 },
-  { id: 27, status: 'occupied', server: 'Carlos M.', covers: 4 },
+  { id: 25, status: 'occupied', server: 'Fernando', covers: 3 },
+  { id: 26, status: 'occupied', server: 'Fernando', covers: 2 },
+  { id: 27, status: 'occupied', server: 'Fernando', covers: 4 },
   { id: 28, status: 'dirty', server: null, covers: 0 },
-  { id: 29, status: 'occupied', server: 'Jordan K.', covers: 2 },
-  { id: 30, status: 'occupied', server: 'Carlos M.', covers: 4 },
+  { id: 29, status: 'occupied', server: 'Jaime', covers: 2 },
+  { id: 30, status: 'occupied', server: 'Fernando', covers: 4 },
   { id: 31, status: 'open', server: null, covers: 0 },
-  { id: 32, status: 'occupied', server: 'Carlos M.', covers: 2 },
+  { id: 32, status: 'occupied', server: 'Fernando', covers: 2 },
   // Patio continued - Table 34 (outdoor, needing attention)
-  { id: 33, status: 'occupied', server: 'Jordan K.', covers: 3 },
-  { id: 34, status: 'needsAttention', server: 'Jordan K.', covers: 4 },
+  { id: 33, status: 'occupied', server: 'Jaime', covers: 3 },
+  { id: 34, status: 'needsAttention', server: 'Jaime', covers: 4 },
   // Bar-Adjacent (Tables 35-42)
-  { id: 35, status: 'occupied', server: 'Destiny W.', covers: 2 },
-  { id: 36, status: 'occupied', server: 'Marcus J.', covers: 2 },
+  { id: 35, status: 'occupied', server: 'Adriana', covers: 2 },
+  { id: 36, status: 'occupied', server: 'Fabian', covers: 2 },
   { id: 37, status: 'open', server: null, covers: 0 },
-  { id: 38, status: 'occupied', server: 'Tiffany R.', covers: 3 },
-  { id: 39, status: 'occupied', server: 'Marcus J.', covers: 2 },
-  { id: 40, status: 'occupied', server: 'Jordan K.', covers: 2 },
+  { id: 38, status: 'occupied', server: 'Maria', covers: 3 },
+  { id: 39, status: 'occupied', server: 'Fabian', covers: 2 },
+  { id: 40, status: 'occupied', server: 'Jaime', covers: 2 },
   { id: 41, status: 'dirty', server: null, covers: 0 },
-  { id: 42, status: 'occupied', server: 'Tiffany R.', covers: 2 },
+  { id: 42, status: 'occupied', server: 'Maria', covers: 2 },
   // Private Dining (Tables 43-46)
-  { id: 43, status: 'occupied', server: 'Destiny W.', covers: 8 },
+  { id: 43, status: 'occupied', server: 'Adriana', covers: 8 },
   { id: 44, status: 'open', server: null, covers: 0 },
-  { id: 45, status: 'occupied', server: 'Marcus J.', covers: 6 },
+  { id: 45, status: 'occupied', server: 'Fabian', covers: 6 },
   { id: 46, status: 'open', server: null, covers: 0 },
   // Communal (Tables 47-50)
-  { id: 47, status: 'occupied', server: 'Tiffany R.', covers: 4 },
-  { id: 48, status: 'occupied', server: 'Jordan K.', covers: 3 },
-  { id: 49, status: 'occupied', server: 'Marcus J.', covers: 2 },
-  { id: 50, status: 'occupied', server: 'Destiny W.', covers: 2 }
+  { id: 47, status: 'occupied', server: 'Maria', covers: 4 },
+  { id: 48, status: 'occupied', server: 'Jaime', covers: 3 },
+  { id: 49, status: 'occupied', server: 'Fabian', covers: 2 },
+  { id: 50, status: 'occupied', server: 'Adriana', covers: 2 }
 ]
 
 // Alerts
 export const alerts = [
-  { id: 1, severity: 'high', message: 'Table 34 outdoor waiting 12min for server - patio rush', action: 'Assign Carlos', icon: 'clock' },
-  { id: 2, severity: 'medium', message: 'Kitchen backed up - 5 mimosa flight orders pending', action: 'View', icon: 'utensils' },
-  { id: 3, severity: 'medium', message: 'Table 17 dirty for 6min - needs bus', action: 'Alert busser', icon: 'spray' },
-  { id: 4, severity: 'low', message: 'All 11am reservations confirmed', action: null, icon: 'check' }
+  { id: 1, severity: 'high', message: '7 tables projected to turn in the next 18 min - pace the host stand now', action: 'View turns', icon: 'clock' },
+  { id: 2, severity: 'medium', message: 'Fabian still has the lightest interior section - route the next 2-top to keep the floor balanced', action: 'Use route', icon: 'utensils' },
+  { id: 3, severity: 'medium', message: 'Classic Mimosa discount window is underperforming by 3 checks - push flights at Tables 21, 25, and 30', action: 'Open pricing', icon: 'spray' },
+  { id: 4, severity: 'low', message: '11:00 AM reservations are confirmed and pacing within capacity', action: null, icon: 'check' }
 ]
 
 // Staff Today (for dashboard leaderboard)
 export const staffToday = [
-  { id: 'destiny-w', name: 'Destiny W.', tips: 218, covers: 28, avgTip: 7.79, rank: 1 },
-  { id: 'marcus-j', name: 'Marcus J.', tips: 195, covers: 24, avgTip: 8.13, rank: 2 },
-  { id: 'tiffany-r', name: 'Tiffany R.', tips: 162, covers: 20, avgTip: 8.10, rank: 3 },
-  { id: 'carlos-m', name: 'Carlos M.', tips: 148, covers: 18, avgTip: 8.22, rank: 4 },
-  { id: 'jordan-k', name: 'Jordan K.', tips: 72, covers: 10, avgTip: 7.20, rank: 5, isNew: true }
+  { id: 'destiny-w', name: 'Adriana', tips: 218, covers: 28, avgTip: 7.79, rank: 1 },
+  { id: 'marcus-j', name: 'Fabian', tips: 195, covers: 24, avgTip: 8.13, rank: 2 },
+  { id: 'tiffany-r', name: 'Maria', tips: 162, covers: 20, avgTip: 8.10, rank: 3 },
+  { id: 'carlos-m', name: 'Fernando', tips: 148, covers: 18, avgTip: 8.22, rank: 4 },
+  { id: 'jordan-k', name: 'Jaime', tips: 72, covers: 10, avgTip: 7.20, rank: 5, isNew: true }
 ]
 
 // Full Staff List
 export const staff = [
   {
     id: 'destiny-w',
-    name: 'Destiny Williams',
+    name: 'Adriana',
     role: 'Server',
     tenure: '3.1 years',
     avatar: null,
@@ -119,7 +119,7 @@ export const staff = [
   },
   {
     id: 'marcus-j',
-    name: 'Marcus Johnson',
+    name: 'Fabian',
     role: 'Server',
     tenure: '2 years',
     avatar: null,
@@ -127,7 +127,7 @@ export const staff = [
     thisMonth: { covers: 274, tips: 2410, avgTip: 8.80, efficiency: 89, revenue: 6280 },
     trend: 'up',
     tipPercent: 18,
-    strengths: ['Consistent performer', 'Great with large parties and families', 'Strong knowledge of southern menu', 'Reliable weekend availability'],
+    strengths: ['Consistent performer', 'Great with walk-ins and small-party routing', 'Strong knowledge of the brunch menu', 'Reliable weekend availability'],
     areasToWatch: ['Table turn time could improve on busy mornings', 'Sometimes slow to greet new tables'],
     recentShifts: [
       { date: 'Sat Feb 21', hours: '6am-2pm', covers: 24, tips: 195, efficiency: 90 },
@@ -145,7 +145,7 @@ export const staff = [
   },
   {
     id: 'tiffany-r',
-    name: 'Tiffany Robinson',
+    name: 'Maria',
     role: 'Server',
     tenure: '1.5 years',
     avatar: null,
@@ -171,7 +171,7 @@ export const staff = [
   },
   {
     id: 'carlos-m',
-    name: 'Carlos Mendez',
+    name: 'Fernando',
     role: 'Server',
     tenure: '10 months',
     avatar: null,
@@ -197,7 +197,7 @@ export const staff = [
   },
   {
     id: 'jordan-k',
-    name: 'Jordan Kim',
+    name: 'Jaime',
     role: 'Server',
     tenure: '6 weeks',
     avatar: null,
@@ -226,9 +226,9 @@ export const reservations = [
 
 // AI Insights
 export const aiInsights = [
-  "Fried Lobster & Waffles sold 18 today already vs. 12 full-day average. You may run low on lobster tails by 12:30 PM - consider 86'ing after 12 PM or having Carlos push the Shrimp & Grits as an alternative.",
-  "Destiny Williams is carrying 10 tables right now and still outperforming the floor. Consider moving 2 of Jordan's bar-side tables to Destiny's section to maximize tips during the 11AM rush.",
-  "Saturday brunch revenue is 14% ahead of last week at this time. Your 10-11 AM window has a 25-minute average wait - deploy the pager system and offer complimentary coffee to waiting guests to reduce walkouts."
+  "Seven tables are likely to turn in the next 18 minutes. Pace the host stand against those seats instead of holding walk-ins too long.",
+  "Fabian is still the lightest interior section while Adriana is carrying the heaviest load. Route the next two 2-tops to Fabian to keep sections balanced.",
+  "Covers are pacing about 10% ahead of last Saturday with the same floor staffing. The gain is coming from shorter turns and fewer idle seats."
 ]
 
 // Weekly Trend Data (breakfast restaurant pattern: weekends strongest)
@@ -255,9 +255,9 @@ export const weeklyTrend = {
 
 // Quick Stats (Right Sidebar)
 export const quickStats = {
-  tablesOpen: 6,
+  tablesOpen: 8,
   staffOn: 5,
-  waitList: 8
+  waitList: 6
 }
 
 // Schedule Data (Breakfast shifts: Open 6AM-2PM, Close 7AM-3PM)
@@ -270,11 +270,11 @@ export const schedule = {
     { name: 'Genta T.', role: 'GM', shifts: ['7-3', '7-3', '7-3', '7-3', '7-3', '7-3', 'OFF'], isTraining: [false, false, false, false, false, false, false] },
     { name: 'Besim T.', role: 'AGM', shifts: ['OFF', '7-3', '7-3', '7-3', '7-3', '7-3', '7-3'], isTraining: [false, false, false, false, false, false, false] },
     // ── SERVERS ──
-    { name: 'Destiny W.', role: 'Server', shifts: ['OFF', '6-2', '6-2', 'OFF', '6-2', '6-2', '6-2'], isTraining: [false, false, false, false, false, false, false] },
-    { name: 'Marcus J.', role: 'Server', shifts: ['7-2', 'OFF', '7-2', '6-2', '6-2', '6-2', 'OFF'], isTraining: [false, false, false, false, false, false, false] },
-    { name: 'Tiffany R.', role: 'Server', shifts: ['6-2', '6-2', 'OFF', '7-2', '6-2', 'OFF', '6-2'], isTraining: [false, false, false, false, false, false, false] },
-    { name: 'Carlos M.', role: 'Server', shifts: ['7-2', '7-2', '7-2', '7-2', 'OFF', '6-2', '6-2'], isTraining: [false, false, false, false, false, false, false] },
-    { name: 'Jordan K.', role: 'Server', shifts: ['OFF', '7-1', 'OFF', '7-1', '7-2', '7-2', 'OFF'], isTraining: [false, true, false, true, true, false, false] },
+    { name: 'Adriana', role: 'Server', shifts: ['OFF', '6-2', '6-2', 'OFF', '6-2', '6-2', '6-2'], isTraining: [false, false, false, false, false, false, false] },
+    { name: 'Fabian', role: 'Server', shifts: ['7-2', 'OFF', '7-2', '6-2', '6-2', '6-2', 'OFF'], isTraining: [false, false, false, false, false, false, false] },
+    { name: 'Maria', role: 'Server', shifts: ['6-2', '6-2', 'OFF', '7-2', '6-2', 'OFF', '6-2'], isTraining: [false, false, false, false, false, false, false] },
+    { name: 'Fernando', role: 'Server', shifts: ['7-2', '7-2', '7-2', '7-2', 'OFF', '6-2', '6-2'], isTraining: [false, false, false, false, false, false, false] },
+    { name: 'Jaime', role: 'Server', shifts: ['OFF', '7-1', 'OFF', '7-1', '7-2', '7-2', 'OFF'], isTraining: [false, true, false, true, true, false, false] },
     { name: 'Aaliyah B.', role: 'Server', shifts: ['6-2', 'OFF', '6-2', '6-2', '6-2', '6-2', 'OFF'], isTraining: [false, false, false, false, false, false, false] },
     { name: 'Dominique P.', role: 'Server', shifts: ['OFF', '6-2', '6-2', 'OFF', '6-2', '6-2', '6-2'], isTraining: [false, false, false, false, false, false, false] },
     { name: 'Keisha L.', role: 'Server', shifts: ['7-2', '7-2', 'OFF', '7-2', 'OFF', '6-2', '6-2'], isTraining: [false, false, false, false, false, false, false] },
@@ -308,16 +308,16 @@ export const schedule = {
   ],
   laborCost: 14850,
   laborPercent: 28,
-  warnings: ['Saturday and Sunday may need extra support - spring break traffic picking up', 'Jordan K. and Elijah N. both in training — avoid scheduling solo on peak days']
+  warnings: ['Saturday and Sunday may need extra support - spring break traffic picking up', 'Jaime and Elijah both in training — avoid scheduling solo on peak days']
 }
 
 export const aiScheduleSuggestion = {
-  text: "Based on last week's Saturday/Sunday traffic and the spring break uptick, I recommend adding 1 server and 1 busser Saturday 8AM-1PM for patio overflow, converting Jordan's Friday training to a regular shift, and shifting Priya to Saturday opening to strengthen the weekend line.",
+  text: "Based on last week's Saturday/Sunday traffic and the spring break uptick, I recommend adding 1 server and 1 busser Saturday 8AM-1PM for patio overflow, converting Jaime's Friday training to a regular shift, and shifting Priya to Saturday opening to strengthen the weekend line.",
   changes: [
     { type: 'add', staff: 'Extra server', day: 'SAT', shift: '8am-1pm' },
     { type: 'add', staff: 'Extra busser', day: 'SAT', shift: '8am-1pm' },
     { type: 'add', staff: 'Extra server', day: 'SUN', shift: '8am-1pm' },
-    { type: 'remove', staff: 'Jordan K. (training)', day: 'FRI', shift: 'convert to regular' },
+    { type: 'remove', staff: 'Jaime (training)', day: 'FRI', shift: 'convert to regular' },
     { type: 'add', staff: 'Priya N.', day: 'SAT', shift: '5am-1pm (opening)' }
   ]
 }
@@ -358,6 +358,63 @@ export const items86d = [
 ]
 
 export const menuInsight = "Mimosa Flights have the highest margin ($13/unit) and outsell every other drink 2:1. Consider a 'Build Your Own Flight' upsell at $22 (4 premium flavors) and brief servers to suggest it to every table of 2+ during the 9-11 AM window."
+
+export const pricingSummary = {
+  title: 'Pricing Recommendations',
+  description: 'These recommendations use floor turns, POS mix, reservations, and staffing data to suggest small menu moves the room can support right now.',
+  weeklyLift: 1280,
+  sameStaffLift: 10,
+  monitoredSignals: ['Live floor turns', 'POS sell-through', 'Reservation pacing', 'Server load'],
+}
+
+export const pricingRecommendations = [
+  {
+    id: 'price-lobster',
+    mode: 'increase',
+    item: 'Fried Lobster & Waffles',
+    currentPrice: 24,
+    nextPrice: 26,
+    window: '10:30 AM - 12:00 PM',
+    reason: 'Premium demand stays strong once the room is above 82% full and tables are already waiting on turns.',
+    expectedLift: 540,
+    signal: 'Floor utilization 84% and premium-item conversion running 19% above baseline.',
+  },
+  {
+    id: 'price-mimosa',
+    mode: 'decrease',
+    item: 'Classic Mimosa',
+    currentPrice: 10,
+    nextPrice: 9.5,
+    window: '8:00 AM - 9:15 AM',
+    reason: 'A small early-window discount fills lower-demand seats, then feeds guests into higher-margin flights later in service.',
+    expectedLift: 220,
+    signal: 'Early-hour fill rate lags by 8 seats, but flight attachment spikes after the first round.',
+  },
+  {
+    id: 'price-bundle',
+    mode: 'bundle',
+    item: 'Flight + Benedict Window',
+    currentPrice: null,
+    nextPrice: 34,
+    window: '10:30 AM - 11:30 AM',
+    reason: 'Bundle Mimosa Flight with Crab Cake Benedict during the heaviest turn window to raise check average without slowing the kitchen.',
+    expectedLift: 520,
+    signal: '10:30 window has the strongest mix of open capacity, fast turns, and high-brunch intent.',
+  },
+]
+
+export const nightlyRollup = {
+  headline: 'Shift Summary',
+  summary: 'The shift is pacing about 10% ahead of last Saturday on covers while staffing stays flat. The main drivers are faster turns, steadier section balance, and fewer idle seats.',
+  metrics: [
+    { id: 'utilization', label: 'Utilization', value: '86%', delta: '+9 pts', detail: 'Dining room + patio seats captured during peak window' },
+    { id: 'turns', label: 'Avg Turn Time', value: '34 min', delta: '-4 min', detail: 'Down versus the recent Saturday average' },
+    { id: 'server-load', label: 'Server Load Variance', value: '1.2x', delta: '-31%', detail: 'Tighter spread between lightest and heaviest sections' },
+    { id: 'labor', label: 'Labor As % Of Sales', value: '27.4%', delta: '-1.6 pts', detail: 'Sales pace improved without adding another floor position' },
+    { id: 'pricing', label: 'Pricing Lift', value: '+$1,280', delta: '/ week', detail: 'Estimated 7-day impact from current menu adjustments' },
+    { id: 'left-on-table', label: 'Revenue Left On Table', value: '$410', delta: '-37%', detail: 'Missed turns, idle seats, and mistimed pricing are down' },
+  ],
+}
 
 // Educational Cards
 export const educationalCards = [
@@ -434,21 +491,21 @@ export const analyticsData = {
   ],
   // This Week vs Last Week
   weekComparison: {
-    thisWeek: { revenue: 21317, covers: 930, avgCheck: 22.92 },
-    lastWeek: { revenue: 19880, covers: 868, avgCheck: 22.90 }
+    thisWeek: { revenue: 22140, covers: 954, avgCheck: 23.21 },
+    lastWeek: { revenue: 20110, covers: 868, avgCheck: 22.90 }
   }
 }
 
 // Reviews Data (15-20 reviews, realistic Mimosas themes)
 export const reviews = [
-  { id: 1, source: 'google', rating: 5, date: 'Feb 21', author: 'Christine B.', text: 'The Fried Lobster & Waffles are absolutely INCREDIBLE. Came here on vacation and this was the highlight of our trip. Destiny was our server and she was so sweet - gave us the best recommendations. Already planning our next visit!', sentiment: 'positive' },
+  { id: 1, source: 'google', rating: 5, date: 'Feb 21', author: 'Christine B.', text: 'The Fried Lobster & Waffles are absolutely INCREDIBLE. Came here on vacation and this was the highlight of our trip. Adriana was our server and she was so sweet - gave us the best recommendations. Already planning our next visit!', sentiment: 'positive' },
   { id: 2, source: 'yelp', rating: 5, date: 'Feb 20', author: 'Marcus P.', text: 'Best brunch spot in Myrtle Beach, hands down. The mimosa flights are so fun - we tried all four flavors and the peach was our favorite. Gorgeous decor inside too, very Instagrammable. Shrimp & Grits were perfection.', sentiment: 'positive' },
   { id: 3, source: 'google', rating: 2, date: 'Feb 19', author: 'Rachel T.', text: 'Came for Saturday brunch and waited 35 minutes even with a reservation. The food was good but by the time we sat down we were already frustrated. The Crab Cake Benedict was delicious though, I will give them that.', sentiment: 'negative' },
   { id: 4, source: 'google', rating: 4, date: 'Feb 18', author: 'James W.', text: 'Great food, amazing atmosphere. The southern decor is on point. Only knock is the noise level - during peak brunch it gets LOUD. Hard to hear our server. But the Chicken & Waffles were worth it.', sentiment: 'positive' },
-  { id: 5, source: 'opentable', rating: 5, date: 'Feb 18', author: 'Linda S.', text: 'We come every time we visit Myrtle Beach. The Creme Brulee French Toast is to die for. Our server Destiny remembered us from last year! That kind of service keeps us coming back.', sentiment: 'positive' },
+  { id: 5, source: 'opentable', rating: 5, date: 'Feb 18', author: 'Linda S.', text: 'We come every time we visit Myrtle Beach. The Creme Brulee French Toast is to die for. Our server Adriana remembered us from last year! That kind of service keeps us coming back.', sentiment: 'positive' },
   { id: 6, source: 'yelp', rating: 3, date: 'Feb 17', author: 'Devon K.', text: 'Food is genuinely good but the mimosa glasses are tiny for what you pay. $10 for what is basically a juice glass of mimosa? The flight is a better deal but still feels small. Great food, just manage your drink expectations.', sentiment: 'mixed' },
   { id: 7, source: 'google', rating: 1, date: 'Feb 16', author: 'Karen M.', text: 'Waited 40 minutes on a Sunday with no communication from the host stand. When we finally sat down, our food took another 30 minutes. For breakfast! I could have made pancakes at home three times over. Beautiful restaurant but the operations need serious work on weekends.', sentiment: 'negative' },
-  { id: 8, source: 'opentable', rating: 5, date: 'Feb 15', author: 'Antonio R.', text: 'Outstanding experience from start to finish. The Lobster Shrimp Omelet is a hidden gem - not enough people order it. Patio was gorgeous on a sunny morning. Marcus was a fantastic server.', sentiment: 'positive' },
+  { id: 8, source: 'opentable', rating: 5, date: 'Feb 15', author: 'Antonio R.', text: 'Outstanding experience from start to finish. The Lobster Shrimp Omelet is a hidden gem - not enough people order it. Patio was gorgeous on a sunny morning. Fabian was a fantastic server.', sentiment: 'positive' },
   { id: 9, source: 'google', rating: 4, date: 'Feb 14', author: 'Stephanie H.', text: 'Valentines Day brunch was magical. The place is beautifully decorated. Shrimp & Grits were incredible. Only issue was parking - we circled for 15 minutes. They need a valet or better lot.', sentiment: 'positive' },
   { id: 10, source: 'yelp', rating: 2, date: 'Feb 13', author: 'Tyler G.', text: 'Overhyped. Food was fine but nothing that justified the prices or the 30-minute wait. The Pecan Pancakes were good but $14 for pancakes? And the portions are not huge. Plenty of better brunch options in Myrtle Beach for less.', sentiment: 'negative' },
   { id: 11, source: 'google', rating: 5, date: 'Feb 12', author: 'Denise F.', text: 'I am OBSESSED with this place. The Fried Lobster & Waffles haunt my dreams. Brought my whole family (party of 8) and everyone loved their meal. The Biscuits & Gravy are the real deal - reminds me of my grandma\'s cooking.', sentiment: 'positive' },
@@ -457,7 +514,7 @@ export const reviews = [
   { id: 14, source: 'google', rating: 3, date: 'Feb 9', author: 'Yolanda C.', text: 'The food is great but it is SO LOUD in there during Saturday brunch. We could barely talk. Also our food took about 25 minutes which felt long for eggs and waffles. The Crab Cake Benedict was delicious though.', sentiment: 'mixed' },
   { id: 15, source: 'yelp', rating: 5, date: 'Feb 8', author: 'Nathan R.', text: 'If you visit Myrtle Beach and don\'t eat at Mimosas, you\'re making a mistake. The Fried Lobster & Waffles alone are worth the trip. Beautiful restaurant, friendly staff, and the bottomless coffee kept flowing. 10/10.', sentiment: 'positive' },
   { id: 16, source: 'google', rating: 4, date: 'Feb 7', author: 'Priya M.', text: 'Really enjoyed our brunch here. The Southern Breakfast Platter is huge and filling. Mimosa flight was a fun touch. Only complaint is the wait - even on a Thursday at 10am we waited 10 minutes with an open table right there. Seemed like a staffing thing.', sentiment: 'positive' },
-  { id: 17, source: 'internal', rating: null, date: 'Feb 6', author: 'Table 42', text: 'Guest praised Tiffany for upselling the mimosa flight - said it was the best recommendation. Party of 4, all ordered flights. $72 in drinks alone from one table.', sentiment: 'positive' },
+  { id: 17, source: 'internal', rating: null, date: 'Feb 6', author: 'Table 42', text: 'Guest praised Maria for upselling the mimosa flight - said it was the best recommendation. Party of 4, all ordered flights. $72 in drinks alone from one table.', sentiment: 'positive' },
   { id: 18, source: 'yelp', rating: 3, date: 'Feb 5', author: 'Greg L.', text: 'Good food, beautiful place, but the value proposition is off for me. $24 for lobster and waffles is steep for a breakfast spot. Portions are decent but not generous. I\'d come back for a special occasion but not a regular thing.', sentiment: 'mixed' }
 ]
 
@@ -470,12 +527,12 @@ export const reviewsSummary = {
 }
 
 export const reviewsAISynthesis = {
-  summary: "Based on 47 reviews this month, customers rave about the Fried Lobster & Waffles (mentioned 14 times) and the mimosa flights (mentioned 11 times). The decor and atmosphere receive consistent praise. Server Destiny Williams is mentioned by name in 6 positive reviews. However, weekend wait times are the top complaint (mentioned 12 times), with guests reporting 30-40 minute waits even with reservations. Secondary concerns include food wait times during the 9-11 AM peak, noise level inside during busy brunch, and perceived drink portion size vs. price for individual mimosas.",
+  summary: "Based on 47 reviews this month, customers rave about the Fried Lobster & Waffles (mentioned 14 times) and the mimosa flights (mentioned 11 times). The decor and atmosphere receive consistent praise. Server Adriana is mentioned by name in 6 positive reviews. However, weekend wait times are the top complaint (mentioned 12 times), with guests reporting 30-40 minute waits even with reservations. Secondary concerns include food wait times during the 9-11 AM peak, noise level inside during busy brunch, and perceived drink portion size vs. price for individual mimosas.",
   topPraises: [
     'Fried Lobster & Waffles consistently called "incredible" and "best in Myrtle Beach"',
     'Mimosa flights praised as fun and great value',
     'Beautiful decor and atmosphere - multiple "Instagrammable" mentions',
-    'Server Destiny Williams mentioned by name 6 times for excellent service',
+    'Server Adriana mentioned by name 6 times for excellent service',
     'Shrimp & Grits and Crab Cake Benedict frequently praised'
   ],
   topIssues: [
@@ -577,11 +634,11 @@ export const restaurantProfile = {
 export const users = [
   { id: 1, name: 'Genta T.', email: 'genta@mimosasmb.com', role: 'owner', status: 'active', lastLogin: 'Today, 6:15 AM' },
   { id: 2, name: 'Besim T.', email: 'besim@mimosasmb.com', role: 'manager', status: 'active', lastLogin: 'Today, 6:00 AM' },
-  { id: 3, name: 'Destiny Williams', email: 'destiny@mimosasmb.com', role: 'server', status: 'active', lastLogin: 'Today, 5:55 AM' },
-  { id: 4, name: 'Marcus Johnson', email: 'marcus@mimosasmb.com', role: 'server', status: 'active', lastLogin: 'Today, 5:50 AM' },
-  { id: 5, name: 'Tiffany Robinson', email: 'tiffany@mimosasmb.com', role: 'server', status: 'active', lastLogin: 'Today, 5:58 AM' },
-  { id: 6, name: 'Carlos Mendez', email: 'carlos@mimosasmb.com', role: 'server', status: 'active', lastLogin: 'Today, 5:52 AM' },
-  { id: 7, name: 'Jordan Kim', email: 'jordan@mimosasmb.com', role: 'server', status: 'active', lastLogin: 'Today, 6:45 AM' },
+  { id: 3, name: 'Adriana', email: 'adriana@mimosasmb.com', role: 'server', status: 'active', lastLogin: 'Today, 5:55 AM' },
+  { id: 4, name: 'Fabian', email: 'fabian@mimosasmb.com', role: 'server', status: 'active', lastLogin: 'Today, 5:50 AM' },
+  { id: 5, name: 'Maria', email: 'maria@mimosasmb.com', role: 'server', status: 'active', lastLogin: 'Today, 5:58 AM' },
+  { id: 6, name: 'Fernando', email: 'fernando@mimosasmb.com', role: 'server', status: 'active', lastLogin: 'Today, 5:52 AM' },
+  { id: 7, name: 'Jaime', email: 'jaime@mimosasmb.com', role: 'server', status: 'active', lastLogin: 'Today, 6:45 AM' },
   { id: 8, name: 'DeShawn Harris', email: 'deshawn@mimosasmb.com', role: 'kitchen', status: 'active', lastLogin: 'Today, 5:30 AM' },
   { id: 9, name: 'Aaliyah Brooks', email: 'aaliyah@mimosasmb.com', role: 'host', status: 'active', lastLogin: 'Today, 6:30 AM' }
 ]

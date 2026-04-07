@@ -10,6 +10,8 @@ interface TopBarProps {
   onOpenVideoViewer?: () => void
 }
 
+const IS_FAKE_HOST = window.location.pathname.startsWith('/fake-host-ui')
+
 export function TopBar({ onOpenVideoViewer }: TopBarProps) {
   const [time, setTime] = useState(new Date())
   const [dropdownOpen, setDropdownOpen] = useState(false)
@@ -20,6 +22,7 @@ export function TopBar({ onOpenVideoViewer }: TopBarProps) {
   const undoHistory = useRestaurantStore((s) => s.undoHistory)
   const theme = useRestaurantStore((s) => s.theme)
   const toggleTheme = useRestaurantStore((s) => s.toggleTheme)
+  const demoScene = useRestaurantStore((s) => s.demoScene)
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000)
@@ -83,6 +86,19 @@ export function TopBar({ onOpenVideoViewer }: TopBarProps) {
             <span className="text-tertiary font-normal ml-2 text-sm">Host</span>
           </h1>
 
+          {demoScene && (
+            <div className="hidden 2xl:flex items-center gap-3 rounded-xl border border-accent-primary/25 bg-accent-primary/[0.08] px-3 py-2">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-accent-primary">
+                Step {demoScene.step}/{demoScene.totalSteps}
+              </div>
+              <div className="h-6 w-px bg-white/[0.08]" />
+              <div>
+                <p className="text-sm font-medium text-primary leading-none">{demoScene.title}</p>
+                <p className="mt-1 text-[11px] text-secondary leading-none">{demoScene.description}</p>
+              </div>
+            </div>
+          )}
+
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-tertiary" />
@@ -98,9 +114,11 @@ export function TopBar({ onOpenVideoViewer }: TopBarProps) {
         <div className="flex items-center gap-4">
           <LiveIndicator />
 
-          <div className="font-data text-secondary text-xs tabular-nums tracking-wide">
-            {formatTime(time)}
-          </div>
+          {!IS_FAKE_HOST && (
+            <div className="font-data text-secondary text-xs tabular-nums tracking-wide">
+              {formatTime(time)}
+            </div>
+          )}
 
           {/* Video Viewer Button */}
           {onOpenVideoViewer && (

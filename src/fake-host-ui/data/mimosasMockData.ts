@@ -256,11 +256,11 @@ export const mockTables: Table[] = addBreathingRoom(baseMockTables)
 
 // Servers matching Mimosas sections
 export const mockServers: Server[] = [
-  { id: 's1', name: 'Destiny Williams', initials: 'DW', color: '#E07B39', sectionIds: ['section-a'], activeTableCount: 5, rotationPosition: 1, status: 'active', efficiency: 94, totalTips: 218 },
-  { id: 's2', name: 'Marcus Johnson', initials: 'MJ', color: '#F4D03F', sectionIds: ['section-b'], activeTableCount: 1, rotationPosition: 2, status: 'active', efficiency: 89, totalTips: 156 },
-  { id: 's3', name: 'Tiffany Robinson', initials: 'TR', color: '#9B59B6', sectionIds: ['section-c'], activeTableCount: 4, rotationPosition: 3, status: 'active', efficiency: 91, totalTips: 184 },
-  { id: 's4', name: 'Carlos Mendez', initials: 'CM', color: '#27AE60', sectionIds: ['outdoor'], activeTableCount: 3, rotationPosition: 4, status: 'active', efficiency: 87, totalTips: 142 },
-  { id: 's5', name: 'Jordan Kim', initials: 'JK', color: '#3498DB', sectionIds: ['section-d'], activeTableCount: 2, rotationPosition: 5, status: 'active', efficiency: 78, totalTips: 67 },
+  { id: 's1', name: 'Adriana', initials: 'AD', color: '#E07B39', sectionIds: ['section-a'], activeTableCount: 5, rotationPosition: 1, status: 'active', efficiency: 94, totalTips: 218 },
+  { id: 's2', name: 'Fabian', initials: 'FA', color: '#F4D03F', sectionIds: ['section-b'], activeTableCount: 1, rotationPosition: 2, status: 'active', efficiency: 89, totalTips: 156 },
+  { id: 's3', name: 'Maria', initials: 'MA', color: '#9B59B6', sectionIds: ['section-c'], activeTableCount: 4, rotationPosition: 3, status: 'active', efficiency: 91, totalTips: 184 },
+  { id: 's4', name: 'Fernando', initials: 'FE', color: '#27AE60', sectionIds: ['outdoor'], activeTableCount: 3, rotationPosition: 4, status: 'active', efficiency: 87, totalTips: 142 },
+  { id: 's5', name: 'Jaime', initials: 'JA', color: '#3498DB', sectionIds: ['section-d'], activeTableCount: 2, rotationPosition: 5, status: 'active', efficiency: 78, totalTips: 67 },
 ]
 
 // Waitlist Guests - Saturday 9:30 AM brunch rush at Mimosas
@@ -454,7 +454,7 @@ export const mockActivity: ActivityItem[] = [
   {
     id: 'a3',
     type: 'cv_alert',
-    message: 'Table 9 guests waiting 6+ min with no greeting - Destiny may be in the weeds',
+    message: 'Table 9 guests waiting 6+ min with no greeting - Adriana may be in the weeds',
     timestamp: new Date(Date.now() - 4 * 60000),
     tableId: 't9',
     serverId: 's1',
@@ -496,7 +496,7 @@ export const mockRecommendations: SmartRecommendation[] = [
     id: 'rec1',
     type: 'seat_suggestion',
     title: 'Seat Henderson (4) at T12',
-    description: 'Regular VIP waiting 22 min - Table 12 is a booth in Section A, Destiny knows them by name. Party includes toddler, high chair already staged.',
+    description: 'Regular VIP waiting 22 min - Table 12 is a booth in Section A, Adriana knows them by name. Party includes toddler, high chair already staged.',
     priority: 97,
     actionLabel: 'Seat Now',
     tableId: 't12',
@@ -508,9 +508,9 @@ export const mockRecommendations: SmartRecommendation[] = [
     id: 'rec2',
     type: 'alert',
     title: 'Table 9 Needs Greeting',
-    description: 'Party of 3 seated 6 min ago with no server contact. Destiny has 5 active tables - consider having Marcus assist.',
+    description: 'Party of 3 seated 6 min ago with no server contact. Adriana has 5 active tables - consider having Fabian assist.',
     priority: 92,
-    actionLabel: 'Alert Destiny',
+    actionLabel: 'Alert Adriana',
     tableId: 't9',
     serverId: 's1',
     cvReason: 'CV detected guests looking around, no menu interaction, 6 min without server visit',
@@ -542,8 +542,8 @@ export const mockRecommendations: SmartRecommendation[] = [
   {
     id: 'rec5',
     type: 'server_stat',
-    title: 'Rebalance: Jordan Needs Tables',
-    description: 'Jordan has 2 active tables at bar (78% efficiency). Marcus has 1 table in Section B. Route next walk-in 2-tops to bar area to build Jordan\'s rhythm.',
+    title: 'Rebalance: Jaime Needs Tables',
+    description: 'Jaime has 2 active tables at bar (78% efficiency). Fabian has 1 table in Section B. Route next walk-in 2-tops to bar area to build Jaime\'s rhythm.',
     priority: 55,
     actionLabel: 'View Rotation',
     serverId: 's5',

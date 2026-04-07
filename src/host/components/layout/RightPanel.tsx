@@ -7,6 +7,7 @@ import { cn } from '../../lib/cn'
 import type { Server } from '../../types'
 
 const RESTAURANT_ID = import.meta.env.VITE_RESTAURANT_ID || 'default'
+const IS_FAKE_HOST = window.location.pathname.startsWith('/fake-host-ui')
 
 export function RightPanel() {
   const collapsed = useRestaurantStore((s) => s.rightPanelCollapsed)
@@ -21,12 +22,13 @@ export function RightPanel() {
 
   // Try to fetch demo summary on mount (in case backend has waiter data)
   useEffect(() => {
+    if (IS_FAKE_HOST) return
     fetchDemoSummary(RESTAURANT_ID)
   }, [fetchDemoSummary])
 
   // Poll demo summary every 10 seconds when demo is active
   useEffect(() => {
-    if (!demoActive) return
+    if (IS_FAKE_HOST || !demoActive) return
 
     // Fetch immediately when demo starts
     fetchDemoSummary(RESTAURANT_ID)
@@ -91,8 +93,9 @@ export function RightPanel() {
 
   return (
     <motion.div
+      data-right-panel
       initial={false}
-      animate={{ width: collapsed ? 48 : 300 }}
+      animate={{ width: collapsed ? 48 : 320 }}
       transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
       className="h-full glass-panel-flat border-l border-white/[0.06] flex flex-col overflow-hidden"
     >
@@ -148,7 +151,7 @@ export function RightPanel() {
                 </h3>
                 <span className="text-[10px] text-tertiary">rotation</span>
               </div>
-              <div className="px-3 pb-3 flex gap-2 overflow-x-auto scrollbar-hide">
+              <div className="px-3 pb-3 grid grid-cols-2 gap-2">
                 {activeServers.map((server, index) => (
                   <ServerQueueCard
                     key={server.id}
@@ -234,7 +237,8 @@ function ServerQueueCard({
       whileTap={{ scale: 0.95 }}
       onClick={onClick}
       className={cn(
-        'flex-shrink-0 w-[70px] rounded-lg p-2 text-center transition-all cursor-pointer',
+        'w-full rounded-lg p-2.5 text-left transition-all cursor-pointer',
+        isNext && 'col-span-2',
         isSelected
           ? 'bg-white/[0.12] border-2 border-white/40 ring-2 ring-white/20'
           : isNext
@@ -242,28 +246,32 @@ function ServerQueueCard({
           : 'bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06]'
       )}
     >
-      <div
-        className="w-8 h-8 mx-auto rounded-full flex items-center justify-center text-xs font-bold text-white mb-1"
-        style={{ backgroundColor: server.color }}
-      >
-        {server.initials}
+      <div className="flex items-center gap-2">
+        <div
+          className="w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center text-xs font-bold text-white"
+          style={{ backgroundColor: server.color }}
+        >
+          {server.initials}
+        </div>
+        <div className="min-w-0">
+          <p className={cn(
+            'text-[11px] font-medium truncate',
+            isSelected ? 'text-white' : isNext ? 'text-accent-primary' : 'text-primary'
+          )}>
+            {server.name}
+          </p>
+          <p className="font-data text-[9px] text-tertiary">
+            {server.activeTableCount} tables
+          </p>
+        </div>
       </div>
-      <p className={cn(
-        'text-[11px] font-medium truncate',
-        isSelected ? 'text-white' : isNext ? 'text-accent-primary' : 'text-primary'
-      )}>
-        {server.name}
-      </p>
-      <p className="font-data text-[9px] text-tertiary">
-        {server.activeTableCount} tables
-      </p>
       {isNext && !isSelected && (
-        <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-accent-primary/30 text-accent-primary uppercase">
+        <span className="inline-block mt-2 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-accent-primary/30 text-accent-primary uppercase">
           Next
         </span>
       )}
       {isSelected && (
-        <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-white/20 text-white uppercase">
+        <span className="inline-block mt-2 px-1.5 py-0.5 rounded text-[8px] font-semibold bg-white/20 text-white uppercase">
           Viewing
         </span>
       )}

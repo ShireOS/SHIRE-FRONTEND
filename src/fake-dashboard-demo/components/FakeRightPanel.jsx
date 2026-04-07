@@ -1,5 +1,5 @@
 import { ChevronRight, Sparkles } from 'lucide-react'
-import { quickStats, alerts } from '../data/mimosasMockData'
+import { quickStats, alerts, pricingSummary, nightlyRollup } from '../data/mimosasMockData'
 
 export default function FakeRightPanel({ onOpenChat }) {
   const quickStatRows = [
@@ -33,21 +33,23 @@ export default function FakeRightPanel({ onOpenChat }) {
           <div className="flex items-center gap-3 mb-4">
             <div className="w-11 h-11 bg-dash-gold/20 border border-dash-gold/30 rounded-lg flex items-center justify-center"><Sparkles size={20} className="text-dash-gold" /></div>
             <div>
-              <p className="text-dash-cream font-semibold font-dash-display"><span className="italic">Concierge</span></p>
-              <p className="text-dash-tertiary text-xs italic">Watching your floor</p>
+              <p className="text-dash-cream font-semibold">Current Snapshot</p>
+              <p className="text-dash-tertiary text-xs">Latest shift context</p>
             </div>
           </div>
         </div>
         <div className="p-4">
-          <p className="label-mono mb-1">LATEST INSIGHT</p>
-          <p className="text-sm text-dash-cream leading-relaxed">"Fried Lobster & Waffles are selling 50% above average today. Consider pushing the <span className="font-dash-display italic text-dash-gold">Mimosa Flight</span> pairing."</p>
+          <p className="label-mono mb-1">LATEST NOTE</p>
+          <p className="text-sm text-dash-cream leading-relaxed">
+            {nightlyRollup.summary} Current menu changes are worth an estimated <span className="font-semibold text-dash-gold">+${pricingSummary.weeklyLift}/week</span> because they are timed against turns and reservation pace.
+          </p>
           <button onClick={onOpenChat} className="group mt-4 w-full flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-dash-gold bg-dash-gold/10 hover:bg-dash-gold/20 border border-dash-gold/30 rounded-lg transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_22px_-18px_rgba(180,145,70,0.45)]">
-            Open Chat <ChevronRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+            Open Assistant <ChevronRight size={16} className="transition-transform group-hover:translate-x-0.5" />
           </button>
         </div>
       </div>
       <div className="rounded-lg glass-card p-4">
-        <h3 className="text-sm font-semibold text-dash-cream mb-4">Quick <span className="font-dash-display italic text-dash-gold">Stats</span></h3>
+        <h3 className="text-sm font-semibold text-dash-cream mb-4">Quick Stats</h3>
         <div className="space-y-2">
           {quickStatRows.map((stat, index) => (
             <div
@@ -61,7 +63,7 @@ export default function FakeRightPanel({ onOpenChat }) {
         </div>
       </div>
       <div className="rounded-lg glass-card p-4">
-        <h3 className="text-sm font-semibold text-dash-cream mb-4">Top <span className="font-dash-display italic text-dash-gold">Alerts</span></h3>
+        <h3 className="text-sm font-semibold text-dash-cream mb-4">Watch List</h3>
         <div className="space-y-2">
           {alerts.slice(0, 3).map((alert, index) => (
             <div

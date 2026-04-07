@@ -134,6 +134,7 @@ export function Table({ table, showSection = false }: TableProps) {
       }}
     >
       <motion.button
+        data-floor-table-id={table.id}
         onClick={handleClick}
         whileHover={{ scale: 1.06 }}
         whileTap={{ scale: 0.96 }}

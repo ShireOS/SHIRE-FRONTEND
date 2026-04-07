@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, lazy, Suspense } from 'react'
+import { useEffect, useLayoutEffect, useState, useRef, lazy, Suspense } from 'react'
 import { TopBar } from './components/layout/TopBar'
 import { SmartCarousel } from './components/layout/SmartCarousel'
 import { LeftPanel } from './components/layout/LeftPanel'
@@ -7,6 +7,11 @@ import { RightPanel } from './components/layout/RightPanel'
 import { DemoStatusBanner } from './components/demo/DemoStatusBanner'
 import { MultiCameraView } from './components/demo/MultiCameraView'
 import { useRestaurantStore } from './stores/restaurantStore'
+import {
+  START_SCENE_INDEX,
+  getWalkthroughCameras,
+  getWalkthroughSnapshot,
+} from '../fake-host-ui/data/walkthroughDemo'
 
 // Detect if we're on the fake host demo route
 const IS_FAKE_HOST = window.location.pathname.startsWith('/fake-host-ui')
@@ -41,37 +46,36 @@ function App() {
     document.documentElement.classList.add(theme)
   }, [theme])
 
-  // Auto-start demo on mount (runs once)
-  useEffect(() => {
+  // Preload fake-host walkthrough before first paint so the demo appears already in motion.
+  useLayoutEffect(() => {
     if (demoInitialized.current) return
-    demoInitialized.current = true
 
     if (IS_FAKE_HOST) {
-      // Fake host mode: load Mimosas data locally and start simulation
-      import('../fake-host-ui/data/mimosasMockData').then((mimosas) => {
-        useRestaurantStore.setState({
-          tables: mimosas.mockTables,
-          guests: mimosas.mockGuests,
-          reservations: mimosas.mockReservations,
-          servers: mimosas.mockServers,
-          sections: mimosas.mockSections,
-          activity: mimosas.mockActivity,
-          recommendations: mimosas.mockRecommendations,
-          demoActive: true,
-          demoStatus: { speed: 1.0, cameras: [] },
-        })
-        console.log('[FakeHost] Mimosas data loaded - no backend needed')
+      demoInitialized.current = true
+      useRestaurantStore.setState({
+        ...getWalkthroughSnapshot(START_SCENE_INDEX),
+        demoActive: true,
+        demoStatus: { speed: 1.0, cameras: getWalkthroughCameras() },
+        wsConnected: true,
+        lastCvUpdate: new Date(),
       })
-    } else {
-      // Real host mode: connect to backend
-      const initAndStartDemo = async () => {
-        console.log('[App] Auto-initializing and starting demo...')
-        await initializeFromBackend(RESTAURANT_ID)
-        await startDemo(RESTAURANT_ID)
-        console.log('[App] Demo started automatically')
-      }
-      initAndStartDemo()
+      console.log('[FakeHost] Offline walkthrough scene loaded')
     }
+  }, [])
+
+  // Auto-start real host demo on mount.
+  useEffect(() => {
+    if (demoInitialized.current || IS_FAKE_HOST) return
+    demoInitialized.current = true
+
+    const initAndStartDemo = async () => {
+      console.log('[App] Auto-initializing and starting demo...')
+      await initializeFromBackend(RESTAURANT_ID)
+      await startDemo(RESTAURANT_ID)
+      console.log('[App] Demo started automatically')
+    }
+
+    initAndStartDemo()
   }, [initializeFromBackend, startDemo])
 
   return (

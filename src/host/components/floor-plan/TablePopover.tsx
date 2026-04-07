@@ -1,9 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Users, User, Utensils, Ban, Undo2 } from 'lucide-react'
 import { useRestaurantStore } from '../../stores/restaurantStore'
 import { Button } from '../ui/Button'
-import { Badge } from '../ui/Badge'
+
+function hexToRgba(hex: string, alpha: number) {
+  const normalized = hex.replace('#', '')
+  const safeHex = normalized.length === 3
+    ? normalized.split('').map((char) => `${char}${char}`).join('')
+    : normalized
+
+  const value = Number.parseInt(safeHex, 16)
+  const r = (value >> 16) & 255
+  const g = (value >> 8) & 255
+  const b = value & 255
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
 
 export function TablePopover() {
   const selectedTableId = useRestaurantStore((s) => s.selectedTableId)
@@ -20,48 +32,74 @@ export function TablePopover() {
   const nextGuest = guests[0] // First guest in waitlist
   const server = table ? servers.find((s) => s.id === table.assignedServerId) : null
   const section = table ? sections.find((s) => s.id === table.sectionId) : null
+  const accentColor = section?.color || server?.color || '#4F46E5'
 
   // Calculate popover position based on table position
   const [position, setPosition] = useState({ x: 0, y: 0 })
 
   useEffect(() => {
-    if (table) {
-      // Get the center panel element to calculate offset
-      const centerPanel = document.querySelector('[data-center-panel]')
-      const centerPanelRect = centerPanel?.getBoundingClientRect()
-      const panelLeft = centerPanelRect?.left || 380
+    if (!table) return
 
-      // Position below the table, centered
-      const popoverWidth = 280
-      const popoverHeight = 280
-      const viewportHeight = window.innerHeight
+    const updatePosition = () => {
+      const tableElement = document.querySelector(`[data-floor-table-id="${table.id}"]`) as HTMLElement | null
+      const stageElement = document.querySelector('[data-floor-stage]') as HTMLElement | null
+      const scrollContainer = document.querySelector('[data-floor-scroll]') as HTMLElement | null
 
-      // Calculate absolute position (table position is relative to center panel)
-      let x = table.position.x + panelLeft - popoverWidth / 2 + 30
-      let y = table.position.y + 80 + 170 // account for top bar + carousel
+      if (!tableElement || !stageElement || !scrollContainer) return
 
-      // Clamp x to stay within viewport
-      const rightEdge = window.innerWidth - 320 // account for right panel
-      if (x + popoverWidth > rightEdge) {
-        x = rightEdge - popoverWidth - 20
-      }
-      if (x < panelLeft + 10) {
-        x = panelLeft + 10
-      }
+      const tableRect = tableElement.getBoundingClientRect()
+      const stageRect = stageElement.getBoundingClientRect()
+      const popoverWidth = 332
+      const popoverHeight = 344
+      const gap = 12
+      const relativeLeft = tableRect.left - stageRect.left
+      const relativeRight = tableRect.right - stageRect.left
+      const relativeTop = tableRect.top - stageRect.top
 
-      // If would go off bottom, position above the table instead
-      if (y + popoverHeight > viewportHeight - 20) {
-        y = table.position.y + 170 - popoverHeight - 40
+      let x = relativeRight + gap
+      let y = relativeTop + tableRect.height / 2 - popoverHeight / 2
+
+      if (x + popoverWidth > stageElement.clientWidth - 12) {
+        x = relativeLeft - popoverWidth - gap
       }
 
-      // Minimum y position
-      if (y < 180) {
-        y = 180
+      if (x < 12) {
+        x = Math.max(12, Math.min(relativeLeft + gap, stageElement.clientWidth - popoverWidth - 12))
       }
+
+      y = Math.max(12, Math.min(y, stageElement.clientHeight - popoverHeight - 12))
 
       setPosition({ x, y })
     }
+
+    updatePosition()
+
+    const scrollContainer = document.querySelector('[data-floor-scroll]')
+    window.addEventListener('resize', updatePosition)
+    scrollContainer?.addEventListener('scroll', updatePosition, { passive: true })
+
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      scrollContainer?.removeEventListener('scroll', updatePosition)
+    }
   }, [table])
+
+  const shellStyle = useMemo(() => ({
+    background: `linear-gradient(180deg, ${hexToRgba(accentColor, 0.22)} 0%, rgba(255,255,255,0.98) 38%, rgba(255,255,255,0.95) 100%)`,
+    borderColor: hexToRgba(accentColor, 0.42),
+    boxShadow: `0 28px 70px ${hexToRgba(accentColor, 0.22)}`,
+  }), [accentColor])
+
+  const headerStyle = useMemo(() => ({
+    background: `linear-gradient(135deg, ${hexToRgba(accentColor, 0.22)} 0%, ${hexToRgba(accentColor, 0.08)} 100%)`,
+    borderBottomColor: hexToRgba(accentColor, 0.18),
+  }), [accentColor])
+
+  const badgeStyle = useMemo(() => ({
+    backgroundColor: hexToRgba(accentColor, 0.16),
+    color: accentColor,
+    borderColor: hexToRgba(accentColor, 0.28),
+  }), [accentColor])
 
   if (!table) return null
 
@@ -74,15 +112,6 @@ export function TablePopover() {
     reserved: 'Reserved',
   }
 
-  const statusColors = {
-    available: 'success',
-    occupied: 'info',
-    needs_server: 'warning',
-    dirty: 'default',
-    blocked: 'default',
-    reserved: 'purple',
-  } as const
-
   const getSeatedTime = () => {
     if (!table.seatedAt) return null
     return Math.round((Date.now() - table.seatedAt.getTime()) / 60000)
@@ -93,69 +122,69 @@ export function TablePopover() {
   return (
     <AnimatePresence>
       {selectedTableId && (
-        <>
-          {/* Backdrop - subtle */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40"
-            onClick={() => setSelectedTable(null)}
-          />
-
-          {/* Popover - positioned near table */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: -10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -10 }}
-            transition={{ duration: 0.15 }}
-            className="fixed z-50 w-[280px] bg-elevated border border-[rgba(var(--glass-border))] rounded-lg shadow-xl overflow-hidden dark:bg-[rgb(22,22,26)] light:shadow-[0_4px_24px_rgba(30,28,24,0.12)]"
-            style={{
-              left: position.x,
-              top: position.y,
-            }}
-          >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: -10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: -10 }}
+          transition={{ duration: 0.15 }}
+          className="absolute z-30 w-[332px] rounded-2xl border overflow-hidden backdrop-blur-xl"
+          style={{
+            left: position.x,
+            top: position.y,
+            ...shellStyle,
+          }}
+        >
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={headerStyle}>
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-md bg-white/[0.04] border border-white/[0.08] flex items-center justify-center">
-                  <span className="text-base font-semibold text-primary">{table.number}</span>
+                <div
+                  className="w-11 h-11 rounded-xl border flex items-center justify-center"
+                  style={{
+                    backgroundColor: hexToRgba(accentColor, 0.14),
+                    borderColor: hexToRgba(accentColor, 0.25),
+                  }}
+                >
+                  <span className="text-xl font-semibold text-primary">{table.number}</span>
                 </div>
                 <div>
-                  <h3 className="text-sm font-medium text-primary">Table {table.number}</h3>
-                  <p className="text-[10px] text-tertiary uppercase tracking-wide">{section?.name}</p>
+                  <h3 className="text-base font-semibold text-primary">Table {table.number}</h3>
+                  <p className="text-xs text-secondary uppercase tracking-[0.18em]">{section?.name}</p>
                 </div>
               </div>
               <button
                 onClick={() => setSelectedTable(null)}
-                className="w-6 h-6 rounded flex items-center justify-center text-tertiary hover:text-primary hover:bg-white/5 transition-colors"
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-secondary hover:text-primary transition-colors"
+                style={{ backgroundColor: hexToRgba(accentColor, 0.1) }}
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Info */}
-            <div className="px-4 py-3 space-y-2.5">
+            <div className="px-5 py-4 space-y-3.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-tertiary">Status</span>
-                <Badge variant={statusColors[table.status]} size="sm">
+                <span className="text-sm text-secondary">Status</span>
+                <span
+                  className="inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em]"
+                  style={badgeStyle}
+                >
                   {statusLabels[table.status]}
-                </Badge>
+                </span>
               </div>
 
               <div className="flex items-center justify-between">
-                <span className="text-xs text-tertiary">Capacity</span>
-                <span className="font-data text-xs text-primary flex items-center gap-1">
-                  <Users className="w-3 h-3 text-tertiary" />
+                <span className="text-sm text-secondary">Capacity</span>
+                <span className="font-data text-sm text-primary flex items-center gap-2">
+                  <Users className="w-4 h-4 text-secondary" />
                   {table.capacity}
                 </span>
               </div>
 
               {server && (
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-tertiary">Server</span>
-                  <span className="text-xs text-primary flex items-center gap-1">
-                    <User className="w-3 h-3 text-tertiary" />
+                  <span className="text-sm text-secondary">Server</span>
+                  <span className="text-sm text-primary flex items-center gap-2">
+                    <User className="w-4 h-4 text-secondary" />
                     {server.name}
                   </span>
                 </div>
@@ -163,24 +192,27 @@ export function TablePopover() {
 
               {seatedTime !== null && (
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-tertiary">Seated</span>
-                  <span className="font-data text-xs text-primary">{seatedTime}m</span>
+                  <span className="text-sm text-secondary">Seated</span>
+                  <span className="font-data text-sm text-primary">{seatedTime}m</span>
                 </div>
               )}
             </div>
 
             {/* Actions */}
-            <div className="px-4 pb-4 pt-2 space-y-2 border-t border-white/[0.06]">
+            <div className="px-5 pb-5 pt-3 space-y-3 border-t border-white/10">
               {table.status === 'available' && nextGuest && (
-                <Button
-                  variant="success"
-                  size="sm"
-                  className="w-full"
+                <button
+                  type="button"
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white transition-all"
+                  style={{
+                    backgroundColor: accentColor,
+                    boxShadow: `0 16px 28px ${hexToRgba(accentColor, 0.3)}`,
+                  }}
                   onClick={() => seatGuest(nextGuest.id, table.id)}
                 >
                   <Users className="w-3.5 h-3.5" />
                   Seat {nextGuest.name} ({nextGuest.partySize})
-                </Button>
+                </button>
               )}
 
               {table.status === 'available' && !nextGuest && (
@@ -193,7 +225,7 @@ export function TablePopover() {
                 <div className="flex gap-2">
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="md"
                     className="flex-1"
                     onClick={() => unseatTable(table.id)}
                   >
@@ -202,7 +234,7 @@ export function TablePopover() {
                   </Button>
                   <Button
                     variant="secondary"
-                    size="sm"
+                    size="md"
                     className="flex-1"
                     onClick={() => updateTableStatus(table.id, 'dirty')}
                   >
@@ -215,7 +247,7 @@ export function TablePopover() {
               {table.status === 'dirty' && (
                 <Button
                   variant="success"
-                  size="sm"
+                  size="md"
                   className="w-full"
                   onClick={() => updateTableStatus(table.id, 'available')}
                 >
@@ -227,7 +259,7 @@ export function TablePopover() {
                 {table.status !== 'blocked' ? (
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="md"
                     className="flex-1"
                     onClick={() => updateTableStatus(table.id, 'blocked')}
                   >
@@ -237,7 +269,7 @@ export function TablePopover() {
                 ) : (
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="md"
                     className="flex-1"
                     onClick={() => updateTableStatus(table.id, 'available')}
                   >
@@ -246,8 +278,7 @@ export function TablePopover() {
                 )}
               </div>
             </div>
-          </motion.div>
-        </>
+        </motion.div>
       )}
     </AnimatePresence>
   )

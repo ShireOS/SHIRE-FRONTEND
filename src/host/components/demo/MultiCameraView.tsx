@@ -19,6 +19,8 @@ interface MultiCameraViewProps {
   restaurantId: string
 }
 
+const IS_FAKE_HOST = window.location.pathname.startsWith('/fake-host-ui')
+
 // Get WebSocket URL from API base URL
 function getWebSocketUrl(): string {
   const apiUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
@@ -53,6 +55,12 @@ export function MultiCameraView({ isOpen, onClose, cameras, restaurantId }: Mult
   }, [isOpen])
 
   const initDemo = async () => {
+    if (IS_FAKE_HOST) {
+      setWsConnected(true)
+      setDemoStarted(true)
+      return
+    }
+
     try {
       console.log('[MultiCameraView] Initializing demo...')
 
@@ -162,7 +170,9 @@ export function MultiCameraView({ isOpen, onClose, cameras, restaurantId }: Mult
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-lg font-display text-primary">Multi-Camera View</h3>
-              <p className="text-sm text-secondary">Computer vision processing - All cameras</p>
+              <p className="text-sm text-secondary">
+                {IS_FAKE_HOST ? 'Walkthrough feeds synced locally - All cameras' : 'Computer vision processing - All cameras'}
+              </p>
             </div>
             <button
               onClick={onClose}
@@ -251,7 +261,9 @@ export function MultiCameraView({ isOpen, onClose, cameras, restaurantId }: Mult
               <div className="flex items-center gap-2 text-sm">
                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                 <span className="text-primary">Live - {cameras.length} cameras streaming</span>
-                <span className="text-tertiary ml-auto">Tables updating in real-time</span>
+                <span className="text-tertiary ml-auto">
+                  {IS_FAKE_HOST ? 'Synced to the scripted host walkthrough' : 'Tables updating in real-time'}
+                </span>
               </div>
             </div>
           )}

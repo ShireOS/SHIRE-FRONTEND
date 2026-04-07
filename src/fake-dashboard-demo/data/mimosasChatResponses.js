@@ -27,7 +27,7 @@ export const chatResponses = [
       "Covers served: 168 guests across 112 tickets\n" +
       "Average check: $22.90\n" +
       "Current wait: 14 minutes (78% capacity, 39 of 50 tables seated)\n" +
-      "Floor staff: 5 servers active — Destiny, Marcus, Aaliyah, Jordan, and Brianna\n\n" +
+      "Floor staff: 5 servers active — Adriana, Fabian, Fernando, Jaime, and Maria\n\n" +
       "Saturday is historically your highest-volume day. You're pacing ahead of last Saturday's $4,210 final by about 6%. Kitchen ticket times are averaging 11 minutes, which is within your 12-minute target.",
   },
 
@@ -92,12 +92,12 @@ export const chatResponses = [
     ],
     response:
       "You have 5 servers on the floor right now:\n\n" +
-      "  Destiny  | Section A (patio + window) | 42 covers | $187 tips | Avg check $24.80\n" +
-      "  Marcus   | Section B (center)         | 38 covers | $156 tips | Avg check $23.10\n" +
+      "  Adriana  | Section A (patio + window) | 42 covers | $187 tips | Avg check $24.80\n" +
+      "  Fabian   | Section B (center)         | 38 covers | $156 tips | Avg check $23.10\n" +
       "  Aaliyah  | Section C (back dining)    | 34 covers | $142 tips | Avg check $22.60\n" +
-      "  Jordan   | Section D (bar-adjacent)   | 28 covers | $98 tips  | Avg check $20.40\n" +
+      "  Jaime    | Section D (bar-adjacent)   | 28 covers | $98 tips  | Avg check $20.40\n" +
       "  Brianna  | Section E (overflow/patio) | 26 covers | $112 tips | Avg check $22.10\n\n" +
-      "Destiny is your top performer today by every metric — highest covers, highest tips, and highest average check. She's great at upselling Mimosa Flights (ordered on 71% of her tickets). Jordan is lagging behind; his average check is $2.50 below the floor average. Might be worth checking in on his upsell technique.",
+      "Adriana is your top performer today by every metric — highest covers, highest tips, and highest average check. She's great at upselling Mimosa Flights (ordered on 71% of her tickets). Jaime is lagging behind; his average check is $2.50 below the floor average. Might be worth checking in on his upsell technique.",
   },
 
   // 5. Wait times / Busy / Capacity
@@ -148,7 +148,7 @@ export const chatResponses = [
       "Top praise themes (last 30 days):\n" +
       "  - Food quality & flavor (mentioned in 74% of 5-star reviews)\n" +
       "  - Chicken & Waffles specifically called out 38 times\n" +
-      "  - Friendly staff, especially Destiny (named in 6 reviews this month)\n\n" +
+      "  - Friendly staff, especially Adriana (named in 6 reviews this month)\n\n" +
       "Top complaint themes:\n" +
       "  - Weekend wait times (42% of negative reviews mention this)\n" +
       "  - Parking difficulty (23% of complaints)\n" +
@@ -170,13 +170,13 @@ export const chatResponses = [
     response:
       "Today's staffing (Saturday):\n\n" +
       "  AM Shift (6:30 AM - 2:30 PM):\n" +
-      "    Servers: Destiny, Marcus, Aaliyah, Jordan, Brianna (5 total)\n" +
+      "    Servers: Adriana, Fabian, Fernando, Jaime, Maria (5 total)\n" +
       "    Kitchen: Chef Ray + 3 line cooks + 1 prep\n" +
       "    Host: Taylor | Busser: Devon + Chris\n\n" +
       "Labor cost is running at 28.4% of revenue today, which is within your 30% target.\n\n" +
       "Upcoming schedule notes:\n" +
       "  - Monday: Aaliyah requested off (approved) — need to confirm Kayla as replacement\n" +
-      "  - Wednesday: Jordan has a half-shift, leaves at 11 AM\n" +
+      "  - Wednesday: Jaime has a half-shift, leaves at 11 AM\n" +
       "  - Next Saturday: You're short one server — consider calling in Kayla or posting the shift\n\n" +
       "Recommendation: Next Saturday projects to be even busier (holiday weekend). Think about adding a 6th server and a second busser.",
   },
@@ -245,7 +245,7 @@ export const chatResponses = [
       "This is your single highest-margin item and your #1 seller by volume.\n\n" +
       "Flight flavors: Classic Orange, Mango, Strawberry, Peach\n" +
       "Most popular add-on: Extra glass of Mango ($5) — ordered 34 times today\n\n" +
-      "Mimosa Flights appear on 55% of all tickets. Destiny's tables order them at a 71% rate, while Jordan's tables are only at 39%. Beverage mix is 34% of total revenue today, which is excellent for a breakfast concept. Keep pushing — the margin on these is unbeatable.",
+      "Mimosa Flights appear on 55% of all tickets. Adriana's tables order them at a 71% rate, while Jaime's tables are only at 39%. Beverage mix is 34% of total revenue today, which is excellent for a breakfast concept. Keep pushing — the margin on these is unbeatable.",
   },
 
   // 8e. Specific menu items — French Toast / Benedict
@@ -384,8 +384,8 @@ export const chatResponses = [
     ],
     response:
       "Here are my top recommendations based on today's data:\n\n" +
-      "1. Push Mimosa Flight upsells harder — they're your best margin item at 82%. Destiny gets them on 71% of her tickets; if all servers hit even 55%, that's an extra ~$240/day in high-margin revenue.\n\n" +
-      "2. Coach Jordan on upselling — his average check is $20.40, which is $2.50 below the floor average. A quick mid-shift check-in on suggestive selling could close that gap.\n\n" +
+      "1. Push Mimosa Flight upsells harder — they're your best margin item at 82%. Adriana gets them on 71% of her tickets; if all servers hit even 55%, that's an extra ~$240/day in high-margin revenue.\n\n" +
+      "2. Coach Jaime on upselling — his average check is $20.40, which is $2.50 below the floor average. A quick mid-shift check-in on suggestive selling could close that gap.\n\n" +
       "3. Address weekend wait times — 42% of your negative reviews mention this. A text-ahead waitlist system (like Yelp Waitlist or Waitwhile) could reduce perceived wait frustration significantly.\n\n" +
       "4. Pre-prep more crab cakes on Saturdays — you 86'd the Crab Cake Benedict by 10:45 AM. Increasing Saturday prep by 50% (from 20 to 30 portions) should cover you through close.\n\n" +
       "5. Consider a Tuesday promotion — it's your slowest day at $2,410 avg. A \"Two-for-Tuesday\" Mimosa Flight deal could boost mid-week traffic without cannibalizing weekend volume.",
@@ -405,7 +405,7 @@ export const chatResponses = [
     response:
       "Patio status right now:\n\n" +
       "  Tables: 8 of 10 patio tables are seated (80% capacity)\n" +
-      "  Server: Destiny covers patio + window (Section A)\n" +
+      "  Server: Adriana covers patio + window (Section A)\n" +
       "  Weather: 72F and sunny — perfect patio day\n\n" +
       "The patio is dog-friendly! Mimosas allows well-behaved, leashed dogs on the patio. You have water bowls at the host stand for patio guests with pets. Today, 3 tables currently have dogs.\n\n" +
       "Patio tables turn slightly slower than indoor (avg 52 min vs 45 min indoor) because guests tend to linger. On nice-weather Saturdays like today, patio demand usually outpaces supply by 10:00 AM.\n\n" +
