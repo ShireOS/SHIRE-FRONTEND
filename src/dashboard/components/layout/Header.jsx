@@ -1,10 +1,27 @@
 import { Search, Command, Sun, Moon } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
+
+const PAGE_TITLES = {
+  '/': 'Overview',
+  '/staff': 'Staff',
+  '/schedule': 'Schedule',
+  '/menu': 'Menu',
+  '/analytics': 'Analytics',
+  '/reviews': 'Reviews',
+  '/reservations': 'Reservations',
+  '/settings': 'Settings',
+}
 
 export function Header() {
   const [theme, setTheme] = useState(
     () => localStorage.getItem('dashTheme') || 'dark'
   )
+  const location = useLocation()
+
+  const pageTitle = Object.entries(PAGE_TITLES).find(([path]) =>
+    location.pathname === path || location.pathname.startsWith(`${path}/`)
+  )?.[1] || 'Overview'
 
   useEffect(() => {
     const root = window.document.documentElement
@@ -24,7 +41,7 @@ export function Header() {
       <div className="flex items-center gap-3 text-sm">
         <span className="text-dash-tertiary">Dashboard</span>
         <span className="text-dash-tertiary">/</span>
-        <span className="font-semibold text-dash-cream">Overview</span>
+        <span className="font-semibold text-dash-cream">{pageTitle}</span>
 
         <div className="ml-4 px-3 py-1.5 rounded-full bg-dash-gold/10 border border-dash-gold/30 flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-dash-gold animate-pulse-gold"></span>

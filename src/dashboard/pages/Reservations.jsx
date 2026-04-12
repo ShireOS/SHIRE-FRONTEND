@@ -49,13 +49,17 @@ export function Reservations() {
   const { create: createBlackout } = useCreateBlackout(locationId)
   const { update: updateBlackout } = useUpdateBlackout(locationId)
 
-  // Fall back to mock data in dev or on error
-  const settings = settingsQuery.data || mockSettings
-  const blackouts = blackoutsQuery.data || mockBlackouts
+  const settings = settingsQuery.data
+  const blackouts = blackoutsQuery.data || []
+  const settingsMissing = !settingsQuery.loading && !settings && settingsQuery.error?.status === 404
+  const settingsUnavailable = !settingsQuery.loading && !settings && !settingsMissing
+  const blackoutsUnavailable = !blackoutsQuery.loading && !!blackoutsQuery.error
+  const canEditConfiguredSettings = Boolean(settings)
 
   // Handlers
   const handleSaveServicePeriods = useCallback(
     async (updatedPeriods) => {
+      if (!settings) return
       try {
         await saveSettings({ ...settings, service_periods: updatedPeriods })
         settingsQuery.refetch()
@@ -68,6 +72,7 @@ export function Reservations() {
 
   const handleSaveBookingRules = useCallback(
     async ({ pacing_rules, channel_rules }) => {
+      if (!settings) return
       try {
         await saveSettings({ ...settings, pacing_rules, channel_rules })
         settingsQuery.refetch()
@@ -80,6 +85,7 @@ export function Reservations() {
 
   const handleSaveDefaults = useCallback(
     async (updates) => {
+      if (!settings) return
       try {
         await saveSettings({ ...settings, ...updates })
         settingsQuery.refetch()
@@ -127,8 +133,8 @@ export function Reservations() {
   }, [saveSettings, locationId, settingsQuery])
 
   // Quick stats
-  const activePeriods = settings.service_periods?.filter((sp) => sp.is_active).length || 0
-  const activeChannels = settings.channel_rules?.filter((ch) => ch.is_enabled).length || 0
+  const activePeriods = settings?.service_periods?.filter((sp) => sp.is_active).length || 0
+  const activeChannels = settings?.channel_rules?.filter((ch) => ch.is_enabled).length || 0
   const activeBlackouts = blackouts.filter((b) => b.status === 'active').length
 
   return (
@@ -140,6 +146,39 @@ export function Reservations() {
         </h1>
         <p className="text-dash-secondary mt-1">Configure reservation settings, service periods, and blackouts</p>
       </div>
+
+      {!locationId && (
+        <Card className="mb-6 border border-dash-warning/30">
+          <CardContent className="p-5">
+            <p className="text-dash-warning font-medium">No restaurant is selected.</p>
+            <p className="text-dash-tertiary text-sm mt-1">
+              Reservations config needs an active restaurant ID before it can load or save.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {settingsUnavailable && (
+        <Card className="mb-6 border border-dash-danger/30">
+          <CardContent className="p-5">
+            <p className="text-dash-danger font-medium">Could not load reservation settings from the backend.</p>
+            <p className="text-dash-tertiary text-sm mt-1">
+              {settingsQuery.error?.message || 'The backend did not return reservation settings.'}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {blackoutsUnavailable && (
+        <Card className="mb-6 border border-dash-warning/30">
+          <CardContent className="p-5">
+            <p className="text-dash-warning font-medium">Blackouts could not be loaded.</p>
+            <p className="text-dash-tertiary text-sm mt-1">
+              {blackoutsQuery.error?.message || 'The backend did not return reservation blackouts.'}
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6 border-b border-dash-border">
@@ -165,6 +204,31 @@ export function Reservations() {
       {/* Tab 1: Reservation Settings (overview / defaults) */}
       {activeTab === 'settings' && (
         <div className="space-y-6">
+          {settingsQuery.loading && (
+            <Card>
+              <CardContent className="p-6 text-center text-dash-tertiary">
+                Loading reservation settings...
+              </CardContent>
+            </Card>
+          )}
+
+          {settingsMissing && (
+            <Card>
+              <CardContent className="p-6 text-center">
+                <Users size={28} className="mx-auto text-dash-tertiary mb-3" />
+                <h3 className="font-semibold text-dash-cream mb-2">Reservations are not initialized yet</h3>
+                <p className="text-sm text-dash-tertiary mb-4 max-w-md mx-auto">
+                  The backend returned no reservation settings for this restaurant yet. Initialize defaults to create the first real config.
+                </p>
+                <Button onClick={handleBootstrap}>
+                  Initialize Default Settings
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {settings && (
+            <>
           {/* Quick Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card>
@@ -250,46 +314,48 @@ export function Reservations() {
               </CardContent>
             </Card>
           </div>
-
-          {/* Bootstrap Button (when no real settings) */}
-          {!settingsQuery.data && (
-            <Card>
-              <CardContent className="p-6 text-center">
-                <Users size={28} className="mx-auto text-dash-tertiary mb-3" />
-                <h3 className="font-semibold text-dash-cream mb-2">Get Started with Reservations</h3>
-                <p className="text-sm text-dash-tertiary mb-4 max-w-md mx-auto">
-                  Set up default reservation settings with sensible defaults. You can customize everything afterwards.
-                </p>
-                <Button onClick={handleBootstrap}>
-                  Initialize Default Settings
-                </Button>
-              </CardContent>
-            </Card>
+            </>
           )}
         </div>
       )}
 
       {/* Tab 2: Service Hours */}
       {activeTab === 'service-hours' && (
-        <ServicePeriodsTab
-          servicePeriods={settings.service_periods || []}
-          onSave={handleSaveServicePeriods}
-        />
+        canEditConfiguredSettings ? (
+          <ServicePeriodsTab
+            servicePeriods={settings.service_periods || []}
+            onSave={handleSaveServicePeriods}
+          />
+        ) : (
+          <Card>
+            <CardContent className="p-6 text-center text-dash-tertiary">
+              Initialize reservation settings before editing service hours.
+            </CardContent>
+          </Card>
+        )
       )}
 
       {/* Tab 3: Booking Rules */}
       {activeTab === 'booking-rules' && (
-        <BookingRulesTab
-          pacingRules={settings.pacing_rules || []}
-          channelRules={settings.channel_rules || []}
-          onSave={handleSaveBookingRules}
-        />
+        canEditConfiguredSettings ? (
+          <BookingRulesTab
+            pacingRules={settings.pacing_rules || []}
+            channelRules={settings.channel_rules || []}
+            onSave={handleSaveBookingRules}
+          />
+        ) : (
+          <Card>
+            <CardContent className="p-6 text-center text-dash-tertiary">
+              Initialize reservation settings before editing booking rules.
+            </CardContent>
+          </Card>
+        )
       )}
 
       {/* Tab 4: Blackouts / Closures */}
       {activeTab === 'blackouts' && (
         <BlackoutsTab
-          blackouts={blackouts}
+          blackouts={blackoutsUnavailable ? mockBlackouts : blackouts}
           onCreate={handleCreateBlackout}
           onCancel={handleCancelBlackout}
         />

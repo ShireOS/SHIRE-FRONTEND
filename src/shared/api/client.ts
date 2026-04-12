@@ -3,19 +3,41 @@
 
 import { API_CONFIG, getApiUrl } from './config'
 import type { ApiError } from '../types/api'
+import { isSupabaseConfigured, supabase } from '../lib/supabase'
 
 class ApiClient {
+  private async buildHeaders(headersInit?: HeadersInit): Promise<Headers> {
+    const headers = new Headers(headersInit)
+
+    if (!headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json')
+    }
+
+    if (isSupabaseConfigured) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (session?.access_token) {
+        headers.set('Authorization', `Bearer ${session.access_token}`)
+      }
+    }
+
+    return headers
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
     const url = getApiUrl(endpoint)
+    const headers = await this.buildHeaders(options.headers)
 
     // Log request in dev - ENHANCED LOGGING
     if (import.meta.env.DEV) {
       console.group(`[API] ${options.method || 'GET'} ${endpoint}`)
       console.log('Full URL:', url)
-      console.log('Headers:', { 'Content-Type': 'application/json', ...options.headers })
+      console.log('Headers:', Object.fromEntries(headers.entries()))
       if (options.body) {
         console.log('Body:', JSON.parse(options.body as string))
       }
@@ -29,10 +51,7 @@ class ApiClient {
       const response = await fetch(url, {
         ...options,
         signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
+        headers,
       })
 
       clearTimeout(timeoutId)
@@ -179,9 +198,7 @@ class ApiClient {
       const response = await fetch(url, {
         method: 'POST',
         signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: await this.buildHeaders(),
         body: JSON.stringify(body),
       })
 
