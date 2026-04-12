@@ -8,7 +8,8 @@ import { Plus, Ban, Calendar } from 'lucide-react'
 export function BlackoutsTab({ blackouts = [], onCreate, onCancel }) {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [form, setForm] = useState({
-    date: '',
+    start_date: '',
+    end_date: '',
     scope: 'full_day',
     start_time: '',
     end_time: '',
@@ -23,7 +24,9 @@ export function BlackoutsTab({ blackouts = [], onCreate, onCancel }) {
 
   const handleCreate = () => {
     const payload = {
-      date: form.date,
+      date: form.start_date,
+      start_date: form.start_date,
+      end_date: form.end_date || form.start_date,
       scope: form.scope,
       start_time: form.scope === 'partial' ? form.start_time : null,
       end_time: form.scope === 'partial' ? form.end_time : null,
@@ -31,7 +34,7 @@ export function BlackoutsTab({ blackouts = [], onCreate, onCancel }) {
     }
     onCreate(payload)
     setIsModalOpen(false)
-    setForm({ date: '', scope: 'full_day', start_time: '', end_time: '', reason: '' })
+    setForm({ start_date: '', end_date: '', scope: 'full_day', start_time: '', end_time: '', reason: '' })
   }
 
   const handleCancel = (blackoutId) => {
@@ -39,8 +42,18 @@ export function BlackoutsTab({ blackouts = [], onCreate, onCancel }) {
   }
 
   const formatDate = (dateStr) => {
-    const d = new Date(dateStr + 'T00:00:00')
+    const d = new Date(`${dateStr}T00:00:00`)
     return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+  }
+
+  const formatDateRange = (blackout) => {
+    const startDate = blackout.start_date || blackout.date
+    const endDate = blackout.end_date || blackout.start_date || blackout.date
+
+    if (!startDate) return 'Unknown'
+    if (!endDate || startDate === endDate) return formatDate(startDate)
+
+    return `${formatDate(startDate)} - ${formatDate(endDate)}`
   }
 
   return (
@@ -81,7 +94,7 @@ export function BlackoutsTab({ blackouts = [], onCreate, onCancel }) {
                   {sorted.map((blackout) => (
                     <tr key={blackout.id} className="hover:bg-dash-cream/5 transition-colors">
                       <td className="px-6 py-4 text-sm text-dash-cream font-medium">
-                        {formatDate(blackout.date)}
+                        {formatDateRange(blackout)}
                       </td>
                       <td className="px-6 py-4">
                         <Badge variant={blackout.scope === 'full_day' ? 'info' : 'warning'}>
@@ -98,7 +111,7 @@ export function BlackoutsTab({ blackouts = [], onCreate, onCancel }) {
                       </td>
                       <td className="px-6 py-4">
                         <Badge variant={blackout.status === 'active' ? 'success' : 'neutral'} dot>
-                          {blackout.status}
+                          {blackout.status === 'active' ? 'active' : 'inactive'}
                         </Badge>
                       </td>
                       <td className="px-6 py-4 text-right">
@@ -127,11 +140,22 @@ export function BlackoutsTab({ blackouts = [], onCreate, onCancel }) {
         <div className="space-y-5">
           {/* Date */}
           <div>
-            <label className="block text-sm font-medium text-dash-secondary mb-1.5">Date</label>
+            <label className="block text-sm font-medium text-dash-secondary mb-1.5">Start Date</label>
             <input
               type="date"
-              value={form.date}
-              onChange={(e) => handleFieldChange('date', e.target.value)}
+              value={form.start_date}
+              onChange={(e) => handleFieldChange('start_date', e.target.value)}
+              className="w-full px-3 py-2 bg-dash-cream/5 border border-dash-border rounded-lg text-dash-cream focus:outline-none focus:border-dash-gold/50"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-dash-secondary mb-1.5">End Date</label>
+            <input
+              type="date"
+              value={form.end_date}
+              min={form.start_date || undefined}
+              onChange={(e) => handleFieldChange('end_date', e.target.value)}
               className="w-full px-3 py-2 bg-dash-cream/5 border border-dash-border rounded-lg text-dash-cream focus:outline-none focus:border-dash-gold/50"
             />
           </div>
@@ -206,7 +230,7 @@ export function BlackoutsTab({ blackouts = [], onCreate, onCancel }) {
             <Button
               size="sm"
               onClick={handleCreate}
-              disabled={!form.date || !form.reason || (form.scope === 'partial' && (!form.start_time || !form.end_time))}
+              disabled={!form.start_date || !form.reason || (form.scope === 'partial' && (!form.start_time || !form.end_time))}
             >
               Create Blackout
             </Button>

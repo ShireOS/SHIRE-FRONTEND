@@ -449,15 +449,22 @@ export interface ServicePeriod {
   min_party_size: number
   max_party_size: number
   is_active: boolean
+  default_duration_minutes?: number
+  backend_period_ids?: Partial<Record<DayOfWeek, string>>
 }
 
 export interface PacingRule {
   id: string
   window_minutes: number
   max_covers_per_window: number
+  service_period_id?: string | null
+  channel?: BookingChannel | null
+  is_active?: boolean
 }
 
 export interface ChannelRule {
+  id?: string
+  service_period_id?: string | null
   channel: BookingChannel
   is_enabled: boolean
 }
@@ -472,6 +479,8 @@ export interface ReservationSettings {
   default_max_party_size: number
   auto_confirm: boolean
   confirmation_lead_hours: number
+  booking_horizon_days?: number
+  grace_period_minutes?: number
   updated_at: string
 }
 
@@ -479,27 +488,41 @@ export interface ReservationBlackout {
   id: string
   location_id: string
   date: string // "YYYY-MM-DD"
+  start_date?: string
+  end_date?: string
   scope: BlackoutScope
   start_time: string | null // "HH:MM" for partial
   end_time: string | null   // "HH:MM" for partial
   reason: string
   status: BlackoutStatus
+  active?: boolean
+  service_period_id?: string | null
+  channels?: BookingChannel[]
   created_at: string
   updated_at: string
 }
 
 export interface ReservationBlackoutCreate {
   date: string
+  start_date?: string
+  end_date?: string
   scope: BlackoutScope
   start_time?: string | null
   end_time?: string | null
   reason: string
+  channels?: BookingChannel[]
+  service_period_id?: string | null
 }
 
 export interface ReservationBlackoutUpdate {
+  date?: string
+  start_date?: string
+  end_date?: string
   status?: BlackoutStatus
   reason?: string
   scope?: BlackoutScope
   start_time?: string | null
   end_time?: string | null
+  channels?: BookingChannel[]
+  service_period_id?: string | null
 }

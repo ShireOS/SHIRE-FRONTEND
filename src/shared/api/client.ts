@@ -5,6 +5,51 @@ import { API_CONFIG, getApiUrl } from './config'
 import type { ApiError } from '../types/api'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 
+const normalizeApiMessage = (value: unknown, fallback: string): string => {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value
+  }
+
+  if (Array.isArray(value)) {
+    const messages = value
+      .map((item) => normalizeApiMessage(item, ''))
+      .filter(Boolean)
+    return messages.length > 0 ? messages.join('; ') : fallback
+  }
+
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+
+    if (typeof record.message === 'string' && record.message.trim().length > 0) {
+      return record.message
+    }
+
+    if (typeof record.msg === 'string' && record.msg.trim().length > 0) {
+      return record.msg
+    }
+
+    if (typeof record.detail === 'string' && record.detail.trim().length > 0) {
+      return record.detail
+    }
+
+    if (Array.isArray(record.detail)) {
+      return normalizeApiMessage(record.detail, fallback)
+    }
+
+    if (Array.isArray(record.errors)) {
+      return normalizeApiMessage(record.errors, fallback)
+    }
+
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return fallback
+    }
+  }
+
+  return fallback
+}
+
 class ApiClient {
   private async buildHeaders(headersInit?: HeadersInit): Promise<Headers> {
     const headers = new Headers(headersInit)
@@ -62,7 +107,10 @@ class ApiClient {
 
         try {
           const errorData = await response.json()
-          errorMessage = errorData.detail || errorData.message || errorMessage
+          errorMessage = normalizeApiMessage(
+            (errorData as any).detail ?? (errorData as any).message ?? errorData,
+            errorMessage
+          )
           errorDetails = errorData
         } catch {
           // Response wasn't JSON
@@ -210,7 +258,10 @@ class ApiClient {
 
         try {
           const errorData = await response.json()
-          errorMessage = errorData.detail || errorData.message || errorMessage
+          errorMessage = normalizeApiMessage(
+            (errorData as any).detail ?? (errorData as any).message ?? errorData,
+            errorMessage
+          )
           errorDetails = errorData
         } catch {
           // Response wasn't JSON

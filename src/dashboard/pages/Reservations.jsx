@@ -24,11 +24,7 @@ import {
   useCreateBlackout,
   useUpdateBlackout,
 } from '../../shared/hooks'
-import {
-  reservationSettings as mockSettings,
-  reservationBlackouts as mockBlackouts,
-  reservationBootstrapDefaults,
-} from '../data/mockData'
+import { reservationBootstrapDefaults } from '../data/mockData'
 
 const tabs = [
   { id: 'settings', label: 'Reservation Settings', icon: SettingsIcon },
@@ -51,10 +47,15 @@ export function Reservations() {
 
   const settings = settingsQuery.data
   const blackouts = blackoutsQuery.data || []
-  const settingsMissing = !settingsQuery.loading && !settings && settingsQuery.error?.status === 404
-  const settingsUnavailable = !settingsQuery.loading && !settings && !settingsMissing
+  const settingsUnavailable = !settingsQuery.loading && !settings
   const blackoutsUnavailable = !blackoutsQuery.loading && !!blackoutsQuery.error
   const canEditConfiguredSettings = Boolean(settings)
+  const needsBootstrap = Boolean(
+    settings &&
+    settings.service_periods.length === 0 &&
+    settings.pacing_rules.length === 0 &&
+    settings.channel_rules.length === 0
+  )
 
   // Handlers
   const handleSaveServicePeriods = useCallback(
@@ -123,6 +124,7 @@ export function Reservations() {
   const handleBootstrap = useCallback(async () => {
     try {
       await saveSettings({
+        ...settings,
         ...reservationBootstrapDefaults,
         location_id: locationId || 'default',
       })
@@ -130,7 +132,7 @@ export function Reservations() {
     } catch {
       // Error displayed by hook
     }
-  }, [saveSettings, locationId, settingsQuery])
+  }, [saveSettings, settings, locationId, settingsQuery])
 
   // Quick stats
   const activePeriods = settings?.service_periods?.filter((sp) => sp.is_active).length || 0
@@ -212,13 +214,13 @@ export function Reservations() {
             </Card>
           )}
 
-          {settingsMissing && (
+          {needsBootstrap && (
             <Card>
               <CardContent className="p-6 text-center">
                 <Users size={28} className="mx-auto text-dash-tertiary mb-3" />
-                <h3 className="font-semibold text-dash-cream mb-2">Reservations are not initialized yet</h3>
+                <h3 className="font-semibold text-dash-cream mb-2">Reservations need starter defaults</h3>
                 <p className="text-sm text-dash-tertiary mb-4 max-w-md mx-auto">
-                  The backend returned no reservation settings for this restaurant yet. Initialize defaults to create the first real config.
+                  This location has reservation settings, but no service periods, pacing rules, or channel rules yet.
                 </p>
                 <Button onClick={handleBootstrap}>
                   Initialize Default Settings
@@ -355,7 +357,7 @@ export function Reservations() {
       {/* Tab 4: Blackouts / Closures */}
       {activeTab === 'blackouts' && (
         <BlackoutsTab
-          blackouts={blackoutsUnavailable ? mockBlackouts : blackouts}
+          blackouts={blackouts}
           onCreate={handleCreateBlackout}
           onCancel={handleCancelBlackout}
         />

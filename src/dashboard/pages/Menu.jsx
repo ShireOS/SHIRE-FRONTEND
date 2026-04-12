@@ -37,16 +37,18 @@ function ScoreBadge({ score }) {
 }
 
 export function Menu() {
-  const [restaurantId, setRestaurantId] = useState(API_CONFIG.restaurantId)
+  const [restaurantId, setRestaurantId] = useState(
+    () => localStorage.getItem('selectedRestaurantId') || API_CONFIG.restaurantId
+  )
   const [actionLoading, setActionLoading] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
 
   // Fetch restaurants
   const { data: restaurants } = useRestaurants()
 
-  // Auto-select Mimosas on first load
+  // Auto-select Mimosas on first load (only if no saved selection)
   useEffect(() => {
-    if (restaurants) {
+    if (restaurants && !localStorage.getItem('selectedRestaurantId')) {
       const mimosas = restaurants.find((r) => r.name === 'Mimosas')
       if (mimosas) {
         console.log('[Menu] Auto-selecting Mimosas restaurant:', mimosas.id)
@@ -55,14 +57,6 @@ export function Menu() {
       }
     }
   }, [restaurants])
-
-  // Load from localStorage on mount
-  useEffect(() => {
-    const saved = localStorage.getItem('selectedRestaurantId')
-    if (saved) {
-      setRestaurantId(saved)
-    }
-  }, [])
 
   // Fetch menu data
   const {
