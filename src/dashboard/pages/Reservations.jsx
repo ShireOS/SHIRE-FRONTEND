@@ -1,0 +1,299 @@
+import { useState, useCallback } from 'react'
+import { Card, CardContent } from '../components/shared/Card'
+import { Button } from '../components/shared/Button'
+import { Badge } from '../components/shared/Badge'
+import { ServicePeriodsTab } from '../components/reservations/ServicePeriodsTab'
+import { BookingRulesTab } from '../components/reservations/BookingRulesTab'
+import { BlackoutsTab } from '../components/reservations/BlackoutsTab'
+import {
+  Settings as SettingsIcon,
+  Clock,
+  ShieldCheck,
+  CalendarX2,
+  CalendarClock,
+  Zap,
+  Users,
+  CheckCircle2,
+  Globe,
+} from 'lucide-react'
+import { useAuth } from '../../auth'
+import {
+  useReservationSettings,
+  useUpdateReservationSettings,
+  useReservationBlackouts,
+  useCreateBlackout,
+  useUpdateBlackout,
+} from '../../shared/hooks'
+import {
+  reservationSettings as mockSettings,
+  reservationBlackouts as mockBlackouts,
+  reservationBootstrapDefaults,
+} from '../data/mockData'
+
+const tabs = [
+  { id: 'settings', label: 'Reservation Settings', icon: SettingsIcon },
+  { id: 'service-hours', label: 'Service Hours', icon: Clock },
+  { id: 'booking-rules', label: 'Booking Rules', icon: ShieldCheck },
+  { id: 'blackouts', label: 'Blackouts / Closures', icon: CalendarX2 },
+]
+
+export function Reservations() {
+  const [activeTab, setActiveTab] = useState('settings')
+  const { restaurant } = useAuth()
+  const locationId = restaurant?.currentRestaurant?.id
+
+  // API hooks
+  const settingsQuery = useReservationSettings(locationId)
+  const blackoutsQuery = useReservationBlackouts(locationId)
+  const { save: saveSettings } = useUpdateReservationSettings(locationId)
+  const { create: createBlackout } = useCreateBlackout(locationId)
+  const { update: updateBlackout } = useUpdateBlackout(locationId)
+
+  // Fall back to mock data in dev or on error
+  const settings = settingsQuery.data || mockSettings
+  const blackouts = blackoutsQuery.data || mockBlackouts
+
+  // Handlers
+  const handleSaveServicePeriods = useCallback(
+    async (updatedPeriods) => {
+      try {
+        await saveSettings({ ...settings, service_periods: updatedPeriods })
+        settingsQuery.refetch()
+      } catch {
+        // Error displayed by hook
+      }
+    },
+    [settings, saveSettings, settingsQuery]
+  )
+
+  const handleSaveBookingRules = useCallback(
+    async ({ pacing_rules, channel_rules }) => {
+      try {
+        await saveSettings({ ...settings, pacing_rules, channel_rules })
+        settingsQuery.refetch()
+      } catch {
+        // Error displayed by hook
+      }
+    },
+    [settings, saveSettings, settingsQuery]
+  )
+
+  const handleSaveDefaults = useCallback(
+    async (updates) => {
+      try {
+        await saveSettings({ ...settings, ...updates })
+        settingsQuery.refetch()
+      } catch {
+        // Error displayed by hook
+      }
+    },
+    [settings, saveSettings, settingsQuery]
+  )
+
+  const handleCreateBlackout = useCallback(
+    async (payload) => {
+      try {
+        await createBlackout(payload)
+        blackoutsQuery.refetch()
+      } catch {
+        // Error displayed by hook
+      }
+    },
+    [createBlackout, blackoutsQuery]
+  )
+
+  const handleCancelBlackout = useCallback(
+    async (blackoutId) => {
+      try {
+        await updateBlackout(blackoutId, { status: 'cancelled' })
+        blackoutsQuery.refetch()
+      } catch {
+        // Error displayed by hook
+      }
+    },
+    [updateBlackout, blackoutsQuery]
+  )
+
+  const handleBootstrap = useCallback(async () => {
+    try {
+      await saveSettings({
+        ...reservationBootstrapDefaults,
+        location_id: locationId || 'default',
+      })
+      settingsQuery.refetch()
+    } catch {
+      // Error displayed by hook
+    }
+  }, [saveSettings, locationId, settingsQuery])
+
+  // Quick stats
+  const activePeriods = settings.service_periods?.filter((sp) => sp.is_active).length || 0
+  const activeChannels = settings.channel_rules?.filter((ch) => ch.is_enabled).length || 0
+  const activeBlackouts = blackouts.filter((b) => b.status === 'active').length
+
+  return (
+    <div>
+      {/* Page Header */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-dash-cream">
+          <span className="font-dash-display italic text-dash-gold">Reservations</span>
+        </h1>
+        <p className="text-dash-secondary mt-1">Configure reservation settings, service periods, and blackouts</p>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 mb-6 border-b border-dash-border">
+        {tabs.map((tab) => {
+          const Icon = tab.icon
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === tab.id
+                  ? 'border-dash-gold text-dash-gold'
+                  : 'border-transparent text-dash-secondary hover:text-dash-cream'
+              }`}
+            >
+              <Icon size={18} />
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Tab 1: Reservation Settings (overview / defaults) */}
+      {activeTab === 'settings' && (
+        <div className="space-y-6">
+          {/* Quick Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardContent className="p-4 text-center">
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <CalendarClock size={18} className="text-dash-gold" />
+                  <p className="text-2xl font-bold text-dash-cream">{activePeriods}</p>
+                </div>
+                <p className="text-sm text-dash-tertiary">Active Service Periods</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 text-center">
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <Globe size={18} className="text-dash-success" />
+                  <p className="text-2xl font-bold text-dash-cream">{activeChannels}</p>
+                </div>
+                <p className="text-sm text-dash-tertiary">Active Channels</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 text-center">
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <CalendarX2 size={18} className="text-dash-warning" />
+                  <p className="text-2xl font-bold text-dash-cream">{activeBlackouts}</p>
+                </div>
+                <p className="text-sm text-dash-tertiary">Upcoming Blackouts</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Default Settings Cards */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Slot & Party Defaults */}
+            <Card>
+              <CardContent className="p-6">
+                <h3 className="font-semibold text-dash-cream mb-4 flex items-center gap-2">
+                  <Zap size={18} className="text-dash-gold" />
+                  Default Configuration
+                </h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between py-2 border-b border-dash-border">
+                    <span className="text-dash-secondary text-sm">Default Slot Interval</span>
+                    <span className="text-dash-cream font-medium">{settings.default_slot_interval_minutes} min</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2 border-b border-dash-border">
+                    <span className="text-dash-secondary text-sm">Party Size Range</span>
+                    <span className="text-dash-cream font-medium">
+                      {settings.default_min_party_size} - {settings.default_max_party_size} guests
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-2 border-b border-dash-border">
+                    <span className="text-dash-secondary text-sm">Confirmation Lead Time</span>
+                    <span className="text-dash-cream font-medium">{settings.confirmation_lead_hours}h</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-dash-secondary text-sm">Auto-Confirm</span>
+                    <Badge variant={settings.auto_confirm ? 'success' : 'neutral'} dot>
+                      {settings.auto_confirm ? 'Enabled' : 'Disabled'}
+                    </Badge>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Active Channels Summary */}
+            <Card>
+              <CardContent className="p-6">
+                <h3 className="font-semibold text-dash-cream mb-4 flex items-center gap-2">
+                  <CheckCircle2 size={18} className="text-dash-success" />
+                  Channel Status
+                </h3>
+                <div className="space-y-3">
+                  {settings.channel_rules?.map((rule) => (
+                    <div key={rule.channel} className="flex items-center justify-between py-2 border-b border-dash-border last:border-0">
+                      <span className="text-dash-secondary text-sm capitalize">{rule.channel}</span>
+                      <Badge variant={rule.is_enabled ? 'success' : 'neutral'} dot>
+                        {rule.is_enabled ? 'Active' : 'Off'}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Bootstrap Button (when no real settings) */}
+          {!settingsQuery.data && (
+            <Card>
+              <CardContent className="p-6 text-center">
+                <Users size={28} className="mx-auto text-dash-tertiary mb-3" />
+                <h3 className="font-semibold text-dash-cream mb-2">Get Started with Reservations</h3>
+                <p className="text-sm text-dash-tertiary mb-4 max-w-md mx-auto">
+                  Set up default reservation settings with sensible defaults. You can customize everything afterwards.
+                </p>
+                <Button onClick={handleBootstrap}>
+                  Initialize Default Settings
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Tab 2: Service Hours */}
+      {activeTab === 'service-hours' && (
+        <ServicePeriodsTab
+          servicePeriods={settings.service_periods || []}
+          onSave={handleSaveServicePeriods}
+        />
+      )}
+
+      {/* Tab 3: Booking Rules */}
+      {activeTab === 'booking-rules' && (
+        <BookingRulesTab
+          pacingRules={settings.pacing_rules || []}
+          channelRules={settings.channel_rules || []}
+          onSave={handleSaveBookingRules}
+        />
+      )}
+
+      {/* Tab 4: Blackouts / Closures */}
+      {activeTab === 'blackouts' && (
+        <BlackoutsTab
+          blackouts={blackouts}
+          onCreate={handleCreateBlackout}
+          onCancel={handleCancelBlackout}
+        />
+      )}
+    </div>
+  )
+}

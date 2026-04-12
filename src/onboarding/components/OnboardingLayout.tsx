@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { OnboardingProgress } from './OnboardingProgress'
 
 export interface OnboardingStep {
@@ -45,6 +45,12 @@ export function OnboardingLayout({
   isSwitchingAccount = false,
   switchAccountError,
 }: OnboardingLayoutProps) {
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.add('dark')
+    root.classList.remove('light')
+  }, [])
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] relative">
       {/* Noise overlay */}

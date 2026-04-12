@@ -1,13 +1,36 @@
 import { useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import type { Restaurant } from '../../shared/types/database'
+
+const getCompletedRestaurant = (
+  currentRestaurant: Restaurant | null,
+  restaurants: Restaurant[]
+): Restaurant | null => {
+  if (currentRestaurant?.onboarding_completed_at) {
+    return currentRestaurant
+  }
+
+  return restaurants.find(restaurant => Boolean(restaurant.onboarding_completed_at)) ?? null
+}
+
+const getOnboardingRestaurant = (
+  currentRestaurant: Restaurant | null,
+  restaurants: Restaurant[]
+): Restaurant | null => {
+  if (currentRestaurant && !currentRestaurant.onboarding_completed_at) {
+    return currentRestaurant
+  }
+
+  return restaurants.find(restaurant => !restaurant.onboarding_completed_at) ?? null
+}
 
 interface UseRequireAuthOptions {
   /** Redirect to this path if not authenticated (default: /auth/login) */
   redirectTo?: string
   /** If true, also require onboarding to be complete (default: false) */
   requireOnboarding?: boolean
-  /** Redirect here if onboarding is not complete (default: /onboarding) */
+  /** Redirect here if onboarding is not complete (default: /dev-onboarding) */
   onboardingRedirect?: string
 }
 
@@ -29,12 +52,24 @@ export function useRequireAuth(options: UseRequireAuthOptions = {}) {
   const {
     redirectTo = '/auth/login',
     requireOnboarding = true,
-    onboardingRedirect = '/onboarding',
+    onboardingRedirect = '/dev-onboarding',
   } = options
 
   const auth = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const completedRestaurant = getCompletedRestaurant(
+    auth.restaurant.currentRestaurant,
+    auth.restaurant.restaurants
+  )
+  const resolvedRestaurant = requireOnboarding
+    ? completedRestaurant
+    : auth.restaurant.currentRestaurant
+  const needsRestaurantSwitch = Boolean(
+    requireOnboarding &&
+    completedRestaurant &&
+    auth.restaurant.currentRestaurant?.id !== completedRestaurant.id
+  )
 
   useEffect(() => {
     // Wait for auth AND restaurant data to initialize
@@ -51,12 +86,13 @@ export function useRequireAuth(options: UseRequireAuthOptions = {}) {
 
     // Check onboarding status if required
     if (requireOnboarding) {
-      const restaurant = auth.restaurant.currentRestaurant
-
-      // If NO restaurant exists OR onboarding not complete, redirect to onboarding
-      if (!restaurant || !restaurant.onboarding_completed_at) {
+      if (!completedRestaurant) {
         navigate(onboardingRedirect, { replace: true })
         return
+      }
+
+      if (needsRestaurantSwitch) {
+        void auth.switchRestaurant(completedRestaurant.id)
       }
     }
   }, [
@@ -64,6 +100,10 @@ export function useRequireAuth(options: UseRequireAuthOptions = {}) {
     auth.isAuthenticated,
     auth.restaurant.isLoading,
     auth.restaurant.currentRestaurant,
+    auth.restaurant.restaurants,
+    auth.switchRestaurant,
+    completedRestaurant,
+    needsRestaurantSwitch,
     navigate,
     location.pathname,
     redirectTo,
@@ -73,13 +113,17 @@ export function useRequireAuth(options: UseRequireAuthOptions = {}) {
 
   return {
     /** True when auth state is determined and redirects are complete */
-    isReady: !auth.isLoading && !auth.restaurant.isLoading && auth.isAuthenticated,
+    isReady:
+      !auth.isLoading &&
+      !auth.restaurant.isLoading &&
+      auth.isAuthenticated &&
+      (!requireOnboarding || (!!resolvedRestaurant && !needsRestaurantSwitch)),
     /** Current user */
     user: auth.user,
     /** User profile */
     profile: auth.profile,
     /** Current restaurant */
-    restaurant: auth.restaurant.currentRestaurant,
+    restaurant: resolvedRestaurant,
     /** User's role/membership in current restaurant */
     membership: auth.restaurant.membership,
     /** All restaurants user has access to */
@@ -95,6 +139,14 @@ export function useRequireAuth(options: UseRequireAuthOptions = {}) {
 export function useRequireOnboarding() {
   const auth = useAuth()
   const navigate = useNavigate()
+  const onboardingRestaurant = getOnboardingRestaurant(
+    auth.restaurant.currentRestaurant,
+    auth.restaurant.restaurants
+  )
+  const completedRestaurant = getCompletedRestaurant(
+    auth.restaurant.currentRestaurant,
+    auth.restaurant.restaurants
+  )
 
   useEffect(() => {
     // Wait for auth AND restaurant data to initialize
@@ -106,20 +158,28 @@ export function useRequireOnboarding() {
       return
     }
 
-    // DEV: redirect disabled so /dev-onboarding works without resetting DB each time
-    // if (auth.restaurant.currentRestaurant?.onboarding_completed_at) {
-    //   navigate('/', { replace: true })
-    //   return
-    // }
+    if (onboardingRestaurant) {
+      if (auth.restaurant.currentRestaurant?.id !== onboardingRestaurant.id) {
+        void auth.switchRestaurant(onboardingRestaurant.id)
+      }
+      return
+    }
 
-    //ABOVE, PLS UNCOMMENT AFTER DEV HARSHITH
-
-    // Otherwise stay here - user needs onboarding (no restaurant or incomplete)
+    if (completedRestaurant) {
+      if (auth.restaurant.currentRestaurant?.id !== completedRestaurant.id) {
+        void auth.switchRestaurant(completedRestaurant.id)
+      }
+      navigate('/', { replace: true })
+    }
   }, [
     auth.isLoading,
     auth.isAuthenticated,
     auth.restaurant.isLoading,
     auth.restaurant.currentRestaurant,
+    auth.restaurant.restaurants,
+    auth.switchRestaurant,
+    onboardingRestaurant,
+    completedRestaurant,
     navigate,
   ])
 
@@ -145,12 +205,18 @@ export function useRedirectIfAuthenticated(redirectTo = '/') {
     if (auth.isLoading || auth.restaurant.isLoading) return
 
     if (auth.isAuthenticated) {
-      // Check if we should redirect to onboarding
-      // Redirect to onboarding if: NO restaurant OR restaurant exists but onboarding not complete
-      const restaurant = auth.restaurant.currentRestaurant
-      if (!restaurant || !restaurant.onboarding_completed_at) {
-        navigate('/onboarding', { replace: true })
+      const completedRestaurant = getCompletedRestaurant(
+        auth.restaurant.currentRestaurant,
+        auth.restaurant.restaurants
+      )
+
+      if (!completedRestaurant) {
+        navigate('/dev-onboarding', { replace: true })
         return
+      }
+
+      if (auth.restaurant.currentRestaurant?.id !== completedRestaurant.id) {
+        void auth.switchRestaurant(completedRestaurant.id)
       }
 
       // Redirect to intended destination or default
@@ -162,6 +228,8 @@ export function useRedirectIfAuthenticated(redirectTo = '/') {
     auth.isAuthenticated,
     auth.restaurant.isLoading,
     auth.restaurant.currentRestaurant,
+    auth.restaurant.restaurants,
+    auth.switchRestaurant,
     navigate,
     location.state,
     redirectTo,

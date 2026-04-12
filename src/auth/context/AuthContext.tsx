@@ -43,6 +43,9 @@ const pickRestaurant = (
     if (savedMatch) return savedMatch
   }
 
+  const completedMatch = availableRestaurants.find(restaurant => restaurant.onboarding_completed_at)
+  if (completedMatch) return completedMatch
+
   return availableRestaurants[0]
 }
 
@@ -78,7 +81,8 @@ interface AuthContextValue extends AuthState {
   updateProfile: (updates: Partial<Profile>) => Promise<void>
   // Restaurant methods
   switchRestaurant: (restaurantId: string) => Promise<void>
-  refreshRestaurants: () => Promise<void>
+  refreshRestaurants: (preferredRestaurantId?: string | null) => Promise<void>
+  seedCurrentRestaurant: (restaurant: Restaurant) => void
 }
 
 interface SignUpMetadata {
@@ -293,15 +297,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(CURRENT_RESTAURANT_STORAGE_KEY, restaurant.id)
   }, [restaurants])
 
+  const seedCurrentRestaurant = useCallback((restaurant: Restaurant) => {
+    setRestaurants(prev => {
+      const withoutMatch = prev.filter(existing => existing.id !== restaurant.id)
+      return [...withoutMatch, restaurant]
+    })
+    setCurrentRestaurant(restaurant)
+    localStorage.setItem(CURRENT_RESTAURANT_STORAGE_KEY, restaurant.id)
+  }, [])
+
   // ----------------------------------------
   // REFRESH RESTAURANTS
   // ----------------------------------------
-  const refreshRestaurants = useCallback(async () => {
+  const refreshRestaurants = useCallback(async (preferredRestaurantId?: string | null) => {
     if (!user) return
 
     const userRestaurants = await fetchRestaurants(user.id)
 
     if (userRestaurants.length === 0) {
+      if (preferredRestaurantId && currentRestaurant?.id === preferredRestaurantId) {
+        localStorage.setItem(CURRENT_RESTAURANT_STORAGE_KEY, preferredRestaurantId)
+        return
+      }
       setCurrentRestaurant(null)
       setMembership(null)
       localStorage.removeItem(CURRENT_RESTAURANT_STORAGE_KEY)
@@ -309,7 +326,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const savedRestaurantId = localStorage.getItem(CURRENT_RESTAURANT_STORAGE_KEY)
-    const restaurantToSelect = pickRestaurant(userRestaurants, currentRestaurant, savedRestaurantId)
+    const preferredRestaurant =
+      preferredRestaurantId
+        ? userRestaurants.find((restaurant) => restaurant.id === preferredRestaurantId) ?? null
+        : null
+    const restaurantToSelect =
+      preferredRestaurant
+      ?? pickRestaurant(userRestaurants, currentRestaurant, savedRestaurantId)
 
     if (restaurantToSelect) {
       setCurrentRestaurant(restaurantToSelect)
@@ -666,6 +689,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Restaurant methods
     switchRestaurant,
     refreshRestaurants,
+    seedCurrentRestaurant,
   }
 
   return (

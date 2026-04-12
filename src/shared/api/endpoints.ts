@@ -102,4 +102,12 @@ export const ENDPOINTS = {
     `/restaurants/${restaurantId}/servers`,
   routingRecommend: (restaurantId: string) =>
     `/restaurants/${restaurantId}/routing/recommend`,
+
+  // Reservation configuration endpoints
+  reservationSettings: (locationId: string) =>
+    `/locations/${locationId}/reservation-settings`,
+  reservationBlackouts: (locationId: string) =>
+    `/locations/${locationId}/reservation-blackouts`,
+  reservationBlackout: (locationId: string, blackoutId: string) =>
+    `/locations/${locationId}/reservation-blackouts/${blackoutId}`,
 }

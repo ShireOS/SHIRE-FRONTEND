@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { isSupabaseConfigured, supabase, supabaseConfigError } from '../../shared/lib/supabase'
 import type { EmailOtpType } from '@supabase/supabase-js'
+import type { Restaurant } from '../../shared/types/database'
 import { isAbortError } from '../utils/authErrors'
 
 const SUPPORTED_EMAIL_OTP_TYPES: EmailOtpType[] = [
@@ -13,6 +14,17 @@ const SUPPORTED_EMAIL_OTP_TYPES: EmailOtpType[] = [
 ]
 
 let callbackProcessingPromise: Promise<void> | null = null
+
+const getCompletedRestaurant = (
+  currentRestaurant: Restaurant | null,
+  restaurants: Restaurant[]
+): Restaurant | null => {
+  if (currentRestaurant?.onboarding_completed_at) {
+    return currentRestaurant
+  }
+
+  return restaurants.find(restaurant => Boolean(restaurant.onboarding_completed_at)) ?? null
+}
 
 function normalizeEmailOtpType(value: string | null): EmailOtpType | null {
   if (!value) return null
@@ -122,6 +134,10 @@ export function AuthCallbackPage() {
   const [isProcessingCallback, setIsProcessingCallback] = useState(true)
   const [fatalError, setFatalError] = useState<string | null>(null)
   const redirectedRef = useRef(false)
+  const completedRestaurant = getCompletedRestaurant(
+    auth.restaurant.currentRestaurant,
+    auth.restaurant.restaurants
+  )
 
   useEffect(() => {
     let mounted = true
@@ -165,12 +181,15 @@ export function AuthCallbackPage() {
       return
     }
 
-    if (auth.restaurant.currentRestaurant?.onboarding_completed_at) {
+    if (completedRestaurant) {
+      if (auth.restaurant.currentRestaurant?.id !== completedRestaurant.id) {
+        void auth.switchRestaurant(completedRestaurant.id)
+      }
       navigate('/', { replace: true })
       return
     }
 
-    navigate('/onboarding', { replace: true })
+    navigate('/dev-onboarding', { replace: true })
   }, [
     fatalError,
     isProcessingCallback,
@@ -178,6 +197,9 @@ export function AuthCallbackPage() {
     auth.isAuthenticated,
     auth.restaurant.isLoading,
     auth.restaurant.currentRestaurant,
+    auth.restaurant.restaurants,
+    auth.switchRestaurant,
+    completedRestaurant,
     navigate,
   ])
 

@@ -428,3 +428,78 @@ export interface StreamChunk {
   message_id?: string
   message?: string // For error messages
 }
+
+// ========== Reservation Configuration Types ==========
+// Types for service periods, pacing, booking channels, and blackouts
+
+export type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
+export type BookingChannel = 'host' | 'phone' | 'web' | 'app'
+export type BlackoutScope = 'full_day' | 'partial'
+export type BlackoutStatus = 'active' | 'cancelled'
+
+export interface ServicePeriod {
+  id: string
+  name: string
+  days_of_week: DayOfWeek[]
+  start_time: string // "HH:MM" 24h
+  end_time: string   // "HH:MM" 24h
+  slot_interval_minutes: number
+  lead_time_hours: number
+  cutoff_time: string | null // "HH:MM" 24h
+  min_party_size: number
+  max_party_size: number
+  is_active: boolean
+}
+
+export interface PacingRule {
+  id: string
+  window_minutes: number
+  max_covers_per_window: number
+}
+
+export interface ChannelRule {
+  channel: BookingChannel
+  is_enabled: boolean
+}
+
+export interface ReservationSettings {
+  location_id: string
+  service_periods: ServicePeriod[]
+  pacing_rules: PacingRule[]
+  channel_rules: ChannelRule[]
+  default_slot_interval_minutes: number
+  default_min_party_size: number
+  default_max_party_size: number
+  auto_confirm: boolean
+  confirmation_lead_hours: number
+  updated_at: string
+}
+
+export interface ReservationBlackout {
+  id: string
+  location_id: string
+  date: string // "YYYY-MM-DD"
+  scope: BlackoutScope
+  start_time: string | null // "HH:MM" for partial
+  end_time: string | null   // "HH:MM" for partial
+  reason: string
+  status: BlackoutStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface ReservationBlackoutCreate {
+  date: string
+  scope: BlackoutScope
+  start_time?: string | null
+  end_time?: string | null
+  reason: string
+}
+
+export interface ReservationBlackoutUpdate {
+  status?: BlackoutStatus
+  reason?: string
+  scope?: BlackoutScope
+  start_time?: string | null
+  end_time?: string | null
+}

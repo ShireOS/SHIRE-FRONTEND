@@ -53,11 +53,6 @@ export function GoalsStep({ onboarding }: GoalsStepProps) {
     e.preventDefault()
     setLocalError(null)
 
-    if (data.challenges.length === 0) {
-      setLocalError('Please select at least one challenge')
-      return
-    }
-
     try {
       await saveGoals()
       nextStep()

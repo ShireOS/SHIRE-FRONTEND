@@ -1,5 +1,5 @@
 import { Component, useState, lazy, Suspense } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { Header } from './components/layout/Header'
 import { Sidebar } from './components/layout/Sidebar'
 import { isSupabaseConfigured, supabaseConfigError } from '../shared/lib/supabase'
@@ -97,17 +97,7 @@ function FakeDashboardLayout() {
         <Sidebar />
         <main className="flex-1 p-6 overflow-auto min-h-[calc(100vh-4rem)] ml-64">
           <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-dash-gold" /></div>}>
-            <Routes>
-              <Route path="/" element={<FakeDashboard />} />
-              <Route path="/staff" element={<FakeStaff />} />
-              <Route path="/staff/:id" element={<FakeStaff />} />
-              <Route path="/schedule" element={<FakeSchedule />} />
-              <Route path="/menu" element={<FakeMenu />} />
-              <Route path="/analytics" element={<FakeAnalytics />} />
-              <Route path="/reviews" element={<FakeReviews />} />
-              <Route path="/settings" element={<FakeSettings />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
+            <Outlet />
           </Suspense>
         </main>
         <Suspense fallback={null}>
@@ -127,7 +117,17 @@ export default function App() {
     return (
       <DashboardErrorBoundary>
         <Routes>
-          <Route path="/*" element={<FakeDashboardLayout />} />
+          <Route element={<FakeDashboardLayout />}>
+            <Route index element={<FakeDashboard />} />
+            <Route path="staff" element={<FakeStaff />} />
+            <Route path="staff/:id" element={<FakeStaff />} />
+            <Route path="schedule" element={<FakeSchedule />} />
+            <Route path="menu" element={<FakeMenu />} />
+            <Route path="analytics" element={<FakeAnalytics />} />
+            <Route path="reviews" element={<FakeReviews />} />
+            <Route path="settings" element={<FakeSettings />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </DashboardErrorBoundary>
     )

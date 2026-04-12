@@ -32,7 +32,6 @@ const newBlankItem = (): MenuEditorItem => ({
 
 export function MenuEditor({ restaurantId, mode, initialItems, onBack, onSave }: MenuEditorProps) {
   const [items, setItems] = useState<MenuEditorItem[]>(initialItems ?? [])
-  const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [phase, setPhase] = useState<Phase>(mode === 'manual' ? 'editing' : 'idle')
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)

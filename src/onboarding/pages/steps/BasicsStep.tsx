@@ -23,7 +23,7 @@ const CUISINE_TYPES = [
 ]
 
 export function BasicsStep({ onboarding }: BasicsStepProps) {
-  const { data, updateData, createRestaurant, nextStep, isLoading, error } = onboarding
+  const { data, updateData, createRestaurant, goToStep, isLoading, error } = onboarding
   const [localError, setLocalError] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,18 +35,9 @@ export function BasicsStep({ onboarding }: BasicsStepProps) {
       setLocalError('Restaurant name is required')
       return
     }
-    if (!data.address.trim()) {
-      setLocalError('Address is required')
-      return
-    }
-    if (!data.type) {
-      setLocalError('Please select a restaurant type')
-      return
-    }
-
     try {
       await createRestaurant()
-      nextStep()
+      goToStep(1)
     } catch (err) {
       // Error is already set by createRestaurant
     }
@@ -90,7 +81,7 @@ export function BasicsStep({ onboarding }: BasicsStepProps) {
       {/* Address */}
       <div className="space-y-4">
         <label className="label-mono block text-[rgb(var(--gold))]">
-          Location *
+          Location <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
         </label>
 
         <input
@@ -139,7 +130,7 @@ export function BasicsStep({ onboarding }: BasicsStepProps) {
       {/* Restaurant Type */}
       <div>
         <label className="label-mono block mb-3 text-[rgb(var(--gold))]">
-          Restaurant Type *
+          Restaurant Type <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
         </label>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {RESTAURANT_TYPES.map(type => (

@@ -344,7 +344,7 @@ const toErrorMessage = (error: unknown, fallback: string): string =>
 
 export function useOnboarding() {
   const auth = useAuth()
-  const { user, refreshRestaurants } = auth
+  const { user, refreshRestaurants, seedCurrentRestaurant } = auth
   const currentRestaurant = auth.restaurant.currentRestaurant
   const isRestaurantLoading = auth.restaurant.isLoading
   const navigate = useNavigate()
@@ -566,6 +566,11 @@ export function useOnboarding() {
     if (isHydrating || showLaunchScreen) return
     if (currentRestaurant?.onboarding_completed_at) return
 
+    // Step 0 is the "create restaurant" screen. Once a restaurant exists,
+    // never persist 0 back to the DB or we can reset users to the first screen
+    // while the basics submit/refresh cycle is still settling.
+    if (currentStep === 0) return
+
     const step = clampStep(currentStep)
 
     void supabase
@@ -597,15 +602,15 @@ export function useOnboarding() {
       const basePayload = {
         owner_id: user.id,
         name: data.name.trim(),
-        address: data.address.trim(),
-        city: data.city.trim(),
-        state: data.state.trim(),
-        postal_code: data.postal_code.trim(),
+        address: data.address.trim() || null,
+        city: data.city.trim() || null,
+        state: data.state.trim() || null,
+        postal_code: data.postal_code.trim() || null,
         country: data.country,
         timezone: data.timezone,
-        type: data.type,
+        type: data.type || 'casual',
         cuisine_types: data.cuisine_types,
-        phone: data.phone.trim(),
+        phone: data.phone.trim() || null,
         status: 'onboarding' as const,
         onboarding_step: 1,
       }
@@ -627,6 +632,18 @@ export function useOnboarding() {
         if (updateError) throw updateError
 
         setRestaurantId(updatedRestaurant.id)
+        setCurrentStep(prev => Math.max(prev, 1))
+        seedCurrentRestaurant(updatedRestaurant)
+        if (user) {
+          writeDraft(user.id, {
+            version: ONBOARDING_DRAFT_VERSION,
+            currentStep: 1,
+            restaurantId: updatedRestaurant.id,
+            data,
+            updatedAt: new Date().toISOString(),
+          })
+        }
+        await refreshRestaurants(updatedRestaurant.id)
         return updatedRestaurant
       }
 
@@ -687,6 +704,18 @@ export function useOnboarding() {
       }
 
       setRestaurantId(createdRestaurant.id)
+      setCurrentStep(prev => Math.max(prev, 1))
+      seedCurrentRestaurant(createdRestaurant)
+      if (user) {
+        writeDraft(user.id, {
+          version: ONBOARDING_DRAFT_VERSION,
+          currentStep: 1,
+          restaurantId: createdRestaurant.id,
+          data,
+          updatedAt: new Date().toISOString(),
+        })
+      }
+      await refreshRestaurants(createdRestaurant.id)
       return createdRestaurant
     } catch (err) {
       const message = toErrorMessage(err, 'Failed to create restaurant')
@@ -695,7 +724,7 @@ export function useOnboarding() {
     } finally {
       setIsLoading(false)
     }
-  }, [user, data, restaurantId, currentRestaurant?.id, runWithTimeout])
+  }, [user, data, restaurantId, currentRestaurant?.id, refreshRestaurants, runWithTimeout])
 
   // Save goals & priorities (after step 1)
   const saveGoals = useCallback(async () => {
@@ -955,7 +984,7 @@ export function useOnboarding() {
       const existingConfig = await fetchRestaurantConfig(activeRestaurantId)
 
       // Mark onboarding complete
-      const { error: updateError } = await runWithTimeout(
+      const { data: completedRestaurant, error: updateError } = await runWithTimeout(
         () =>
           supabase
             .from('restaurants')
@@ -970,14 +999,18 @@ export function useOnboarding() {
               onboarding_step: 8,
               onboarding_completed_at: new Date().toISOString(),
             })
-            .eq('id', activeRestaurantId),
+            .eq('id', activeRestaurantId)
+            .select()
+            .single(),
         'Finalizing onboarding timed out. Please retry.'
       )
 
       if (updateError) throw updateError
 
+      seedCurrentRestaurant(completedRestaurant)
+
       // Refresh restaurant list in auth context
-      await refreshRestaurants()
+      await refreshRestaurants(activeRestaurantId)
 
       // Show launch screen
       if (user) {
@@ -999,13 +1032,18 @@ export function useOnboarding() {
     fetchRestaurantConfig,
     refreshRestaurants,
     runWithTimeout,
+    seedCurrentRestaurant,
     user,
   ])
 
   // Navigate to dashboard (called from LaunchScreen)
-  const goToDashboard = useCallback(() => {
+  const goToDashboard = useCallback(async () => {
+    const activeRestaurantId = restaurantId || currentRestaurant?.id || null
+    if (activeRestaurantId) {
+      await refreshRestaurants(activeRestaurantId)
+    }
     navigate('/', { replace: true })
-  }, [navigate])
+  }, [navigate, refreshRestaurants, restaurantId, currentRestaurant?.id])
 
   return {
     // State
