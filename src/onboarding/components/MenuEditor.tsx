@@ -168,9 +168,14 @@ export function MenuEditor({ restaurantId, mode, initialItems, onBack, onSave }:
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <button
-          onClick={() => {
-            if (items.length > 0) onSave(items)
-            onBack()
+          onClick={async () => {
+            if (items.filter(i => i.name.trim() !== '').length > 0) {
+              // handleSave calls onSave on success (which closes editor via parent)
+              // on failure it shows an error and stays open so user doesn't lose work
+              await handleSave()
+            } else {
+              onBack()
+            }
           }}
           disabled={isBusy}
           className="flex items-center gap-2 text-sm text-[rgb(var(--text-secondary))] hover:text-[rgb(var(--text-primary))] disabled:opacity-40 transition-colors"

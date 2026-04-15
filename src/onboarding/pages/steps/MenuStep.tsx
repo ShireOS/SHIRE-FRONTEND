@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
 import { MenuEditor } from '../../components/MenuEditor'
 import type { MenuEditorItem } from '../../components/MenuItemsTable'
+import { supabase } from '../../../shared/lib/supabase'
+import { API_CONFIG } from '../../../shared/api/config'
 
 interface MenuStepProps {
   onboarding: UseOnboardingReturn
@@ -89,6 +91,31 @@ export function MenuStep({ onboarding }: MenuStepProps) {
 
   const [menuMode, setMenuMode] = useState<null | 'upload' | 'manual'>(null)
   const [savedItems, setSavedItems] = useState<MenuEditorItem[]>([])
+
+  // Load existing menu items from DB on mount so they survive page refresh
+  useEffect(() => {
+    if (!restaurantId) return
+    const load = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token ? `Bearer ${session.access_token}` : ''
+      const res = await fetch(
+        `${API_CONFIG.baseUrl}/restaurants/${restaurantId}/menu/items`,
+        { headers: { Authorization: token } }
+      ).catch(() => null)
+      if (!res?.ok) return
+      const items = await res.json()
+      if (items?.length > 0) {
+        setSavedItems(items.map((item: any) => ({
+          id: item.id ?? crypto.randomUUID(),
+          name: item.name ?? '',
+          category: item.category ?? '',
+          price: item.price != null ? String(item.price) : '',
+          description: item.description ?? '',
+        })))
+      }
+    }
+    void load()
+  }, [restaurantId])
 
   const handleContinue = async () => {
     try {

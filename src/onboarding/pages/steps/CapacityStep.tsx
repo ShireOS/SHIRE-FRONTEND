@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
 import { FloorPlanEditor } from '../../components/FloorPlanEditor'
 import type { FloorPlanTable } from '../../components/FloorPlanCanvas'
+import { supabase } from '../../../shared/lib/supabase'
+import { API_CONFIG } from '../../../shared/api/config'
 
 interface CapacityStepProps {
   onboarding: UseOnboardingReturn
@@ -20,6 +22,38 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
 
   const [floorPlanMode, setFloorPlanMode] = useState<null | 'upload' | 'manual'>(null)
   const [savedTables, setSavedTables] = useState<FloorPlanTable[]>([])
+
+  // Load existing floor plan from DB on mount so tables survive page refresh
+  useEffect(() => {
+    if (!restaurantId) return
+    const load = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token ? `Bearer ${session.access_token}` : ''
+      const res = await fetch(
+        `${API_CONFIG.baseUrl}/restaurants/${restaurantId}/floor-plan`,
+        { headers: { Authorization: token } }
+      ).catch(() => null)
+      if (!res?.ok) return
+      const fp = await res.json()
+      if (fp.has_floor_plan && fp.tables?.length > 0) {
+        // Map API nested position format → internal flat format
+        const tables: FloorPlanTable[] = fp.tables.map((t: any) => ({
+          id: t.id,
+          center_x: t.position.center_x,
+          center_y: t.position.center_y,
+          width: t.position.width,
+          height: t.position.height,
+          capacity: t.capacity,
+          shape: t.shape,
+          confidence: t.confidence,
+          notes: t.notes,
+        }))
+        setSavedTables(tables)
+        updateData({ table_count: tables.length })
+      }
+    }
+    void load()
+  }, [restaurantId])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -45,6 +79,7 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
           setFloorPlanMode(null)
         }}
       />
+
     )
   }
 
