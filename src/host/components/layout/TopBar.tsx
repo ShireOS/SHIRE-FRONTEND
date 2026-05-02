@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, Plus, Users, Calendar, Ban, ChevronDown, Undo2, Sun, Moon, Video } from 'lucide-react'
 import { LiveIndicator } from '../ui/LiveIndicator'
@@ -8,14 +8,18 @@ import { cn } from '../../lib/cn'
 
 interface TopBarProps {
   onOpenVideoViewer?: () => void
+  onAddWalkIn?: (anchor?: DOMRect) => void
+  onAddReservation?: (anchor?: DOMRect) => void
 }
 
 const IS_FAKE_HOST = window.location.pathname.startsWith('/fake-host-ui')
+const IS_BACKTESTING = window.location.pathname.startsWith('/backtesting')
 
-export function TopBar({ onOpenVideoViewer }: TopBarProps) {
+export function TopBar({ onOpenVideoViewer, onAddWalkIn, onAddReservation }: TopBarProps) {
   const [time, setTime] = useState(new Date())
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [reservationModalOpen, setReservationModalOpen] = useState(false)
+  const addButtonRef = useRef<HTMLButtonElement>(null)
 
   const addGuest = useRestaurantStore((s) => s.addGuest)
   const undo = useRestaurantStore((s) => s.undo)
@@ -39,6 +43,10 @@ export function TopBar({ onOpenVideoViewer }: TopBarProps) {
 
   const handleAddGuest = () => {
     setDropdownOpen(false)
+    if (onAddWalkIn) {
+      onAddWalkIn(addButtonRef.current?.getBoundingClientRect())
+      return
+    }
     addGuest({
       name: 'Walk-in',
       partySize: 2,
@@ -53,6 +61,10 @@ export function TopBar({ onOpenVideoViewer }: TopBarProps) {
 
   const handleAddReservation = () => {
     setDropdownOpen(false)
+    if (onAddReservation) {
+      onAddReservation(addButtonRef.current?.getBoundingClientRect())
+      return
+    }
     setReservationModalOpen(true)
   }
 
@@ -184,12 +196,15 @@ export function TopBar({ onOpenVideoViewer }: TopBarProps) {
           {/* Add Dropdown */}
           <div className="relative">
             <motion.button
+              ref={addButtonRef}
               onClick={() => setDropdownOpen(!dropdownOpen)}
               className={cn(
                 'flex items-center gap-2 h-8 px-4 rounded-lg border text-sm font-medium transition-all',
-                dropdownOpen
-                  ? 'bg-accent-primary/20 border-accent-primary/40 text-accent-primary'
-                  : 'bg-white/[0.04] border-white/[0.08] text-secondary hover:bg-white/[0.08] hover:border-white/[0.12] hover:text-primary'
+                IS_BACKTESTING
+                  ? 'bg-accent-green border-accent-green/60 text-white font-semibold hover:brightness-110 shadow-[0_0_16px_rgba(74,222,128,0.25)]'
+                  : dropdownOpen
+                    ? 'bg-accent-primary/20 border-accent-primary/40 text-accent-primary'
+                    : 'bg-white/[0.04] border-white/[0.08] text-secondary hover:bg-white/[0.08] hover:border-white/[0.12] hover:text-primary'
               )}
             >
               <Plus className="w-3.5 h-3.5" />

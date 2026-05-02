@@ -7,11 +7,13 @@ import { useRestaurantStore } from '../../stores/restaurantStore'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
 import { cn } from '../../lib/cn'
+import { getTableZone } from '../../lib/tableTypes'
 
 interface GuestCardProps {
   guest: Guest
 }
 
+const IS_BACKTESTING = window.location.pathname.startsWith('/backtesting')
 const RESTAURANT_ID = import.meta.env.VITE_RESTAURANT_ID || '550e8400-e29b-41d4-a716-446655440000'
 
 export function GuestCard({ guest }: GuestCardProps) {
@@ -20,7 +22,13 @@ export function GuestCard({ guest }: GuestCardProps) {
   const getRoutingRecommendations = useRestaurantStore((s) => s.getRoutingRecommendations)
   const seatGuest = useRestaurantStore((s) => s.seatGuest)
   const tables = useRestaurantStore((s) => s.tables)
+  const seatMode = useRestaurantStore((s) => s.seatMode)
+  const seatPreferences = useRestaurantStore((s) => s.seatPreferences)
+  const customSelectedGuestId = useRestaurantStore((s) => s.customSelectedGuestId)
+  const setCustomSelectedGuest = useRestaurantStore((s) => s.setCustomSelectedGuest)
+
   const isSelected = selectedGuestId === guest.id
+  const isCustomSelected = customSelectedGuestId === guest.id
 
   const [showRecommendations, setShowRecommendations] = useState(false)
   const [recommendations, setRecommendations] = useState<TableRecommendation[]>([])
@@ -36,27 +44,92 @@ export function GuestCard({ guest }: GuestCardProps) {
     no_show: 'danger',
   } as const
 
+  // Local preference-based recommendation (backtesting) — no backend call
+  const getLocalRecommendations = (): TableRecommendation[] => {
+    // Fallback pool: available tables that fit the party
+    const fitsParty = tables.filter(
+      (t) => t.status === 'available' && t.capacity >= guest.partySize
+    )
+    // Preferred pool: available tables in the toggled zones (capacity-agnostic so they always show)
+    const inZone = (t: (typeof tables)[number]) =>
+      seatPreferences.includes(getTableZone(t.number))
+    const preferredPool = seatPreferences.length > 0
+      ? tables.filter((t) => t.status === 'available' && inZone(t))
+      : fitsParty
+
+    if (seatPreferences.length === 0) {
+      // No preference toggled — just show first 3 available that fit
+      return fitsParty.slice(0, 3).map((t) => ({
+        table_id: t.id,
+        table_number: t.tableNumber,
+        score: 100,
+        reason: 'Available table',
+        table_capacity: t.capacity,
+      }))
+    }
+
+    // Step 1: pick one from each toggled zone (ensures distribution)
+    const result: (typeof tables[number])[] = []
+    for (const pref of seatPreferences) {
+      const candidate = preferredPool.find(
+        (t) => getTableZone(t.number) === pref && !result.includes(t)
+      )
+      if (candidate) result.push(candidate)
+    }
+
+    // Step 2: fill remaining slots — more preferred first, then capacity-safe fallback
+    if (result.length < 3) {
+      const morePreferred = preferredPool.filter((t) => !result.includes(t))
+      const fallback = fitsParty.filter((t) => !inZone(t) && !result.includes(t))
+      result.push(...[...morePreferred, ...fallback].slice(0, 3 - result.length))
+    }
+
+    // Step 3: if still empty (zone has no available tables at all), fall back to anything
+    const final = result.length > 0
+      ? result.slice(0, 3)
+      : fitsParty.slice(0, 3)
+
+    return final.map((t) => {
+      const zone = getTableZone(t.number)
+      const isPreferred = seatPreferences.includes(zone)
+      const tooSmall = t.capacity < guest.partySize
+      return {
+        table_id: t.id,
+        table_number: t.tableNumber,
+        score: isPreferred ? 100 : 50,
+        reason: tooSmall
+          ? `${zone} table — tight fit (${t.capacity}-top)`
+          : isPreferred
+          ? `${zone} table (preferred)`
+          : 'Available fallback',
+        table_capacity: t.capacity,
+      }
+    })
+  }
+
   const handleSeatClick = async () => {
+    if (IS_BACKTESTING) {
+      setRecommendations(getLocalRecommendations())
+      setShowRecommendations(true)
+      return
+    }
+
     setLoading(true)
     try {
       const recs = await getRoutingRecommendations(RESTAURANT_ID, guest.partySize, guest.preferences)
-
       if (recs.length === 0) {
-        // No match - show available tables as fallback
         const availableTables = tables.filter(t => t.status === 'available')
         setRecommendations(
           availableTables.slice(0, 3).map(t => ({
             table_id: t.id,
-            table_number: t.tableNumber, // Use original backend table_number
+            table_number: t.tableNumber,
             score: 0,
             reason: 'Available table',
           }))
         )
       } else {
-        // Backend returns 1 optimal recommendation
-        // Add 2 more alternatives from available tables that can fit the party
         const primaryRec = recs[0]
-        const availableTables = tables
+        const alternatives = tables
           .filter(t => t.status === 'available' && t.id !== primaryRec.table_id && t.capacity >= guest.partySize)
           .slice(0, 2)
           .map(t => ({
@@ -66,19 +139,15 @@ export function GuestCard({ guest }: GuestCardProps) {
             reason: `${t.capacity}-top alternative`,
             table_capacity: t.capacity,
           }))
-
-        setRecommendations([primaryRec, ...availableTables])
+        setRecommendations([primaryRec, ...alternatives])
       }
-
       setShowRecommendations(true)
-    } catch (error) {
-      console.error('Failed to get recommendations:', error)
-      // Fallback: show all available tables
+    } catch {
       const availableTables = tables.filter(t => t.status === 'available')
       setRecommendations(
         availableTables.slice(0, 3).map(t => ({
           table_id: t.id,
-          table_number: t.tableNumber, // Use original backend table_number
+          table_number: t.tableNumber,
           score: 0,
           reason: 'Available table',
         }))
@@ -97,14 +166,24 @@ export function GuestCard({ guest }: GuestCardProps) {
 
   const medals = ['🥇', '🥈', '🥉']
 
+  const isCustomMode = IS_BACKTESTING && seatMode === 'custom'
+
   return (
     <motion.div
       layout
-      onClick={() => setSelectedGuest(isSelected ? null : guest.id)}
+      onClick={() => {
+        if (isCustomMode) {
+          setCustomSelectedGuest(isCustomSelected ? null : guest.id)
+        } else {
+          setSelectedGuest(isSelected ? null : guest.id)
+        }
+      }}
       className={cn(
         'card-elevated p-4 rounded-lg bg-white/[0.02] border border-white/[0.06] cursor-pointer transition-all',
         'hover:border-white/[0.12] hover:bg-white/[0.04]',
-        isSelected && 'ring-2 ring-accent-primary/40 border-accent-primary/30 bg-accent-primary/[0.04]'
+        !isCustomMode && isSelected && 'ring-2 ring-accent-primary/40 border-accent-primary/30 bg-accent-primary/[0.04]',
+        isCustomMode && isCustomSelected && 'ring-2 ring-accent-green/50 border-accent-green/40 bg-accent-green/[0.06]',
+        isCustomMode && !isCustomSelected && 'hover:border-accent-green/20'
       )}
     >
       {/* Header */}
@@ -149,26 +228,39 @@ export function GuestCard({ guest }: GuestCardProps) {
       )}
 
       {/* Actions */}
-      <div className="flex gap-2">
-        <Button
-          variant="success"
-          size="sm"
-          className="flex-1"
-          onClick={(e) => {
-            e.stopPropagation()
-            handleSeatClick()
-          }}
-          disabled={loading}
+      {isCustomMode ? (
+        <div
+          className={cn(
+            'text-xs text-center py-1.5 rounded-lg border transition-all',
+            isCustomSelected
+              ? 'border-accent-green/40 text-accent-green bg-accent-green/[0.08]'
+              : 'border-white/[0.06] text-tertiary'
+          )}
         >
-          {loading ? 'Loading...' : 'Seat'}
-        </Button>
-        <Button variant="ghost" size="sm">
-          <Phone className="w-3.5 h-3.5" />
-        </Button>
-        <Button variant="ghost" size="sm">
-          <MessageSquare className="w-3.5 h-3.5" />
-        </Button>
-      </div>
+          {isCustomSelected ? 'Selected — tap a table to seat' : 'Tap to select'}
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <Button
+            variant="success"
+            size="sm"
+            className="flex-1"
+            onClick={(e) => {
+              e.stopPropagation()
+              handleSeatClick()
+            }}
+            disabled={loading}
+          >
+            {loading ? 'Loading...' : 'Seat'}
+          </Button>
+          <Button variant="ghost" size="sm">
+            <Phone className="w-3.5 h-3.5" />
+          </Button>
+          <Button variant="ghost" size="sm">
+            <MessageSquare className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      )}
 
       {/* Recommendations Modal - Portal to document body for proper z-index */}
       {createPortal(

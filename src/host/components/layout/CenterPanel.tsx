@@ -3,23 +3,32 @@ import { SectionTabs } from '../floor-plan/SectionTabs'
 import { ServerModeToggle } from '../server/ServerModeToggle'
 import { Table } from '../floor-plan/Table'
 import { TablePopover } from '../floor-plan/TablePopover'
+import { SeatModeBar } from '../../../backtesting/SeatModeBar'
+
+const IS_BACKTESTING = window.location.pathname.startsWith('/backtesting')
 
 export function CenterPanel() {
   const tables = useRestaurantStore((s) => s.tables)
   const activeSection = useRestaurantStore((s) => s.activeSection)
   const serverMode = useRestaurantStore((s) => s.serverMode)
 
-  // Filter tables by active section
-  const filteredTables = activeSection
+  // Filter tables by active section (only in non-backtesting)
+  const filteredTables = (!IS_BACKTESTING && activeSection)
     ? tables.filter((t) => t.sectionId === activeSection)
     : tables
 
   return (
     <div data-center-panel className="relative flex-1 flex flex-col h-full glass-panel-flat border-x border-white/[0.06]">
-      {/* Header: Section Tabs + Mode Toggle */}
+      {/* Header: Section Tabs + Mode Toggle OR Seat Mode Bar */}
       <div className="border-b border-white/5">
-        <SectionTabs />
-        <ServerModeToggle />
+        {IS_BACKTESTING ? (
+          <SeatModeBar />
+        ) : (
+          <>
+            <SectionTabs />
+            <ServerModeToggle />
+          </>
+        )}
       </div>
 
       {/* Floor Plan Canvas */}

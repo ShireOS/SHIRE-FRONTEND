@@ -34,6 +34,11 @@ interface RestaurantState {
   activeTab: 'waitlist' | 'reservations'
   theme: Theme
 
+  // Backtesting seating state
+  seatPreferences: ('indoor' | 'outdoor' | 'bar')[]
+  seatMode: 'preference' | 'custom'
+  customSelectedGuestId: string | null
+
   // Undo history
   undoHistory: UndoAction[]
 
@@ -43,6 +48,11 @@ interface RestaurantState {
   wsConnected: boolean
   lastCvUpdate: Date | null
   demoScene: DemoScene | null
+
+  // Backtesting seating actions
+  toggleSeatPreference: (type: 'indoor' | 'outdoor' | 'bar') => void
+  setSeatMode: (mode: 'preference' | 'custom') => void
+  setCustomSelectedGuest: (id: string | null) => void
 
   // Actions
   setSelectedTable: (id: string | null) => void
@@ -98,6 +108,11 @@ export const useRestaurantStore = create<RestaurantState>((set, get) => ({
   activeTab: 'waitlist',
   theme: 'light',
 
+  // Backtesting seating state
+  seatPreferences: [],
+  seatMode: 'preference',
+  customSelectedGuestId: null,
+
   // Undo history
   undoHistory: [],
 
@@ -107,6 +122,15 @@ export const useRestaurantStore = create<RestaurantState>((set, get) => ({
   wsConnected: false,
   lastCvUpdate: null,
   demoScene: null,
+
+  // Backtesting seating actions
+  toggleSeatPreference: (type) => set((state) => ({
+    seatPreferences: state.seatPreferences.includes(type)
+      ? state.seatPreferences.filter((p) => p !== type)
+      : [...state.seatPreferences, type],
+  })),
+  setSeatMode: (mode) => set({ seatMode: mode, customSelectedGuestId: null }),
+  setCustomSelectedGuest: (id) => set({ customSelectedGuestId: id }),
 
   // UI Actions
   setSelectedTable: (id) => set({ selectedTableId: id }),
