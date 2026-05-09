@@ -180,10 +180,14 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <button
-          onClick={() => {
-            // Push current tables to parent before unmounting so re-opening restores them
-            if (tables.length > 0) onSave(tables)
-            onBack()
+          onClick={async () => {
+            if (tables.length > 0) {
+              // handleSave calls onSave on success (which closes editor via parent)
+              // on failure it shows an error and stays open so user doesn't lose work
+              await handleSave()
+            } else {
+              onBack()
+            }
           }}
           disabled={isBusy}
           className="flex items-center gap-2 text-sm text-[rgb(var(--text-secondary))] hover:text-[rgb(var(--text-primary))] disabled:opacity-40 transition-colors"

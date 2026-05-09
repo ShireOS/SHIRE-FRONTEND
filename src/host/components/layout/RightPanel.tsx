@@ -8,6 +8,7 @@ import type { Server } from '../../types'
 
 const RESTAURANT_ID = import.meta.env.VITE_RESTAURANT_ID || 'default'
 const IS_FAKE_HOST = window.location.pathname.startsWith('/fake-host-ui')
+const IS_BACKTESTING = window.location.pathname.startsWith('/backtesting')
 
 export function RightPanel() {
   const collapsed = useRestaurantStore((s) => s.rightPanelCollapsed)
@@ -22,13 +23,13 @@ export function RightPanel() {
 
   // Try to fetch demo summary on mount (in case backend has waiter data)
   useEffect(() => {
-    if (IS_FAKE_HOST) return
+    if (IS_FAKE_HOST || IS_BACKTESTING) return
     fetchDemoSummary(RESTAURANT_ID)
   }, [fetchDemoSummary])
 
   // Poll demo summary every 10 seconds when demo is active
   useEffect(() => {
-    if (IS_FAKE_HOST || !demoActive) return
+    if (IS_FAKE_HOST || IS_BACKTESTING || !demoActive) return
 
     // Fetch immediately when demo starts
     fetchDemoSummary(RESTAURANT_ID)
@@ -49,7 +50,9 @@ export function RightPanel() {
     .map((server) => {
       // Calculate actual table count from tables data
       const serverTables = tables.filter((t) => t.assignedServerId === server.id)
-      const occupiedCount = serverTables.filter((t) => t.status === 'occupied').length
+      const occupiedCount = serverTables.filter(
+        (t) => t.status === 'occupied' || t.status === 'needs_server'
+      ).length
       return {
         ...server,
         activeTableCount: occupiedCount, // Override with actual count
@@ -64,27 +67,30 @@ export function RightPanel() {
 
   // Calculate stats - either for selected server or restaurant total
   const getStats = () => {
+    const isActive = (t: (typeof tables)[number]) =>
+      t.status === 'occupied' || t.status === 'needs_server'
+
     if (selectedServer) {
       const serverTables = tables.filter((t) => t.assignedServerId === selectedServer.id)
-      const occupiedServerTables = serverTables.filter((t) => t.status === 'occupied')
+      const activeTables = serverTables.filter(isActive)
       return {
         label: selectedServer.name,
-        occupancy: serverTables.length > 0 ? Math.round((occupiedServerTables.length / serverTables.length) * 100) : 0,
+        occupancy: serverTables.length > 0 ? Math.round((activeTables.length / serverTables.length) * 100) : 0,
         efficiency: selectedServer.efficiency,
         tips: selectedServer.totalTips,
-        tablesServed: occupiedServerTables.length,
+        tablesServed: activeTables.length,
       }
     } else {
       const totalTables = tables.length
-      const occupiedTables = tables.filter((t) => t.status === 'occupied').length
+      const activeTables = tables.filter(isActive).length
       const totalTips = servers.reduce((sum, s) => sum + s.totalTips, 0)
       const avgEfficiency = Math.round(activeServers.reduce((sum, s) => sum + s.efficiency, 0) / (activeServers.length || 1))
       return {
         label: 'Restaurant',
-        occupancy: Math.round((occupiedTables / totalTables) * 100),
+        occupancy: Math.round((activeTables / totalTables) * 100),
         efficiency: avgEfficiency,
         tips: totalTips,
-        tablesServed: occupiedTables,
+        tablesServed: activeTables,
       }
     }
   }

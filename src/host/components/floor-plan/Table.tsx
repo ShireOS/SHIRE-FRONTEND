@@ -72,6 +72,8 @@ const shapeSizes = {
   },
 }
 
+const IS_BACKTESTING = window.location.pathname.startsWith('/backtesting')
+
 export function Table({ table, showSection = false }: TableProps) {
   const selectedTableId = useRestaurantStore((s) => s.selectedTableId)
   const setSelectedTable = useRestaurantStore((s) => s.setSelectedTable)
@@ -79,8 +81,17 @@ export function Table({ table, showSection = false }: TableProps) {
   const guests = useRestaurantStore((s) => s.guests)
   const serverMode = useRestaurantStore((s) => s.serverMode)
   const seatGuest = useRestaurantStore((s) => s.seatGuest)
+  const seatMode = useRestaurantStore((s) => s.seatMode)
+  const customSelectedGuestId = useRestaurantStore((s) => s.customSelectedGuestId)
+  const setCustomSelectedGuest = useRestaurantStore((s) => s.setCustomSelectedGuest)
   const isSelected = selectedTableId === table.id
   const nextGuest = guests[0] // First in waitlist
+
+  const customGuest = customSelectedGuestId
+    ? guests.find((g) => g.id === customSelectedGuestId) ?? null
+    : null
+  const isCustomMode = IS_BACKTESTING && seatMode === 'custom'
+  const showCustomSeatIndicator = isCustomMode && table.status === 'available' && customGuest !== null
 
   // Clear justUpdated flag after animation
   useEffect(() => {
@@ -112,16 +123,17 @@ export function Table({ table, showSection = false }: TableProps) {
 
   const timerProgress = getTimerProgress()
 
-  // In rotation mode, clicking available table seats next guest directly
   const handleClick = () => {
-    if (serverMode === 'rotations' && table.status === 'available' && nextGuest) {
+    if (isCustomMode && table.status === 'available' && customGuest) {
+      seatGuest(customGuest.id, table.id)
+      setCustomSelectedGuest(null)
+    } else if (serverMode === 'rotations' && table.status === 'available' && nextGuest) {
       seatGuest(nextGuest.id, table.id)
     } else {
       setSelectedTable(isSelected ? null : table.id)
     }
   }
 
-  // Show quick-seat indicator in rotation mode
   const showQuickSeatIndicator = serverMode === 'rotations' && table.status === 'available' && nextGuest
 
   return (
@@ -155,9 +167,11 @@ export function Table({ table, showSection = false }: TableProps) {
           isSelected && 'ring-2 ring-white/30 border-white/50 scale-105',
           table.status === 'blocked' && 'opacity-50',
           showQuickSeatIndicator && 'ring-2 ring-accent-green/40 animate-pulse',
+          showCustomSeatIndicator && 'ring-2 ring-accent-green/60 animate-pulse cursor-pointer',
+          isCustomMode && table.status === 'available' && !customGuest && 'opacity-60',
           'hover:brightness-110'
         )}
-        title={showQuickSeatIndicator ? `Click to seat ${nextGuest.name}` : undefined}
+        title={showCustomSeatIndicator ? `Click to seat ${customGuest!.name}` : showQuickSeatIndicator ? `Click to seat ${nextGuest.name}` : undefined}
       >
         {/* Timer Ring */}
         {table.status === 'occupied' && timerProgress > 0 && (
@@ -214,6 +228,13 @@ export function Table({ table, showSection = false }: TableProps) {
         {showQuickSeatIndicator && (
           <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-[7px] font-semibold bg-accent-green text-black uppercase whitespace-nowrap">
             Tap to seat
+          </div>
+        )}
+
+        {/* Custom Seat Badge */}
+        {showCustomSeatIndicator && (
+          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-[7px] font-semibold bg-accent-green text-black uppercase whitespace-nowrap">
+            Seat here
           </div>
         )}
       </motion.button>

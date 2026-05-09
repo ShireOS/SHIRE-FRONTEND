@@ -21,6 +21,8 @@ function mpaFallback() {
             req.url = '/dashboard/index.html'
           } else if (url.startsWith('/dashboard')) {
             req.url = '/dashboard/index.html'
+          } else if (url.startsWith('/backtesting')) {
+            req.url = '/backtesting/index.html'
           } else if (url.startsWith('/host')) {
             req.url = '/host/index.html'
           }
@@ -100,6 +102,7 @@ export default defineConfig(({ mode }) => {
           book: resolve(__dirname, 'book/index.html'),
           host: resolve(__dirname, 'host/index.html'),
           dashboard: resolve(__dirname, 'dashboard/index.html'),
+          backtesting: resolve(__dirname, 'backtesting/index.html'),
         },
       },
     },
