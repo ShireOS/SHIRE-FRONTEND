@@ -4,6 +4,7 @@
 import { useState, useCallback } from 'react'
 import { useApiQuery } from './useApiQuery'
 import { reservationApi } from '../api/reservationApi'
+import type { ReservationChannelConnection } from '../api/reservationApi'
 import type {
   ReservationSettings,
   ReservationBlackout,
@@ -113,4 +114,45 @@ export function useUpdateBlackout(locationId?: string) {
   )
 
   return { update, loading, error }
+}
+
+export function useGoogleReservationConnection(locationId?: string) {
+  const fetchFn = useCallback(
+    () => {
+      if (!locationId) {
+        return Promise.resolve(null)
+      }
+      return reservationApi.getGoogleConnection(locationId)
+    },
+    [locationId]
+  )
+
+  return useApiQuery<ReservationChannelConnection | null>(fetchFn, [locationId])
+}
+
+export function useUpdateGoogleReservationConnection(locationId?: string) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<ApiError | null>(null)
+
+  const save = useCallback(
+    async (connection: ReservationChannelConnection) => {
+      if (!locationId) {
+        throw new Error('No restaurant is selected.')
+      }
+
+      setLoading(true)
+      setError(null)
+      try {
+        return await reservationApi.updateGoogleConnection(locationId, connection)
+      } catch (err) {
+        setError(err as ApiError)
+        throw err
+      } finally {
+        setLoading(false)
+      }
+    },
+    [locationId]
+  )
+
+  return { save, loading, error }
 }

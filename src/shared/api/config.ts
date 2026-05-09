@@ -3,6 +3,7 @@
 
 export const API_CONFIG = {
   baseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1',
+  publicSiteUrl: import.meta.env.VITE_PUBLIC_SITE_URL || '',
   timeout: 10000, // 10 seconds
   useMockData: import.meta.env.VITE_USE_MOCK_DATA === 'true',
   restaurantId: import.meta.env.VITE_RESTAURANT_ID || 'default',

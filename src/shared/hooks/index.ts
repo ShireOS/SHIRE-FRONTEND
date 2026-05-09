@@ -24,4 +24,6 @@ export {
   useReservationBlackouts,
   useCreateBlackout,
   useUpdateBlackout,
+  useGoogleReservationConnection,
+  useUpdateGoogleReservationConnection,
 } from './useReservationSettings'

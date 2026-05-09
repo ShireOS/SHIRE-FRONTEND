@@ -2,6 +2,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
+    { "source": "/book/(.*)", "destination": "/book/index.html" },
     { "source": "/fake-host-ui/(.*)", "destination": "/host/index.html" },
     { "source": "/fake-dashboard-demo/(.*)", "destination": "/dashboard/index.html" },
     { "source": "/host/(.*)", "destination": "/host/index.html" },

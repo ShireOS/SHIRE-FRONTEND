@@ -5,6 +5,7 @@ import { Badge } from '../components/shared/Badge'
 import { ServicePeriodsTab } from '../components/reservations/ServicePeriodsTab'
 import { BookingRulesTab } from '../components/reservations/BookingRulesTab'
 import { BlackoutsTab } from '../components/reservations/BlackoutsTab'
+import { GoogleSetupTab } from '../components/reservations/GoogleSetupTab'
 import {
   Settings as SettingsIcon,
   Clock,
@@ -15,6 +16,7 @@ import {
   Users,
   CheckCircle2,
   Globe,
+  SearchCheck,
 } from 'lucide-react'
 import { useAuth } from '../../auth'
 import {
@@ -31,6 +33,7 @@ const tabs = [
   { id: 'service-hours', label: 'Service Hours', icon: Clock },
   { id: 'booking-rules', label: 'Booking Rules', icon: ShieldCheck },
   { id: 'blackouts', label: 'Blackouts / Closures', icon: CalendarX2 },
+  { id: 'google-setup', label: 'Google Setup', icon: SearchCheck },
 ]
 
 export function Reservations() {
@@ -360,6 +363,14 @@ export function Reservations() {
           blackouts={blackouts}
           onCreate={handleCreateBlackout}
           onCancel={handleCancelBlackout}
+        />
+      )}
+
+      {/* Tab 5: Google Setup */}
+      {activeTab === 'google-setup' && (
+        <GoogleSetupTab
+          locationId={locationId}
+          restaurant={restaurant?.currentRestaurant}
         />
       )}
     </div>

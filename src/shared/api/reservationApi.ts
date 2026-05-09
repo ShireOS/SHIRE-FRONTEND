@@ -77,6 +77,76 @@ interface BackendReservationBlackoutListResponse {
   blackouts: BackendReservationBlackout[]
 }
 
+export interface ReservationChannelConnection {
+  redirectBookingUrl: string
+  connectionStatus: 'connected' | 'disconnected' | 'pending' | string
+  updatedAt?: string
+}
+
+export interface PublicBookableLocation {
+  locationId: string
+  slug?: string
+  name?: string
+  displayName?: string
+  restaurantName?: string
+  timezone?: string
+  address?: string
+  phone?: string
+}
+
+export interface PublicBookingConfig {
+  locationId?: string
+  minPartySize?: number
+  maxPartySize?: number
+  bookingHorizonDays?: number
+  defaultPartySize?: number
+  timezone?: string
+  restaurantName?: string
+  name?: string
+}
+
+export interface PublicAvailabilitySlot {
+  id?: string
+  time?: string
+  startTime?: string
+  reservationTime?: string
+  available?: boolean
+  remainingCovers?: number
+  label?: string
+}
+
+export interface PublicReservationCreate {
+  guestName: string
+  guestPhone: string
+  guestEmail?: string
+  partySize: number
+  serviceDate: string
+  reservationTime: string
+  source: 'google_business_profile' | 'public_web'
+}
+
+export interface PublicReservation {
+  id?: string
+  reservationId?: string
+  confirmationCode?: string
+  status?: string
+  guestName?: string
+  partySize?: number
+  serviceDate?: string
+  reservationTime?: string
+}
+
+const unwrapAvailabilitySlots = (response: unknown): PublicAvailabilitySlot[] => {
+  if (Array.isArray(response)) return response as PublicAvailabilitySlot[]
+  if (response && typeof response === 'object') {
+    const record = response as Record<string, unknown>
+    if (Array.isArray(record.slots)) return record.slots as PublicAvailabilitySlot[]
+    if (Array.isArray(record.availability)) return record.availability as PublicAvailabilitySlot[]
+    if (Array.isArray(record.availableSlots)) return record.availableSlots as PublicAvailabilitySlot[]
+  }
+  return []
+}
+
 const DAY_NAMES: DayOfWeek[] = [
   'monday',
   'tuesday',
@@ -385,5 +455,48 @@ export const reservationApi = {
       toBackendBlackoutUpdate(updates)
     )
     return toUiBlackout(response)
+  },
+
+  getGoogleConnection: async (locationId: string): Promise<ReservationChannelConnection> => {
+    return apiClient.get<ReservationChannelConnection>(
+      ENDPOINTS.reservationChannelConnection(locationId, 'google')
+    )
+  },
+
+  updateGoogleConnection: async (
+    locationId: string,
+    payload: ReservationChannelConnection
+  ): Promise<ReservationChannelConnection> => {
+    return apiClient.put<ReservationChannelConnection>(
+      ENDPOINTS.reservationChannelConnection(locationId, 'google'),
+      payload
+    )
+  },
+
+  getPublicBookableLocation: async (slug: string): Promise<PublicBookableLocation> => {
+    return apiClient.get<PublicBookableLocation>(ENDPOINTS.publicBookableLocation(slug))
+  },
+
+  getPublicBookingConfig: async (locationId: string): Promise<PublicBookingConfig> => {
+    return apiClient.get<PublicBookingConfig>(ENDPOINTS.publicBookingConfig(locationId))
+  },
+
+  getPublicAvailability: async (
+    locationId: string,
+    serviceDate: string,
+    partySize: number,
+    channel = 'google'
+  ): Promise<PublicAvailabilitySlot[]> => {
+    const response = await apiClient.get<unknown>(
+      ENDPOINTS.publicAvailability(locationId, serviceDate, partySize, channel)
+    )
+    return unwrapAvailabilitySlots(response)
+  },
+
+  createPublicReservation: async (
+    locationId: string,
+    payload: PublicReservationCreate
+  ): Promise<PublicReservation> => {
+    return apiClient.post<PublicReservation>(ENDPOINTS.publicReservations(locationId), payload)
   },
 }

@@ -110,4 +110,14 @@ export const ENDPOINTS = {
     `/locations/${locationId}/reservation-blackouts`,
   reservationBlackout: (locationId: string, blackoutId: string) =>
     `/locations/${locationId}/reservation-blackouts/${blackoutId}`,
+  reservationChannelConnection: (locationId: string, channel: string) =>
+    `/locations/${locationId}/reservation-channel-connections/${channel}`,
+  publicBookableLocation: (slug: string) =>
+    `/public/bookable-locations/${encodeURIComponent(slug)}`,
+  publicBookingConfig: (locationId: string) =>
+    `/public/locations/${locationId}/booking-config`,
+  publicAvailability: (locationId: string, serviceDate: string, partySize: number, channel = 'google') =>
+    `/public/locations/${locationId}/availability?serviceDate=${encodeURIComponent(serviceDate)}&partySize=${partySize}&channel=${encodeURIComponent(channel)}`,
+  publicReservations: (locationId: string) =>
+    `/public/locations/${locationId}/reservations`,
 }

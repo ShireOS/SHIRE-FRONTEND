@@ -13,7 +13,9 @@ function mpaFallback() {
 
         // Only rewrite navigation requests (text/html), not JS/CSS/image assets
         if (accept.includes('text/html') && !url.endsWith('.html')) {
-          if (url.startsWith('/fake-host-ui')) {
+          if (url.startsWith('/book')) {
+            req.url = '/book/index.html'
+          } else if (url.startsWith('/fake-host-ui')) {
             req.url = '/host/index.html'
           } else if (url.startsWith('/fake-dashboard-demo')) {
             req.url = '/dashboard/index.html'
@@ -95,6 +97,7 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           main: resolve(__dirname, 'index.html'),
+          book: resolve(__dirname, 'book/index.html'),
           host: resolve(__dirname, 'host/index.html'),
           dashboard: resolve(__dirname, 'dashboard/index.html'),
         },
