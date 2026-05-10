@@ -113,7 +113,7 @@ const INITIAL_DATA: OnboardingData = {
   invites: [],
 }
 
-const ONBOARDING_MAX_STEP = 7
+const ONBOARDING_MAX_STEP = 8
 const REQUEST_TIMEOUT_MS = 20000
 const ONBOARDING_DRAFT_VERSION = 1
 

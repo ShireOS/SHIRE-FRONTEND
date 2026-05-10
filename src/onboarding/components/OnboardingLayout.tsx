@@ -15,6 +15,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   { id: 'hours', title: 'Operating Hours', description: 'When you\'re open' },
   { id: 'capacity', title: 'Tables & Capacity', description: 'Your floor layout' },
   { id: 'menu', title: 'Menu Setup', description: 'Import your menu' },
+  { id: 'modifiers', title: 'Menu Modifiers', description: 'Add-ons and customizations' },
   { id: 'team', title: 'Add Your Staff', description: 'So waiters can log into the POS' },
 ]
 

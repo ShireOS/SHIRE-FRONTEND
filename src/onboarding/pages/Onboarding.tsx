@@ -12,6 +12,7 @@ import { TechStackStep } from './steps/TechStackStep'
 import { HoursStep } from './steps/HoursStep'
 import { CapacityStep } from './steps/CapacityStep'
 import { MenuStep } from './steps/MenuStep'
+import { ModifierStep } from './steps/ModifierStep'
 import { TeamStep } from './steps/TeamStep'
 
 export function OnboardingPage() {
@@ -86,14 +87,16 @@ export function OnboardingPage() {
       case 6:
         return <MenuStep onboarding={onboarding} />
       case 7:
+        return <ModifierStep onboarding={onboarding} />
+      case 8:
         return <TeamStep onboarding={onboarding} />
       default:
         return null
     }
   }
 
-  // Steps 3-6 are skippable (tools, hours, capacity, menu). Demo (2) shows only Continue.
-  const canSkip = currentStep >= 3 && currentStep <= 6
+  // Steps 3-7 are skippable (tools, hours, capacity, menu, modifiers). Demo (2) shows only Continue.
+  const canSkip = currentStep >= 3 && currentStep <= 7
   const canGoBack = currentStep > 0
 
   return (
