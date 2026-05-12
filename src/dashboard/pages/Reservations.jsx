@@ -371,6 +371,7 @@ export function Reservations() {
         <GoogleSetupTab
           locationId={locationId}
           restaurant={restaurant?.currentRestaurant}
+          settings={settings}
         />
       )}
     </div>

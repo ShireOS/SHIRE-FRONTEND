@@ -117,7 +117,7 @@ export const ENDPOINTS = {
   publicBookingConfig: (locationId: string) =>
     `/public/locations/${locationId}/booking-config`,
   publicAvailability: (locationId: string, serviceDate: string, partySize: number, channel = 'google') =>
-    `/public/locations/${locationId}/availability?serviceDate=${encodeURIComponent(serviceDate)}&partySize=${partySize}&channel=${encodeURIComponent(channel)}`,
+    `/public/locations/${locationId}/availability?service_date=${encodeURIComponent(serviceDate)}&party_size=${partySize}&channel=${encodeURIComponent(channel)}`,
   publicReservations: (locationId: string) =>
     `/public/locations/${locationId}/reservations`,
 }

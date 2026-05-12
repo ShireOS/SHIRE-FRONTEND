@@ -74,7 +74,7 @@ export function GoalsStep({ onboarding }: GoalsStepProps) {
       {/* Challenges */}
       <div>
         <label className="label-mono block mb-1 text-[rgb(var(--gold))]">
-          What are your biggest challenges?
+          What are your biggest challenges? <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
         </label>
         <p className="text-[rgb(var(--text-tertiary))] text-sm mb-4">Select all that apply</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -99,7 +99,7 @@ export function GoalsStep({ onboarding }: GoalsStepProps) {
       {/* Daily Covers */}
       <div>
         <label className="label-mono block mb-4 text-[rgb(var(--gold))]">
-          How many covers per day?
+          How many covers per day? <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
         </label>
         <div className="flex flex-wrap gap-3">
           {COVERS_OPTIONS.map(opt => (
@@ -122,7 +122,7 @@ export function GoalsStep({ onboarding }: GoalsStepProps) {
       {/* Team Size */}
       <div>
         <label className="label-mono block mb-4 text-[rgb(var(--gold))]">
-          How many staff members?
+          How many staff members? <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
         </label>
         <div className="flex flex-wrap gap-3">
           {TEAM_SIZE_OPTIONS.map(opt => (
@@ -145,7 +145,7 @@ export function GoalsStep({ onboarding }: GoalsStepProps) {
       {/* Primary Goal */}
       <div>
         <label className="label-mono block mb-1 text-[rgb(var(--gold))]">
-          #1 goal with SHIRE?
+          #1 goal with SHIRE? <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
         </label>
         <p className="text-[rgb(var(--text-tertiary))] text-sm mb-4">Pick one</p>
         <div className="space-y-3">

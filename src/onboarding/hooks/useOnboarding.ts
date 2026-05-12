@@ -61,6 +61,11 @@ export interface TeamInvite {
   role: 'manager' | 'server' | 'host' | 'kitchen'
 }
 
+export interface OnboardingValidationIssue {
+  field: string
+  message: string
+}
+
 interface OnboardingDraft {
   version: number
   currentStep: number
@@ -338,6 +343,41 @@ const isSlugConflict = (error: unknown): boolean => {
 const toErrorMessage = (error: unknown, fallback: string): string =>
   error instanceof Error ? error.message : fallback
 
+const getRequiredBasicsIssues = (data: OnboardingData): OnboardingValidationIssue[] => {
+  const issues: OnboardingValidationIssue[] = []
+
+  if (!data.name.trim()) {
+    issues.push({
+      field: 'name',
+      message: 'Restaurant name is required.',
+    })
+  }
+
+  return issues
+}
+
+const getCompletionIssues = (
+  data: OnboardingData,
+  activeRestaurantId: string | null
+): OnboardingValidationIssue[] => {
+  const issues = getRequiredBasicsIssues(data)
+
+  if (!activeRestaurantId) {
+    issues.push({
+      field: 'restaurant',
+      message: 'Create or select a restaurant before completing onboarding.',
+    })
+  }
+
+  return issues
+}
+
+const throwIfInvalid = (issues: OnboardingValidationIssue[]) => {
+  if (issues.length > 0) {
+    throw new Error(issues[0].message)
+  }
+}
+
 // ============================================
 // HOOK
 // ============================================
@@ -357,13 +397,15 @@ export function useOnboarding() {
   const [showLaunchScreen, setShowLaunchScreen] = useState(false)
   const [isHydrating, setIsHydrating] = useState(true)
 
+  const activeRestaurantId = restaurantId || currentRestaurant?.id || null
+  const completionIssues = getCompletionIssues(data, activeRestaurantId)
+
   const getActiveRestaurantId = useCallback((): string => {
-    const activeRestaurantId = restaurantId || currentRestaurant?.id
     if (!activeRestaurantId) {
       throw new Error('No restaurant created')
     }
     return activeRestaurantId
-  }, [restaurantId, currentRestaurant?.id])
+  }, [activeRestaurantId])
 
   const runWithTimeout = useCallback(async <T,>(
     operation: () => PromiseLike<T>,
@@ -599,6 +641,8 @@ export function useOnboarding() {
     setError(null)
 
     try {
+      throwIfInvalid(getRequiredBasicsIssues(data))
+
       const basePayload = {
         owner_id: user.id,
         name: data.name.trim(),
@@ -611,18 +655,29 @@ export function useOnboarding() {
         type: data.type || 'casual',
         cuisine_types: data.cuisine_types,
         phone: data.phone.trim() || null,
-        status: 'onboarding' as const,
-        onboarding_step: 1,
       }
 
       // If a restaurant already exists, update instead of creating a duplicate.
       const existingRestaurantId = restaurantId || currentRestaurant?.id || null
+      const existingIsCompleted = Boolean(
+        existingRestaurantId &&
+        currentRestaurant?.id === existingRestaurantId &&
+        currentRestaurant.onboarding_completed_at
+      )
       if (existingRestaurantId) {
         const { data: updatedRestaurant, error: updateError } = await runWithTimeout(
           () =>
             supabase
               .from('restaurants')
-              .update(basePayload)
+              .update({
+                ...basePayload,
+                ...(!existingIsCompleted
+                  ? {
+                      status: 'onboarding',
+                      onboarding_step: Math.max(1, currentRestaurant?.onboarding_step || 1),
+                    }
+                  : {}),
+              })
               .eq('id', existingRestaurantId)
               .select()
               .single(),
@@ -657,6 +712,8 @@ export function useOnboarding() {
               .from('restaurants')
               .insert({
                 ...basePayload,
+                status: 'onboarding',
+                onboarding_step: 1,
                 slug: buildUniqueSlug(data.name),
               })
               .select()
@@ -724,7 +781,17 @@ export function useOnboarding() {
     } finally {
       setIsLoading(false)
     }
-  }, [user, data, restaurantId, currentRestaurant?.id, refreshRestaurants, runWithTimeout])
+  }, [
+    user,
+    data,
+    restaurantId,
+    currentRestaurant?.id,
+    currentRestaurant?.onboarding_completed_at,
+    currentRestaurant?.onboarding_step,
+    refreshRestaurants,
+    runWithTimeout,
+    seedCurrentRestaurant,
+  ])
 
   // Save goals & priorities (after step 1)
   const saveGoals = useCallback(async () => {
@@ -981,6 +1048,8 @@ export function useOnboarding() {
 
     try {
       const activeRestaurantId = getActiveRestaurantId()
+      throwIfInvalid(getCompletionIssues(data, activeRestaurantId))
+
       const existingConfig = await fetchRestaurantConfig(activeRestaurantId)
 
       // Mark onboarding complete
@@ -989,14 +1058,25 @@ export function useOnboarding() {
           supabase
             .from('restaurants')
             .update({
+              name: data.name.trim(),
+              country: data.country || INITIAL_DATA.country,
+              timezone: data.timezone || INITIAL_DATA.timezone,
+              type: data.type || 'casual',
               config: {
                 ...existingConfig,
+                challenges: data.challenges,
+                daily_covers_range: data.daily_covers_range,
+                team_size_range: data.team_size_range,
+                primary_goal: data.primary_goal,
+                current_pos: data.current_pos,
+                current_scheduling: data.current_scheduling,
+                current_reservations: data.current_reservations,
                 menu_import_method: data.menu_import_method,
                 team_setup_method: data.team_setup_method,
                 invites: data.invites,
               },
               status: 'active',
-              onboarding_step: 8,
+              onboarding_step: ONBOARDING_MAX_STEP,
               onboarding_completed_at: new Date().toISOString(),
             })
             .eq('id', activeRestaurantId)
@@ -1025,9 +1105,7 @@ export function useOnboarding() {
       setIsLoading(false)
     }
   }, [
-    data.menu_import_method,
-    data.team_setup_method,
-    data.invites,
+    data,
     getActiveRestaurantId,
     fetchRestaurantConfig,
     refreshRestaurants,
@@ -1053,6 +1131,7 @@ export function useOnboarding() {
     isLoading,
     error,
     showLaunchScreen,
+    completionIssues,
 
     // Actions
     updateData,

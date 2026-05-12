@@ -95,8 +95,8 @@ export function OnboardingPage() {
     }
   }
 
-  // Steps 3-7 are skippable (tools, hours, capacity, menu, modifiers). Demo (2) shows only Continue.
-  const canSkip = currentStep >= 3 && currentStep <= 7
+  // Optional setup steps can be skipped; required basics are enforced in the step UI.
+  const canSkip = currentStep === 1 || (currentStep >= 3 && currentStep <= 7)
   const canGoBack = currentStep > 0
 
   return (

@@ -35,6 +35,19 @@ const pickRestaurant = (
 
   if (activeRestaurant) {
     const activeMatch = availableRestaurants.find(r => r.id === activeRestaurant.id)
+    if (activeMatch?.onboarding_completed_at) return activeMatch
+  }
+
+  if (persistedRestaurantId) {
+    const savedMatch = availableRestaurants.find(r => r.id === persistedRestaurantId)
+    if (savedMatch?.onboarding_completed_at) return savedMatch
+  }
+
+  const completedMatch = availableRestaurants.find(restaurant => restaurant.onboarding_completed_at)
+  if (completedMatch) return completedMatch
+
+  if (activeRestaurant) {
+    const activeMatch = availableRestaurants.find(r => r.id === activeRestaurant.id)
     if (activeMatch) return activeMatch
   }
 
@@ -42,9 +55,6 @@ const pickRestaurant = (
     const savedMatch = availableRestaurants.find(r => r.id === persistedRestaurantId)
     if (savedMatch) return savedMatch
   }
-
-  const completedMatch = availableRestaurants.find(restaurant => restaurant.onboarding_completed_at)
-  if (completedMatch) return completedMatch
 
   return availableRestaurants[0]
 }

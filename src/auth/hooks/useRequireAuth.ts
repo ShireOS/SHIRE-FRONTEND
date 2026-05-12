@@ -158,18 +158,19 @@ export function useRequireOnboarding() {
       return
     }
 
-    if (onboardingRestaurant) {
-      if (auth.restaurant.currentRestaurant?.id !== onboardingRestaurant.id) {
-        void auth.switchRestaurant(onboardingRestaurant.id)
-      }
-      return
-    }
-
     if (completedRestaurant) {
       if (auth.restaurant.currentRestaurant?.id !== completedRestaurant.id) {
         void auth.switchRestaurant(completedRestaurant.id)
       }
       navigate('/', { replace: true })
+      return
+    }
+
+    if (onboardingRestaurant) {
+      if (auth.restaurant.currentRestaurant?.id !== onboardingRestaurant.id) {
+        void auth.switchRestaurant(onboardingRestaurant.id)
+      }
+      return
     }
   }, [
     auth.isLoading,

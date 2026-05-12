@@ -84,19 +84,29 @@ h1 {
   letter-spacing: 0;
 }
 
+.booking-title {
+  overflow-wrap: anywhere;
+}
+
 h2 {
   margin: 0;
   font-size: 16px;
 }
 
 .subtle,
+.booking-intent,
 .powered,
 .slot-state {
   color: var(--book-muted);
 }
 
-.subtle {
+.booking-intent {
   margin: 12px 0 0;
+  font-size: 15px;
+}
+
+.subtle {
+  margin: 8px 0 0;
 }
 
 .booking-form {

@@ -82,7 +82,7 @@ export function TechStackStep({ onboarding }: TechStackStepProps) {
       {/* Current POS */}
       <div>
         <label className="label-mono block mb-4 text-[rgb(var(--gold))]">
-          Current POS System
+          Current POS System <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
         </label>
         {renderCardGrid(
           POS_OPTIONS,
@@ -94,7 +94,7 @@ export function TechStackStep({ onboarding }: TechStackStepProps) {
       {/* Scheduling Tool */}
       <div>
         <label className="label-mono block mb-4 text-[rgb(var(--gold))]">
-          Scheduling Tool
+          Scheduling Tool <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
         </label>
         {renderCardGrid(
           SCHEDULING_OPTIONS,
@@ -106,7 +106,7 @@ export function TechStackStep({ onboarding }: TechStackStepProps) {
       {/* Reservation System */}
       <div>
         <label className="label-mono block mb-4 text-[rgb(var(--gold))]">
-          Reservation System
+          Reservation System <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
         </label>
         {renderCardGrid(
           RESERVATION_OPTIONS,

@@ -18,7 +18,9 @@ interface StaffMember {
 }
 
 export function TeamStep({ onboarding }: TeamStepProps) {
-  const { restaurantId, completeOnboarding, isLoading, error } = onboarding
+  const { restaurantId, completeOnboarding, isLoading, error, completionIssues } = onboarding
+  const completionError = completionIssues[0]?.message ?? null
+  const cannotComplete = completionIssues.length > 0
 
   const [staffList, setStaffList] = useState<StaffMember[]>([])
   const [showForm, setShowForm] = useState(false)
@@ -107,6 +109,12 @@ export function TeamStep({ onboarding }: TeamStepProps) {
       {error && (
         <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
           {error}
+        </div>
+      )}
+
+      {completionError && (
+        <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm">
+          {completionError}
         </div>
       )}
 
@@ -245,7 +253,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
       <div className="space-y-3 pt-2">
         <button
           onClick={() => void completeOnboarding()}
-          disabled={isLoading}
+          disabled={isLoading || cannotComplete}
           className="w-full py-4 px-6 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
         >
           {isLoading ? (
@@ -265,7 +273,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
 
         <button
           onClick={() => void completeOnboarding()}
-          disabled={isLoading}
+          disabled={isLoading || cannotComplete}
           className="w-full py-2 text-sm text-[rgb(var(--text-tertiary))] hover:text-[rgb(var(--text-primary))] transition-colors"
         >
           Skip for now

@@ -98,6 +98,8 @@ export interface PublicBookingConfig {
   locationId?: string
   minPartySize?: number
   maxPartySize?: number
+  publicMinPartySize?: number
+  publicMaxPartySize?: number
   bookingHorizonDays?: number
   defaultPartySize?: number
   timezone?: string

@@ -33,6 +33,21 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
   return fallback
 }
 
+const isTechnicalLabel = (value: string): boolean =>
+  /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value) ||
+  /^[a-f0-9-]{24,}$/i.test(value)
+
+const getDisplayName = (...values: Array<string | undefined>): string => {
+  const cleanValue = values.find((value) => {
+    const trimmed = value?.trim()
+    return trimmed && !isTechnicalLabel(trimmed)
+  })
+
+  return cleanValue?.trim() || 'Book your table'
+}
+
+const hasPublicDisplayName = (value: string): boolean => value !== 'Book your table'
+
 function getSlugFromPath(): string {
   const [, slug = ''] = window.location.pathname.match(/^\/book\/([^/?#]+)/) || []
   return decodeURIComponent(slug)
@@ -58,16 +73,17 @@ export function PublicBookingApp() {
   const [confirmation, setConfirmation] = useState<PublicReservation | null>(null)
 
   const locationId = location?.locationId
-  const restaurantName =
-    config?.restaurantName ||
-    config?.name ||
-    location?.displayName ||
-    location?.restaurantName ||
-    location?.name ||
+  const restaurantName = getDisplayName(
+    config?.restaurantName,
+    config?.name,
+    location?.displayName,
+    location?.restaurantName,
+    location?.name,
     slug
+  )
 
-  const minPartySize = config?.minPartySize || 1
-  const maxPartySize = config?.maxPartySize || 12
+  const minPartySize = config?.publicMinPartySize || config?.minPartySize || 1
+  const maxPartySize = config?.publicMaxPartySize || config?.maxPartySize || 12
 
   useEffect(() => {
     let cancelled = false
@@ -214,8 +230,8 @@ export function PublicBookingApp() {
       <main className="booking-shell">
         <section className="booking-panel booking-confirmation">
           <CheckCircle2 size={34} />
-          <p className="eyebrow">Reservation requested</p>
-          <h1>{restaurantName}</h1>
+          <p className="eyebrow">Reservation requested at</p>
+          <h1 className="booking-title">{restaurantName}</h1>
           <p className="confirmation-line">
             {partySize} guests on {serviceDate} at {formatTime(confirmedTime)}
           </p>
@@ -232,8 +248,13 @@ export function PublicBookingApp() {
     <main className="booking-shell">
       <section className="booking-panel">
         <header className="booking-header">
-          <p className="eyebrow">Reserve a table</p>
-          <h1>{restaurantName}</h1>
+          <p className="eyebrow">Booking at</p>
+          <h1 className="booking-title">{restaurantName}</h1>
+          <p className="booking-intent">
+            {hasPublicDisplayName(restaurantName)
+              ? 'Reserve a table for this location.'
+              : 'Confirm this booking link before choosing a time.'}
+          </p>
           {location?.address && <p className="subtle">{location.address}</p>}
         </header>
 
