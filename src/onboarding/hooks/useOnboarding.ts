@@ -706,6 +706,7 @@ export function useOnboarding() {
       let lastCreateError: unknown = null
 
       for (let attempt = 0; attempt < 3; attempt += 1) {
+        const slug = buildUniqueSlug(data.name)
         const { data: restaurant, error: createError } = await runWithTimeout(
           () =>
             supabase
@@ -714,7 +715,8 @@ export function useOnboarding() {
                 ...basePayload,
                 status: 'onboarding',
                 onboarding_step: 1,
-                slug: buildUniqueSlug(data.name),
+                slug,
+                public_slug: slug,
               })
               .select()
               .single(),

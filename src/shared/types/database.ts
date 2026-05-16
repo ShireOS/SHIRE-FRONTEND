@@ -47,6 +47,7 @@ export interface Database {
           owner_id: string | null
           name: string
           slug: string | null
+          public_slug: string | null
           address: string | null
           city: string | null
           state: string | null
@@ -75,6 +76,7 @@ export interface Database {
           owner_id?: string | null
           name: string
           slug?: string | null
+          public_slug?: string | null
           address?: string | null
           city?: string | null
           state?: string | null
@@ -100,6 +102,7 @@ export interface Database {
           owner_id?: string | null
           name?: string
           slug?: string | null
+          public_slug?: string | null
           address?: string | null
           city?: string | null
           state?: string | null

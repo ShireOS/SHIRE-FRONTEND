@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -14,6 +14,8 @@ import {
 import { Card, CardContent } from '../shared/Card'
 import { Button } from '../shared/Button'
 import { Badge } from '../shared/Badge'
+import { useAuth } from '../../../auth'
+import { supabase } from '../../../shared/lib/supabase'
 import { API_CONFIG } from '../../../shared/api/config'
 import {
   useGoogleReservationConnection,
@@ -29,6 +31,14 @@ const getPublicSiteUrl = () => {
 const isTechnicalValue = (value = '') =>
   /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value) ||
   /^[a-f0-9-]{24,}$/i.test(value)
+
+const normalizeSlug = (value = '') =>
+  value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
 
 const copyToClipboard = async (value) => {
   await navigator.clipboard.writeText(value)
@@ -72,12 +82,26 @@ function SetupCheck({ complete, label, detail }) {
 }
 
 export function GoogleSetupTab({ locationId, restaurant, settings }) {
+  const { refreshRestaurants, seedCurrentRestaurant } = useAuth()
   const [copiedTarget, setCopiedTarget] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
-  const slug = restaurant?.slug
+  const publicSlug = restaurant?.public_slug || restaurant?.slug || ''
+  const [slugDraft, setSlugDraft] = useState(publicSlug)
+  const [slugMessage, setSlugMessage] = useState('')
+  const [slugError, setSlugError] = useState('')
+  const [savingSlug, setSavingSlug] = useState(false)
+  const slug = publicSlug
   const restaurantName = restaurant?.name || ''
   const hasGuestReadyName = Boolean(restaurantName && !isTechnicalValue(restaurantName))
   const displayRestaurantName = hasGuestReadyName ? restaurantName : 'Restaurant name not set'
+  const normalizedSlug = normalizeSlug(slugDraft)
+  const hasSlugChange = Boolean(normalizedSlug && normalizedSlug !== slug)
+
+  useEffect(() => {
+    setSlugDraft(restaurant?.slug || '')
+    setSlugMessage('')
+    setSlugError('')
+  }, [publicSlug])
 
   const urls = useMemo(() => {
     if (!slug) return { website: '', google: '' }
@@ -137,6 +161,45 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
       connectionQuery.refetch()
     } catch {
       setSaveMessage('')
+    }
+  }
+
+  const handleSaveSlug = async () => {
+    if (!locationId) return
+
+    setSlugMessage('')
+    setSlugError('')
+
+    if (!normalizedSlug) {
+      setSlugError('Enter a public URL slug.')
+      return
+    }
+
+    setSavingSlug(true)
+    try {
+      const { data: updatedRestaurant, error } = await supabase
+        .from('restaurants')
+        .update({
+          public_slug: normalizedSlug,
+          slug: normalizedSlug,
+        })
+        .eq('id', locationId)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      seedCurrentRestaurant(updatedRestaurant)
+      await refreshRestaurants(updatedRestaurant.id)
+      setSlugDraft(updatedRestaurant.slug || normalizedSlug)
+      setSlugMessage('Public URL updated.')
+    } catch (err) {
+      const message = err?.code === '23505'
+        ? 'That public URL is already in use.'
+        : err?.message || 'Could not update public URL.'
+      setSlugError(message)
+    } finally {
+      setSavingSlug(false)
     }
   }
 
@@ -320,6 +383,40 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
               </div>
               <p className="mt-2 text-sm text-dash-cream break-all">{displayRestaurantName}</p>
               <p className="mt-1 font-dash-mono text-xs text-dash-tertiary break-all">{slug}</p>
+              <label className="mt-4 block text-xs uppercase tracking-wide text-dash-tertiary">
+                Public URL slug
+              </label>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={slugDraft}
+                  onChange={(event) => {
+                    setSlugDraft(event.target.value)
+                    setSlugMessage('')
+                    setSlugError('')
+                  }}
+                  placeholder="mimosas"
+                  className="min-w-0 flex-1 rounded-lg border border-dash-border bg-dash-base px-3 py-2 font-dash-mono text-sm text-dash-cream outline-none transition-colors placeholder:text-dash-tertiary focus:border-dash-gold"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  icon={savingSlug ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  disabled={savingSlug || !hasSlugChange}
+                  onClick={handleSaveSlug}
+                >
+                  Save URL
+                </Button>
+              </div>
+              <p className="mt-2 font-dash-mono text-xs text-dash-tertiary break-all">
+                /book/{normalizedSlug || 'mimosas'}
+              </p>
+              {slugMessage && (
+                <p className="mt-2 text-xs text-dash-success">{slugMessage}</p>
+              )}
+              {slugError && (
+                <p className="mt-2 text-xs text-dash-danger">{slugError}</p>
+              )}
             </div>
           </CardContent>
         </Card>
