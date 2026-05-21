@@ -65,6 +65,7 @@ export function PublicBookingApp() {
   const [guestName, setGuestName] = useState('')
   const [guestPhone, setGuestPhone] = useState('')
   const [guestEmail, setGuestEmail] = useState('')
+  const [smsConsent, setSmsConsent] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -178,6 +179,11 @@ export function PublicBookingApp() {
         return
       }
 
+      if (!smsConsent) {
+        setError('Please agree to receive SMS messages to confirm your reservation.')
+        return
+      }
+
       setSubmitting(true)
       setError('')
 
@@ -198,7 +204,7 @@ export function PublicBookingApp() {
         setSubmitting(false)
       }
     },
-    [guestEmail, guestName, guestPhone, locationId, partySize, selectedTime, serviceDate, source]
+    [guestEmail, guestName, guestPhone, locationId, partySize, selectedTime, serviceDate, smsConsent, source]
   )
 
   if (initialLoading) {
@@ -355,9 +361,24 @@ export function PublicBookingApp() {
             />
           </label>
 
+          <label className="sms-consent">
+            <input
+              type="checkbox"
+              checked={smsConsent}
+              onChange={(event) => setSmsConsent(event.target.checked)}
+            />
+            <span>
+              I agree to receive Delivery Notification, Account Notification SMS messages from Shire at the number provided. Msg frequency varies. Msg &amp; data rates may apply. Reply Help for Help. Reply STOP to opt-out. Please see <a href="/privacy/" target="_blank" rel="noopener noreferrer">Privacy Policy</a> and <a href="/terms/" target="_blank" rel="noopener noreferrer">Terms of Use</a>.
+            </span>
+          </label>
+
           {error && <p className="error">{error}</p>}
 
-          <button className="confirm-button" type="submit" disabled={submitting || !selectedTime}>
+          <button
+            className="confirm-button"
+            type="submit"
+            disabled={submitting || !selectedTime || !smsConsent}
+          >
             {submitting ? <Loader2 className="spin" size={18} /> : <PartyPopper size={18} />}
             Confirm reservation
           </button>

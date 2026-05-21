@@ -211,6 +211,38 @@ input:focus {
   opacity: 0.55;
 }
 
+.sms-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  background: rgba(31, 111, 99, 0.04);
+  border: 1px solid var(--book-line);
+  border-radius: 6px;
+}
+
+.sms-consent input[type="checkbox"] {
+  width: auto;
+  min-height: 0;
+  margin: 3px 0 0;
+  padding: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--book-accent);
+}
+
+.sms-consent span {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--book-ink);
+  font-weight: 400;
+}
+
+.sms-consent a {
+  color: var(--book-accent-strong);
+  text-decoration: underline;
+}
+
 .error {
   margin: 0;
   color: var(--book-danger);
