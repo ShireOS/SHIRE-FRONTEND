@@ -25,6 +25,10 @@ function mpaFallback() {
             req.url = '/backtesting/index.html'
           } else if (url.startsWith('/host')) {
             req.url = '/host/index.html'
+          } else if (url.startsWith('/privacy')) {
+            req.url = '/privacy/index.html'
+          } else if (url.startsWith('/terms')) {
+            req.url = '/terms/index.html'
           }
         }
         next()
@@ -103,6 +107,8 @@ export default defineConfig(({ mode }) => {
           host: resolve(__dirname, 'host/index.html'),
           dashboard: resolve(__dirname, 'dashboard/index.html'),
           backtesting: resolve(__dirname, 'backtesting/index.html'),
+          privacy: resolve(__dirname, 'privacy/index.html'),
+          terms: resolve(__dirname, 'terms/index.html'),
         },
       },
     },

@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms &amp; Conditions | SHIRE</title>
+    <meta name="description" content="Shire, Inc. Terms & Conditions for the SHIRE platform.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=Inter+Tight:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&display=swap"
+        rel="stylesheet">
+
+    <style>
+        :root {
+            --font-display: 'Instrument Serif', serif;
+            --font-body: 'Inter Tight', sans-serif;
+            --font-data: 'Geist Mono', monospace;
+
+            --bg-base: #0a0a0d;
+            --bg-elevated: #131216;
+            --bg-gradient:
+                radial-gradient(130% 90% at 50% -20%, rgba(155, 161, 179, 0.05), transparent 65%),
+                radial-gradient(80% 60% at 100% 0%, rgba(215, 172, 105, 0.04), transparent 60%),
+                #0a0a0a;
+
+            --glass: rgba(20, 20, 24, 0.7);
+            --border: rgba(255, 255, 255, 0.1);
+            --border-light: rgba(255, 255, 255, 0.22);
+
+            --gold: #d7ac69;
+            --cream: #ece8e2;
+            --text-muted: #ada79d;
+            --text-soft: #79746b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg-gradient);
+            background-attachment: fixed;
+            color: var(--cream);
+            font-family: var(--font-body);
+            font-weight: 300;
+            line-height: 1.7;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
+        }
+
+        a {
+            color: var(--gold);
+            text-decoration: none;
+            border-bottom: 1px solid rgba(215, 172, 105, 0.3);
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        a:hover {
+            color: #f0c585;
+            border-bottom-color: rgba(215, 172, 105, 0.7);
+        }
+
+        .nav-glass {
+            position: sticky;
+            top: 0;
+            width: 100%;
+            padding: 1.2rem 3rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+            background: rgba(10, 10, 13, 0.78);
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .brand-logo {
+            font-family: var(--font-display);
+            font-size: 1.55rem;
+            color: #f5f0e9;
+            letter-spacing: 0.02em;
+            border-bottom: none;
+        }
+
+        .brand-logo:hover {
+            color: #fff;
+        }
+
+        .nav-back {
+            font-family: var(--font-data);
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            color: var(--text-muted);
+            border-bottom: none;
+        }
+
+        .nav-back:hover {
+            color: var(--cream);
+        }
+
+        main {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 5rem 2rem 6rem;
+        }
+
+        .label-mono {
+            font-family: var(--font-data);
+            font-size: 0.68rem;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            display: inline-block;
+            margin-bottom: 1.2rem;
+        }
+
+        h1 {
+            font-family: var(--font-display);
+            font-size: 3.4rem;
+            line-height: 1.05;
+            font-weight: 400;
+            color: #f4f1ec;
+            letter-spacing: -0.03em;
+            margin-bottom: 1rem;
+        }
+
+        .updated {
+            font-family: var(--font-data);
+            font-size: 0.75rem;
+            color: var(--text-soft);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 3rem;
+        }
+
+        h2 {
+            font-family: var(--font-display);
+            font-size: 1.85rem;
+            font-weight: 400;
+            color: #f1ebe2;
+            margin-top: 3rem;
+            margin-bottom: 1rem;
+            letter-spacing: -0.01em;
+        }
+
+        h3 {
+            font-family: var(--font-body);
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--cream);
+            margin-top: 1.8rem;
+            margin-bottom: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        p {
+            font-size: 1rem;
+            color: rgba(236, 232, 226, 0.82);
+            margin-bottom: 1.1rem;
+        }
+
+        ul {
+            list-style: none;
+            margin-bottom: 1.2rem;
+            padding-left: 0;
+        }
+
+        li {
+            font-size: 1rem;
+            color: rgba(236, 232, 226, 0.82);
+            margin-bottom: 0.6rem;
+            padding-left: 1.5rem;
+            position: relative;
+        }
+
+        li::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0.7rem;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--gold);
+            opacity: 0.55;
+        }
+
+        strong {
+            color: var(--cream);
+            font-weight: 500;
+        }
+
+        .callout {
+            border-left: 2px solid var(--gold);
+            background: rgba(215, 172, 105, 0.05);
+            padding: 1.2rem 1.5rem;
+            margin: 2rem 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .callout p {
+            margin-bottom: 0;
+            color: rgba(236, 232, 226, 0.88);
+        }
+
+        .callout-label {
+            font-family: var(--font-data);
+            font-size: 0.65rem;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+
+        footer.legal-footer {
+            margin-top: 4rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border);
+            font-family: var(--font-data);
+            font-size: 0.72rem;
+            color: var(--text-soft);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        footer.legal-footer a {
+            color: var(--text-muted);
+            border-bottom: none;
+        }
+
+        footer.legal-footer a:hover {
+            color: var(--cream);
+        }
+
+        @media (max-width: 720px) {
+            .nav-glass {
+                padding: 1rem 1.5rem;
+            }
+
+            main {
+                padding: 3rem 1.5rem 4rem;
+            }
+
+            h1 {
+                font-size: 2.4rem;
+            }
+
+            h2 {
+                font-size: 1.5rem;
+                margin-top: 2.5rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="nav-glass">
+        <a href="/" class="brand-logo">SHIRE</a>
+        <a href="/" class="nav-back">← Back to home</a>
+    </nav>
+
+    <main>
+        <span class="label-mono">Legal</span>
+        <h1>Terms &amp; Conditions</h1>
+        <div class="updated">Last updated: May 21, 2026</div>
+
+        <p>These Terms &amp; Conditions (the &ldquo;Terms&rdquo;) govern use of the SHIRE platform, operated by Shire, Inc. (&ldquo;Shire,&rdquo; &ldquo;SHIRE,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; or &ldquo;our&rdquo;). Please read them carefully. If you do not agree, do not use the platform.</p>
+
+        <h2>Who these Terms apply to</h2>
+        <p>SHIRE is used by two distinct groups of people, and these Terms apply to each in a different way:</p>
+
+        <h3>Restaurant operators and staff</h3>
+        <p><strong>By creating an account, accessing, or using SHIRE on behalf of a restaurant, you agree to these Terms in full.</strong> If you are accepting on behalf of a business, you represent that you have authority to bind that business. Restaurant operators are responsible for ensuring their staff comply with these Terms when using the platform.</p>
+
+        <h3>Guests and diners</h3>
+        <p>If you are a guest interacting with a SHIRE-powered restaurant (for example, by making a reservation or joining a waitlist), <strong>your acceptance is limited to the <a href="#sms-terms">SMS Terms</a> and the <a href="/privacy/">Privacy Policy</a></strong>. By providing your phone number to a SHIRE-powered restaurant, you agree to receive the transactional SMS messages described in the SMS Terms below. You are not entering into the broader SaaS agreement that applies to restaurant operators.</p>
+
+        <h2>The Service</h2>
+        <p>SHIRE is a software platform that helps restaurants manage reservations, waitlists, scheduling, and communications with guests and staff. SHIRE provides the platform &mdash; the dining relationship is between the guest and the restaurant. Shire is not a party to any reservation, transaction, or service provided by a restaurant.</p>
+
+        <h2>Accounts</h2>
+        <ul>
+            <li>Restaurant operators are responsible for the accuracy of the information they provide and for safeguarding their account credentials.</li>
+            <li>Operators are responsible for managing access for their staff, including adding and removing users.</li>
+            <li>You must promptly notify us of any unauthorized use of your account or any other suspected breach of security.</li>
+        </ul>
+
+        <h2 id="sms-terms">SMS Terms</h2>
+
+        <div class="callout">
+            <span class="callout-label">SMS at a glance</span>
+            <p>By providing your phone number to a SHIRE-powered restaurant, you agree to receive <strong>transactional</strong> text messages from that restaurant via SHIRE. You can reply <strong>STOP</strong> at any time to unsubscribe, or <strong>HELP</strong> for assistance. Message and data rates may apply. Message frequency varies.</p>
+        </div>
+
+        <h3>Opt-in</h3>
+        <p>Guests opt in to receive SMS messages by entering their phone number when making a reservation, joining a waitlist, or communicating with a SHIRE-powered restaurant. The booking and waitlist forms disclose that by providing a phone number, the guest agrees to receive transactional SMS messages.</p>
+
+        <h3>What you&rsquo;ll receive</h3>
+        <ul>
+            <li>Reservation confirmations, changes, and reminders</li>
+            <li>Waitlist position updates</li>
+            <li>Table-ready notifications</li>
+            <li>Replies from restaurant staff</li>
+        </ul>
+        <p>We do not send marketing or promotional SMS without separate, explicit consent.</p>
+
+        <h3>Frequency, rates, and carrier disclaimer</h3>
+        <p>Message frequency varies based on reservation and waitlist activity. <strong>Message and data rates may apply</strong> according to your mobile carrier&rsquo;s plan. Carriers are not liable for delayed or undelivered messages.</p>
+
+        <h3>How to opt out</h3>
+        <p>Reply <strong>STOP</strong> to any SMS message to unsubscribe. Reply <strong>HELP</strong> for assistance, or contact <a href="mailto:founders@shireintelligence.com">founders@shireintelligence.com</a>.</p>
+
+        <h3>Sharing of SMS consent</h3>
+        <p><strong>SMS consent is not shared with third parties or affiliates for their own marketing purposes.</strong> See the <a href="/privacy/">Privacy Policy</a> for details on how SMS data is used and shared.</p>
+
+        <h2>Acceptable use</h2>
+        <p>When using SHIRE, you agree not to:</p>
+        <ul>
+            <li>Use the platform to send unlawful, harassing, deceptive, or abusive content.</li>
+            <li>Use SHIRE&rsquo;s messaging features to send marketing or promotional content to guests without their separate, explicit consent.</li>
+            <li>Attempt to reverse engineer, decompile, scrape, or interfere with the platform or its infrastructure.</li>
+            <li>Access the platform other than through interfaces we provide.</li>
+            <li>Use the platform in any way that violates applicable law or carrier requirements (including CTIA, TCPA, and A2P 10DLC rules for SMS).</li>
+        </ul>
+
+        <h2>Intellectual property</h2>
+        <p>The SHIRE platform, including its software, design, brand, and content, is owned by Shire, Inc. and is protected by intellectual property laws. Restaurant operators retain ownership of the operational data they upload to SHIRE. Operators grant Shire a limited license to host, process, and display that data as needed to operate the platform.</p>
+
+        <h2>Termination</h2>
+        <p>Restaurant operators may stop using SHIRE at any time by contacting us. We may suspend or terminate access to the platform if you materially breach these Terms or if continued provision would expose us to legal or carrier-compliance risk. On termination, certain provisions of these Terms survive, including intellectual property, disclaimers, limitation of liability, and dispute resolution.</p>
+
+        <h2>Disclaimers</h2>
+        <p>SHIRE is provided <strong>&ldquo;AS IS&rdquo; and &ldquo;AS AVAILABLE,&rdquo;</strong> without warranties of any kind, whether express or implied, including warranties of merchantability, fitness for a particular purpose, non-infringement, or uninterrupted operation. We do not warrant that the platform will be error-free or that SMS messages will always be delivered on time. Carriers are not liable for delayed or undelivered messages.</p>
+
+        <h2>Limitation of liability</h2>
+        <p>To the maximum extent permitted by law, Shire, Inc. and its officers, employees, and agents will not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits, revenues, data, or goodwill, arising out of or related to your use of SHIRE. Our total liability for any claim arising out of or related to these Terms or the platform is limited to the greater of (a) the amounts paid by you to Shire for the platform in the twelve months preceding the claim, or (b) one hundred U.S. dollars (US$100).</p>
+
+        <h2>Indemnification</h2>
+        <p>Restaurant operators agree to indemnify and hold harmless Shire, Inc. and its officers, employees, and agents from any claims, damages, liabilities, and expenses (including reasonable attorneys&rsquo; fees) arising out of or related to (i) the operator&rsquo;s use of SHIRE, (ii) the operator&rsquo;s violation of these Terms, or (iii) the operator&rsquo;s violation of any law or the rights of any third party, including guests.</p>
+
+        <h2>Governing law and disputes</h2>
+        <p>These Terms are governed by the laws of the United States and applicable U.S. state law, without regard to conflict-of-laws principles. Any dispute arising out of or related to these Terms or your use of SHIRE will be resolved in the federal or state courts located in the United States, and you consent to the personal jurisdiction of those courts. Nothing in this section limits either party&rsquo;s right to seek injunctive or equitable relief.</p>
+
+        <h2>Changes to these Terms</h2>
+        <p>We may update these Terms from time to time. When we do, we will update the &ldquo;Last updated&rdquo; date at the top of this page. Material changes will be communicated to active users by email or through an in-product notice. Continued use of SHIRE after a change takes effect constitutes acceptance of the updated Terms.</p>
+
+        <h2>Contact us</h2>
+        <p>Questions about these Terms? Contact us at:</p>
+        <p>
+            <strong>Shire, Inc.</strong><br>
+            <a href="mailto:founders@shireintelligence.com">founders@shireintelligence.com</a>
+        </p>
+
+        <footer class="legal-footer">
+            <div>&copy; 2026 Shire, Inc.</div>
+            <div><a href="/privacy/">Privacy Policy</a></div>
+        </footer>
+    </main>
+</body>
+
+</html>

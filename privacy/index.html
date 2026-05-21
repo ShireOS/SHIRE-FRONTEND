@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy Policy | SHIRE</title>
+    <meta name="description" content="Shire, Inc. Privacy Policy — how we collect, use, and share information across the SHIRE platform.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=Inter+Tight:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&display=swap"
+        rel="stylesheet">
+
+    <style>
+        :root {
+            --font-display: 'Instrument Serif', serif;
+            --font-body: 'Inter Tight', sans-serif;
+            --font-data: 'Geist Mono', monospace;
+
+            --bg-base: #0a0a0d;
+            --bg-elevated: #131216;
+            --bg-gradient:
+                radial-gradient(130% 90% at 50% -20%, rgba(155, 161, 179, 0.05), transparent 65%),
+                radial-gradient(80% 60% at 100% 0%, rgba(215, 172, 105, 0.04), transparent 60%),
+                #0a0a0a;
+
+            --glass: rgba(20, 20, 24, 0.7);
+            --border: rgba(255, 255, 255, 0.1);
+            --border-light: rgba(255, 255, 255, 0.22);
+
+            --gold: #d7ac69;
+            --cream: #ece8e2;
+            --text-muted: #ada79d;
+            --text-soft: #79746b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg-gradient);
+            background-attachment: fixed;
+            color: var(--cream);
+            font-family: var(--font-body);
+            font-weight: 300;
+            line-height: 1.7;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
+        }
+
+        a {
+            color: var(--gold);
+            text-decoration: none;
+            border-bottom: 1px solid rgba(215, 172, 105, 0.3);
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        a:hover {
+            color: #f0c585;
+            border-bottom-color: rgba(215, 172, 105, 0.7);
+        }
+
+        .nav-glass {
+            position: sticky;
+            top: 0;
+            width: 100%;
+            padding: 1.2rem 3rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+            background: rgba(10, 10, 13, 0.78);
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .brand-logo {
+            font-family: var(--font-display);
+            font-size: 1.55rem;
+            color: #f5f0e9;
+            letter-spacing: 0.02em;
+            border-bottom: none;
+        }
+
+        .brand-logo:hover {
+            color: #fff;
+        }
+
+        .nav-back {
+            font-family: var(--font-data);
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            color: var(--text-muted);
+            border-bottom: none;
+        }
+
+        .nav-back:hover {
+            color: var(--cream);
+        }
+
+        main {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 5rem 2rem 6rem;
+        }
+
+        .label-mono {
+            font-family: var(--font-data);
+            font-size: 0.68rem;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            display: inline-block;
+            margin-bottom: 1.2rem;
+        }
+
+        h1 {
+            font-family: var(--font-display);
+            font-size: 3.4rem;
+            line-height: 1.05;
+            font-weight: 400;
+            color: #f4f1ec;
+            letter-spacing: -0.03em;
+            margin-bottom: 1rem;
+        }
+
+        .updated {
+            font-family: var(--font-data);
+            font-size: 0.75rem;
+            color: var(--text-soft);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 3rem;
+        }
+
+        h2 {
+            font-family: var(--font-display);
+            font-size: 1.85rem;
+            font-weight: 400;
+            color: #f1ebe2;
+            margin-top: 3rem;
+            margin-bottom: 1rem;
+            letter-spacing: -0.01em;
+        }
+
+        h3 {
+            font-family: var(--font-body);
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--cream);
+            margin-top: 1.8rem;
+            margin-bottom: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        p {
+            font-size: 1rem;
+            color: rgba(236, 232, 226, 0.82);
+            margin-bottom: 1.1rem;
+        }
+
+        ul {
+            list-style: none;
+            margin-bottom: 1.2rem;
+            padding-left: 0;
+        }
+
+        li {
+            font-size: 1rem;
+            color: rgba(236, 232, 226, 0.82);
+            margin-bottom: 0.6rem;
+            padding-left: 1.5rem;
+            position: relative;
+        }
+
+        li::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0.7rem;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--gold);
+            opacity: 0.55;
+        }
+
+        strong {
+            color: var(--cream);
+            font-weight: 500;
+        }
+
+        .callout {
+            border-left: 2px solid var(--gold);
+            background: rgba(215, 172, 105, 0.05);
+            padding: 1.2rem 1.5rem;
+            margin: 2rem 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .callout p {
+            margin-bottom: 0;
+            color: rgba(236, 232, 226, 0.88);
+        }
+
+        .callout-label {
+            font-family: var(--font-data);
+            font-size: 0.65rem;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+
+        footer.legal-footer {
+            margin-top: 4rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border);
+            font-family: var(--font-data);
+            font-size: 0.72rem;
+            color: var(--text-soft);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        footer.legal-footer a {
+            color: var(--text-muted);
+            border-bottom: none;
+        }
+
+        footer.legal-footer a:hover {
+            color: var(--cream);
+        }
+
+        @media (max-width: 720px) {
+            .nav-glass {
+                padding: 1rem 1.5rem;
+            }
+
+            main {
+                padding: 3rem 1.5rem 4rem;
+            }
+
+            h1 {
+                font-size: 2.4rem;
+            }
+
+            h2 {
+                font-size: 1.5rem;
+                margin-top: 2.5rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="nav-glass">
+        <a href="/" class="brand-logo">SHIRE</a>
+        <a href="/" class="nav-back">← Back to home</a>
+    </nav>
+
+    <main>
+        <span class="label-mono">Legal</span>
+        <h1>Privacy Policy</h1>
+        <div class="updated">Last updated: May 21, 2026</div>
+
+        <p>This Privacy Policy describes how Shire, Inc. (&ldquo;Shire,&rdquo; &ldquo;SHIRE,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo; or &ldquo;our&rdquo;) collects, uses, and shares information when you use the SHIRE platform &mdash; a software-as-a-service product for restaurants that helps operators manage reservations, waitlists, scheduling, and guest and staff communications.</p>
+
+        <p>This policy applies to three groups of people whose information SHIRE may handle:</p>
+        <ul>
+            <li><strong>Restaurant operators</strong> &mdash; the owners, managers, or designated employees who create and administer a SHIRE account on behalf of a restaurant.</li>
+            <li><strong>Restaurant staff</strong> &mdash; employees of a restaurant who are added to a SHIRE account by their operator.</li>
+            <li><strong>Guests and diners</strong> &mdash; people who interact with a SHIRE-powered restaurant by making a reservation, joining a waitlist, or communicating with the restaurant through SHIRE.</li>
+        </ul>
+
+        <h2>Information we collect</h2>
+
+        <h3>From restaurant operators</h3>
+        <ul>
+            <li><strong>Account information:</strong> name, email address, password (stored only in hashed form), role, and the name and details of the restaurant or business.</li>
+            <li><strong>Operational data you upload:</strong> menu items, table layouts, hours of operation, restaurant settings, integrations, and other configuration.</li>
+            <li><strong>Billing information</strong> if and when paid plans are introduced.</li>
+            <li><strong>Communications</strong> you send to us, such as support requests or feedback.</li>
+        </ul>
+
+        <h3>From restaurant staff</h3>
+        <ul>
+            <li><strong>Profile information</strong> provided by the operator: name, role, contact information, and schedule.</li>
+            <li><strong>Performance and operational data:</strong> assigned shifts, attendance, and metrics generated through use of the platform.</li>
+            <li><strong>Communications</strong> sent or received through SHIRE while interacting with management or guests.</li>
+        </ul>
+
+        <h3>From guests and diners</h3>
+        <ul>
+            <li><strong>Reservation and waitlist information:</strong> name, phone number, email address (if provided), party size, requested time, and any notes or dietary preferences you share with the restaurant.</li>
+            <li><strong>Activity information:</strong> your reservation history with that restaurant, including past visits, cancellations, no-shows, and any feedback or reviews you provide.</li>
+            <li><strong>Communications</strong> you exchange with restaurant staff through SHIRE, including SMS messages.</li>
+        </ul>
+
+        <h3>From website visitors</h3>
+        <p>When you visit our public website at <a href="https://shireintelligence.com">shireintelligence.com</a> or other SHIRE-hosted pages, our servers automatically log standard request information used to operate and secure the site:</p>
+        <ul>
+            <li><strong>Server logs:</strong> IP address, browser user-agent, referrer URL, requested page, and timestamp.</li>
+            <li><strong>Device and session information</strong> needed to deliver the page and prevent abuse.</li>
+        </ul>
+        <p>This information is used only to operate, secure, and improve the site. We do not use third-party advertising trackers or cross-site tracking on our public website.</p>
+
+        <h2>How we use information</h2>
+        <ul>
+            <li>To provide, maintain, and improve the SHIRE platform.</li>
+            <li>To send transactional SMS notifications related to reservations, waitlists, and restaurant communications (see <a href="#sms">SMS communications</a> below).</li>
+            <li>To generate analytics and reports for restaurant operators about their own operations.</li>
+            <li>To respond to support requests and communicate with users about the service.</li>
+            <li>To detect, investigate, and prevent fraud, abuse, or violations of our Terms.</li>
+            <li>To comply with legal obligations and enforce our agreements.</li>
+        </ul>
+
+        <h2 id="sms">SMS communications</h2>
+
+        <div class="callout">
+            <span class="callout-label">SMS at a glance</span>
+            <p>SHIRE sends <strong>transactional</strong> text messages to guests on behalf of restaurants. You can reply <strong>STOP</strong> at any time to unsubscribe, or <strong>HELP</strong> for assistance. Message and data rates may apply. Message frequency varies.</p>
+        </div>
+
+        <h3>How guests opt in</h3>
+        <p>Guests opt in to receive SMS messages by entering their phone number when making a reservation, joining a waitlist, or communicating with a SHIRE-powered restaurant. The booking and waitlist forms disclose that by providing a phone number, the guest agrees to receive transactional SMS messages about reservation status, waitlist position, table-ready notifications, reminders, and replies from restaurant staff.</p>
+
+        <h3>What we send</h3>
+        <p>SMS messages sent through SHIRE are transactional and tied to the guest&rsquo;s interaction with a specific restaurant. They include:</p>
+        <ul>
+            <li>Reservation confirmations, changes, and reminders</li>
+            <li>Waitlist position updates</li>
+            <li>Table-ready notifications</li>
+            <li>Replies from restaurant staff</li>
+        </ul>
+        <p>We do <strong>not</strong> send marketing or promotional SMS without separate, explicit consent.</p>
+
+        <h3>Frequency, rates, and carrier disclaimer</h3>
+        <p>Message frequency varies based on reservation and waitlist activity. <strong>Message and data rates may apply</strong> according to your mobile carrier&rsquo;s plan. Carriers are not liable for delayed or undelivered messages.</p>
+
+        <h3>How to opt out</h3>
+        <p>You can opt out of SMS communications at any time by replying <strong>STOP</strong> to any message. Reply <strong>HELP</strong> for support, or contact us at <a href="mailto:founders@shireintelligence.com">founders@shireintelligence.com</a>. Opt-out requests are honored promptly and recorded so we can continue to honor your preference.</p>
+
+        <h3>Sharing of SMS consent</h3>
+        <p><strong>SMS consent is not shared with third parties or affiliates for their own marketing purposes.</strong> Phone numbers collected for SMS communications are used only to deliver the transactional messages described above, and are shared only with the SMS delivery provider listed in <a href="#sharing">How we share information</a>.</p>
+
+        <h2 id="sharing">How we share information</h2>
+
+        <p>We share information only as described below. We do <strong>not</strong> sell personal information, and we do not share it with third parties for their own marketing purposes. <strong>SMS consent and the phone numbers collected for SMS communications are not shared with third parties or affiliates for their own marketing purposes.</strong></p>
+
+        <ul>
+            <li><strong>With the restaurant you interact with.</strong> When you make a reservation or join a waitlist at a SHIRE-powered restaurant, the information you provide is shared with that restaurant so they can fulfill your reservation and communicate with you.</li>
+            <li><strong>With our service providers (subprocessors).</strong> We use a limited number of vendors to operate the platform:
+                <ul style="margin-top: 0.6rem;">
+                    <li><strong>Sakari</strong> &mdash; delivery of SMS messages.</li>
+                    <li><strong>Supabase</strong> &mdash; authentication and database hosting.</li>
+                </ul>
+                These providers are bound by contract to use information only to provide services to us.
+            </li>
+            <li><strong>For legal reasons.</strong> We may share information if required by law, regulation, legal process, or governmental request, or to protect the rights, property, or safety of Shire, our users, or others.</li>
+            <li><strong>In connection with a business transaction.</strong> If Shire is involved in a merger, acquisition, financing, or sale of assets, information may be transferred as part of that transaction, subject to standard confidentiality protections.</li>
+        </ul>
+
+        <h2>Data retention</h2>
+        <p>We retain personal information for as long as needed to provide the service and for legitimate business purposes such as honoring opt-out preferences, resolving disputes, and complying with legal obligations.</p>
+        <ul>
+            <li><strong>Operator and staff data</strong> is retained while the associated account is active and for a reasonable period after closure.</li>
+            <li><strong>Guest reservation history</strong> is retained per the operating restaurant&rsquo;s needs to provide continuity of service.</li>
+            <li><strong>SMS opt-out records</strong> are retained indefinitely so we can continue to honor unsubscribe requests.</li>
+        </ul>
+
+        <h2>Security</h2>
+        <p>We use reasonable technical, administrative, and organizational measures to protect information against unauthorized access, loss, or alteration. No method of transmission or storage is completely secure, and we cannot guarantee absolute security.</p>
+
+        <h2>Your choices and rights</h2>
+        <ul>
+            <li><strong>Access, correction, and deletion.</strong> You may request a copy of the personal information we hold about you, or ask us to correct or delete it, by contacting us at <a href="mailto:founders@shireintelligence.com">founders@shireintelligence.com</a>. Some information may be retained where we have a legal obligation or legitimate business reason to keep it.</li>
+            <li><strong>SMS opt-out.</strong> Reply <strong>STOP</strong> to any SMS message you receive from a SHIRE-powered restaurant.</li>
+            <li><strong>Restaurant staff.</strong> If you are a restaurant employee and have questions about how your employer uses SHIRE, please contact your employer directly. We act as a service provider to the restaurant in handling that data.</li>
+        </ul>
+
+        <h2>Children</h2>
+        <p>SHIRE is not directed to children under the age of 13, and we do not knowingly collect personal information from children under 13. If you believe we have collected information from a child under 13, please contact us so we can delete it.</p>
+
+        <h2>Changes to this policy</h2>
+        <p>We may update this Privacy Policy from time to time. When we do, we will update the &ldquo;Last updated&rdquo; date at the top of this page. Material changes will be communicated to active users by email or through an in-product notice. Your continued use of SHIRE after a change takes effect constitutes acceptance of the updated policy.</p>
+
+        <h2>Contact us</h2>
+        <p>Questions about this Privacy Policy or our data practices? Contact us at:</p>
+        <p>
+            <strong>Shire, Inc.</strong><br>
+            <a href="mailto:founders@shireintelligence.com">founders@shireintelligence.com</a>
+        </p>
+
+        <footer class="legal-footer">
+            <div>&copy; 2026 Shire, Inc.</div>
+            <div><a href="/terms/">Terms &amp; Conditions</a></div>
+        </footer>
+    </main>
+</body>
+
+</html>
