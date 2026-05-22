@@ -8,12 +8,12 @@ import {
   useMenuBottomRankings,
   useMenu86Recommendations,
   useMenu86dItems,
-  useRestaurants,
   usePricingRecommendations,
 } from '../../shared/hooks/useMenuAnalytics'
 import { menuApi } from '../../shared/api/menuApi'
 import { API_CONFIG } from '../../shared/api/config'
 import { useShoppingList } from '../../shared/hooks/useInventory'
+import { useAuth } from '../../auth'
 
 // Score Badge Component
 function ScoreBadge({ score }) {
@@ -37,26 +37,11 @@ function ScoreBadge({ score }) {
 }
 
 export function Menu() {
-  const [restaurantId, setRestaurantId] = useState(
-    () => localStorage.getItem('selectedRestaurantId') || API_CONFIG.restaurantId
-  )
+  const { restaurant } = useAuth()
+  const currentRestaurant = restaurant.currentRestaurant
+  const restaurantId = currentRestaurant?.id
   const [actionLoading, setActionLoading] = useState(false)
   const [showPricingModal, setShowPricingModal] = useState(false)
-
-  // Fetch restaurants
-  const { data: restaurants } = useRestaurants()
-
-  // Auto-select Mimosas on first load (only if no saved selection)
-  useEffect(() => {
-    if (restaurants && !localStorage.getItem('selectedRestaurantId')) {
-      const mimosas = restaurants.find((r) => r.name === 'Mimosas')
-      if (mimosas) {
-        console.log('[Menu] Auto-selecting Mimosas restaurant:', mimosas.id)
-        setRestaurantId(mimosas.id)
-        localStorage.setItem('selectedRestaurantId', mimosas.id)
-      }
-    }
-  }, [restaurants])
 
   // Fetch menu data
   const {
@@ -161,12 +146,12 @@ export function Menu() {
   }
 
   // Loading state
-  if (loadingTop || loadingBottom) {
+  if (restaurant.isLoading || !restaurantId || loadingTop || loadingBottom) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="flex items-center gap-2 text-dash-secondary">
           <Loader2 className="animate-spin text-dash-gold" size={20} />
-          <span>Loading menu analytics...</span>
+          <span>{!restaurantId ? 'Selecting restaurant...' : 'Loading menu analytics...'}</span>
         </div>
       </div>
     )
@@ -201,9 +186,9 @@ export function Menu() {
           </h1>
           <p className="text-dash-secondary mt-1">
             Analyze performance and optimize your menu
-            {restaurants && (
+            {currentRestaurant && (
               <span className="text-sm text-dash-gold ml-2">
-                · {restaurants.find((r) => r.id === restaurantId)?.name || 'Loading...'}
+                · {currentRestaurant.name}
               </span>
             )}
           </p>

@@ -4,7 +4,7 @@
 import { useState, useCallback } from 'react'
 import { useApiQuery } from './useApiQuery'
 import { reservationApi } from '../api/reservationApi'
-import type { ReservationChannelConnection } from '../api/reservationApi'
+import type { PublicSlugUpdateResponse, ReservationChannelConnection } from '../api/reservationApi'
 import type {
   ReservationSettings,
   ReservationBlackout,
@@ -144,6 +144,33 @@ export function useUpdateGoogleReservationConnection(locationId?: string) {
       setError(null)
       try {
         return await reservationApi.updateGoogleConnection(locationId, connection)
+      } catch (err) {
+        setError(err as ApiError)
+        throw err
+      } finally {
+        setLoading(false)
+      }
+    },
+    [locationId]
+  )
+
+  return { save, loading, error }
+}
+
+export function useUpdatePublicSlug(locationId?: string) {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<ApiError | null>(null)
+
+  const save = useCallback(
+    async (publicSlug: string): Promise<PublicSlugUpdateResponse> => {
+      if (!locationId) {
+        throw new Error('No restaurant is selected.')
+      }
+
+      setLoading(true)
+      setError(null)
+      try {
+        return await reservationApi.updatePublicSlug(locationId, publicSlug)
       } catch (err) {
         setError(err as ApiError)
         throw err

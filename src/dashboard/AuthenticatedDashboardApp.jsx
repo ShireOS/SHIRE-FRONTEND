@@ -38,7 +38,7 @@ function DashboardLayout() {
 
   return (
     <div className="dashboard-chrome min-h-screen bg-dash-base text-dash-cream font-dash-body selection:bg-dash-gold selection:text-dash-base">
-      <Header />
+      <Header showRestaurantSwitcher />
       <div className="flex">
         <Sidebar />
         <main className="flex-1 p-6 overflow-auto min-h-[calc(100vh-4rem)] ml-64">

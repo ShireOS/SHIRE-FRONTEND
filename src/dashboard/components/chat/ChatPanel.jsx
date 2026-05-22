@@ -1,12 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
 import { X, Send, Sparkles, Loader2, User, Bot } from 'lucide-react'
 import { chatApi } from '../../../shared/api/chatApi'
-import { useRestaurants } from '../../../shared/hooks/useMenuAnalytics'
+import { useAuth } from '../../../auth'
 
 /**
  * Slide-out chat panel for AI Concierge
  */
 export function ChatPanel({ isOpen, onClose }) {
+  const { restaurant } = useAuth()
+  const currentRestaurant = restaurant.currentRestaurant
+  const restaurantId = currentRestaurant?.id
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
@@ -16,24 +19,8 @@ export function ChatPanel({ isOpen, onClose }) {
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingContent, setStreamingContent] = useState('')
-  const [restaurantId, setRestaurantId] = useState(null)
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
-
-  // Fetch restaurants to get real UUID
-  const { data: restaurants } = useRestaurants()
-
-  // Auto-select Mimosas restaurant
-  useEffect(() => {
-    if (restaurants && !restaurantId) {
-      const mimosas = restaurants.find((r) => r.name === 'Mimosas')
-      if (mimosas) {
-        setRestaurantId(mimosas.id)
-      } else if (restaurants.length > 0) {
-        setRestaurantId(restaurants[0].id)
-      }
-    }
-  }, [restaurants, restaurantId])
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -127,7 +114,9 @@ export function ChatPanel({ isOpen, onClose }) {
               <h2 className="text-dash-cream font-semibold">
                 <span className="font-dash-display italic text-dash-gold">Concierge</span>
               </h2>
-              <p className="text-dash-tertiary text-xs italic">Watching your floor</p>
+              <p className="text-dash-tertiary text-xs italic">
+                {currentRestaurant ? `Watching ${currentRestaurant.name}` : 'Select a restaurant'}
+              </p>
             </div>
           </div>
           <button
@@ -177,11 +166,11 @@ export function ChatPanel({ isOpen, onClose }) {
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask anything about your restaurant..."
               className="flex-1 px-4 py-3 bg-dash-cream/5 border border-dash-border rounded-lg text-dash-cream text-sm focus:outline-none focus:ring-1 focus:ring-dash-gold/50 focus:border-dash-gold/50 transition-all placeholder:text-dash-tertiary"
-              disabled={isStreaming}
+              disabled={isStreaming || !restaurantId}
             />
             <button
               type="submit"
-              disabled={!input.trim() || isStreaming}
+              disabled={!input.trim() || isStreaming || !restaurantId}
               className="w-11 h-11 bg-dash-gold hover:bg-dash-gold/90 disabled:bg-dash-cream/10 rounded-lg flex items-center justify-center text-dash-base transition-colors"
             >
               {isStreaming ? (

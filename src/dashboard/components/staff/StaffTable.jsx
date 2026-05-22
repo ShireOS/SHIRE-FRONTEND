@@ -18,27 +18,13 @@ import {
   WifiOff
 } from 'lucide-react'
 import { useStaffWithStatus } from '../../hooks/useStaffData'
-import { useRestaurants } from '../../../shared/hooks/useMenuAnalytics'
 import { API_CONFIG } from '../../../shared/api/config'
+import { useAuth } from '../../../auth'
 
 export function StaffTable() {
   const navigate = useNavigate()
-
-  // Auto-select Mimosas restaurant
-  const [restaurantId, setRestaurantId] = useState(null)
-  const { data: restaurants } = useRestaurants()
-
-  useEffect(() => {
-    if (restaurants && restaurants.length > 0) {
-      const mimosas = restaurants.find((r) => r.name === 'Mimosas')
-      if (mimosas) {
-        console.log('[StaffTable] Auto-selecting Mimosas restaurant:', mimosas.id)
-        setRestaurantId(mimosas.id)
-      } else {
-        setRestaurantId(restaurants[0].id)
-      }
-    }
-  }, [restaurants])
+  const { restaurant } = useAuth()
+  const restaurantId = restaurant.currentRestaurant?.id
 
   const { staff: allStaff, isLoading, isError, error, refetch } = useStaffWithStatus(restaurantId)
 
@@ -93,7 +79,7 @@ export function StaffTable() {
   }
 
   // Show loading state
-  if (!restaurantId || isLoading) {
+  if (restaurant.isLoading || !restaurantId || isLoading) {
     return (
       <Card>
         <CardContent className="p-12 text-center">

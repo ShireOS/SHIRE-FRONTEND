@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, CardContent } from '../components/shared/Card'
 import { Button } from '../components/shared/Button'
 import { Badge } from '../components/shared/Badge'
 import { Star, Sparkles, MessageSquare, ThumbsUp, ThumbsDown, AlertCircle, CheckCircle, TrendingUp, ExternalLink, Filter, RefreshCw } from 'lucide-react'
 import { useReviewStats, useReviewSummary, useReviewsList, useCategorizeTrigger } from '@shared/hooks/useReviews'
-import { useRestaurants } from '@shared/hooks/useMenuAnalytics'
+import { useAuth } from '../../auth'
 
 const sourceIcons = {
   google: '🔍',
@@ -21,27 +21,17 @@ const sourceColors = {
 }
 
 export function Reviews() {
+  const { restaurant } = useAuth()
+  const currentRestaurant = restaurant.currentRestaurant
+  const restaurantId = currentRestaurant?.id
   const [filter, setFilter] = useState('all')
   const [page, setPage] = useState(0)
   const pageSize = 50
 
-  // Auto-select Mimosas restaurant
-  const [restaurantId, setRestaurantId] = useState(null)
-  const { data: restaurants } = useRestaurants()
-
   useEffect(() => {
-    if (restaurants && restaurants.length > 0 && !restaurantId) {
-      const mimosas = restaurants.find((r) => r.name === 'Mimosas')
-      if (mimosas) {
-        console.log('[Reviews] Auto-selecting Mimosas restaurant:', mimosas.id)
-        setRestaurantId(mimosas.id)
-      } else {
-        setRestaurantId(restaurants[0].id)
-      }
-    }
-  }, [restaurants, restaurantId])
+    setPage(0)
+  }, [restaurantId])
 
-  // Fetch data from API with Mimosas ID
   const { data: stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useReviewStats(restaurantId)
   const { data: summary, loading: summaryLoading, error: summaryError, refetch: refetchSummary } = useReviewSummary(restaurantId)
   const { data: reviews, loading: reviewsLoading, error: reviewsError, refetch: refetchReviews } = useReviewsList(
@@ -51,7 +41,7 @@ export function Reviews() {
   )
   const { trigger: triggerCategorize, loading: categorizing } = useCategorizeTrigger(restaurantId)
 
-  const loading = statsLoading || summaryLoading || reviewsLoading
+  const loading = restaurant.isLoading || !restaurantId || statsLoading || summaryLoading || reviewsLoading
   const error = statsError || summaryError || reviewsError
 
   // Handle refresh button
@@ -73,7 +63,7 @@ export function Reviews() {
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
           <RefreshCw className="w-8 h-8 animate-spin text-dash-gold mx-auto mb-2" />
-          <p className="text-dash-secondary">Loading reviews...</p>
+          <p className="text-dash-secondary">{!restaurantId ? 'Selecting restaurant...' : 'Loading reviews...'}</p>
         </div>
       </div>
     )
@@ -153,6 +143,9 @@ export function Reviews() {
             <span className="font-dash-display italic text-dash-gold">Reviews</span>
           </h1>
           <p className="text-dash-secondary mt-1">Monitor feedback and improve guest experience</p>
+          {currentRestaurant && (
+            <p className="mt-1 text-sm text-dash-gold">{currentRestaurant.name}</p>
+          )}
         </div>
         <div className="flex gap-2">
           <Button

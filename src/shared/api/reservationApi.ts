@@ -83,6 +83,16 @@ export interface ReservationChannelConnection {
   updatedAt?: string
 }
 
+export interface PublicSlugUpdateResponse {
+  locationId?: string
+  restaurantId?: string
+  publicSlug?: string
+  public_slug?: string
+  slug?: string
+  canonicalBookingUrl?: string
+  restaurant?: Record<string, unknown>
+}
+
 export interface PublicBookableLocation {
   locationId: string
   slug?: string
@@ -472,6 +482,16 @@ export const reservationApi = {
     return apiClient.put<ReservationChannelConnection>(
       ENDPOINTS.reservationChannelConnection(locationId, 'google'),
       payload
+    )
+  },
+
+  updatePublicSlug: async (
+    locationId: string,
+    publicSlug: string
+  ): Promise<PublicSlugUpdateResponse> => {
+    return apiClient.patch<PublicSlugUpdateResponse>(
+      ENDPOINTS.publicSlug(locationId),
+      { public_slug: publicSlug }
     )
   },
 

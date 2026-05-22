@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowRight,
+  CalendarClock,
+  CalendarX2,
   CheckCircle2,
   ClipboardList,
   Copy,
@@ -10,16 +13,17 @@ import {
   Loader2,
   Save,
   SearchCheck,
+  ShieldCheck,
 } from 'lucide-react'
 import { Card, CardContent } from '../shared/Card'
 import { Button } from '../shared/Button'
 import { Badge } from '../shared/Badge'
 import { useAuth } from '../../../auth'
-import { supabase } from '../../../shared/lib/supabase'
 import { API_CONFIG } from '../../../shared/api/config'
 import {
   useGoogleReservationConnection,
   useUpdateGoogleReservationConnection,
+  useUpdatePublicSlug,
 } from '../../../shared/hooks'
 
 const getPublicSiteUrl = () => {
@@ -45,19 +49,23 @@ const copyToClipboard = async (value) => {
 }
 
 function LinkBox({ label, value, onCopy, onOpen, copied }) {
+  const isReady = Boolean(value)
+
   return (
     <div className="rounded-lg border border-dash-border bg-dash-base/40 p-4">
       <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-xs uppercase tracking-wide text-dash-tertiary">{label}</p>
-          <p className="mt-2 font-dash-mono text-sm text-dash-cream break-all">{value}</p>
+          <p className="mt-2 font-dash-mono text-sm text-dash-cream break-all">
+            {value || 'Save a public URL slug to generate this link.'}
+          </p>
         </div>
       </div>
       <div className="flex flex-wrap gap-3">
-        <Button type="button" variant="secondary" size="sm" icon={<Copy size={14} />} onClick={onCopy}>
+        <Button type="button" variant="secondary" size="sm" icon={<Copy size={14} />} disabled={!isReady} onClick={onCopy}>
           {copied ? 'Copied' : 'Copy'}
         </Button>
-        <Button type="button" variant="outline" size="sm" icon={<ExternalLink size={14} />} onClick={onOpen}>
+        <Button type="button" variant="outline" size="sm" icon={<ExternalLink size={14} />} disabled={!isReady} onClick={onOpen}>
           Test
         </Button>
       </div>
@@ -65,7 +73,7 @@ function LinkBox({ label, value, onCopy, onOpen, copied }) {
   )
 }
 
-function SetupCheck({ complete, label, detail }) {
+function SetupCheck({ complete, label, detail, actionLabel, onAction }) {
   return (
     <div className="flex items-start gap-3 rounded-lg border border-dash-border bg-dash-base/30 p-3">
       {complete ? (
@@ -76,12 +84,42 @@ function SetupCheck({ complete, label, detail }) {
       <div>
         <p className="text-sm font-medium text-dash-cream">{label}</p>
         <p className="mt-0.5 text-xs text-dash-tertiary">{detail}</p>
+        {!complete && actionLabel && onAction && (
+          <button
+            type="button"
+            onClick={onAction}
+            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-dash-gold transition-colors hover:text-dash-cream"
+          >
+            {actionLabel}
+            <ArrowRight size={12} />
+          </button>
+        )}
       </div>
     </div>
   )
 }
 
-export function GoogleSetupTab({ locationId, restaurant, settings }) {
+const getUpdatedRestaurant = (restaurant, slugResponse, fallbackSlug) => {
+  const responseRestaurant = slugResponse?.restaurant && typeof slugResponse.restaurant === 'object'
+    ? slugResponse.restaurant
+    : {}
+  const nextSlug =
+    responseRestaurant.public_slug ||
+    responseRestaurant.publicSlug ||
+    slugResponse?.public_slug ||
+    slugResponse?.publicSlug ||
+    slugResponse?.slug ||
+    fallbackSlug
+
+  return {
+    ...restaurant,
+    ...responseRestaurant,
+    public_slug: nextSlug,
+    slug: responseRestaurant.slug || nextSlug,
+  }
+}
+
+export function GoogleSetupTab({ locationId, restaurant, settings, onNavigateTab }) {
   const { refreshRestaurants, seedCurrentRestaurant } = useAuth()
   const [copiedTarget, setCopiedTarget] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
@@ -95,10 +133,10 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
   const hasGuestReadyName = Boolean(restaurantName && !isTechnicalValue(restaurantName))
   const displayRestaurantName = hasGuestReadyName ? restaurantName : 'Restaurant name not set'
   const normalizedSlug = normalizeSlug(slugDraft)
-  const hasSlugChange = Boolean(normalizedSlug && normalizedSlug !== slug)
+  const hasSlugChange = normalizedSlug !== slug
 
   useEffect(() => {
-    setSlugDraft(restaurant?.slug || '')
+    setSlugDraft(publicSlug)
     setSlugMessage('')
     setSlugError('')
   }, [publicSlug])
@@ -122,6 +160,7 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
 
   const connectionQuery = useGoogleReservationConnection(locationId)
   const updateConnection = useUpdateGoogleReservationConnection(locationId)
+  const updatePublicSlug = useUpdatePublicSlug(locationId)
   const connection = connectionQuery.data
   const connectionStatus = connection?.connectionStatus || 'disconnected'
   const isConnected = connectionStatus === 'connected'
@@ -165,7 +204,7 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
   }
 
   const handleSaveSlug = async () => {
-    if (!locationId) return
+    if (!locationId || !restaurant) return
 
     setSlugMessage('')
     setSlugError('')
@@ -177,24 +216,14 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
 
     setSavingSlug(true)
     try {
-      const { data: updatedRestaurant, error } = await supabase
-        .from('restaurants')
-        .update({
-          public_slug: normalizedSlug,
-          slug: normalizedSlug,
-        })
-        .eq('id', locationId)
-        .select()
-        .single()
-
-      if (error) throw error
-
+      const slugResponse = await updatePublicSlug.save(normalizedSlug)
+      const updatedRestaurant = getUpdatedRestaurant(restaurant, slugResponse, normalizedSlug)
       seedCurrentRestaurant(updatedRestaurant)
       await refreshRestaurants(updatedRestaurant.id)
-      setSlugDraft(updatedRestaurant.slug || normalizedSlug)
+      setSlugDraft(updatedRestaurant.public_slug || updatedRestaurant.slug || normalizedSlug)
       setSlugMessage('Public URL updated.')
     } catch (err) {
-      const message = err?.code === '23505'
+      const message = err?.code === '23505' || err?.status === 409
         ? 'That public URL is already in use.'
         : err?.message || 'Could not update public URL.'
       setSlugError(message)
@@ -213,19 +242,6 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
     )
   }
 
-  if (!slug) {
-    return (
-      <Card className="border border-dash-warning/30">
-        <CardContent className="p-6">
-          <h3 className="font-semibold text-dash-warning mb-2">Restaurant slug required</h3>
-          <p className="text-sm text-dash-tertiary">
-            This restaurant needs a public slug before SHIRE can generate booking links.
-          </p>
-        </CardContent>
-      </Card>
-    )
-  }
-
   return (
     <div className="space-y-6">
       <Card>
@@ -237,7 +253,7 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
                 <h3 className="font-semibold text-dash-cream">Google reservation export</h3>
               </div>
               <p className="text-sm text-dash-tertiary max-w-2xl">
-                Use this link for Google Business Profile, website buttons, QR codes, and owner handoff.
+                Prepare the exact booking link for Google Business Profile, website buttons, QR codes, and owner handoff.
               </p>
             </div>
             <Badge variant={isConnected ? 'success' : 'neutral'} dot>
@@ -262,7 +278,21 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
             />
           </div>
 
-          {isTechnicalValue(slug) && (
+          {!slug && (
+            <div className="mt-4 rounded-lg border border-dash-warning/30 bg-dash-warning/10 p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle size={18} className="mt-0.5 shrink-0 text-dash-warning" />
+                <div>
+                  <p className="text-sm font-medium text-dash-warning">Restaurant slug required.</p>
+                  <p className="mt-1 text-sm text-dash-tertiary">
+                    Save a friendly public URL before sending this restaurant to Google.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {slug && isTechnicalValue(slug) && (
             <div className="mt-4 rounded-lg border border-dash-warning/30 bg-dash-warning/10 p-4">
               <div className="flex items-start gap-3">
                 <AlertTriangle size={18} className="mt-0.5 shrink-0 text-dash-warning" />
@@ -302,6 +332,12 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
             </p>
           )}
 
+          {updatePublicSlug.error && (
+            <p className="mt-3 text-sm text-dash-danger">
+              Could not save public URL: {updatePublicSlug.error.message}
+            </p>
+          )}
+
           {saveMessage && (
             <p className="mt-3 text-sm text-dash-success">{saveMessage}</p>
           )}
@@ -310,7 +346,7 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
             <Button
               type="button"
               icon={updateConnection.loading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-              disabled={updateConnection.loading}
+              disabled={updateConnection.loading || !urls.google}
               onClick={handleSave}
             >
               Save Google Connection
@@ -319,6 +355,7 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
               type="button"
               variant="secondary"
               icon={<ClipboardList size={16} />}
+              disabled={!exportText}
               onClick={() => handleCopy('export', exportText)}
             >
               {copiedTarget === 'export' ? 'Copied Export' : 'Copy Export'}
@@ -339,16 +376,22 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
                 complete={activeServicePeriods.length > 0}
                 label="Service hours"
                 detail={`${activeServicePeriods.length} active service period${activeServicePeriods.length === 1 ? '' : 's'}`}
+                actionLabel="Edit service hours"
+                onAction={() => onNavigateTab?.('service-hours')}
               />
               <SetupCheck
                 complete={hasPublicChannel}
                 label="Public channel"
                 detail={hasPublicChannel ? 'Website or app booking is enabled.' : 'Enable Website in Booking Rules.'}
+                actionLabel="Open booking rules"
+                onAction={() => onNavigateTab?.('booking-rules')}
               />
               <SetupCheck
                 complete={hasPacingRule}
                 label="Pacing rules"
                 detail={hasPacingRule ? 'Cover limits are configured.' : 'Add a pacing rule before sending traffic.'}
+                actionLabel="Open booking rules"
+                onAction={() => onNavigateTab?.('booking-rules')}
               />
               <SetupCheck
                 complete={hasGuestReadyName}
@@ -359,6 +402,17 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
                 complete={hasFriendlySlug}
                 label="Friendly URL"
                 detail={hasFriendlySlug ? `Slug: ${slug}` : 'Use a readable slug before sharing with guests.'}
+                actionLabel="Edit public URL below"
+                onAction={() => {
+                  document.getElementById('public-url-slug-input')?.focus()
+                }}
+              />
+              <SetupCheck
+                complete={isConnected}
+                label="Google channel saved"
+                detail={isConnected ? 'Google redirect URL is stored for this restaurant.' : 'Save the Google connection after the URL is ready.'}
+                actionLabel="Save Google connection"
+                onAction={handleSave}
               />
             </div>
           </CardContent>
@@ -371,10 +425,18 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
               <h3 className="font-semibold text-dash-cream">Where to configure</h3>
             </div>
             <div className="space-y-3 text-sm text-dash-secondary">
-              <p><span className="text-dash-cream">Service Hours:</span> dates, days, time windows, party limits.</p>
-              <p><span className="text-dash-cream">Booking Rules:</span> public channels and pacing limits.</p>
-              <p><span className="text-dash-cream">Blackouts:</span> closures and partial-day blocks.</p>
-              <p><span className="text-dash-cream">Google Setup:</span> copy, test, and save the export URL.</p>
+              <button type="button" onClick={() => onNavigateTab?.('service-hours')} className="flex w-full items-start gap-3 rounded-lg border border-dash-border bg-dash-base/30 p-3 text-left transition-colors hover:border-dash-gold/30">
+                <CalendarClock size={16} className="mt-0.5 shrink-0 text-dash-gold" />
+                <span><span className="text-dash-cream">Service Hours:</span> dates, days, time windows, party limits.</span>
+              </button>
+              <button type="button" onClick={() => onNavigateTab?.('booking-rules')} className="flex w-full items-start gap-3 rounded-lg border border-dash-border bg-dash-base/30 p-3 text-left transition-colors hover:border-dash-gold/30">
+                <ShieldCheck size={16} className="mt-0.5 shrink-0 text-dash-success" />
+                <span><span className="text-dash-cream">Booking Rules:</span> public channels and pacing limits.</span>
+              </button>
+              <button type="button" onClick={() => onNavigateTab?.('blackouts')} className="flex w-full items-start gap-3 rounded-lg border border-dash-border bg-dash-base/30 p-3 text-left transition-colors hover:border-dash-gold/30">
+                <CalendarX2 size={16} className="mt-0.5 shrink-0 text-dash-warning" />
+                <span><span className="text-dash-cream">Blackouts:</span> closures and partial-day blocks.</span>
+              </button>
             </div>
             <div className="mt-5 rounded-lg border border-dash-border bg-dash-base/40 p-3">
               <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-dash-tertiary">
@@ -388,6 +450,7 @@ export function GoogleSetupTab({ locationId, restaurant, settings }) {
               </label>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                 <input
+                  id="public-url-slug-input"
                   value={slugDraft}
                   onChange={(event) => {
                     setSlugDraft(event.target.value)

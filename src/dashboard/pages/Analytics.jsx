@@ -3,8 +3,11 @@ import { Badge } from '../components/shared/Badge'
 import { Clock, Timer, ChefHat, TrendingUp, TrendingDown, DollarSign, Users, Receipt, Target, AlertTriangle } from 'lucide-react'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { analyticsData } from '../data/mockData'
+import { useAuth } from '../../auth'
 
 export function Analytics() {
+  const { restaurant } = useAuth()
+  const currentRestaurant = restaurant.currentRestaurant
   const { tableTurns, waitTimes, kitchenSpeed, peakHours, monthlyRevenue, weekComparison } = analyticsData
 
   // Calculate week-over-week changes
@@ -41,6 +44,9 @@ export function Analytics() {
           <span className="font-dash-display italic text-dash-gold">Analytics</span>
         </h1>
         <p className="text-dash-secondary mt-1">Deep dive into operations and revenue performance</p>
+        {currentRestaurant && (
+          <p className="mt-1 text-sm text-dash-gold">{currentRestaurant.name}</p>
+        )}
       </div>
 
       {/* Week Comparison Cards */}

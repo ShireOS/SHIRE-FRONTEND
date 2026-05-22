@@ -5,8 +5,11 @@ import { ChatHeader } from './ChatHeader'
 import { ChatMessages } from './ChatMessages'
 import { ChatInput } from './ChatInput'
 import { useChat } from '../../../shared/hooks/useChat'
+import { useAuth } from '../../../auth'
 
 export function ChatInterface({ onMinimize }) {
+  const { restaurant } = useAuth()
+  const restaurantId = restaurant.currentRestaurant?.id
   const {
     messages,
     isStreaming,
@@ -14,7 +17,7 @@ export function ChatInterface({ onMinimize }) {
     error,
     sendMessage,
     clearHistory
-  } = useChat()
+  } = useChat(restaurantId)
 
   const handleSend = (message) => {
     sendMessage(message)
@@ -55,7 +58,7 @@ export function ChatInterface({ onMinimize }) {
 
       <ChatInput
         onSend={handleSend}
-        disabled={isStreaming}
+        disabled={isStreaming || !restaurantId}
       />
     </div>
   )

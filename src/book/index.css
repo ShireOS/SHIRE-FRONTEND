@@ -232,6 +232,7 @@ input:focus {
 }
 
 .sms-consent span {
+  display: block;
   font-size: 12px;
   line-height: 1.5;
   color: var(--book-ink);
@@ -241,6 +242,7 @@ input:focus {
 .sms-consent a {
   color: var(--book-accent-strong);
   text-decoration: underline;
+  white-space: nowrap;
 }
 
 .error {

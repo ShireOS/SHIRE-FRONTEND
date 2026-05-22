@@ -26,4 +26,5 @@ export {
   useUpdateBlackout,
   useGoogleReservationConnection,
   useUpdateGoogleReservationConnection,
+  useUpdatePublicSlug,
 } from './useReservationSettings'

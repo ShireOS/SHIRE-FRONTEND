@@ -7,6 +7,8 @@ import { BookingRulesTab } from '../components/reservations/BookingRulesTab'
 import { BlackoutsTab } from '../components/reservations/BlackoutsTab'
 import { GoogleSetupTab } from '../components/reservations/GoogleSetupTab'
 import {
+  AlertTriangle,
+  Building2,
   Settings as SettingsIcon,
   Clock,
   ShieldCheck,
@@ -16,6 +18,7 @@ import {
   Users,
   CheckCircle2,
   Globe,
+  Link2,
   SearchCheck,
 } from 'lucide-react'
 import { useAuth } from '../../auth'
@@ -25,6 +28,7 @@ import {
   useReservationBlackouts,
   useCreateBlackout,
   useUpdateBlackout,
+  useGoogleReservationConnection,
 } from '../../shared/hooks'
 import { reservationBootstrapDefaults } from '../data/mockData'
 
@@ -39,11 +43,13 @@ const tabs = [
 export function Reservations() {
   const [activeTab, setActiveTab] = useState('settings')
   const { restaurant } = useAuth()
-  const locationId = restaurant?.currentRestaurant?.id
+  const currentRestaurant = restaurant?.currentRestaurant
+  const locationId = currentRestaurant?.id
 
   // API hooks
   const settingsQuery = useReservationSettings(locationId)
   const blackoutsQuery = useReservationBlackouts(locationId)
+  const googleConnectionQuery = useGoogleReservationConnection(locationId)
   const { save: saveSettings } = useUpdateReservationSettings(locationId)
   const { create: createBlackout } = useCreateBlackout(locationId)
   const { update: updateBlackout } = useUpdateBlackout(locationId)
@@ -141,6 +147,21 @@ export function Reservations() {
   const activePeriods = settings?.service_periods?.filter((sp) => sp.is_active).length || 0
   const activeChannels = settings?.channel_rules?.filter((ch) => ch.is_enabled).length || 0
   const activeBlackouts = blackouts.filter((b) => b.status === 'active').length
+  const publicSlug = currentRestaurant?.public_slug || currentRestaurant?.slug || ''
+  const publicChannels = settings?.channel_rules?.filter((rule) =>
+    ['web', 'app'].includes(rule.channel)
+  ) || []
+  const hasPublicChannel = publicChannels.some((rule) => rule.is_enabled)
+  const hasPacingRule = Boolean(settings?.pacing_rules?.some((rule) => rule.is_active !== false))
+  const googleConnected = googleConnectionQuery.data?.connectionStatus === 'connected'
+  const readinessItems = [
+    Boolean(activePeriods),
+    hasPublicChannel,
+    hasPacingRule,
+    Boolean(publicSlug),
+    googleConnected,
+  ]
+  const readyCount = readinessItems.filter(Boolean).length
 
   return (
     <div>
@@ -183,6 +204,67 @@ export function Reservations() {
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {locationId && (
+        <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_1fr_0.9fr]">
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-start gap-4">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-dash-gold/30 bg-dash-gold/15 text-dash-gold">
+                  <Building2 size={20} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs uppercase tracking-wide text-dash-tertiary">Active restaurant</p>
+                  <h2 className="mt-1 truncate text-lg font-semibold text-dash-cream">{currentRestaurant?.name}</h2>
+                  <p className="mt-1 truncate text-sm text-dash-secondary">
+                    {[currentRestaurant?.city, currentRestaurant?.state].filter(Boolean).join(', ') || currentRestaurant?.address || 'Location profile pending'}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-start gap-4">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-dash-border bg-dash-base/40 text-dash-cream">
+                  <Link2 size={20} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs uppercase tracking-wide text-dash-tertiary">Public booking URL</p>
+                  <p className="mt-1 truncate font-dash-mono text-sm text-dash-cream">
+                    {publicSlug ? `/book/${publicSlug}` : 'Slug not configured'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('google-setup')}
+                    className="mt-2 text-xs font-medium text-dash-gold transition-colors hover:text-dash-cream"
+                  >
+                    Manage Google setup
+                  </button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className={readyCount === readinessItems.length ? 'border border-dash-success/30' : 'border border-dash-warning/30'}>
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-dash-tertiary">Reservation readiness</p>
+                  <p className="mt-1 text-2xl font-bold text-dash-cream">{readyCount}/{readinessItems.length}</p>
+                  <p className="mt-1 text-sm text-dash-secondary">Google, public URL, pacing, and hours</p>
+                </div>
+                {readyCount === readinessItems.length ? (
+                  <CheckCircle2 size={22} className="text-dash-success" />
+                ) : (
+                  <AlertTriangle size={22} className="text-dash-warning" />
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Tabs */}
@@ -370,8 +452,9 @@ export function Reservations() {
       {activeTab === 'google-setup' && (
         <GoogleSetupTab
           locationId={locationId}
-          restaurant={restaurant?.currentRestaurant}
+          restaurant={currentRestaurant}
           settings={settings}
+          onNavigateTab={setActiveTab}
         />
       )}
     </div>

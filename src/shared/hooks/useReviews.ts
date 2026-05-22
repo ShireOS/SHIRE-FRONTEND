@@ -19,7 +19,7 @@ import type {
  */
 export function useReviewStats(restaurantId?: string, enabled = true) {
   const fetchFn = useCallback(async (): Promise<ReviewStats | null> => {
-    if (!enabled) return null
+    if (!enabled || !restaurantId) return null
     return reviewApi.getStats(restaurantId)
   }, [restaurantId, enabled])
 
@@ -31,7 +31,8 @@ export function useReviewStats(restaurantId?: string, enabled = true) {
  * @param restaurantId - Optional restaurant ID
  */
 export function useReviewSummary(restaurantId?: string) {
-  const fetchFn = useCallback(async (): Promise<ReviewSummary> => {
+  const fetchFn = useCallback(async (): Promise<ReviewSummary | null> => {
+    if (!restaurantId) return null
     return reviewApi.getSummary(restaurantId)
   }, [restaurantId])
 
@@ -50,6 +51,7 @@ export function useReviewsList(
   limit = 50
 ) {
   const fetchFn = useCallback(async (): Promise<ReviewRead[]> => {
+    if (!restaurantId) return []
     return reviewApi.getReviews(restaurantId, skip, limit)
   }, [restaurantId, skip, limit])
 
@@ -71,6 +73,9 @@ export function useCategorizeTrigger(restaurantId?: string) {
     setResult(null)
 
     try {
+      if (!restaurantId) {
+        throw { status: 400, message: 'No restaurant is selected.' } as ApiError
+      }
       const data = await reviewApi.triggerCategorization(restaurantId)
       setResult(data)
       return data

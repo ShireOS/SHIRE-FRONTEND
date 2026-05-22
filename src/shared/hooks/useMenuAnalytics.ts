@@ -13,6 +13,7 @@ export function useMenuTopRankings(
   limit = 10
 ) {
   const fetchFn = useCallback(async () => {
+    if (!restaurantId) return null
     return menuApi.getTopRankings(restaurantId, lookbackDays, limit)
   }, [restaurantId, lookbackDays, limit])
 
@@ -28,6 +29,7 @@ export function useMenuBottomRankings(
   limit = 10
 ) {
   const fetchFn = useCallback(async () => {
+    if (!restaurantId) return null
     return menuApi.getBottomRankings(restaurantId, lookbackDays, limit)
   }, [restaurantId, lookbackDays, limit])
 
@@ -43,6 +45,7 @@ export function useMenu86Recommendations(
   scoreThreshold = 25.0
 ) {
   const fetchFn = useCallback(async () => {
+    if (!restaurantId) return null
     return menuApi.get86Recommendations(
       restaurantId,
       lookbackDays,
@@ -58,6 +61,7 @@ export function useMenu86Recommendations(
  */
 export function useMenu86dItems(restaurantId?: string) {
   const fetchFn = useCallback(async () => {
+    if (!restaurantId) return null
     return menuApi.get86dItems(restaurantId)
   }, [restaurantId])
 
@@ -83,6 +87,7 @@ export function usePricingRecommendations(
   lookbackDays = 30
 ) {
   const fetchFn = useCallback(async () => {
+    if (!restaurantId) return null
     return menuApi.getPricingRecommendations(restaurantId, lookbackDays)
   }, [restaurantId, lookbackDays])
 

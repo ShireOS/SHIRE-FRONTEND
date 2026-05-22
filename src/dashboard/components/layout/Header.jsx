@@ -1,6 +1,7 @@
 import { Search, Command, Sun, Moon } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
+import { RestaurantSwitcher } from './RestaurantSwitcher'
 
 const PAGE_TITLES = {
   '/': 'Overview',
@@ -13,7 +14,7 @@ const PAGE_TITLES = {
   '/settings': 'Settings',
 }
 
-export function Header() {
+export function Header({ showRestaurantSwitcher = false }) {
   const [theme, setTheme] = useState(
     () => localStorage.getItem('dashTheme') || 'dark'
   )
@@ -50,9 +51,11 @@ export function Header() {
       </div>
 
       {/* Right: Controls */}
-      <div className="flex items-center gap-5">
+      <div className="flex min-w-0 items-center gap-4">
+        {showRestaurantSwitcher && <RestaurantSwitcher />}
+
         {/* Search Input - Frosted */}
-        <div className="relative group">
+        <div className="relative group hidden 2xl:block">
           <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-dash-tertiary group-focus-within:text-dash-cream transition-colors" />
           <input
             type="text"

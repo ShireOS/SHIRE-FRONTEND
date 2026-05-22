@@ -13,6 +13,7 @@ export function useShoppingList(
   lookbackDays = 30
 ) {
   const fetchFn = useCallback(async () => {
+    if (!restaurantId) return null
     return inventoryApi.getShoppingList(restaurantId, forecastDays, lookbackDays)
   }, [restaurantId, forecastDays, lookbackDays])
 
@@ -24,6 +25,7 @@ export function useShoppingList(
  */
 export function useStockAlerts(restaurantId?: string) {
   const fetchFn = useCallback(async () => {
+    if (!restaurantId) return null
     return inventoryApi.getStockAlerts(restaurantId)
   }, [restaurantId])
 

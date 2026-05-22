@@ -11,6 +11,7 @@ import type { StaffMember } from '../types/api'
  */
 export function useWaiterList(restaurantId?: string) {
   const fetchFn = useCallback(async (): Promise<StaffMember[]> => {
+    if (!restaurantId) return []
     const data = await restaurantApi.getWaiters(restaurantId)
     return data.map(transformWaiterListItem)
   }, [restaurantId])

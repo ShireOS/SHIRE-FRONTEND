@@ -10,10 +10,10 @@ import { Sparkles, ChevronLeft, ChevronRight, Send, Plus, AlertTriangle, Loader2
 import { useStaffingRequirements, useAllStaffAvailability, useCoverageGaps } from '../../shared/hooks/useSchedule'
 import { useSchedulingEngine } from '../../shared/hooks/useSchedulingEngine'
 import { useWaiterList } from '../../shared/hooks/useWaiterList'
-import { useRestaurants } from '../../shared/hooks/useMenuAnalytics'
 import { scheduleApi } from '../../shared/api/scheduleApi'
 import { detectCoverageGaps, transformSchedule } from '../../shared/utils/dataTransformers'
 import { API_CONFIG } from '../../shared/api/config'
+import { useAuth } from '../../auth'
 
 /**
  * Get Monday of current week in YYYY-MM-DD format
@@ -36,23 +36,9 @@ function addWeeks(dateStr, weeks) {
 }
 
 export function Schedule() {
-  // Restaurant selection (auto-select Mimosas)
-  const [restaurantId, setRestaurantId] = useState(null)
-  const { data: restaurants, loading: loadingRestaurants } = useRestaurants()
-
-  useEffect(() => {
-    if (restaurants && restaurants.length > 0) {
-      const mimosas = restaurants.find((r) => r.name === 'Mimosas')
-      if (mimosas) {
-        console.log('[Schedule] Auto-selecting Mimosas restaurant:', mimosas.id)
-        setRestaurantId(mimosas.id)
-      } else {
-        // Fallback to first restaurant
-        console.log('[Schedule] Mimosas not found, using first restaurant:', restaurants[0].id)
-        setRestaurantId(restaurants[0].id)
-      }
-    }
-  }, [restaurants])
+  const { restaurant } = useAuth()
+  const currentRestaurant = restaurant.currentRestaurant
+  const restaurantId = currentRestaurant?.id
 
   // Week navigation
   const [currentWeek, setCurrentWeek] = useState(getWeekStart())
@@ -85,6 +71,12 @@ export function Schedule() {
   // DON'T auto-fetch schedule - start empty, only load after AI generation
   const [schedule, setSchedule] = useState(null)
   const [loadingSchedule, setLoadingSchedule] = useState(false)
+
+  useEffect(() => {
+    setSchedule(null)
+    setSuggestedSchedule(null)
+    setShowPreviewModal(false)
+  }, [restaurantId])
 
   // Manual refetch function (called after AI apply or week navigation)
   const refetchSchedule = async () => {
@@ -242,14 +234,14 @@ export function Schedule() {
   }
 
   // Loading state (only for initial page load)
-  const loading = loadingRestaurants || !restaurantId || loadingStaff
+  const loading = restaurant.isLoading || !restaurantId || loadingStaff
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="flex items-center gap-2 text-dash-secondary">
           <Loader2 className="animate-spin text-dash-gold" size={20} />
           <span>
-            {loadingRestaurants
+            {restaurant.isLoading
               ? 'Loading restaurants...'
               : !restaurantId
               ? 'Selecting restaurant...'
@@ -286,9 +278,9 @@ export function Schedule() {
           </h1>
           <p className="text-dash-secondary mt-1">
             Plan and manage your team's shifts
-            {restaurants && (
+            {currentRestaurant && (
               <span className="text-sm text-dash-gold ml-2">
-                · {restaurants.find((r) => r.id === restaurantId)?.name || 'Loading...'}
+                · {currentRestaurant.name}
               </span>
             )}
           </p>

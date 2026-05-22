@@ -4,10 +4,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { chatApi } from '../api/chatApi'
 import { saveMessages, loadMessages, clearMessages as clearStoredMessages } from '../utils/chatStorage'
-import { API_CONFIG } from '../api/config'
 import type { ChatMessage, ApiError } from '../types/api'
 
-export function useChat() {
+export function useChat(restaurantId?: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
@@ -34,6 +33,13 @@ export function useChat() {
 
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || isStreaming) return
+    if (!restaurantId) {
+      setError({
+        status: 400,
+        message: 'No restaurant is selected.',
+      })
+      return
+    }
 
     setError(null)
 
@@ -97,7 +103,7 @@ export function useChat() {
             setMessages(prev => prev.filter(msg => msg.id !== assistantMessageId))
           }
         },
-        API_CONFIG.restaurantId
+        restaurantId
       )
     } catch (err) {
       console.error('[Chat] Unexpected error:', err)
@@ -110,7 +116,7 @@ export function useChat() {
       // Remove the empty assistant message
       setMessages(prev => prev.filter(msg => msg.id !== assistantMessageId))
     }
-  }, [messages, isStreaming])
+  }, [messages, isStreaming, restaurantId])
 
   const clearHistory = useCallback(() => {
     setMessages([])

@@ -112,6 +112,8 @@ export const ENDPOINTS = {
     `/locations/${locationId}/reservation-blackouts/${blackoutId}`,
   reservationChannelConnection: (locationId: string, channel: string) =>
     `/locations/${locationId}/reservation-channel-connections/${channel}`,
+  publicSlug: (locationId: string) =>
+    `/locations/${locationId}/public-slug`,
   publicBookableLocation: (slug: string) =>
     `/public/bookable-locations/${encodeURIComponent(slug)}`,
   publicBookingConfig: (locationId: string) =>
