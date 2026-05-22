@@ -3,6 +3,13 @@ import { X, Send, Sparkles, Loader2, User, Bot } from 'lucide-react'
 import { chatApi } from '../../../shared/api/chatApi'
 import { useAuth } from '../../../auth'
 
+const getInitialMessages = () => [
+  {
+    role: 'assistant',
+    content: 'Welcome. I\'m your restaurant Concierge. Ask me about sales trends, staff performance, menu optimization, or any other insights about your restaurant.',
+  },
+]
+
 /**
  * Slide-out chat panel for AI Concierge
  */
@@ -10,17 +17,21 @@ export function ChatPanel({ isOpen, onClose }) {
   const { restaurant } = useAuth()
   const currentRestaurant = restaurant.currentRestaurant
   const restaurantId = currentRestaurant?.id
-  const [messages, setMessages] = useState([
-    {
-      role: 'assistant',
-      content: 'Welcome. I\'m your restaurant Concierge. Ask me about sales trends, staff performance, menu optimization, or any other insights about your restaurant.',
-    },
-  ])
+  const [messages, setMessages] = useState(getInitialMessages)
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingContent, setStreamingContent] = useState('')
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
+  const streamRequestRef = useRef(0)
+
+  useEffect(() => {
+    streamRequestRef.current += 1
+    setMessages(getInitialMessages())
+    setInput('')
+    setIsStreaming(false)
+    setStreamingContent('')
+  }, [restaurantId])
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -43,6 +54,7 @@ export function ChatPanel({ isOpen, onClose }) {
     setMessages((prev) => [...prev, { role: 'user', content: userMessage }])
     setIsStreaming(true)
     setStreamingContent('')
+    const requestId = ++streamRequestRef.current
 
     // Build history from previous messages (excluding the initial greeting)
     const history = messages.slice(1).map((m) => ({
@@ -55,9 +67,11 @@ export function ChatPanel({ isOpen, onClose }) {
       history,
       {
         onToken: (token) => {
+          if (requestId !== streamRequestRef.current) return
           setStreamingContent((prev) => prev + token)
         },
         onComplete: (fullResponse) => {
+          if (requestId !== streamRequestRef.current) return
           setMessages((prev) => [
             ...prev,
             { role: 'assistant', content: fullResponse },
@@ -66,6 +80,7 @@ export function ChatPanel({ isOpen, onClose }) {
           setIsStreaming(false)
         },
         onError: (error) => {
+          if (requestId !== streamRequestRef.current) return
           console.error('Chat error:', error)
           // Extract readable error message
           let errorMsg = 'Unknown error'

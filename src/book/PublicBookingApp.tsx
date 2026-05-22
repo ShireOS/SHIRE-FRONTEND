@@ -368,7 +368,7 @@ export function PublicBookingApp() {
               onChange={(event) => setSmsConsent(event.target.checked)}
             />
             <span>
-              I agree to receive Delivery Notification, Account Notification SMS messages from Shire at the number provided. Msg frequency varies. Msg &amp; data rates may apply. Reply Help for Help. Reply STOP to opt-out. Please see <a href="/privacy/" target="_blank" rel="noopener noreferrer">Privacy Policy</a> and <a href="/terms/" target="_blank" rel="noopener noreferrer">Terms of Use</a>.
+              I agree to receive Customer Care SMS messages from Shire at the number provided. Msg frequency varies. Msg &amp; data rates may apply. Reply HELP for help. Reply STOP to opt-out. Please see <a href="/privacy/" target="_blank" rel="noopener noreferrer">Privacy Policy</a> and <a href="/terms/" target="_blank" rel="noopener noreferrer">Terms of Use</a>.
             </span>
           </label>
 

@@ -21,12 +21,22 @@ export function useApiQuery<T>(
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<ApiError | null>(null)
   const mountedRef = useRef(true)
+  const requestIdRef = useRef(0)
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (options?: { clearData?: boolean }) => {
+    const requestId = ++requestIdRef.current
+    const isCurrentRequest = () => mountedRef.current && requestId === requestIdRef.current
+
+    if (options?.clearData) {
+      setData(null)
+    }
+
     // If mock data mode, skip API calls entirely
     if (API_CONFIG.useMockData) {
       console.log('[useApiQuery] Mock mode enabled, skipping API call')
-      setLoading(false)
+      if (isCurrentRequest()) {
+        setLoading(false)
+      }
       return
     }
 
@@ -35,7 +45,7 @@ export function useApiQuery<T>(
 
     try {
       const result = await fetchFn()
-      if (mountedRef.current) {
+      if (isCurrentRequest()) {
         setData(result)
         setError(null)
 
@@ -60,14 +70,14 @@ export function useApiQuery<T>(
         }
       }
     } catch (err) {
-      if (mountedRef.current) {
+      if (isCurrentRequest()) {
         const apiError = err as ApiError
         setError(apiError)
         // DO NOT fall back to mock data - show the error
         console.error('[useApiQuery] ❌ API call failed:', apiError)
       }
     } finally {
-      if (mountedRef.current) {
+      if (isCurrentRequest()) {
         setLoading(false)
       }
     }
@@ -75,9 +85,10 @@ export function useApiQuery<T>(
 
   useEffect(() => {
     mountedRef.current = true
-    fetchData()
+    fetchData({ clearData: true })
     return () => {
       mountedRef.current = false
+      requestIdRef.current += 1
     }
   }, [...deps, fetchData])
 
