@@ -78,6 +78,9 @@ export function Table({ table, showSection = false }: TableProps) {
   const selectedTableId = useRestaurantStore((s) => s.selectedTableId)
   const setSelectedTable = useRestaurantStore((s) => s.setSelectedTable)
   const servers = useRestaurantStore((s) => s.servers)
+  const alerts = useRestaurantStore((s) => s.alerts)
+  const removeAlert = useRestaurantStore((s) => s.removeAlert)
+  const activeAlert = alerts.find((a) => a.table_id === table.id)
   const guests = useRestaurantStore((s) => s.guests)
   const serverMode = useRestaurantStore((s) => s.serverMode)
   const seatGuest = useRestaurantStore((s) => s.seatGuest)
@@ -235,6 +238,36 @@ export function Table({ table, showSection = false }: TableProps) {
         {showCustomSeatIndicator && (
           <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-[7px] font-semibold bg-accent-green text-black uppercase whitespace-nowrap">
             Seat here
+          </div>
+        )}
+
+        {/* Waiter Alert Badge */}
+        {activeAlert && (
+          <div
+            className={cn(
+              'absolute -top-2 left-1/2 -translate-x-1/2 flex items-center gap-0.5',
+              'px-1.5 py-0.5 rounded text-[7px] font-semibold uppercase whitespace-nowrap',
+              'animate-pulse',
+              activeAlert.priority === 'urgent'
+                ? 'bg-accent-red text-white'
+                : 'bg-accent-yellow text-black'
+            )}
+          >
+            {activeAlert.alert_type === 'ready_to_order' && 'Take order'}
+            {activeAlert.alert_type === 'check_back' && 'Check back'}
+            {activeAlert.alert_type === 'ready_to_pay' && 'Ready to pay'}
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                const ML_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string || '').replace(/\/api\/v1\/?$/, '')
+                fetch(`${ML_BASE_URL}/alerts/${activeAlert.alert_id}/dismiss`, { method: 'POST' })
+                  .catch(() => {/* best-effort */})
+                removeAlert(activeAlert.alert_id)
+              }}
+              className="ml-0.5 opacity-70 hover:opacity-100"
+            >
+              ✕
+            </button>
           </div>
         )}
       </motion.button>

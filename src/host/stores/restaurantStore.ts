@@ -14,6 +14,16 @@ interface UndoAction {
 
 export type Theme = 'light' | 'dark'
 
+export interface WaiterAlert {
+  alert_id: string
+  alert_type: string
+  priority: 'urgent' | 'standard'
+  table_id: string
+  table_number: string
+  time_in_state_seconds: number
+  fired_at: string
+}
+
 interface RestaurantState {
   // Data
   tables: Table[]
@@ -23,6 +33,7 @@ interface RestaurantState {
   sections: Section[]
   activity: ActivityItem[]
   recommendations: SmartRecommendation[]
+  alerts: WaiterAlert[]
 
   // UI State
   selectedTableId: string | null
@@ -77,6 +88,10 @@ interface RestaurantState {
   // Activity actions
   addActivity: (activity: Omit<ActivityItem, 'id' | 'timestamp' | 'read'>) => void
 
+  // Alert actions
+  addAlert: (alert: WaiterAlert) => void
+  removeAlert: (alertId: string) => void
+
   // Demo actions
   initializeFromBackend: (restaurantId: string) => Promise<void>
   startDemo: (restaurantId: string) => Promise<void>
@@ -97,6 +112,7 @@ export const useRestaurantStore = create<RestaurantState>((set, get) => ({
   sections: mockSections,
   activity: mockActivity,
   recommendations: mockRecommendations,
+  alerts: [],
 
   // Initial UI state
   selectedTableId: null,
@@ -354,6 +370,17 @@ export const useRestaurantStore = create<RestaurantState>((set, get) => ({
       activity: [newActivity, ...state.activity].slice(0, 20),
     }))
   },
+
+  // Alert actions
+  addAlert: (alert) => set((state) => ({
+    alerts: state.alerts.some((a) => a.alert_id === alert.alert_id)
+      ? state.alerts
+      : [...state.alerts, alert],
+  })),
+
+  removeAlert: (alertId) => set((state) => ({
+    alerts: state.alerts.filter((a) => a.alert_id !== alertId),
+  })),
 
   // Demo actions
   initializeFromBackend: async (restaurantId) => {

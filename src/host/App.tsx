@@ -7,6 +7,7 @@ import { RightPanel } from './components/layout/RightPanel'
 import { DemoStatusBanner } from './components/demo/DemoStatusBanner'
 import { MultiCameraView } from './components/demo/MultiCameraView'
 import { useRestaurantStore } from './stores/restaurantStore'
+import { useAlerts } from './hooks/useAlerts'
 import {
   START_SCENE_INDEX,
   getWalkthroughCameras,
@@ -39,6 +40,9 @@ function App() {
 
   const initializeFromBackend = useRestaurantStore((s) => s.initializeFromBackend)
   const startDemo = useRestaurantStore((s) => s.startDemo)
+
+  // Connect SSE stream for real-time waiter alerts
+  useAlerts(RESTAURANT_ID)
 
   // Initialize theme class on document
   useEffect(() => {
