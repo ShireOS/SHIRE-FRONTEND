@@ -34,6 +34,7 @@ const base = (restaurantId: string) =>
 
 export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: ModifierEditorProps) {
   const [modifiers, setModifiers] = useState<LocalModifier[]>([])
+  const [deletedModifierIds, setDeletedModifierIds] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -48,15 +49,14 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
         const res = await fetch(base(restaurantId), { headers: { Authorization: token } })
         if (!res.ok) return
         const data: { id: string; name: string; price_delta: number; item_ids: string[] }[] = await res.json()
-        if (data.length > 0) {
-          setModifiers(data.map(m => ({
-            localId: m.id,
-            savedId: m.id,
-            name: m.name,
-            priceDelta: m.price_delta > 0 ? String(m.price_delta) : '',
-            itemIds: new Set(m.item_ids),
-          })))
-        }
+        setModifiers(data.map(m => ({
+          localId: m.id,
+          savedId: m.id,
+          name: m.name,
+          priceDelta: m.price_delta > 0 ? String(m.price_delta) : '',
+          itemIds: new Set(m.item_ids),
+        })))
+        setDeletedModifierIds(new Set())
       } catch {
         // silently fall through — start with empty list
       } finally {
@@ -78,8 +78,12 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
   }, [])
 
   const removeRow = useCallback((localId: string) => {
+    const removed = modifiers.find(m => m.localId === localId)
+    if (removed?.savedId) {
+      setDeletedModifierIds(ids => new Set(ids).add(removed.savedId!))
+    }
     setModifiers(prev => prev.filter(m => m.localId !== localId))
-  }, [])
+  }, [modifiers])
 
   const setItemIds = useCallback((localId: string, ids: Set<string>) => {
     setModifiers(prev => prev.map(m => m.localId === localId ? { ...m, itemIds: new Set(ids) } : m))
@@ -87,7 +91,7 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
 
   const handleSave = async () => {
     const valid = modifiers.filter(m => m.name.trim() !== '')
-    if (valid.length === 0) { onDone(); return }
+    if (valid.length === 0 && deletedModifierIds.size === 0) { onDone(); return }
 
     setSaving(true)
     setError(null)
@@ -125,16 +129,15 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
         })
       }
 
-      // Delete any rows the user removed (had a savedId but no longer in list)
-      const validIds = new Set(valid.map(m => m.savedId).filter(Boolean))
-      const toDelete = modifiers.filter(m => m.savedId && !validIds.has(m.savedId))
-      for (const mod of toDelete) {
-        await fetch(`${base(restaurantId)}/${mod.savedId}`, {
+      for (const modifierId of deletedModifierIds) {
+        const res = await fetch(`${base(restaurantId)}/${modifierId}`, {
           method: 'DELETE',
           headers: { Authorization: token },
         })
+        if (!res.ok) throw new Error('Failed to delete removed modifier')
       }
 
+      setDeletedModifierIds(new Set())
       onDone()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
