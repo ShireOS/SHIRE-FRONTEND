@@ -2,34 +2,21 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
 
-// SPA fallback for multi-page app — serve each sub-app's index.html for all its routes
-function mpaFallback() {
+// SPA fallback for the owner console.
+function ownerConsoleFallback() {
   return {
-    name: 'mpa-fallback',
+    name: 'owner-console-fallback',
     configureServer(server: any) {
       server.middlewares.use((req: any, _res: any, next: any) => {
         const url = req.url || ''
         const accept = req.headers.accept || ''
 
-        // Only rewrite navigation requests (text/html), not JS/CSS/image assets
-        if (accept.includes('text/html') && !url.endsWith('.html')) {
-          if (url.startsWith('/book')) {
-            req.url = '/book/index.html'
-          } else if (url.startsWith('/fake-host-ui')) {
-            req.url = '/host/index.html'
-          } else if (url.startsWith('/fake-dashboard-demo')) {
-            req.url = '/dashboard/index.html'
-          } else if (url.startsWith('/dashboard')) {
-            req.url = '/dashboard/index.html'
-          } else if (url.startsWith('/backtesting')) {
-            req.url = '/backtesting/index.html'
-          } else if (url.startsWith('/host')) {
-            req.url = '/host/index.html'
-          } else if (url.startsWith('/privacy')) {
-            req.url = '/privacy/index.html'
-          } else if (url.startsWith('/terms')) {
-            req.url = '/terms/index.html'
-          }
+        if (url === '/book') {
+          req.url = '/book/index.html'
+        } else if (url.startsWith('/book/') && accept.includes('text/html') && !url.includes('.')) {
+          req.url = '/book/index.html'
+        } else if (accept.includes('text/html') && !url.includes('.') && url !== '/') {
+          req.url = '/index.html'
         }
         next()
       })
@@ -50,7 +37,7 @@ function apiConfigLogger() {
       const restaurantId = env.VITE_RESTAURANT_ID || 'default'
 
       console.log('')
-      console.log('\x1b[44m\x1b[37m === SHIRE API CONFIG === \x1b[0m')
+      console.log('\x1b[44m\x1b[37m === SHIRE OWNER CONSOLE === \x1b[0m')
       console.log('\x1b[36m API Base URL:\x1b[0m', apiUrl)
       console.log('\x1b[36m Restaurant ID:\x1b[0m', restaurantId)
       console.log('\x1b[36m Mock Data Mode:\x1b[0m', useMock ? '\x1b[33mON (no API calls)\x1b[0m' : '\x1b[32mOFF (calling real API)\x1b[0m')
@@ -60,10 +47,6 @@ function apiConfigLogger() {
         console.log('\x1b[33m ⚠️  Backend must be running at:\x1b[0m', apiUrl)
         console.log('\x1b[90m    If not running, set VITE_USE_MOCK_DATA=true in .env.development\x1b[0m')
         console.log('')
-        console.log('\x1b[35m 📅 Scheduling Features:\x1b[0m')
-        console.log('\x1b[90m    • Auto-selects "Mimosas" restaurant\x1b[0m')
-        console.log('\x1b[90m    • AI schedule generation via /schedules/run\x1b[0m')
-        console.log('\x1b[90m    • Coverage gap detection & labor tracking\x1b[0m')
       } else {
         console.log('\x1b[32m ✓ Using mock data - no backend required\x1b[0m')
       }
@@ -80,7 +63,7 @@ export default defineConfig(({ mode }) => {
     env.VITE_SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_PUBLISHABLE_KEY || ''
 
   return {
-    plugins: [react(), mpaFallback(), apiConfigLogger()],
+    plugins: [react(), ownerConsoleFallback(), apiConfigLogger()],
     define: {
       __SHIRE_SUPABASE_URL__: JSON.stringify(supabaseUrl),
       __SHIRE_SUPABASE_PUBLISHABLE_KEY__: JSON.stringify(supabasePublishableKey),
@@ -88,15 +71,8 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': resolve(__dirname, './src'),
-        '@host': resolve(__dirname, './src/host'),
         '@dashboard': resolve(__dirname, './src/dashboard'),
         '@shared': resolve(__dirname, './src/shared'),
-      },
-    },
-    server: {
-      // Fix 416 errors for video files - ensure proper Range request handling
-      headers: {
-        'Accept-Ranges': 'bytes',
       },
     },
     build: {
@@ -104,11 +80,6 @@ export default defineConfig(({ mode }) => {
         input: {
           main: resolve(__dirname, 'index.html'),
           book: resolve(__dirname, 'book/index.html'),
-          host: resolve(__dirname, 'host/index.html'),
-          dashboard: resolve(__dirname, 'dashboard/index.html'),
-          backtesting: resolve(__dirname, 'backtesting/index.html'),
-          privacy: resolve(__dirname, 'privacy/index.html'),
-          terms: resolve(__dirname, 'terms/index.html'),
         },
       },
     },

@@ -189,7 +189,7 @@ export function AuthCallbackPage() {
       return
     }
 
-    navigate('/dev-onboarding', { replace: true })
+    navigate('/onboarding', { replace: true })
   }, [
     fatalError,
     isProcessingCallback,

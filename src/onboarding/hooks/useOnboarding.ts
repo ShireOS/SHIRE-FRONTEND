@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../shared/lib/supabase'
 import { useAuth } from '../../auth'
 import type { Restaurant, RestaurantType } from '../../shared/types/database'
@@ -388,6 +388,14 @@ export function useOnboarding() {
   const currentRestaurant = auth.restaurant.currentRestaurant
   const isRestaurantLoading = auth.restaurant.isLoading
   const navigate = useNavigate()
+  const location = useLocation()
+  const isSetupEditor = /^\/restaurants\/[^/]+\/setup\/?$/.test(location.pathname)
+  const isNewRestaurantFlow =
+    location.pathname === '/onboarding' &&
+    new URLSearchParams(location.search).get('new') === '1'
+  const shouldUseCurrentRestaurant = !isNewRestaurantFlow
+  const currentRestaurantStep = isSetupEditor ? null : currentRestaurant?.onboarding_step
+  const currentRestaurantUpdatedAt = isSetupEditor ? null : currentRestaurant?.updated_at
 
   const [currentStep, setCurrentStep] = useState(0)
   const [data, setData] = useState<OnboardingData>(toOnboardingData(INITIAL_DATA))
@@ -397,7 +405,7 @@ export function useOnboarding() {
   const [showLaunchScreen, setShowLaunchScreen] = useState(false)
   const [isHydrating, setIsHydrating] = useState(true)
 
-  const activeRestaurantId = restaurantId || currentRestaurant?.id || null
+  const activeRestaurantId = restaurantId || (shouldUseCurrentRestaurant ? currentRestaurant?.id : null) || null
   const completionIssues = getCompletionIssues(data, activeRestaurantId)
 
   const getActiveRestaurantId = useCallback((): string => {
@@ -496,6 +504,10 @@ export function useOnboarding() {
     return {}
   }, [runWithTimeout])
 
+  const onboardingProgressPatch = useCallback((step: number) =>
+    isSetupEditor ? {} : { onboarding_step: step },
+  [isSetupEditor])
+
   // Hydrate local onboarding state from Supabase + local draft.
   useEffect(() => {
     let cancelled = false
@@ -524,7 +536,7 @@ export function useOnboarding() {
       let resolvedRestaurantId: string | null = null
       let resolvedStep = 0
 
-      const localDraft = readDraft(user.id)
+      const localDraft = isNewRestaurantFlow || isSetupEditor ? null : readDraft(user.id)
       if (localDraft) {
         mergedData = mergeOnboardingData(mergedData, localDraft.data)
         resolvedRestaurantId = localDraft.restaurantId
@@ -532,7 +544,9 @@ export function useOnboarding() {
       }
 
       const onboardingRestaurant =
-        currentRestaurant && !currentRestaurant.onboarding_completed_at
+        shouldUseCurrentRestaurant &&
+        currentRestaurant &&
+        (isSetupEditor || !currentRestaurant.onboarding_completed_at)
           ? currentRestaurant
           : null
 
@@ -540,10 +554,12 @@ export function useOnboarding() {
         const restaurantData = await hydrateFromRestaurant(onboardingRestaurant)
         mergedData = mergeOnboardingData(mergedData, restaurantData)
         resolvedRestaurantId = onboardingRestaurant.id
-        resolvedStep = Math.max(
-          resolvedStep,
-          mapDbStepToUiStep(onboardingRestaurant.onboarding_step)
-        )
+        resolvedStep = isSetupEditor
+          ? 0
+          : Math.max(
+              resolvedStep,
+              mapDbStepToUiStep(onboardingRestaurant.onboarding_step)
+            )
       }
 
       if (!cancelled) {
@@ -564,14 +580,18 @@ export function useOnboarding() {
     user?.id,
     isRestaurantLoading,
     currentRestaurant?.id,
-    currentRestaurant?.onboarding_step,
-    currentRestaurant?.updated_at,
+    currentRestaurantStep,
+    currentRestaurantUpdatedAt,
     currentRestaurant?.onboarding_completed_at,
+    shouldUseCurrentRestaurant,
+    isSetupEditor,
+    isNewRestaurantFlow,
     hydrateFromRestaurant,
   ])
 
   // Persist in-progress onboarding draft for refresh resilience.
   useEffect(() => {
+    if (isSetupEditor) return
     if (!user || isHydrating) return
 
     writeDraft(user.id, {
@@ -581,7 +601,7 @@ export function useOnboarding() {
       data,
       updatedAt: new Date().toISOString(),
     })
-  }, [user?.id, isHydrating, currentStep, restaurantId, data])
+  }, [user?.id, isHydrating, isSetupEditor, currentStep, restaurantId, data])
 
   // Update data
   const updateData = useCallback((updates: Partial<OnboardingData>) => {
@@ -603,10 +623,11 @@ export function useOnboarding() {
 
   // Persist visible step so onboarding resumes across browsers, not just localStorage.
   useEffect(() => {
-    const activeRestaurantId = restaurantId || currentRestaurant?.id
+    const activeRestaurantId = restaurantId || (shouldUseCurrentRestaurant ? currentRestaurant?.id : null)
+    if (isSetupEditor) return
     if (!activeRestaurantId) return
     if (isHydrating || showLaunchScreen) return
-    if (currentRestaurant?.onboarding_completed_at) return
+    if (currentRestaurant?.onboarding_completed_at && !isSetupEditor) return
 
     // Step 0 is the "create restaurant" screen. Once a restaurant exists,
     // never persist 0 back to the DB or we can reset users to the first screen
@@ -629,6 +650,8 @@ export function useOnboarding() {
     restaurantId,
     currentRestaurant?.id,
     currentRestaurant?.onboarding_completed_at,
+    shouldUseCurrentRestaurant,
+    isSetupEditor,
     isHydrating,
     showLaunchScreen,
   ])
@@ -658,7 +681,8 @@ export function useOnboarding() {
       }
 
       // If a restaurant already exists, update instead of creating a duplicate.
-      const existingRestaurantId = restaurantId || currentRestaurant?.id || null
+      const existingRestaurantId =
+        restaurantId || (shouldUseCurrentRestaurant ? currentRestaurant?.id : null) || null
       const existingIsCompleted = Boolean(
         existingRestaurantId &&
         currentRestaurant?.id === existingRestaurantId &&
@@ -689,7 +713,7 @@ export function useOnboarding() {
         setRestaurantId(updatedRestaurant.id)
         setCurrentStep(prev => Math.max(prev, 1))
         seedCurrentRestaurant(updatedRestaurant)
-        if (user) {
+        if (user && !isSetupEditor) {
           writeDraft(user.id, {
             version: ONBOARDING_DRAFT_VERSION,
             currentStep: 1,
@@ -698,7 +722,9 @@ export function useOnboarding() {
             updatedAt: new Date().toISOString(),
           })
         }
-        await refreshRestaurants(updatedRestaurant.id)
+        if (!isSetupEditor) {
+          await refreshRestaurants(updatedRestaurant.id)
+        }
         return updatedRestaurant
       }
 
@@ -790,6 +816,8 @@ export function useOnboarding() {
     currentRestaurant?.id,
     currentRestaurant?.onboarding_completed_at,
     currentRestaurant?.onboarding_step,
+    isSetupEditor,
+    shouldUseCurrentRestaurant,
     refreshRestaurants,
     runWithTimeout,
     seedCurrentRestaurant,
@@ -816,7 +844,7 @@ export function useOnboarding() {
                 team_size_range: data.team_size_range,
                 primary_goal: data.primary_goal,
               },
-              onboarding_step: 2,
+              ...onboardingProgressPatch(2),
             })
             .eq('id', activeRestaurantId),
         'Saving goals timed out. Please retry.'
@@ -832,7 +860,7 @@ export function useOnboarding() {
     } finally {
       setIsLoading(false)
     }
-  }, [data, getActiveRestaurantId, fetchRestaurantConfig, runWithTimeout])
+  }, [data, getActiveRestaurantId, fetchRestaurantConfig, onboardingProgressPatch, runWithTimeout])
 
   // Save tech stack (after step 3)
   const saveTechStack = useCallback(async () => {
@@ -854,7 +882,7 @@ export function useOnboarding() {
                 current_scheduling: data.current_scheduling,
                 current_reservations: data.current_reservations,
               },
-              onboarding_step: 4,
+              ...onboardingProgressPatch(4),
             })
             .eq('id', activeRestaurantId),
         'Saving current tools timed out. Please retry.'
@@ -870,7 +898,7 @@ export function useOnboarding() {
     } finally {
       setIsLoading(false)
     }
-  }, [data, getActiveRestaurantId, fetchRestaurantConfig, runWithTimeout])
+  }, [data, getActiveRestaurantId, fetchRestaurantConfig, onboardingProgressPatch, runWithTimeout])
 
   // Save operating hours (after step 4)
   const saveOperatingHours = useCallback(async () => {
@@ -911,15 +939,16 @@ export function useOnboarding() {
 
       if (insertError) throw insertError
 
-      // Update restaurant step
-      const { error: stepError } = await runWithTimeout(
-        () =>
-          supabase
-            .from('restaurants')
-            .update({ onboarding_step: 5 })
-            .eq('id', activeRestaurantId),
-        'Updating onboarding progress timed out. Please retry.'
-      )
+      const { error: stepError } = isSetupEditor
+        ? { error: null }
+        : await runWithTimeout(
+            () =>
+              supabase
+                .from('restaurants')
+                .update({ onboarding_step: 5 })
+                .eq('id', activeRestaurantId),
+            'Updating onboarding progress timed out. Please retry.'
+          )
 
       if (stepError) throw stepError
 
@@ -931,7 +960,7 @@ export function useOnboarding() {
     } finally {
       setIsLoading(false)
     }
-  }, [data.operating_hours, getActiveRestaurantId, runWithTimeout])
+  }, [data.operating_hours, getActiveRestaurantId, isSetupEditor, runWithTimeout])
 
   // Save capacity (after step 5)
   const saveCapacity = useCallback(async () => {
@@ -949,7 +978,7 @@ export function useOnboarding() {
             .update({
               seating_capacity: data.seating_capacity,
               table_count: data.table_count,
-              onboarding_step: 6,
+              ...onboardingProgressPatch(6),
             })
             .eq('id', activeRestaurantId),
         'Saving capacity settings timed out. Please retry.'
@@ -1006,7 +1035,7 @@ export function useOnboarding() {
     } finally {
       setIsLoading(false)
     }
-  }, [data, getActiveRestaurantId, runWithTimeout])
+  }, [data, getActiveRestaurantId, onboardingProgressPatch, runWithTimeout])
 
   // Save menu step progress (after step 6)
   const saveMenuProgress = useCallback(async () => {
@@ -1026,7 +1055,7 @@ export function useOnboarding() {
                 ...existingConfig,
                 menu_import_method: data.menu_import_method,
               },
-              onboarding_step: 7,
+              ...onboardingProgressPatch(7),
             })
             .eq('id', activeRestaurantId),
         'Saving menu setup timed out. Please retry.'
@@ -1041,7 +1070,7 @@ export function useOnboarding() {
     } finally {
       setIsLoading(false)
     }
-  }, [data.menu_import_method, getActiveRestaurantId, fetchRestaurantConfig, runWithTimeout])
+  }, [data.menu_import_method, getActiveRestaurantId, fetchRestaurantConfig, onboardingProgressPatch, runWithTimeout])
 
   // Complete onboarding
   const completeOnboarding = useCallback(async () => {
@@ -1077,9 +1106,13 @@ export function useOnboarding() {
                 team_setup_method: data.team_setup_method,
                 invites: data.invites,
               },
-              status: 'active',
-              onboarding_step: ONBOARDING_MAX_STEP,
-              onboarding_completed_at: new Date().toISOString(),
+              ...(isSetupEditor
+                ? {}
+                : {
+                    status: 'active',
+                    onboarding_step: ONBOARDING_MAX_STEP,
+                    onboarding_completed_at: new Date().toISOString(),
+                  }),
             })
             .eq('id', activeRestaurantId)
             .select()
@@ -1098,6 +1131,10 @@ export function useOnboarding() {
       if (user) {
         clearDraft(user.id)
       }
+      if (isSetupEditor) {
+        navigate(`/restaurants/${activeRestaurantId}/analytics`, { replace: true })
+        return
+      }
       setShowLaunchScreen(true)
     } catch (err) {
       const message = toErrorMessage(err, 'Failed to complete onboarding')
@@ -1110,6 +1147,8 @@ export function useOnboarding() {
     data,
     getActiveRestaurantId,
     fetchRestaurantConfig,
+    isSetupEditor,
+    navigate,
     refreshRestaurants,
     runWithTimeout,
     seedCurrentRestaurant,
@@ -1121,8 +1160,10 @@ export function useOnboarding() {
     const activeRestaurantId = restaurantId || currentRestaurant?.id || null
     if (activeRestaurantId) {
       await refreshRestaurants(activeRestaurantId)
+      navigate(`/restaurants/${activeRestaurantId}/analytics`, { replace: true })
+      return
     }
-    navigate('/', { replace: true })
+    navigate('/restaurants', { replace: true })
   }, [navigate, refreshRestaurants, restaurantId, currentRestaurant?.id])
 
   return {
@@ -1133,6 +1174,7 @@ export function useOnboarding() {
     isLoading,
     error,
     showLaunchScreen,
+    isHydrating,
     completionIssues,
 
     // Actions

@@ -1,4 +1,12 @@
-import type { TableStateEvent } from '../../host/types'
+export interface TableStateEvent {
+  type: 'table.state'
+  camera_id: string
+  table_id: string
+  table_number: string
+  state: string
+  confidence: number
+  timestamp: string
+}
 
 type ConnectionStatus = 'connected' | 'disconnected' | 'connecting'
 

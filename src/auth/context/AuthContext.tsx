@@ -11,20 +11,33 @@ const isRestaurantMemberPolicyRecursion = (message: string): boolean =>
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 const AUTH_BOOTSTRAP_GUARD_MS = 12000
+const AUTH_REQUEST_TIMEOUT_MS = 10000
 const CURRENT_RESTAURANT_STORAGE_KEY = 'shire_current_restaurant'
 const AUTH_NOT_CONFIGURED_ERROR =
   supabaseConfigError || '[Supabase] Auth is not configured for this environment.'
 
-const resolveAuthBasePath = (): '/dashboard' | '/host' | '/fake-host-ui' => {
-  const pathname = window.location.pathname
+const withTimeout = async <T,>(
+  operation: PromiseLike<T>,
+  timeoutMessage: string,
+  timeoutMs = AUTH_REQUEST_TIMEOUT_MS
+): Promise<T> => {
+  let timerId: ReturnType<typeof setTimeout> | null = null
 
-  if (pathname.startsWith('/fake-host-ui')) return '/fake-host-ui'
-  if (pathname.startsWith('/host')) return '/host'
-  return '/dashboard'
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timerId = setTimeout(() => {
+      reject(new Error(timeoutMessage))
+    }, timeoutMs)
+  })
+
+  try {
+    return await Promise.race([Promise.resolve(operation), timeoutPromise])
+  } finally {
+    if (timerId) clearTimeout(timerId)
+  }
 }
 
 const createAppAuthUrl = (path: 'callback' | 'reset-password') =>
-  `${window.location.origin}${resolveAuthBasePath()}/auth/${path}`
+  `${window.location.origin}/auth/${path}`
 
 const pickRestaurant = (
   availableRestaurants: Restaurant[],
@@ -169,12 +182,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!isSupabaseConfigured) return null
     if (membershipQueryDisabledRef.current) return null
 
-    const { data: member, error: memberError } = await supabase
-      .from('restaurant_members')
-      .select('*')
-      .eq('restaurant_id', restaurantId)
-      .eq('user_id', userId)
-      .maybeSingle()
+    let result
+    try {
+      result = await withTimeout(
+        supabase
+          .from('restaurant_members')
+          .select('*')
+          .eq('restaurant_id', restaurantId)
+          .eq('user_id', userId)
+          .maybeSingle(),
+        'Membership lookup timed out.'
+      )
+    } catch (error) {
+      console.warn('[Auth] Could not fetch membership:', error)
+      return null
+    }
+
+    const { data: member, error: memberError } = result
 
     if (memberError) {
       handleMembershipError(memberError.message, 'Could not fetch membership')
@@ -220,11 +244,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ----------------------------------------
   const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
     if (!isSupabaseConfigured) return null
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
+    let result
+    try {
+      result = await withTimeout(
+        supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single(),
+        'Profile lookup timed out.'
+      )
+    } catch (error) {
+      console.warn('[Auth] Could not fetch profile:', error)
+      return null
+    }
+
+    const { data, error } = result
 
     if (error) {
       // Profile might not exist yet for new users — that's OK
@@ -244,10 +279,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       // Get restaurants where user is owner
-      const { data: ownedRestaurants, error: ownedError } = await supabase
-        .from('restaurants')
-        .select('*')
-        .eq('owner_id', userId)
+      const { data: ownedRestaurants, error: ownedError } = await withTimeout(
+        supabase
+          .from('restaurants')
+          .select('*')
+          .eq('owner_id', userId),
+        'Owned restaurant lookup timed out.'
+      )
 
       if (ownedError) {
         console.warn('[Auth] Could not fetch owned restaurants:', ownedError.message)
@@ -255,14 +293,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       let memberRestaurants: Restaurant[] = []
       if (!membershipQueryDisabledRef.current) {
-        const { data: memberships, error: memberError } = await supabase
-          .from('restaurant_members')
-          .select(`
-            *,
-            restaurant:restaurants(*)
-          `)
-          .eq('user_id', userId)
-          .eq('status', 'active')
+        const { data: memberships, error: memberError } = await withTimeout(
+          supabase
+            .from('restaurant_members')
+            .select(`
+              *,
+              restaurant:restaurants(*)
+            `)
+            .eq('user_id', userId)
+            .eq('status', 'active'),
+          'Member restaurant lookup timed out.'
+        )
 
         if (memberError) {
           handleMembershipError(memberError.message, 'Could not fetch memberships (RLS may need setup)')
@@ -525,18 +566,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            first_name: metadata?.first_name,
-            last_name: metadata?.last_name,
-            phone: metadata?.phone,
+      const { data, error } = await withTimeout(
+        supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              first_name: metadata?.first_name,
+              last_name: metadata?.last_name,
+              phone: metadata?.phone,
+            },
+            emailRedirectTo: createAppAuthUrl('callback'),
           },
-          emailRedirectTo: createAppAuthUrl('callback'),
-        },
-      })
+        }),
+        'Sign up timed out. Please check your connection and try again.'
+      )
 
       if (error) throw error
 
@@ -561,10 +605,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+      const { error } = await withTimeout(
+        supabase.auth.signInWithPassword({
+          email,
+          password,
+        }),
+        'Sign in timed out. Please check your connection and try again.'
+      )
 
       if (error) throw error
 
@@ -581,12 +628,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: createAppAuthUrl('callback'),
-        },
-      })
+      const { error } = await withTimeout(
+        supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: createAppAuthUrl('callback'),
+          },
+        }),
+        'Google sign in timed out. Please check your connection and try again.'
+      )
 
       if (error) throw error
 
@@ -613,9 +663,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: createAppAuthUrl('reset-password'),
-      })
+      const { error } = await withTimeout(
+        supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: createAppAuthUrl('reset-password'),
+        }),
+        'Password reset timed out. Please check your connection and try again.'
+      )
 
       if (error) throw error
 
@@ -632,9 +685,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword,
-      })
+      const { error } = await withTimeout(
+        supabase.auth.updateUser({
+          password: newPassword,
+        }),
+        'Password update timed out. Please check your connection and try again.'
+      )
 
       if (error) throw error
 

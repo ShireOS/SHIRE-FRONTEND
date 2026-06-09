@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 
 interface AuthLayoutProps {
   children: ReactNode
@@ -10,8 +9,6 @@ interface AuthLayoutProps {
 }
 
 export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
-  const navigate = useNavigate()
-  // Check system preference or local storage for initial theme
   const [isDark, setIsDark] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('auth-theme')
@@ -21,7 +18,6 @@ export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
     return true
   })
 
-  // Apply theme class to document element
   useEffect(() => {
     const root = document.documentElement
     if (isDark) {
@@ -36,105 +32,81 @@ export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
   }, [isDark])
 
   return (
-    <div className="min-h-screen bg-base flex transition-colors duration-500 font-sans">
+    <div className="min-h-screen bg-dash-base text-dash-cream transition-colors duration-500 font-sans">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(201,169,98,0.12),transparent_26%),radial-gradient(circle_at_80%_0%,rgba(255,255,255,0.06),transparent_24%)]" />
 
-      {/* Absolute top-right toggle across the whole screen */}
-      <div className="absolute top-8 right-8 z-50">
+      <div className="absolute top-6 right-6 z-50">
         <button
+          type="button"
           onClick={() => setIsDark(!isDark)}
-          className="w-16 h-8 rounded-full bg-elevated/80 backdrop-blur-md border border-transparent shadow-sm hover:shadow transition-all relative flex items-center px-1 cursor-pointer focus:outline-none"
+          className="w-14 h-8 rounded-full border border-white/10 bg-white/[0.04] backdrop-blur-md shadow-sm transition-all relative flex items-center px-1 cursor-pointer focus:outline-none"
           aria-label="Toggle Dark Mode"
         >
-          {/* Icons container */}
-          <div className="absolute w-full flex justify-between px-2 left-0 text-primary/50 pointer-events-none">
-            {/* Moon icon */}
+          <div className="absolute w-full flex justify-between px-2 left-0 text-dash-secondary pointer-events-none">
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
+              <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
             </svg>
-            {/* Sun icon */}
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4.22 1.536a1 1 0 011.415 0l.707.707a1 1 0 01-1.414 1.414l-.707-.707a1 1 0 010-1.414zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zm-1.536 4.22a1 1 0 010 1.415l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 0zM10 18a1 1 0 01-1-1v-1a1 1 0 112 0v1a1 1 0 01-1 1zm-4.22-1.536a1 1 0 01-1.415 0l-.707-.707a1 1 0 011.414-1.414l.707.707a1 1 0 010 1.414zM2 10a1 1 0 011-1h1a1 1 0 110 2H3a1 1 0 01-1-1zm1.536-4.22a1 1 0 010-1.415l.707-.707a1 1 0 011.414 1.414l-.707.707a1 1 0 01-1.414 0zM10 5a5 5 0 100 10 5 5 0 000-10z"></path>
+              <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4.22 1.536a1 1 0 011.415 0l.707.707a1 1 0 01-1.414 1.414l-.707-.707a1 1 0 010-1.414zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zm-1.536 4.22a1 1 0 010 1.415l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 0zM10 18a1 1 0 01-1-1v-1a1 1 0 112 0v1a1 1 0 01-1 1zm-4.22-1.536a1 1 0 01-1.415 0l-.707-.707a1 1 0 011.414-1.414l.707.707a1 1 0 010 1.414zM2 10a1 1 0 011-1h1a1 1 0 110 2H3a1 1 0 01-1-1zm1.536-4.22a1 1 0 010-1.415l.707-.707a1 1 0 011.414 1.414l-.707.707a1 1 0 01-1.414 0zM10 5a5 5 0 100 10 5 5 0 000-10z" />
             </svg>
           </div>
-
-          {/* Animated Thumb */}
           <motion.div
-            className="w-6 h-6 rounded-full bg-primary shadow-sm relative z-10"
-            animate={{ x: isDark ? 0 : 32 }}
-            transition={{ type: "spring", stiffness: 500, damping: 30 }}
+            className="w-6 h-6 rounded-full bg-dash-gold shadow-sm relative z-10"
+            animate={{ x: isDark ? 0 : 24 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
           />
         </button>
       </div>
 
-      {/* LEFT COLUMN: Form Area */}
-      <div className="w-full lg:w-1/2 flex flex-col relative z-10 px-8 py-10 lg:px-24 justify-center">
-
-        {/* Top Header - Logo */}
-        <div className="absolute top-8 left-8 lg:left-24 flex items-center gap-4">
-          <button
-            onClick={() => navigate(-1)}
-            className="w-8 h-8 rounded-lg bg-elevated/80 border border-black/5 dark:border-white/10 flex items-center justify-center text-secondary hover:text-primary hover:bg-elevated transition-all cursor-pointer focus:outline-none"
-            aria-label="Go back"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M19 12H5M5 12L12 19M5 12L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-          <span className="font-display text-2xl tracking-wide text-primary">SHIRE</span>
-        </div>
-
+      <main className="relative z-10 flex min-h-screen items-center justify-center px-5 py-10">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: 'easeOut' }}
-          className="w-full max-w-md mx-auto mt-20"
+          className="grid w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035] shadow-2xl backdrop-blur-xl lg:grid-cols-[1fr_420px]"
         >
-          {/* Header */}
-          <div className="mb-10">
-            <h1 className="text-4xl font-semibold tracking-tight text-primary mb-3">
-              {title}
-            </h1>
-            {subtitle && (
-              <p className="text-lg text-secondary">
-                {subtitle}
-              </p>
-            )}
-          </div>
-
-          {children}
-        </motion.div>
-      </div>
-
-      {/* RIGHT COLUMN: Visual/Marketing Area */}
-      <div className="hidden lg:flex w-1/2 bg-surface relative overflow-hidden items-center justify-center p-8">
-        {/* Decorative inner container */}
-        <div className="w-full max-w-3xl h-[85vh] rounded-3xl overflow-hidden relative shadow-2xl glass-card backdrop-blur-2xl group border border-white/5">
-          <img
-            src={isDark ? '/auth-rest-dark.png' : '/auth-rest-light.png'}
-            alt="Shire Marketing"
-            className="w-full h-full object-cover transition-opacity duration-700"
-            key={isDark ? 'dark-restaurant' : 'light-restaurant'}
-          />
-
-          {/* Gradient Overlay for Text Legibility if needed */}
-          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
-
-          {/* Testimonial / Features Overlay */}
-          <div className="absolute bottom-12 left-12 right-12 z-10 glass-panel rounded-2xl p-6 border border-white/10 mt-auto bg-black/40 backdrop-blur-xl">
-            <div className="flex gap-4 mb-4">
-              <span className="px-3 py-1 rounded-full border border-white/20 text-white/90 text-xs font-mono backdrop-blur-md">Live at Mimosas</span>
+          <section className="p-6 sm:p-10">
+            <div className="mb-10">
+              <p className="label-mono text-dash-gold">SHIRE Owner Console</p>
+              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-dash-cream sm:text-4xl">
+                {title}
+              </h1>
+              {subtitle && (
+                <p className="mt-3 max-w-md text-sm leading-6 text-dash-secondary">
+                  {subtitle}
+                </p>
+              )}
             </div>
-            <p className="text-white text-lg font-medium leading-relaxed mb-4">
-              "Shire is exactly the solution we've been looking for. It has completely streamlined our operations at Mimosas, making scheduling and staffing essentially run themselves. It's a game changer."
-            </p>
+            {children}
+          </section>
+
+          <aside className="hidden border-l border-white/10 bg-black/20 p-8 lg:flex lg:flex-col lg:justify-between">
             <div>
-              <p className="text-white/90 text-sm font-semibold tracking-wide">Genta T</p>
-              <p className="text-white/60 text-xs mt-1 font-medium">Co-Owner // Mimosas</p>
+              <div className="inline-flex rounded-xl border border-dash-gold/25 bg-dash-gold/10 px-3 py-2 text-xs font-semibold text-dash-gold">
+                Manager / Owner Access
+              </div>
+              <h2 className="mt-6 text-2xl font-semibold tracking-tight">
+                Operations, analytics, setup, and scheduling in one place.
+              </h2>
+              <p className="mt-4 text-sm leading-6 text-dash-secondary">
+                Sign in to manage restaurants, edit setup, review analytics, and prepare staff scheduling workflows.
+              </p>
             </div>
-          </div>
-        </div>
-      </div>
 
+            <div className="grid gap-3 text-sm text-dash-secondary">
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                Restaurant setup
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                Owner analytics
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                Scheduling foundation
+              </div>
+            </div>
+          </aside>
+        </motion.div>
+      </main>
     </div>
   )
 }

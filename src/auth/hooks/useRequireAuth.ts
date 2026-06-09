@@ -30,7 +30,7 @@ interface UseRequireAuthOptions {
   redirectTo?: string
   /** If true, also require onboarding to be complete (default: false) */
   requireOnboarding?: boolean
-  /** Redirect here if onboarding is not complete (default: /dev-onboarding) */
+  /** Redirect here if onboarding is not complete (default: /onboarding) */
   onboardingRedirect?: string
 }
 
@@ -52,7 +52,7 @@ export function useRequireAuth(options: UseRequireAuthOptions = {}) {
   const {
     redirectTo = '/auth/login',
     requireOnboarding = true,
-    onboardingRedirect = '/dev-onboarding',
+    onboardingRedirect = '/onboarding',
   } = options
 
   const auth = useAuth()
@@ -139,6 +139,11 @@ export function useRequireAuth(options: UseRequireAuthOptions = {}) {
 export function useRequireOnboarding() {
   const auth = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const isSetupEditor = /^\/restaurants\/[^/]+\/setup\/?$/.test(location.pathname)
+  const isNewRestaurantFlow =
+    location.pathname === '/onboarding' &&
+    new URLSearchParams(location.search).get('new') === '1'
   const onboardingRestaurant = getOnboardingRestaurant(
     auth.restaurant.currentRestaurant,
     auth.restaurant.restaurants
@@ -158,15 +163,15 @@ export function useRequireOnboarding() {
       return
     }
 
-    if (completedRestaurant) {
+    if (completedRestaurant && !isSetupEditor && !isNewRestaurantFlow) {
       if (auth.restaurant.currentRestaurant?.id !== completedRestaurant.id) {
         void auth.switchRestaurant(completedRestaurant.id)
       }
-      navigate('/', { replace: true })
+      navigate('/restaurants', { replace: true })
       return
     }
 
-    if (onboardingRestaurant) {
+    if (onboardingRestaurant && !isNewRestaurantFlow) {
       if (auth.restaurant.currentRestaurant?.id !== onboardingRestaurant.id) {
         void auth.switchRestaurant(onboardingRestaurant.id)
       }
@@ -181,6 +186,8 @@ export function useRequireOnboarding() {
     auth.switchRestaurant,
     onboardingRestaurant,
     completedRestaurant,
+    isSetupEditor,
+    isNewRestaurantFlow,
     navigate,
   ])
 
@@ -212,7 +219,7 @@ export function useRedirectIfAuthenticated(redirectTo = '/') {
       )
 
       if (!completedRestaurant) {
-        navigate('/dev-onboarding', { replace: true })
+        navigate('/onboarding', { replace: true })
         return
       }
 

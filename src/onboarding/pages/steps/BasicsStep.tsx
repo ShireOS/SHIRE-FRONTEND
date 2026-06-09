@@ -26,8 +26,7 @@ export function BasicsStep({ onboarding }: BasicsStepProps) {
   const { data, updateData, createRestaurant, goToStep, isLoading, error } = onboarding
   const [localError, setLocalError] = useState<string | null>(null)
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const submitBasics = async () => {
     setLocalError(null)
 
     // Validate
@@ -39,8 +38,13 @@ export function BasicsStep({ onboarding }: BasicsStepProps) {
       await createRestaurant()
       goToStep(1)
     } catch (err) {
-      // Error is already set by createRestaurant
+      setLocalError(err instanceof Error ? err.message : 'Could not save restaurant basics')
     }
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    void submitBasics()
   }
 
   const toggleCuisine = (cuisine: string) => {
@@ -176,7 +180,8 @@ export function BasicsStep({ onboarding }: BasicsStepProps) {
 
       {/* Submit */}
       <button
-        type="submit"
+        type="button"
+        onClick={() => void submitBasics()}
         disabled={isLoading}
         className="w-full py-4 px-6 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
       >

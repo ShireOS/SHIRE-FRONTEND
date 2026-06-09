@@ -23,7 +23,7 @@ export function OnboardingPage() {
   const [isSwitchingAccount, setIsSwitchingAccount] = useState(false)
   const [switchAccountError, setSwitchAccountError] = useState<string | null>(null)
 
-  const { currentStep, nextStep, prevStep, showLaunchScreen } = onboarding
+  const { currentStep, nextStep, prevStep, showLaunchScreen, isHydrating } = onboarding
 
   const handleSwitchAccount = useCallback(async () => {
     setSwitchAccountError(null)
@@ -43,7 +43,7 @@ export function OnboardingPage() {
   }, [navigate, signOut])
 
   // Loading state
-  if (!isReady) {
+  if (!isReady || isHydrating) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
         <div className="text-center">

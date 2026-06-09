@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useRedirectIfAuthenticated } from '../hooks/useRequireAuth'
 import { AuthLayout } from '../components/AuthLayout'
@@ -8,6 +8,7 @@ import { SocialLogin } from '../components/SocialLogin'
 export function LoginPage() {
   const { signIn, signInWithGoogle } = useAuth()
   const { isReady } = useRedirectIfAuthenticated()
+  const navigate = useNavigate()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -23,9 +24,11 @@ export function LoginPage() {
 
     if (!result.success) {
       setError(result.error || 'Failed to sign in')
+      setIsLoading(false)
+      return
     }
 
-    setIsLoading(false)
+    navigate('/', { replace: true })
   }
 
   const handleGoogleSignIn = async () => {
@@ -91,7 +94,7 @@ export function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full px-4 py-3 rounded-xl bg-transparent border border-dash-border/60 hover:border-dash-border/80 text-primary placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-[15px] shadow-sm"
-              placeholder="Create a password"
+              placeholder="Your password"
             />
           </div>
 
