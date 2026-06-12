@@ -13,8 +13,10 @@ type StaffRole = typeof ROLES[number]
 interface StaffMember {
   id: string
   name: string
+  email?: string | null
   role: StaffRole
   pos_passcode: string
+  employee_login_id?: string | null
 }
 
 export function TeamStep({ onboarding }: TeamStepProps) {
@@ -25,6 +27,8 @@ export function TeamStep({ onboarding }: TeamStepProps) {
   const [staffList, setStaffList] = useState<StaffMember[]>([])
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [employeeLoginId, setEmployeeLoginId] = useState('')
   const [role, setRole] = useState<StaffRole>('server')
   const [passcode, setPasscode] = useState('1111')
   const [isAdding, setIsAdding] = useState(false)
@@ -32,10 +36,15 @@ export function TeamStep({ onboarding }: TeamStepProps) {
 
   const resetForm = () => {
     setName('')
+    setEmail('')
+    setEmployeeLoginId('')
     setRole('server')
     setPasscode('1111')
     setFormError(null)
   }
+
+  const defaultEmployeeId = (value: string) =>
+    value.trim().split(/\s+/)[0]?.toLowerCase().replace(/[^a-z0-9_]+/g, '') || ''
 
   const handleAddEmployee = async () => {
     if (!name.trim()) {
@@ -68,8 +77,10 @@ export function TeamStep({ onboarding }: TeamStepProps) {
           },
           body: JSON.stringify({
             name: name.trim(),
+            email: email.trim() || null,
             role,
             pos_passcode: passcode,
+            employee_login_id: employeeLoginId.trim() || defaultEmployeeId(name),
           }),
         }
       )
@@ -79,15 +90,24 @@ export function TeamStep({ onboarding }: TeamStepProps) {
         throw new Error((err as { detail?: string; message?: string }).detail || (err as { detail?: string; message?: string }).message || `Error ${response.status}`)
       }
 
-      const created = await response.json() as { id?: string; name?: string; role?: string; pos_passcode?: string }
+      const created = await response.json() as {
+        id?: string
+        name?: string
+        email?: string | null
+        role?: string
+        pos_passcode?: string
+        employee_login_id?: string | null
+      }
 
       setStaffList(prev => [
         ...prev,
         {
           id: created.id || String(Date.now()),
           name: created.name || name.trim(),
+          email: created.email || email.trim() || null,
           role: (created.role as StaffRole) || role,
           pos_passcode: created.pos_passcode || passcode,
+          employee_login_id: created.employee_login_id || employeeLoginId.trim() || defaultEmployeeId(name),
         },
       ])
 
@@ -136,8 +156,10 @@ export function TeamStep({ onboarding }: TeamStepProps) {
             <div>
               <p className="text-[rgb(var(--text-primary))] font-medium text-sm">{staff.name}</p>
               <p className="text-xs text-[rgb(var(--text-tertiary))] mt-0.5 capitalize">
-                {staff.role} · Passcode:{' '}
-                <span className="font-mono">{staff.pos_passcode}</span>
+                {staff.role} · ID:{' '}
+                <span className="font-mono normal-case">{staff.employee_login_id || 'auto'}</span>
+                {' '}· PIN: <span className="font-mono">{staff.pos_passcode}</span>
+                {staff.email ? <span className="normal-case"> · {staff.email}</span> : null}
               </p>
             </div>
             <button
@@ -167,12 +189,45 @@ export function TeamStep({ onboarding }: TeamStepProps) {
             <input
               type="text"
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={e => {
+                setName(e.target.value)
+                if (!employeeLoginId.trim()) {
+                  setEmployeeLoginId(defaultEmployeeId(e.target.value))
+                }
+              }}
               onKeyDown={e => e.key === 'Enter' && void handleAddEmployee()}
               placeholder="Alice"
               className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
               autoFocus
             />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <label className="block text-xs font-medium text-[rgb(var(--text-secondary))] mb-1.5">
+                Email <span className="text-[rgb(var(--text-tertiary))] font-normal">(optional)</span>
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="alice@restaurant.com"
+                className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-[rgb(var(--text-secondary))] mb-1.5">
+                Employee ID <span className="text-[rgb(var(--text-tertiary))] font-normal">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={employeeLoginId}
+                onChange={e => setEmployeeLoginId(e.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, ''))}
+                placeholder={defaultEmployeeId(name) || 'alice'}
+                className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm font-mono"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -211,7 +266,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
           </div>
 
           <p className="text-xs text-amber-400/70">
-            Remind managers to update passcodes before handing tablets to staff — default is 1111.
+            Employees can sign in with email + PIN or employee ID + PIN after selecting the restaurant.
           </p>
 
           <div className="flex gap-2">
