@@ -93,16 +93,23 @@ export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
               </p>
             </div>
 
+            <div className="flex flex-1 items-center justify-center py-10">
+              <div className="relative h-44 w-44 rounded-[34px] border-2 border-dash-gold/80 bg-dash-gold/5 shadow-[0_0_80px_rgba(201,169,98,0.16)]">
+                <div className="absolute left-5 top-5 h-5 w-5 border-l-2 border-t-2 border-dash-gold/90" />
+                <div className="absolute right-5 top-5 h-5 w-5 border-r-2 border-t-2 border-dash-gold/90" />
+                <div className="absolute bottom-5 left-5 h-5 w-5 border-b-2 border-l-2 border-dash-gold/90" />
+                <div className="absolute bottom-5 right-5 h-5 w-5 border-b-2 border-r-2 border-dash-gold/90" />
+                <div className="absolute left-1/2 top-1/2 h-16 w-24 -translate-x-1/2 -translate-y-1/2 rounded-[50%] border-2 border-dash-cream/85 bg-dash-cream/5" />
+                <div className="absolute left-1/2 top-1/2 h-9 w-14 -translate-x-1/2 -translate-y-1/2 rounded-[50%] border border-dash-gold/70" />
+                <div className="absolute left-1/2 top-[48px] h-9 w-px -translate-x-1/2 bg-dash-gold/60" />
+                <div className="absolute left-1/2 bottom-[48px] h-9 w-px -translate-x-1/2 bg-dash-gold/60" />
+              </div>
+            </div>
+
             <div className="grid gap-3 text-sm text-dash-secondary">
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                Restaurant setup
-              </div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                Owner analytics
-              </div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                Scheduling foundation
-              </div>
+              <p className="leading-6">
+                Restaurant setup, analytics, and scheduling share one operational workspace after sign in.
+              </p>
             </div>
           </aside>
         </motion.div>

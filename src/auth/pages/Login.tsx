@@ -45,18 +45,29 @@ export function LoginPage() {
     if (mode !== 'employee' || restaurants.length > 0) return
 
     let cancelled = false
-    fetch(`${API_CONFIG.baseUrl}/employee-auth/restaurants`)
-      .then(response => {
-        if (!response.ok) throw new Error(`Could not load restaurants (${response.status})`)
-        return response.json()
-      })
+    const loadRestaurants = async () => {
+      const primary = await fetch(`${API_CONFIG.baseUrl}/employee-auth/restaurants`)
+      if (primary.ok) return primary.json()
+
+      const fallback = await fetch(`${API_CONFIG.baseUrl}/restaurants`)
+      if (fallback.ok) return fallback.json()
+
+      throw new Error(`Could not load restaurants (${primary.status})`)
+    }
+
+    loadRestaurants()
       .then((data: EmployeeRestaurant[]) => {
         if (cancelled) return
         setRestaurants(data)
         if (data[0]) setSelectedRestaurantId(data[0].id)
       })
       .catch(err => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load restaurants')
+        if (!cancelled) {
+          const message = err instanceof TypeError
+            ? `Could not reach the backend at ${API_CONFIG.baseUrl}. Start/restart the backend and try again.`
+            : err instanceof Error ? err.message : 'Could not load restaurants'
+          setError(message)
+        }
       })
 
     return () => {

@@ -12,6 +12,10 @@ import {
 import { OnboardingPage } from '../onboarding'
 import { supabase } from '../shared/lib/supabase'
 import { API_CONFIG } from '../shared/api/config'
+import ModernRestaurantSetupPanel, {
+  buildSetupWarnings as buildModernSetupWarnings,
+  warningCount as modernWarningCount,
+} from './RestaurantSetupPanel'
 
 function LoadingScreen() {
   return (
@@ -153,21 +157,24 @@ function WarningTriangle({ className = '' }) {
 
 function buildSetupWarnings(restaurant, waiterCount = null) {
   const warnings = {
-    profile: [],
-    operations: [],
-    team: [],
+    basics: [],
+    hours: [],
+    capacity: [],
+    menu: [],
+    modifiers: [],
+    employees: [],
     integrations: [],
   }
 
-  if (!restaurant.name) warnings.profile.push('Restaurant name')
-  if (!restaurant.city || !restaurant.state) warnings.profile.push('Location')
-  if (!restaurant.phone) warnings.profile.push('Phone')
+  if (!restaurant.name) warnings.basics.push('Restaurant name')
+  if (!restaurant.city || !restaurant.state) warnings.basics.push('Location')
+  if (!restaurant.phone) warnings.basics.push('Phone')
 
-  if (!restaurant.seating_capacity) warnings.operations.push('Seating capacity')
-  if (!restaurant.table_count) warnings.operations.push('Table count')
-  if (!restaurant.floor_plan_data && !restaurant.floor_plan_image_url) warnings.operations.push('Floor plan')
+  if (!restaurant.seating_capacity) warnings.capacity.push('Seating capacity')
+  if (!restaurant.table_count) warnings.capacity.push('Table count')
+  if (!restaurant.floor_plan_data && !restaurant.floor_plan_image_url) warnings.capacity.push('Floor plan')
 
-  if (waiterCount === 0) warnings.team.push('Employees')
+  if (waiterCount === 0) warnings.employees.push('Employees')
 
   return warnings
 }
@@ -186,24 +193,347 @@ function PlaceholderPanel({ title, eyebrow, children }) {
   )
 }
 
-function AnalyticsPlaceholder({ restaurant }) {
+const ANALYTICS_PERIODS = [
+  { id: 'day', label: 'Day' },
+  { id: 'week', label: 'Week' },
+  { id: 'month', label: 'Month' },
+  { id: 'year', label: 'Year' },
+  { id: 'full', label: 'Full' },
+]
+
+const formatCurrency = (value) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+    .format(Number(value || 0))
+
+const formatNumber = (value, digits = 0) =>
+  value === null || value === undefined
+    ? 'DNE'
+    : new Intl.NumberFormat('en-US', { maximumFractionDigits: digits }).format(Number(value || 0))
+
+const formatMinutes = (value) =>
+  value === null || value === undefined ? 'DNE' : `${formatNumber(value, 1)} min`
+
+const renderNumber = (value) => formatNumber(value)
+const renderCurrency = (value) => formatCurrency(value)
+
+function MetricCard({ label, value, detail, muted = false }) {
   return (
-    <div className="space-y-5">
-      <PlaceholderPanel title="Analytics" eyebrow="Coming online">
-        <p>
-          Placeholder analytics workspace for {restaurant?.name || 'this restaurant'}. This will house revenue,
-          covers, table turns, staff efficiency, menu performance, and operational insights.
-        </p>
-      </PlaceholderPanel>
-      <div className="grid gap-4 md:grid-cols-3">
-        {['Revenue', 'Covers', 'Table Turns'].map((label) => (
-          <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-            <p className="text-sm text-dash-tertiary">{label}</p>
-            <p className="mt-3 text-3xl font-semibold">--</p>
-            <p className="mt-2 text-sm text-dash-secondary">Waiting for live analytics data.</p>
-          </div>
-        ))}
+    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+      <p className="text-sm text-dash-tertiary">{label}</p>
+      <p className={`mt-3 text-3xl font-semibold ${muted ? 'text-dash-secondary' : ''}`}>{value}</p>
+      {detail && <p className="mt-2 text-sm leading-5 text-dash-secondary">{detail}</p>}
+    </div>
+  )
+}
+
+function EmptyNotice({ message }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4 text-sm text-dash-secondary">
+      {message}
+    </div>
+  )
+}
+
+function AnalyticsSection({ title, source, sampleSize, status, children, emptyMessage }) {
+  const empty = status === 'empty'
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-white/10 pb-3">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
+          <p className="mt-1 text-sm text-dash-secondary">Source: {source}</p>
+        </div>
+        <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-dash-secondary">
+          n={sampleSize ?? 0}
+        </span>
       </div>
+      {empty ? <EmptyNotice message={emptyMessage} /> : children}
+    </section>
+  )
+}
+
+function MiniTable({ columns, rows }) {
+  if (!rows?.length) return <EmptyNotice message="No rows for this range." />
+  return (
+    <div className="overflow-hidden rounded-xl border border-white/10">
+      <table className="w-full text-left text-sm">
+        <thead className="bg-white/[0.04] text-dash-tertiary">
+          <tr>
+            {columns.map(column => (
+              <th key={column.key} className="px-4 py-3 font-medium">{column.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/10">
+          {rows.map((row, index) => (
+            <tr key={`${row.name || row.status || row.state || row.bucket || index}-${index}`}>
+              {columns.map(column => (
+                <td key={column.key} className="px-4 py-3 text-dash-secondary">
+                  {column.render ? column.render(row[column.key], row) : row[column.key]}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function AnalyticsDashboard({ restaurant }) {
+  const [period, setPeriod] = useState('week')
+  const [payload, setPayload] = useState(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!restaurant?.id) return
+    let cancelled = false
+    setIsLoading(true)
+    setError('')
+    fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/owner-analytics?period=${period}`)
+      .then(data => {
+        if (!cancelled) setPayload(data)
+      })
+      .catch(err => {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load analytics')
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [restaurant?.id, period])
+
+  const sections = payload?.sections || {}
+  const revenue = sections.revenue || {}
+  const revenueData = revenue.data || {}
+  const visits = sections.visits || {}
+  const visitData = visits.data || {}
+  const reservations = sections.reservations || {}
+  const reservationData = reservations.data || {}
+  const floor = sections.floor || {}
+  const floorData = floor.data || {}
+  const staff = sections.staff || {}
+  const staffData = staff.data || {}
+  const stateEvents = sections.state_events || {}
+  const stateData = stateEvents.data || {}
+  const menu = sections.menu || {}
+  const timeSeries = sections.time_series || {}
+
+  return (
+    <div className="space-y-8">
+      <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="label-mono">Owner Analytics</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight">{restaurant?.name || 'Restaurant'}</h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-dash-secondary">
+              Phase 1 analytics from live POS, reservation, host visit, table, shift, and state-event data.
+            </p>
+          </div>
+          <nav className="grid grid-cols-5 rounded-xl border border-white/10 p-1">
+            {ANALYTICS_PERIODS.map(item => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setPeriod(item.id)}
+                className={[
+                  'rounded-lg px-3 py-2 text-sm font-semibold transition',
+                  period === item.id ? 'bg-dash-gold text-black' : 'text-dash-secondary hover:text-dash-cream',
+                ].join(' ')}
+              >
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+        {payload?.window && (
+          <p className="mt-4 text-xs text-dash-tertiary">
+            {payload.window.is_full_history
+              ? 'Showing all available history.'
+              : `Window: ${payload.window.start_at?.slice(0, 10)} to ${payload.window.end_at?.slice(0, 10)}`}
+          </p>
+        )}
+      </section>
+
+      {isLoading && <LoadingScreen />}
+      {error && <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">{error}</div>}
+
+      {!isLoading && !error && payload && (
+        <>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard label="Revenue" value={formatCurrency(revenueData.total_revenue)} detail={`${formatNumber(revenueData.order_count)} POS orders`} />
+            <MetricCard label="Covers" value={formatNumber(visitData.covers)} detail={`${formatNumber(visitData.visit_count)} host visits`} />
+            <MetricCard label="Avg Turn Time" value={formatMinutes(visitData.avg_turn_minutes)} detail={visits.quality?.message} muted={!visits.quality?.turn_time_available} />
+            <MetricCard label="Reservations" value={formatNumber(reservationData.reservation_count)} detail={`${formatNumber(reservationData.booked_covers)} booked covers`} />
+          </div>
+
+          <AnalyticsSection
+            title="Revenue"
+            source="pos_orders"
+            status={revenue.status}
+            sampleSize={revenue.sample_size}
+            emptyMessage={revenue.empty_message}
+          >
+            <div className="grid gap-4 md:grid-cols-3">
+              <MetricCard label="Avg Order" value={formatCurrency(revenueData.avg_order_value)} />
+              <MetricCard label="Tips" value={formatCurrency(revenueData.tips)} />
+              <MetricCard label="Paid / Closed" value={`${formatNumber(revenueData.paid_orders)} / ${formatNumber(revenueData.closed_orders)}`} />
+            </div>
+          </AnalyticsSection>
+
+          <AnalyticsSection
+            title="Menu Sales"
+            source="pos_order_items + pos_orders"
+            status={menu.status}
+            sampleSize={menu.sample_size}
+            emptyMessage={menu.empty_message}
+          >
+            <MiniTable
+              rows={menu.items}
+              columns={[
+                { key: 'name', label: 'Item' },
+                { key: 'category', label: 'Category' },
+                { key: 'quantity', label: 'Qty', render: renderNumber },
+                { key: 'revenue', label: 'Revenue', render: renderCurrency },
+              ]}
+            />
+          </AnalyticsSection>
+
+          <div className="grid gap-6 xl:grid-cols-2">
+            <AnalyticsSection
+              title="Visits & Turn Time"
+              source="visits"
+              status={visits.status}
+              sampleSize={visits.sample_size}
+              emptyMessage={visits.empty_message}
+            >
+              <div className="grid gap-4 md:grid-cols-2">
+                <MetricCard label="Completed Turns" value={formatNumber(visitData.completed_turns)} detail="Requires seated_at and cleared_at." />
+                <MetricCard label="Payment → Clear" value={formatMinutes(visitData.avg_payment_to_clear_minutes)} />
+                <MetricCard label="Seated → Payment" value={formatMinutes(visitData.avg_seated_to_payment_minutes)} />
+                <MetricCard label="Covers" value={formatNumber(visitData.covers)} />
+              </div>
+            </AnalyticsSection>
+
+            <AnalyticsSection
+              title="Reservations"
+              source="reservations"
+              status={reservations.status}
+              sampleSize={reservations.sample_size}
+              emptyMessage={reservations.empty_message}
+            >
+              <div className="grid gap-4 md:grid-cols-2">
+                <MetricCard label="Avg Party" value={formatNumber(reservationData.avg_party_size, 1)} />
+                <MetricCard label="Seated / Canceled" value={`${formatNumber(reservationData.seated)} / ${formatNumber(reservationData.canceled)}`} />
+              </div>
+              <div className="mt-4">
+                <MiniTable
+                  rows={reservations.status_breakdown}
+                  columns={[
+                    { key: 'status', label: 'Status' },
+                    { key: 'count', label: 'Count', render: renderNumber },
+                  ]}
+                />
+              </div>
+            </AnalyticsSection>
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-2">
+            <AnalyticsSection
+              title="Current Floor"
+              source="tables"
+              status={floor.status}
+              sampleSize={floor.sample_size}
+              emptyMessage={floor.empty_message}
+            >
+              <div className="grid gap-4 md:grid-cols-3">
+                <MetricCard label="Active Tables" value={formatNumber(floorData.active_tables)} />
+                <MetricCard label="Capacity" value={formatNumber(floorData.active_capacity)} />
+                <MetricCard label="Occupied" value={formatNumber(floorData.occupied)} />
+              </div>
+              <div className="mt-4">
+                <MiniTable
+                  rows={floor.state_breakdown}
+                  columns={[
+                    { key: 'state', label: 'State' },
+                    { key: 'count', label: 'Tables', render: renderNumber },
+                  ]}
+                />
+              </div>
+            </AnalyticsSection>
+
+            <AnalyticsSection
+              title="Staff"
+              source="shifts + waiters"
+              status={staff.status}
+              sampleSize={staff.sample_size}
+              emptyMessage={staff.empty_message}
+            >
+              <div className="grid gap-4 md:grid-cols-3">
+                <MetricCard label="Shifts" value={formatNumber(staffData.shift_count)} />
+                <MetricCard label="Staff Worked" value={formatNumber(staffData.staff_worked)} />
+                <MetricCard label="Shift Sales" value={formatCurrency(staffData.sales)} />
+              </div>
+              <div className="mt-4">
+                <MiniTable
+                  rows={staff.top_staff}
+                  columns={[
+                    { key: 'name', label: 'Staff' },
+                    { key: 'shifts', label: 'Shifts', render: renderNumber },
+                    { key: 'covers', label: 'Covers', render: renderNumber },
+                    { key: 'sales', label: 'Sales', render: renderCurrency },
+                  ]}
+                />
+              </div>
+            </AnalyticsSection>
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-2">
+            <AnalyticsSection
+              title="State Machine Events"
+              source="table_state_events"
+              status={stateEvents.status}
+              sampleSize={stateEvents.sample_size}
+              emptyMessage={stateEvents.empty_message}
+            >
+              <div className="grid gap-4 md:grid-cols-3">
+                <MetricCard label="Events" value={formatNumber(stateData.event_count)} />
+                <MetricCard label="Avg Confidence" value={stateData.avg_confidence === null || stateData.avg_confidence === undefined ? 'DNE' : `${formatNumber(Number(stateData.avg_confidence) * 100, 1)}%`} />
+                <MetricCard label="POS / Host / ML" value={`${formatNumber(stateData.pos_events)} / ${formatNumber(stateData.host_events)} / ${formatNumber(stateData.ml_events)}`} />
+              </div>
+              <div className="mt-4">
+                <MiniTable
+                  rows={stateEvents.breakdown}
+                  columns={[
+                    { key: 'event', label: 'Event' },
+                    { key: 'count', label: 'Count', render: renderNumber },
+                  ]}
+                />
+              </div>
+            </AnalyticsSection>
+
+            <AnalyticsSection
+              title="Trend"
+              source="pos_orders + visits"
+              status={timeSeries.status}
+              sampleSize={timeSeries.sample_size}
+              emptyMessage={timeSeries.empty_message}
+            >
+              <MiniTable
+                rows={(timeSeries.revenue || []).slice(-8)}
+                columns={[
+                  { key: 'bucket', label: 'Bucket', render: value => String(value).slice(0, 10) },
+                  { key: 'orders', label: 'Orders', render: renderNumber },
+                  { key: 'revenue', label: 'Revenue', render: renderCurrency },
+                ]}
+              />
+            </AnalyticsSection>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -221,24 +551,160 @@ async function fetchWithSupabaseAuth(endpoint, options = {}) {
   })
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
-    throw new Error(body.detail || body.message || `Request failed (${response.status})`)
+    const detail = body.detail || body.message
+    const message = typeof detail === 'string'
+      ? detail
+      : detail
+        ? JSON.stringify(detail)
+        : `Request failed (${response.status})`
+    throw new Error(message)
   }
   if (response.status === 204) return null
   return response.json()
 }
 
+function formatTimeEntry(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 4)
+  if (digits.length === 1 && !['0', '1'].includes(digits)) return `0${digits}:`
+  if (digits.length < 2) return digits
+  if (digits.length === 2) return `${digits}:`
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`
+}
+
+function TimeEntry({ value, onChange, placeholder = '17:00', ariaLabel }) {
+  const safeValue = value || ''
+  const remainder = safeValue.length < placeholder.length ? placeholder.slice(safeValue.length) : ''
+
+  return (
+    <div className="relative">
+      <div className="pointer-events-none absolute inset-0 flex items-center rounded-xl px-3 py-2 font-mono text-sm">
+        <span className="text-dash-cream">{safeValue}</span>
+        <span className="text-dash-tertiary/30">{remainder}</span>
+      </div>
+      <input
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        aria-label={ariaLabel}
+        value={safeValue}
+        onChange={event => onChange(formatTimeEntry(event.target.value))}
+        placeholder={placeholder}
+        maxLength={5}
+        className="relative z-10 w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 font-mono text-sm text-transparent caret-white outline-none placeholder:text-transparent focus:border-dash-gold/70"
+      />
+    </div>
+  )
+}
+
+const SCHEDULING_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const COVERAGE_ROLES = ['manager', 'server', 'host', 'bartender', 'busser', 'runner', 'chef']
+const ROLE_LABELS = {
+  manager: 'Managers',
+  server: 'Servers',
+  host: 'Hosts',
+  bartender: 'Bartenders',
+  busser: 'Bussers',
+  runner: 'Runners',
+  chef: 'Kitchen',
+}
+
+const emptyCoverageBlockForm = {
+  key: null,
+  is_suggested: false,
+  day_of_week: 0,
+  start_time: '',
+  end_time: '',
+  is_prime_shift: true,
+  notes: '',
+  original_day_of_week: null,
+  original_start_time: null,
+  original_end_time: null,
+  roles: COVERAGE_ROLES.reduce((acc, role) => ({ ...acc, [role]: '' }), {}),
+}
+
+function roleSummary(roles = {}) {
+  const parts = COVERAGE_ROLES
+    .map(role => {
+      const value = roles[role]
+      const count = typeof value === 'object' ? value?.min_staff : value
+      return Number(count || 0) > 0 ? `${ROLE_LABELS[role] || role}: ${count}` : null
+    })
+    .filter(Boolean)
+  return parts.length ? parts.join(' · ') : 'No role counts set'
+}
+
+function blockToForm(block) {
+  const roles = COVERAGE_ROLES.reduce((acc, role) => {
+    const value = block?.roles?.[role]
+    const count = typeof value === 'object' ? value?.min_staff : value
+    acc[role] = count ?? ''
+    return acc
+  }, {})
+  return {
+    ...emptyCoverageBlockForm,
+    key: block?.key || null,
+    is_suggested: Boolean(block?.is_suggested),
+    day_of_week: Number(block?.day_of_week ?? 0),
+    start_time: String(block?.start_time || '').slice(0, 5),
+    end_time: String(block?.end_time || '').slice(0, 5),
+    is_prime_shift: Boolean(block?.is_prime_shift),
+    notes: block?.notes || '',
+    original_day_of_week: block?.is_suggested ? null : Number(block?.day_of_week ?? 0),
+    original_start_time: block?.is_suggested ? null : String(block?.start_time || '').slice(0, 5),
+    original_end_time: block?.is_suggested ? null : String(block?.end_time || '').slice(0, 5),
+    roles,
+  }
+}
+
 function SchedulingPanel({ restaurantId }) {
+  const [activeSchedulingTab, setActiveSchedulingTab] = useState('schedule')
   const [weekStart, setWeekStart] = useState('')
-  const [requirements, setRequirements] = useState([])
+  const [coverageBlocks, setCoverageBlocks] = useState([])
+  const [suggestedBlocks, setSuggestedBlocks] = useState([])
+  const [schedules, setSchedules] = useState([])
+  const [staff, setStaff] = useState([])
+  const [requestPolicy, setRequestPolicy] = useState(null)
+  const [coverageForm, setCoverageForm] = useState(emptyCoverageBlockForm)
+  const [selectedShift, setSelectedShift] = useState(null)
+  const [shiftForm, setShiftForm] = useState(null)
   const [note, setNote] = useState('')
   const [status, setStatus] = useState('')
+  const [noteStatus, setNoteStatus] = useState('')
+
+  const loadCoverageBlocks = async () => {
+    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements/blocks`)
+    setCoverageBlocks(Array.isArray(data) ? data : [])
+    return data
+  }
+
+  const loadSuggestedBlocks = async () => {
+    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements/suggestions`)
+    setSuggestedBlocks(Array.isArray(data) ? data : [])
+    return data
+  }
+
+  const loadSchedules = async (targetWeekStart = weekStart) => {
+    const query = targetWeekStart ? `?week_start=${targetWeekStart}&limit=5` : '?limit=5'
+    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/schedules${query}`)
+    setSchedules(Array.isArray(data) ? data : [])
+    return data
+  }
+
+  const loadStaff = async () => {
+    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`)
+    setStaff(Array.isArray(data) ? data : [])
+    return data
+  }
+
+  const loadRequestPolicy = async () => {
+    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/employee-request-policy`)
+    setRequestPolicy(data)
+    return data
+  }
 
   useEffect(() => {
     let cancelled = false
-    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements`)
-      .then(data => {
-        if (!cancelled) setRequirements(data)
-      })
+    Promise.all([loadCoverageBlocks(), loadSuggestedBlocks(), loadSchedules(), loadStaff(), loadRequestPolicy()])
       .catch(err => {
         if (!cancelled) setStatus(err.message)
       })
@@ -247,21 +713,200 @@ function SchedulingPanel({ restaurantId }) {
     }
   }, [restaurantId])
 
+  const activeSchedule = schedules[0] || null
+  const scheduleItems = activeSchedule?.items || []
+  const displayedBlocks = coverageBlocks.length ? coverageBlocks : suggestedBlocks
+
+  const blocksForDay = (dayIndex) => displayedBlocks.filter(block => Number(block.day_of_week) === dayIndex)
+
+  const itemsForDay = (dayIndex) => {
+    if (!activeSchedule?.week_start_date) return []
+    const start = new Date(`${activeSchedule.week_start_date}T12:00:00`)
+    start.setDate(start.getDate() + dayIndex)
+    const target = start.toISOString().slice(0, 10)
+    return scheduleItems.filter(item => item.shift_date === target)
+  }
+
   const createManualRun = async () => {
-    setStatus('Creating schedule run...')
+    setStatus('Generating draft schedule...')
     try {
       const body = weekStart ? { week_start_date: weekStart } : {}
-      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/schedules/run?run_engine=false`, {
+      const run = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/schedules/run?run_engine=true&force_regenerate=true`, {
         method: 'POST',
         body: JSON.stringify(body),
       })
-      setStatus('Draft run created. Engine generation comes next.')
+      await loadSchedules(weekStart || run.week_start_date)
+      setWeekStart(weekStart || run.week_start_date)
+      setActiveSchedulingTab('schedule')
+      setStatus(run.run_status === 'completed' ? 'Draft schedule generated.' : `Schedule run ${run.run_status}.`)
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Could not create run')
     }
   }
 
-  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  const selectShift = (item) => {
+    setSelectedShift(item)
+    setShiftForm({
+      waiter_id: item.waiter_id,
+      role: item.role,
+      shift_date: item.shift_date,
+      shift_start: String(item.shift_start).slice(0, 5),
+      shift_end: String(item.shift_end).slice(0, 5),
+      is_locked: Boolean(item.is_locked),
+      notes: item.notes || '',
+    })
+  }
+
+  const saveSelectedShift = async () => {
+    if (!selectedShift || !shiftForm) return
+    setStatus('Saving shift...')
+    try {
+      await fetchWithSupabaseAuth(`/schedule-items/${selectedShift.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          waiter_id: shiftForm.waiter_id,
+          role: shiftForm.role,
+          shift_date: shiftForm.shift_date,
+          shift_start: shiftForm.shift_start,
+          shift_end: shiftForm.shift_end,
+          is_locked: Boolean(shiftForm.is_locked),
+          is_manual_override: true,
+          notes: shiftForm.notes || null,
+        }),
+      })
+      await loadSchedules(activeSchedule?.week_start_date || weekStart)
+      setSelectedShift(null)
+      setShiftForm(null)
+      setStatus('Shift saved.')
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not save shift')
+    }
+  }
+
+  const deleteSelectedShift = async () => {
+    if (!selectedShift) return
+    setStatus('Removing shift...')
+    try {
+      await fetchWithSupabaseAuth(`/schedule-items/${selectedShift.id}`, { method: 'DELETE' })
+      await loadSchedules(activeSchedule?.week_start_date || weekStart)
+      setSelectedShift(null)
+      setShiftForm(null)
+      setStatus('Shift removed.')
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not remove shift')
+    }
+  }
+
+  const startNewBlock = (dayIndex = 0) => {
+    setCoverageForm({
+      ...emptyCoverageBlockForm,
+      day_of_week: dayIndex,
+      start_time: '',
+      end_time: '',
+      is_prime_shift: true,
+      roles: { ...emptyCoverageBlockForm.roles, server: 3 },
+    })
+  }
+
+  const saveCoverageBlock = async () => {
+    if (!coverageForm.start_time || !coverageForm.end_time) {
+      setStatus('Coverage block needs both a start time and an end time.')
+      return
+    }
+    if (!/^\d{2}:\d{2}$/.test(coverageForm.start_time) || !/^\d{2}:\d{2}$/.test(coverageForm.end_time)) {
+      setStatus('Use HH:MM format for both coverage times.')
+      return
+    }
+    if (coverageForm.start_time >= coverageForm.end_time) {
+      setStatus('Coverage block end time must be after the start time.')
+      return
+    }
+    setStatus('Saving coverage block...')
+    try {
+      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements/blocks`, {
+        method: 'POST',
+        body: JSON.stringify({
+          day_of_week: Number(coverageForm.day_of_week),
+          start_time: coverageForm.start_time,
+          end_time: coverageForm.end_time,
+          roles: coverageForm.roles,
+          is_prime_shift: Boolean(coverageForm.is_prime_shift),
+          notes: coverageForm.notes || null,
+          infer_support_roles: true,
+          original_day_of_week: coverageForm.original_day_of_week,
+          original_start_time: coverageForm.original_start_time,
+          original_end_time: coverageForm.original_end_time,
+        }),
+      })
+      await loadCoverageBlocks()
+      setCoverageForm(emptyCoverageBlockForm)
+      setStatus('Coverage block saved.')
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not save coverage block')
+    }
+  }
+
+  const deleteCoverageBlock = async () => {
+    if (!coverageForm.original_start_time || coverageForm.is_suggested) return
+    setStatus('Removing coverage block...')
+    try {
+      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements/blocks`, {
+        method: 'DELETE',
+        body: JSON.stringify({
+          day_of_week: Number(coverageForm.original_day_of_week),
+          start_time: coverageForm.original_start_time,
+          end_time: coverageForm.original_end_time,
+        }),
+      })
+      await loadCoverageBlocks()
+      setCoverageForm(emptyCoverageBlockForm)
+      setStatus('Coverage block removed.')
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not remove coverage block')
+    }
+  }
+
+  const saveManagerNote = async () => {
+    if (!note.trim()) return
+    setNoteStatus('Parsing note...')
+    try {
+      const result = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/schedule-constraint-notes`, {
+        method: 'POST',
+        body: JSON.stringify({
+          raw_text: note.trim(),
+          week_start_date: weekStart || null,
+          use_llm: true,
+        }),
+      })
+      setNote('')
+      if (result?.applied_coverage_block) await loadCoverageBlocks()
+      setNoteStatus(result?.applied_coverage_block ? 'Parsed and applied as a coverage block.' : 'Parsed and saved for the schedule engine.')
+    } catch (err) {
+      setNoteStatus(err instanceof Error ? err.message : 'Could not save note')
+    }
+  }
+
+  const saveRequestPolicy = async () => {
+    if (!requestPolicy) return
+    setStatus('Saving request limits...')
+    try {
+      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/employee-request-policy`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          policy_year: requestPolicy.policy_year,
+          critical_priority_limit: requestPolicy.critical_priority_limit,
+          high_priority_limit: requestPolicy.high_priority_limit,
+          normal_priority_limit: requestPolicy.normal_priority_limit,
+          low_priority_limit: requestPolicy.low_priority_limit,
+          manager_settings: requestPolicy.manager_settings || {},
+        }),
+      })
+      setRequestPolicy(saved)
+      setStatus('Request limits saved.')
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not save request limits')
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -271,7 +916,7 @@ function SchedulingPanel({ restaurantId }) {
             <p className="label-mono">Scheduling</p>
             <h2 className="mt-2 text-3xl font-semibold tracking-tight">Calendar Builder</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-dash-secondary">
-              Coverage requirements, employee availability, requests, and manager notes feed the schedule draft.
+              Coverage blocks, employee inputs, manager notes, and draft schedule editing.
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -290,68 +935,313 @@ function SchedulingPanel({ restaurantId }) {
             </button>
           </div>
         </div>
+        <div className="mt-5 flex flex-wrap gap-2">
+          {[
+            ['schedule', 'Schedule'],
+            ['config', 'Calendar Config'],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setActiveSchedulingTab(id)}
+              className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                activeSchedulingTab === id
+                  ? 'bg-white text-black'
+                  : 'border border-white/10 text-dash-secondary hover:border-dash-gold/60 hover:text-dash-cream'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         {status && <p className="mt-4 text-sm text-dash-secondary">{status}</p>}
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[1fr_340px]">
-        <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.025]">
-          <div className="grid grid-cols-7 border-b border-white/10">
-            {days.map(day => (
-              <div key={day} className="px-4 py-3 text-sm font-semibold text-dash-secondary">
-                {day}
-              </div>
-            ))}
+      {activeSchedulingTab === 'schedule' && (
+        <section className="grid gap-4 lg:grid-cols-[1fr_340px]">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.025]">
+            <div className="grid grid-cols-7 border-b border-white/10">
+              {SCHEDULING_DAYS.map(day => (
+                <div key={day} className="px-4 py-3 text-sm font-semibold text-dash-secondary">{day}</div>
+              ))}
+            </div>
+            <div className="grid min-h-[460px] grid-cols-7">
+              {SCHEDULING_DAYS.map((day, dayIndex) => {
+                const dayItems = itemsForDay(dayIndex)
+                return (
+                  <div key={day} className="border-r border-white/10 p-3 last:border-r-0">
+                    <div className="space-y-2">
+                      {dayItems.map(item => (
+                        <button
+                          type="button"
+                          key={item.id}
+                          onClick={() => selectShift(item)}
+                          className={`w-full rounded-xl border p-3 text-left text-xs transition ${
+                            selectedShift?.id === item.id
+                              ? 'border-dash-gold bg-dash-gold/20'
+                              : 'border-dash-gold/25 bg-dash-gold/10 hover:border-dash-gold/70'
+                          }`}
+                        >
+                          <p className="font-semibold text-dash-cream">{item.waiter_name || 'Assigned staff'}</p>
+                          <p className="mt-0.5 capitalize text-dash-secondary">{item.role}</p>
+                          <p className="mt-1 text-dash-secondary">{String(item.shift_start).slice(0, 5)}-{String(item.shift_end).slice(0, 5)}</p>
+                          <p className="mt-1 truncate text-dash-tertiary">{item.reasoning?.reasons?.[0] || item.source}</p>
+                        </button>
+                      ))}
+                      {dayItems.length === 0 && (
+                        <div className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-dash-tertiary">No shifts</div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
-          <div className="grid min-h-[420px] grid-cols-7">
-            {days.map(day => (
-              <div key={day} className="border-r border-white/10 p-3 last:border-r-0">
-                <div className="rounded-xl border border-dashed border-white/10 p-4 text-sm text-dash-tertiary">
-                  Shifts
+
+          <aside className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+            <h3 className="text-lg font-semibold">Shift Editor</h3>
+            {!shiftForm ? (
+              <p className="mt-3 text-sm leading-6 text-dash-secondary">Select a generated shift to assign a different employee, change the role, or lock it as a manual edit.</p>
+            ) : (
+              <div className="mt-4 space-y-3">
+                <select
+                  value={shiftForm.waiter_id}
+                  onChange={event => setShiftForm(prev => ({ ...prev, waiter_id: event.target.value }))}
+                  className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none"
+                >
+                  {staff.map(person => <option key={person.id} value={person.id}>{person.name} · {person.role}</option>)}
+                </select>
+                <select
+                  value={shiftForm.role}
+                  onChange={event => setShiftForm(prev => ({ ...prev, role: event.target.value }))}
+                  className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none"
+                >
+                  {COVERAGE_ROLES.map(role => <option key={role} value={role}>{ROLE_LABELS[role]}</option>)}
+                </select>
+                <input
+                  type="date"
+                  value={shiftForm.shift_date}
+                  onChange={event => setShiftForm(prev => ({ ...prev, shift_date: event.target.value }))}
+                  className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <TimeEntry value={shiftForm.shift_start} onChange={value => setShiftForm(prev => ({ ...prev, shift_start: value }))} placeholder="17:00" ariaLabel="Shift start" />
+                  <TimeEntry value={shiftForm.shift_end} onChange={value => setShiftForm(prev => ({ ...prev, shift_end: value }))} placeholder="22:00" ariaLabel="Shift end" />
+                </div>
+                <label className="flex items-center gap-2 text-sm text-dash-secondary">
+                  <input type="checkbox" checked={shiftForm.is_locked} onChange={event => setShiftForm(prev => ({ ...prev, is_locked: event.target.checked }))} />
+                  Lock this manual edit
+                </label>
+                <textarea
+                  rows={3}
+                  value={shiftForm.notes}
+                  onChange={event => setShiftForm(prev => ({ ...prev, notes: event.target.value }))}
+                  placeholder="Notes optional"
+                  className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => void saveSelectedShift()} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90">Save</button>
+                  <button type="button" onClick={() => void deleteSelectedShift()} className="rounded-xl border border-red-400/30 px-4 py-2 text-sm font-semibold text-red-100 transition hover:border-red-300/70">Remove</button>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
+            )}
+          </aside>
+        </section>
+      )}
 
-        <aside className="space-y-4">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
-            <h3 className="text-lg font-semibold">Coverage Rules</h3>
-            <p className="mt-2 text-sm text-dash-secondary">
-              {requirements.length} active staffing requirement{requirements.length === 1 ? '' : 's'}.
-            </p>
-            <button className="mt-4 w-full rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">
-              Edit coverage
-            </button>
+      {activeSchedulingTab === 'config' && (
+        <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
+          <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.025]">
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+              <div>
+                <h3 className="text-lg font-semibold">Coverage Blocks</h3>
+                <p className="mt-1 text-xs text-dash-tertiary">
+                  {coverageBlocks.length ? `${coverageBlocks.length} saved block${coverageBlocks.length === 1 ? '' : 's'}.` : 'Showing suggested defaults until you save your own blocks.'}
+                </p>
+              </div>
+              <button type="button" onClick={() => startNewBlock()} className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90">Add rule</button>
+            </div>
+            <div className="grid grid-cols-7 border-b border-white/10">
+              {SCHEDULING_DAYS.map(day => <div key={day} className="px-4 py-3 text-sm font-semibold text-dash-secondary">{day}</div>)}
+            </div>
+            <div className="grid min-h-[500px] grid-cols-7">
+              {SCHEDULING_DAYS.map((day, dayIndex) => {
+                const dayBlocks = blocksForDay(dayIndex)
+                return (
+                  <div key={day} className="border-r border-white/10 p-3 last:border-r-0">
+                    <div className="space-y-2">
+                      {dayBlocks.map(block => (
+                        <button
+                          type="button"
+                          key={block.key}
+                          onClick={() => setCoverageForm(blockToForm(block))}
+                          className={`w-full rounded-xl border p-3 text-left text-xs transition ${
+                            block.is_suggested
+                              ? 'border-dashed border-white/20 bg-white/[0.025] hover:border-dash-gold/50'
+                              : 'border-emerald-300/25 bg-emerald-300/10 hover:border-emerald-200/60'
+                          }`}
+                        >
+                          <p className="font-semibold text-dash-cream">{String(block.start_time).slice(0, 5)}-{String(block.end_time).slice(0, 5)}</p>
+                          <p className="mt-1 text-dash-secondary">{roleSummary(block.roles)}</p>
+                          <p className="mt-2 text-dash-tertiary">{block.is_suggested ? 'Suggested' : block.is_prime_shift ? 'Prime' : 'Standard'}</p>
+                        </button>
+                      ))}
+                      {dayBlocks.length === 0 && (
+                        <button
+                          type="button"
+                          onClick={() => startNewBlock(dayIndex)}
+                          className="w-full rounded-xl border border-dashed border-white/10 p-4 text-left text-sm text-dash-tertiary transition hover:border-dash-gold/50 hover:text-dash-cream"
+                        >
+                          Add block
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
-            <h3 className="text-lg font-semibold">Manager Notes</h3>
-            <textarea
-              value={note}
-              onChange={event => setNote(event.target.value)}
-              rows={5}
-              className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary focus:border-dash-gold/70"
-              placeholder="Ryan prefers Tuesday dinner. Jamie cannot close Friday."
-            />
-            <button
-              type="button"
-              disabled={!note.trim()}
-              className="mt-3 w-full rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90 disabled:opacity-40"
-            >
-              Parse note
-            </button>
-          </div>
+          <aside className="space-y-4">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+              <h3 className="text-lg font-semibold">{coverageForm.key ? 'Edit Coverage Block' : 'New Coverage Block'}</h3>
+              <div className="mt-4 space-y-3">
+                <select
+                  value={coverageForm.day_of_week}
+                  onChange={event => setCoverageForm(prev => ({ ...prev, day_of_week: Number(event.target.value) }))}
+                  className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none"
+                >
+                  {SCHEDULING_DAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}
+                </select>
+                <div className="grid grid-cols-2 gap-2">
+                  <TimeEntry value={coverageForm.start_time} onChange={value => setCoverageForm(prev => ({ ...prev, start_time: value }))} placeholder="17:00" ariaLabel="Coverage start" />
+                  <TimeEntry value={coverageForm.end_time} onChange={value => setCoverageForm(prev => ({ ...prev, end_time: value }))} placeholder="22:00" ariaLabel="Coverage end" />
+                </div>
+                <label className="flex items-center gap-2 text-sm text-dash-secondary">
+                  <input type="checkbox" checked={coverageForm.is_prime_shift} onChange={event => setCoverageForm(prev => ({ ...prev, is_prime_shift: event.target.checked }))} />
+                  High-demand block
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {COVERAGE_ROLES.map(role => (
+                    <label key={role} className="space-y-1">
+                      <span className="text-xs text-dash-tertiary">{ROLE_LABELS[role]}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={coverageForm.roles[role] ?? ''}
+                        onChange={event => setCoverageForm(prev => ({
+                          ...prev,
+                          roles: { ...prev.roles, [role]: event.target.value },
+                        }))}
+                        className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <textarea
+                  rows={2}
+                  value={coverageForm.notes}
+                  onChange={event => setCoverageForm(prev => ({ ...prev, notes: event.target.value }))}
+                  placeholder="Notes optional"
+                  className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => void saveCoverageBlock()} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90">Save block</button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteCoverageBlock()}
+                    disabled={!coverageForm.original_start_time || coverageForm.is_suggested}
+                    className="rounded-xl border border-red-400/30 px-4 py-2 text-sm font-semibold text-red-100 transition hover:border-red-300/70 disabled:opacity-35"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
-            <h3 className="text-lg font-semibold">Request Inbox</h3>
-            <p className="mt-2 text-sm text-dash-secondary">
-              Employee availability, ideal times, and time-off requests will queue here for approval.
-            </p>
-          </div>
-        </aside>
-      </section>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+              <h3 className="text-lg font-semibold">Manager LLM Input</h3>
+              <textarea
+                value={note}
+                onChange={event => setNote(event.target.value)}
+                rows={5}
+                className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary focus:border-dash-gold/70"
+                placeholder="Friday dinner needs 5 servers and 2 hosts. Cameron cannot work Saturday close."
+              />
+              <button
+                type="button"
+                onClick={() => void saveManagerNote()}
+                disabled={!note.trim()}
+                className="mt-3 w-full rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90 disabled:opacity-40"
+              >
+                Parse note
+              </button>
+              {noteStatus && <p className="mt-2 text-xs leading-5 text-dash-tertiary">{noteStatus}</p>}
+            </div>
+
+            {requestPolicy && (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+                <h3 className="text-lg font-semibold">Request Limits</h3>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  {[
+                    ['critical_priority_limit', 'Critical'],
+                    ['high_priority_limit', 'High'],
+                    ['normal_priority_limit', 'Normal'],
+                    ['low_priority_limit', 'Low'],
+                  ].map(([field, label]) => (
+                    <label key={field} className="space-y-1">
+                      <span className="text-xs text-dash-tertiary">{label}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={requestPolicy[field] ?? ''}
+                        onChange={event => setRequestPolicy(prev => ({
+                          ...prev,
+                          [field]: event.target.value === '' ? null : Number(event.target.value),
+                        }))}
+                        className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <button type="button" onClick={() => void saveRequestPolicy()} className="mt-3 w-full rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Save limits</button>
+              </div>
+            )}
+          </aside>
+        </section>
+      )}
     </div>
   )
+}
+
+const EMPLOYEE_PORTAL_TABS = [
+  { id: 'schedule', label: 'Schedule' },
+  { id: 'availability', label: 'Availability' },
+  { id: 'requests', label: 'Requests' },
+  { id: 'preferences', label: 'Preferences' },
+]
+
+const EMPLOYEE_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+const EMPLOYEE_SHIFT_TYPES = ['breakfast', 'lunch', 'dinner', 'close', 'weekend']
+
+const emptyAvailabilityForm = {
+  day_of_week: 1,
+  start_time: '17:00',
+  end_time: '22:00',
+  availability_type: 'preferred',
+  notes: '',
+}
+
+const emptyRequestForm = {
+  request_type: 'time_off',
+  priority: 'normal',
+  start_date: '',
+  end_date: '',
+  day_of_week: '',
+  start_time: '',
+  end_time: '',
+  title: '',
+  notes: '',
 }
 
 function EmployeePortal() {
@@ -365,6 +1255,13 @@ function EmployeePortal() {
   })
   const [schedule, setSchedule] = useState([])
   const [requests, setRequests] = useState([])
+  const [availability, setAvailability] = useState([])
+  const [preferences, setPreferences] = useState(null)
+  const [activeEmployeeTab, setActiveEmployeeTab] = useState('schedule')
+  const [availabilityForm, setAvailabilityForm] = useState(emptyAvailabilityForm)
+  const [requestForm, setRequestForm] = useState(emptyRequestForm)
+  const [employeeNote, setEmployeeNote] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
   const [message, setMessage] = useState('')
   const token = localStorage.getItem('shire_employee_token')
 
@@ -387,12 +1284,25 @@ function EmployeePortal() {
       employeeFetch('/employee/me'),
       employeeFetch('/employee/schedule'),
       employeeFetch('/employee/requests'),
+      employeeFetch('/employee/availability'),
+      employeeFetch('/employee/preferences'),
     ])
-      .then(([me, shiftData, requestData]) => {
+      .then(([me, shiftData, requestData, availabilityData, preferenceData]) => {
         if (cancelled) return
         setProfile(me)
         setSchedule(shiftData)
         setRequests(requestData)
+        setAvailability(availabilityData)
+        setPreferences(preferenceData || {
+          preferred_roles: [],
+          preferred_shift_types: [],
+          preferred_sections: [],
+          max_shifts_per_week: '',
+          max_hours_per_week: '',
+          min_hours_per_week: '',
+          avoid_clopening: true,
+          notes: '',
+        })
       })
       .catch(err => {
         if (!cancelled) setMessage(err instanceof Error ? err.message : 'Could not load employee portal')
@@ -410,6 +1320,134 @@ function EmployeePortal() {
     localStorage.removeItem('shire_employee_token')
     localStorage.removeItem('shire_employee_profile')
     navigate('/auth/login', { replace: true })
+  }
+
+  const saveAvailability = async (nextAvailability = availability) => {
+    setIsSaving(true)
+    setMessage('')
+    try {
+      const saved = await employeeFetch('/employee/availability', {
+        method: 'PUT',
+        body: JSON.stringify(nextAvailability.map(entry => ({
+          day_of_week: Number(entry.day_of_week),
+          start_time: String(entry.start_time).slice(0, 5),
+          end_time: String(entry.end_time).slice(0, 5),
+          availability_type: entry.availability_type,
+          notes: entry.notes || null,
+        }))),
+      })
+      setAvailability(saved)
+      setMessage('Availability saved.')
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not save availability')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const addAvailability = async () => {
+    const nextAvailability = [...availability, availabilityForm]
+    setAvailability(nextAvailability)
+    setAvailabilityForm(emptyAvailabilityForm)
+    await saveAvailability(nextAvailability)
+  }
+
+  const removeAvailability = async (index) => {
+    const nextAvailability = availability.filter((_, itemIndex) => itemIndex !== index)
+    setAvailability(nextAvailability)
+    await saveAvailability(nextAvailability)
+  }
+
+  const savePreferences = async () => {
+    setIsSaving(true)
+    setMessage('')
+    try {
+      const saved = await employeeFetch('/employee/preferences', {
+        method: 'PUT',
+        body: JSON.stringify({
+          preferred_roles: preferences?.preferred_roles || [],
+          preferred_shift_types: preferences?.preferred_shift_types || [],
+          preferred_sections: preferences?.preferred_sections || [],
+          max_shifts_per_week: preferences?.max_shifts_per_week === '' ? null : Number(preferences?.max_shifts_per_week),
+          max_hours_per_week: preferences?.max_hours_per_week === '' ? null : Number(preferences?.max_hours_per_week),
+          min_hours_per_week: preferences?.min_hours_per_week === '' ? null : Number(preferences?.min_hours_per_week),
+          avoid_clopening: preferences?.avoid_clopening ?? true,
+          notes: preferences?.notes || null,
+        }),
+      })
+      setPreferences(saved)
+      setMessage('Preferences saved.')
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not save preferences')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const createRequest = async (payload) => {
+    setIsSaving(true)
+    setMessage('')
+    try {
+      const created = await employeeFetch('/employee/requests', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+      setRequests(prev => [created, ...prev])
+      setMessage('Request submitted.')
+      return created
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not submit request')
+      return null
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const submitRequestForm = async () => {
+    const created = await createRequest({
+      request_type: requestForm.request_type,
+      priority: requestForm.priority,
+      start_date: requestForm.start_date || null,
+      end_date: requestForm.end_date || requestForm.start_date || null,
+      day_of_week: requestForm.day_of_week === '' ? null : Number(requestForm.day_of_week),
+      start_time: requestForm.start_time || null,
+      end_time: requestForm.end_time || null,
+      title: requestForm.title || null,
+      notes: requestForm.notes || null,
+      structured_payload: { source: 'employee_form' },
+    })
+    if (created) setRequestForm(emptyRequestForm)
+  }
+
+  const submitEmployeeNote = async () => {
+    if (!employeeNote.trim()) return
+    setIsSaving(true)
+    setMessage('')
+    try {
+      const created = await employeeFetch('/employee/requests/parse', {
+        method: 'POST',
+        body: JSON.stringify({ raw_text: employeeNote.trim() }),
+      })
+      setRequests(prev => [created, ...prev])
+      setEmployeeNote('')
+      setMessage('Scheduling note parsed and submitted.')
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not parse note')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const togglePreferredShiftType = (shiftType) => {
+    setPreferences(prev => {
+      const current = prev?.preferred_shift_types || []
+      return {
+        ...(prev || {}),
+        preferred_shift_types: current.includes(shiftType)
+          ? current.filter(item => item !== shiftType)
+          : [...current, shiftType],
+      }
+    })
   }
 
   return (
@@ -447,16 +1485,188 @@ function EmployeePortal() {
           </div>
         </section>
 
+        <nav className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/[0.025] p-2">
+          {EMPLOYEE_PORTAL_TABS.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setActiveEmployeeTab(item.id)}
+              className={[
+                'rounded-xl px-4 py-2 text-sm font-semibold transition',
+                activeEmployeeTab === item.id
+                  ? 'bg-dash-gold text-black'
+                  : 'text-dash-secondary hover:bg-white/[0.05] hover:text-dash-cream',
+              ].join(' ')}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
         <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-6">
-          <h2 className="text-2xl font-semibold">Availability</h2>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {['Preferred shifts', 'Unavailable windows', 'Time off', 'Profile'].map(label => (
-              <div key={label} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                <h3 className="font-semibold">{label}</h3>
-                <p className="mt-2 text-sm text-dash-secondary">Editable workflow placeholder.</p>
+          {activeEmployeeTab === 'schedule' && (
+            <div>
+              <h2 className="text-2xl font-semibold">My Schedule</h2>
+              {schedule.length === 0 ? (
+                <p className="mt-4 text-sm text-dash-secondary">No published shifts are assigned yet.</p>
+              ) : (
+                <div className="mt-4 divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10">
+                  {schedule.map(shift => (
+                    <div key={shift.id} className="grid gap-2 p-4 text-sm md:grid-cols-[1fr_1fr_1fr]">
+                      <span className="font-semibold">{shift.shift_date}</span>
+                      <span className="text-dash-secondary">{String(shift.shift_start).slice(0, 5)} - {String(shift.shift_end).slice(0, 5)}</span>
+                      <span className="capitalize text-dash-tertiary">{shift.role || shift.schedule_status}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeEmployeeTab === 'availability' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-2xl font-semibold">Availability</h2>
+                <p className="mt-2 text-sm text-dash-secondary">
+                  Add preferred or unavailable windows. These feed the schedule optimizer.
+                </p>
               </div>
-            ))}
-          </div>
+
+              <div className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 lg:grid-cols-[150px_150px_120px_120px_1fr_auto]">
+                <select value={availabilityForm.availability_type} onChange={event => setAvailabilityForm(prev => ({ ...prev, availability_type: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none">
+                  <option value="preferred">Preferred</option>
+                  <option value="unavailable">Unavailable</option>
+                  <option value="available">Available</option>
+                </select>
+                <select value={availabilityForm.day_of_week} onChange={event => setAvailabilityForm(prev => ({ ...prev, day_of_week: Number(event.target.value) }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none">
+                  {EMPLOYEE_DAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}
+                </select>
+                <input type="time" value={availabilityForm.start_time} onChange={event => setAvailabilityForm(prev => ({ ...prev, start_time: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none" />
+                <input type="time" value={availabilityForm.end_time} onChange={event => setAvailabilityForm(prev => ({ ...prev, end_time: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none" />
+                <input value={availabilityForm.notes} onChange={event => setAvailabilityForm(prev => ({ ...prev, notes: event.target.value }))} placeholder="Notes optional" className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
+                <button type="button" onClick={() => void addAvailability()} disabled={isSaving} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">
+                  Add
+                </button>
+              </div>
+
+              {availability.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-white/15 p-5 text-sm text-dash-secondary">No availability windows saved yet.</p>
+              ) : (
+                <div className="divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10">
+                  {availability.map((entry, index) => (
+                    <div key={entry.id || `${entry.day_of_week}-${entry.start_time}-${index}`} className="grid gap-2 p-4 text-sm md:grid-cols-[130px_130px_1fr_auto] md:items-center">
+                      <span className="capitalize font-semibold">{entry.availability_type}</span>
+                      <span>{EMPLOYEE_DAYS[Number(entry.day_of_week)]}</span>
+                      <span className="text-dash-secondary">{String(entry.start_time).slice(0, 5)} - {String(entry.end_time).slice(0, 5)}{entry.notes ? ` · ${entry.notes}` : ''}</span>
+                      <button type="button" onClick={() => void removeAvailability(index)} className="rounded-xl border border-red-400/30 px-3 py-2 text-sm text-red-200 hover:border-red-300/60">
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                <h3 className="font-semibold">Natural-language note</h3>
+                <textarea value={employeeNote} onChange={event => setEmployeeNote(event.target.value)} rows={3} placeholder="I prefer Tuesday dinner but cannot close Friday this month." className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
+                <button type="button" onClick={() => void submitEmployeeNote()} disabled={!employeeNote.trim() || isSaving} className="mt-3 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-40">
+                  Submit note
+                </button>
+                <p className="mt-2 text-xs text-dash-tertiary">Saved as a scheduling note. LLM parsing is not wired yet.</p>
+              </div>
+            </div>
+          )}
+
+          {activeEmployeeTab === 'requests' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-2xl font-semibold">Requests</h2>
+                <p className="mt-2 text-sm text-dash-secondary">Submit time off, shift preferences, or one-off availability exceptions.</p>
+              </div>
+              <div className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-2 lg:grid-cols-4">
+                <select value={requestForm.request_type} onChange={event => setRequestForm(prev => ({ ...prev, request_type: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none">
+                  <option value="time_off">Time off</option>
+                  <option value="prefer_shift">Prefer shift</option>
+                  <option value="avoid_shift">Avoid shift</option>
+                  <option value="availability_exception">Availability exception</option>
+                </select>
+                <select value={requestForm.priority} onChange={event => setRequestForm(prev => ({ ...prev, priority: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none">
+                  <option value="low">Low</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                </select>
+                <input type="date" value={requestForm.start_date} onChange={event => setRequestForm(prev => ({ ...prev, start_date: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none" />
+                <input type="date" value={requestForm.end_date} onChange={event => setRequestForm(prev => ({ ...prev, end_date: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none" />
+                <select value={requestForm.day_of_week} onChange={event => setRequestForm(prev => ({ ...prev, day_of_week: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none">
+                  <option value="">Any day</option>
+                  {EMPLOYEE_DAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}
+                </select>
+                <input type="time" value={requestForm.start_time} onChange={event => setRequestForm(prev => ({ ...prev, start_time: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none" />
+                <input type="time" value={requestForm.end_time} onChange={event => setRequestForm(prev => ({ ...prev, end_time: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none" />
+                <input value={requestForm.title} onChange={event => setRequestForm(prev => ({ ...prev, title: event.target.value }))} placeholder="Title optional" className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
+                <textarea value={requestForm.notes} onChange={event => setRequestForm(prev => ({ ...prev, notes: event.target.value }))} placeholder="Details" rows={3} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary lg:col-span-3" />
+                <button type="button" onClick={() => void submitRequestForm()} disabled={isSaving} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">
+                  Submit
+                </button>
+              </div>
+              {requests.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-white/15 p-5 text-sm text-dash-secondary">No requests submitted yet.</p>
+              ) : (
+                <div className="divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10">
+                  {requests.map(request => (
+                    <div key={request.id} className="grid gap-2 p-4 text-sm md:grid-cols-[150px_120px_1fr]">
+                      <span className="capitalize font-semibold">{String(request.request_type || '').replaceAll('_', ' ')}</span>
+                      <span className="capitalize text-dash-secondary">{request.status || 'pending'}</span>
+                      <span className="text-dash-tertiary">{request.title || request.notes || 'Request'} {request.start_date ? `· ${request.start_date}` : ''}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeEmployeeTab === 'preferences' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-2xl font-semibold">Preferences</h2>
+                <p className="mt-2 text-sm text-dash-secondary">Standing preferences the scheduler can consider after coverage requirements.</p>
+              </div>
+              <div>
+                <p className="label-mono mb-3">Preferred shift types</p>
+                <div className="flex flex-wrap gap-2">
+                  {EMPLOYEE_SHIFT_TYPES.map(shiftType => (
+                    <button
+                      key={shiftType}
+                      type="button"
+                      onClick={() => togglePreferredShiftType(shiftType)}
+                      className={[
+                        'rounded-full px-3 py-1.5 text-sm font-semibold capitalize transition',
+                        preferences?.preferred_shift_types?.includes(shiftType)
+                          ? 'bg-white text-black'
+                          : 'bg-white/[0.05] text-dash-tertiary hover:bg-white/[0.1]',
+                      ].join(' ')}
+                    >
+                      {shiftType}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <input type="number" min="0" max="7" value={preferences?.min_hours_per_week ?? ''} onChange={event => setPreferences(prev => ({ ...(prev || {}), min_hours_per_week: event.target.value }))} placeholder="Min hours/week" className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
+                <input type="number" min="1" max="60" value={preferences?.max_hours_per_week ?? ''} onChange={event => setPreferences(prev => ({ ...(prev || {}), max_hours_per_week: event.target.value }))} placeholder="Max hours/week" className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
+                <input type="number" min="1" max="7" value={preferences?.max_shifts_per_week ?? ''} onChange={event => setPreferences(prev => ({ ...(prev || {}), max_shifts_per_week: event.target.value }))} placeholder="Max shifts/week" className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
+              </div>
+              <label className="flex items-center gap-3 text-sm text-dash-secondary">
+                <input type="checkbox" checked={preferences?.avoid_clopening ?? true} onChange={event => setPreferences(prev => ({ ...(prev || {}), avoid_clopening: event.target.checked }))} />
+                Avoid close/open back-to-back when possible
+              </label>
+              <textarea value={preferences?.notes || ''} onChange={event => setPreferences(prev => ({ ...(prev || {}), notes: event.target.value }))} rows={4} placeholder="Anything else managers should know." className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
+              <button type="button" onClick={() => void savePreferences()} disabled={isSaving} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">
+                Save preferences
+              </button>
+            </div>
+          )}
         </section>
       </div>
     </main>
@@ -464,12 +1674,49 @@ function EmployeePortal() {
 }
 
 const SETUP_TABS = [
-  { id: 'profile', label: 'Profile' },
-  { id: 'operations', label: 'Operations' },
+  { id: 'basics', label: 'Basics' },
+  { id: 'hours', label: 'Hours' },
+  { id: 'capacity', label: 'Capacity / Floor Plan' },
   { id: 'menu', label: 'Menu' },
-  { id: 'team', label: 'Team' },
+  { id: 'modifiers', label: 'Modifiers' },
+  { id: 'employees', label: 'Employees' },
   { id: 'integrations', label: 'Integrations' },
 ]
+
+const RESTAURANT_TYPES = [
+  { value: 'fine_dining', label: 'Fine Dining' },
+  { value: 'casual', label: 'Casual Dining' },
+  { value: 'fast_casual', label: 'Fast Casual' },
+  { value: 'bar', label: 'Bar / Pub' },
+  { value: 'cafe', label: 'Cafe' },
+  { value: 'food_truck', label: 'Food Truck' },
+]
+
+const CUISINE_TYPES = [
+  'American', 'Italian', 'Mexican', 'Chinese', 'Japanese', 'Thai',
+  'Indian', 'Mediterranean', 'French', 'Korean', 'Vietnamese', 'Greek',
+  'Spanish', 'Middle Eastern', 'Caribbean', 'Southern', 'Seafood', 'Steakhouse',
+  'Pizza', 'Burgers', 'Sushi', 'BBQ', 'Vegan', 'Farm-to-Table',
+]
+
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const DEFAULT_HOURS = DAYS.map((_, day_of_week) => ({
+  day_of_week,
+  open_time: '09:00',
+  close_time: '22:00',
+  is_closed: false,
+}))
+
+const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
+  const hours = Math.floor(i / 2)
+  const minutes = i % 2 === 0 ? '00' : '30'
+  const period = hours >= 12 ? 'PM' : 'AM'
+  const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
+  return {
+    value: `${hours.toString().padStart(2, '0')}:${minutes}`,
+    label: `${displayHours}:${minutes} ${period}`,
+  }
+})
 
 function Field({ label, children }) {
   return (
@@ -498,8 +1745,50 @@ function SetupPlaceholder({ title, children }) {
   )
 }
 
-function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings }) {
+function SmallButton({ children, onClick, variant = 'secondary', disabled = false }) {
+  const classes = variant === 'primary'
+    ? 'bg-dash-gold text-black hover:opacity-90'
+    : variant === 'danger'
+      ? 'border border-red-400/30 text-red-200 hover:border-red-300/60'
+      : 'border border-white/10 text-dash-secondary hover:border-dash-gold/60 hover:text-dash-cream'
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`rounded-xl px-3 py-2 text-sm font-semibold transition disabled:opacity-50 ${classes}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function SetupEmptyState({ title, children, actionLabel, onAction }) {
+  return (
+    <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-6 text-center">
+      <h3 className="text-lg font-semibold">{title}</h3>
+      <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-dash-secondary">{children}</p>
+      {actionLabel && (
+        <button
+          type="button"
+          onClick={onAction}
+          className="mt-4 inline-flex rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
+        >
+          + {actionLabel}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function defaultEmployeeId(value) {
+  return value.trim().split(/\s+/)[0]?.toLowerCase().replace(/[^a-z0-9_]+/g, '') || ''
+}
+
+function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, onSetupChanged }) {
   const [activeSetupTab, setActiveSetupTab] = useState('profile')
+  const [activeSubTab, setActiveSubTab] = useState('Basics')
   const [profile, setProfile] = useState(() => ({
     name: restaurant.name || '',
     address: restaurant.address || '',
@@ -508,9 +1797,18 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings })
     postal_code: restaurant.postal_code || '',
     phone: restaurant.phone || '',
     type: restaurant.type || 'casual',
+    seating_capacity: restaurant.seating_capacity || '',
+    table_count: restaurant.table_count || '',
   }))
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
+  const [waiters, setWaiters] = useState([])
+  const [tables, setTables] = useState([])
+  const [menuItems, setMenuItems] = useState([])
+  const [setupError, setSetupError] = useState('')
+  const [staffForm, setStaffForm] = useState({ name: '', email: '', role: 'server', pin: '1111', employee_login_id: '' })
+  const [tableForm, setTableForm] = useState({ table_number: '', capacity: '2', table_type: 'standard', location: 'inside' })
+  const [menuForm, setMenuForm] = useState({ name: '', category: '', price: '', cost: '', description: '' })
 
   useEffect(() => {
     setProfile({
@@ -521,6 +1819,8 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings })
       postal_code: restaurant.postal_code || '',
       phone: restaurant.phone || '',
       type: restaurant.type || 'casual',
+      seating_capacity: restaurant.seating_capacity || '',
+      table_count: restaurant.table_count || '',
     })
     setSaveMessage('')
   }, [restaurant.id, restaurant.updated_at])
@@ -532,6 +1832,31 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings })
     if (activeSetupTab === 'team') return ['Staff', 'Roles', 'Invites']
     return ['POS', 'Scheduling', 'Reservations']
   }, [activeSetupTab])
+
+  useEffect(() => {
+    setActiveSubTab(subTabs[0])
+  }, [subTabs])
+
+  const loadSetupData = async () => {
+    if (!restaurantId) return
+    setSetupError('')
+    try {
+      const [staffRows, tableRows, menuRows] = await Promise.all([
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tables?include_inactive=false`),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`),
+      ])
+      setWaiters(Array.isArray(staffRows) ? staffRows : [])
+      setTables(Array.isArray(tableRows) ? tableRows : [])
+      setMenuItems(Array.isArray(menuRows) ? menuRows : [])
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not load setup data.')
+    }
+  }
+
+  useEffect(() => {
+    void loadSetupData()
+  }, [restaurantId])
 
   const saveProfile = async () => {
     setIsSaving(true)
@@ -547,6 +1872,8 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings })
         postal_code: profile.postal_code.trim() || null,
         phone: profile.phone.trim() || null,
         type: profile.type || 'casual',
+        seating_capacity: profile.seating_capacity === '' ? null : Number(profile.seating_capacity),
+        table_count: profile.table_count === '' ? null : Number(profile.table_count),
       })
       .eq('id', restaurantId)
       .select()
@@ -560,7 +1887,114 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings })
     }
 
     auth.seedCurrentRestaurant(updatedRestaurant)
+    onSetupChanged?.()
     setSaveMessage('Saved.')
+  }
+
+  const addStaff = async () => {
+    if (!staffForm.name.trim()) {
+      setSetupError('Employee name is required.')
+      return
+    }
+    setSetupError('')
+    const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: staffForm.name.trim(),
+        email: staffForm.email.trim() || null,
+        role: staffForm.role,
+        pin: staffForm.pin,
+        employee_login_id: staffForm.employee_login_id.trim() || defaultEmployeeId(staffForm.name),
+      }),
+    })
+    setWaiters(prev => [...prev, created])
+    setStaffForm({ name: '', email: '', role: 'server', pin: '1111', employee_login_id: '' })
+    onSetupChanged?.()
+  }
+
+  const updateStaff = async (waiterId, updates) => {
+    const updated = await fetchWithSupabaseAuth(`/waiters/${waiterId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    })
+    setWaiters(prev => prev.map(item => item.id === waiterId ? updated : item))
+  }
+
+  const removeStaff = async (waiterId) => {
+    await fetchWithSupabaseAuth(`/waiters/${waiterId}`, { method: 'DELETE' })
+    setWaiters(prev => prev.filter(item => item.id !== waiterId))
+    onSetupChanged?.()
+  }
+
+  const addTable = async () => {
+    if (!tableForm.table_number.trim()) {
+      setSetupError('Table number is required.')
+      return
+    }
+    setSetupError('')
+    const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tables`, {
+      method: 'POST',
+      body: JSON.stringify({
+        table_number: tableForm.table_number.trim(),
+        capacity: Number(tableForm.capacity || 2),
+        table_type: tableForm.table_type,
+        location: tableForm.location,
+      }),
+    })
+    setTables(prev => [...prev, created])
+    setTableForm({ table_number: '', capacity: '2', table_type: 'standard', location: 'inside' })
+    onSetupChanged?.()
+  }
+
+  const updateTable = async (tableId, updates) => {
+    const updated = await fetchWithSupabaseAuth(`/tables/${tableId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    })
+    setTables(prev => prev.map(item => item.id === tableId ? updated : item))
+  }
+
+  const removeTable = async (tableId) => {
+    await fetchWithSupabaseAuth(`/tables/${tableId}`, { method: 'DELETE' })
+    setTables(prev => prev.filter(item => item.id !== tableId))
+    onSetupChanged?.()
+  }
+
+  const addMenuItem = async () => {
+    if (!menuForm.name.trim()) {
+      setSetupError('Menu item name is required.')
+      return
+    }
+    setSetupError('')
+    const payload = {
+      restaurant_id: restaurantId,
+      name: menuForm.name.trim(),
+      category: menuForm.category.trim() || null,
+      price: menuForm.price === '' ? null : Number(menuForm.price),
+      cost: menuForm.cost === '' ? null : Number(menuForm.cost),
+      description: menuForm.description.trim() || null,
+    }
+    const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items/single`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+    setMenuItems(prev => [...prev, created])
+    setMenuForm({ name: '', category: '', price: '', cost: '', description: '' })
+    onSetupChanged?.()
+  }
+
+  const updateMenuItem = async (itemId, updates) => {
+    const updated = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    })
+    setMenuItems(prev => prev.map(item => item.id === itemId ? updated : item))
+  }
+
+  const removeMenuItem = async (itemId) => {
+    await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items/${itemId}`, { method: 'DELETE' })
+    setMenuItems(prev => prev.filter(item => item.id !== itemId))
+    onSetupChanged?.()
   }
 
   return (
@@ -608,9 +2042,10 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings })
             <button
               key={label}
               type="button"
+              onClick={() => setActiveSubTab(label)}
               className={[
                 'block w-full rounded-lg px-3 py-2 text-left text-sm transition',
-                index === 0
+                activeSubTab === label
                   ? 'bg-white/[0.07] text-dash-cream'
                   : 'text-dash-secondary hover:bg-white/[0.04] hover:text-dash-cream',
               ].join(' ')}
@@ -630,7 +2065,13 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings })
         </aside>
 
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-          {activeSetupTab === 'profile' && (
+          {setupError && (
+            <div className="mb-4 rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">
+              {setupError}
+            </div>
+          )}
+
+          {activeSetupTab === 'profile' && activeSubTab === 'Basics' && (
             <div className="space-y-5">
               {setupWarnings.profile.length > 0 && (
                 <div className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
@@ -703,7 +2144,15 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings })
             </div>
           )}
 
-          {activeSetupTab === 'operations' && (
+          {activeSetupTab === 'profile' && activeSubTab !== 'Basics' && (
+            <SetupPlaceholder title={activeSubTab}>
+              {activeSubTab === 'Location'
+                ? 'Location fields are editable in Basics for now: address, city, state, and postal code.'
+                : 'Logo, cover image, and brand styling controls will live here.'}
+            </SetupPlaceholder>
+          )}
+
+          {activeSetupTab === 'operations' && activeSubTab === 'Hours' && (
             <div className="space-y-4">
               {setupWarnings.operations.length > 0 && (
                 <div className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
@@ -711,6 +2160,22 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings })
                 </div>
               )}
               <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Seating Capacity">
+                  <TextInput
+                    type="number"
+                    min="0"
+                    value={profile.seating_capacity}
+                    onChange={(event) => setProfile(prev => ({ ...prev, seating_capacity: event.target.value }))}
+                  />
+                </Field>
+                <Field label="Table Count">
+                  <TextInput
+                    type="number"
+                    min="0"
+                    value={profile.table_count}
+                    onChange={(event) => setProfile(prev => ({ ...prev, table_count: event.target.value }))}
+                  />
+                </Field>
                 <SetupPlaceholder title="Operating Hours">
                   Edit service days, open/close windows, and holiday exceptions here.
                 </SetupPlaceholder>
@@ -718,36 +2183,135 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings })
                   Manage table count, seating capacity, and named floor sections.
                 </SetupPlaceholder>
               </div>
+              <SmallButton variant="primary" onClick={() => void saveProfile()} disabled={isSaving}>
+                {isSaving ? 'Saving...' : 'Save operations'}
+              </SmallButton>
             </div>
           )}
 
-          {activeSetupTab === 'menu' && (
+          {activeSetupTab === 'operations' && activeSubTab === 'Capacity' && (
+            <div className="space-y-5">
+              <div className="grid gap-3 md:grid-cols-4">
+                <TextInput placeholder="Table #" value={tableForm.table_number} onChange={event => setTableForm(prev => ({ ...prev, table_number: event.target.value }))} />
+                <TextInput type="number" min="1" placeholder="Capacity" value={tableForm.capacity} onChange={event => setTableForm(prev => ({ ...prev, capacity: event.target.value }))} />
+                <select value={tableForm.table_type} onChange={event => setTableForm(prev => ({ ...prev, table_type: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm text-dash-cream outline-none focus:border-dash-gold/70">
+                  <option value="standard">Standard</option>
+                  <option value="bar">Bar</option>
+                  <option value="booth">Booth</option>
+                  <option value="patio">Patio</option>
+                </select>
+                <SmallButton variant="primary" onClick={() => void addTable()}>Add table</SmallButton>
+              </div>
+              {tables.length === 0 ? (
+                <SetupEmptyState title="No tables yet" actionLabel="Add table" onAction={() => void addTable()}>
+                  Add tables here so floor state and table-volume analytics have real table records.
+                </SetupEmptyState>
+              ) : (
+                <div className="space-y-2">
+                  {tables.map(table => (
+                    <div key={table.id} className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 md:grid-cols-[1fr_110px_140px_auto]">
+                      <TextInput defaultValue={table.table_number || ''} onBlur={event => void updateTable(table.id, { table_number: event.target.value })} />
+                      <TextInput type="number" min="1" defaultValue={table.capacity || ''} onBlur={event => void updateTable(table.id, { capacity: Number(event.target.value || 0) })} />
+                      <span className="px-3 py-3 text-sm capitalize text-dash-secondary">{table.table_type || 'standard'}</span>
+                      <SmallButton variant="danger" onClick={() => void removeTable(table.id)}>Remove</SmallButton>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeSetupTab === 'operations' && activeSubTab === 'Sections' && (
+            <SetupPlaceholder title="Sections">
+              Section editing will connect to the floor-plan section records. Tables are editable in Capacity right now.
+            </SetupPlaceholder>
+          )}
+
+          {activeSetupTab === 'menu' && activeSubTab === 'Items' && (
+            <div className="space-y-5">
+              <div className="grid gap-3 md:grid-cols-[1fr_140px_120px_120px_auto]">
+                <TextInput placeholder="Item name" value={menuForm.name} onChange={event => setMenuForm(prev => ({ ...prev, name: event.target.value }))} />
+                <TextInput placeholder="Category" value={menuForm.category} onChange={event => setMenuForm(prev => ({ ...prev, category: event.target.value }))} />
+                <TextInput type="number" min="0" step="0.01" placeholder="Price" value={menuForm.price} onChange={event => setMenuForm(prev => ({ ...prev, price: event.target.value }))} />
+                <TextInput type="number" min="0" step="0.01" placeholder="Cost" value={menuForm.cost} onChange={event => setMenuForm(prev => ({ ...prev, cost: event.target.value }))} />
+                <SmallButton variant="primary" onClick={() => void addMenuItem()}>Add item</SmallButton>
+              </div>
+              {menuItems.length === 0 ? (
+                <SetupEmptyState title="No menu items yet" actionLabel="Add menu item" onAction={() => void addMenuItem()}>
+                  Add menu items manually here, or import/extract them later from the menu workflow.
+                </SetupEmptyState>
+              ) : (
+                <div className="space-y-2">
+                  {menuItems.map(item => (
+                    <div key={item.id} className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 md:grid-cols-[1fr_140px_110px_110px_auto]">
+                      <TextInput defaultValue={item.name || ''} onBlur={event => void updateMenuItem(item.id, { name: event.target.value })} />
+                      <TextInput defaultValue={item.category || ''} onBlur={event => void updateMenuItem(item.id, { category: event.target.value || null })} />
+                      <TextInput type="number" min="0" step="0.01" defaultValue={item.price ?? ''} onBlur={event => void updateMenuItem(item.id, { price: event.target.value === '' ? null : Number(event.target.value) })} />
+                      <TextInput type="number" min="0" step="0.01" defaultValue={item.cost ?? ''} onBlur={event => void updateMenuItem(item.id, { cost: event.target.value === '' ? null : Number(event.target.value) })} />
+                      <SmallButton variant="danger" onClick={() => void removeMenuItem(item.id)}>Remove</SmallButton>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeSetupTab === 'menu' && activeSubTab !== 'Items' && (
             <div className="grid gap-4 md:grid-cols-2">
-              <SetupPlaceholder title="Menu Items">
-                Menu item editor and import status will live here.
-              </SetupPlaceholder>
-              <SetupPlaceholder title="Modifiers">
-                Modifier groups, required choices, and add-on pricing will live here.
+              <SetupPlaceholder title={activeSubTab}>
+                {activeSubTab === 'Modifiers'
+                  ? 'Modifier groups and add-on pricing remain in the dedicated modifier editor.'
+                  : 'Menu import/extraction controls will live here.'}
               </SetupPlaceholder>
             </div>
           )}
 
-          {activeSetupTab === 'team' && (
+          {activeSetupTab === 'team' && activeSubTab === 'Staff' && (
             <div className="space-y-4">
               {setupWarnings.team.length > 0 && (
                 <div className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
                   Missing: {setupWarnings.team.join(', ')}
                 </div>
               )}
-              <div className="grid gap-4 md:grid-cols-2">
-                <SetupPlaceholder title="Staff Directory">
-                  Owners, managers, employees, roles, and invites will live here.
-                </SetupPlaceholder>
-                <SetupPlaceholder title="Permissions">
-                  Role-level access to analytics, scheduling, setup, and billing will live here.
-                </SetupPlaceholder>
+              <div className="grid gap-3 md:grid-cols-[1fr_1fr_120px_110px_120px_auto]">
+                <TextInput placeholder="Name" value={staffForm.name} onChange={event => setStaffForm(prev => ({ ...prev, name: event.target.value, employee_login_id: prev.employee_login_id || defaultEmployeeId(event.target.value) }))} />
+                <TextInput placeholder="Email optional" value={staffForm.email} onChange={event => setStaffForm(prev => ({ ...prev, email: event.target.value }))} />
+                <select value={staffForm.role} onChange={event => setStaffForm(prev => ({ ...prev, role: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-3 text-sm text-dash-cream outline-none focus:border-dash-gold/70">
+                  <option value="server">Server</option>
+                  <option value="bartender">Bartender</option>
+                  <option value="host">Host</option>
+                  <option value="manager">Manager</option>
+                </select>
+                <TextInput placeholder="PIN" value={staffForm.pin} onChange={event => setStaffForm(prev => ({ ...prev, pin: event.target.value.replace(/\D/g, '').slice(0, 8) }))} />
+                <TextInput placeholder="ID" value={staffForm.employee_login_id} onChange={event => setStaffForm(prev => ({ ...prev, employee_login_id: event.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, '') }))} />
+                <SmallButton variant="primary" onClick={() => void addStaff()}>Add</SmallButton>
               </div>
+              {waiters.length === 0 ? (
+                <SetupEmptyState title="No employees yet" actionLabel="Add employee" onAction={() => void addStaff()}>
+                  Add employees so the employee login, scheduling, and staff analytics have real people attached.
+                </SetupEmptyState>
+              ) : (
+                <div className="space-y-2">
+                  {waiters.map(waiter => (
+                    <div key={waiter.id} className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 md:grid-cols-[1fr_1fr_120px_120px_auto]">
+                      <TextInput defaultValue={waiter.name || ''} onBlur={event => void updateStaff(waiter.id, { name: event.target.value })} />
+                      <TextInput defaultValue={waiter.email || ''} placeholder="Email" onBlur={event => void updateStaff(waiter.id, { email: event.target.value || null })} />
+                      <span className="px-3 py-3 text-sm capitalize text-dash-secondary">{waiter.role || 'server'}</span>
+                      <span className="px-3 py-3 font-mono text-sm text-dash-secondary">{waiter.employee_login_id || 'auto'}</span>
+                      <SmallButton variant="danger" onClick={() => void removeStaff(waiter.id)}>Remove</SmallButton>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+          )}
+
+          {activeSetupTab === 'team' && activeSubTab !== 'Staff' && (
+            <SetupPlaceholder title={activeSubTab}>
+              {activeSubTab === 'Roles'
+                ? 'Role permissions will be managed here. Staff records are editable in Staff.'
+                : 'Manager and employee invite flows will live here.'}
+            </SetupPlaceholder>
           )}
 
           {activeSetupTab === 'integrations' && (
@@ -776,9 +2340,10 @@ function RestaurantWorkspace() {
   const restaurant = auth.restaurant.restaurants.find((item) => item.id === restaurantId) ?? null
   const activeTab = TABS.some((item) => item.id === tab) ? tab : 'analytics'
   const [waiterCount, setWaiterCount] = useState(null)
+  const [setupRefreshKey, setSetupRefreshKey] = useState(0)
 
   const setupWarnings = useMemo(
-    () => buildSetupWarnings(restaurant || {}, waiterCount),
+    () => buildModernSetupWarnings(restaurant || {}, waiterCount),
     [restaurant, waiterCount]
   )
 
@@ -792,7 +2357,7 @@ function RestaurantWorkspace() {
   useEffect(() => {
     if (!restaurantId || !restaurant) return
     let cancelled = false
-    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=true`)
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`)
       .then(data => {
         if (!cancelled) setWaiterCount(Array.isArray(data) ? data.length : 0)
       })
@@ -802,7 +2367,7 @@ function RestaurantWorkspace() {
     return () => {
       cancelled = true
     }
-  }, [restaurant, restaurantId])
+  }, [restaurant, restaurantId, setupRefreshKey])
 
   if (!restaurantId) {
     return <Navigate to="/restaurants" replace />
@@ -845,11 +2410,12 @@ function RestaurantWorkspace() {
               navigate={navigate}
               setupWarnings={setupWarnings}
             />
-            <RestaurantSetupPanel
+            <ModernRestaurantSetupPanel
               restaurant={restaurant}
               restaurantId={restaurantId}
               auth={auth}
               setupWarnings={setupWarnings}
+              onSetupChanged={() => setSetupRefreshKey(key => key + 1)}
             />
           </div>
         </main>
@@ -870,7 +2436,7 @@ function RestaurantWorkspace() {
             setupWarnings={setupWarnings}
           />
 
-          {activeTab === 'analytics' && <AnalyticsPlaceholder restaurant={restaurant} />}
+          {activeTab === 'analytics' && <AnalyticsDashboard restaurant={restaurant} />}
           {activeTab === 'scheduling' && <SchedulingPanel restaurantId={restaurantId} />}
           {activeTab === 'payments' && (
             <PlaceholderPanel title="Payments / Plan" eyebrow="Placeholder">
@@ -884,7 +2450,7 @@ function RestaurantWorkspace() {
 }
 
 function RestaurantWorkspaceHeader({ restaurant, restaurantId, activeTab, auth, navigate, setupWarnings }) {
-  const needsSetupAttention = warningCount(setupWarnings || {}) > 0
+  const needsSetupAttention = modernWarningCount(setupWarnings || {}) > 0
   return (
     <header className="space-y-5 border-b border-white/10 pb-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
