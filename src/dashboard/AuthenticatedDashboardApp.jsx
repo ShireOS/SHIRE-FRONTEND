@@ -155,7 +155,7 @@ function WarningTriangle({ className = '' }) {
   )
 }
 
-function buildSetupWarnings(restaurant, waiterCount = null) {
+function buildSetupWarnings(restaurant, waiterCount = null, floorPlanStatus = null) {
   const warnings = {
     basics: [],
     hours: [],
@@ -172,7 +172,7 @@ function buildSetupWarnings(restaurant, waiterCount = null) {
 
   if (!restaurant.seating_capacity) warnings.capacity.push('Seating capacity')
   if (!restaurant.table_count) warnings.capacity.push('Table count')
-  if (!restaurant.floor_plan_data && !restaurant.floor_plan_image_url) warnings.capacity.push('Floor plan')
+  if (floorPlanStatus && !floorPlanStatus.has_floor_plan) warnings.capacity.push('Floor plan')
 
   if (waiterCount === 0) warnings.employees.push('Employees')
 
@@ -823,13 +823,17 @@ function SchedulingPanel({ restaurantId }) {
     }
     setStatus('Saving coverage block...')
     try {
+      const rolePayload = COVERAGE_ROLES.reduce((acc, role) => ({
+        ...acc,
+        [role]: coverageForm.roles[role] === '' ? 0 : Number(coverageForm.roles[role] || 0),
+      }), {})
       await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements/blocks`, {
         method: 'POST',
         body: JSON.stringify({
           day_of_week: Number(coverageForm.day_of_week),
           start_time: coverageForm.start_time,
           end_time: coverageForm.end_time,
-          roles: coverageForm.roles,
+          roles: rolePayload,
           is_prime_shift: Boolean(coverageForm.is_prime_shift),
           notes: coverageForm.notes || null,
           infer_support_roles: true,
@@ -2340,11 +2344,12 @@ function RestaurantWorkspace() {
   const restaurant = auth.restaurant.restaurants.find((item) => item.id === restaurantId) ?? null
   const activeTab = TABS.some((item) => item.id === tab) ? tab : 'analytics'
   const [waiterCount, setWaiterCount] = useState(null)
+  const [floorPlanStatus, setFloorPlanStatus] = useState(null)
   const [setupRefreshKey, setSetupRefreshKey] = useState(0)
 
   const setupWarnings = useMemo(
-    () => buildModernSetupWarnings(restaurant || {}, waiterCount),
-    [restaurant, waiterCount]
+    () => buildModernSetupWarnings(restaurant || {}, waiterCount, floorPlanStatus),
+    [restaurant, waiterCount, floorPlanStatus]
   )
 
   useEffect(() => {
@@ -2357,12 +2362,20 @@ function RestaurantWorkspace() {
   useEffect(() => {
     if (!restaurantId || !restaurant) return
     let cancelled = false
-    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`)
-      .then(data => {
-        if (!cancelled) setWaiterCount(Array.isArray(data) ? data.length : 0)
+    Promise.all([
+      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`),
+      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`).catch(() => null),
+    ])
+      .then(([waiterData, floorPlan]) => {
+        if (cancelled) return
+        setWaiterCount(Array.isArray(waiterData) ? waiterData.length : 0)
+        setFloorPlanStatus(floorPlan)
       })
       .catch(() => {
-        if (!cancelled) setWaiterCount(null)
+        if (!cancelled) {
+          setWaiterCount(null)
+          setFloorPlanStatus(null)
+        }
       })
     return () => {
       cancelled = true

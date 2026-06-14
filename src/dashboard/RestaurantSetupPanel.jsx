@@ -250,7 +250,7 @@ async function fetchWithSupabaseAuth(endpoint, options = {}) {
   return response.json()
 }
 
-export function buildSetupWarnings(restaurant, waiterCount = null) {
+export function buildSetupWarnings(restaurant, waiterCount = null, floorPlanStatus = null) {
   const warnings = {
     basics: [],
     hours: [],
@@ -267,7 +267,7 @@ export function buildSetupWarnings(restaurant, waiterCount = null) {
 
   if (!restaurant.seating_capacity) warnings.capacity.push('Seating capacity')
   if (!restaurant.table_count) warnings.capacity.push('Table count')
-  if (!restaurant.floor_plan_data && !restaurant.floor_plan_image_url) warnings.capacity.push('Floor plan')
+  if (floorPlanStatus && !floorPlanStatus.has_floor_plan) warnings.capacity.push('Floor plan')
 
   if (waiterCount === 0) warnings.employees.push('Employees')
 
@@ -555,6 +555,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
             setFloorPlanMode(null)
             setProfile(prev => ({ ...prev, table_count: tables.length }))
             void saveCapacity({ table_count: tables.length })
+            onSetupChanged?.()
           }}
         />
       </section>
