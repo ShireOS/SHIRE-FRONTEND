@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../shared/lib/supabase'
 import { API_CONFIG } from '../shared/api/config'
 import { FloorPlanEditor } from '../onboarding/components/FloorPlanEditor'
+import { normalizeFloorPlanTablesForEditor } from '../onboarding/components/FloorPlanCanvas'
 import { MenuEditor } from '../onboarding/components/MenuEditor'
 import { ModifierEditor } from '../onboarding/components/ModifierEditor'
 
@@ -208,7 +209,7 @@ function deriveSameHours(hours) {
 
 function mapFloorPlanTables(fp) {
   if (!fp?.has_floor_plan || !Array.isArray(fp.tables)) return []
-  return fp.tables.map(table => ({
+  return normalizeFloorPlanTablesForEditor(fp.tables.map(table => ({
     id: table.id || crypto.randomUUID(),
     center_x: table.position?.center_x ?? 50,
     center_y: table.position?.center_y ?? 50,
@@ -218,7 +219,7 @@ function mapFloorPlanTables(fp) {
     shape: table.shape || 'rectangular',
     confidence: table.confidence,
     notes: table.notes,
-  }))
+  })))
 }
 
 function mapMenuItems(items) {
@@ -265,8 +266,10 @@ export function buildSetupWarnings(restaurant, waiterCount = null, floorPlanStat
   if (!restaurant.city || !restaurant.state) warnings.basics.push('Location')
   if (!restaurant.phone) warnings.basics.push('Phone')
 
-  if (!restaurant.seating_capacity) warnings.capacity.push('Seating capacity')
-  if (!restaurant.table_count) warnings.capacity.push('Table count')
+  const floorPlanTableCount = floorPlanStatus?.total_tables || floorPlanStatus?.tables?.length || 0
+  const floorPlanCapacity = floorPlanStatus?.total_capacity || 0
+  if (!restaurant.seating_capacity && !floorPlanCapacity) warnings.capacity.push('Seating capacity')
+  if (!restaurant.table_count && !floorPlanTableCount) warnings.capacity.push('Table count')
   if (floorPlanStatus && !floorPlanStatus.has_floor_plan) warnings.capacity.push('Floor plan')
 
   if (waiterCount === 0) warnings.employees.push('Employees')
@@ -299,7 +302,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [menuItems, setMenuItems] = useState([])
   const [menuMode, setMenuMode] = useState(null)
   const [waiters, setWaiters] = useState([])
-  const [staffForm, setStaffForm] = useState({ name: '', email: '', role: 'server', pin: '1111', employee_login_id: '' })
+  const [staffForm, setStaffForm] = useState({ name: '', email: '', role: 'server', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
   const [pinEdits, setPinEdits] = useState({})
   const [pinSaving, setPinSaving] = useState({})
   const [pinSaved, setPinSaved] = useState({})
@@ -496,10 +499,11 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         role: staffForm.role,
         pin: staffForm.pin,
         employee_login_id: staffForm.employee_login_id.trim() || defaultEmployeeId(staffForm.name),
+        suggested_weekly_hours: staffForm.suggested_weekly_hours === '' ? null : Number(staffForm.suggested_weekly_hours),
       }),
     })
     setWaiters(prev => [...prev, created])
-    setStaffForm({ name: '', email: '', role: 'server', pin: '1111', employee_login_id: '' })
+    setStaffForm({ name: '', email: '', role: 'server', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
     onSetupChanged?.()
   }
 
@@ -908,12 +912,13 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               Missing: {setupWarnings.employees.join(', ')}
             </div>
           )}
-          <div className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[1fr_1fr_140px_120px_130px_auto]">
+          <div className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[1fr_1fr_140px_110px_120px_130px_auto]">
             <TextInput placeholder="Name" value={staffForm.name} onChange={event => setStaffForm(prev => ({ ...prev, name: event.target.value, employee_login_id: prev.employee_login_id || defaultEmployeeId(event.target.value) }))} />
             <TextInput placeholder="Email optional" value={staffForm.email} onChange={event => setStaffForm(prev => ({ ...prev, email: event.target.value }))} />
             <SelectInput value={staffForm.role} onChange={event => setStaffForm(prev => ({ ...prev, role: event.target.value }))}>
               {ROLE_OPTIONS.map(role => <option key={role} value={role}>{role}</option>)}
             </SelectInput>
+            <TextInput placeholder="Hrs/week" value={staffForm.suggested_weekly_hours} onChange={event => setStaffForm(prev => ({ ...prev, suggested_weekly_hours: event.target.value.replace(/[^\d.]/g, '').slice(0, 5) }))} />
             <TextInput placeholder="PIN" value={staffForm.pin} onChange={event => setStaffForm(prev => ({ ...prev, pin: event.target.value.replace(/\D/g, '').slice(0, 8) }))} />
             <TextInput placeholder="ID" value={staffForm.employee_login_id} onChange={event => setStaffForm(prev => ({ ...prev, employee_login_id: event.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, '') }))} />
             <SmallButton variant="primary" onClick={() => void addStaff()}>Add</SmallButton>
@@ -926,12 +931,13 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               </SetupEmptyState>
             ) : (
               waiters.map(waiter => (
-                <div key={waiter.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 xl:grid-cols-[1fr_1fr_150px_150px_180px_100px_auto]">
+                <div key={waiter.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 xl:grid-cols-[1fr_1fr_130px_120px_150px_170px_100px_auto]">
                   <TextInput defaultValue={waiter.name || ''} onBlur={event => void updateStaff(waiter.id, { name: event.target.value })} />
                   <TextInput defaultValue={waiter.email || ''} placeholder="Email" onBlur={event => void updateStaff(waiter.id, { email: event.target.value || null })} />
                   <SelectInput defaultValue={waiter.role || 'server'} onChange={event => void updateStaff(waiter.id, { role: event.target.value })}>
                     {ROLE_OPTIONS.map(role => <option key={role} value={role}>{role}</option>)}
                   </SelectInput>
+                  <TextInput defaultValue={waiter.suggested_weekly_hours ?? ''} placeholder="Hrs/week" onBlur={event => void updateStaff(waiter.id, { suggested_weekly_hours: event.target.value === '' ? null : Number(event.target.value) })} />
                   <TextInput defaultValue={waiter.employee_login_id || defaultEmployeeId(waiter.name || '')} placeholder="Login ID" onBlur={event => void updateStaff(waiter.id, { employee_login_id: event.target.value || defaultEmployeeId(waiter.name || '') })} />
                   <TextInput
                     placeholder="New PIN"

@@ -27,8 +27,14 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [phase, setPhase] = useState<Phase>(mode === 'manual' ? 'editing' : 'idle')
   const [error, setError] = useState<string | null>(null)
+  const [isDirty, setIsDirty] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dropZoneRef = useRef<HTMLDivElement>(null)
+
+  const updateTables = useCallback((next: FloorPlanTable[] | ((current: FloorPlanTable[]) => FloorPlanTable[])) => {
+    setIsDirty(true)
+    setTables(next)
+  }, [])
 
   // Handle file upload + analyze
   const processFile = useCallback(async (file: File) => {
@@ -97,13 +103,13 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
         notes: t.notes,
       }))
 
-      setTables(detected)
+      updateTables(detected)
       setPhase('editing')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setPhase('idle')
     }
-  }, [restaurantId])
+  }, [restaurantId, updateTables])
 
   // Drag-and-drop on the upload zone
   useEffect(() => {
@@ -126,6 +132,10 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
   }, [phase, processFile])
 
   const handleSave = async () => {
+    if (!isDirty) {
+      onBack()
+      return
+    }
     setError(null)
     setPhase('saving')
     try {
@@ -152,6 +162,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
         throw new Error(err.detail || `Save failed (${res.status})`)
       }
 
+      setIsDirty(false)
       onSave(tables)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
@@ -170,7 +181,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
       capacity: 4,
       shape: 'rectangular',
     }
-    setTables(prev => [...prev, newTable])
+    updateTables(prev => [...prev, newTable])
   }
 
   const isBusy = phase === 'uploading' || phase === 'analyzing' || phase === 'saving'
@@ -181,7 +192,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
       <div className="flex items-center justify-between mb-4">
         <button
           onClick={async () => {
-            if (tables.length > 0) {
+            if (tables.length > 0 && isDirty) {
               // handleSave calls onSave on success (which closes editor via parent)
               // on failure it shows an error and stays open so user doesn't lose work
               await handleSave()
@@ -203,7 +214,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
             onClick={handleSave}
             className="px-4 py-2 bg-[rgb(var(--gold))] text-black text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
           >
-            Save {tables.length} Table{tables.length !== 1 ? 's' : ''}
+            {isDirty ? `Save ${tables.length} Table${tables.length !== 1 ? 's' : ''}` : 'Done'}
           </button>
         )}
 
@@ -262,7 +273,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
         <div className="flex-1 flex flex-col gap-3">
           <FloorPlanCanvas
             tables={tables}
-            onTablesChange={setTables}
+            onTablesChange={updateTables}
             mode="manual"
           />
 
@@ -281,7 +292,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
 
             {mode === 'upload' && (
               <button
-                onClick={() => { setPhase('idle'); setTables([]); setImageUrl(null) }}
+                onClick={() => { setPhase('idle'); updateTables([]); setImageUrl(null) }}
                 disabled={isBusy}
                 className="flex items-center gap-2 px-3 py-2 text-sm text-[rgb(var(--text-secondary))] border border-[rgba(255,255,255,0.1)] rounded-lg hover:bg-[rgba(255,255,255,0.05)] hover:text-[rgb(var(--text-primary))] disabled:opacity-40 transition-all"
               >

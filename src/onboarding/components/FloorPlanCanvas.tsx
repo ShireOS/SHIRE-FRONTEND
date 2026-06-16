@@ -12,6 +12,51 @@ export interface FloorPlanTable {
   notes?: string
 }
 
+export function normalizeFloorPlanTablesForEditor(tables: FloorPlanTable[], padding = 6): FloorPlanTable[] {
+  if (!Array.isArray(tables) || tables.length === 0) return []
+
+  const extents = tables.reduce(
+    (acc, table) => {
+      const width = Math.max(MIN_SIZE, Math.min(MAX_SIZE, Number(table.width || 12)))
+      const height = Math.max(MIN_SIZE, Math.min(MAX_SIZE, Number(table.height || 10)))
+      const left = Number(table.center_x || 50) - width / 2
+      const right = Number(table.center_x || 50) + width / 2
+      const top = Number(table.center_y || 50) - height / 2
+      const bottom = Number(table.center_y || 50) + height / 2
+      return {
+        minX: Math.min(acc.minX, left),
+        maxX: Math.max(acc.maxX, right),
+        minY: Math.min(acc.minY, top),
+        maxY: Math.max(acc.maxY, bottom),
+      }
+    },
+    { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity },
+  )
+
+  if (!Number.isFinite(extents.minX) || !Number.isFinite(extents.minY)) return tables
+
+  const sourceWidth = Math.max(1, extents.maxX - extents.minX)
+  const sourceHeight = Math.max(1, extents.maxY - extents.minY)
+  const targetSize = 100 - padding * 2
+  const scale = Math.min(targetSize / sourceWidth, targetSize / sourceHeight, 1.15)
+  const fittedWidth = sourceWidth * scale
+  const fittedHeight = sourceHeight * scale
+  const offsetX = padding + (targetSize - fittedWidth) / 2
+  const offsetY = padding + (targetSize - fittedHeight) / 2
+
+  return tables.map(table => {
+    const width = Math.max(MIN_SIZE, Math.min(MAX_SIZE, Number(table.width || 12))) * scale
+    const height = Math.max(MIN_SIZE, Math.min(MAX_SIZE, Number(table.height || 10))) * scale
+    return {
+      ...table,
+      center_x: offsetX + (Number(table.center_x || 50) - extents.minX) * scale,
+      center_y: offsetY + (Number(table.center_y || 50) - extents.minY) * scale,
+      width: Math.max(MIN_SIZE, Math.min(MAX_SIZE, width)),
+      height: Math.max(MIN_SIZE, Math.min(MAX_SIZE, height)),
+    }
+  })
+}
+
 type ResizeHandle = 'nw' | 'ne' | 'sw' | 'se'
 
 type DragState =

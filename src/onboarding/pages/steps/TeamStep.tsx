@@ -17,6 +17,7 @@ interface StaffMember {
   role: StaffRole
   pos_passcode: string
   employee_login_id?: string | null
+  suggested_weekly_hours?: number | null
 }
 
 export function TeamStep({ onboarding }: TeamStepProps) {
@@ -31,6 +32,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
   const [employeeLoginId, setEmployeeLoginId] = useState('')
   const [role, setRole] = useState<StaffRole>('server')
   const [passcode, setPasscode] = useState('1111')
+  const [suggestedWeeklyHours, setSuggestedWeeklyHours] = useState('')
   const [isAdding, setIsAdding] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -40,6 +42,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
     setEmployeeLoginId('')
     setRole('server')
     setPasscode('1111')
+    setSuggestedWeeklyHours('')
     setFormError(null)
   }
 
@@ -81,6 +84,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
             role,
             pos_passcode: passcode,
             employee_login_id: employeeLoginId.trim() || defaultEmployeeId(name),
+            suggested_weekly_hours: suggestedWeeklyHours === '' ? null : Number(suggestedWeeklyHours),
           }),
         }
       )
@@ -97,6 +101,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
         role?: string
         pos_passcode?: string
         employee_login_id?: string | null
+        suggested_weekly_hours?: number | null
       }
 
       setStaffList(prev => [
@@ -108,6 +113,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
           role: (created.role as StaffRole) || role,
           pos_passcode: created.pos_passcode || passcode,
           employee_login_id: created.employee_login_id || employeeLoginId.trim() || defaultEmployeeId(name),
+          suggested_weekly_hours: created.suggested_weekly_hours ?? (suggestedWeeklyHours === '' ? null : Number(suggestedWeeklyHours)),
         },
       ])
 
@@ -159,6 +165,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
                 {staff.role} · ID:{' '}
                 <span className="font-mono normal-case">{staff.employee_login_id || 'auto'}</span>
                 {' '}· PIN: <span className="font-mono">{staff.pos_passcode}</span>
+                {staff.suggested_weekly_hours ? <span> · {staff.suggested_weekly_hours} hrs/week</span> : null}
                 {staff.email ? <span className="normal-case"> · {staff.email}</span> : null}
               </p>
             </div>
@@ -230,7 +237,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
               <label className="block text-xs font-medium text-[rgb(var(--text-secondary))] mb-1.5">
                 Role
@@ -261,6 +268,21 @@ export function TeamStep({ onboarding }: TeamStepProps) {
                 placeholder="1111"
                 maxLength={4}
                 className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[rgb(var(--text-secondary))] mb-1.5">
+                Suggested hours/week
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={60}
+                step={1}
+                value={suggestedWeeklyHours}
+                onChange={e => setSuggestedWeeklyHours(e.target.value)}
+                placeholder="28"
+                className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
               />
             </div>
           </div>

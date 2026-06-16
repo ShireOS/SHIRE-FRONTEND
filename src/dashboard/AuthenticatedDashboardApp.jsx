@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import {
   AuthProvider,
@@ -170,8 +170,10 @@ function buildSetupWarnings(restaurant, waiterCount = null, floorPlanStatus = nu
   if (!restaurant.city || !restaurant.state) warnings.basics.push('Location')
   if (!restaurant.phone) warnings.basics.push('Phone')
 
-  if (!restaurant.seating_capacity) warnings.capacity.push('Seating capacity')
-  if (!restaurant.table_count) warnings.capacity.push('Table count')
+  const floorPlanTableCount = floorPlanStatus?.total_tables || floorPlanStatus?.tables?.length || 0
+  const floorPlanCapacity = floorPlanStatus?.total_capacity || 0
+  if (!restaurant.seating_capacity && !floorPlanCapacity) warnings.capacity.push('Seating capacity')
+  if (!restaurant.table_count && !floorPlanTableCount) warnings.capacity.push('Table count')
   if (floorPlanStatus && !floorPlanStatus.has_floor_plan) warnings.capacity.push('Floor plan')
 
   if (waiterCount === 0) warnings.employees.push('Employees')
@@ -608,6 +610,29 @@ const ROLE_LABELS = {
   chef: 'Kitchen',
 }
 
+const COVERAGE_TIME_AXIS_WIDTH = 72
+const COVERAGE_PIXELS_PER_HOUR = 44
+const COVERAGE_SLOT_MINUTES = 15
+const DEFAULT_CALENDAR_START = 0
+const DEFAULT_CALENDAR_END = 24 * 60
+const DEFAULT_COVERAGE_THRESHOLD = 0.7
+const DEFAULT_OPTIMIZATION_WEIGHTS = {
+  coverage: 1,
+  weekly_hours: 1,
+  preferences: 1,
+  requests: 1,
+  fairness: 1,
+  prime_balance: 1,
+}
+const OPTIMIZATION_WEIGHT_FIELDS = [
+  ['coverage', 'Coverage'],
+  ['weekly_hours', 'Target hours'],
+  ['preferences', 'Employee preferences'],
+  ['requests', 'Requests'],
+  ['fairness', 'Fairness'],
+  ['prime_balance', 'Prime shifts'],
+]
+
 const emptyCoverageBlockForm = {
   key: null,
   is_suggested: false,
@@ -620,6 +645,98 @@ const emptyCoverageBlockForm = {
   original_start_time: null,
   original_end_time: null,
   roles: COVERAGE_ROLES.reduce((acc, role) => ({ ...acc, [role]: '' }), {}),
+}
+
+function timeToMinutes(value, fallback = null) {
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})/)
+  if (!match) return fallback
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return fallback
+  return (hours * 60) + minutes
+}
+
+function minutesToTime(value) {
+  const bounded = Math.max(0, Math.min(23 * 60 + 59, Number(value) || 0))
+  const hours = Math.floor(bounded / 60)
+  const minutes = bounded % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+function formatDisplayTime(value) {
+  const minutesValue = typeof value === 'number' ? value : timeToMinutes(value, 0)
+  const bounded = Math.max(0, Math.min(24 * 60, Number(minutesValue) || 0))
+  const hours24 = Math.floor(bounded / 60) % 24
+  const minutes = bounded % 60
+  const suffix = hours24 >= 12 ? 'PM' : 'AM'
+  const hours12 = hours24 % 12 || 12
+  return minutes ? `${hours12}:${String(minutes).padStart(2, '0')} ${suffix}` : `${hours12} ${suffix}`
+}
+
+function roundMinutes(value, slot = COVERAGE_SLOT_MINUTES) {
+  return Math.round(value / slot) * slot
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value))
+}
+
+function normalizeRoleCounts(roles = {}) {
+  return COVERAGE_ROLES.reduce((acc, role) => {
+    const value = roles[role]
+    const count = typeof value === 'object' ? value?.min_staff : value
+    acc[role] = count === '' || count === null || count === undefined ? 0 : Number(count || 0)
+    return acc
+  }, {})
+}
+
+function blockDurationMinutes(block) {
+  const start = timeToMinutes(block?.start_time, 0)
+  const end = timeToMinutes(block?.end_time, start)
+  return Math.max(0, end - start)
+}
+
+function blockOverlapMinutes(a, b) {
+  if (Number(a?.day_of_week) !== Number(b?.day_of_week)) return 0
+  const start = Math.max(timeToMinutes(a?.start_time, 0), timeToMinutes(b?.start_time, 0))
+  const end = Math.min(timeToMinutes(a?.end_time, 0), timeToMinutes(b?.end_time, 0))
+  return Math.max(0, end - start)
+}
+
+function blockHasCoreCoverage(block) {
+  const roles = block?.roles || {}
+  return ["server", "host", "bartender", "busser", "runner", "chef"].some(role => {
+    const value = roles[role]
+    const count = typeof value === 'object' ? value?.min_staff : value
+    return Number(count || 0) > 0
+  })
+}
+
+function hasMeaningfulOverlap(block, blocks, ratio = 0.5) {
+  const duration = Math.max(1, blockDurationMinutes(block))
+  return blocks.some(existing => blockHasCoreCoverage(existing) && blockOverlapMinutes(block, existing) / duration >= ratio)
+}
+
+function mergeCoverageBlocks(savedBlocks, suggestedBlocks) {
+  const saved = Array.isArray(savedBlocks) ? savedBlocks : []
+  const suggestions = Array.isArray(suggestedBlocks) ? suggestedBlocks : []
+  const missingSuggestions = suggestions.filter(block => !hasMeaningfulOverlap(block, saved))
+  return [...saved, ...missingSuggestions]
+}
+
+function coverageRatio(savedBlocks, suggestedBlocks) {
+  const suggestions = Array.isArray(suggestedBlocks) ? suggestedBlocks : []
+  const totalSuggestedMinutes = suggestions.reduce((sum, block) => sum + blockDurationMinutes(block), 0)
+  if (!totalSuggestedMinutes) return 1
+  const coveredMinutes = suggestions.reduce((sum, suggestion) => {
+    const suggestionDuration = blockDurationMinutes(suggestion)
+    const covered = (Array.isArray(savedBlocks) ? savedBlocks : []).filter(blockHasCoreCoverage).reduce(
+      (overlap, saved) => overlap + blockOverlapMinutes(suggestion, saved),
+      0,
+    )
+    return sum + Math.min(suggestionDuration, covered)
+  }, 0)
+  return coveredMinutes / totalSuggestedMinutes
 }
 
 function roleSummary(roles = {}) {
@@ -663,13 +780,22 @@ function SchedulingPanel({ restaurantId }) {
   const [suggestedBlocks, setSuggestedBlocks] = useState([])
   const [schedules, setSchedules] = useState([])
   const [staff, setStaff] = useState([])
+  const [employeeRequests, setEmployeeRequests] = useState([])
   const [requestPolicy, setRequestPolicy] = useState(null)
+  const [optimizationWeights, setOptimizationWeights] = useState(DEFAULT_OPTIMIZATION_WEIGHTS)
   const [coverageForm, setCoverageForm] = useState(emptyCoverageBlockForm)
   const [selectedShift, setSelectedShift] = useState(null)
   const [shiftForm, setShiftForm] = useState(null)
   const [note, setNote] = useState('')
   const [status, setStatus] = useState('')
   const [noteStatus, setNoteStatus] = useState('')
+  const [calendarDrag, setCalendarDrag] = useState(null)
+  const [draftBlock, setDraftBlock] = useState(null)
+  const [coverageMenu, setCoverageMenu] = useState(null)
+  const coverageCalendarRef = useRef(null)
+  const autoGeneratedCoverageRef = useRef('')
+  const autoScrolledCoverageRef = useRef('')
+  const draftBlockRef = useRef(null)
 
   const loadCoverageBlocks = async () => {
     const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements/blocks`)
@@ -699,12 +825,107 @@ function SchedulingPanel({ restaurantId }) {
   const loadRequestPolicy = async () => {
     const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/employee-request-policy`)
     setRequestPolicy(data)
+    setOptimizationWeights({
+      ...DEFAULT_OPTIMIZATION_WEIGHTS,
+      ...(data?.manager_settings?.optimization_weights || {}),
+    })
     return data
+  }
+
+  const loadEmployeeRequests = async () => {
+    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/employee-requests?status=all`)
+    setEmployeeRequests(Array.isArray(data) ? data : [])
+    return data
+  }
+
+  const saveCoverageBlockPayload = async (form, options = {}) => {
+    if (!form.start_time || !form.end_time) {
+      setStatus('Coverage block needs both a start time and an end time.')
+      return null
+    }
+    if (!/^\d{2}:\d{2}$/.test(form.start_time) || !/^\d{2}:\d{2}$/.test(form.end_time)) {
+      setStatus('Use HH:MM format for both coverage times.')
+      return null
+    }
+    if (timeToMinutes(form.end_time, 0) <= timeToMinutes(form.start_time, 0)) {
+      setStatus('Coverage block end time must be after the start time.')
+      return null
+    }
+    if (!options.silent) setStatus(options.pendingMessage || 'Saving coverage block...')
+    const rolePayload = normalizeRoleCounts(form.roles)
+    await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements/blocks`, {
+      method: 'POST',
+      body: JSON.stringify({
+        day_of_week: Number(form.day_of_week),
+        start_time: form.start_time,
+        end_time: form.end_time,
+        roles: rolePayload,
+        is_prime_shift: Boolean(form.is_prime_shift),
+        notes: form.notes || null,
+        infer_support_roles: true,
+        original_day_of_week: form.original_day_of_week,
+        original_start_time: form.original_start_time,
+        original_end_time: form.original_end_time,
+      }),
+    })
+    const updated = await loadCoverageBlocks()
+    if (options.keepEditor) {
+      setCoverageForm({
+        ...form,
+        is_suggested: false,
+        original_day_of_week: Number(form.day_of_week),
+        original_start_time: form.start_time,
+        original_end_time: form.end_time,
+      })
+    } else {
+      setCoverageForm(emptyCoverageBlockForm)
+    }
+    if (!options.silent) setStatus(options.successMessage || 'Coverage block saved.')
+    return updated
+  }
+
+  const ensureCoverageDefaults = async (savedBlocks, suggestions) => {
+    const saved = Array.isArray(savedBlocks) ? savedBlocks : []
+    const suggested = Array.isArray(suggestions) ? suggestions : []
+    if (!suggested.length || autoGeneratedCoverageRef.current === restaurantId) return
+    autoGeneratedCoverageRef.current = restaurantId
+    if (coverageRatio(saved, suggested) >= DEFAULT_COVERAGE_THRESHOLD) return
+
+    const missingBlocks = suggested.filter(block => !hasMeaningfulOverlap(block, saved))
+    if (!missingBlocks.length) return
+
+    setStatus('Filling missing default coverage blocks...')
+    try {
+      for (const block of missingBlocks) {
+        await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements/blocks`, {
+          method: 'POST',
+          body: JSON.stringify({
+            day_of_week: Number(block.day_of_week),
+            start_time: String(block.start_time || '').slice(0, 5),
+            end_time: String(block.end_time || '').slice(0, 5),
+            roles: normalizeRoleCounts(block.roles),
+            is_prime_shift: Boolean(block.is_prime_shift),
+            notes: block.notes || 'Auto-generated default coverage',
+            infer_support_roles: true,
+            original_day_of_week: null,
+            original_start_time: null,
+            original_end_time: null,
+          }),
+        })
+      }
+      await loadCoverageBlocks()
+      setStatus(`Generated ${missingBlocks.length} default coverage block${missingBlocks.length === 1 ? '' : 's'}.`)
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not generate default coverage blocks')
+    }
   }
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([loadCoverageBlocks(), loadSuggestedBlocks(), loadSchedules(), loadStaff(), loadRequestPolicy()])
+    Promise.all([loadCoverageBlocks(), loadSuggestedBlocks(), loadSchedules(), loadStaff(), loadRequestPolicy(), loadEmployeeRequests()])
+      .then(([saved, suggestions]) => {
+        if (!cancelled) void ensureCoverageDefaults(saved, suggestions)
+      })
       .catch(err => {
         if (!cancelled) setStatus(err.message)
       })
@@ -713,11 +934,60 @@ function SchedulingPanel({ restaurantId }) {
     }
   }, [restaurantId])
 
+  useEffect(() => {
+    draftBlockRef.current = draftBlock
+  }, [draftBlock])
+
   const activeSchedule = schedules[0] || null
   const scheduleItems = activeSchedule?.items || []
-  const displayedBlocks = coverageBlocks.length ? coverageBlocks : suggestedBlocks
+  const displayedBlocks = useMemo(
+    () => mergeCoverageBlocks(coverageBlocks, suggestedBlocks),
+    [coverageBlocks, suggestedBlocks],
+  )
 
-  const blocksForDay = (dayIndex) => displayedBlocks.filter(block => Number(block.day_of_week) === dayIndex)
+  const calendarBounds = useMemo(() => ({ start: DEFAULT_CALENDAR_START, end: DEFAULT_CALENDAR_END }), [])
+
+  const calendarHeight = ((calendarBounds.end - calendarBounds.start) / 60) * COVERAGE_PIXELS_PER_HOUR
+  const timelineHours = useMemo(() => {
+    const hours = []
+    for (let minute = calendarBounds.start; minute <= calendarBounds.end; minute += 60) hours.push(minute)
+    return hours
+  }, [calendarBounds])
+
+  useEffect(() => {
+    if (activeSchedulingTab !== 'config' || !displayedBlocks.length) return undefined
+    const scrollKey = `${restaurantId}:${displayedBlocks.map(block => `${block.day_of_week}-${block.start_time}-${block.end_time}`).join('|')}`
+    if (autoScrolledCoverageRef.current === scrollKey) return undefined
+    autoScrolledCoverageRef.current = scrollKey
+
+    const frame = window.requestAnimationFrame(() => {
+      const node = coverageCalendarRef.current
+      if (!node) return
+      const blockCenters = displayedBlocks
+        .map(block => {
+          const start = timeToMinutes(block.start_time, null)
+          const end = timeToMinutes(block.end_time, null)
+          if (start === null || end === null || end <= start) return null
+          return (start + end) / 2
+        })
+        .filter(value => value !== null)
+      if (!blockCenters.length) return
+
+      const averageMinute = blockCenters.reduce((sum, value) => sum + value, 0) / blockCenters.length
+      const averageTop = ((averageMinute - calendarBounds.start) / 60) * COVERAGE_PIXELS_PER_HOUR
+      const targetTop = clamp(averageTop - (node.clientHeight / 2), 0, Math.max(0, node.scrollHeight - node.clientHeight))
+      node.scrollTop = targetTop
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [activeSchedulingTab, calendarBounds.start, displayedBlocks, restaurantId])
+
+  const renderedBlocksForDay = (dayIndex) => {
+    const movedBlocks = displayedBlocks.map(block => (
+      draftBlock && calendarDrag?.type !== 'create' && block.key === calendarDrag?.block?.key ? draftBlock : block
+    ))
+    const withDraft = draftBlock?.is_draft ? [...movedBlocks, draftBlock] : movedBlocks
+    return withDraft.filter(block => Number(block.day_of_week) === dayIndex)
+  }
 
   const itemsForDay = (dayIndex) => {
     if (!activeSchedule?.week_start_date) return []
@@ -726,6 +996,26 @@ function SchedulingPanel({ restaurantId }) {
     const target = start.toISOString().slice(0, 10)
     return scheduleItems.filter(item => item.shift_date === target)
   }
+
+  const staffHourRows = useMemo(() => {
+    const assigned = scheduleItems.reduce((acc, item) => {
+      const start = timeToMinutes(item.shift_start, 0)
+      const end = timeToMinutes(item.shift_end, start)
+      const hours = Math.max(0, end - start) / 60
+      acc[item.waiter_id] = (acc[item.waiter_id] || 0) + hours
+      return acc
+    }, {})
+    return staff.map(person => {
+      const target = Number(person.suggested_weekly_hours ?? 0) || null
+      const hours = Number((assigned[person.id] || 0).toFixed(2))
+      return {
+        ...person,
+        assigned_hours: hours,
+        target_hours: target,
+        delta_hours: target === null ? null : Number((hours - target).toFixed(2)),
+      }
+    })
+  }, [scheduleItems, staff])
 
   const createManualRun = async () => {
     setStatus('Generating draft schedule...')
@@ -741,6 +1031,35 @@ function SchedulingPanel({ restaurantId }) {
       setStatus(run.run_status === 'completed' ? 'Draft schedule generated.' : `Schedule run ${run.run_status}.`)
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Could not create run')
+    }
+  }
+
+  const regenerateCoverageDefaults = async () => {
+    setStatus('Recalculating coverage suggestions...')
+    try {
+      const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements/regenerate-defaults`, {
+        method: 'POST',
+      })
+      setCoverageBlocks(Array.isArray(data) ? data : [])
+      await loadSuggestedBlocks()
+      setCoverageForm(emptyCoverageBlockForm)
+      setStatus('Coverage suggestions recalculated.')
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not recalculate coverage suggestions')
+    }
+  }
+
+  const reviewEmployeeRequest = async (requestId, nextStatus) => {
+    setStatus(nextStatus === 'approved' ? 'Approving request...' : 'Updating request...')
+    try {
+      await fetchWithSupabaseAuth(`/employee-requests/${requestId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: nextStatus }),
+      })
+      await Promise.all([loadEmployeeRequests(), loadStaff()])
+      setStatus(nextStatus === 'approved' ? 'Request approved.' : 'Request updated.')
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not update request')
     }
   }
 
@@ -801,50 +1120,16 @@ function SchedulingPanel({ restaurantId }) {
     setCoverageForm({
       ...emptyCoverageBlockForm,
       day_of_week: dayIndex,
-      start_time: '',
-      end_time: '',
+      start_time: '17:00',
+      end_time: '18:30',
       is_prime_shift: true,
       roles: { ...emptyCoverageBlockForm.roles, server: 3 },
     })
   }
 
   const saveCoverageBlock = async () => {
-    if (!coverageForm.start_time || !coverageForm.end_time) {
-      setStatus('Coverage block needs both a start time and an end time.')
-      return
-    }
-    if (!/^\d{2}:\d{2}$/.test(coverageForm.start_time) || !/^\d{2}:\d{2}$/.test(coverageForm.end_time)) {
-      setStatus('Use HH:MM format for both coverage times.')
-      return
-    }
-    if (coverageForm.start_time >= coverageForm.end_time) {
-      setStatus('Coverage block end time must be after the start time.')
-      return
-    }
-    setStatus('Saving coverage block...')
     try {
-      const rolePayload = COVERAGE_ROLES.reduce((acc, role) => ({
-        ...acc,
-        [role]: coverageForm.roles[role] === '' ? 0 : Number(coverageForm.roles[role] || 0),
-      }), {})
-      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements/blocks`, {
-        method: 'POST',
-        body: JSON.stringify({
-          day_of_week: Number(coverageForm.day_of_week),
-          start_time: coverageForm.start_time,
-          end_time: coverageForm.end_time,
-          roles: rolePayload,
-          is_prime_shift: Boolean(coverageForm.is_prime_shift),
-          notes: coverageForm.notes || null,
-          infer_support_roles: true,
-          original_day_of_week: coverageForm.original_day_of_week,
-          original_start_time: coverageForm.original_start_time,
-          original_end_time: coverageForm.original_end_time,
-        }),
-      })
-      await loadCoverageBlocks()
-      setCoverageForm(emptyCoverageBlockForm)
-      setStatus('Coverage block saved.')
+      await saveCoverageBlockPayload(coverageForm)
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Could not save coverage block')
     }
@@ -870,6 +1155,221 @@ function SchedulingPanel({ restaurantId }) {
     }
   }
 
+  const deleteCoverageBlockByForm = async (form) => {
+    if (!form?.original_start_time || form.is_suggested) return
+    setStatus('Removing coverage block...')
+    try {
+      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements/blocks`, {
+        method: 'DELETE',
+        body: JSON.stringify({
+          day_of_week: Number(form.original_day_of_week),
+          start_time: form.original_start_time,
+          end_time: form.original_end_time,
+        }),
+      })
+      await loadCoverageBlocks()
+      if (coverageForm.key === form.key) setCoverageForm(emptyCoverageBlockForm)
+      setCoverageMenu(null)
+      setStatus('Coverage block removed.')
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not remove coverage block')
+    }
+  }
+
+  const getCalendarPoint = (event) => {
+    const node = coverageCalendarRef.current
+    if (!node) return null
+    const rect = node.getBoundingClientRect()
+    const dayWidth = (node.scrollWidth - COVERAGE_TIME_AXIS_WIDTH) / SCHEDULING_DAYS.length
+    const x = event.clientX - rect.left - COVERAGE_TIME_AXIS_WIDTH + node.scrollLeft
+    const y = event.clientY - rect.top + node.scrollTop
+    const day = clamp(Math.floor(x / dayWidth), 0, SCHEDULING_DAYS.length - 1)
+    const rawMinute = calendarBounds.start + ((y / COVERAGE_PIXELS_PER_HOUR) * 60)
+    const minute = clamp(roundMinutes(rawMinute), calendarBounds.start, calendarBounds.end)
+    return { day, minute }
+  }
+
+  const buildDraggedBlockForm = (sourceBlock, day, startMinute, endMinute) => {
+    const start = clamp(startMinute, calendarBounds.start, calendarBounds.end - COVERAGE_SLOT_MINUTES)
+    const end = clamp(Math.max(endMinute, start + COVERAGE_SLOT_MINUTES), start + COVERAGE_SLOT_MINUTES, calendarBounds.end)
+    return {
+      ...blockToForm(sourceBlock),
+      day_of_week: day,
+      start_time: minutesToTime(start),
+      end_time: minutesToTime(end),
+      roles: {
+        ...emptyCoverageBlockForm.roles,
+        ...blockToForm(sourceBlock).roles,
+      },
+    }
+  }
+
+  const startCreateCoverageDrag = (event, dayIndex) => {
+    if (event.button !== 0) return
+    setCoverageMenu(null)
+    const point = getCalendarPoint(event)
+    if (!point) return
+    const start = point.minute
+    const end = Math.min(calendarBounds.end, start + COVERAGE_SLOT_MINUTES)
+    const nextDraft = {
+      key: 'draft-coverage-block',
+      is_draft: true,
+      is_suggested: true,
+      day_of_week: dayIndex,
+      start_time: minutesToTime(start),
+      end_time: minutesToTime(end),
+      roles: { server: 3 },
+      is_prime_shift: true,
+      notes: '',
+    }
+    setDraftBlock(nextDraft)
+    draftBlockRef.current = nextDraft
+    setCalendarDrag({ type: 'create', day: dayIndex, anchorMinute: start })
+  }
+
+  const startMoveCoverageDrag = (event, block) => {
+    if (event.button !== 0) return
+    setCoverageMenu(null)
+    event.preventDefault()
+    event.stopPropagation()
+    const point = getCalendarPoint(event)
+    if (!point) return
+    const start = timeToMinutes(block.start_time, calendarBounds.start)
+    const end = timeToMinutes(block.end_time, start + 60)
+    setDraftBlock(block)
+    draftBlockRef.current = block
+    setCalendarDrag({
+      type: 'move',
+      block,
+      pointerOffset: point.minute - start,
+      duration: Math.max(COVERAGE_SLOT_MINUTES, end - start),
+    })
+  }
+
+  const startResizeCoverageDrag = (event, block) => {
+    if (event.button !== 0) return
+    setCoverageMenu(null)
+    event.preventDefault()
+    event.stopPropagation()
+    const start = timeToMinutes(block.start_time, calendarBounds.start)
+    setDraftBlock(block)
+    draftBlockRef.current = block
+    setCalendarDrag({ type: 'resize', block, startMinute: start })
+  }
+
+  useEffect(() => {
+    if (!calendarDrag) return undefined
+
+    const handlePointerMove = (event) => {
+      const point = getCalendarPoint(event)
+      if (!point) return
+
+      if (calendarDrag.type === 'create') {
+        const start = Math.min(calendarDrag.anchorMinute, point.minute)
+        const end = Math.max(calendarDrag.anchorMinute + COVERAGE_SLOT_MINUTES, point.minute)
+        setDraftBlock(prev => {
+          const next = {
+            ...(prev || {}),
+            key: 'draft-coverage-block',
+            is_draft: true,
+            is_suggested: true,
+            day_of_week: point.day,
+            start_time: minutesToTime(clamp(start, calendarBounds.start, calendarBounds.end - COVERAGE_SLOT_MINUTES)),
+            end_time: minutesToTime(clamp(end, calendarBounds.start + COVERAGE_SLOT_MINUTES, calendarBounds.end)),
+            roles: prev?.roles || { server: 3 },
+            is_prime_shift: true,
+          }
+          draftBlockRef.current = next
+          return next
+        })
+        return
+      }
+
+      if (calendarDrag.type === 'move') {
+        const start = clamp(point.minute - calendarDrag.pointerOffset, calendarBounds.start, calendarBounds.end - calendarDrag.duration)
+        const end = start + calendarDrag.duration
+        const next = {
+          ...calendarDrag.block,
+          day_of_week: point.day,
+          start_time: minutesToTime(start),
+          end_time: minutesToTime(end),
+        }
+        draftBlockRef.current = next
+        setDraftBlock(next)
+        return
+      }
+
+      if (calendarDrag.type === 'resize') {
+        const end = clamp(point.minute, calendarDrag.startMinute + COVERAGE_SLOT_MINUTES, calendarBounds.end)
+        const next = {
+          ...calendarDrag.block,
+          end_time: minutesToTime(end),
+        }
+        draftBlockRef.current = next
+        setDraftBlock(next)
+      }
+    }
+
+    const handlePointerUp = () => {
+      const finalDraft = draftBlockRef.current
+      setCalendarDrag(null)
+      setDraftBlock(null)
+      draftBlockRef.current = null
+      if (!finalDraft) return
+
+      const finalForm = calendarDrag.type === 'create'
+        ? {
+            ...emptyCoverageBlockForm,
+            day_of_week: Number(finalDraft.day_of_week),
+            start_time: String(finalDraft.start_time).slice(0, 5),
+            end_time: String(finalDraft.end_time).slice(0, 5),
+            is_prime_shift: true,
+            roles: { ...emptyCoverageBlockForm.roles, server: 3 },
+          }
+        : buildDraggedBlockForm(
+            calendarDrag.block,
+            Number(finalDraft.day_of_week),
+            timeToMinutes(finalDraft.start_time, calendarBounds.start),
+            timeToMinutes(finalDraft.end_time, calendarBounds.start + 60),
+          )
+
+      setCoverageForm(finalForm)
+      if (calendarDrag.type === 'create') {
+        void saveCoverageBlockPayload(finalForm, {
+          keepEditor: true,
+          successMessage: 'Coverage block created.',
+        }).catch(err => {
+          setStatus(err instanceof Error ? err.message : 'Could not create coverage block')
+        })
+      } else {
+        void saveCoverageBlockPayload(finalForm, {
+          keepEditor: true,
+          successMessage: 'Coverage block updated.',
+        }).catch(err => {
+          setStatus(err instanceof Error ? err.message : 'Could not update coverage block')
+        })
+      }
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [calendarDrag, draftBlock, calendarBounds])
+
+  useEffect(() => {
+    if (!coverageMenu) return undefined
+    const closeMenu = () => setCoverageMenu(null)
+    window.addEventListener('click', closeMenu)
+    window.addEventListener('scroll', closeMenu, true)
+    return () => {
+      window.removeEventListener('click', closeMenu)
+      window.removeEventListener('scroll', closeMenu, true)
+    }
+  }, [coverageMenu])
+
   const saveManagerNote = async () => {
     if (!note.trim()) return
     setNoteStatus('Parsing note...')
@@ -894,6 +1394,10 @@ function SchedulingPanel({ restaurantId }) {
     if (!requestPolicy) return
     setStatus('Saving request limits...')
     try {
+      const managerSettings = {
+        ...(requestPolicy.manager_settings || {}),
+        optimization_weights: optimizationWeights,
+      }
       const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/employee-request-policy`, {
         method: 'PUT',
         body: JSON.stringify({
@@ -902,10 +1406,14 @@ function SchedulingPanel({ restaurantId }) {
           high_priority_limit: requestPolicy.high_priority_limit,
           normal_priority_limit: requestPolicy.normal_priority_limit,
           low_priority_limit: requestPolicy.low_priority_limit,
-          manager_settings: requestPolicy.manager_settings || {},
+          manager_settings: managerSettings,
         }),
       })
       setRequestPolicy(saved)
+      setOptimizationWeights({
+        ...DEFAULT_OPTIMIZATION_WEIGHTS,
+        ...(saved?.manager_settings?.optimization_weights || {}),
+      })
       setStatus('Request limits saved.')
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Could not save request limits')
@@ -943,6 +1451,7 @@ function SchedulingPanel({ restaurantId }) {
           {[
             ['schedule', 'Schedule'],
             ['config', 'Calendar Config'],
+            ['requests', 'Requests'],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -962,6 +1471,7 @@ function SchedulingPanel({ restaurantId }) {
       </section>
 
       {activeSchedulingTab === 'schedule' && (
+        <div className="space-y-4">
         <section className="grid gap-4 lg:grid-cols-[1fr_340px]">
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.025]">
             <div className="grid grid-cols-7 border-b border-white/10">
@@ -1051,58 +1561,231 @@ function SchedulingPanel({ restaurantId }) {
             )}
           </aside>
         </section>
+        <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">Target Hours</h3>
+              <p className="mt-1 text-sm text-dash-secondary">Generated assignments compared with each employee's suggested weekly hours.</p>
+            </div>
+          </div>
+          <div className="mt-4 overflow-hidden rounded-xl border border-white/10">
+            {staffHourRows.length === 0 ? (
+              <p className="p-4 text-sm text-dash-secondary">No employees loaded.</p>
+            ) : (
+              staffHourRows.map(row => (
+                <div key={row.id} className="grid gap-2 border-b border-white/10 p-3 text-sm last:border-b-0 md:grid-cols-[1fr_120px_120px_120px]">
+                  <span className="font-semibold text-dash-cream">{row.name}</span>
+                  <span className="capitalize text-dash-secondary">{row.role || 'staff'}</span>
+                  <span className="text-dash-secondary">{row.assigned_hours} assigned</span>
+                  <span className={row.delta_hours === null ? 'text-dash-tertiary' : row.delta_hours > 2 ? 'text-amber-200' : row.delta_hours < -2 ? 'text-red-200' : 'text-emerald-200'}>
+                    {row.target_hours === null ? 'No target' : `${row.target_hours} target (${row.delta_hours > 0 ? '+' : ''}${row.delta_hours})`}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+        </div>
+      )}
+
+      {activeSchedulingTab === 'requests' && (
+        <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">Employee Requests</h3>
+              <p className="mt-1 text-sm text-dash-secondary">Review time off, preferred shifts, availability exceptions, and requested weekly-hour changes.</p>
+            </div>
+            <button type="button" onClick={() => void loadEmployeeRequests()} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Refresh</button>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {employeeRequests.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-white/15 p-5 text-sm text-dash-secondary">No employee requests yet.</p>
+            ) : (
+              employeeRequests.map(request => {
+                const payload = typeof request.structured_payload === 'object' && request.structured_payload ? request.structured_payload : {}
+                const weeklyTarget = payload.requested_weekly_hours || payload.target_hours || payload.weekly_hours
+                return (
+                  <div key={request.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[1fr_170px_210px] lg:items-center">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="font-semibold text-dash-cream">{request.waiter_name || 'Employee'}</h4>
+                        <span className="rounded-full border border-white/10 px-2 py-0.5 text-xs capitalize text-dash-secondary">{String(request.request_type || '').replaceAll('_', ' ')}</span>
+                        <span className="rounded-full border border-white/10 px-2 py-0.5 text-xs capitalize text-dash-secondary">{request.priority || 'normal'}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-xs capitalize ${request.status === 'pending' ? 'bg-amber-300/15 text-amber-100' : request.status === 'approved' ? 'bg-emerald-300/15 text-emerald-100' : 'bg-white/[0.06] text-dash-secondary'}`}>{request.status || 'pending'}</span>
+                      </div>
+                      <p className="mt-2 text-sm text-dash-secondary">
+                        {request.title || request.notes || 'Scheduling request'}
+                        {weeklyTarget ? ` · Requested ${weeklyTarget} hrs/week` : ''}
+                      </p>
+                      <p className="mt-1 text-xs text-dash-tertiary">
+                        {[request.start_date, request.end_date && request.end_date !== request.start_date ? request.end_date : null].filter(Boolean).join(' to ') || 'No date'}
+                        {request.start_time ? ` · ${formatDisplayTime(request.start_time)}-${formatDisplayTime(request.end_time)}` : ''}
+                      </p>
+                    </div>
+                    <div className="text-sm text-dash-secondary">
+                      <p>{request.waiter_role || 'staff'}</p>
+                      <p className="mt-1 text-dash-tertiary">Current target: {request.current_suggested_weekly_hours ?? 'unset'} hrs</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void reviewEmployeeRequest(request.id, 'approved')}
+                        disabled={request.status === 'approved'}
+                        className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90 disabled:opacity-40"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void reviewEmployeeRequest(request.id, 'denied')}
+                        disabled={request.status === 'denied'}
+                        className="rounded-xl border border-red-400/30 px-4 py-2 text-sm font-semibold text-red-100 transition hover:border-red-300/70 disabled:opacity-40"
+                      >
+                        Deny
+                      </button>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </section>
       )}
 
       {activeSchedulingTab === 'config' && (
+        <div className="space-y-4">
         <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
           <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.025]">
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
               <div>
                 <h3 className="text-lg font-semibold">Coverage Blocks</h3>
                 <p className="mt-1 text-xs text-dash-tertiary">
-                  {coverageBlocks.length ? `${coverageBlocks.length} saved block${coverageBlocks.length === 1 ? '' : 's'}.` : 'Showing suggested defaults until you save your own blocks.'}
+                  {coverageBlocks.length
+                    ? `${coverageBlocks.length} saved block${coverageBlocks.length === 1 ? '' : 's'}. Drag blocks to move them or pull the bottom edge to resize.`
+                    : 'Default coverage will be generated from restaurant hours, then saved here.'}
                 </p>
               </div>
-              <button type="button" onClick={() => startNewBlock()} className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90">Add rule</button>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => void regenerateCoverageDefaults()} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Re-calculate suggestions</button>
+                <button type="button" onClick={() => startNewBlock()} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">New block</button>
+              </div>
             </div>
-            <div className="grid grid-cols-7 border-b border-white/10">
-              {SCHEDULING_DAYS.map(day => <div key={day} className="px-4 py-3 text-sm font-semibold text-dash-secondary">{day}</div>)}
+            <div className="grid border-b border-white/10" style={{ gridTemplateColumns: `${COVERAGE_TIME_AXIS_WIDTH}px repeat(7, minmax(92px, 1fr))` }}>
+              <div className="border-r border-white/10 px-3 py-3 text-xs font-semibold text-dash-tertiary">Time</div>
+              {SCHEDULING_DAYS.map(day => <div key={day} className="border-r border-white/10 px-3 py-3 text-sm font-semibold text-dash-secondary last:border-r-0">{day}</div>)}
             </div>
-            <div className="grid min-h-[500px] grid-cols-7">
-              {SCHEDULING_DAYS.map((day, dayIndex) => {
-                const dayBlocks = blocksForDay(dayIndex)
-                return (
-                  <div key={day} className="border-r border-white/10 p-3 last:border-r-0">
-                    <div className="space-y-2">
-                      {dayBlocks.map(block => (
-                        <button
-                          type="button"
-                          key={block.key}
-                          onClick={() => setCoverageForm(blockToForm(block))}
-                          className={`w-full rounded-xl border p-3 text-left text-xs transition ${
-                            block.is_suggested
-                              ? 'border-dashed border-white/20 bg-white/[0.025] hover:border-dash-gold/50'
-                              : 'border-emerald-300/25 bg-emerald-300/10 hover:border-emerald-200/60'
-                          }`}
-                        >
-                          <p className="font-semibold text-dash-cream">{String(block.start_time).slice(0, 5)}-{String(block.end_time).slice(0, 5)}</p>
-                          <p className="mt-1 text-dash-secondary">{roleSummary(block.roles)}</p>
-                          <p className="mt-2 text-dash-tertiary">{block.is_suggested ? 'Suggested' : block.is_prime_shift ? 'Prime' : 'Standard'}</p>
-                        </button>
-                      ))}
-                      {dayBlocks.length === 0 && (
-                        <button
-                          type="button"
-                          onClick={() => startNewBlock(dayIndex)}
-                          className="w-full rounded-xl border border-dashed border-white/10 p-4 text-left text-sm text-dash-tertiary transition hover:border-dash-gold/50 hover:text-dash-cream"
-                        >
-                          Add block
-                        </button>
-                      )}
+            <div
+              ref={coverageCalendarRef}
+              className="relative max-h-[620px] overflow-auto"
+              style={{ minHeight: Math.min(calendarHeight, 620) }}
+            >
+              <div
+                className="relative min-w-[760px]"
+                style={{
+                  height: calendarHeight,
+                  display: 'grid',
+                  gridTemplateColumns: `${COVERAGE_TIME_AXIS_WIDTH}px repeat(7, minmax(92px, 1fr))`,
+                }}
+              >
+                <div className="relative border-r border-white/10 bg-black/10">
+                  {timelineHours.map(minute => (
+                    <div
+                      key={minute}
+                      className="absolute left-0 right-0 -translate-y-2 px-3 text-right font-mono text-[11px] text-dash-tertiary"
+                      style={{ top: ((minute - calendarBounds.start) / 60) * COVERAGE_PIXELS_PER_HOUR }}
+                    >
+                      {formatDisplayTime(minute)}
                     </div>
+                  ))}
+                </div>
+                {SCHEDULING_DAYS.map((day, dayIndex) => (
+                  <div
+                    key={day}
+                    role="presentation"
+                    onPointerDown={event => startCreateCoverageDrag(event, dayIndex)}
+                    className="relative border-r border-white/10 last:border-r-0"
+                  >
+                    {timelineHours.map(minute => (
+                      <div
+                        key={minute}
+                        className="pointer-events-none absolute left-0 right-0 border-t border-white/[0.055]"
+                        style={{ top: ((minute - calendarBounds.start) / 60) * COVERAGE_PIXELS_PER_HOUR }}
+                      />
+                    ))}
+                    {renderedBlocksForDay(dayIndex).map(block => {
+                      const start = timeToMinutes(block.start_time, calendarBounds.start)
+                      const end = timeToMinutes(block.end_time, start + 60)
+                      const top = ((start - calendarBounds.start) / 60) * COVERAGE_PIXELS_PER_HOUR
+                      const height = Math.max(28, ((end - start) / 60) * COVERAGE_PIXELS_PER_HOUR)
+                      const isDraft = block.is_draft
+                      const isSelected = coverageForm.key && block.key === coverageForm.key
+                      return (
+                        <div
+                          key={block.key || `${dayIndex}-${block.start_time}-${block.end_time}`}
+                          role="button"
+                          tabIndex={0}
+                          onPointerDown={event => startMoveCoverageDrag(event, block)}
+                          onContextMenu={event => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            if (!block.is_suggested && !block.is_draft) {
+                              setCoverageMenu({
+                                x: event.clientX,
+                                y: event.clientY,
+                                form: blockToForm(block),
+                              })
+                            }
+                          }}
+                          onClick={event => {
+                            event.stopPropagation()
+                            setCoverageForm(blockToForm(block))
+                          }}
+                          onKeyDown={event => {
+                            if (event.key === 'Enter' || event.key === ' ') setCoverageForm(blockToForm(block))
+                          }}
+                          className={`absolute left-2 right-2 cursor-grab overflow-hidden rounded-xl border px-3 py-2 text-left text-xs shadow-lg transition active:cursor-grabbing ${
+                            isDraft
+                              ? 'border-dashed border-dash-gold bg-dash-gold/15'
+                              : block.is_suggested
+                                ? 'border-dashed border-white/25 bg-white/[0.045] hover:border-dash-gold/60'
+                                : isSelected
+                                  ? 'border-dash-gold bg-dash-gold/20'
+                                  : 'border-emerald-300/30 bg-emerald-300/12 hover:border-emerald-200/70'
+                          }`}
+                          style={{ top, height }}
+                        >
+                          <p className="font-semibold text-dash-cream">{formatDisplayTime(block.start_time)}-{formatDisplayTime(block.end_time)}</p>
+                          <p className="mt-1 truncate text-dash-secondary">{roleSummary(block.roles)}</p>
+                          <p className="mt-1 text-dash-tertiary">{isDraft ? 'New block' : block.is_suggested ? 'Suggested default' : block.is_prime_shift ? 'High demand' : 'Standard'}</p>
+                          {!isDraft && (
+                            <span
+                              role="presentation"
+                              onPointerDown={event => startResizeCoverageDrag(event, block)}
+                              className="absolute inset-x-2 bottom-1 h-3 cursor-ns-resize rounded-full border-t border-white/25"
+                            />
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
-                )
-              })}
+                ))}
+              </div>
+              {coverageMenu && (
+                <div
+                  className="fixed z-50 w-32 overflow-hidden rounded-xl border border-white/10 bg-[#151412] p-1 shadow-2xl"
+                  style={{ left: coverageMenu.x, top: coverageMenu.y }}
+                  onClick={event => event.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={() => void deleteCoverageBlockByForm(coverageMenu.form)}
+                    className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-red-100 transition hover:bg-red-400/15"
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1213,6 +1896,37 @@ function SchedulingPanel({ restaurantId }) {
             )}
           </aside>
         </section>
+        <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">Optimization Weights</h3>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-dash-secondary">
+                Tune how strongly the draft scheduler balances coverage, target hours, requests, preferences, fairness, and prime-shift spread.
+              </p>
+            </div>
+            <button type="button" onClick={() => void saveRequestPolicy()} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90">Save weights</button>
+          </div>
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {OPTIMIZATION_WEIGHT_FIELDS.map(([field, label]) => (
+              <label key={field} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-dash-cream">{label}</span>
+                  <span className="font-mono text-sm text-dash-secondary">{Number(optimizationWeights[field] ?? 1).toFixed(1)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="3"
+                  step="0.1"
+                  value={optimizationWeights[field] ?? 1}
+                  onChange={event => setOptimizationWeights(prev => ({ ...prev, [field]: Number(event.target.value) }))}
+                  className="mt-4 w-full accent-[rgb(var(--gold))]"
+                />
+              </label>
+            ))}
+          </div>
+        </section>
+        </div>
       )}
     </div>
   )
@@ -1244,6 +1958,7 @@ const emptyRequestForm = {
   day_of_week: '',
   start_time: '',
   end_time: '',
+  requested_weekly_hours: '',
   title: '',
   notes: '',
 }
@@ -1418,7 +2133,10 @@ function EmployeePortal() {
       end_time: requestForm.end_time || null,
       title: requestForm.title || null,
       notes: requestForm.notes || null,
-      structured_payload: { source: 'employee_form' },
+      structured_payload: {
+        source: 'employee_form',
+        requested_weekly_hours: requestForm.requested_weekly_hours === '' ? null : Number(requestForm.requested_weekly_hours),
+      },
     })
     if (created) setRequestForm(emptyRequestForm)
   }
@@ -1576,7 +2294,7 @@ function EmployeePortal() {
                 <button type="button" onClick={() => void submitEmployeeNote()} disabled={!employeeNote.trim() || isSaving} className="mt-3 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-40">
                   Submit note
                 </button>
-                <p className="mt-2 text-xs text-dash-tertiary">Saved as a scheduling note. LLM parsing is not wired yet.</p>
+                <p className="mt-2 text-xs text-dash-tertiary">Saved as a scheduling request when the parser can structure it; otherwise it remains a manager-visible note.</p>
               </div>
             </div>
           )}
@@ -1593,6 +2311,7 @@ function EmployeePortal() {
                   <option value="prefer_shift">Prefer shift</option>
                   <option value="avoid_shift">Avoid shift</option>
                   <option value="availability_exception">Availability exception</option>
+                  <option value="weekly_hours">Weekly hours</option>
                 </select>
                 <select value={requestForm.priority} onChange={event => setRequestForm(prev => ({ ...prev, priority: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none">
                   <option value="low">Low</option>
@@ -1608,6 +2327,18 @@ function EmployeePortal() {
                 </select>
                 <input type="time" value={requestForm.start_time} onChange={event => setRequestForm(prev => ({ ...prev, start_time: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none" />
                 <input type="time" value={requestForm.end_time} onChange={event => setRequestForm(prev => ({ ...prev, end_time: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none" />
+                {requestForm.request_type === 'weekly_hours' && (
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    step="1"
+                    value={requestForm.requested_weekly_hours}
+                    onChange={event => setRequestForm(prev => ({ ...prev, requested_weekly_hours: event.target.value }))}
+                    placeholder="Requested hrs/week"
+                    className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary"
+                  />
+                )}
                 <input value={requestForm.title} onChange={event => setRequestForm(prev => ({ ...prev, title: event.target.value }))} placeholder="Title optional" className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
                 <textarea value={requestForm.notes} onChange={event => setRequestForm(prev => ({ ...prev, notes: event.target.value }))} placeholder="Details" rows={3} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary lg:col-span-3" />
                 <button type="button" onClick={() => void submitRequestForm()} disabled={isSaving} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">
