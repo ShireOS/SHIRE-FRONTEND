@@ -840,6 +840,7 @@ function SchedulingPanel({ restaurantId }) {
   const [scheduleEmployeeFilter, setScheduleEmployeeFilter] = useState('all')
   const [coverageForm, setCoverageForm] = useState(emptyCoverageBlockForm)
   const [selectedShift, setSelectedShift] = useState(null)
+  const [selectedDiagnostic, setSelectedDiagnostic] = useState(null)
   const [shiftForm, setShiftForm] = useState(null)
   const [note, setNote] = useState('')
   const [status, setStatus] = useState('')
@@ -998,6 +999,9 @@ function SchedulingPanel({ restaurantId }) {
 
   const activeSchedule = schedules[0] || null
   const scheduleItems = activeSchedule?.items || []
+  const scheduleDiagnostics = useMemo(() => (
+    Array.isArray(activeSchedule?.run_coverage_gaps) ? activeSchedule.run_coverage_gaps : []
+  ), [activeSchedule])
   const scheduleRoles = useMemo(() => (
     [...new Set(scheduleItems.map(item => String(item.role || '').toLowerCase()).filter(Boolean))].sort()
   ), [scheduleItems])
@@ -1022,6 +1026,13 @@ function SchedulingPanel({ restaurantId }) {
       return true
     })
   ), [scheduleItems, scheduleRoleFilter, scheduleEmployeeFilter])
+  const filteredScheduleDiagnostics = useMemo(() => (
+    scheduleDiagnostics.filter(item => {
+      if (scheduleEmployeeFilter !== 'all') return false
+      if (scheduleRoleFilter !== 'all' && String(item.role || '').toLowerCase() !== scheduleRoleFilter) return false
+      return true
+    })
+  ), [scheduleDiagnostics, scheduleRoleFilter, scheduleEmployeeFilter])
   const displayedBlocks = useMemo(
     () => mergeCoverageBlocks(coverageBlocks, suggestedBlocks),
     [coverageBlocks, suggestedBlocks],
@@ -1107,6 +1118,14 @@ function SchedulingPanel({ restaurantId }) {
     return layoutOverlappingScheduleItems(filteredScheduleItems.filter(item => item.shift_date === target))
   }
 
+  const diagnosticsForDay = (dayIndex) => {
+    if (!activeSchedule?.week_start_date) return []
+    const start = new Date(`${activeSchedule.week_start_date}T12:00:00`)
+    start.setDate(start.getDate() + dayIndex)
+    const target = start.toISOString().slice(0, 10)
+    return filteredScheduleDiagnostics.filter(item => String(item.shift_date).slice(0, 10) === target || Number(item.day_of_week) === dayIndex)
+  }
+
   const staffHourRows = useMemo(() => {
     const assigned = scheduleItems.reduce((acc, item) => {
       const start = timeToMinutes(item.shift_start, 0)
@@ -1175,6 +1194,7 @@ function SchedulingPanel({ restaurantId }) {
 
   const selectShift = (item) => {
     setSelectedShift(item)
+    setSelectedDiagnostic(null)
     setShiftForm({
       waiter_id: item.waiter_id,
       role: item.role,
@@ -1184,6 +1204,12 @@ function SchedulingPanel({ restaurantId }) {
       is_locked: Boolean(item.is_locked),
       notes: item.notes || '',
     })
+  }
+
+  const selectDiagnostic = (item) => {
+    setSelectedDiagnostic(item)
+    setSelectedShift(null)
+    setShiftForm(null)
   }
 
   const saveSelectedShift = async () => {
@@ -1657,6 +1683,7 @@ function SchedulingPanel({ restaurantId }) {
                 </div>
                 {SCHEDULING_DAYS.map((day, dayIndex) => {
                   const dayItems = itemsForDay(dayIndex)
+                  const dayDiagnostics = diagnosticsForDay(dayIndex)
                   return (
                     <div key={day} className="relative border-r border-white/10 last:border-r-0">
                       {timelineHours.map(minute => (
@@ -1708,6 +1735,43 @@ function SchedulingPanel({ restaurantId }) {
                           </button>
                         )
                       })}
+                      {dayDiagnostics.map((diagnostic, diagnosticIndex) => {
+                        const start = timeToMinutes(diagnostic.start_time, calendarBounds.start)
+                        const end = timeToMinutes(diagnostic.end_time, start + 60)
+                        const top = ((start - calendarBounds.start) / 60) * SCHEDULE_PIXELS_PER_HOUR
+                        const height = Math.max(34, ((end - start) / 60) * SCHEDULE_PIXELS_PER_HOUR)
+                        const timeLabel = `${formatDisplayTime(diagnostic.start_time)}-${formatDisplayTime(diagnostic.end_time)}`
+                        const severity = diagnostic.severity || 'medium'
+                        const isSelected = selectedDiagnostic === diagnostic
+                        return (
+                          <button
+                            type="button"
+                            key={`${diagnostic.role}-${diagnostic.shift_date || dayIndex}-${diagnostic.start_time}-${diagnosticIndex}`}
+                            title={`${diagnostic.role || 'Coverage'} gap · ${timeLabel}`}
+                            onClick={() => selectDiagnostic(diagnostic)}
+                            className={`absolute right-1 z-10 overflow-hidden rounded-lg border px-1 py-2 text-[11px] shadow-lg transition ${
+                              isSelected
+                                ? 'border-red-200 bg-red-300/25'
+                                : severity === 'high'
+                                  ? 'border-red-300/45 bg-red-300/15 hover:border-red-200/80'
+                                  : 'border-amber-300/45 bg-amber-300/15 hover:border-amber-200/80'
+                            }`}
+                            style={{
+                              top,
+                              height,
+                              width: '22px',
+                            }}
+                          >
+                            <span
+                              className="mx-auto flex h-full max-h-full items-center gap-2 whitespace-nowrap text-left font-semibold text-red-50"
+                              style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                            >
+                              <span>{diagnostic.role || 'Gap'}</span>
+                              <span className="font-mono font-normal text-red-100/75">{timeLabel}</span>
+                            </span>
+                          </button>
+                        )
+                      })}
                     </div>
                   )
                 })}
@@ -1721,11 +1785,55 @@ function SchedulingPanel({ restaurantId }) {
           </div>
 
           <aside className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
-            <h3 className="text-lg font-semibold">Shift Editor</h3>
-            {!shiftForm ? (
+            <h3 className="text-lg font-semibold">{selectedDiagnostic ? 'Schedule Diagnostic' : 'Shift Editor'}</h3>
+            {selectedDiagnostic ? (
+              <div className="mt-4 space-y-4">
+                <div className="rounded-xl border border-red-300/25 bg-red-300/10 p-4">
+                  <p className="text-sm font-semibold capitalize text-red-50">{selectedDiagnostic.role || 'Coverage'} gap</p>
+                  <p className="mt-2 text-sm leading-6 text-red-100/80">
+                    {selectedDiagnostic.diagnostic || selectedDiagnostic.reason || 'This coverage requirement could not be assigned.'}
+                  </p>
+                  <p className="mt-2 font-mono text-xs text-red-100/70">
+                    {String(selectedDiagnostic.shift_date || '').slice(0, 10)} · {formatDisplayTime(selectedDiagnostic.start_time)}-{formatDisplayTime(selectedDiagnostic.end_time)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDiagnostic(null)}
+                  className="w-full rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-white/20 hover:text-dash-cream"
+                >
+                  Clear diagnostic
+                </button>
+              </div>
+            ) : !shiftForm ? (
               <p className="mt-3 text-sm leading-6 text-dash-secondary">Select a generated shift to assign a different employee, change the role, or lock it as a manual edit.</p>
             ) : (
               <div className="mt-4 space-y-3">
+                {selectedShift?.reasoning && (
+                  <div className="rounded-xl border border-emerald-300/20 bg-emerald-300/10 p-4">
+                    <p className="text-sm font-semibold text-emerald-50">Why this assignment</p>
+                    <ul className="mt-3 space-y-2 text-sm leading-5 text-emerald-100/85">
+                      {(selectedShift.reasoning.reasons || []).map((reason, index) => (
+                        <li key={`${reason}-${index}`}>- {reason}</li>
+                      ))}
+                    </ul>
+                    {selectedShift.reasoning.score_breakdown && (
+                      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                        {[
+                          ['Solver', selectedShift.reasoning.score_breakdown.solver || 'engine'],
+                          ['Target', selectedShift.reasoning.score_breakdown.target_weekly_hours != null ? `${selectedShift.reasoning.score_breakdown.target_weekly_hours}h` : 'n/a'],
+                          ['Projected', selectedShift.reasoning.score_breakdown.projected_weekly_hours != null ? `${selectedShift.reasoning.score_breakdown.projected_weekly_hours}h` : 'n/a'],
+                          ['Confidence', selectedShift.reasoning.confidence_score != null ? `${Math.round(selectedShift.reasoning.confidence_score * 100)}%` : 'n/a'],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-lg border border-white/10 bg-black/15 p-2">
+                            <p className="text-dash-tertiary">{label}</p>
+                            <p className="mt-1 font-semibold text-dash-cream">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <select
                   value={shiftForm.waiter_id}
                   onChange={event => setShiftForm(prev => ({ ...prev, waiter_id: event.target.value }))}
