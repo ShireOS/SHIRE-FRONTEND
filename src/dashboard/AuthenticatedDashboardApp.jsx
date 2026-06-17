@@ -956,7 +956,7 @@ function SchedulingPanel({ restaurantId }) {
 
   useEffect(() => {
     if (activeSchedulingTab !== 'config' || !displayedBlocks.length) return undefined
-    const scrollKey = `${restaurantId}:${displayedBlocks.map(block => `${block.day_of_week}-${block.start_time}-${block.end_time}`).join('|')}`
+    const scrollKey = String(restaurantId)
     if (autoScrolledCoverageRef.current === scrollKey) return undefined
     autoScrolledCoverageRef.current = scrollKey
 
