@@ -1,0 +1,15 @@
+{
+  "name": "@shire/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@supabase/supabase-js": "^2.97.0"
+  },
+  "dependencies": {
+    "@shire/backend": "workspace:*"
+  }
+}

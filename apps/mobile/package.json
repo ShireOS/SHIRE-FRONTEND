@@ -11,6 +11,7 @@
     "@fortawesome/react-native-fontawesome": "^1.0.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^7.17.0",
+    "@shire/db": "workspace:*",
     "@supabase/supabase-js": "^2.108.2",
     "dotenv": "^17.4.2",
     "expo": "~56.0.9",
@@ -33,6 +34,7 @@
     "react-dom": "19.2.3",
     "react-fontawesome": "^1.7.1",
     "react-native": "0.85.3",
+    "react-native-css-interop": "^0.2.5",
     "react-native-floating-tab-bar-glass": "^1.0.0",
     "react-native-gesture-handler": "~2.31.1",
     "react-native-reanimated": "4.3.1",
@@ -55,8 +57,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint",
-    "generate_schema": "dotenv run -- sh -c 'npx supabase gen types --lang=typescript --db-url \"$TYPES_LINK\" --schema public --debug > ./models/schemas.ts'"
+    "lint": "expo lint"
   },
   "overrides": {
     "react-native-reanimated": "$react-native-reanimated"

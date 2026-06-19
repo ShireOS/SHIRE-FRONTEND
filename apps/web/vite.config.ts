@@ -30,7 +30,7 @@ function apiConfigLogger() {
     name: 'api-config-logger',
     configureServer() {
       // Load env vars
-      const env = loadEnv('development', process.cwd(), 'VITE_')
+      const env = loadEnv('development', resolve(__dirname, '../..'), 'VITE_')
 
       const apiUrl = env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1'
       const useMock = env.VITE_USE_MOCK_DATA === 'true'
@@ -57,12 +57,14 @@ function apiConfigLogger() {
 }
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '')
+  const rootEnvDir = resolve(__dirname, '../..')
+  const env = loadEnv(mode, rootEnvDir, '')
   const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL || ''
   const supabasePublishableKey =
     env.VITE_SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_PUBLISHABLE_KEY || ''
 
   return {
+    envDir: rootEnvDir,
     plugins: [react(), ownerConsoleFallback(), apiConfigLogger()],
     define: {
       __SHIRE_SUPABASE_URL__: JSON.stringify(supabaseUrl),

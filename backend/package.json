@@ -1,6 +1,15 @@
 {
-    "name": "backend",
-    "scripts": {
-        "generate_schema": "dotenv run -- sh -c 'npx supabase gen types --lang=typescript --db-url \"$TYPES_LINK\" --schema public --debug > ./models/schemas.ts'"
-    }
+  "name": "@shire/backend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./schemas": "./models/schemas.ts"
+  },
+  "scripts": {
+    "generate-schema": "dotenv -e ../.env -- sh -c 'mkdir -p ./models && npx supabase gen types --lang=typescript --db-url \"$TYPES_LINK\" --schema public > ./models/schemas.ts'"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^7.4.4"
+  }
 }
