@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react'
 import { isSupabaseConfigured, supabase, supabaseConfigError } from '../../shared/lib/supabase'
 import type { User, Session, AuthError } from '@supabase/supabase-js'
-import type { Profile, Restaurant, RestaurantMember } from '../../shared/types/database'
+import type { Profile, Restaurant, RestaurantMember } from '@shire/db'
 import { isAbortError } from '../utils/authErrors'
 
 const isRestaurantMemberPolicyRecursion = (message: string): boolean =>

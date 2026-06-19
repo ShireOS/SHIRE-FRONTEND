@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
-import type { RestaurantType } from '../../../shared/types/database'
+import type { RestaurantType, UseOnboardingReturn } from '../../hooks/useOnboarding'
 
 interface BasicsStepProps {
   onboarding: UseOnboardingReturn

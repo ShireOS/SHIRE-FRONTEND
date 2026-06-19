@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./schemas": "./models/schemas.ts"
+    "./schemas": "./models/schemas.ts",
+    "./types": "./models/helper_types.ts"
   },
   "scripts": {
     "generate-schema": "dotenv -e ../.env -- sh -c 'mkdir -p ./models && npx supabase gen types --lang=typescript --db-url \"$TYPES_LINK\" --schema public > ./models/schemas.ts'"

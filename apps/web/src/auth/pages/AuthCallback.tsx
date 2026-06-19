@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { isSupabaseConfigured, supabase, supabaseConfigError } from '../../shared/lib/supabase'
 import type { EmailOtpType } from '@supabase/supabase-js'
-import type { Restaurant } from '../../shared/types/database'
+import type { Restaurant } from '@shire/db'
 import { isAbortError } from '../utils/authErrors'
 
 const SUPPORTED_EMAIL_OTP_TYPES: EmailOtpType[] = [

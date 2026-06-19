@@ -2,7 +2,15 @@ import { useState, useCallback, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../shared/lib/supabase'
 import { useAuth } from '../../auth'
-import type { Restaurant, RestaurantType } from '../../shared/types/database'
+import type { Restaurant } from '@shire/db'
+
+export type RestaurantType =
+  | 'fine_dining'
+  | 'casual'
+  | 'fast_casual'
+  | 'bar'
+  | 'cafe'
+  | 'food_truck'
 
 // ============================================
 // TYPES
@@ -473,7 +481,7 @@ export function useOnboarding() {
       postal_code: asString(restaurant.postal_code),
       country: asString(restaurant.country, INITIAL_DATA.country),
       timezone: asString(restaurant.timezone, INITIAL_DATA.timezone),
-      type: restaurant.type,
+      type: restaurant.type as RestaurantType | null,
       cuisine_types: Array.isArray(restaurant.cuisine_types) ? restaurant.cuisine_types : [],
       phone: asString(restaurant.phone),
       seating_capacity: restaurant.seating_capacity,
