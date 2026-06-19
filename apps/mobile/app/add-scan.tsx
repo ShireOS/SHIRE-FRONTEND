@@ -15,6 +15,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -332,9 +333,12 @@ export default function AddScan() {
 /**
  * Anchored, shadcn-style dropdown menu translated to React Native primitives.
  * Visual rules from design.md §6 / §7 "Dropdown panel": white surface, hairline
- * stone-200 border, `radius/sm`, cool sky shadow, compact rows with a leading
- * icon, sky-700 check on the selected row. Anchored under the trigger
- * (measured via `measureInWindow`), not a bottom sheet.
+ * stone-200 border, cool sky shadow, compact rows with leading icon + sky-700
+ * check on selection. Anchored under the trigger (measureInWindow).
+ *
+ * Motion (UI Pro Max §7): 220ms ease-out enter, 140ms ease-in exit (~64%).
+ * Stagger each row by 28ms for a crafted reveal. Items use 44pt min-height
+ * (touch target). prefers-reduced-motion → opacity only, no transforms.
  */
 export function RoomDropdownMenu({
   open,
@@ -360,11 +364,50 @@ export function RoomDropdownMenu({
     Math.max(160, screen.height - panelTop - 24),
   );
 
+  // Reduced-motion preference (a11y)
+  const [reduceMotion, setReduceMotion] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((v) => {
+      if (mounted) setReduceMotion(v);
+    });
+    const sub = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      (v) => setReduceMotion(v),
+    );
+    return () => {
+      mounted = false;
+      sub.remove();
+    };
+  }, []);
+
+  // Reveal progress drives both panel and per-row entry.
+  const progress = useSharedValue(0);
+  useEffect(() => {
+    progress.value = withTiming(open ? 1 : 0, {
+      duration: open ? 220 : 140,
+      easing: open ? Easing.out(Easing.cubic) : Easing.in(Easing.cubic),
+    });
+  }, [open, progress]);
+
+  const panelAnimStyle = useAnimatedStyle(() => {
+    if (reduceMotion) {
+      return { opacity: progress.value };
+    }
+    return {
+      opacity: progress.value,
+      transform: [
+        { translateY: (1 - progress.value) * -6 },
+        { scale: 0.97 + progress.value * 0.03 },
+      ],
+    };
+  }, [reduceMotion]);
+
   return (
     <Modal
       visible={open}
       transparent
-      animationType="fade"
+      animationType="none"
       onRequestClose={onClose}
       statusBarTranslucent
     >
@@ -373,122 +416,214 @@ export function RoomDropdownMenu({
         style={{ flex: 1, backgroundColor: 'transparent' }}
       >
         {anchor ? (
-          <Pressable
-            onPress={() => {}}
-            style={{
-              position: 'absolute',
-              left: panelLeft,
-              top: panelTop,
-              width: panelWidth,
-              backgroundColor: '#FFFFFF',
-              borderRadius: 14, // Slightly rounded out for a modern card finish
-              borderWidth: 1,
-              borderColor: color_pallet.stone[200],
-              paddingVertical: 8,
-              overflow: 'hidden',
-              // Dynamic glowing shadow
-              shadowColor: '#3C78BE',
-              shadowOpacity: 0.12,
-              shadowRadius: 30,
-              shadowOffset: { width: 0, height: 12 },
-              elevation: 8,
-            }}
+          <Animated.View
+            // Transform origin "top" so scale grows out from the trigger edge.
+            style={[
+              {
+                position: 'absolute',
+                left: panelLeft,
+                top: panelTop,
+                width: panelWidth,
+                transformOrigin: 'top center',
+              },
+              panelAnimStyle,
+            ]}
           >
-            {/* Header / Eyebrow text updated to look match crisp sub-labels */}
-            <Text
+            <Pressable
+              onPress={() => {}}
+              accessibilityRole="menu"
               style={{
-                paddingHorizontal: 14,
-                paddingTop: 6,
-                paddingBottom: 8,
-                fontSize: 10,
-                fontWeight: '700',
-                letterSpacing: 1,
-                color: color_pallet.ink[500],
-                textTransform: 'uppercase',
+                backgroundColor: '#FFFFFF',
+                borderRadius: 14,
+                borderWidth: 1,
+                borderColor: color_pallet.stone[200],
+                paddingVertical: 8,
+                overflow: 'hidden',
+                // Cool sky shadow — design.md §6 dropdown panel
+                shadowColor: '#3C78BE',
+                shadowOpacity: 0.16,
+                shadowRadius: 42,
+                shadowOffset: { width: 0, height: 18 },
+                elevation: 12,
               }}
             >
-              Select room
-            </Text>
-
-            {/* Faint subtle separator line */}
-            <View
-              style={{
-                height: StyleSheet.hairlineWidth,
-                backgroundColor: color_pallet.stone[200],
-                marginHorizontal: 8,
-                marginBottom: 6,
-              }}
-            />
-
-            <ScrollView
-              style={{ maxHeight: panelMaxHeight }}
-              showsVerticalScrollIndicator={false}
-            >
-              <View
-                style={{
-                  paddingHorizontal: 8,
-                  paddingVertical: 2,
-                  gap: 4, // Clean structural spacing between options
-                }}
+              <ScrollView
+                style={{ maxHeight: panelMaxHeight }}
+                showsVerticalScrollIndicator={false}
               >
-                {rooms.map((room) => {
-                  const isSelected = selectedId === room.id;
-                  return (
-                    <Pressable
-                      key={room.id}
-                      onPress={() => onSelect(room)}
-                      accessibilityRole="menuitem"
-                      accessibilityState={{ selected: isSelected }}
-                      style={({ pressed }) => ({
-                        paddingHorizontal: 12,
-                        paddingVertical: 11,
-                        borderRadius: 10,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 10,
-                        backgroundColor: pressed
-                          ? color_pallet.stone[100]
-                          : isSelected
-                            ? color_pallet.sky[50]
-                            : 'transparent',
-                      })}
-                    >
-                      <Feather
-                        name="map-pin"
-                        size={14}
-                        color={
-                          isSelected
-                            ? color_pallet.sky[700]
-                            : color_pallet.ink[500]
-                        }
-                      />
-                      <Text
+                <View style={{ paddingHorizontal: 6 }}>
+                  {rooms.map((room) => {
+                    const isSelected = selectedId === room.id;
+                    return (
+                      <Pressable
+                        key={room.id}
+                        onPress={() => onSelect(room)}
+                        accessibilityRole="menuitem"
+                        accessibilityLabel={room.room_name ?? 'Untitled room'}
+                        accessibilityState={{ selected: isSelected }}
                         style={{
-                          color: isSelected ? color_pallet.sky[700] : color_pallet.ink[900],
-                          fontSize: 14,
-                          fontWeight: isSelected ? '600' : '400',
-                          flex: 1,
+                          minHeight: 44,
+                          paddingHorizontal: 12,
+                          paddingVertical: 10,
+                          borderRadius: 10,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 12,
+                          backgroundColor: 'transparent',
                         }}
-                        numberOfLines={1}
                       >
-                        {room.room_name ?? 'Untitled room'}
-                      </Text>
-                      {isSelected && (
-                        <Feather
-                          name="check"
-                          size={15}
-                          color={color_pallet.sky[700]}
+                        <View
+                          style={{
+                            width: 3,
+                            height: 18,
+                            borderRadius: 2,
+                            backgroundColor: isSelected
+                              ? color_pallet.sky[700]
+                              : 'transparent',
+                          }}
                         />
-                      )}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </ScrollView>
-          </Pressable>
+                        <Feather
+                          name="map-pin"
+                          size={14}
+                          color={
+                            isSelected
+                              ? color_pallet.sky[700]
+                              : color_pallet.ink[500]
+                          }
+                        />
+                        <Text
+                          style={{
+                            color: isSelected
+                              ? color_pallet.sky[700]
+                              : color_pallet.ink[900],
+                            fontSize: 14,
+                            fontFamily: isSelected
+                              ? 'Inter_500Medium'
+                              : 'Inter_400Regular',
+                            flex: 1,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {room.room_name ?? 'Untitled room'}
+                        </Text>
+                        {isSelected && (
+                          <Feather
+                            name="check"
+                            size={15}
+                            color={color_pallet.sky[700]}
+                          />
+                        )}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            </Pressable>
+          </Animated.View>
         ) : null}
       </Pressable>
     </Modal>
+  );
+}
+
+/**
+ * One menu row. Stagger by index: starts revealing at `index * 0.06` of the
+ * panel's master progress so rows cascade in (~28ms apart at 220ms enter).
+ * Selected rows get a 3px sky/700 indicator on the leading edge.
+ */
+function RoomMenuItem({
+  room,
+  index,
+  isSelected,
+  progress,
+  reduceMotion,
+  onPress,
+}: {
+  room: Room;
+  index: number;
+  isSelected: boolean;
+  progress: SharedValue<number>;
+  reduceMotion: boolean;
+  onPress: () => void;
+}) {
+  const rowAnimStyle = useAnimatedStyle(() => {
+    if (reduceMotion) {
+      return { opacity: progress.value };
+    }
+    const start = Math.min(index * 0.06, 0.4);
+    const local = Math.max(0, (progress.value - start) / (1 - start));
+    const eased = Math.min(1, local);
+    return {
+      opacity: eased,
+      transform: [{ translateY: (1 - eased) * 8 }],
+    };
+  }, [index, reduceMotion]);
+
+  return (
+    <Animated.View style={[{ width: '100%' }, rowAnimStyle]}>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="menuitem"
+        accessibilityLabel={room.room_name ?? 'Untitled room'}
+        accessibilityState={{ selected: isSelected }}
+        style={({ pressed }) => ({
+          width: '100%',
+          minHeight: 44, // §2 touch-target-size
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+          borderRadius: 10,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 12,
+          backgroundColor: pressed
+            ? color_pallet.cream[200]
+            : isSelected
+              ? color_pallet.sky[50]
+              : 'transparent',
+        })}
+      >
+        {/* Leading sky indicator bar for the selected row */}
+        <View
+          style={{
+            width: 3,
+            height: 18,
+            borderRadius: 2,
+            backgroundColor: isSelected
+              ? color_pallet.sky[700]
+              : 'transparent',
+          }}
+        />
+        <Feather
+          name="map-pin"
+          size={14}
+          color={
+            isSelected ? color_pallet.sky[700] : color_pallet.ink[500]
+          }
+        />
+        <Text
+          style={{
+            color: isSelected
+              ? color_pallet.sky[700]
+              : color_pallet.ink[900],
+            fontSize: 14,
+            fontFamily: isSelected
+              ? 'Inter_500Medium'
+              : 'Inter_400Regular',
+            flex: 1,
+          }}
+          numberOfLines={1}
+        >
+          {room.room_name ?? 'Untitled room'}
+        </Text>
+        {isSelected && (
+          <Feather
+            name="check"
+            size={15}
+            color={color_pallet.sky[700]}
+          />
+        )}
+      </Pressable>
+    </Animated.View>
   );
 }
 
