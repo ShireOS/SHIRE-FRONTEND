@@ -1,5 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
+  Dimensions,
   Modal,
   Pressable,
   ScrollView,
@@ -8,6 +10,12 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
@@ -50,6 +58,17 @@ export default function AddScan() {
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [numberOfTables, setNumberOfTables] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [anchor, setAnchor] = useState<
+    { x: number; y: number; width: number } | null
+  >(null);
+  const triggerRef = useRef<View>(null);
+
+  const openPicker = () => {
+    triggerRef.current?.measureInWindow((x, y, width, height) => {
+      setAnchor({ x, y: y + height + 6, width });
+      setPickerOpen(true);
+    });
+  };
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -116,51 +135,59 @@ export default function AddScan() {
 
       {/* Form */}
       <View style={{ paddingHorizontal: 20, gap: 16 }}>
-        {/* Room picker */}
+        {/* Room picker — matches the Number-of-tables input shell */}
         <View style={{ gap: 8 }}>
           <Text style={EYEBROW_LABEL}>Room</Text>
-          <Pressable
-            onPress={() => setPickerOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Select room"
-            style={({ pressed }) => ({
-              height: 52,
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: color_pallet.stone[200],
-              backgroundColor: pressed
-                ? color_pallet.cream[200]
-                : color_pallet.cream[100],
-              paddingHorizontal: 16,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            })}
-          >
-            <Text
-              style={[
-                typography.body,
-                {
-                  color: selectedRoom
-                    ? color_pallet.ink[900]
-                    : color_pallet.ink[500],
-                },
-              ]}
-              numberOfLines={1}
+          <View ref={triggerRef} collapsable={false}>
+            <Pressable
+              onPress={openPicker}
+              accessibilityRole="button"
+              accessibilityLabel="Select room"
+              accessibilityState={{ expanded: pickerOpen }}
+              style={{
+                height: 52,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: color_pallet.stone[200],
+                backgroundColor: color_pallet.cream[100],
+                paddingHorizontal: 16,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
             >
-              {selectedRoom?.room_name ?? 'Select a room'}
-            </Text>
-            <Feather
-              name="chevron-down"
-              size={18}
-              color={color_pallet.ink[500]}
-            />
-          </Pressable>
+              <Text
+                style={[
+                  typography.body,
+                  {
+                    color: selectedRoom
+                      ? color_pallet.ink[900]
+                      : color_pallet.ink[500],
+                    flexShrink: 1,
+                  },
+                ]}
+                numberOfLines={1}
+              >
+                {selectedRoom?.room_name ?? 'Select a room'}
+              </Text>
+              <View
+                style={{
+                  transform: [{ rotate: pickerOpen ? '180deg' : '0deg' }],
+                }}
+              >
+                <Feather
+                  name="chevron-down"
+                  size={18}
+                  color={color_pallet.ink[500]}
+                />
+              </View>
+            </Pressable>
+          </View>
         </View>
 
         {/* Number of tables */}
         <View style={{ gap: 8 }}>
-          <Text style={EYEBROW_LABEL}>Number of tables</Text>
+          <Text style={EYEBROW_LABEL}>Scan Name</Text>
           <View
             style={{
               height: 52,
@@ -173,9 +200,8 @@ export default function AddScan() {
             }}
           >
             <TextInput
-              value={numberOfTables}
+              
               onChangeText={(t) => setNumberOfTables(t.replace(/[^0-9]/g, ''))}
-              keyboardType="number-pad"
               inputMode="numeric"
               placeholder="0"
               placeholderTextColor={color_pallet.ink[500]}
@@ -257,43 +283,6 @@ export default function AddScan() {
                 maxWidth: 280,
               }}
             >
-              <View
-                style={{
-                  width: 56,
-                  height: 56,
-                  borderRadius: 9999,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: 'rgba(255,255,255,0.16)',
-                  borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.25)',
-                }}
-              >
-                <Feather name="camera" size={26} color="#FFFFFF" />
-              </View>
-              <Text
-                style={[
-                  typography.title,
-                  {
-                    color: '#FFFFFF',
-                    textAlign: 'center',
-                  },
-                ]}
-              >
-                Capture your room
-              </Text>
-              <Text
-                style={[
-                  typography.bodySmall,
-                  {
-                    color: 'rgba(255,255,255,0.75)',
-                    textAlign: 'center',
-                  },
-                ]}
-              >
-                Slowly pan around the space to capture every table.
-              </Text>
-
               <PlushyButton
                 onPress={handleStartScan}
                 accessibilityLabel="Start 3D scan"
@@ -301,23 +290,22 @@ export default function AddScan() {
                   marginTop: 4,
                   paddingHorizontal: 22,
                   paddingVertical: 12,
-                  borderRadius: 9999,
+                  borderRadius: 5,
                   flexDirection: 'row',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 8,
-                  backgroundColor: '#FFFFFF',
+                  gap: 14,
                 }}
               >
                 <Feather
-                  name="play"
-                  size={14}
-                  color={color_pallet.ink[900]}
+                  name="camera"
+                  size={20}
+                  color={color_pallet.bg.DEFAULT}
                 />
                 <Text
                   style={[
-                    typography.title,
-                    { color: color_pallet.ink[900], fontSize: 15 },
+                    typography.h1,
+                    { color: color_pallet.bg.DEFAULT, fontSize: 18 },
                   ]}
                 >
                   Start 3D scan
@@ -328,89 +316,167 @@ export default function AddScan() {
         </View>
       </View>
 
-      {/* Room picker bottom sheet */}
-      <Modal
-        visible={pickerOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setPickerOpen(false)}
+      {/* Room picker — anchored shadcn-style dropdown */}
+      <RoomDropdownMenu
+        open={pickerOpen}
+        anchor={anchor}
+        rooms={roomOptions}
+        selectedId={selectedRoom?.id ?? null}
+        onSelect={pickRoom}
+        onClose={() => setPickerOpen(false)}
+      />
+    </SafeAreaView>
+  );
+}
+
+/**
+ * Anchored, shadcn-style dropdown menu translated to React Native primitives.
+ * Visual rules from design.md §6 / §7 "Dropdown panel": white surface, hairline
+ * stone-200 border, `radius/sm`, cool sky shadow, compact rows with a leading
+ * icon, sky-700 check on the selected row. Anchored under the trigger
+ * (measured via `measureInWindow`), not a bottom sheet.
+ */
+export function RoomDropdownMenu({
+  open,
+  anchor,
+  rooms,
+  selectedId,
+  onSelect,
+  onClose,
+}: {
+  open: boolean;
+  anchor: { x: number; y: number; width: number } | null;
+  rooms: Room[];
+  selectedId: number | null;
+  onSelect: (room: Room) => void;
+  onClose: () => void;
+}) {
+  const screen = Dimensions.get('window');
+  const panelLeft = anchor?.x ?? 0;
+  const panelTop = anchor?.y ?? 0;
+  const panelWidth = anchor?.width ?? 0;
+  const panelMaxHeight = Math.min(
+    320,
+    Math.max(160, screen.height - panelTop - 24),
+  );
+
+  return (
+    <Modal
+      visible={open}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <Pressable
+        onPress={onClose}
+        style={{ flex: 1, backgroundColor: 'transparent' }}
       >
-        <Pressable
-          onPress={() => setPickerOpen(false)}
-          style={{
-            flex: 1,
-            backgroundColor: 'rgba(0,0,0,0.25)',
-            justifyContent: 'flex-end',
-          }}
-        >
+        {anchor ? (
           <Pressable
             onPress={() => {}}
             style={{
-              backgroundColor: color_pallet.elevated.DEFAULT,
-              borderTopLeftRadius: 28,
-              borderTopRightRadius: 28,
-              paddingHorizontal: 20,
-              paddingTop: 8,
-              paddingBottom: 32,
-              gap: 16,
+              position: 'absolute',
+              left: panelLeft,
+              top: panelTop,
+              width: panelWidth,
+              backgroundColor: '#FFFFFF',
+              borderRadius: 14, // Slightly rounded out for a modern card finish
+              borderWidth: 1,
+              borderColor: color_pallet.stone[200],
+              paddingVertical: 8,
+              overflow: 'hidden',
+              // Dynamic glowing shadow
+              shadowColor: '#3C78BE',
+              shadowOpacity: 0.12,
+              shadowRadius: 30,
+              shadowOffset: { width: 0, height: 12 },
+              elevation: 8,
             }}
           >
-            {/* Drag handle */}
+            {/* Header / Eyebrow text updated to look match crisp sub-labels */}
+            <Text
+              style={{
+                paddingHorizontal: 14,
+                paddingTop: 6,
+                paddingBottom: 8,
+                fontSize: 10,
+                fontWeight: '700',
+                letterSpacing: 1,
+                color: color_pallet.ink[500],
+                textTransform: 'uppercase',
+              }}
+            >
+              Select room
+            </Text>
+
+            {/* Faint subtle separator line */}
             <View
               style={{
-                alignSelf: 'center',
-                width: 36,
-                height: 4,
-                borderRadius: 9999,
+                height: StyleSheet.hairlineWidth,
                 backgroundColor: color_pallet.stone[200],
-                marginTop: 4,
+                marginHorizontal: 8,
+                marginBottom: 6,
               }}
             />
 
-            <Text style={[EYEBROW_LABEL, { paddingTop: 8 }]}>Select room</Text>
-
             <ScrollView
-              style={{ maxHeight: 320 }}
+              style={{ maxHeight: panelMaxHeight }}
               showsVerticalScrollIndicator={false}
             >
-              <View style={{ gap: 4 }}>
-                {roomOptions.map((room) => {
-                  const isSelected = selectedRoom?.id === room.id;
+              <View
+                style={{
+                  paddingHorizontal: 8,
+                  paddingVertical: 2,
+                  gap: 4, // Clean structural spacing between options
+                }}
+              >
+                {rooms.map((room) => {
+                  const isSelected = selectedId === room.id;
                   return (
                     <Pressable
                       key={room.id}
-                      onPress={() => pickRoom(room)}
+                      onPress={() => onSelect(room)}
+                      accessibilityRole="menuitem"
+                      accessibilityState={{ selected: isSelected }}
                       style={({ pressed }) => ({
-                        paddingHorizontal: 16,
-                        paddingVertical: 14,
-                        borderRadius: 12,
+                        paddingHorizontal: 12,
+                        paddingVertical: 11,
+                        borderRadius: 10,
                         flexDirection: 'row',
                         alignItems: 'center',
-                        justifyContent: 'space-between',
+                        gap: 10,
                         backgroundColor: pressed
-                          ? color_pallet.cream[200]
+                          ? color_pallet.stone[100]
                           : isSelected
                             ? color_pallet.sky[50]
                             : 'transparent',
                       })}
                     >
+                      <Feather
+                        name="map-pin"
+                        size={14}
+                        color={
+                          isSelected
+                            ? color_pallet.sky[700]
+                            : color_pallet.ink[500]
+                        }
+                      />
                       <Text
-                        style={[
-                          typography.body,
-                          {
-                            color: color_pallet.ink[900],
-                            fontFamily: isSelected
-                              ? 'Inter_500Medium'
-                              : 'Inter_400Regular',
-                          },
-                        ]}
+                        style={{
+                          color: isSelected ? color_pallet.sky[700] : color_pallet.ink[900],
+                          fontSize: 14,
+                          fontWeight: isSelected ? '600' : '400',
+                          flex: 1,
+                        }}
+                        numberOfLines={1}
                       >
                         {room.room_name ?? 'Untitled room'}
                       </Text>
                       {isSelected && (
                         <Feather
                           name="check"
-                          size={18}
+                          size={15}
                           color={color_pallet.sky[700]}
                         />
                       )}
@@ -420,23 +486,16 @@ export default function AddScan() {
               </View>
             </ScrollView>
           </Pressable>
-        </Pressable>
-      </Modal>
-    </SafeAreaView>
+        ) : null}
+      </Pressable>
+    </Modal>
   );
 }
 
 function DottedSkyBackground() {
   return (
-    <View
-      pointerEvents="none"
-      style={StyleSheet.absoluteFill}
-    >
-      <Svg
-        width="100%"
-        height="100%"
-        preserveAspectRatio="xMidYMid slice"
-      >
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      <Svg width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
         <Defs>
           {/* Dot grid — 22×22, faint stone dot. Darker base; the mask fades them upward. */}
           <Pattern
@@ -462,19 +521,21 @@ function DottedSkyBackground() {
             <Rect width="100%" height="100%" fill="url(#dotFade)" />
           </Mask>
 
-          {/* Soft sky glow centered low — primary bloom */}
+          {/* SMOOTHED: Soft sky glow centered low — primary bloom */}
           <RadialGradient
             id="skyBloomBottom"
             cx="50%"
             cy="100%"
-            rx="90%"
-            ry="78%"
+            rx="100%" /* Slightly wider radius to ease the transition edge */
+            ry="85%"  /* Slightly taller radius to stretch the blend upward */
             fx="50%"
             fy="100%"
           >
             <Stop offset="0%" stopColor="#84B9EF" stopOpacity={0.7} />
-            <Stop offset="35%" stopColor="#A7CBF2" stopOpacity={0.45} />
-            <Stop offset="70%" stopColor="#E2ECF5" stopOpacity={0.18} />
+            <Stop offset="30%" stopColor="#9BC5F0" stopOpacity={0.45} />
+            <Stop offset="55%" stopColor="#BBD6F3" stopOpacity={0.25} />
+            <Stop offset="75%" stopColor="#DCE9F6" stopOpacity={0.12} />
+            <Stop offset="90%" stopColor="#F2F6FA" stopOpacity={0.03} />
             <Stop offset="100%" stopColor="#FAFAFA" stopOpacity={0} />
           </RadialGradient>
 
@@ -508,62 +569,5 @@ function DottedSkyBackground() {
         <Rect width="100%" height="100%" fill="url(#skyBloomBottom)" />
       </Svg>
     </View>
-  );
-}
-
-function ScanCorners() {
-  const size = 28;
-  const stroke = 2;
-  const inset = 16;
-  const color = 'rgba(255,255,255,0.55)';
-  const baseCorner = {
-    position: 'absolute' as const,
-    width: size,
-    height: size,
-    borderColor: color,
-  };
-  return (
-    <>
-      <View
-        style={{
-          ...baseCorner,
-          top: inset,
-          right: inset,
-          borderTopWidth: stroke,
-          borderRightWidth: stroke,
-          borderTopRightRadius: 8,
-        }}
-      />
-      <View
-        style={{
-          ...baseCorner,
-          bottom: inset,
-          left: inset,
-          borderBottomWidth: stroke,
-          borderLeftWidth: stroke,
-          borderBottomLeftRadius: 8,
-        }}
-      />
-      <View
-        style={{
-          ...baseCorner,
-          bottom: inset,
-          right: inset,
-          borderBottomWidth: stroke,
-          borderRightWidth: stroke,
-          borderBottomRightRadius: 8,
-        }}
-      />
-      <View
-        style={{
-          ...baseCorner,
-          top: inset,
-          left: inset,
-          borderTopWidth: stroke,
-          borderLeftWidth: stroke,
-          borderTopLeftRadius: 8,
-        }}
-      />
-    </>
   );
 }
