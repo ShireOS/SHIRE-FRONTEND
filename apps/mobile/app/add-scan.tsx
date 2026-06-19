@@ -100,9 +100,11 @@ export default function AddScan() {
         style={{
           flexDirection: 'row',
           alignItems: 'center',
+          justifyContent: 'space-between',
           paddingHorizontal: 20,
           paddingTop: 4,
           paddingBottom: 12,
+          marginBottom: 10
         }}
       >
         <Pressable
@@ -132,13 +134,21 @@ export default function AddScan() {
         >
           Add Scan
         </Text>
+        <View style={{width: 40}}></View>
       </View>
 
       {/* Form */}
       <View style={{ paddingHorizontal: 20, gap: 16 }}>
         {/* Room picker — matches the Number-of-tables input shell */}
         <View style={{ gap: 8 }}>
-          <Text style={EYEBROW_LABEL}>Room</Text>
+          <Text
+            style={[
+              EYEBROW_LABEL,
+              selectedRoom ? { color: color_pallet.sky[700] } : null,
+            ]}
+          >
+            Room
+          </Text>
           <View ref={triggerRef} collapsable={false}>
             <Pressable
               onPress={openPicker}
@@ -149,7 +159,9 @@ export default function AddScan() {
                 height: 52,
                 borderRadius: 12,
                 borderWidth: 1,
-                borderColor: color_pallet.stone[200],
+                borderColor: selectedRoom
+                  ? color_pallet.sky[700]
+                  : color_pallet.stone[200],
                 backgroundColor: color_pallet.cream[100],
                 paddingHorizontal: 16,
                 flexDirection: 'row',
@@ -159,12 +171,13 @@ export default function AddScan() {
             >
               <Text
                 style={[
-                  typography.body,
+                  typography.h3,
                   {
                     color: selectedRoom
                       ? color_pallet.ink[900]
                       : color_pallet.ink[500],
                     flexShrink: 1,
+                    fontSize: 16
                   },
                 ]}
                 numberOfLines={1}
@@ -188,32 +201,42 @@ export default function AddScan() {
 
         {/* Number of tables */}
         <View style={{ gap: 8 }}>
-          <Text style={EYEBROW_LABEL}>Scan Name</Text>
+          <Text
+            style={[
+              EYEBROW_LABEL,
+              numberOfTables ? { color: color_pallet.sky[700] } : null,
+            ]}
+          >
+            Scan Name
+          </Text>
           <View
             style={{
               height: 52,
               borderRadius: 12,
               borderWidth: 1,
-              borderColor: color_pallet.stone[200],
+              borderColor: numberOfTables
+                ? color_pallet.sky[700]
+                : color_pallet.stone[200],
               backgroundColor: color_pallet.cream[100],
               paddingHorizontal: 16,
               justifyContent: 'center',
             }}
           >
             <TextInput
-              
-              onChangeText={(t) => setNumberOfTables(t.replace(/[^0-9]/g, ''))}
-              inputMode="numeric"
-              placeholder="0"
+              value={numberOfTables}
+              onChangeText={setNumberOfTables}
+              placeholder="e.g. Friday dinner service"
               placeholderTextColor={color_pallet.ink[500]}
               style={[
-                typography.body,
-                {
-                  color: color_pallet.ink[900],
-                  padding: 0,
-                  fontFamily: 'FragmentMono_400Regular',
-                },
-              ]}
+                  typography.h3,
+                  {
+                    color: selectedRoom
+                      ? color_pallet.ink[900]
+                      : color_pallet.ink[500],
+                    flexShrink: 1,
+                    fontSize: 16
+                  },
+                ]}
             />
           </View>
         </View>
