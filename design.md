@@ -776,3 +776,60 @@ Before merging a screen / component:
 - [ ] Animations respect `prefers-reduced-motion`
 - [ ] Counts / page numbers use `tabular-nums`
 - [ ] Tinted shadow (warm or cool) + inset top sheen — no flat grey drop shadows
+Here's the snippet pulled from design.md covering backgrounds, gradients, and the dropdown pattern:
+
+---
+Backgrounds (design.md:330-340)
+
+┌──────────────┬────────────────────────────────────────────────────────────────┐
+│    Layer     │                           Treatment                            │
+├──────────────┼────────────────────────────────────────────────────────────────┤
+│ Page canvas  │ bg-cream-50                                                    │
+├──────────────┼────────────────────────────────────────────────────────────────┤
+│ Card /       │ bg-white (default) or bg-cream-100 (recessed)                  │
+│ surface      │                                                                │
+├──────────────┼────────────────────────────────────────────────────────────────┤
+│ Glass panel  │ bg-white/85 + backdrop-filter: blur(10–12px) — only on sticky  │
+│              │ pagination bar and over-image chips                            │
+├──────────────┼────────────────────────────────────────────────────────────────┤
+│ Loading veil │ bg-cream-100/70 over the area being updated                    │
+├──────────────┼────────────────────────────────────────────────────────────────┤
+│ Annotation   │ dotted grid + sky radial blobs                                 │
+│ page         │                                                                │
+└──────────────┴────────────────────────────────────────────────────────────────┘
+
+Never use pure white (#FFFFFF) as a page canvas — use cream/50. White is for cards on top of cream.
+
+Annotation page background (design.md:272): dotted grid + radial sky blobs weighted to the bottom — radial-gradient(circle, #DCD9D5 1px, transparent 1.5px) at 22×22px, layered over sky-colored ellipses.
+
+---
+Gradients — Glow CTAs (design.md:58-71)
+
+/* Royal sky (Continue annotating) */
+background:
+  radial-gradient(ellipse 110% 80% at 50% 0%, rgba(255,255,255,0.22) 0%, transparent 60%),
+  linear-gradient(180deg, #3B82F6 0%, #2563EB 100%);
+
+/* Royal purple (Confirm audited) */
+background:
+  radial-gradient(ellipse 110% 80% at 50% 0%, rgba(255,255,255,0.22) 0%, transparent 60%),
+  linear-gradient(180deg, #8B5CF6 0%, #7C3AED 100%);
+
+Each pairs with inset 0 1px 0 rgba(255,255,255,0.45) (top sheen) and inset 0 -1px 1px rgba(0,0,0,0.14) (bottom edge) for tactile depth without an outer drop shadow.
+
+Directional intent gradients on swipe (design.md:274): danger-600 left, success-700 right and up; opacity tracks drag distance (Math.min(1, dragX / 140)).
+
+---
+Dropdown panel (design.md:204-213)
+
+fixed z-50 w-56 / w-72 rounded-lg bg-white border border-stone-200 overflow-hidden
+box-shadow: 0 18px 45px rgba(60,120,190,0.12), 0 4px 50px rgba(97,74,68,0.10)
+
+- position: fixed, not absolute — escapes any ancestor overflow clipping
+- Position computed from trigger's getBoundingClientRect(): left: rect.left, top: rect.bottom + 8
+- Inner search input: h-9 rounded-full bg-cream-100 border-transparent; focus → border-sky-700 bg-white
+- Option row: px-3 py-2 flex items-center gap-3 hover:bg-cream-100 with transition-colors duration-100
+- Footer "Clear N selected": border-t border-stone-200 bg-cream-50, mono eyebrow, hover → text-danger-600
+
+---
+If you wanted me to write this into a new file (e.g., a condensed design-snippet.md) rather than display it here, let me know where.
