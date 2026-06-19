@@ -1,0 +1,6 @@
+{
+    "name": "backend",
+    "scripts": {
+        "generate_schema": "dotenv run -- sh -c 'npx supabase gen types --lang=typescript --db-url \"$TYPES_LINK\" --schema public --debug > ./models/schemas.ts'"
+    }
+}

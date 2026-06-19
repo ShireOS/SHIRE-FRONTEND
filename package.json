@@ -2,7 +2,8 @@
     "private": true,
     "scripts": {
         "web": "pnpm --filter web dev",
-        "mobile": "pnpm --filter mobile start"
+        "mobile": "pnpm --filter mobile start",
+        "schema": "pnpm --filter backend generate_schema"
     },
     "pnpm": {
         "overrides": {
