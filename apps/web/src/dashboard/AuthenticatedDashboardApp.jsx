@@ -2390,6 +2390,8 @@ function EmployeePortal() {
   const [weekStart, setWeekStart] = useState(() => toDateKey(startOfWeek()))
   const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()))
   const [touchStartX, setTouchStartX] = useState(null)
+  const scheduleListRef = useRef(null)
+  const scheduleDayRefs = useRef({})
   const [availabilityForm, setAvailabilityForm] = useState(emptyEmployeeAvailabilityForm)
   const [timeOffForm, setTimeOffForm] = useState(emptyEmployeeTimeOffForm)
   const [newChatMemberId, setNewChatMemberId] = useState('')
@@ -2477,6 +2479,17 @@ function EmployeePortal() {
       cancelled = true
     }
   }, [token, selectedConversationId])
+
+  useEffect(() => {
+    if (activeEmployeeTab !== 'schedule') return
+    const frame = requestAnimationFrame(() => {
+      scheduleDayRefs.current[selectedDate]?.scrollIntoView({
+        block: 'start',
+        behavior: 'smooth',
+      })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [activeEmployeeTab, scheduleScope, selectedDate, weekStart])
 
   if (!token) {
     return <Navigate to="/auth/login" replace />
@@ -2651,10 +2664,6 @@ function EmployeePortal() {
   const todayKey = toDateKey(new Date())
   const scopedShifts = scheduleScope === 'mine' ? weekSchedule.mine : weekSchedule.all
   const shiftsByDate = groupShiftsByDate(scopedShifts)
-  const orderedDates = [
-    ...weekDates.filter(day => toDateKey(day) >= selectedDate),
-    ...weekDates.filter(day => toDateKey(day) < selectedDate),
-  ]
   const todayShifts = weekSchedule.mine.filter(shift => String(shift.shift_date) === todayKey)
   const upcomingMine = weekSchedule.mine
     .filter(shift => String(shift.shift_date) >= todayKey)
@@ -2783,12 +2792,18 @@ function EmployeePortal() {
                 )
               })}
             </div>
-            <div className="max-h-[58vh] space-y-3 overflow-y-auto pr-1">
-              {orderedDates.map(day => {
+            <div ref={scheduleListRef} className="max-h-[58vh] space-y-3 overflow-y-auto pr-1">
+              {weekDates.map(day => {
                 const key = toDateKey(day)
                 const dayShifts = shiftsByDate[key] || []
                 return (
-                  <article key={key} className={['rounded-2xl border p-4', key === selectedDate ? 'border-dash-gold/50 bg-dash-gold/5' : 'border-white/10 bg-white/[0.025]'].join(' ')}>
+                  <article
+                    key={key}
+                    ref={element => {
+                      if (element) scheduleDayRefs.current[key] = element
+                    }}
+                    className={['rounded-2xl border p-4', key === selectedDate ? 'border-dash-gold/50 bg-dash-gold/5' : 'border-white/10 bg-white/[0.025]'].join(' ')}
+                  >
                     <div className="flex items-center justify-between gap-3">
                       <h3 className="font-semibold">{day.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</h3>
                       <span className="text-xs text-dash-tertiary">{dayShifts.length} shift{dayShifts.length === 1 ? '' : 's'}</span>
@@ -2906,9 +2921,27 @@ function EmployeePortal() {
                 <div className="space-y-4">
                   <h2 className="text-2xl font-semibold">Availability</h2>
                   <div className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-2">
-                    <select value={availabilityForm.day_of_week} onChange={event => setAvailabilityForm(prev => ({ ...prev, day_of_week: Number(event.target.value) }))} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none">
-                      {EMPLOYEE_DAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}
-                    </select>
+                    <div className="md:col-span-2">
+                      <p className="label-mono mb-2">Day</p>
+                      <div className="grid grid-cols-7 gap-2">
+                        {EMPLOYEE_DAYS.map((day, index) => (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => setAvailabilityForm(prev => ({ ...prev, day_of_week: index }))}
+                            className={[
+                              'rounded-xl border px-2 py-3 text-center text-xs font-semibold transition',
+                              Number(availabilityForm.day_of_week) === index
+                                ? 'border-dash-gold bg-dash-gold text-black'
+                                : 'border-white/10 text-dash-secondary hover:border-dash-gold/50 hover:text-dash-cream',
+                            ].join(' ')}
+                          >
+                            <span className="block sm:hidden">{EMPLOYEE_DAYS_SHORT[index]}</span>
+                            <span className="hidden sm:block">{day}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <select value={availabilityForm.recurrence} onChange={event => setAvailabilityForm(prev => ({ ...prev, recurrence: event.target.value }))} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none">
                       <option value="recurring">Recurring</option>
                       <option value="one_time">One time</option>
