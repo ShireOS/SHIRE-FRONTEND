@@ -16,6 +16,7 @@ import ModernRestaurantSetupPanel, {
   buildSetupWarnings as buildModernSetupWarnings,
   warningCount as modernWarningCount,
 } from './RestaurantSetupPanel'
+import { TimeEntry } from './components/shared/TimeEntry'
 
 function LoadingScreen() {
   return (
@@ -564,39 +565,6 @@ async function fetchWithSupabaseAuth(endpoint, options = {}) {
   }
   if (response.status === 204) return null
   return response.json()
-}
-
-function formatTimeEntry(value) {
-  const digits = String(value || '').replace(/\D/g, '').slice(0, 4)
-  if (digits.length === 1 && !['0', '1'].includes(digits)) return `0${digits}:`
-  if (digits.length < 2) return digits
-  if (digits.length === 2) return `${digits}:`
-  return `${digits.slice(0, 2)}:${digits.slice(2)}`
-}
-
-function TimeEntry({ value, onChange, placeholder = '17:00', ariaLabel }) {
-  const safeValue = value || ''
-  const remainder = safeValue.length < placeholder.length ? placeholder.slice(safeValue.length) : ''
-
-  return (
-    <div className="relative">
-      <div className="pointer-events-none absolute inset-0 flex items-center rounded-xl px-3 py-2 font-mono text-sm">
-        <span className="text-dash-cream">{safeValue}</span>
-        <span className="text-dash-tertiary/30">{remainder}</span>
-      </div>
-      <input
-        type="text"
-        inputMode="numeric"
-        autoComplete="off"
-        aria-label={ariaLabel}
-        value={safeValue}
-        onChange={event => onChange(formatTimeEntry(event.target.value))}
-        placeholder={placeholder}
-        maxLength={5}
-        className="relative z-10 w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 font-mono text-sm text-transparent caret-white outline-none placeholder:text-transparent focus:border-dash-gold/70"
-      />
-    </div>
-  )
 }
 
 const SCHEDULING_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -1857,7 +1825,7 @@ function SchedulingPanel({ restaurantId }) {
                 />
                 <div className="grid grid-cols-2 gap-2">
                   <TimeEntry value={shiftForm.shift_start} onChange={value => setShiftForm(prev => ({ ...prev, shift_start: value }))} placeholder="17:00" ariaLabel="Shift start" />
-                  <TimeEntry value={shiftForm.shift_end} onChange={value => setShiftForm(prev => ({ ...prev, shift_end: value }))} placeholder="22:00" ariaLabel="Shift end" />
+                  <TimeEntry value={shiftForm.shift_end} onChange={value => setShiftForm(prev => ({ ...prev, shift_end: value }))} placeholder="17:00" ariaLabel="Shift end" />
                 </div>
                 <label className="flex items-center gap-2 text-sm text-dash-secondary">
                   <input type="checkbox" checked={shiftForm.is_locked} onChange={event => setShiftForm(prev => ({ ...prev, is_locked: event.target.checked }))} />
@@ -2119,7 +2087,7 @@ function SchedulingPanel({ restaurantId }) {
                 </select>
                 <div className="grid grid-cols-2 gap-2">
                   <TimeEntry value={coverageForm.start_time} onChange={value => setCoverageForm(prev => ({ ...prev, start_time: value }))} placeholder="17:00" ariaLabel="Coverage start" />
-                  <TimeEntry value={coverageForm.end_time} onChange={value => setCoverageForm(prev => ({ ...prev, end_time: value }))} placeholder="22:00" ariaLabel="Coverage end" />
+                  <TimeEntry value={coverageForm.end_time} onChange={value => setCoverageForm(prev => ({ ...prev, end_time: value }))} placeholder="17:00" ariaLabel="Coverage end" />
                 </div>
                 <label className="flex items-center gap-2 text-sm text-dash-secondary">
                   <input type="checkbox" checked={coverageForm.is_prime_shift} onChange={event => setCoverageForm(prev => ({ ...prev, is_prime_shift: event.target.checked }))} />
@@ -2283,8 +2251,8 @@ const emptyEmployeeAvailabilityForm = {
   day_of_week: 0,
   recurrence: 'recurring',
   date: '',
-  start_time: '00:00',
-  end_time: '23:59',
+  start_time: '10:00',
+  end_time: '17:00',
   availability_type: 'available',
   reason: '',
   note: '',
@@ -2394,7 +2362,6 @@ function EmployeePortal() {
   const scheduleDayRefs = useRef({})
   const [availabilityForm, setAvailabilityForm] = useState(emptyEmployeeAvailabilityForm)
   const [timeOffForm, setTimeOffForm] = useState(emptyEmployeeTimeOffForm)
-  const [newChatMemberId, setNewChatMemberId] = useState('')
   const [messageText, setMessageText] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -2624,25 +2591,6 @@ function EmployeePortal() {
     if (created) setTimeOffForm(emptyEmployeeTimeOffForm)
   }
 
-  const createConversation = async () => {
-    if (!newChatMemberId) return
-    setIsSaving(true)
-    setMessage('')
-    try {
-      const conversation = await employeeFetch('/employee/messages/conversations', {
-        method: 'POST',
-        body: JSON.stringify({ member_ids: [newChatMemberId], conversation_type: 'dm' }),
-      })
-      setConversations(prev => [conversation, ...prev.filter(item => item.id !== conversation.id)])
-      setSelectedConversationId(String(conversation.id))
-      setNewChatMemberId('')
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not start message')
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
   const sendMessage = async () => {
     if (!selectedConversationId || !messageText.trim()) return
     const body = messageText.trim()
@@ -2845,13 +2793,9 @@ function EmployeePortal() {
             {messageSubtab === 'messages' ? (
               <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
                 <div className="space-y-3">
-                  <div className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                    <select value={newChatMemberId} onChange={event => setNewChatMemberId(event.target.value)} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none">
-                      <option value="">Start DM</option>
-                      {contacts.filter(contact => !contact.is_me).map(contact => <option key={contact.id} value={contact.id}>{contactName(contact)}</option>)}
-                    </select>
-                    <button type="button" onClick={() => void createConversation()} disabled={!newChatMemberId || isSaving} className="rounded-xl bg-dash-gold px-3 py-2 text-sm font-semibold text-black disabled:opacity-50">Open</button>
-                  </div>
+                  <p className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-dash-secondary">
+                    Managers add employees to chats. Your active conversations show below.
+                  </p>
                   <div className="space-y-2">
                     {conversations.length === 0 ? (
                       <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-dash-secondary">No messages yet.</p>
@@ -2951,8 +2895,8 @@ function EmployeePortal() {
                       <option value="available">Available</option>
                       <option value="not_available">Not available</option>
                     </select>
-                    <input type="time" value={availabilityForm.start_time} onChange={event => setAvailabilityForm(prev => ({ ...prev, start_time: event.target.value }))} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none" />
-                    <input type="time" value={availabilityForm.end_time} onChange={event => setAvailabilityForm(prev => ({ ...prev, end_time: event.target.value }))} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none" />
+                    <TimeEntry value={availabilityForm.start_time} onChange={value => setAvailabilityForm(prev => ({ ...prev, start_time: value }))} placeholder="10:00" ariaLabel="Availability start" />
+                    <TimeEntry value={availabilityForm.end_time} onChange={value => setAvailabilityForm(prev => ({ ...prev, end_time: value }))} placeholder="17:00" ariaLabel="Availability end" />
                     <select value={availabilityForm.reason} onChange={event => setAvailabilityForm(prev => ({ ...prev, reason: event.target.value }))} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none">
                       <option value="">Reason dropdown</option>
                       {EMPLOYEE_REASON_OPTIONS.map(reason => <option key={reason} value={reason}>{reason}</option>)}
@@ -3044,7 +2988,9 @@ function ManagerMessagingPanel({ restaurantId }) {
   const [conversationMessages, setConversationMessages] = useState([])
   const [announcements, setAnnouncements] = useState([])
   const [activeSubtab, setActiveSubtab] = useState('messages')
-  const [newChatMemberId, setNewChatMemberId] = useState('')
+  const [isNewChatOpen, setIsNewChatOpen] = useState(false)
+  const [selectedNewChatMemberIds, setSelectedNewChatMemberIds] = useState([])
+  const [newChatTitle, setNewChatTitle] = useState('')
   const [messageText, setMessageText] = useState('')
   const [announcementForm, setAnnouncementForm] = useState({ title: '', body: '' })
   const [status, setStatus] = useState('')
@@ -3093,18 +3039,46 @@ function ManagerMessagingPanel({ restaurantId }) {
 
   const selectedConversation = conversations.find(item => String(item.id) === String(selectedConversationId))
 
+  const toggleNewChatMember = (memberId) => {
+    setSelectedNewChatMemberIds(prev => (
+      prev.includes(memberId)
+        ? prev.filter(id => id !== memberId)
+        : [...prev, memberId]
+    ))
+  }
+
+  const resetNewChatForm = () => {
+    setIsNewChatOpen(false)
+    setSelectedNewChatMemberIds([])
+    setNewChatTitle('')
+  }
+
   const createConversation = async () => {
-    if (!newChatMemberId) return
+    if (selectedNewChatMemberIds.length === 0) {
+      setStatus('Choose at least one employee for the chat.')
+      return
+    }
     setIsSaving(true)
     setStatus('')
     try {
+      const selectedContacts = contacts.filter(item => selectedNewChatMemberIds.includes(String(item.id)))
+      const isGroup = selectedNewChatMemberIds.length > 1
       const conversation = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations`, {
         method: 'POST',
-        body: JSON.stringify({ member_ids: [newChatMemberId], conversation_type: 'dm' }),
+        body: JSON.stringify({
+          member_ids: selectedNewChatMemberIds,
+          conversation_type: isGroup ? 'group' : 'dm',
+          title: isGroup
+            ? (newChatTitle.trim() || selectedContacts.map(contact => contact.name).join(', '))
+            : null,
+        }),
       })
-      setConversations(prev => [conversation, ...prev.filter(item => item.id !== conversation.id)])
+      const nextConversations = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations`)
+      setConversations(nextConversations)
       setSelectedConversationId(String(conversation.id))
-      setNewChatMemberId('')
+      resetNewChatForm()
+      setActiveSubtab('messages')
+      setStatus(`${isGroup ? 'Group chat' : 'DM'} opened.`)
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Could not start message')
     } finally {
@@ -3130,11 +3104,14 @@ function ManagerMessagingPanel({ restaurantId }) {
   }
 
   const createAnnouncement = async () => {
-    if (!announcementForm.title.trim() || !announcementForm.body.trim()) return
+    if (!announcementForm.title.trim() || !announcementForm.body.trim()) {
+      setStatus('Announcement needs a title and message.')
+      return
+    }
     setIsSaving(true)
     setStatus('')
     try {
-      const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/announcements`, {
+      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/announcements`, {
         method: 'POST',
         body: JSON.stringify({
           title: announcementForm.title.trim(),
@@ -3142,7 +3119,8 @@ function ManagerMessagingPanel({ restaurantId }) {
           audience: 'all',
         }),
       })
-      setAnnouncements(prev => [created, ...prev])
+      const nextAnnouncements = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/announcements`)
+      setAnnouncements(nextAnnouncements)
       setAnnouncementForm({ title: '', body: '' })
       setStatus('Announcement posted.')
     } catch (err) {
@@ -3153,6 +3131,7 @@ function ManagerMessagingPanel({ restaurantId }) {
   }
 
   return (
+    <>
     <section className="space-y-5 rounded-2xl border border-white/10 bg-white/[0.025] p-6">
       <div>
         <p className="label-mono">Staff Messaging</p>
@@ -3174,13 +3153,17 @@ function ManagerMessagingPanel({ restaurantId }) {
       {activeSubtab === 'messages' ? (
         <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
           <aside className="space-y-3">
-            <div className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-              <select value={newChatMemberId} onChange={event => setNewChatMemberId(event.target.value)} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none">
-                <option value="">Start DM</option>
-                {contacts.map(contact => <option key={contact.id} value={contact.id}>{contactName(contact)}</option>)}
-              </select>
-              <button type="button" onClick={() => void createConversation()} disabled={!newChatMemberId || isSaving} className="rounded-xl bg-dash-gold px-3 py-2 text-sm font-semibold text-black disabled:opacity-50">Open chat</button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedNewChatMemberIds([])
+                setNewChatTitle('')
+                setIsNewChatOpen(true)
+              }}
+              className="w-full rounded-xl bg-dash-gold px-4 py-3 text-sm font-semibold text-black transition hover:opacity-90"
+            >
+              Start new chat
+            </button>
             <div className="space-y-2">
               {conversations.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-dash-secondary">No staff chats yet.</p>
@@ -3233,6 +3216,71 @@ function ManagerMessagingPanel({ restaurantId }) {
         </div>
       )}
     </section>
+    {isNewChatOpen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm">
+        <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-white/10 bg-dash-base shadow-2xl">
+          <div className="border-b border-white/10 p-5">
+            <p className="label-mono">New Chat</p>
+            <h3 className="mt-2 text-2xl font-semibold">Choose employees</h3>
+            <p className="mt-2 text-sm text-dash-secondary">
+              Select one employee for a DM, or multiple employees for a group chat.
+            </p>
+          </div>
+          <div className="max-h-[55vh] space-y-2 overflow-y-auto p-5">
+            {selectedNewChatMemberIds.length > 1 && (
+              <input
+                value={newChatTitle}
+                onChange={event => setNewChatTitle(event.target.value)}
+                placeholder="Group chat name optional"
+                className="mb-3 w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary focus:border-dash-gold/70"
+              />
+            )}
+            {contacts.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-dash-secondary">No employees found.</p>
+            ) : contacts.map(contact => {
+              const selected = selectedNewChatMemberIds.includes(String(contact.id))
+              return (
+                <button
+                  key={contact.id}
+                  type="button"
+                  onClick={() => toggleNewChatMember(String(contact.id))}
+                  className={[
+                    'flex w-full items-center justify-between gap-4 rounded-xl border p-4 text-left text-sm transition',
+                    selected ? 'border-dash-gold/70 bg-dash-gold/10' : 'border-white/10 bg-white/[0.025] hover:border-dash-gold/50',
+                  ].join(' ')}
+                >
+                  <span>
+                    <span className="block font-semibold">{contact.name}</span>
+                    <span className="block capitalize text-dash-tertiary">{contact.role || 'Staff'}{contact.email ? ` · ${contact.email}` : ''}</span>
+                  </span>
+                  <span className={['flex h-6 w-6 items-center justify-center rounded-md border text-xs font-bold', selected ? 'border-dash-gold bg-dash-gold text-black' : 'border-white/20 text-transparent'].join(' ')}>
+                    ✓
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex flex-col gap-2 border-t border-white/10 p-5 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={resetNewChatForm}
+              className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-white/20 hover:text-dash-cream"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void createConversation()}
+              disabled={isSaving || selectedNewChatMemberIds.length === 0}
+              className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90 disabled:opacity-50"
+            >
+              {selectedNewChatMemberIds.length > 1 ? 'Create group chat' : 'Create DM'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
 
