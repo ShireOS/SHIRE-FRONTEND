@@ -37,11 +37,17 @@ export default function AuthPage() {
     setError(null)
     const result = await login(email.trim(), password)
     setSubmitting(false)
-    if (result.ok) {
-      router.replace('/(tabs)/scans')
+    if (!result.ok) {
+      setError(result.error)
       return
     }
-    setError(result.error)
+    if (result.role === 'owner' || result.role === 'developer') {
+      router.replace('/(admin)/scans')
+    } else if (result.role === 'employee') {
+      router.replace('/(employee)/scans')
+    } else {
+      setError('No role assigned to this account. Contact your administrator.')
+    }
   }
 
   return (

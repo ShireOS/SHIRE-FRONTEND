@@ -1,5 +1,7 @@
-import { Database, initClient, getClient } from "@shire/db"
+import { Database, initClient, getClient, UserRole } from "@shire/db"
 import Constants from 'expo-constants'
+
+export type userRole = "owner" | "employee" | "developer" | null
 
 export function getSBClient() {
     const { supabaseUrl, supabasePublishableKey } = Constants.expoConfig?.extra ?? {}
@@ -15,14 +17,18 @@ export function getSBClient() {
     }
 }
 
-export type LoginResult = { ok: true } | { ok: false; error: string }
+export type LoginResult =
+    | { ok: true; role: userRole }
+    | { ok: false; error: string }
 
 export async function login(email: string, password: string): Promise<LoginResult> {
     try {
         const client = getSBClient()
         const { error } = await client.auth.signInWithPassword({ email, password })
         if (error) return { ok: false, error: humanizeAuthError(error.message) }
-        return { ok: true }
+
+        const role = (await getUserRole()) ?? null
+        return { ok: true, role }
     } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
         return { ok: false, error: humanizeAuthError(message) }
@@ -44,4 +50,16 @@ function humanizeAuthError(raw: string): string {
         return 'Network error. Check your connection and try again.'
     }
     return raw || 'Something went wrong. Please try again.'
+}
+
+export async function getUserRole(): Promise<userRole | undefined> {
+    const client = getSBClient()
+    const user = await client.auth.getUser()
+
+    if (user.data.user == null) return
+
+    const data = await client.from("user_roles").select("*").eq("user", user.data.user.id)
+
+    if (data.data == null) return
+    return data.data[0].restaraunt_role
 }

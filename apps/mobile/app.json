@@ -36,6 +36,14 @@
             "imageWidth": 76
           }
         }
+      ],
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "This app needs access to your camera to take photos.",
+          "enableMicrophonePermission": true,
+          "microphonePermissionText": "This app needs access to your microphone to record videos."
+        }
       ]
     ],
     "experiments": {
