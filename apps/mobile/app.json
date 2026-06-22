@@ -9,7 +9,8 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.veera-unnam.frontend"
+      "bundleIdentifier": "com.veera-unnam.frontend",
+      "appleTeamId": "HAZGK2J8MF"
     },
     "android": {
       "adaptiveIcon": {

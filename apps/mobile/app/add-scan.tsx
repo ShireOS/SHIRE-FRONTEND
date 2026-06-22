@@ -32,7 +32,7 @@ import Svg, {
   Stop,
 } from 'react-native-svg';
 import type { Room } from '@shire/db';
-
+import {Camera} from "react-native-vision-camera"
 import PlushyButton from '@/components/PlushyButton';
 import { color_pallet } from '@/styles/colors';
 import { typography } from '@/styles/typography';
@@ -255,6 +255,11 @@ export default function AddScan() {
           ]}
         >
           {/* Simulated camera feed — replace with real preview later */}
+          <Camera
+            style={StyleSheet.absoluteFill}
+            device="back"
+            isActive={true}
+          />
           <LinearGradient
             colors={['#1A1615', '#221E1D', '#0F0D0D']}
             start={{ x: 0, y: 0 }}
