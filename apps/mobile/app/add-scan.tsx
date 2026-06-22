@@ -15,7 +15,6 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
-  type SharedValue,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -57,7 +56,7 @@ export default function AddScan() {
   const roomOptions: Room[] = useMemo(() => DUMMY_ROOMS, []);
 
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
-  const [numberOfTables, setNumberOfTables] = useState('');
+  const [scanName, setScanName] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [anchor, setAnchor] = useState<
     { x: number; y: number; width: number } | null
@@ -66,7 +65,7 @@ export default function AddScan() {
 
   const openPicker = () => {
     triggerRef.current?.measureInWindow((x, y, width, height) => {
-      setAnchor({ x, y: y + height + 6, width });
+      setAnchor({ x, y: y + height + 8, width });
       setPickerOpen(true);
     });
   };
@@ -75,11 +74,12 @@ export default function AddScan() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace('/(tabs)/scans');
+      router.replace('/');
     }
   };
 
   const handleStartScan = () => {
+    console.warn('Start scan not implemented yet');
     // TODO: navigate to the 3D scan capture screen
   };
 
@@ -128,13 +128,12 @@ export default function AddScan() {
             typography.h3,
             {
               color: color_pallet.ink[900],
-              marginLeft: 8,
             },
           ]}
         >
           Add Scan
         </Text>
-        <View style={{width: 40}}></View>
+        <View style={{ width: 40 }} />
       </View>
 
       {/* Form */}
@@ -170,16 +169,12 @@ export default function AddScan() {
               }}
             >
               <Text
-                style={[
-                  typography.h3,
-                  {
-                    color: selectedRoom
-                      ? color_pallet.ink[900]
-                      : color_pallet.ink[500],
-                    flexShrink: 1,
-                    fontSize: 16
-                  },
-                ]}
+                style={{
+                  fontFamily: 'Inter_400Regular',
+                  fontSize: 16,
+                  color: selectedRoom ? color_pallet.ink[900] : color_pallet.ink[500],
+                  flexShrink: 1,
+                }}
                 numberOfLines={1}
               >
                 {selectedRoom?.room_name ?? 'Select a room'}
@@ -204,7 +199,7 @@ export default function AddScan() {
           <Text
             style={[
               EYEBROW_LABEL,
-              numberOfTables ? { color: color_pallet.sky[700] } : null,
+              scanName ? { color: color_pallet.sky[700] } : null,
             ]}
           >
             Scan Name
@@ -214,7 +209,7 @@ export default function AddScan() {
               height: 52,
               borderRadius: 12,
               borderWidth: 1,
-              borderColor: numberOfTables
+              borderColor: scanName
                 ? color_pallet.sky[700]
                 : color_pallet.stone[200],
               backgroundColor: color_pallet.cream[100],
@@ -223,20 +218,15 @@ export default function AddScan() {
             }}
           >
             <TextInput
-              value={numberOfTables}
-              onChangeText={setNumberOfTables}
+              value={scanName}
+              onChangeText={setScanName}
               placeholder="e.g. Friday dinner service"
               placeholderTextColor={color_pallet.ink[500]}
-              style={[
-                  typography.h3,
-                  {
-                    color: selectedRoom
-                      ? color_pallet.ink[900]
-                      : color_pallet.ink[500],
-                    flexShrink: 1,
-                    fontSize: 16
-                  },
-                ]}
+              style={{
+                fontFamily: 'Inter_400Regular',
+                fontSize: 16,
+                color: scanName ? color_pallet.ink[900] : color_pallet.ink[500],
+              }}
             />
           </View>
         </View>
@@ -261,7 +251,7 @@ export default function AddScan() {
               borderWidth: 1,
               borderColor: color_pallet.stone[200],
             },
-            shadowMd ?? {},
+            shadowMd,
           ]}
         >
           {/* Simulated camera feed — replace with real preview later */}
@@ -314,7 +304,7 @@ export default function AddScan() {
                   marginTop: 4,
                   paddingHorizontal: 22,
                   paddingVertical: 12,
-                  borderRadius: 5,
+                  borderRadius: 9999,
                   flexDirection: 'row',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -328,8 +318,8 @@ export default function AddScan() {
                 />
                 <Text
                   style={[
-                    typography.h1,
-                    { color: color_pallet.bg.DEFAULT, fontSize: 18 },
+                    typography.title,
+                    { color: color_pallet.bg.DEFAULT },
                   ]}
                 >
                   Start 3D scan
@@ -452,12 +442,11 @@ export function RoomDropdownMenu({
               panelAnimStyle,
             ]}
           >
-            <Pressable
-              onPress={() => {}}
+            <View
               accessibilityRole="menu"
               style={{
                 backgroundColor: '#FFFFFF',
-                borderRadius: 14,
+                borderRadius: 20,
                 borderWidth: 1,
                 borderColor: color_pallet.stone[200],
                 paddingVertical: 8,
@@ -541,112 +530,11 @@ export function RoomDropdownMenu({
                   })}
                 </View>
               </ScrollView>
-            </Pressable>
+            </View>
           </Animated.View>
         ) : null}
       </Pressable>
     </Modal>
-  );
-}
-
-/**
- * One menu row. Stagger by index: starts revealing at `index * 0.06` of the
- * panel's master progress so rows cascade in (~28ms apart at 220ms enter).
- * Selected rows get a 3px sky/700 indicator on the leading edge.
- */
-function RoomMenuItem({
-  room,
-  index,
-  isSelected,
-  progress,
-  reduceMotion,
-  onPress,
-}: {
-  room: Room;
-  index: number;
-  isSelected: boolean;
-  progress: SharedValue<number>;
-  reduceMotion: boolean;
-  onPress: () => void;
-}) {
-  const rowAnimStyle = useAnimatedStyle(() => {
-    if (reduceMotion) {
-      return { opacity: progress.value };
-    }
-    const start = Math.min(index * 0.06, 0.4);
-    const local = Math.max(0, (progress.value - start) / (1 - start));
-    const eased = Math.min(1, local);
-    return {
-      opacity: eased,
-      transform: [{ translateY: (1 - eased) * 8 }],
-    };
-  }, [index, reduceMotion]);
-
-  return (
-    <Animated.View style={[{ width: '100%' }, rowAnimStyle]}>
-      <Pressable
-        onPress={onPress}
-        accessibilityRole="menuitem"
-        accessibilityLabel={room.room_name ?? 'Untitled room'}
-        accessibilityState={{ selected: isSelected }}
-        style={({ pressed }) => ({
-          width: '100%',
-          minHeight: 44, // §2 touch-target-size
-          paddingHorizontal: 12,
-          paddingVertical: 10,
-          borderRadius: 10,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 12,
-          backgroundColor: pressed
-            ? color_pallet.cream[200]
-            : isSelected
-              ? color_pallet.sky[50]
-              : 'transparent',
-        })}
-      >
-        {/* Leading sky indicator bar for the selected row */}
-        <View
-          style={{
-            width: 3,
-            height: 18,
-            borderRadius: 2,
-            backgroundColor: isSelected
-              ? color_pallet.sky[700]
-              : 'transparent',
-          }}
-        />
-        <Feather
-          name="map-pin"
-          size={14}
-          color={
-            isSelected ? color_pallet.sky[700] : color_pallet.ink[500]
-          }
-        />
-        <Text
-          style={{
-            color: isSelected
-              ? color_pallet.sky[700]
-              : color_pallet.ink[900],
-            fontSize: 14,
-            fontFamily: isSelected
-              ? 'Inter_500Medium'
-              : 'Inter_400Regular',
-            flex: 1,
-          }}
-          numberOfLines={1}
-        >
-          {room.room_name ?? 'Untitled room'}
-        </Text>
-        {isSelected && (
-          <Feather
-            name="check"
-            size={15}
-            color={color_pallet.sky[700]}
-          />
-        )}
-      </Pressable>
-    </Animated.View>
   );
 }
 

@@ -3,12 +3,9 @@
     "scripts": {
         "web": "pnpm --filter web dev",
         "ios": "pnpm --filter mobile ios",
+        "ios_device": "pnpm --filter mobile ios_device",
         "schema": "pnpm --filter @shire/backend generate-schema"
     },
     "pnpm": {
-        "overrides": {
-            "@types/react": "^18.3.18",
-            "@types/react-dom": "^18.3.5"
-        }
     }
 }

@@ -1816,8 +1816,8 @@ export type Database = {
       }
       image_annotations: {
         Row: {
-          annotation_state: Database["public"]["Enums"]["annotation_state"]
-          assigned_annotator: string | null
+          annotation_state: Database["public"]["Enums"]["annotation_state"][]
+          assigned_annotator: string[] | null
           audit_metadata: Json
           audit_note: string | null
           audit_previous_state:
@@ -1839,6 +1839,7 @@ export type Database = {
           legacy: boolean
           next_interval_id: string | null
           prev_interval_id: string | null
+          primary_annotator: boolean
           raw_window_uri: string | null
           restaurant_id: string
           sample_index: string
@@ -1850,8 +1851,8 @@ export type Database = {
           uuid: string
         }
         Insert: {
-          annotation_state?: Database["public"]["Enums"]["annotation_state"]
-          assigned_annotator?: string | null
+          annotation_state?: Database["public"]["Enums"]["annotation_state"][]
+          assigned_annotator?: string[] | null
           audit_metadata?: Json
           audit_note?: string | null
           audit_previous_state?:
@@ -1873,6 +1874,7 @@ export type Database = {
           legacy?: boolean
           next_interval_id?: string | null
           prev_interval_id?: string | null
+          primary_annotator?: boolean
           raw_window_uri?: string | null
           restaurant_id: string
           sample_index: string
@@ -1884,8 +1886,8 @@ export type Database = {
           uuid?: string
         }
         Update: {
-          annotation_state?: Database["public"]["Enums"]["annotation_state"]
-          assigned_annotator?: string | null
+          annotation_state?: Database["public"]["Enums"]["annotation_state"][]
+          assigned_annotator?: string[] | null
           audit_metadata?: Json
           audit_note?: string | null
           audit_previous_state?:
@@ -1907,6 +1909,7 @@ export type Database = {
           legacy?: boolean
           next_interval_id?: string | null
           prev_interval_id?: string | null
+          primary_annotator?: boolean
           raw_window_uri?: string | null
           restaurant_id?: string
           sample_index?: string
@@ -4123,6 +4126,8 @@ export type Database = {
       pos_payments: {
         Row: {
           amount: number
+          authorized_amount: number | null
+          captured_at: string | null
           card_brand: string | null
           card_funding: string | null
           card_last4: string | null
@@ -4134,6 +4139,7 @@ export type Database = {
           helcim_approval_code: string | null
           helcim_card_token: string | null
           helcim_checkout_token: string | null
+          helcim_preauth_transaction_id: string | null
           helcim_transaction_id: string | null
           id: string
           offline_device_id: string | null
@@ -4151,6 +4157,8 @@ export type Database = {
         }
         Insert: {
           amount: number
+          authorized_amount?: number | null
+          captured_at?: string | null
           card_brand?: string | null
           card_funding?: string | null
           card_last4?: string | null
@@ -4162,6 +4170,7 @@ export type Database = {
           helcim_approval_code?: string | null
           helcim_card_token?: string | null
           helcim_checkout_token?: string | null
+          helcim_preauth_transaction_id?: string | null
           helcim_transaction_id?: string | null
           id?: string
           offline_device_id?: string | null
@@ -4179,6 +4188,8 @@ export type Database = {
         }
         Update: {
           amount?: number
+          authorized_amount?: number | null
+          captured_at?: string | null
           card_brand?: string | null
           card_funding?: string | null
           card_last4?: string | null
@@ -4190,6 +4201,7 @@ export type Database = {
           helcim_approval_code?: string | null
           helcim_card_token?: string | null
           helcim_checkout_token?: string | null
+          helcim_preauth_transaction_id?: string | null
           helcim_transaction_id?: string | null
           id?: string
           offline_device_id?: string | null
@@ -4871,6 +4883,100 @@ export type Database = {
             columns: ["staff_id"]
             isOneToOne: false
             referencedRelation: "waiters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pos_tip_adjustments: {
+        Row: {
+          changed_by_name: string | null
+          changed_by_staff_id: string | null
+          created_at: string
+          id: string
+          new_tip: number
+          old_tip: number
+          order_id: string
+          payment_id: string | null
+          reason: string | null
+          restaurant_id: string
+          role: string | null
+        }
+        Insert: {
+          changed_by_name?: string | null
+          changed_by_staff_id?: string | null
+          created_at?: string
+          id?: string
+          new_tip?: number
+          old_tip?: number
+          order_id: string
+          payment_id?: string | null
+          reason?: string | null
+          restaurant_id: string
+          role?: string | null
+        }
+        Update: {
+          changed_by_name?: string | null
+          changed_by_staff_id?: string | null
+          created_at?: string
+          id?: string
+          new_tip?: number
+          old_tip?: number
+          order_id?: string
+          payment_id?: string | null
+          reason?: string | null
+          restaurant_id?: string
+          role?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pos_tip_adjustments_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pos_tip_declarations: {
+        Row: {
+          amount: number
+          business_date: string
+          created_at: string
+          created_by_staff_id: string | null
+          id: string
+          restaurant_id: string
+          staff_id: string | null
+          staff_name: string | null
+          type: string
+        }
+        Insert: {
+          amount?: number
+          business_date: string
+          created_at?: string
+          created_by_staff_id?: string | null
+          id?: string
+          restaurant_id: string
+          staff_id?: string | null
+          staff_name?: string | null
+          type?: string
+        }
+        Update: {
+          amount?: number
+          business_date?: string
+          created_at?: string
+          created_by_staff_id?: string | null
+          id?: string
+          restaurant_id?: string
+          staff_id?: string | null
+          staff_name?: string | null
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pos_tip_declarations_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
         ]
@@ -6627,6 +6733,54 @@ export type Database = {
           },
         ]
       }
+      staff_announcements: {
+        Row: {
+          audience: string
+          body: string
+          created_at: string
+          created_by_user_id: string | null
+          created_by_waiter_id: string | null
+          id: string
+          restaurant_id: string
+          title: string
+        }
+        Insert: {
+          audience?: string
+          body: string
+          created_at?: string
+          created_by_user_id?: string | null
+          created_by_waiter_id?: string | null
+          id?: string
+          restaurant_id: string
+          title: string
+        }
+        Update: {
+          audience?: string
+          body?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          created_by_waiter_id?: string | null
+          id?: string
+          restaurant_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_announcements_created_by_waiter_id_fkey"
+            columns: ["created_by_waiter_id"]
+            isOneToOne: false
+            referencedRelation: "waiters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_announcements_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       staff_availability: {
         Row: {
           availability_type: string
@@ -6686,6 +6840,90 @@ export type Database = {
             columns: ["waiter_id"]
             isOneToOne: false
             referencedRelation: "waiters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_conversation_members: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          last_read_at: string | null
+          waiter_id: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          last_read_at?: string | null
+          waiter_id: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          last_read_at?: string | null
+          waiter_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_conversation_members_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "staff_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_conversation_members_waiter_id_fkey"
+            columns: ["waiter_id"]
+            isOneToOne: false
+            referencedRelation: "waiters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_conversations: {
+        Row: {
+          conversation_type: string
+          created_at: string
+          created_by_user_id: string | null
+          created_by_waiter_id: string | null
+          id: string
+          restaurant_id: string
+          title: string | null
+          updated_at: string
+        }
+        Insert: {
+          conversation_type?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          created_by_waiter_id?: string | null
+          id?: string
+          restaurant_id: string
+          title?: string | null
+          updated_at?: string
+        }
+        Update: {
+          conversation_type?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          created_by_waiter_id?: string | null
+          id?: string
+          restaurant_id?: string
+          title?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_conversations_created_by_waiter_id_fkey"
+            columns: ["created_by_waiter_id"]
+            isOneToOne: false
+            referencedRelation: "waiters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_conversations_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
         ]
@@ -6886,6 +7124,58 @@ export type Database = {
           {
             foreignKeyName: "staff_invitations_waiter_id_fkey"
             columns: ["waiter_id"]
+            isOneToOne: false
+            referencedRelation: "waiters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_messages: {
+        Row: {
+          body: string
+          conversation_id: string
+          created_at: string
+          id: string
+          restaurant_id: string
+          sender_user_id: string | null
+          sender_waiter_id: string | null
+        }
+        Insert: {
+          body: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          restaurant_id: string
+          sender_user_id?: string | null
+          sender_waiter_id?: string | null
+        }
+        Update: {
+          body?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          restaurant_id?: string
+          sender_user_id?: string | null
+          sender_waiter_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "staff_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_messages_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_messages_sender_waiter_id_fkey"
+            columns: ["sender_waiter_id"]
             isOneToOne: false
             referencedRelation: "waiters"
             referencedColumns: ["id"]
@@ -7838,26 +8128,26 @@ export type Database = {
       }
       table_scan: {
         Row: {
-          "3d_scan": string | null
           created_at: string
           id: number
           name: string | null
+          scan_3d: string | null
           table_config_json: Json | null
           table_count: number | null
         }
         Insert: {
-          "3d_scan"?: string | null
           created_at?: string
           id?: number
           name?: string | null
+          scan_3d?: string | null
           table_config_json?: Json | null
           table_count?: number | null
         }
         Update: {
-          "3d_scan"?: string | null
           created_at?: string
           id?: number
           name?: string | null
+          scan_3d?: string | null
           table_config_json?: Json | null
           table_count?: number | null
         }
@@ -8254,6 +8544,28 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_roles: {
+        Row: {
+          restaraunt_role: Database["public"]["Enums"]["restaraunt_role"] | null
+          sole_annotation_access: boolean
+          user: string
+        }
+        Insert: {
+          restaraunt_role?:
+            | Database["public"]["Enums"]["restaraunt_role"]
+            | null
+          sole_annotation_access?: boolean
+          user: string
+        }
+        Update: {
+          restaraunt_role?:
+            | Database["public"]["Enums"]["restaraunt_role"]
+            | null
+          sole_annotation_access?: boolean
+          user?: string
+        }
+        Relationships: []
       }
       video_jobs: {
         Row: {
@@ -8866,6 +9178,7 @@ export type Database = {
           pos_role: string
           restaurant_id: string
           role: string | null
+          roles: string[] | null
           suggested_weekly_hours: number | null
           tier: string | null
           tier_updated_at: string | null
@@ -8894,6 +9207,7 @@ export type Database = {
           pos_role?: string
           restaurant_id: string
           role?: string | null
+          roles?: string[] | null
           suggested_weekly_hours?: number | null
           tier?: string | null
           tier_updated_at?: string | null
@@ -8922,6 +9236,7 @@ export type Database = {
           pos_role?: string
           restaurant_id?: string
           role?: string | null
+          roles?: string[] | null
           suggested_weekly_hours?: number | null
           tier?: string | null
           tier_updated_at?: string | null
@@ -9249,6 +9564,7 @@ export type Database = {
         | "AMBIGUOUS"
         | "DISCARDED"
         | "NEEDS_AUDIT"
+      restaraunt_role: "owner" | "employee" | "developer"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -9391,6 +9707,7 @@ export const Constants = {
         "DISCARDED",
         "NEEDS_AUDIT",
       ],
+      restaraunt_role: ["owner", "employee", "developer"],
     },
   },
 } as const
