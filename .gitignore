@@ -24,3 +24,7 @@ npm-debug.log*
 
 # TypeScript
 *.tsbuildinfo
+CLAUDE.md
+claude.md
+AGENTS.md
+agents.md

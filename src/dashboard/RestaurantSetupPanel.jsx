@@ -13,6 +13,7 @@ const SETUP_TABS = [
   { id: 'capacity', label: 'Capacity / Floor Plan' },
   { id: 'menu', label: 'Menu' },
   { id: 'modifiers', label: 'Modifiers' },
+  { id: 'routing', label: 'Kitchen Routing' },
   { id: 'employees', label: 'Employees' },
   { id: 'integrations', label: 'Integrations' },
 ]
@@ -180,6 +181,183 @@ function SectionShell({ title, description, children, actions }) {
       </div>
       <div className="mt-5">{children}</div>
     </section>
+  )
+}
+
+function KitchenRoutingSetup({ restaurantId }) {
+  const [config, setConfig] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [stationName, setStationName] = useState('')
+  const [targetName, setTargetName] = useState('Kitchen Printer')
+  const [targetHost, setTargetHost] = useState('')
+  const [selectedStationId, setSelectedStationId] = useState('')
+
+  const stations = config?.stations || []
+  const targets = config?.targets || []
+  const categories = useMemo(() => {
+    return Array.from(new Set((config?.menu_items || []).map(item => item.category || 'Other'))).sort()
+  }, [config])
+
+  const load = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const next = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing`)
+      setConfig(next)
+      setSelectedStationId(current => current || next.stations?.[0]?.id || '')
+    } catch {
+      setError('Could not load kitchen routing.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+  }, [restaurantId])
+
+  const createStation = async () => {
+    if (!stationName.trim()) return
+    await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing/stations`, {
+      method: 'POST',
+      body: JSON.stringify({ name: stationName.trim(), is_active: true }),
+    })
+    setStationName('')
+    await load()
+  }
+
+  const createTarget = async () => {
+    await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing/targets`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: targetName.trim() || 'Kitchen Printer',
+        target_type: 'printer',
+        connection_type: targetHost.trim() ? 'network' : 'dummy',
+        config: targetHost.trim() ? { host: targetHost.trim(), port: 9100, profile: 'TM-T88V' } : {},
+        is_active: true,
+      }),
+    })
+    setTargetHost('')
+    await load()
+  }
+
+  const assignTarget = async (stationId, targetId) => {
+    await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing/station-targets`, {
+      method: 'POST',
+      body: JSON.stringify({ station_id: stationId, target_id: targetId, priority: 0, is_active: true }),
+    })
+    await load()
+  }
+
+  const setFallback = async (stationId) => {
+    try {
+      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing/fallback`, {
+        method: 'PUT',
+        body: JSON.stringify({ station_id: stationId }),
+      })
+      await load()
+    } catch {
+      setError('Fallback station needs an active output target first.')
+    }
+  }
+
+  const routeCategory = async (category) => {
+    if (!selectedStationId) return
+    await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing/rules`, {
+      method: 'POST',
+      body: JSON.stringify({ source_type: 'category', category, station_id: selectedStationId, target_types: ['printer', 'display'] }),
+    })
+    await load()
+  }
+
+  return (
+    <div className="space-y-5">
+      {error && <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">{error}</div>}
+      {loading && <div className="text-sm text-dash-tertiary">Loading routing...</div>}
+
+      <div className={`rounded-xl border p-4 ${config?.fallback?.ok ? 'border-emerald-400/20 bg-emerald-400/10' : 'border-red-400/20 bg-red-400/10'}`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="label-mono">Required Fallback</p>
+            <p className="mt-1 text-sm text-dash-secondary">{config?.fallback?.ok ? 'Fallback station has an active target.' : config?.fallback?.reason || 'Kitchen send is blocked until fallback is configured.'}</p>
+          </div>
+          <span className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold text-dash-cream">{config?.fallback?.ok ? 'Ready' : 'Blocked'}</span>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+          <h4 className="text-sm font-semibold">Stations</h4>
+          <div className="mt-3 flex gap-2">
+            <TextInput value={stationName} onChange={event => setStationName(event.target.value)} placeholder="Expo, Grill, Bar" />
+            <SmallButton variant="primary" onClick={() => void createStation()}>Add</SmallButton>
+          </div>
+          <div className="mt-4 space-y-2">
+            {stations.map(station => (
+              <div key={station.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.025] p-3 text-sm">
+                <span>{station.name}</span>
+                <SmallButton onClick={() => void setFallback(station.id)}>{station.is_fallback ? 'Fallback' : 'Use fallback'}</SmallButton>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+          <h4 className="text-sm font-semibold">Targets</h4>
+          <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+            <TextInput value={targetName} onChange={event => setTargetName(event.target.value)} placeholder="Target name" />
+            <TextInput value={targetHost} onChange={event => setTargetHost(event.target.value)} placeholder="Host/IP or blank dummy" />
+            <SmallButton variant="primary" onClick={() => void createTarget()}>Add</SmallButton>
+          </div>
+          <div className="mt-4 space-y-2">
+            {targets.map(target => (
+              <div key={target.id} className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 text-sm md:grid-cols-[1fr_auto]">
+                <span>{target.name} · {target.connection_type}</span>
+                {stations[0] && <SmallButton onClick={() => void assignTarget(stations[0].id, target.id)}>Assign first station</SmallButton>}
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <section className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h4 className="text-sm font-semibold">Category Defaults</h4>
+          <SelectInput value={selectedStationId} onChange={event => setSelectedStationId(event.target.value)}>
+            {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
+          </SelectInput>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {categories.map(category => (
+            <SmallButton key={category} onClick={() => void routeCategory(category)}>{category}</SmallButton>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+        <h4 className="text-sm font-semibold">Item Coverage</h4>
+        <div className="mt-3 space-y-2">
+          {(config?.menu_items || []).map(item => (
+            <div key={item.id} className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-sm md:grid-cols-[1fr_auto]">
+              <span>{item.name}</span>
+              <span className={item.routing_publishable ? 'text-emerald-200' : 'text-amber-200'}>
+                {item.routing_publishable ? 'Confirmed' : 'Needs confirmation'}
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+        <h4 className="text-sm font-semibold">Audit</h4>
+        <div className="mt-3 space-y-2 text-sm text-dash-tertiary">
+          {(config?.audit_events || []).slice(0, 20).map(event => (
+            <div key={event.id} className="rounded-lg border border-white/10 px-3 py-2">{event.action} · {new Date(event.created_at).toLocaleString()}</div>
+          ))}
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -899,6 +1077,15 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               void loadMenuItems()
             }}
           />
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'routing' && (
+        <SectionShell
+          title="Kitchen Routing"
+          description="Configure stations, output targets, fallback behavior, category defaults, item coverage, modifier overrides, and audit history."
+        >
+          <KitchenRoutingSetup restaurantId={restaurantId} />
         </SectionShell>
       )}
 

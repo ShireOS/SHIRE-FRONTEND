@@ -44,7 +44,7 @@ export interface OnboardingData {
   // Step 6: Menu
   menu_import_method: 'skip' | 'manual' | 'upload' | 'toast' | 'scrape' | 'template'
 
-  // Step 7: Team
+  // Step 8: Team
   team_setup_method: 'skip' | 'invite' | 'sevenshifts'
   invites: TeamInvite[]
 }
@@ -118,7 +118,7 @@ const INITIAL_DATA: OnboardingData = {
   invites: [],
 }
 
-const ONBOARDING_MAX_STEP = 8
+const ONBOARDING_MAX_STEP = 9
 const REQUEST_TIMEOUT_MS = 20000
 const ONBOARDING_DRAFT_VERSION = 1
 

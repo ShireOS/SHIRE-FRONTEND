@@ -13,6 +13,7 @@ import { HoursStep } from './steps/HoursStep'
 import { CapacityStep } from './steps/CapacityStep'
 import { MenuStep } from './steps/MenuStep'
 import { ModifierStep } from './steps/ModifierStep'
+import { RoutingStep } from './steps/RoutingStep'
 import { TeamStep } from './steps/TeamStep'
 
 export function OnboardingPage() {
@@ -89,6 +90,8 @@ export function OnboardingPage() {
       case 7:
         return <ModifierStep onboarding={onboarding} />
       case 8:
+        return <RoutingStep onboarding={onboarding} />
+      case 9:
         return <TeamStep onboarding={onboarding} />
       default:
         return null
