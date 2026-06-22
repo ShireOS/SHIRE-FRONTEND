@@ -1,4 +1,4 @@
-import { Database, initClient, getClient, UserRole } from "@shire/db"
+import { Database, initClient, getClient, Restaurant } from "@shire/db"
 import Constants from 'expo-constants'
 
 export type userRole = "owner" | "employee" | "developer" | null
@@ -62,4 +62,20 @@ export async function getUserRole(): Promise<userRole | undefined> {
 
     if (data.data == null) return
     return data.data[0].restaraunt_role
+}
+
+export async function getUserRestaraunts(): Promise<Restaurant[] | undefined> {
+    const client = getSBClient()
+    const user = await client.auth.getUser()
+
+    if (user.data.user == null) return
+
+    const data = await client.from("restaraunt_assignments").select("*").eq("user", user.data.user.id)
+    if (data.data == null) return
+
+    const restaraunt_ids = data.data.map((rest) => rest.restaraunt ?? "")
+    const restaraunts = await client.from("restaurants").select("*").contains("id", restaraunt_ids)
+
+    if (restaraunts.data == null) return
+    return restaraunts.data
 }
