@@ -12,4 +12,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supabaseUrl: process.env.SUPABASE_URL,
     supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY,
   },
+  plugins: [
+    "expo-web-browser"
+  ]
 })
