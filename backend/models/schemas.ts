@@ -5772,6 +5772,39 @@ export type Database = {
           },
         ]
       }
+      restaraunt_assignments: {
+        Row: {
+          id: number
+          restaraunt: string | null
+          user: string
+        }
+        Insert: {
+          id?: number
+          restaraunt?: string | null
+          user: string
+        }
+        Update: {
+          id?: number
+          restaraunt?: string | null
+          user?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "restaraunt_assignments_restaraunt_fkey"
+            columns: ["restaraunt"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "restaraunt_assignments_user_fkey"
+            columns: ["user"]
+            isOneToOne: false
+            referencedRelation: "user_roles"
+            referencedColumns: ["user"]
+          },
+        ]
+      }
       restaurant_integrations: {
         Row: {
           access_token_encrypted: string | null

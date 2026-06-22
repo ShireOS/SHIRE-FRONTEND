@@ -1,7 +1,7 @@
 import { color_pallet } from '@/styles/colors';
 import { typography } from '@/styles/typography';
 import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
+import { Slot, Tabs } from 'expo-router';
 import { Image, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LiquidGlassTabBar } from '@/components/LiquidGlassTabBar';
@@ -35,6 +35,7 @@ export default function RootLayout() {
         <Text style={[{...typography.h1, fontSize: 29}, { color: '#151313'}]}>Shire</Text>
         <View style={{width: 49}}></View>
       </View>
+      <Slot></Slot>
       <View style={{flex: 1}}>
         <BottomTabBar />
       </View>
