@@ -1,0 +1,15 @@
+import {Database} from "./schemas"
+
+export type Profile = Database['public']['Tables']['profiles']['Row']
+export type Restaurant = Database['public']['Tables']['restaurants']['Row']
+export type RestaurantMember = Database['public']['Tables']['restaurant_members']['Row']
+export type OperatingHours = Database['public']['Tables']['operating_hours']['Row']
+export type Integration = Database['public']['Tables']['integrations']['Row']
+export type Invitation = Database['public']['Tables']['invitations']['Row']
+export type Waiter = Database['public']['Tables']['waiters']['Row']
+export type Table = Database['public']['Tables']['tables']['Row']
+export type Section = Database['public']['Tables']['sections']['Row']
+export type MenuItem = Database['public']['Tables']['menu_items']['Row']
+export type Room = Database['public']['Tables']['rooms']['Row']
+export type TableScan = Database['public']['Tables']['table_scan']['Row']
+export type UserRole = Database['public']['Tables']['user_roles']['Row']
