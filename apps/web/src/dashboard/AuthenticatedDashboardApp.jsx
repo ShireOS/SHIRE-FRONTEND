@@ -16,6 +16,7 @@ import ModernRestaurantSetupPanel, {
   buildSetupWarnings as buildModernSetupWarnings,
   warningCount as modernWarningCount,
 } from './RestaurantSetupPanel'
+import { TimeEntry } from './components/shared/TimeEntry'
 
 function LoadingScreen() {
   return (
@@ -142,6 +143,7 @@ const TABS = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'setup', label: 'Edit Setup' },
   { id: 'scheduling', label: 'Scheduling' },
+  { id: 'messaging', label: 'Messaging' },
   { id: 'payments', label: 'Payments / Plan' },
 ]
 
@@ -563,39 +565,6 @@ async function fetchWithSupabaseAuth(endpoint, options = {}) {
   }
   if (response.status === 204) return null
   return response.json()
-}
-
-function formatTimeEntry(value) {
-  const digits = String(value || '').replace(/\D/g, '').slice(0, 4)
-  if (digits.length === 1 && !['0', '1'].includes(digits)) return `0${digits}:`
-  if (digits.length < 2) return digits
-  if (digits.length === 2) return `${digits}:`
-  return `${digits.slice(0, 2)}:${digits.slice(2)}`
-}
-
-function TimeEntry({ value, onChange, placeholder = '17:00', ariaLabel }) {
-  const safeValue = value || ''
-  const remainder = safeValue.length < placeholder.length ? placeholder.slice(safeValue.length) : ''
-
-  return (
-    <div className="relative">
-      <div className="pointer-events-none absolute inset-0 flex items-center rounded-xl px-3 py-2 font-mono text-sm">
-        <span className="text-dash-cream">{safeValue}</span>
-        <span className="text-dash-tertiary/30">{remainder}</span>
-      </div>
-      <input
-        type="text"
-        inputMode="numeric"
-        autoComplete="off"
-        aria-label={ariaLabel}
-        value={safeValue}
-        onChange={event => onChange(formatTimeEntry(event.target.value))}
-        placeholder={placeholder}
-        maxLength={5}
-        className="relative z-10 w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 font-mono text-sm text-transparent caret-white outline-none placeholder:text-transparent focus:border-dash-gold/70"
-      />
-    </div>
-  )
 }
 
 const SCHEDULING_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -1856,7 +1825,7 @@ function SchedulingPanel({ restaurantId }) {
                 />
                 <div className="grid grid-cols-2 gap-2">
                   <TimeEntry value={shiftForm.shift_start} onChange={value => setShiftForm(prev => ({ ...prev, shift_start: value }))} placeholder="17:00" ariaLabel="Shift start" />
-                  <TimeEntry value={shiftForm.shift_end} onChange={value => setShiftForm(prev => ({ ...prev, shift_end: value }))} placeholder="22:00" ariaLabel="Shift end" />
+                  <TimeEntry value={shiftForm.shift_end} onChange={value => setShiftForm(prev => ({ ...prev, shift_end: value }))} placeholder="17:00" ariaLabel="Shift end" />
                 </div>
                 <label className="flex items-center gap-2 text-sm text-dash-secondary">
                   <input type="checkbox" checked={shiftForm.is_locked} onChange={event => setShiftForm(prev => ({ ...prev, is_locked: event.target.checked }))} />
@@ -2118,7 +2087,7 @@ function SchedulingPanel({ restaurantId }) {
                 </select>
                 <div className="grid grid-cols-2 gap-2">
                   <TimeEntry value={coverageForm.start_time} onChange={value => setCoverageForm(prev => ({ ...prev, start_time: value }))} placeholder="17:00" ariaLabel="Coverage start" />
-                  <TimeEntry value={coverageForm.end_time} onChange={value => setCoverageForm(prev => ({ ...prev, end_time: value }))} placeholder="22:00" ariaLabel="Coverage end" />
+                  <TimeEntry value={coverageForm.end_time} onChange={value => setCoverageForm(prev => ({ ...prev, end_time: value }))} placeholder="17:00" ariaLabel="Coverage end" />
                 </div>
                 <label className="flex items-center gap-2 text-sm text-dash-secondary">
                   <input type="checkbox" checked={coverageForm.is_prime_shift} onChange={event => setCoverageForm(prev => ({ ...prev, is_prime_shift: event.target.checked }))} />
@@ -2261,34 +2230,107 @@ function SchedulingPanel({ restaurantId }) {
 }
 
 const EMPLOYEE_PORTAL_TABS = [
+  { id: 'home', label: 'Home' },
   { id: 'schedule', label: 'Schedule' },
-  { id: 'availability', label: 'Availability' },
-  { id: 'requests', label: 'Requests' },
-  { id: 'preferences', label: 'Preferences' },
+  { id: 'messaging', label: 'Messaging' },
+  { id: 'more', label: 'More' },
 ]
 
 const EMPLOYEE_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-const EMPLOYEE_SHIFT_TYPES = ['breakfast', 'lunch', 'dinner', 'close', 'weekend']
+const EMPLOYEE_DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const EMPLOYEE_REASON_OPTIONS = [
+  'School',
+  'Family',
+  'Second job',
+  'Commute',
+  'Health',
+  'Preferred routine',
+]
 
-const emptyAvailabilityForm = {
-  day_of_week: 1,
-  start_time: '17:00',
-  end_time: '22:00',
-  availability_type: 'preferred',
+const emptyEmployeeAvailabilityForm = {
+  day_of_week: 0,
+  recurrence: 'recurring',
+  date: '',
+  start_time: '10:00',
+  end_time: '17:00',
+  availability_type: 'available',
+  reason: '',
+  note: '',
+}
+
+const emptyEmployeeTimeOffForm = {
+  start_date: '',
+  end_date: '',
+  priority: 'normal',
+  title: 'Time off',
   notes: '',
 }
 
-const emptyRequestForm = {
-  request_type: 'time_off',
-  priority: 'normal',
-  start_date: '',
-  end_date: '',
-  day_of_week: '',
-  start_time: '',
-  end_time: '',
-  requested_weekly_hours: '',
-  title: '',
-  notes: '',
+function toDateKey(value) {
+  const date = value instanceof Date ? value : new Date(`${value}T00:00:00`)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function startOfWeek(value = new Date()) {
+  const date = value instanceof Date ? new Date(value) : new Date(`${value}T00:00:00`)
+  date.setHours(0, 0, 0, 0)
+  const day = date.getDay() || 7
+  date.setDate(date.getDate() - day + 1)
+  return date
+}
+
+function addDays(value, count) {
+  const date = value instanceof Date ? new Date(value) : new Date(`${value}T00:00:00`)
+  date.setDate(date.getDate() + count)
+  return date
+}
+
+function formatEmployeeTime(value) {
+  if (!value) return ''
+  const [hourPart, minutePart = '00'] = String(value).slice(0, 5).split(':')
+  const hour = Number(hourPart)
+  const suffix = hour >= 12 ? 'PM' : 'AM'
+  const twelve = hour % 12 || 12
+  return `${twelve}:${minutePart} ${suffix}`
+}
+
+function shiftDurationHours(shift) {
+  if (!shift?.shift_start || !shift?.shift_end) return 0
+  const [startHour, startMinute] = String(shift.shift_start).slice(0, 5).split(':').map(Number)
+  const [endHour, endMinute] = String(shift.shift_end).slice(0, 5).split(':').map(Number)
+  let minutes = (endHour * 60 + endMinute) - (startHour * 60 + startMinute)
+  if (minutes < 0) minutes += 24 * 60
+  return minutes / 60
+}
+
+function groupShiftsByDate(shifts) {
+  return shifts.reduce((acc, shift) => {
+    const key = String(shift.shift_date)
+    acc[key] = [...(acc[key] || []), shift]
+    return acc
+  }, {})
+}
+
+function greetingForNow() {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
+  return 'Good evening'
+}
+
+function contactName(contact) {
+  return [contact?.name, contact?.role ? `(${contact.role})` : ''].filter(Boolean).join(' ')
+}
+
+function conversationDisplayName(conversation, profile) {
+  if (conversation?.title) return conversation.title
+  const members = Array.isArray(conversation?.members) ? conversation.members : []
+  const others = members.filter(member => String(member.id) !== String(profile?.waiter_id))
+  if (others.length === 0) return 'Staff chat'
+  return others.map(member => member.name).join(', ')
 }
 
 function EmployeePortal() {
@@ -2300,14 +2342,27 @@ function EmployeePortal() {
       return null
     }
   })
-  const [schedule, setSchedule] = useState([])
+  const [weekSchedule, setWeekSchedule] = useState({ mine: [], all: [] })
   const [requests, setRequests] = useState([])
   const [availability, setAvailability] = useState([])
-  const [preferences, setPreferences] = useState(null)
-  const [activeEmployeeTab, setActiveEmployeeTab] = useState('schedule')
-  const [availabilityForm, setAvailabilityForm] = useState(emptyAvailabilityForm)
-  const [requestForm, setRequestForm] = useState(emptyRequestForm)
-  const [employeeNote, setEmployeeNote] = useState('')
+  const [contacts, setContacts] = useState([])
+  const [earnings, setEarnings] = useState(null)
+  const [conversations, setConversations] = useState([])
+  const [selectedConversationId, setSelectedConversationId] = useState('')
+  const [conversationMessages, setConversationMessages] = useState([])
+  const [announcements, setAnnouncements] = useState([])
+  const [activeEmployeeTab, setActiveEmployeeTab] = useState('home')
+  const [scheduleScope, setScheduleScope] = useState('mine')
+  const [messageSubtab, setMessageSubtab] = useState('messages')
+  const [morePage, setMorePage] = useState('')
+  const [weekStart, setWeekStart] = useState(() => toDateKey(startOfWeek()))
+  const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()))
+  const [touchStartX, setTouchStartX] = useState(null)
+  const scheduleListRef = useRef(null)
+  const scheduleDayRefs = useRef({})
+  const [availabilityForm, setAvailabilityForm] = useState(emptyEmployeeAvailabilityForm)
+  const [timeOffForm, setTimeOffForm] = useState(emptyEmployeeTimeOffForm)
+  const [messageText, setMessageText] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [message, setMessage] = useState('')
   const token = localStorage.getItem('shire_employee_token')
@@ -2329,27 +2384,23 @@ function EmployeePortal() {
     let cancelled = false
     Promise.all([
       employeeFetch('/employee/me'),
-      employeeFetch('/employee/schedule'),
       employeeFetch('/employee/requests'),
       employeeFetch('/employee/availability'),
-      employeeFetch('/employee/preferences'),
+      employeeFetch('/employee/contacts'),
+      employeeFetch('/employee/earnings/biweekly'),
+      employeeFetch('/employee/messages/conversations'),
+      employeeFetch('/employee/announcements'),
     ])
-      .then(([me, shiftData, requestData, availabilityData, preferenceData]) => {
+      .then(([me, requestData, availabilityData, contactData, earningsData, conversationData, announcementData]) => {
         if (cancelled) return
         setProfile(me)
-        setSchedule(shiftData)
         setRequests(requestData)
         setAvailability(availabilityData)
-        setPreferences(preferenceData || {
-          preferred_roles: [],
-          preferred_shift_types: [],
-          preferred_sections: [],
-          max_shifts_per_week: '',
-          max_hours_per_week: '',
-          min_hours_per_week: '',
-          avoid_clopening: true,
-          notes: '',
-        })
+        setContacts(contactData)
+        setEarnings(earningsData)
+        setConversations(conversationData)
+        setAnnouncements(announcementData)
+        if (conversationData[0]?.id) setSelectedConversationId(String(conversationData[0].id))
       })
       .catch(err => {
         if (!cancelled) setMessage(err instanceof Error ? err.message : 'Could not load employee portal')
@@ -2359,6 +2410,54 @@ function EmployeePortal() {
     }
   }, [token])
 
+  useEffect(() => {
+    if (!token) return
+    let cancelled = false
+    Promise.all([
+      employeeFetch(`/employee/schedule/week?week_start=${weekStart}&scope=mine`),
+      employeeFetch(`/employee/schedule/week?week_start=${weekStart}&scope=all`),
+    ])
+      .then(([mine, all]) => {
+        if (cancelled) return
+        setWeekSchedule({ mine: mine.items || [], all: all.items || [] })
+      })
+      .catch(err => {
+        if (!cancelled) setMessage(err instanceof Error ? err.message : 'Could not load schedule')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token, weekStart])
+
+  useEffect(() => {
+    if (!token || !selectedConversationId) {
+      setConversationMessages([])
+      return
+    }
+    let cancelled = false
+    employeeFetch(`/employee/messages/conversations/${selectedConversationId}/messages`)
+      .then(data => {
+        if (!cancelled) setConversationMessages(Array.isArray(data) ? data : [])
+      })
+      .catch(err => {
+        if (!cancelled) setMessage(err instanceof Error ? err.message : 'Could not load messages')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token, selectedConversationId])
+
+  useEffect(() => {
+    if (activeEmployeeTab !== 'schedule') return
+    const frame = requestAnimationFrame(() => {
+      scheduleDayRefs.current[selectedDate]?.scrollIntoView({
+        block: 'start',
+        behavior: 'smooth',
+      })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [activeEmployeeTab, scheduleScope, selectedDate, weekStart])
+
   if (!token) {
     return <Navigate to="/auth/login" replace />
   }
@@ -2367,6 +2466,23 @@ function EmployeePortal() {
     localStorage.removeItem('shire_employee_token')
     localStorage.removeItem('shire_employee_profile')
     navigate('/auth/login', { replace: true })
+  }
+
+  const refreshEmployeeData = async () => {
+    const [requestData, availabilityData, contactData, earningsData, conversationData, announcementData] = await Promise.all([
+      employeeFetch('/employee/requests'),
+      employeeFetch('/employee/availability'),
+      employeeFetch('/employee/contacts'),
+      employeeFetch('/employee/earnings/biweekly'),
+      employeeFetch('/employee/messages/conversations'),
+      employeeFetch('/employee/announcements'),
+    ])
+    setRequests(requestData)
+    setAvailability(availabilityData)
+    setContacts(contactData)
+    setEarnings(earningsData)
+    setConversations(conversationData)
+    setAnnouncements(announcementData)
   }
 
   const saveAvailability = async (nextAvailability = availability) => {
@@ -2380,6 +2496,8 @@ function EmployeePortal() {
           start_time: String(entry.start_time).slice(0, 5),
           end_time: String(entry.end_time).slice(0, 5),
           availability_type: entry.availability_type,
+          effective_from: entry.effective_from || null,
+          effective_until: entry.effective_until || null,
           notes: entry.notes || null,
         }))),
       })
@@ -2392,43 +2510,53 @@ function EmployeePortal() {
     }
   }
 
-  const addAvailability = async () => {
-    const nextAvailability = [...availability, availabilityForm]
-    setAvailability(nextAvailability)
-    setAvailabilityForm(emptyAvailabilityForm)
+  const submitAvailability = async () => {
+    const note = availabilityForm.note.trim()
+    const reason = availabilityForm.reason.trim()
+    if (!reason && !note) {
+      setMessage('Choose a reason or add a note before saving availability.')
+      return
+    }
+    const nextEntry = {
+      day_of_week: Number(availabilityForm.day_of_week),
+      start_time: availabilityForm.start_time,
+      end_time: availabilityForm.end_time,
+      availability_type: availabilityForm.availability_type === 'not_available' ? 'unavailable' : 'available',
+      effective_from: availabilityForm.recurrence === 'one_time' ? availabilityForm.date || null : null,
+      effective_until: availabilityForm.recurrence === 'one_time' ? availabilityForm.date || null : null,
+      notes: [reason, note].filter(Boolean).join(' · '),
+    }
+    const nextAvailability = [...availability, nextEntry]
     await saveAvailability(nextAvailability)
+    if (note) {
+      try {
+        const created = await employeeFetch('/employee/requests/parse', {
+          method: 'POST',
+          body: JSON.stringify({ raw_text: note }),
+        })
+        setRequests(prev => [created, ...prev])
+      } catch {
+        await createRequest({
+          request_type: 'availability_exception',
+          priority: 'normal',
+          start_date: nextEntry.effective_from,
+          end_date: nextEntry.effective_until,
+          day_of_week: nextEntry.day_of_week,
+          start_time: nextEntry.start_time,
+          end_time: nextEntry.end_time,
+          title: 'Availability note',
+          notes: note,
+          structured_payload: { source: 'employee_availability_note' },
+        })
+      }
+    }
+    setAvailabilityForm(emptyEmployeeAvailabilityForm)
   }
 
   const removeAvailability = async (index) => {
     const nextAvailability = availability.filter((_, itemIndex) => itemIndex !== index)
     setAvailability(nextAvailability)
     await saveAvailability(nextAvailability)
-  }
-
-  const savePreferences = async () => {
-    setIsSaving(true)
-    setMessage('')
-    try {
-      const saved = await employeeFetch('/employee/preferences', {
-        method: 'PUT',
-        body: JSON.stringify({
-          preferred_roles: preferences?.preferred_roles || [],
-          preferred_shift_types: preferences?.preferred_shift_types || [],
-          preferred_sections: preferences?.preferred_sections || [],
-          max_shifts_per_week: preferences?.max_shifts_per_week === '' ? null : Number(preferences?.max_shifts_per_week),
-          max_hours_per_week: preferences?.max_hours_per_week === '' ? null : Number(preferences?.max_hours_per_week),
-          min_hours_per_week: preferences?.min_hours_per_week === '' ? null : Number(preferences?.min_hours_per_week),
-          avoid_clopening: preferences?.avoid_clopening ?? true,
-          notes: preferences?.notes || null,
-        }),
-      })
-      setPreferences(saved)
-      setMessage('Preferences saved.')
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not save preferences')
-    } finally {
-      setIsSaving(false)
-    }
   }
 
   const createRequest = async (payload) => {
@@ -2450,64 +2578,72 @@ function EmployeePortal() {
     }
   }
 
-  const submitRequestForm = async () => {
+  const submitTimeOff = async () => {
     const created = await createRequest({
-      request_type: requestForm.request_type,
-      priority: requestForm.priority,
-      start_date: requestForm.start_date || null,
-      end_date: requestForm.end_date || requestForm.start_date || null,
-      day_of_week: requestForm.day_of_week === '' ? null : Number(requestForm.day_of_week),
-      start_time: requestForm.start_time || null,
-      end_time: requestForm.end_time || null,
-      title: requestForm.title || null,
-      notes: requestForm.notes || null,
-      structured_payload: {
-        source: 'employee_form',
-        requested_weekly_hours: requestForm.requested_weekly_hours === '' ? null : Number(requestForm.requested_weekly_hours),
-      },
+      request_type: 'time_off',
+      priority: timeOffForm.priority,
+      start_date: timeOffForm.start_date || null,
+      end_date: timeOffForm.end_date || timeOffForm.start_date || null,
+      title: timeOffForm.title || 'Time off',
+      notes: timeOffForm.notes || null,
+      structured_payload: { source: 'employee_time_off_page' },
     })
-    if (created) setRequestForm(emptyRequestForm)
+    if (created) setTimeOffForm(emptyEmployeeTimeOffForm)
   }
 
-  const submitEmployeeNote = async () => {
-    if (!employeeNote.trim()) return
-    setIsSaving(true)
-    setMessage('')
+  const sendMessage = async () => {
+    if (!selectedConversationId || !messageText.trim()) return
+    const body = messageText.trim()
+    setMessageText('')
     try {
-      const created = await employeeFetch('/employee/requests/parse', {
+      const sent = await employeeFetch(`/employee/messages/conversations/${selectedConversationId}/messages`, {
         method: 'POST',
-        body: JSON.stringify({ raw_text: employeeNote.trim() }),
+        body: JSON.stringify({ body }),
       })
-      setRequests(prev => [created, ...prev])
-      setEmployeeNote('')
-      setMessage('Scheduling note parsed and submitted.')
+      setConversationMessages(prev => [...prev, sent])
+      const nextConversations = await employeeFetch('/employee/messages/conversations')
+      setConversations(nextConversations)
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not parse note')
-    } finally {
-      setIsSaving(false)
+      setMessage(err instanceof Error ? err.message : 'Could not send message')
     }
   }
 
-  const togglePreferredShiftType = (shiftType) => {
-    setPreferences(prev => {
-      const current = prev?.preferred_shift_types || []
-      return {
-        ...(prev || {}),
-        preferred_shift_types: current.includes(shiftType)
-          ? current.filter(item => item !== shiftType)
-          : [...current, shiftType],
-      }
-    })
+  const weekDates = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index))
+  const todayKey = toDateKey(new Date())
+  const scopedShifts = scheduleScope === 'mine' ? weekSchedule.mine : weekSchedule.all
+  const shiftsByDate = groupShiftsByDate(scopedShifts)
+  const todayShifts = weekSchedule.mine.filter(shift => String(shift.shift_date) === todayKey)
+  const upcomingMine = weekSchedule.mine
+    .filter(shift => String(shift.shift_date) >= todayKey)
+    .slice(0, 5)
+  const totalWeekHours = weekSchedule.mine.reduce((sum, shift) => sum + shiftDurationHours(shift), 0)
+  const selectedConversation = conversations.find(item => String(item.id) === String(selectedConversationId))
+
+  const moveWeek = (direction) => {
+    const nextWeekStart = toDateKey(addDays(weekStart, direction * 7))
+    setWeekStart(nextWeekStart)
+    setSelectedDate(nextWeekStart)
+  }
+
+  const handleScheduleTouchEnd = (event) => {
+    if (touchStartX === null) return
+    const delta = event.changedTouches[0].clientX - touchStartX
+    if (Math.abs(delta) > 60) moveWeek(delta < 0 ? 1 : -1)
+    setTouchStartX(null)
   }
 
   return (
-    <main className="min-h-screen bg-dash-base px-6 py-8 text-dash-cream">
-      <div className="mx-auto max-w-6xl space-y-6">
+    <main className="min-h-screen bg-dash-base px-4 py-6 text-dash-cream md:px-6">
+      <div className="mx-auto max-w-4xl space-y-5 pb-24">
         <header className="flex flex-col gap-4 border-b border-white/10 pb-6 md:flex-row md:items-end md:justify-between">
           <div>
             <p className="label-mono">Employee Portal</p>
-            <h1 className="mt-2 text-4xl font-semibold tracking-tight">{profile?.name || 'Employee'}</h1>
-            <p className="mt-2 text-dash-secondary">Schedule, availability, ideal times, and requests.</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight">{greetingForNow()}, {profile?.name || 'there'}</h1>
+            <p className="mt-2 text-dash-secondary">
+              {todayShifts.length === 0
+                ? 'You have the day off, enjoy!'
+                : `You have work from ${formatEmployeeTime(todayShifts[0].shift_start)} to ${formatEmployeeTime(todayShifts[todayShifts.length - 1].shift_end)}.`}
+            </p>
           </div>
           <button
             type="button"
@@ -2520,29 +2656,317 @@ function EmployeePortal() {
 
         {message && <div className="rounded-xl border border-white/10 bg-white/[0.035] p-4 text-sm text-dash-secondary">{message}</div>}
 
-        <section className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
-            <h2 className="text-xl font-semibold">My Schedule</h2>
-            <p className="mt-2 text-sm text-dash-secondary">{schedule.length} upcoming published shifts.</p>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
-            <h2 className="text-xl font-semibold">Ideal Times</h2>
-            <p className="mt-2 text-sm text-dash-secondary">Preferred shift windows and recurring availability live here.</p>
-          </div>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
-            <h2 className="text-xl font-semibold">Requests</h2>
-            <p className="mt-2 text-sm text-dash-secondary">{requests.length} submitted request{requests.length === 1 ? '' : 's'}.</p>
-          </div>
-        </section>
+        {activeEmployeeTab === 'home' && (
+          <div className="space-y-5">
+            <section className="rounded-2xl border border-dash-gold/30 bg-dash-gold/10 p-5">
+              <p className="label-mono">Today</p>
+              <h2 className="mt-2 text-2xl font-semibold">
+                {todayShifts.length === 0 ? 'Day off' : `${formatEmployeeTime(todayShifts[0].shift_start)} - ${formatEmployeeTime(todayShifts[todayShifts.length - 1].shift_end)}`}
+              </h2>
+              <p className="mt-2 text-sm text-dash-secondary">
+                {todayShifts.length === 0
+                  ? 'No shift is assigned to you today.'
+                  : todayShifts.map(shift => `${shift.role || shift.waiter_role || 'Staff'} ${formatEmployeeTime(shift.shift_start)}-${formatEmployeeTime(shift.shift_end)}`).join(' · ')}
+              </p>
+            </section>
 
-        <nav className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/[0.025] p-2">
+            <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold">Your upcoming shifts</h2>
+                <button type="button" onClick={() => setActiveEmployeeTab('schedule')} className="text-sm font-semibold text-dash-gold">View all</button>
+              </div>
+              {upcomingMine.length === 0 ? (
+                <p className="mt-4 rounded-xl border border-dashed border-white/15 p-4 text-sm text-dash-secondary">Nobody here!</p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {upcomingMine.map(shift => (
+                    <div key={shift.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-4 text-sm">
+                      <p className="font-semibold">{new Date(`${shift.shift_date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</p>
+                      <p className="mt-1 text-dash-secondary">{formatEmployeeTime(shift.shift_start)} - {formatEmployeeTime(shift.shift_end)} · {shift.role || shift.waiter_role || 'Staff'}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:grid-cols-3">
+              <div>
+                <p className="label-mono">Biweekly wages</p>
+                <p className="mt-2 text-2xl font-semibold">{earnings?.estimated_wages == null ? 'Unset' : `$${Number(earnings.estimated_wages).toFixed(2)}`}</p>
+                <p className="mt-1 text-xs text-dash-tertiary">{earnings?.wage_status || 'Using saved wage data when configured.'}</p>
+              </div>
+              <div>
+                <p className="label-mono">Shifts</p>
+                <p className="mt-2 text-2xl font-semibold">{earnings?.shift_count ?? 0}</p>
+              </div>
+              <div>
+                <p className="label-mono">Hours</p>
+                <p className="mt-2 text-2xl font-semibold">{Number(earnings?.hours ?? totalWeekHours).toFixed(1)}</p>
+              </div>
+            </section>
+          </div>
+        )}
+
+        {activeEmployeeTab === 'schedule' && (
+          <section
+            className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.025] p-4"
+            onTouchStart={event => setTouchStartX(event.touches[0].clientX)}
+            onTouchEnd={handleScheduleTouchEnd}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex gap-2">
+                {[
+                  ['mine', 'My shifts'],
+                  ['all', 'Schedule'],
+                ].map(([id, label]) => (
+                  <button key={id} type="button" onClick={() => setScheduleScope(id)} className={['rounded-xl px-4 py-2 text-sm font-semibold transition', scheduleScope === id ? 'bg-white text-black' : 'border border-white/10 text-dash-secondary'].join(' ')}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => moveWeek(-1)} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-dash-secondary">Prev</button>
+                <button type="button" onClick={() => moveWeek(1)} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-dash-secondary">Next</button>
+              </div>
+            </div>
+            <div className="grid grid-cols-7 gap-2">
+              {weekDates.map((day, index) => {
+                const key = toDateKey(day)
+                return (
+                  <button key={key} type="button" onClick={() => setSelectedDate(key)} className={['rounded-xl border px-2 py-3 text-center text-xs font-semibold transition', key === selectedDate ? 'border-dash-gold bg-dash-gold text-black' : key === todayKey ? 'border-dash-gold/60 text-dash-gold' : 'border-white/10 text-dash-secondary'].join(' ')}>
+                    <span className="block">{EMPLOYEE_DAYS_SHORT[index]}</span>
+                    <span className="mt-1 block text-base">{day.getDate()}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <div ref={scheduleListRef} className="max-h-[58vh] space-y-3 overflow-y-auto pr-1">
+              {weekDates.map(day => {
+                const key = toDateKey(day)
+                const dayShifts = shiftsByDate[key] || []
+                return (
+                  <article
+                    key={key}
+                    ref={element => {
+                      if (element) scheduleDayRefs.current[key] = element
+                    }}
+                    className={['rounded-2xl border p-4', key === selectedDate ? 'border-dash-gold/50 bg-dash-gold/5' : 'border-white/10 bg-white/[0.025]'].join(' ')}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="font-semibold">{day.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</h3>
+                      <span className="text-xs text-dash-tertiary">{dayShifts.length} shift{dayShifts.length === 1 ? '' : 's'}</span>
+                    </div>
+                    {dayShifts.length === 0 ? (
+                      <p className="mt-4 rounded-xl border border-dashed border-white/15 p-4 text-sm text-dash-secondary">Nobody here!</p>
+                    ) : (
+                      <div className="mt-4 space-y-2">
+                        {dayShifts.map(shift => (
+                          <div key={shift.id} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-3 text-sm">
+                            <div>
+                              <p className="font-semibold">{shift.waiter_name || profile?.name || 'Staff'}</p>
+                              <p className="capitalize text-dash-tertiary">{shift.role || shift.waiter_role || 'Staff'}</p>
+                            </div>
+                            <p className="text-right text-dash-secondary">{formatEmployeeTime(shift.shift_start)}<br />{formatEmployeeTime(shift.shift_end)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                )
+              })}
+            </div>
+          </section>
+        )}
+
+        {activeEmployeeTab === 'messaging' && (
+          <section className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+            <div className="flex gap-2">
+              {[
+                ['messages', 'Messages'],
+                ['announcements', 'Announcements'],
+              ].map(([id, label]) => (
+                <button key={id} type="button" onClick={() => setMessageSubtab(id)} className={['rounded-xl px-4 py-2 text-sm font-semibold transition', messageSubtab === id ? 'bg-white text-black' : 'border border-white/10 text-dash-secondary'].join(' ')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {messageSubtab === 'messages' ? (
+              <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
+                <div className="space-y-3">
+                  <p className="rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-dash-secondary">
+                    Managers add employees to chats. Your active conversations show below.
+                  </p>
+                  <div className="space-y-2">
+                    {conversations.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-dash-secondary">No messages yet.</p>
+                    ) : conversations.map(conversation => (
+                      <button key={conversation.id} type="button" onClick={() => setSelectedConversationId(String(conversation.id))} className={['w-full rounded-xl border p-3 text-left text-sm transition', String(selectedConversationId) === String(conversation.id) ? 'border-dash-gold/60 bg-dash-gold/10' : 'border-white/10 bg-white/[0.025]'].join(' ')}>
+                        <p className="font-semibold">{conversationDisplayName(conversation, profile)}</p>
+                        <p className="mt-1 truncate text-xs text-dash-tertiary">{conversation.last_message_preview || 'No messages yet'}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex min-h-[420px] flex-col rounded-xl border border-white/10 bg-white/[0.025]">
+                  <div className="border-b border-white/10 p-4">
+                    <h2 className="font-semibold">{selectedConversation ? conversationDisplayName(selectedConversation, profile) : 'Select a chat'}</h2>
+                  </div>
+                  <div className="flex-1 space-y-3 overflow-y-auto p-4">
+                    {conversationMessages.length === 0 ? (
+                      <p className="text-sm text-dash-secondary">No messages here yet.</p>
+                    ) : conversationMessages.map(item => (
+                      <div key={item.id} className={['max-w-[82%] rounded-2xl border p-3 text-sm', item.sender_waiter_id && String(item.sender_waiter_id) === String(profile?.waiter_id) ? 'ml-auto border-dash-gold/40 bg-dash-gold/10' : 'border-white/10 bg-white/[0.035]'].join(' ')}>
+                        <p className="text-xs font-semibold text-dash-tertiary">{item.sender_name || 'Manager'}</p>
+                        <p className="mt-1">{item.body}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 border-t border-white/10 p-3">
+                    <input value={messageText} onChange={event => setMessageText(event.target.value)} placeholder="Message" className="min-w-0 flex-1 rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
+                    <button type="button" onClick={() => void sendMessage()} disabled={!selectedConversationId || !messageText.trim()} className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-40">Send</button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {announcements.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-dash-secondary">No announcements yet.</p>
+                ) : announcements.map(item => (
+                  <article key={item.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-4">
+                    <h3 className="font-semibold">{item.title}</h3>
+                    <p className="mt-2 text-sm text-dash-secondary">{item.body}</p>
+                    <p className="mt-3 text-xs text-dash-tertiary">{new Date(item.created_at).toLocaleString()}</p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {activeEmployeeTab === 'more' && (
+          <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+            {!morePage ? (
+              <div className="grid gap-3">
+                {[
+                  ['availability', 'Availability', 'Set recurring or one-time availability.'],
+                  ['time_off', 'Time off', 'Request vacation or unexcused days off.'],
+                  ['contacts', 'Contacts', 'View everyone at this restaurant.'],
+                ].map(([id, title, subtitle]) => (
+                  <button key={id} type="button" onClick={() => setMorePage(id)} className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 text-left transition hover:border-dash-gold/50">
+                    <h2 className="text-xl font-semibold">{title}</h2>
+                    <p className="mt-1 text-sm text-dash-secondary">{subtitle}</p>
+                  </button>
+                ))}
+              </div>
+            ) : (
+            <div className="space-y-6">
+              <button type="button" onClick={() => setMorePage('')} className="rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-dash-secondary">Back</button>
+              {morePage === 'availability' && (
+                <div className="space-y-4">
+                  <h2 className="text-2xl font-semibold">Availability</h2>
+                  <div className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <p className="label-mono mb-2">Day</p>
+                      <div className="grid grid-cols-7 gap-2">
+                        {EMPLOYEE_DAYS.map((day, index) => (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => setAvailabilityForm(prev => ({ ...prev, day_of_week: index }))}
+                            className={[
+                              'rounded-xl border px-2 py-3 text-center text-xs font-semibold transition',
+                              Number(availabilityForm.day_of_week) === index
+                                ? 'border-dash-gold bg-dash-gold text-black'
+                                : 'border-white/10 text-dash-secondary hover:border-dash-gold/50 hover:text-dash-cream',
+                            ].join(' ')}
+                          >
+                            <span className="block sm:hidden">{EMPLOYEE_DAYS_SHORT[index]}</span>
+                            <span className="hidden sm:block">{day}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <select value={availabilityForm.recurrence} onChange={event => setAvailabilityForm(prev => ({ ...prev, recurrence: event.target.value }))} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none">
+                      <option value="recurring">Recurring</option>
+                      <option value="one_time">One time</option>
+                    </select>
+                    {availabilityForm.recurrence === 'one_time' && <input type="date" value={availabilityForm.date} onChange={event => setAvailabilityForm(prev => ({ ...prev, date: event.target.value }))} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none" />}
+                    <select value={availabilityForm.availability_type} onChange={event => setAvailabilityForm(prev => ({ ...prev, availability_type: event.target.value }))} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none">
+                      <option value="available">Available</option>
+                      <option value="not_available">Not available</option>
+                    </select>
+                    <TimeEntry value={availabilityForm.start_time} onChange={value => setAvailabilityForm(prev => ({ ...prev, start_time: value }))} placeholder="10:00" ariaLabel="Availability start" />
+                    <TimeEntry value={availabilityForm.end_time} onChange={value => setAvailabilityForm(prev => ({ ...prev, end_time: value }))} placeholder="17:00" ariaLabel="Availability end" />
+                    <select value={availabilityForm.reason} onChange={event => setAvailabilityForm(prev => ({ ...prev, reason: event.target.value }))} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none">
+                      <option value="">Reason dropdown</option>
+                      {EMPLOYEE_REASON_OPTIONS.map(reason => <option key={reason} value={reason}>{reason}</option>)}
+                    </select>
+                    <textarea value={availabilityForm.note} onChange={event => setAvailabilityForm(prev => ({ ...prev, note: event.target.value }))} rows={3} placeholder="Or describe it naturally" className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary md:col-span-2" />
+                    <button type="button" onClick={() => void submitAvailability()} disabled={isSaving} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">Save availability</button>
+                  </div>
+                  <div className="space-y-2">
+                    {availability.map((entry, index) => (
+                      <div key={entry.id || `${entry.day_of_week}-${index}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-3 text-sm">
+                        <span>{EMPLOYEE_DAYS[Number(entry.day_of_week)]} · {String(entry.start_time).slice(0, 5)}-{String(entry.end_time).slice(0, 5)} · {entry.availability_type}</span>
+                        <button type="button" onClick={() => void removeAvailability(index)} className="text-red-200">Remove</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {morePage === 'time_off' && (
+                <div className="space-y-4">
+                  <h2 className="text-2xl font-semibold">Time off</h2>
+                  <div className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-2">
+                    <input type="date" value={timeOffForm.start_date} onChange={event => setTimeOffForm(prev => ({ ...prev, start_date: event.target.value }))} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none" />
+                    <input type="date" value={timeOffForm.end_date} onChange={event => setTimeOffForm(prev => ({ ...prev, end_date: event.target.value }))} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none" />
+                    <select value={timeOffForm.priority} onChange={event => setTimeOffForm(prev => ({ ...prev, priority: event.target.value }))} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none">
+                      <option value="normal">Normal</option>
+                      <option value="high">High</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                    <input value={timeOffForm.title} onChange={event => setTimeOffForm(prev => ({ ...prev, title: event.target.value }))} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none" />
+                    <textarea value={timeOffForm.notes} onChange={event => setTimeOffForm(prev => ({ ...prev, notes: event.target.value }))} rows={3} placeholder="Optional note" className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary md:col-span-2" />
+                    <button type="button" onClick={() => void submitTimeOff()} disabled={isSaving || !timeOffForm.start_date} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">Submit request</button>
+                  </div>
+                  <div className="space-y-2">
+                    {requests.map(request => (
+                      <div key={request.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-3 text-sm">
+                        <p className="capitalize font-semibold">{String(request.request_type || '').replaceAll('_', ' ')} · {request.status || 'pending'}</p>
+                        <p className="mt-1 text-dash-secondary">{request.title || request.notes || 'Request'} {request.start_date ? `· ${request.start_date}` : ''}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {morePage === 'contacts' && (
+                <div className="space-y-3">
+                  <h2 className="text-2xl font-semibold">Contacts</h2>
+                  {contacts.map(contact => (
+                    <div key={contact.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-4 text-sm">
+                      <p className="font-semibold">{contact.name}{contact.is_me ? ' · You' : ''}</p>
+                      <p className="mt-1 capitalize text-dash-secondary">{contact.role || 'Staff'}</p>
+                      <p className="mt-1 text-dash-tertiary">{[contact.email, contact.phone].filter(Boolean).join(' · ') || 'No contact detail saved'}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            )}
+          </section>
+        )}
+
+        <nav className="fixed inset-x-4 bottom-4 z-20 mx-auto grid max-w-2xl grid-cols-4 gap-2 rounded-2xl border border-white/10 bg-black/85 p-2 shadow-2xl backdrop-blur">
           {EMPLOYEE_PORTAL_TABS.map(item => (
             <button
               key={item.id}
               type="button"
-              onClick={() => setActiveEmployeeTab(item.id)}
+              onClick={() => {
+                setActiveEmployeeTab(item.id)
+                if (item.id !== 'more') setMorePage('')
+              }}
               className={[
-                'rounded-xl px-4 py-2 text-sm font-semibold transition',
+                'rounded-xl px-2 py-3 text-xs font-semibold transition sm:text-sm',
                 activeEmployeeTab === item.id
                   ? 'bg-dash-gold text-black'
                   : 'text-dash-secondary hover:bg-white/[0.05] hover:text-dash-cream',
@@ -2552,187 +2976,311 @@ function EmployeePortal() {
             </button>
           ))}
         </nav>
-
-        <section className="rounded-2xl border border-white/10 bg-white/[0.025] p-6">
-          {activeEmployeeTab === 'schedule' && (
-            <div>
-              <h2 className="text-2xl font-semibold">My Schedule</h2>
-              {schedule.length === 0 ? (
-                <p className="mt-4 text-sm text-dash-secondary">No published shifts are assigned yet.</p>
-              ) : (
-                <div className="mt-4 divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10">
-                  {schedule.map(shift => (
-                    <div key={shift.id} className="grid gap-2 p-4 text-sm md:grid-cols-[1fr_1fr_1fr]">
-                      <span className="font-semibold">{shift.shift_date}</span>
-                      <span className="text-dash-secondary">{String(shift.shift_start).slice(0, 5)} - {String(shift.shift_end).slice(0, 5)}</span>
-                      <span className="capitalize text-dash-tertiary">{shift.role || shift.schedule_status}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeEmployeeTab === 'availability' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-2xl font-semibold">Availability</h2>
-                <p className="mt-2 text-sm text-dash-secondary">
-                  Add preferred or unavailable windows. These feed the schedule optimizer.
-                </p>
               </div>
-
-              <div className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 lg:grid-cols-[150px_150px_120px_120px_1fr_auto]">
-                <select value={availabilityForm.availability_type} onChange={event => setAvailabilityForm(prev => ({ ...prev, availability_type: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none">
-                  <option value="preferred">Preferred</option>
-                  <option value="unavailable">Unavailable</option>
-                  <option value="available">Available</option>
-                </select>
-                <select value={availabilityForm.day_of_week} onChange={event => setAvailabilityForm(prev => ({ ...prev, day_of_week: Number(event.target.value) }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none">
-                  {EMPLOYEE_DAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}
-                </select>
-                <input type="time" value={availabilityForm.start_time} onChange={event => setAvailabilityForm(prev => ({ ...prev, start_time: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none" />
-                <input type="time" value={availabilityForm.end_time} onChange={event => setAvailabilityForm(prev => ({ ...prev, end_time: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none" />
-                <input value={availabilityForm.notes} onChange={event => setAvailabilityForm(prev => ({ ...prev, notes: event.target.value }))} placeholder="Notes optional" className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
-                <button type="button" onClick={() => void addAvailability()} disabled={isSaving} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">
-                  Add
-                </button>
-              </div>
-
-              {availability.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-white/15 p-5 text-sm text-dash-secondary">No availability windows saved yet.</p>
-              ) : (
-                <div className="divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10">
-                  {availability.map((entry, index) => (
-                    <div key={entry.id || `${entry.day_of_week}-${entry.start_time}-${index}`} className="grid gap-2 p-4 text-sm md:grid-cols-[130px_130px_1fr_auto] md:items-center">
-                      <span className="capitalize font-semibold">{entry.availability_type}</span>
-                      <span>{EMPLOYEE_DAYS[Number(entry.day_of_week)]}</span>
-                      <span className="text-dash-secondary">{String(entry.start_time).slice(0, 5)} - {String(entry.end_time).slice(0, 5)}{entry.notes ? ` · ${entry.notes}` : ''}</span>
-                      <button type="button" onClick={() => void removeAvailability(index)} className="rounded-xl border border-red-400/30 px-3 py-2 text-sm text-red-200 hover:border-red-300/60">
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-                <h3 className="font-semibold">Natural-language note</h3>
-                <textarea value={employeeNote} onChange={event => setEmployeeNote(event.target.value)} rows={3} placeholder="I prefer Tuesday dinner but cannot close Friday this month." className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
-                <button type="button" onClick={() => void submitEmployeeNote()} disabled={!employeeNote.trim() || isSaving} className="mt-3 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-40">
-                  Submit note
-                </button>
-                <p className="mt-2 text-xs text-dash-tertiary">Saved as a scheduling request when the parser can structure it; otherwise it remains a manager-visible note.</p>
-              </div>
-            </div>
-          )}
-
-          {activeEmployeeTab === 'requests' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-2xl font-semibold">Requests</h2>
-                <p className="mt-2 text-sm text-dash-secondary">Submit time off, shift preferences, or one-off availability exceptions.</p>
-              </div>
-              <div className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-2 lg:grid-cols-4">
-                <select value={requestForm.request_type} onChange={event => setRequestForm(prev => ({ ...prev, request_type: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none">
-                  <option value="time_off">Time off</option>
-                  <option value="prefer_shift">Prefer shift</option>
-                  <option value="avoid_shift">Avoid shift</option>
-                  <option value="availability_exception">Availability exception</option>
-                  <option value="weekly_hours">Weekly hours</option>
-                </select>
-                <select value={requestForm.priority} onChange={event => setRequestForm(prev => ({ ...prev, priority: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none">
-                  <option value="low">Low</option>
-                  <option value="normal">Normal</option>
-                  <option value="high">High</option>
-                  <option value="critical">Critical</option>
-                </select>
-                <input type="date" value={requestForm.start_date} onChange={event => setRequestForm(prev => ({ ...prev, start_date: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none" />
-                <input type="date" value={requestForm.end_date} onChange={event => setRequestForm(prev => ({ ...prev, end_date: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none" />
-                <select value={requestForm.day_of_week} onChange={event => setRequestForm(prev => ({ ...prev, day_of_week: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none">
-                  <option value="">Any day</option>
-                  {EMPLOYEE_DAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}
-                </select>
-                <input type="time" value={requestForm.start_time} onChange={event => setRequestForm(prev => ({ ...prev, start_time: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none" />
-                <input type="time" value={requestForm.end_time} onChange={event => setRequestForm(prev => ({ ...prev, end_time: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none" />
-                {requestForm.request_type === 'weekly_hours' && (
-                  <input
-                    type="number"
-                    min="0"
-                    max="60"
-                    step="1"
-                    value={requestForm.requested_weekly_hours}
-                    onChange={event => setRequestForm(prev => ({ ...prev, requested_weekly_hours: event.target.value }))}
-                    placeholder="Requested hrs/week"
-                    className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary"
-                  />
-                )}
-                <input value={requestForm.title} onChange={event => setRequestForm(prev => ({ ...prev, title: event.target.value }))} placeholder="Title optional" className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
-                <textarea value={requestForm.notes} onChange={event => setRequestForm(prev => ({ ...prev, notes: event.target.value }))} placeholder="Details" rows={3} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary lg:col-span-3" />
-                <button type="button" onClick={() => void submitRequestForm()} disabled={isSaving} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">
-                  Submit
-                </button>
-              </div>
-              {requests.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-white/15 p-5 text-sm text-dash-secondary">No requests submitted yet.</p>
-              ) : (
-                <div className="divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10">
-                  {requests.map(request => (
-                    <div key={request.id} className="grid gap-2 p-4 text-sm md:grid-cols-[150px_120px_1fr]">
-                      <span className="capitalize font-semibold">{String(request.request_type || '').replaceAll('_', ' ')}</span>
-                      <span className="capitalize text-dash-secondary">{request.status || 'pending'}</span>
-                      <span className="text-dash-tertiary">{request.title || request.notes || 'Request'} {request.start_date ? `· ${request.start_date}` : ''}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeEmployeeTab === 'preferences' && (
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-2xl font-semibold">Preferences</h2>
-                <p className="mt-2 text-sm text-dash-secondary">Standing preferences the scheduler can consider after coverage requirements.</p>
-              </div>
-              <div>
-                <p className="label-mono mb-3">Preferred shift types</p>
-                <div className="flex flex-wrap gap-2">
-                  {EMPLOYEE_SHIFT_TYPES.map(shiftType => (
-                    <button
-                      key={shiftType}
-                      type="button"
-                      onClick={() => togglePreferredShiftType(shiftType)}
-                      className={[
-                        'rounded-full px-3 py-1.5 text-sm font-semibold capitalize transition',
-                        preferences?.preferred_shift_types?.includes(shiftType)
-                          ? 'bg-white text-black'
-                          : 'bg-white/[0.05] text-dash-tertiary hover:bg-white/[0.1]',
-                      ].join(' ')}
-                    >
-                      {shiftType}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="grid gap-3 md:grid-cols-3">
-                <input type="number" min="0" max="7" value={preferences?.min_hours_per_week ?? ''} onChange={event => setPreferences(prev => ({ ...(prev || {}), min_hours_per_week: event.target.value }))} placeholder="Min hours/week" className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
-                <input type="number" min="1" max="60" value={preferences?.max_hours_per_week ?? ''} onChange={event => setPreferences(prev => ({ ...(prev || {}), max_hours_per_week: event.target.value }))} placeholder="Max hours/week" className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
-                <input type="number" min="1" max="7" value={preferences?.max_shifts_per_week ?? ''} onChange={event => setPreferences(prev => ({ ...(prev || {}), max_shifts_per_week: event.target.value }))} placeholder="Max shifts/week" className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
-              </div>
-              <label className="flex items-center gap-3 text-sm text-dash-secondary">
-                <input type="checkbox" checked={preferences?.avoid_clopening ?? true} onChange={event => setPreferences(prev => ({ ...(prev || {}), avoid_clopening: event.target.checked }))} />
-                Avoid close/open back-to-back when possible
-              </label>
-              <textarea value={preferences?.notes || ''} onChange={event => setPreferences(prev => ({ ...(prev || {}), notes: event.target.value }))} rows={4} placeholder="Anything else managers should know." className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
-              <button type="button" onClick={() => void savePreferences()} disabled={isSaving} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">
-                Save preferences
-              </button>
-            </div>
-          )}
-        </section>
-      </div>
     </main>
+  )
+}
+
+function ManagerMessagingPanel({ restaurantId }) {
+  const [contacts, setContacts] = useState([])
+  const [conversations, setConversations] = useState([])
+  const [selectedConversationId, setSelectedConversationId] = useState('')
+  const [conversationMessages, setConversationMessages] = useState([])
+  const [announcements, setAnnouncements] = useState([])
+  const [activeSubtab, setActiveSubtab] = useState('messages')
+  const [isNewChatOpen, setIsNewChatOpen] = useState(false)
+  const [selectedNewChatMemberIds, setSelectedNewChatMemberIds] = useState([])
+  const [newChatTitle, setNewChatTitle] = useState('')
+  const [messageText, setMessageText] = useState('')
+  const [announcementForm, setAnnouncementForm] = useState({ title: '', body: '' })
+  const [status, setStatus] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+
+  const loadMessaging = async () => {
+    const [staffRows, conversationRows, announcementRows] = await Promise.all([
+      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`),
+      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations`),
+      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/announcements`),
+    ])
+    setContacts(Array.isArray(staffRows) ? staffRows : [])
+    setConversations(Array.isArray(conversationRows) ? conversationRows : [])
+    setAnnouncements(Array.isArray(announcementRows) ? announcementRows : [])
+    if (!selectedConversationId && conversationRows[0]?.id) setSelectedConversationId(String(conversationRows[0].id))
+  }
+
+  useEffect(() => {
+    if (!restaurantId) return
+    let cancelled = false
+    loadMessaging().catch(err => {
+      if (!cancelled) setStatus(err instanceof Error ? err.message : 'Could not load messaging')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [restaurantId])
+
+  useEffect(() => {
+    if (!restaurantId || !selectedConversationId) {
+      setConversationMessages([])
+      return
+    }
+    let cancelled = false
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations/${selectedConversationId}/messages`)
+      .then(data => {
+        if (!cancelled) setConversationMessages(Array.isArray(data) ? data : [])
+      })
+      .catch(err => {
+        if (!cancelled) setStatus(err instanceof Error ? err.message : 'Could not load messages')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [restaurantId, selectedConversationId])
+
+  const selectedConversation = conversations.find(item => String(item.id) === String(selectedConversationId))
+
+  const toggleNewChatMember = (memberId) => {
+    setSelectedNewChatMemberIds(prev => (
+      prev.includes(memberId)
+        ? prev.filter(id => id !== memberId)
+        : [...prev, memberId]
+    ))
+  }
+
+  const resetNewChatForm = () => {
+    setIsNewChatOpen(false)
+    setSelectedNewChatMemberIds([])
+    setNewChatTitle('')
+  }
+
+  const createConversation = async () => {
+    if (selectedNewChatMemberIds.length === 0) {
+      setStatus('Choose at least one employee for the chat.')
+      return
+    }
+    setIsSaving(true)
+    setStatus('')
+    try {
+      const selectedContacts = contacts.filter(item => selectedNewChatMemberIds.includes(String(item.id)))
+      const isGroup = selectedNewChatMemberIds.length > 1
+      const conversation = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations`, {
+        method: 'POST',
+        body: JSON.stringify({
+          member_ids: selectedNewChatMemberIds,
+          conversation_type: isGroup ? 'group' : 'dm',
+          title: isGroup
+            ? (newChatTitle.trim() || selectedContacts.map(contact => contact.name).join(', '))
+            : null,
+        }),
+      })
+      const nextConversations = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations`)
+      setConversations(nextConversations)
+      setSelectedConversationId(String(conversation.id))
+      resetNewChatForm()
+      setActiveSubtab('messages')
+      setStatus(`${isGroup ? 'Group chat' : 'DM'} opened.`)
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not start message')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const sendMessage = async () => {
+    if (!selectedConversationId || !messageText.trim()) return
+    const body = messageText.trim()
+    setMessageText('')
+    try {
+      const sent = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations/${selectedConversationId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ body }),
+      })
+      setConversationMessages(prev => [...prev, sent])
+      const nextConversations = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations`)
+      setConversations(nextConversations)
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not send message')
+    }
+  }
+
+  const createAnnouncement = async () => {
+    if (!announcementForm.title.trim() || !announcementForm.body.trim()) {
+      setStatus('Announcement needs a title and message.')
+      return
+    }
+    setIsSaving(true)
+    setStatus('')
+    try {
+      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/announcements`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: announcementForm.title.trim(),
+          body: announcementForm.body.trim(),
+          audience: 'all',
+        }),
+      })
+      const nextAnnouncements = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/announcements`)
+      setAnnouncements(nextAnnouncements)
+      setAnnouncementForm({ title: '', body: '' })
+      setStatus('Announcement posted.')
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not post announcement')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <>
+    <section className="space-y-5 rounded-2xl border border-white/10 bg-white/[0.025] p-6">
+      <div>
+        <p className="label-mono">Staff Messaging</p>
+        <h2 className="mt-2 text-3xl font-semibold tracking-tight">Messages</h2>
+        <p className="mt-2 text-sm text-dash-secondary">Direct messages, group chats, and restaurant announcements.</p>
+      </div>
+      {status && <div className="rounded-xl border border-white/10 bg-white/[0.035] p-3 text-sm text-dash-secondary">{status}</div>}
+      <div className="flex gap-2">
+        {[
+          ['messages', 'Messages'],
+          ['announcements', 'Announcements'],
+        ].map(([id, label]) => (
+          <button key={id} type="button" onClick={() => setActiveSubtab(id)} className={['rounded-xl px-4 py-2 text-sm font-semibold transition', activeSubtab === id ? 'bg-white text-black' : 'border border-white/10 text-dash-secondary'].join(' ')}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeSubtab === 'messages' ? (
+        <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
+          <aside className="space-y-3">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedNewChatMemberIds([])
+                setNewChatTitle('')
+                setIsNewChatOpen(true)
+              }}
+              className="w-full rounded-xl bg-dash-gold px-4 py-3 text-sm font-semibold text-black transition hover:opacity-90"
+            >
+              Start new chat
+            </button>
+            <div className="space-y-2">
+              {conversations.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-dash-secondary">No staff chats yet.</p>
+              ) : conversations.map(conversation => (
+                <button key={conversation.id} type="button" onClick={() => setSelectedConversationId(String(conversation.id))} className={['w-full rounded-xl border p-3 text-left text-sm transition', String(selectedConversationId) === String(conversation.id) ? 'border-dash-gold/60 bg-dash-gold/10' : 'border-white/10 bg-white/[0.025]'].join(' ')}>
+                  <p className="font-semibold">{conversationDisplayName(conversation, null)}</p>
+                  <p className="mt-1 truncate text-xs text-dash-tertiary">{conversation.last_message_preview || 'No messages yet'}</p>
+                </button>
+              ))}
+            </div>
+          </aside>
+          <div className="flex min-h-[520px] flex-col rounded-xl border border-white/10 bg-white/[0.025]">
+            <div className="border-b border-white/10 p-4">
+              <h3 className="font-semibold">{selectedConversation ? conversationDisplayName(selectedConversation, null) : 'Select a chat'}</h3>
+            </div>
+            <div className="flex-1 space-y-3 overflow-y-auto p-4">
+              {conversationMessages.length === 0 ? (
+                <p className="text-sm text-dash-secondary">No messages here yet.</p>
+              ) : conversationMessages.map(item => (
+                <div key={item.id} className={['max-w-[82%] rounded-2xl border p-3 text-sm', item.sender_user_id ? 'ml-auto border-dash-gold/40 bg-dash-gold/10' : 'border-white/10 bg-white/[0.035]'].join(' ')}>
+                  <p className="text-xs font-semibold text-dash-tertiary">{item.sender_name || 'Manager'}</p>
+                  <p className="mt-1">{item.body}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 border-t border-white/10 p-3">
+              <input value={messageText} onChange={event => setMessageText(event.target.value)} placeholder="Message" className="min-w-0 flex-1 rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
+              <button type="button" onClick={() => void sendMessage()} disabled={!selectedConversationId || !messageText.trim()} className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-40">Send</button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
+          <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <input value={announcementForm.title} onChange={event => setAnnouncementForm(prev => ({ ...prev, title: event.target.value }))} placeholder="Announcement title" className="w-full rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
+            <textarea value={announcementForm.body} onChange={event => setAnnouncementForm(prev => ({ ...prev, body: event.target.value }))} rows={5} placeholder="Message to staff" className="w-full rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary" />
+            <button type="button" onClick={() => void createAnnouncement()} disabled={isSaving || !announcementForm.title.trim() || !announcementForm.body.trim()} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">Post announcement</button>
+          </div>
+          <div className="space-y-3">
+            {announcements.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-dash-secondary">No announcements yet.</p>
+            ) : announcements.map(item => (
+              <article key={item.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-4">
+                <h3 className="font-semibold">{item.title}</h3>
+                <p className="mt-2 text-sm text-dash-secondary">{item.body}</p>
+                <p className="mt-3 text-xs text-dash-tertiary">{new Date(item.created_at).toLocaleString()}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+    {isNewChatOpen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm">
+        <div className="w-full max-w-xl overflow-hidden rounded-2xl border border-white/10 bg-dash-base shadow-2xl">
+          <div className="border-b border-white/10 p-5">
+            <p className="label-mono">New Chat</p>
+            <h3 className="mt-2 text-2xl font-semibold">Choose employees</h3>
+            <p className="mt-2 text-sm text-dash-secondary">
+              Select one employee for a DM, or multiple employees for a group chat.
+            </p>
+          </div>
+          <div className="max-h-[55vh] space-y-2 overflow-y-auto p-5">
+            {selectedNewChatMemberIds.length > 1 && (
+              <input
+                value={newChatTitle}
+                onChange={event => setNewChatTitle(event.target.value)}
+                placeholder="Group chat name optional"
+                className="mb-3 w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary focus:border-dash-gold/70"
+              />
+            )}
+            {contacts.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-dash-secondary">No employees found.</p>
+            ) : contacts.map(contact => {
+              const selected = selectedNewChatMemberIds.includes(String(contact.id))
+              return (
+                <button
+                  key={contact.id}
+                  type="button"
+                  onClick={() => toggleNewChatMember(String(contact.id))}
+                  className={[
+                    'flex w-full items-center justify-between gap-4 rounded-xl border p-4 text-left text-sm transition',
+                    selected ? 'border-dash-gold/70 bg-dash-gold/10' : 'border-white/10 bg-white/[0.025] hover:border-dash-gold/50',
+                  ].join(' ')}
+                >
+                  <span>
+                    <span className="block font-semibold">{contact.name}</span>
+                    <span className="block capitalize text-dash-tertiary">{contact.role || 'Staff'}{contact.email ? ` · ${contact.email}` : ''}</span>
+                  </span>
+                  <span className={['flex h-6 w-6 items-center justify-center rounded-md border text-xs font-bold', selected ? 'border-dash-gold bg-dash-gold text-black' : 'border-white/20 text-transparent'].join(' ')}>
+                    ✓
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex flex-col gap-2 border-t border-white/10 p-5 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={resetNewChatForm}
+              className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-white/20 hover:text-dash-cream"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void createConversation()}
+              disabled={isSaving || selectedNewChatMemberIds.length === 0}
+              className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90 disabled:opacity-50"
+            >
+              {selectedNewChatMemberIds.length > 1 ? 'Create group chat' : 'Create DM'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
 
@@ -3510,6 +4058,7 @@ function RestaurantWorkspace() {
 
           {activeTab === 'analytics' && <AnalyticsDashboard restaurant={restaurant} />}
           {activeTab === 'scheduling' && <SchedulingPanel restaurantId={restaurantId} />}
+          {activeTab === 'messaging' && <ManagerMessagingPanel restaurantId={restaurantId} />}
           {activeTab === 'payments' && (
             <PlaceholderPanel title="Payments / Plan" eyebrow="Placeholder">
               <p>Plan management, billing status, payment method, and subscription controls will live here.</p>

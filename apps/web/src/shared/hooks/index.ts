@@ -16,15 +16,3 @@ export {
   useCoverageGaps,
 } from './useSchedule'
 export { useSchedulingEngine } from './useSchedulingEngine'
-
-// Reservation hooks
-export {
-  useReservationSettings,
-  useUpdateReservationSettings,
-  useReservationBlackouts,
-  useCreateBlackout,
-  useUpdateBlackout,
-  useGoogleReservationConnection,
-  useUpdateGoogleReservationConnection,
-  useUpdatePublicSlug,
-} from './useReservationSettings'
