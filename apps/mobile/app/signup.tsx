@@ -4,60 +4,61 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   Text,
   TextInput,
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
-import { login } from '../packages/supabase'
+import { signUp } from '../packages/supabase'
 import { DottedSkyBackground } from '@/components/DottedSkyBackground'
 import { color_pallet } from '@/styles/colors'
 
 const EYEBROW_TRACKING = 0.06 * 10
 const BRAND_EYEBROW_TRACKING = 0.06 * 12
 
-export default function AuthPage() {
+export default function SignUpPage() {
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [emailFocused, setEmailFocused] = useState(false)
   const [passwordFocused, setPasswordFocused] = useState(false)
+  const [confirmFocused, setConfirmFocused] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
 
-  const canSubmit = email.trim().length > 0 && password.length > 0 && !submitting
+  const passwordsMatch = password.length > 0 && password === confirmPassword
+  const canSubmit =
+    email.trim().length > 0 && password.length >= 6 && passwordsMatch && !submitting
 
   async function onSubmit() {
     if (!canSubmit) return
     setSubmitting(true)
     setError(null)
-    const result = await login(email.trim(), password)
+    setInfo(null)
+    const result = await signUp(email.trim(), password)
     setSubmitting(false)
     if (!result.ok) {
       setError(result.error)
       return
     }
-    if (result.role === 'owner' || result.role === 'developer') {
-      router.replace('/(admin)/scans')
-    } else if (result.role === 'employee') {
-      router.replace('/(employee)/scans')
+    if (result.needsConfirmation) {
+      setInfo('Account created. Check your email to confirm before signing in.')
     } else {
-      setError('No role assigned to this account. Contact your administrator.')
+      router.replace('/')
     }
   }
 
   return (
     <SafeAreaView className="flex-1 bg-bg">
-      <DottedSkyBackground opacity={0.8} glow={false}/>
+      <DottedSkyBackground opacity={0.8} glow={false} />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         className="flex-1"
       >
-        <View
-          style={{ flex: 1, flexDirection: "column", paddingHorizontal: 24, paddingVertical: 32}}
-        >
+        <View style={{ flex: 1, flexDirection: 'column', paddingHorizontal: 24, paddingVertical: 32 }}>
           <View className="items-center mb-6">
             <Text
               className="font-mono text-ink-500"
@@ -69,7 +70,7 @@ export default function AuthPage() {
               className="text-ink-900 mt-3"
               style={{ fontSize: 32, fontWeight: '800', letterSpacing: -0.015 * 32, lineHeight: 32 }}
             >
-              Welcome back
+              Create account
             </Text>
           </View>
 
@@ -106,7 +107,7 @@ export default function AuthPage() {
             />
           </View>
 
-          <View className="mb-6">
+          <View className="mb-5">
             <Text
               className="font-mono text-ink-500 mb-2"
               style={{ fontSize: 10, letterSpacing: EYEBROW_TRACKING, textTransform: 'uppercase' }}
@@ -120,15 +121,13 @@ export default function AuthPage() {
               onBlur={() => setPasswordFocused(false)}
               autoCapitalize="none"
               autoCorrect={false}
-              autoComplete="password"
-              textContentType="password"
+              autoComplete="new-password"
+              textContentType="newPassword"
               secureTextEntry
-              placeholder="••••••••"
+              placeholder="At least 6 characters"
               placeholderTextColor={color_pallet.ink[500]}
               editable={!submitting}
               accessibilityLabel="Password"
-              returnKeyType="go"
-              onSubmitEditing={onSubmit}
               className="bg-cream-100 text-ink-900"
               style={{
                 height: 52,
@@ -139,6 +138,53 @@ export default function AuthPage() {
                 borderColor: passwordFocused ? color_pallet.sky[600] : color_pallet.stone[200],
               }}
             />
+          </View>
+
+          <View className="mb-6">
+            <Text
+              className="font-mono text-ink-500 mb-2"
+              style={{ fontSize: 10, letterSpacing: EYEBROW_TRACKING, textTransform: 'uppercase' }}
+            >
+              Confirm password
+            </Text>
+            <TextInput
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              onFocus={() => setConfirmFocused(true)}
+              onBlur={() => setConfirmFocused(false)}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="new-password"
+              textContentType="newPassword"
+              secureTextEntry
+              placeholder="Re-enter your password"
+              placeholderTextColor={color_pallet.ink[500]}
+              editable={!submitting}
+              accessibilityLabel="Confirm password"
+              returnKeyType="go"
+              onSubmitEditing={onSubmit}
+              className="bg-cream-100 text-ink-900"
+              style={{
+                height: 52,
+                paddingHorizontal: 16,
+                fontSize: 16,
+                borderRadius: 12,
+                borderWidth: confirmFocused ? 1.5 : 1,
+                borderColor: confirmFocused
+                  ? color_pallet.sky[600]
+                  : confirmPassword.length > 0 && !passwordsMatch
+                  ? color_pallet.danger[600]
+                  : color_pallet.stone[200],
+              }}
+            />
+            {confirmPassword.length > 0 && !passwordsMatch && (
+              <Text
+                className="text-danger-600 mt-2"
+                style={{ fontSize: 12, fontWeight: '500' }}
+              >
+                Passwords don’t match.
+              </Text>
+            )}
           </View>
 
           {error && (
@@ -160,11 +206,32 @@ export default function AuthPage() {
               </Text>
             </View>
           )}
-          <View style={{flex: 1}}></View>
+
+          {info && (
+            <View
+              accessibilityLiveRegion="polite"
+              className="mb-4"
+              style={{
+                backgroundColor: 'rgba(21, 108, 194, 0.08)',
+                borderRadius: 12,
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+              }}
+            >
+              <Text
+                style={{ fontSize: 13, fontWeight: '500', lineHeight: 13 * 1.4, color: color_pallet.sky[700] }}
+              >
+                {info}
+              </Text>
+            </View>
+          )}
+
+          <View style={{ flex: 1 }} />
+
           <Pressable
             onPress={onSubmit}
             accessibilityRole="button"
-            accessibilityLabel="Log in"
+            accessibilityLabel="Create account"
             style={{
               backgroundColor: !canSubmit ? color_pallet.sky[400] : color_pallet.sky[700],
               borderRadius: 10,
@@ -188,11 +255,23 @@ export default function AuthPage() {
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '500' }}>
-                    Log in
+                    Create account
                   </Text>
                 )}
               </View>
             )}
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.replace('/')}
+            accessibilityRole="button"
+            accessibilityLabel="Back to sign in"
+            style={{ marginTop: 16, alignItems: 'center', paddingVertical: 8 }}
+          >
+            <Text style={{ fontSize: 14, color: color_pallet.ink[500] }}>
+              Already have an account?{' '}
+              <Text style={{ color: color_pallet.sky[700], fontWeight: '500' }}>Sign in</Text>
+            </Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>

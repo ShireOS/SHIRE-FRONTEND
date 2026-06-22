@@ -4,6 +4,7 @@
         "web": "pnpm --filter web dev",
         "ios": "pnpm --filter mobile ios",
         "ios_device": "pnpm --filter mobile ios_device",
+        "ios_server": "pnpm --filter mobile start",
         "schema": "pnpm --filter @shire/backend generate-schema"
     },
     "pnpm": {

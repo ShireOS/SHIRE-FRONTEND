@@ -35,6 +35,22 @@ export async function login(email: string, password: string): Promise<LoginResul
     }
 }
 
+export type SignUpResult =
+    | { ok: true; needsConfirmation: boolean }
+    | { ok: false; error: string }
+
+export async function signUp(email: string, password: string): Promise<SignUpResult> {
+    try {
+        const client = getSBClient()
+        const { data, error } = await client.auth.signUp({ email, password })
+        if (error) return { ok: false, error: humanizeAuthError(error.message) }
+        return { ok: true, needsConfirmation: data.session == null }
+    } catch (e) {
+        const message = e instanceof Error ? e.message : String(e)
+        return { ok: false, error: humanizeAuthError(message) }
+    }
+}
+
 function humanizeAuthError(raw: string): string {
     const m = raw.toLowerCase()
     if (m.includes('invalid login') || m.includes('invalid credentials')) {
@@ -42,6 +58,15 @@ function humanizeAuthError(raw: string): string {
     }
     if (m.includes('email not confirmed')) {
         return 'Please confirm your email before signing in.'
+    }
+    if (m.includes('already registered') || m.includes('already exists') || m.includes('user already')) {
+        return 'An account with this email already exists. Try signing in instead.'
+    }
+    if (m.includes('password') && (m.includes('short') || m.includes('at least'))) {
+        return 'Password must be at least 6 characters.'
+    }
+    if (m.includes('unable to validate email') || m.includes('invalid email')) {
+        return 'That doesn’t look like a valid email address.'
     }
     if (m.includes('rate') && m.includes('limit')) {
         return 'Too many attempts. Try again in a minute.'
@@ -60,7 +85,8 @@ export async function getUserRole(): Promise<userRole | undefined> {
 
     const data = await client.from("user_roles").select("*").eq("user", user.data.user.id)
 
-    if (data.data == null) return
+    if (data.data == null && data.count == 0) return
+    console.log(data.data, user.data.user.id)
     return data.data[0].restaraunt_role
 }
 
