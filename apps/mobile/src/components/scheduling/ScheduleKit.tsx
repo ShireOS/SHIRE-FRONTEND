@@ -44,7 +44,8 @@ export function startOfWeek(date = new Date()) {
 
 export function formatTime(value?: string | null) {
   if (!value) return 'DNE';
-  const [rawHour, rawMinute] = String(value).slice(0, 5).split(':');
+  const timePart = extractTimePart(value);
+  const [rawHour, rawMinute] = timePart.split(':');
   const hour = Number(rawHour);
   const minute = Number(rawMinute || 0);
   if (!Number.isFinite(hour)) return String(value);
@@ -61,8 +62,14 @@ export function shiftHours(shift: EmployeeShift) {
 }
 
 function timeToMinutes(value?: string | null) {
-  const [hour, minute] = String(value || '00:00').slice(0, 5).split(':').map(Number);
+  const [hour, minute] = extractTimePart(value).split(':').map(Number);
   return (Number.isFinite(hour) ? hour : 0) * 60 + (Number.isFinite(minute) ? minute : 0);
+}
+
+function extractTimePart(value?: string | null) {
+  const raw = String(value || '00:00');
+  const match = raw.match(/(\d{1,2}):(\d{2})/);
+  return match ? `${match[1].padStart(2, '0')}:${match[2]}` : '00:00';
 }
 
 export function groupShiftsByDate(shifts: EmployeeShift[]) {
@@ -213,7 +220,7 @@ export function LocationFilterRow({
       <UiText variant="body" style={styles.locationText} numberOfLines={1}>
         {location || 'Restaurant'}
       </UiText>
-      <IconButton name="sliders" label="Filter schedule" onPress={onFilter} />
+      {onFilter ? <IconButton name="sliders" label="Filter schedule" onPress={onFilter} /> : null}
     </View>
   );
 }
@@ -258,7 +265,7 @@ export function ShiftRow({
           </View>
         )}
       </View>
-      <Feather name="chevron-right" size={18} color={palette.ink[300]} />
+      {onPress ? <Feather name="chevron-right" size={18} color={palette.ink[300]} /> : null}
     </Pressable>
   );
 }

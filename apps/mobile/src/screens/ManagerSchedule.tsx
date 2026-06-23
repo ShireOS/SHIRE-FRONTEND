@@ -1,34 +1,22 @@
 import {
   createManagerSchedule,
   createManagerScheduleItem,
-  createManagerAnnouncement,
-  fetchManagerAnnouncements,
-  fetchManagerConversations,
-  fetchManagerRequests,
   fetchManagerScheduleHistory,
   fetchManagerSchedules,
   fetchManagerStaff,
-  reviewManagerRequest,
   runManagerScheduler,
   updateManagerScheduleItem,
   updateManagerScheduleSummary,
-  type Announcement,
-  type Conversation,
-  type EmployeeRequest,
   type EmployeeShift,
   type ManagerSchedule as ManagerSchedulePayload,
   type StaffContact,
 } from '@/api/employeeOps';
 import {
-  AnnouncementCard,
-  ConversationRow,
   DayScheduleSection,
   IconButton,
   LocationFilterRow,
   PageHeader,
-  RequestRow,
   ScreenShell,
-  SegmentedControl,
   TextField,
   WeekStrip,
   addDays,
@@ -40,35 +28,34 @@ import {
 } from '@/components/scheduling/ScheduleKit';
 import { UiButton } from '@/components/ui/Button';
 import { UiText } from '@/components/ui/Text';
+import { staleWhileRevalidate, writeCacheRecord } from '@/cache/staleWhileRevalidate';
 import { palette, semanticColors } from '@/styles/colors';
 import { radius, spacing } from '@/styles/tokens';
 import { getOwnerRestaurant, type OwnerRestaurant } from '../../packages/supabase';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-type ManagerTab = 'schedule' | 'requests' | 'messages' | 'config';
 const STAFF_ROLES = ['manager', 'server', 'bartender', 'host', 'busser', 'runner', 'chef'];
-const emptyToolErrors = { requests: '', messages: '', announcements: '' };
 const AUTO_GENERATE_MANUAL_THRESHOLD = 4;
+const SCHEDULE_CACHE_TTL_MS = 30_000;
+const SCHEDULE_CACHE_MAX_STALE_MS = 7 * 24 * 60 * 60 * 1000;
+
+type ManagerScheduleCacheData = {
+  schedules: ManagerSchedulePayload[];
+  staff: StaffContact[];
+  manualScheduleCount: number;
+};
 
 export default function ManagerSchedule() {
   const [restaurant, setRestaurant] = useState<OwnerRestaurant | null>(null);
-  const [tab, setTab] = useState<ManagerTab>('schedule');
   const [weekStart, setWeekStart] = useState(() => toDateKey(startOfWeek()));
   const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
   const [schedules, setSchedules] = useState<ManagerSchedulePayload[]>([]);
   const [staff, setStaff] = useState<StaffContact[]>([]);
-  const [requests, setRequests] = useState<EmployeeRequest[]>([]);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [announcementTitle, setAnnouncementTitle] = useState('');
-  const [announcementBody, setAnnouncementBody] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [status, setStatus] = useState('');
-  const [auxiliaryError, setAuxiliaryError] = useState('');
-  const [toolErrors, setToolErrors] = useState(emptyToolErrors);
   const [error, setError] = useState<string | null>(null);
   const [selectedShift, setSelectedShift] = useState<EmployeeShift | null>(null);
   const [shiftForm, setShiftForm] = useState({ role: '', shift_start: '', shift_end: '' });
@@ -76,40 +63,69 @@ export default function ManagerSchedule() {
   const [newShiftForm, setNewShiftForm] = useState({ waiter_id: '', role: 'server', shift_start: '17:00', shift_end: '21:00' });
   const [scheduleContext, setScheduleContext] = useState('');
   const [manualScheduleCount, setManualScheduleCount] = useState(0);
+  const staffRef = useRef<StaffContact[]>([]);
+  const manualScheduleCountRef = useRef(0);
 
   const restaurantId = restaurant?.id;
 
-  const loadManagerData = useCallback(async (id: string) => {
-    setAuxiliaryError('');
-    setToolErrors(emptyToolErrors);
-    const scheduleData = await fetchManagerSchedules(id, weekStart);
+  const applyCachedData = useCallback((data: ManagerScheduleCacheData) => {
+    setSchedules(data.schedules);
+    setStaff(data.staff);
+    setManualScheduleCount(data.manualScheduleCount);
+    staffRef.current = data.staff;
+    manualScheduleCountRef.current = data.manualScheduleCount;
+  }, []);
+
+  const persistScheduleCache = useCallback(async (
+    id: string,
+    targetWeekStart: string,
+    data: ManagerScheduleCacheData,
+  ) => {
+    await writeCacheRecord(
+      { namespace: 'manager-schedule', version: 1, parts: [id, targetWeekStart] },
+      data,
+      SCHEDULE_CACHE_TTL_MS,
+    ).catch(() => undefined);
+  }, []);
+
+  const commitManagerData = useCallback(async (
+    id: string,
+    targetWeekStart: string,
+    data: ManagerScheduleCacheData,
+  ) => {
+    applyCachedData(data);
+    await persistScheduleCache(id, targetWeekStart, data);
+  }, [applyCachedData, persistScheduleCache]);
+
+  const refreshManagerData = useCallback(async (id: string, targetWeekStart = weekStart): Promise<ManagerScheduleCacheData> => {
+    const scheduleData = await fetchManagerSchedules(id, targetWeekStart);
     const optionalResults = await Promise.allSettled([
-      fetchManagerRequests(id),
-      fetchManagerConversations(id),
-      fetchManagerAnnouncements(id),
       fetchManagerScheduleHistory(id),
       fetchManagerStaff(id),
     ]);
-    const [requestResult, conversationResult, announcementResult, historyResult, staffResult] = optionalResults;
-    const optionalFailures = optionalResults.slice(0, 3).filter((result) => result.status === 'rejected').length;
+    const [historyResult, staffResult] = optionalResults;
+    const nextData = {
+      schedules: scheduleData,
+      staff: staffResult.status === 'fulfilled' ? staffResult.value : staffRef.current,
+      manualScheduleCount: historyResult.status === 'fulfilled'
+        ? historyResult.value.filter((schedule) => schedule.generated_by === 'manual').length
+        : manualScheduleCountRef.current,
+    };
+    await persistScheduleCache(id, targetWeekStart, nextData);
+    return nextData;
+  }, [persistScheduleCache, weekStart]);
 
-    setSchedules(scheduleData);
-    setRequests(requestResult.status === 'fulfilled' ? requestResult.value : []);
-    setConversations(conversationResult.status === 'fulfilled' ? conversationResult.value : []);
-    setAnnouncements(announcementResult.status === 'fulfilled' ? announcementResult.value : []);
-    setStaff(staffResult.status === 'fulfilled' ? staffResult.value : []);
-    setToolErrors({
-      requests: requestResult.status === 'rejected' ? getErrorMessage(requestResult.reason, 'Requests are unavailable.') : '',
-      messages: conversationResult.status === 'rejected' ? getErrorMessage(conversationResult.reason, 'Messages are unavailable.') : '',
-      announcements: announcementResult.status === 'rejected' ? getErrorMessage(announcementResult.reason, 'Announcements are unavailable.') : '',
+  const loadManagerData = useCallback(async (id: string) => {
+    const key = { namespace: 'manager-schedule', version: 1, parts: [id, weekStart] };
+    const result = await staleWhileRevalidate<ManagerScheduleCacheData>({
+      ...key,
+      ttlMs: SCHEDULE_CACHE_TTL_MS,
+      maxStaleMs: SCHEDULE_CACHE_MAX_STALE_MS,
+      fetcher: () => refreshManagerData(id, weekStart),
+      onRevalidate: applyCachedData,
     });
-    if (historyResult.status === 'fulfilled') {
-      setManualScheduleCount(historyResult.value.filter((schedule) => schedule.generated_by === 'manual').length);
-    }
-    if (optionalFailures > 0) {
-      setAuxiliaryError(`${optionalFailures} manager tool${optionalFailures === 1 ? '' : 's'} did not load. Schedule editing is still available.`);
-    }
-  }, [weekStart]);
+    applyCachedData(result.data);
+  }, [applyCachedData, refreshManagerData, weekStart]);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,6 +160,11 @@ export default function ManagerSchedule() {
   );
   const selectedDayShifts = shiftsByDate[selectedDate] || [];
   const totalHours = scheduleItems.reduce((sum, shift) => sum + shiftHours(shift as EmployeeShift), 0);
+  const selectedDayLabel = new Date(`${selectedDate}T12:00:00`).toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
   const canAutoGenerate = manualScheduleCount >= AUTO_GENERATE_MANUAL_THRESHOLD;
   const manualSchedulesRemaining = Math.max(0, AUTO_GENERATE_MANUAL_THRESHOLD - manualScheduleCount);
 
@@ -166,6 +187,16 @@ export default function ManagerSchedule() {
     setSelectedDate(firstShiftDate);
   }, [scheduleItems, selectedDate, shiftsByDate, visibleWeekStart, weekDates]);
 
+  useEffect(() => {
+    if (newShiftForm.waiter_id || staff.length === 0) return;
+    const firstStaff = staff[0];
+    setNewShiftForm((prev) => ({
+      ...prev,
+      waiter_id: firstStaff.id,
+      role: firstStaff.role || prev.role,
+    }));
+  }, [newShiftForm.waiter_id, staff]);
+
   const attachScheduleContext = async (scheduleId: string, context: string) => {
     const trimmed = context.trim();
     if (!trimmed) return;
@@ -178,15 +209,20 @@ export default function ManagerSchedule() {
     setStatus(activeSchedule ? 'Opening this week for manual scheduling.' : 'Creating a manual draft for this week.');
     try {
       let schedule = activeSchedule;
+      let nextManualScheduleCount = manualScheduleCount;
       if (!schedule) {
         schedule = await createManagerSchedule(restaurantId, visibleWeekStart);
-        setManualScheduleCount((count) => count + 1);
+        nextManualScheduleCount += 1;
       }
       if (schedule?.id) {
         await attachScheduleContext(schedule.id, scheduleContext);
       }
       const updated = await fetchManagerSchedules(restaurantId, visibleWeekStart);
-      setSchedules(updated);
+      await commitManagerData(restaurantId, visibleWeekStart, {
+        schedules: updated,
+        staff,
+        manualScheduleCount: nextManualScheduleCount,
+      });
       setIsScheduleModalOpen(false);
       setStatus('Manual draft is ready. Tap shifts to edit; add-shift controls can build on this draft next.');
     } catch (err) {
@@ -212,7 +248,11 @@ export default function ManagerSchedule() {
       if (updated[0]?.id) {
         await attachScheduleContext(updated[0].id, context);
       }
-      setSchedules(updated);
+      await commitManagerData(restaurantId, nextWeekStart, {
+        schedules: updated,
+        staff,
+        manualScheduleCount,
+      });
       const shiftCount = updated[0]?.items?.length || 0;
       setSelectedShift(null);
       setIsScheduleModalOpen(false);
@@ -245,7 +285,11 @@ export default function ManagerSchedule() {
         is_manual_override: true,
       });
       const updated = await fetchManagerSchedules(restaurantId, visibleWeekStart);
-      setSchedules(updated);
+      await commitManagerData(restaurantId, visibleWeekStart, {
+        schedules: updated,
+        staff,
+        manualScheduleCount,
+      });
       setSelectedShift(null);
       setStatus('Shift saved. The generated draft now includes your edit.');
     } catch (err) {
@@ -255,33 +299,45 @@ export default function ManagerSchedule() {
     }
   };
 
-  const reviewRequest = async (requestId: string, nextStatus: 'approved' | 'denied') => {
-    setStatus(nextStatus === 'approved' ? 'Approving request...' : 'Denying request...');
-    try {
-      await reviewManagerRequest(requestId, nextStatus);
-      if (restaurantId) setRequests(await fetchManagerRequests(restaurantId));
-      setStatus(nextStatus === 'approved' ? 'Request approved.' : 'Request denied.');
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Could not update request.');
+  const addManualShift = async () => {
+    if (!restaurantId || !activeSchedule?.id) {
+      setStatus('Create a manual draft before adding shifts.');
+      return;
     }
-  };
-
-  const postAnnouncement = async () => {
-    if (!restaurantId || !announcementTitle.trim() || !announcementBody.trim()) return;
-    if (toolErrors.announcements) {
-      setStatus(toolErrors.announcements);
+    if (!newShiftForm.waiter_id) {
+      setStatus('Choose an employee before adding a shift.');
+      return;
+    }
+    if (!/^\d{2}:\d{2}$/.test(newShiftForm.shift_start) || !/^\d{2}:\d{2}$/.test(newShiftForm.shift_end)) {
+      setStatus('Use HH:MM time for the new shift.');
+      return;
+    }
+    const normalizedRole = newShiftForm.role.trim().toLowerCase();
+    if (!STAFF_ROLES.includes(normalizedRole)) {
+      setStatus('Choose one of the listed roles before adding a shift.');
       return;
     }
     setIsSaving(true);
-    setStatus('Posting announcement...');
+    setStatus('Adding manual shift...');
     try {
-      await createManagerAnnouncement(restaurantId, announcementTitle.trim(), announcementBody.trim());
-      setAnnouncementTitle('');
-      setAnnouncementBody('');
-      setAnnouncements(await fetchManagerAnnouncements(restaurantId));
-      setStatus('Announcement posted.');
+      await createManagerScheduleItem(activeSchedule.id, {
+        waiter_id: newShiftForm.waiter_id,
+        role: normalizedRole,
+        shift_date: selectedDate,
+        shift_start: newShiftForm.shift_start,
+        shift_end: newShiftForm.shift_end,
+        source: 'manual',
+      });
+      const updated = await fetchManagerSchedules(restaurantId, visibleWeekStart);
+      await commitManagerData(restaurantId, visibleWeekStart, {
+        schedules: updated,
+        staff,
+        manualScheduleCount,
+      });
+      setIsAddShiftOpen(false);
+      setStatus('Manual shift added.');
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Could not post announcement.');
+      setStatus(err instanceof Error ? err.message : 'Could not add shift.');
     } finally {
       setIsSaving(false);
     }
@@ -292,27 +348,12 @@ export default function ManagerSchedule() {
       <PageHeader
         eyebrow={restaurant?.name || 'Owner'}
         title="Schedule"
-        subtitle="Draft generation, employee requests, staff messages, and mobile controls."
+        subtitle="Build, generate, and edit this week's staff schedule."
         action={<IconButton name="plus" label="Start this week's schedule" accent onPress={() => setIsScheduleModalOpen(true)} />}
-      />
-      <SegmentedControl
-        value={tab}
-        options={[
-          { id: 'schedule', label: 'Schedule' },
-          { id: 'requests', label: 'Requests' },
-          { id: 'messages', label: 'Messages' },
-          { id: 'config', label: 'Config' },
-        ]}
-        onChange={setTab}
       />
       {status ? (
         <View style={styles.statusCard}>
           <UiText variant="bodySmall" tone="muted">{status}</UiText>
-        </View>
-      ) : null}
-      {auxiliaryError ? (
-        <View style={styles.noticeCard}>
-          <UiText variant="bodySmall" tone="muted">{auxiliaryError}</UiText>
         </View>
       ) : null}
 
@@ -328,7 +369,7 @@ export default function ManagerSchedule() {
         </View>
       )}
 
-      {!isLoading && !error && tab === 'schedule' && (
+      {!isLoading && !error && (
         <>
           <LocationFilterRow location={restaurant?.name || 'Restaurant'} />
           <WeekStrip weekStart={visibleWeekStart} selectedDate={selectedDate} onSelectDate={setSelectedDate} />
@@ -344,40 +385,59 @@ export default function ManagerSchedule() {
               <View style={styles.summaryStats}>
                 <View>
                   <UiText variant="metricSmall" style={styles.summaryMetric}>{scheduleItems.length}</UiText>
-                  <UiText variant="bodySmall" tone="muted">total shifts</UiText>
+                  <UiText variant="bodySmall" tone="muted">week shifts</UiText>
                 </View>
                 <View>
                   <UiText variant="metricSmall" style={styles.summaryMetric}>{selectedDayShifts.length}</UiText>
-                  <UiText variant="bodySmall" tone="muted">selected day</UiText>
+                  <UiText variant="bodySmall" tone="muted">{selectedDayLabel}</UiText>
                 </View>
                 <View>
                   <UiText variant="metricSmall" style={styles.summaryMetric}>{totalHours.toFixed(1)}</UiText>
-                  <UiText variant="bodySmall" tone="muted">hours</UiText>
+                  <UiText variant="bodySmall" tone="muted">week hours</UiText>
                 </View>
               </View>
               <UiText variant="bodySmall" tone="muted" style={styles.summaryHelp}>
                 Generate creates a draft for this week. Tap a shift below, adjust role or time, then save it back to the backend.
               </UiText>
-              <UiButton label={isSaving ? 'Working...' : 'Start / generate'} disabled={isSaving || !restaurantId} onPress={() => setIsScheduleModalOpen(true)} style={styles.generateButton} />
+              <View style={styles.summaryActions}>
+                <UiButton label={isSaving ? 'Working...' : 'Start / generate'} disabled={isSaving || !restaurantId} onPress={() => setIsScheduleModalOpen(true)} style={styles.actionButton} />
+                <UiButton label="Add shift" variant="secondary" disabled={!activeSchedule?.id || isSaving} onPress={() => setIsAddShiftOpen((open) => !open)} style={styles.actionButton} />
+              </View>
             </View>
-            {selectedShift && (
+            {isAddShiftOpen && activeSchedule?.id && (
               <View style={styles.editorCard}>
                 <View style={styles.editorHeader}>
                   <View>
-                    <UiText variant="eyebrow" tone="muted">Editing shift</UiText>
-                    <UiText variant="title">{selectedShift.waiter_name || 'Assigned staff'}</UiText>
+                    <UiText variant="eyebrow" tone="muted">Manual shift</UiText>
+                    <UiText variant="title">{selectedDate}</UiText>
                   </View>
-                  <Pressable onPress={() => setSelectedShift(null)} style={styles.closeButton}>
+                  <Pressable onPress={() => setIsAddShiftOpen(false)} style={styles.closeButton}>
                     <UiText variant="caption" style={styles.closeText}>Close</UiText>
                   </Pressable>
                 </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.staffPicker}>
+                  {staff.map((member) => {
+                    const active = newShiftForm.waiter_id === member.id;
+                    return (
+                      <Pressable
+                        key={member.id}
+                        onPress={() => setNewShiftForm((prev) => ({ ...prev, waiter_id: member.id, role: member.role || prev.role }))}
+                        style={[styles.staffChip, active && styles.staffChipActive]}
+                      >
+                        <UiText variant="caption" style={[styles.staffChipText, active && styles.staffChipTextActive]} numberOfLines={1}>
+                          {member.name || 'Staff'}
+                        </UiText>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
                 <View style={styles.rolePicker}>
                   {STAFF_ROLES.map((role) => {
-                    const active = shiftForm.role.toLowerCase() === role;
+                    const active = newShiftForm.role.toLowerCase() === role;
                     return (
                       <Pressable
                         key={role}
-                        onPress={() => setShiftForm((prev) => ({ ...prev, role }))}
+                        onPress={() => setNewShiftForm((prev) => ({ ...prev, role }))}
                         style={[styles.roleChip, active && styles.roleChipActive]}
                       >
                         <UiText variant="caption" style={[styles.roleChipText, active && styles.roleChipTextActive]}>
@@ -388,10 +448,10 @@ export default function ManagerSchedule() {
                   })}
                 </View>
                 <View style={styles.timeFields}>
-                  <TextField value={shiftForm.shift_start} onChangeText={(value) => setShiftForm((prev) => ({ ...prev, shift_start: value }))} placeholder="Start HH:MM" />
-                  <TextField value={shiftForm.shift_end} onChangeText={(value) => setShiftForm((prev) => ({ ...prev, shift_end: value }))} placeholder="End HH:MM" />
+                  <TextField value={newShiftForm.shift_start} onChangeText={(value) => setNewShiftForm((prev) => ({ ...prev, shift_start: value }))} placeholder="Start HH:MM" />
+                  <TextField value={newShiftForm.shift_end} onChangeText={(value) => setNewShiftForm((prev) => ({ ...prev, shift_end: value }))} placeholder="End HH:MM" />
                 </View>
-                <UiButton label={isSaving ? 'Saving...' : 'Save shift'} disabled={isSaving} onPress={saveSelectedShift} />
+                <UiButton label={isSaving ? 'Adding...' : 'Add to selected day'} disabled={isSaving || staff.length === 0} onPress={addManualShift} />
               </View>
             )}
             {weekDates.map((dateKey) => (
@@ -405,80 +465,6 @@ export default function ManagerSchedule() {
             ))}
           </ScrollView>
         </>
-      )}
-
-      {!isLoading && !error && tab === 'requests' && (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          {toolErrors.requests ? (
-            <View style={styles.stateCard}>
-              <UiText variant="title">Requests unavailable</UiText>
-              <UiText variant="bodySmall" tone="muted">{toolErrors.requests}</UiText>
-            </View>
-          ) : requests.length === 0 ? (
-            <View style={styles.stateCard}>
-              <UiText variant="bodySmall" tone="muted">No employee requests yet.</UiText>
-            </View>
-          ) : (
-            requests.map((request) => (
-              <RequestRow
-                key={request.id}
-                request={request}
-                onApprove={() => reviewRequest(request.id, 'approved')}
-                onDeny={() => reviewRequest(request.id, 'denied')}
-              />
-            ))
-          )}
-        </ScrollView>
-      )}
-
-      {!isLoading && !error && tab === 'messages' && (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          {toolErrors.messages && toolErrors.announcements ? (
-            <View style={styles.stateCard}>
-              <UiText variant="title">Messages unavailable</UiText>
-              <UiText variant="bodySmall" tone="muted">{toolErrors.messages}</UiText>
-            </View>
-          ) : (
-            <>
-              <View style={styles.formCard}>
-                <UiText variant="title">Post announcement</UiText>
-                {toolErrors.announcements ? (
-                  <UiText variant="bodySmall" tone="muted">{toolErrors.announcements}</UiText>
-                ) : (
-                  <>
-                    <TextField value={announcementTitle} onChangeText={setAnnouncementTitle} placeholder="Title" />
-                    <TextField value={announcementBody} onChangeText={setAnnouncementBody} placeholder="Message" multiline />
-                    <UiButton label="Post to team" disabled={isSaving || !announcementTitle.trim() || !announcementBody.trim()} onPress={postAnnouncement} />
-                  </>
-                )}
-              </View>
-              <View style={styles.listGap}>
-                {toolErrors.messages ? (
-                  <View style={styles.stateCard}>
-                    <UiText variant="bodySmall" tone="muted">{toolErrors.messages}</UiText>
-                  </View>
-                ) : conversations.map((conversation) => <ConversationRow key={conversation.id} conversation={conversation} />)}
-                {announcements.map((announcement) => <AnnouncementCard key={announcement.id} announcement={announcement} />)}
-              </View>
-            </>
-          )}
-        </ScrollView>
-      )}
-
-      {!isLoading && !error && tab === 'config' && (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.formCard}>
-            <UiText variant="title">Mobile manager controls</UiText>
-            <UiText variant="bodySmall" tone="muted">
-              Full drag scheduling stays on web. Mobile focuses on fast draft generation, day inspection, request review, announcements, and staff communication.
-            </UiText>
-          </View>
-          <View style={styles.configGrid}>
-            <ConfigTile label="Requests" value={String(requests.filter((request) => request.status === 'pending').length)} />
-            <ConfigTile label="Chats" value={String(conversations.length)} />
-            <ConfigTile label="Shifts" value={String(scheduleItems.length)} />
-          </View>
-        </ScrollView>
       )}
 
       <Modal
@@ -544,21 +530,50 @@ export default function ManagerSchedule() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={selectedShift !== null}
+        onRequestClose={() => setSelectedShift(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.scheduleModal}>
+            <View style={styles.editorHeader}>
+              <View>
+                <UiText variant="eyebrow" tone="muted">Editing shift</UiText>
+                <UiText variant="title">{selectedShift?.waiter_name || 'Assigned staff'}</UiText>
+              </View>
+              <Pressable onPress={() => setSelectedShift(null)} style={styles.closeButton}>
+                <UiText variant="caption" style={styles.closeText}>Close</UiText>
+              </Pressable>
+            </View>
+            <View style={styles.rolePicker}>
+              {STAFF_ROLES.map((role) => {
+                const active = shiftForm.role.toLowerCase() === role;
+                return (
+                  <Pressable
+                    key={role}
+                    onPress={() => setShiftForm((prev) => ({ ...prev, role }))}
+                    style={[styles.roleChip, active && styles.roleChipActive]}
+                  >
+                    <UiText variant="caption" style={[styles.roleChipText, active && styles.roleChipTextActive]}>
+                      {role}
+                    </UiText>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <View style={styles.timeFields}>
+              <TextField value={shiftForm.shift_start} onChangeText={(value) => setShiftForm((prev) => ({ ...prev, shift_start: value }))} placeholder="Start HH:MM" />
+              <TextField value={shiftForm.shift_end} onChangeText={(value) => setShiftForm((prev) => ({ ...prev, shift_end: value }))} placeholder="End HH:MM" />
+            </View>
+            <UiButton label={isSaving ? 'Saving...' : 'Save shift'} disabled={isSaving} onPress={saveSelectedShift} />
+          </View>
+        </View>
+      </Modal>
     </ScreenShell>
   );
-}
-
-function ConfigTile({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.configTile}>
-      <UiText variant="eyebrow" tone="muted">{label}</UiText>
-      <UiText variant="metricSmall" style={styles.summaryMetric}>{value}</UiText>
-    </View>
-  );
-}
-
-function getErrorMessage(reason: unknown, fallback: string) {
-  return reason instanceof Error ? reason.message : fallback;
 }
 
 const styles = StyleSheet.create({
@@ -566,13 +581,6 @@ const styles = StyleSheet.create({
     gap: spacing[4],
     padding: spacing[5],
     paddingBottom: 120,
-  },
-  monthControls: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing[5],
-    paddingVertical: spacing[3],
   },
   stateCard: {
     alignItems: 'center',
@@ -591,15 +599,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginHorizontal: spacing[5],
     marginTop: spacing[3],
-    padding: spacing[3],
-  },
-  noticeCard: {
-    backgroundColor: palette.stone[50],
-    borderColor: semanticColors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    marginHorizontal: spacing[5],
-    marginTop: spacing[2],
     padding: spacing[3],
   },
   summaryCard: {
@@ -629,8 +628,13 @@ const styles = StyleSheet.create({
   summaryHelp: {
     marginTop: spacing[4],
   },
-  generateButton: {
+  summaryActions: {
+    flexDirection: 'row',
+    gap: spacing[3],
     marginTop: spacing[4],
+  },
+  actionButton: {
+    flex: 1,
   },
   editorCard: {
     backgroundColor: semanticColors.elevated,
@@ -679,31 +683,31 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontFamily: 'Inter_700Bold',
   },
+  staffPicker: {
+    gap: spacing[2],
+    paddingRight: spacing[2],
+  },
+  staffChip: {
+    borderColor: semanticColors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    maxWidth: 150,
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+  },
+  staffChipActive: {
+    backgroundColor: palette.ink[900],
+    borderColor: palette.ink[900],
+  },
+  staffChipText: {
+    color: palette.ink[500],
+  },
+  staffChipTextActive: {
+    color: '#FFFFFF',
+    fontFamily: 'Inter_700Bold',
+  },
   timeFields: {
     gap: spacing[3],
-  },
-  formCard: {
-    backgroundColor: semanticColors.elevated,
-    borderColor: semanticColors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    gap: spacing[3],
-    padding: spacing[4],
-  },
-  listGap: {
-    gap: spacing[3],
-  },
-  configGrid: {
-    flexDirection: 'row',
-    gap: spacing[3],
-  },
-  configTile: {
-    backgroundColor: semanticColors.elevated,
-    borderColor: semanticColors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flex: 1,
-    padding: spacing[3],
   },
   modalOverlay: {
     alignItems: 'center',
