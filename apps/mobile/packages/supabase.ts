@@ -43,7 +43,14 @@ export async function signUp(email: string, password: string): Promise<SignUpRes
     try {
         const client = getSBClient()
         const { data, error } = await client.auth.signUp({ email, password })
-        if (error) return { ok: false, error: humanizeAuthError(error.message) }
+        if (error) return { ok: false, error: humanizeAuthError(error.message ?? "") }
+        if  (data.user == null || data.user.id == null) return {ok: false, error: "Error retrieving your infromation"}
+
+        client.from("user_roles").insert({
+            user: data.user?.id!,
+            sole_annotation_access: false,
+            restaraunt_role: "employee"
+        })
         return { ok: true, needsConfirmation: data.session == null }
     } catch (e) {
         const message = e instanceof Error ? e.message : String(e)
@@ -87,7 +94,7 @@ export async function getUserRole(): Promise<userRole | undefined> {
 
     if (data.data == null && data.count == 0) return
     console.log(data.data, user.data.user.id)
-    return data.data[0].restaraunt_role
+    return data.data![0].restaraunt_role
 }
 
 export async function getUserRestaraunts(): Promise<Restaurant[] | undefined> {

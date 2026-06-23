@@ -1,68 +1,56 @@
 import { color_pallet } from '@/styles/colors';
 import { typography } from '@/styles/typography';
 import { Ionicons } from '@expo/vector-icons';
-import { Slot, Tabs } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { Image, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LiquidGlassTabBar } from '@/components/LiquidGlassTabBar';
 
 export default function RootLayout() {
   return (
-    <SafeAreaView 
+    <SafeAreaView
       edges={['top']}
-      style={{ flex: 1, backgroundColor: color_pallet.bg.DEFAULT, justifyContent: "flex-start"}}
+      style={{ flex: 1, backgroundColor: color_pallet.elevated.DEFAULT }}
     >
-      <View style={{ 
-        backgroundColor: color_pallet.bg.DEFAULT, 
-        marginLeft: 16, 
-        marginRight: 16, 
+      <View style={{
+        backgroundColor: color_pallet.elevated.DEFAULT,
+        marginLeft: 16,
+        marginRight: 16,
         marginBottom: 16,
-        flex: 0, 
-        flexDirection: 'row', 
+        flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between'
+        justifyContent: 'space-between',
       }}>
         <Image
-            source={{ uri: 'https://static.vecteezy.com/system/resources/thumbnails/075/640/866/small/man-sitting-at-cafe-table-with-camera-and-tableware-in-foreground-urban-leisure-creative-lifestyle-streetgraphy-and-relaxed-social-atmosphere-photo.jpg' }}
-            style={{
-              height: 45, 
-              width: 45, 
-              borderRadius: 5,
-              borderWidth: 2, 
-              borderColor: color_pallet.elevated.dark
-            }}
-          />
-        <Text style={[{...typography.h1, fontSize: 29}, { color: '#151313'}]}>Shire</Text>
-        <View style={{width: 49}}></View>
+          source={{ uri: 'https://static.vecteezy.com/system/resources/thumbnails/075/640/866/small/man-sitting-at-cafe-table-with-camera-and-tableware-in-foreground-urban-leisure-creative-lifestyle-streetgraphy-and-relaxed-social-atmosphere-photo.jpg' }}
+          style={{
+            height: 45,
+            width: 45,
+            borderRadius: 5,
+            borderWidth: 2,
+            borderColor: color_pallet.elevated.dark,
+          }}
+        />
+        <Text style={[{ ...typography.h1, fontSize: 29 }, { color: '#151313' }]}>Shire</Text>
+        <View style={{ width: 49 }} />
       </View>
-      <Slot></Slot>
-      <View style={{flex: 1}}>
-        <BottomTabBar />
-      </View>
-    </SafeAreaView>
-  );
-}
 
-function BottomTabBar() {
-  return (
-    <Tabs 
-      screenOptions={
-        {
-          headerShown: false, 
-          sceneStyle: { 
-            backgroundColor: color_pallet.bg.DEFAULT 
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          sceneStyle: {
+            backgroundColor: color_pallet.elevated.DEFAULT,
           },
           tabBarStyle: {
-            backgroundColor: color_pallet.bg.DEFAULT,
+            backgroundColor: color_pallet.elevated.DEFAULT,
             paddingVertical: 5,
-            paddingBottom: 0
+            paddingBottom: 0,
           },
-        }
-      }
-      tabBar={(props) => (
-        <LiquidGlassTabBar {...props} />
-      )}
-    >
+        }}
+        tabBar={(props) => (
+          <LiquidGlassTabBar {...props} />
+        )}
+      >
       <Tabs.Screen
         name="scans"
         options={{
@@ -99,6 +87,7 @@ function BottomTabBar() {
           ),
         }}
       />
-    </Tabs>
+      </Tabs>
+    </SafeAreaView>
   );
 }

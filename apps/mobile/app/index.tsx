@@ -56,7 +56,7 @@ export default function AuthPage() {
         className="flex-1"
       >
         <View
-          style={{ flex: 1, flexDirection: "column", paddingHorizontal: 24, paddingVertical: 32}}
+          style={{ flex: 1, flexDirection: "column", paddingHorizontal: 24, paddingTop: 32, paddingBottom: 10}}
         >
           <View className="items-center mb-6">
             <Text
@@ -106,7 +106,7 @@ export default function AuthPage() {
             />
           </View>
 
-          <View className="mb-6">
+          <View>
             <Text
               className="font-mono text-ink-500 mb-2"
               style={{ fontSize: 10, letterSpacing: EYEBROW_TRACKING, textTransform: 'uppercase' }}
@@ -193,6 +193,22 @@ export default function AuthPage() {
                 )}
               </View>
             )}
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.replace('/signup')}
+            accessibilityRole="button"
+            accessibilityLabel="Create an account"
+            style={{
+              marginTop: 16,
+              alignSelf: 'center',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+            }}
+          >
+            <Text style={{ fontSize: 14, color: color_pallet.ink[500] }}>
+              Don't have an account?{' '}
+              <Text style={{ color: color_pallet.sky[700], fontWeight: '500' }}>Sign up</Text>
+            </Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>

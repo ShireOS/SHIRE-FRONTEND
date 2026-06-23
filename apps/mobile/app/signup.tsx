@@ -58,7 +58,7 @@ export default function SignUpPage() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         className="flex-1"
       >
-        <View style={{ flex: 1, flexDirection: 'column', paddingHorizontal: 24, paddingVertical: 32 }}>
+        <View style={{ flex: 1, flexDirection: "column", paddingHorizontal: 24, paddingTop: 32, paddingBottom: 10}}>
           <View className="items-center mb-6">
             <Text
               className="font-mono text-ink-500"
@@ -262,11 +262,15 @@ export default function SignUpPage() {
             )}
           </Pressable>
 
-          <Pressable
+         <Pressable
             onPress={() => router.replace('/')}
             accessibilityRole="button"
-            accessibilityLabel="Back to sign in"
-            style={{ marginTop: 16, alignItems: 'center', paddingVertical: 8 }}
+            accessibilityLabel="Create an account"
+            style={{
+              marginTop: 16,
+              alignSelf: 'center',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+            }}
           >
             <Text style={{ fontSize: 14, color: color_pallet.ink[500] }}>
               Already have an account?{' '}

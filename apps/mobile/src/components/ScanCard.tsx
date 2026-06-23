@@ -59,7 +59,7 @@ export function ScanCard({ data, onPress, onDelete }: ScanCardProps) {
   return (
     <Animated.View style={animStyle} onLayout={onLayout}>
       <Pressable onPress={onPress}>
-        <View style={[styles.card, shadowMd]}>
+        <View style={[styles.card]}>
           <ThumbnailTile />
           <View style={styles.gap} />
           <View style={styles.body}>
@@ -127,8 +127,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   thumb: {
-    width: 90,
-    height: 90,
+    aspectRatio: 1,
     borderRadius: 2,
     overflow: 'hidden',
     borderWidth: 1,

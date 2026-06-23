@@ -166,8 +166,7 @@ function GlassSurface({ tintColor }: { tintColor?: string }) {
         experimentalBlurMethod="dimezisBlurView"
         style={StyleSheet.absoluteFill}
       />
-      <View style={[StyleSheet.absoluteFill, styles.surfaceTint]} pointerEvents="none" />
-      <View style={[StyleSheet.absoluteFill, styles.highlight]} pointerEvents="none" />
+      
     </View>
   );
 }
