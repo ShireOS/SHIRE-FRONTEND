@@ -1,4 +1,4 @@
-import { apiGet } from './mobileApi';
+import { fetchCachedOwnerAnalytics, fetchCachedOwnerChecks } from '@/data/ownerAnalyticsCache';
 
 export type AnalyticsPeriod = 'day' | 'week' | 'month' | 'year' | 'full';
 
@@ -107,17 +107,31 @@ export type OwnerChecksPayload = {
   }[];
 };
 
+export type OwnerAnalyticsFetchOptions = {
+  forceRefresh?: boolean;
+  onRevalidate?: (data: OwnerAnalyticsPayload) => void;
+  onError?: (error: unknown) => void;
+};
+
+export type OwnerChecksFetchOptions = {
+  forceRefresh?: boolean;
+  onRevalidate?: (data: OwnerChecksPayload) => void;
+  onError?: (error: unknown) => void;
+};
+
 export function fetchOwnerAnalytics(
   restaurantId: string,
   period: AnalyticsPeriod,
   dateKey: string,
+  options?: OwnerAnalyticsFetchOptions,
 ) {
-  const query = `period=${encodeURIComponent(period)}&date=${encodeURIComponent(dateKey)}`;
-  return apiGet<OwnerAnalyticsPayload>(`/restaurants/${restaurantId}/owner-analytics?${query}`);
+  return fetchCachedOwnerAnalytics(restaurantId, period, dateKey, options);
 }
 
-export function fetchOwnerChecks(restaurantId: string, dateKey: string) {
-  return apiGet<OwnerChecksPayload>(
-    `/restaurants/${restaurantId}/owner-checks?date=${encodeURIComponent(dateKey)}`,
-  );
+export function fetchOwnerChecks(
+  restaurantId: string,
+  dateKey: string,
+  options?: OwnerChecksFetchOptions,
+) {
+  return fetchCachedOwnerChecks(restaurantId, dateKey, options);
 }

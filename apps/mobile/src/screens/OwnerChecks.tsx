@@ -1,5 +1,6 @@
 import { fetchOwnerChecks, type OwnerChecksPayload } from '@/api/ownerAnalytics';
-import { color_pallet } from '@/styles/colors';
+import { color_pallet, semanticColors, statusColors } from '@/styles/colors';
+import { card, divider, layout, radius, spacing } from '@/styles/tokens';
 import { typography } from '@/styles/typography';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -59,7 +60,11 @@ export default function OwnerChecks() {
     setIsLoading(true);
     setError(null);
 
-    fetchOwnerChecks(restaurantId, date)
+    fetchOwnerChecks(restaurantId, date, {
+      onRevalidate: (data) => {
+        if (!cancelled) setPayload(data);
+      },
+    })
       .then((data) => {
         if (!cancelled) setPayload(data);
       })
@@ -184,22 +189,22 @@ const styles = StyleSheet.create({
     backgroundColor: color_pallet.bg.DEFAULT,
   },
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 64,
-    paddingBottom: 48,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing[10],
+    paddingBottom: spacing[12],
   },
   header: {
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing[3],
     alignItems: 'center',
   },
   backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: color_pallet.cream[100],
+    width: layout.touchTarget,
+    height: layout.touchTarget,
+    borderRadius: radius.pill,
+    backgroundColor: semanticColors.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: color_pallet.stone[200],
+    borderColor: semanticColors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -208,79 +213,72 @@ const styles = StyleSheet.create({
   },
   title: {
     color: color_pallet.ink[900],
-    marginTop: 2,
+    marginTop: spacing[1] / 2,
   },
   subtitle: {
     color: color_pallet.ink[500],
-    marginTop: 2,
+    marginTop: spacing[1] / 2,
   },
   stateCard: {
-    marginTop: 24,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: color_pallet.stone[200],
-    backgroundColor: color_pallet.elevated.DEFAULT,
-    padding: 18,
+    ...card.base,
+    marginTop: spacing[6],
     alignItems: 'center',
   },
   stateText: {
     color: color_pallet.ink[500],
-    marginTop: 8,
+    marginTop: spacing[2],
   },
   errorCard: {
-    marginTop: 24,
-    borderRadius: 8,
+    marginTop: spacing[6],
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: 'rgba(201,80,46,0.25)',
-    backgroundColor: 'rgba(201,80,46,0.08)',
-    padding: 14,
+    borderColor: statusColors.danger.border,
+    backgroundColor: statusColors.danger.bg,
+    padding: spacing[4],
   },
   errorTitle: {
     color: color_pallet.danger[600],
   },
   errorCopy: {
     color: color_pallet.ink[700],
-    marginTop: 4,
+    marginTop: spacing[1],
   },
   errorHint: {
     color: color_pallet.ink[500],
-    marginTop: 8,
+    marginTop: spacing[2],
   },
   summaryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 22,
+    gap: spacing[3],
+    marginTop: spacing[6],
   },
   summaryTile: {
+    ...card.base,
     width: '48.4%',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: color_pallet.stone[200],
-    backgroundColor: color_pallet.elevated.DEFAULT,
-    padding: 14,
+    padding: spacing[4],
   },
   tileLabel: {
     color: color_pallet.ink[500],
   },
   tileValue: {
     color: color_pallet.ink[900],
-    marginTop: 8,
+    marginTop: spacing[2],
   },
   section: {
-    marginTop: 24,
+    marginTop: spacing[6],
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: color_pallet.stone[200],
-    paddingTop: 14,
+    borderTopColor: divider.backgroundColor,
+    paddingTop: spacing[4],
   },
   sectionTitle: {
     color: color_pallet.ink[900],
-    marginBottom: 6,
+    marginBottom: spacing[2],
   },
   hourRow: {
     minHeight: 56,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: color_pallet.stone[200],
+    borderBottomColor: semanticColors.border,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -296,28 +294,28 @@ const styles = StyleSheet.create({
   },
   hourSales: {
     color: color_pallet.ink[900],
-    marginTop: 2,
+    marginTop: spacing[1] / 2,
   },
   checkRow: {
     minHeight: 78,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: color_pallet.stone[200],
+    borderBottomColor: semanticColors.border,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: spacing[3],
   },
   checkTitle: {
     color: color_pallet.ink[800],
   },
   checkMeta: {
     color: color_pallet.ink[500],
-    marginTop: 2,
+    marginTop: spacing[1] / 2,
   },
   checkTotal: {
     color: color_pallet.ink[900],
   },
   emptyText: {
     color: color_pallet.ink[500],
-    paddingVertical: 12,
+    paddingVertical: spacing[3],
   },
 });

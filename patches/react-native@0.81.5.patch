@@ -1,0 +1,12 @@
+diff --git a/ReactCommon/yoga/Yoga.podspec b/ReactCommon/yoga/Yoga.podspec
+--- a/ReactCommon/yoga/Yoga.podspec
++++ b/ReactCommon/yoga/Yoga.podspec
+@@ -54,7 +54,7 @@ Pod::Spec.new do |spec|
+   spec.source_files = podspec_sources(source_files, "yoga/**/*.h")
+   spec.header_mappings_dir = 'yoga'
+
+-  public_header_files = 'yoga/*.h'
++  public_header_files = 'yoga/**/*.h'
+   public_header_files = File.join('ReactCommon/yoga', public_header_files) if ENV['INSTALL_YOGA_WITHOUT_PATH_OPTION']
+   spec.public_header_files = public_header_files
+

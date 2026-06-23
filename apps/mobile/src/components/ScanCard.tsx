@@ -4,7 +4,6 @@ import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { typography } from '@/styles/typography';
-import { shadowMd } from '@/styles/shadows';
 import { color_pallet } from '@/styles/colors';
 import type { Scan, ScanType } from '@/models/scan';
 
@@ -59,7 +58,7 @@ export function ScanCard({ data, onPress, onDelete }: ScanCardProps) {
   return (
     <Animated.View style={animStyle} onLayout={onLayout}>
       <Pressable onPress={onPress}>
-        <View style={[styles.card, shadowMd]}>
+        <View style={[styles.card]}>
           <ThumbnailTile />
           <View style={styles.gap} />
           <View style={styles.body}>
@@ -127,8 +126,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   thumb: {
-    width: 90,
-    height: 90,
+    aspectRatio: 1,
     borderRadius: 2,
     overflow: 'hidden',
     borderWidth: 1,

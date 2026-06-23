@@ -5772,6 +5772,42 @@ export type Database = {
           },
         ]
       }
+      restaraunt_assignments: {
+        Row: {
+          approved: boolean | null
+          id: number
+          restaraunt: string | null
+          user: string
+        }
+        Insert: {
+          approved?: boolean | null
+          id?: number
+          restaraunt?: string | null
+          user: string
+        }
+        Update: {
+          approved?: boolean | null
+          id?: number
+          restaraunt?: string | null
+          user?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "restaraunt_assignments_restaraunt_fkey"
+            columns: ["restaraunt"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "restaraunt_assignments_user_fkey"
+            columns: ["user"]
+            isOneToOne: false
+            referencedRelation: "user_roles"
+            referencedColumns: ["user"]
+          },
+        ]
+      }
       restaurant_integrations: {
         Row: {
           access_token_encrypted: string | null
@@ -5980,6 +6016,7 @@ export type Database = {
           floor_plan_image_url: string | null
           floor_plan_updated_at: string | null
           id: string
+          join_code: string
           logo_url: string | null
           name: string
           onboarding_completed_at: string | null
@@ -6013,6 +6050,7 @@ export type Database = {
           floor_plan_image_url?: string | null
           floor_plan_updated_at?: string | null
           id?: string
+          join_code?: string
           logo_url?: string | null
           name: string
           onboarding_completed_at?: string | null
@@ -6046,6 +6084,7 @@ export type Database = {
           floor_plan_image_url?: string | null
           floor_plan_updated_at?: string | null
           id?: string
+          join_code?: string
           logo_url?: string | null
           name?: string
           onboarding_completed_at?: string | null
@@ -8544,6 +8583,21 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_meta: {
+        Row: {
+          picture: string
+          user_id: string | null
+        }
+        Insert: {
+          picture: string
+          user_id?: string | null
+        }
+        Update: {
+          picture?: string
+          user_id?: string | null
+        }
+        Relationships: []
       }
       user_roles: {
         Row: {

@@ -5,8 +5,9 @@ import {
   type MenuSalesItem,
   type OwnerAnalyticsPayload,
 } from '@/api/ownerAnalytics';
-import { color_pallet } from '@/styles/colors';
+import { color_pallet, semanticColors, statusColors } from '@/styles/colors';
 import { shadowMd } from '@/styles/shadows';
+import { card, divider, layout, radius, spacing } from '@/styles/tokens';
 import { typography } from '@/styles/typography';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -114,7 +115,11 @@ export default function OwnerOverview() {
     setIsLoading(true);
     setError(null);
 
-    fetchOwnerAnalytics(restaurant.id, period, dateKey)
+    fetchOwnerAnalytics(restaurant.id, period, dateKey, {
+      onRevalidate: (data) => {
+        if (!cancelled) setPayload(data);
+      },
+    })
       .then((data) => {
         if (!cancelled) setPayload(data);
       })
@@ -376,8 +381,8 @@ const styles = StyleSheet.create({
     backgroundColor: color_pallet.bg.DEFAULT,
   },
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 4,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing[1],
     paddingBottom: 128,
   },
   heading: {
@@ -393,28 +398,28 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   refreshButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: layout.controlHeightSmall,
+    height: layout.controlHeightSmall,
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: color_pallet.cream[100],
+    backgroundColor: semanticColors.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: color_pallet.stone[200],
+    borderColor: semanticColors.border,
   },
   dateBar: {
-    marginTop: 16,
-    minHeight: 48,
-    borderRadius: 8,
+    marginTop: spacing[4],
+    minHeight: layout.controlHeight,
+    borderRadius: radius.md,
     backgroundColor: color_pallet.ink[700],
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 8,
+    paddingHorizontal: spacing[2],
   },
   dateArrow: {
-    width: 38,
-    height: 38,
+    width: layout.controlHeightSmall,
+    height: layout.controlHeightSmall,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -427,22 +432,22 @@ const styles = StyleSheet.create({
   dateSubLabel: {
     color: 'rgba(250,250,250,0.62)',
     fontSize: 10,
-    marginTop: 2,
+    marginTop: spacing[1] / 2,
   },
   periodRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
+    gap: spacing[2],
+    marginTop: spacing[3],
   },
   periodPill: {
     flex: 1,
-    minHeight: 34,
-    borderRadius: 17,
+    minHeight: layout.controlHeightSmall,
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: color_pallet.cream[100],
+    backgroundColor: semanticColors.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: color_pallet.stone[200],
+    borderColor: semanticColors.border,
   },
   periodPillActive: {
     backgroundColor: color_pallet.elevated.dark,
@@ -457,25 +462,21 @@ const styles = StyleSheet.create({
     color: color_pallet.cream[50],
   },
   loadingCard: {
-    marginTop: 18,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: color_pallet.stone[200],
-    backgroundColor: color_pallet.elevated.DEFAULT,
-    padding: 18,
+    ...card.base,
+    marginTop: spacing[5],
     alignItems: 'center',
   },
   loadingText: {
-    marginTop: 8,
+    marginTop: spacing[2],
     color: color_pallet.ink[500],
   },
   errorCard: {
-    marginTop: 18,
-    borderRadius: 8,
+    marginTop: spacing[5],
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: 'rgba(201,80,46,0.25)',
-    backgroundColor: 'rgba(201,80,46,0.08)',
-    padding: 14,
+    borderColor: statusColors.danger.border,
+    backgroundColor: statusColors.danger.bg,
+    padding: spacing[4],
   },
   errorTitle: {
     color: color_pallet.danger[600],
@@ -485,12 +486,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   salesCard: {
-    marginTop: 18,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: color_pallet.stone[200],
-    backgroundColor: color_pallet.elevated.DEFAULT,
-    padding: 18,
+    ...card.base,
+    marginTop: spacing[5],
+    padding: spacing[5],
   },
   cardHeader: {
     flexDirection: 'row',
@@ -501,20 +499,20 @@ const styles = StyleSheet.create({
     color: color_pallet.ink[500],
   },
   salesValue: {
-    marginTop: 10,
+    marginTop: spacing[3],
     color: color_pallet.ink[900],
     fontSize: 42,
   },
   salesDetail: {
     color: color_pallet.ink[500],
-    marginTop: 4,
+    marginTop: spacing[1],
   },
   sparkWrap: {
     height: 46,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 5,
-    marginTop: 16,
+    gap: spacing[1],
+    marginTop: spacing[4],
   },
   sparkBar: {
     width: 7,
@@ -523,33 +521,30 @@ const styles = StyleSheet.create({
   metricGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 12,
+    gap: spacing[3],
+    marginTop: spacing[3],
   },
   metricTile: {
+    ...card.base,
     width: '48.4%',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: color_pallet.stone[200],
-    backgroundColor: color_pallet.elevated.DEFAULT,
-    padding: 14,
+    padding: spacing[4],
   },
   tileLabel: {
     color: color_pallet.ink[500],
   },
   tileValue: {
     color: color_pallet.ink[900],
-    marginTop: 8,
+    marginTop: spacing[2],
   },
   tileDetail: {
     color: color_pallet.ink[500],
-    marginTop: 2,
+    marginTop: spacing[1] / 2,
   },
   section: {
-    marginTop: 22,
+    marginTop: spacing[6],
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: color_pallet.stone[200],
-    paddingTop: 14,
+    borderTopColor: divider.backgroundColor,
+    paddingTop: spacing[4],
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -558,7 +553,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: color_pallet.ink[900],
-    marginBottom: 6,
+    marginBottom: spacing[2],
   },
   sectionHint: {
     color: color_pallet.ink[500],
@@ -566,18 +561,18 @@ const styles = StyleSheet.create({
   metricRow: {
     minHeight: 58,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: color_pallet.stone[200],
+    borderBottomColor: semanticColors.border,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 14,
+    gap: spacing[4],
   },
   rowLabel: {
     color: color_pallet.ink[800],
   },
   rowDetail: {
     color: color_pallet.ink[500],
-    marginTop: 2,
+    marginTop: spacing[1] / 2,
   },
   rowValueGroup: {
     flexDirection: 'row',
@@ -593,11 +588,11 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     color: color_pallet.ink[500],
-    paddingVertical: 12,
+    paddingVertical: spacing[3],
   },
   centerState: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: spacing[6],
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: color_pallet.bg.DEFAULT,

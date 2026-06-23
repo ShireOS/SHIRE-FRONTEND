@@ -4,7 +4,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   Text,
   TextInput,
   View,
@@ -12,13 +11,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { getStoredUserRole, login, type userRole } from '../packages/supabase'
+import { DottedSkyBackground } from '@/components/DottedSkyBackground'
+import { color_pallet } from '@/styles/colors'
 
 const EYEBROW_TRACKING = 0.06 * 10
 const BRAND_EYEBROW_TRACKING = 0.06 * 12
-const INK_500 = '#757170'
-const STONE_200 = '#E4E2E2'
-const SKY_600 = '#6F86FF'
-const SKY_700 = '#156CC2'
 
 function routeForRole(role: userRole) {
   if (role === 'owner' || role === 'developer') return '/(admin)/overview'
@@ -72,16 +69,15 @@ export default function AuthPage() {
 
   return (
     <SafeAreaView className="flex-1 bg-bg">
+      <DottedSkyBackground opacity={0.8} glow={false}/>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         className="flex-1"
       >
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 32 }}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+        <View
+          style={{ flex: 1, flexDirection: "column", paddingHorizontal: 24, paddingTop: 32, paddingBottom: 10}}
         >
-          <View className="items-center mb-12">
+          <View className="items-center mb-6">
             <Text
               className="font-mono text-ink-500"
               style={{ fontSize: 12, letterSpacing: BRAND_EYEBROW_TRACKING, textTransform: 'uppercase' }}
@@ -90,15 +86,9 @@ export default function AuthPage() {
             </Text>
             <Text
               className="text-ink-900 mt-3"
-              style={{ fontSize: 32, fontWeight: '600', letterSpacing: -0.015 * 32, lineHeight: 32 * 1.1 }}
+              style={{ fontSize: 32, fontWeight: '800', letterSpacing: 0, lineHeight: 32 }}
             >
               Welcome back
-            </Text>
-            <Text
-              className="text-ink-500 mt-2"
-              style={{ fontSize: 16, lineHeight: 16 * 1.5 }}
-            >
-              Sign in to your admin account
             </Text>
           </View>
 
@@ -120,7 +110,7 @@ export default function AuthPage() {
               keyboardType="email-address"
               textContentType="emailAddress"
               placeholder="you@restaurant.com"
-              placeholderTextColor={INK_500}
+              placeholderTextColor={color_pallet.ink[500]}
               editable={!submitting}
               accessibilityLabel="Email"
               className="bg-cream-100 text-ink-900"
@@ -130,12 +120,12 @@ export default function AuthPage() {
                 fontSize: 16,
                 borderRadius: 12,
                 borderWidth: emailFocused ? 1.5 : 1,
-                borderColor: emailFocused ? SKY_600 : STONE_200,
+                borderColor: emailFocused ? color_pallet.sky[600] : color_pallet.stone[200],
               }}
             />
           </View>
 
-          <View className="mb-6">
+          <View>
             <Text
               className="font-mono text-ink-500 mb-2"
               style={{ fontSize: 10, letterSpacing: EYEBROW_TRACKING, textTransform: 'uppercase' }}
@@ -153,7 +143,7 @@ export default function AuthPage() {
               textContentType="password"
               secureTextEntry
               placeholder="••••••••"
-              placeholderTextColor={INK_500}
+              placeholderTextColor={color_pallet.ink[500]}
               editable={!submitting}
               accessibilityLabel="Password"
               returnKeyType="go"
@@ -165,7 +155,7 @@ export default function AuthPage() {
                 fontSize: 16,
                 borderRadius: 12,
                 borderWidth: passwordFocused ? 1.5 : 1,
-                borderColor: passwordFocused ? SKY_600 : STONE_200,
+                borderColor: passwordFocused ? color_pallet.sky[600] : color_pallet.stone[200],
               }}
             />
           </View>
@@ -189,40 +179,57 @@ export default function AuthPage() {
               </Text>
             </View>
           )}
-
+          <View style={{flex: 1}}></View>
           <Pressable
             onPress={onSubmit}
-            disabled={!canSubmit}
             accessibilityRole="button"
             accessibilityLabel="Log in"
-            accessibilityState={{ disabled: !canSubmit, busy: submitting }}
-            style={({ pressed }) => ({
-              backgroundColor: SKY_700,
-              borderRadius: 9999,
+            style={{
+              backgroundColor: !canSubmit ? color_pallet.sky[400] : color_pallet.sky[700],
+              borderRadius: 10,
               height: 52,
               alignItems: 'center',
               justifyContent: 'center',
-              opacity: !canSubmit ? 0.5 : 1,
-              transform: [{ scale: pressed && canSubmit ? 0.98 : 1 }],
-              shadowColor: '#3C78BE',
+              shadowColor: color_pallet.sky[700],
               shadowOpacity: 0.2,
               shadowRadius: 18,
               shadowOffset: { width: 0, height: 8 },
               elevation: 3,
-            })}
+            }}
           >
-            {submitting ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text
-                className="text-white"
-                style={{ fontSize: 16, fontWeight: '500' }}
+            {({ pressed }) => (
+              <View
+                style={{
+                  transform: [{ scale: pressed && canSubmit ? 0.98 : 1 }],
+                }}
               >
-                Log in
-              </Text>
+                {submitting ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '500' }}>
+                    Log in
+                  </Text>
+                )}
+              </View>
             )}
           </Pressable>
-        </ScrollView>
+
+          <Pressable
+            onPress={() => router.replace('/signup')}
+            accessibilityRole="button"
+            accessibilityLabel="Create an account"
+            style={{
+              marginTop: 16,
+              alignSelf: 'center',
+              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+            }}
+          >
+            <Text style={{ fontSize: 14, color: color_pallet.ink[500] }}>
+              Don&apos;t have an account?{' '}
+              <Text style={{ color: color_pallet.sky[700], fontWeight: '500' }}>Sign up</Text>
+            </Text>
+          </Pressable>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   )
