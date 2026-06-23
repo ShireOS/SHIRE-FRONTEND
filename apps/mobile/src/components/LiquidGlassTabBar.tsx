@@ -7,7 +7,7 @@ import { BlurView } from 'expo-blur';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { typography } from '@/styles/typography';
 import { color_pallet } from '@/styles/colors';
-import { shadowLg, shadowLgDark, shadowMd } from '@/styles/shadows';
+import { shadowLgDark } from '@/styles/shadows';
 
 const SPRING = { damping: 22, stiffness: 320, mass: 0.55 };
 const TIMING = { duration: 160, easing: Easing.out(Easing.quad) };
@@ -20,6 +20,7 @@ const HORIZONTAL_MARGIN = 24;
 export type LiquidGlassTabBarProps = BottomTabBarProps & {
   activeColor?: string;
   inactiveColor?: string;
+  bottomOffset?: number;
   /** Tint applied to the glass surface (iOS 26 only). */
   tintColor?: string;
 };
@@ -30,6 +31,7 @@ export function LiquidGlassTabBar({
   navigation,
   activeColor = color_pallet.cream[50],
   inactiveColor = color_pallet.ink[700],
+  bottomOffset = 0,
   tintColor,
 }: LiquidGlassTabBarProps) {
   const insets = useSafeAreaInsets();
@@ -59,7 +61,7 @@ export function LiquidGlassTabBar({
   return (
     <View
       pointerEvents="box-none"
-      style={[styles.container, { paddingBottom: Math.max(insets.bottom, 12) }]}
+      style={[styles.container, { paddingBottom: Math.max(insets.bottom, 12) + bottomOffset }]}
     >
       <View
         style={[styles.pillWrapper, { marginHorizontal: HORIZONTAL_MARGIN }]}

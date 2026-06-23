@@ -1,9 +1,14 @@
-import { createClient as createSupabaseClient, SupabaseClient } from '@supabase/supabase-js'
+import {
+  createClient as createSupabaseClient,
+  SupabaseClient,
+  type SupabaseClientOptions,
+} from '@supabase/supabase-js'
 import type { Database } from '@shire/backend/schemas'
 
 export interface InitOptions {
   url: string
   anonKey: string
+  auth?: SupabaseClientOptions<'public'>['auth']
 }
 
 let cached: SupabaseClient<Database> | null = null
@@ -14,6 +19,7 @@ export function initClient(opts: InitOptions): SupabaseClient<Database> {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
+      ...opts.auth,
     },
   })
   return cached

@@ -1,5 +1,5 @@
-import { View } from "react-native";
+import { Redirect } from 'expo-router';
 
 export default function analytics() {
-    return (<View></View>);
+  return <Redirect href="/(admin)/overview" />;
 }

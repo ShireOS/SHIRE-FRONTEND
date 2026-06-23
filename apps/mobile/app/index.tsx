@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -11,7 +11,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
-import { login } from '../packages/supabase'
+import { getStoredUserRole, login, type userRole } from '../packages/supabase'
 
 const EYEBROW_TRACKING = 0.06 * 10
 const BRAND_EYEBROW_TRACKING = 0.06 * 12
@@ -19,6 +19,12 @@ const INK_500 = '#757170'
 const STONE_200 = '#E4E2E2'
 const SKY_600 = '#6F86FF'
 const SKY_700 = '#156CC2'
+
+function routeForRole(role: userRole) {
+  if (role === 'owner' || role === 'developer') return '/(admin)/overview'
+  if (role === 'employee') return '/(employee)/scans'
+  return null
+}
 
 export default function AuthPage() {
   const router = useRouter()
@@ -31,6 +37,21 @@ export default function AuthPage() {
 
   const canSubmit = email.trim().length > 0 && password.length > 0 && !submitting
 
+  useEffect(() => {
+    let active = true
+
+    getStoredUserRole()
+      .then((role) => {
+        const route = routeForRole(role)
+        if (active && route) router.replace(route)
+      })
+      .catch(() => {})
+
+    return () => {
+      active = false
+    }
+  }, [router])
+
   async function onSubmit() {
     if (!canSubmit) return
     setSubmitting(true)
@@ -41,10 +62,9 @@ export default function AuthPage() {
       setError(result.error)
       return
     }
-    if (result.role === 'owner' || result.role === 'developer') {
-      router.replace('/(admin)/scans')
-    } else if (result.role === 'employee') {
-      router.replace('/(employee)/scans')
+    const route = routeForRole(result.role)
+    if (route) {
+      router.replace(route)
     } else {
       setError('No role assigned to this account. Contact your administrator.')
     }
