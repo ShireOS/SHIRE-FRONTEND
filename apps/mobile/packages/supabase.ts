@@ -1,5 +1,6 @@
 import 'react-native-url-polyfill/auto';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Restaurant } from '@shire/db';
@@ -18,6 +19,16 @@ let mobileSupabaseClient: SupabaseClient | null = null;
 let currentAccessToken: string | null = null;
 let currentRefreshToken: string | null = null;
 let currentUserId: string | null = null;
+
+function syncSessionSnapshot(session: {
+  access_token?: string | null;
+  refresh_token?: string | null;
+  user?: { id?: string | null } | null;
+} | null) {
+  currentAccessToken = session?.access_token ?? null;
+  currentRefreshToken = session?.refresh_token ?? null;
+  currentUserId = session?.user?.id ?? null;
+}
 
 function withTimeout<T>(promise: PromiseLike<T>, label: string, ms = AUTH_TIMEOUT_MS): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -89,10 +100,15 @@ export function getSBClient() {
 
   mobileSupabaseClient = createClient(supabaseUrl, supabasePublishableKey, {
     auth: {
-      persistSession: false,
-      autoRefreshToken: false,
+      storage: AsyncStorage,
+      persistSession: true,
+      autoRefreshToken: true,
       detectSessionInUrl: false,
     },
+  });
+
+  mobileSupabaseClient.auth.onAuthStateChange((_event, session) => {
+    syncSessionSnapshot(session);
   });
 
   return mobileSupabaseClient;
@@ -116,9 +132,7 @@ async function getSessionSnapshot(label = 'Loading Supabase session') {
   if (error) throw error;
   if (!data.session?.user.id || !data.session.access_token) return null;
 
-  currentAccessToken = data.session.access_token;
-  currentRefreshToken = data.session.refresh_token;
-  currentUserId = data.session.user.id;
+  syncSessionSnapshot(data.session);
 
   return { userId: data.session.user.id, accessToken: data.session.access_token };
 }
@@ -153,9 +167,11 @@ export async function login(email: string, password: string): Promise<LoginResul
       return { ok: false, error: 'Supabase did not return a valid session.' };
     }
 
-    currentAccessToken = data.access_token;
-    currentRefreshToken = data.refresh_token;
-    currentUserId = data.user.id;
+    syncSessionSnapshot({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      user: { id: data.user.id },
+    });
 
     await withTimeout(
       client.auth.setSession({

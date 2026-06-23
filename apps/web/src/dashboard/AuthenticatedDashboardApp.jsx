@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { Building2, ChevronDown } from 'lucide-react'
 import {
   AuthProvider,
   useAuth,
@@ -4072,17 +4073,64 @@ function RestaurantWorkspace() {
 
 function RestaurantWorkspaceHeader({ restaurant, restaurantId, activeTab, auth, navigate, setupWarnings }) {
   const needsSetupAttention = modernWarningCount(setupWarnings || {}) > 0
+  const [switchingRestaurantId, setSwitchingRestaurantId] = useState(null)
+  const restaurants = auth.restaurant.restaurants || []
+  const canSwitchRestaurants = restaurants.length > 1
+
+  const handleRestaurantChange = async (event) => {
+    const nextRestaurantId = event.target.value
+    if (!nextRestaurantId || nextRestaurantId === restaurantId) return
+
+    setSwitchingRestaurantId(nextRestaurantId)
+    try {
+      await auth.switchRestaurant(nextRestaurantId)
+      navigate(`/restaurants/${nextRestaurantId}/${activeTab}`)
+    } finally {
+      setSwitchingRestaurantId(null)
+    }
+  }
+
   return (
     <header className="space-y-5 border-b border-white/10 pb-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <Link
-            to="/restaurants"
-            className="inline-flex rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream"
-          >
-            All restaurants
-          </Link>
-          <h1 className="mt-2 text-4xl font-semibold tracking-tight">{restaurant.name}</h1>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            {canSwitchRestaurants ? (
+              <label className="relative inline-flex max-w-full items-center rounded-xl border border-white/10 bg-white/[0.035] text-sm font-semibold text-dash-cream transition focus-within:border-dash-gold/70 hover:border-dash-gold/60">
+                <span className="pointer-events-none absolute left-3 text-dash-tertiary">
+                  <Building2 size={16} strokeWidth={1.8} />
+                </span>
+                <span className="sr-only">Switch restaurant</span>
+                <select
+                  value={restaurantId}
+                  onChange={handleRestaurantChange}
+                  disabled={Boolean(switchingRestaurantId)}
+                  className="min-h-[42px] max-w-[min(78vw,320px)] appearance-none truncate rounded-xl bg-transparent py-2 pl-10 pr-10 text-sm font-semibold text-dash-cream outline-none disabled:cursor-wait disabled:opacity-70"
+                >
+                  {restaurants.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name || 'Untitled restaurant'}
+                    </option>
+                  ))}
+                </select>
+                <span className="pointer-events-none absolute right-3 text-dash-tertiary">
+                  <ChevronDown size={16} strokeWidth={1.8} />
+                </span>
+              </label>
+            ) : (
+              <span className="inline-flex min-h-[42px] max-w-full items-center gap-2 rounded-xl border border-white/10 bg-white/[0.025] px-3 py-2 text-sm font-semibold text-dash-secondary">
+                <Building2 size={16} strokeWidth={1.8} />
+                <span className="truncate">{restaurant.name || 'Restaurant workspace'}</span>
+              </span>
+            )}
+            <Link
+              to="/restaurants"
+              className="inline-flex min-h-[42px] items-center rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream"
+            >
+              All restaurants
+            </Link>
+          </div>
+          <h1 className="mt-3 text-4xl font-semibold tracking-tight">{restaurant.name}</h1>
           <p className="mt-2 text-dash-secondary">
             {[restaurant.city, restaurant.state].filter(Boolean).join(', ') || 'Restaurant workspace'}
           </p>

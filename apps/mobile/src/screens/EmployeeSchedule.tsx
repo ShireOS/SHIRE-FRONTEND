@@ -18,7 +18,7 @@ import {
   toDateKey,
 } from '@/components/scheduling/ScheduleKit';
 import { UiText } from '@/components/ui/Text';
-import { palette, semanticColors } from '@/styles/colors';
+import { semanticColors } from '@/styles/colors';
 import { radius, spacing } from '@/styles/tokens';
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';

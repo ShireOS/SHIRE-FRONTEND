@@ -144,6 +144,13 @@ export type CreateScheduleItemPayload = {
   notes?: string | null;
 };
 
+export type CopyManagerSchedulePayload = {
+  source_schedule_id?: string;
+  source_week_start?: string;
+  target_week_start: string;
+  force_replace?: boolean;
+};
+
 export function fetchEmployeeProfile() {
   return apiRequest<EmployeeProfile>('/employee/me', { auth: 'supabase' });
 }
@@ -230,6 +237,10 @@ export function createManagerSchedule(restaurantId: string, weekStart: string) {
   });
 }
 
+export function copyManagerSchedule(restaurantId: string, body: CopyManagerSchedulePayload) {
+  return apiPost<ManagerSchedule>(`/restaurants/${restaurantId}/schedules/copy`, body);
+}
+
 export function runManagerScheduler(restaurantId: string, weekStart: string) {
   return apiPost<ScheduleRun>(
     `/restaurants/${restaurantId}/schedules/run?run_engine=true&force_regenerate=true`,
@@ -252,6 +263,16 @@ export function updateManagerScheduleItem(itemId: string, body: UpdateScheduleIt
     method: 'PATCH',
     body,
   });
+}
+
+export function deleteManagerScheduleItem(itemId: string) {
+  return apiRequest<void>(`/schedule-items/${itemId}`, {
+    method: 'DELETE',
+  });
+}
+
+export function publishManagerSchedule(scheduleId: string) {
+  return apiPost<ManagerSchedule>(`/schedules/${scheduleId}/publish`);
 }
 
 export function fetchManagerRequests(restaurantId: string) {

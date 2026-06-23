@@ -1,9 +1,12 @@
 import {
+  copyManagerSchedule,
   createManagerSchedule,
   createManagerScheduleItem,
+  deleteManagerScheduleItem,
   fetchManagerScheduleHistory,
   fetchManagerSchedules,
   fetchManagerStaff,
+  publishManagerSchedule,
   runManagerScheduler,
   updateManagerScheduleItem,
   updateManagerScheduleSummary,
@@ -11,6 +14,7 @@ import {
   type ManagerSchedule as ManagerSchedulePayload,
   type StaffContact,
 } from '@/api/employeeOps';
+import { Feather } from '@expo/vector-icons';
 import {
   DayScheduleSection,
   IconButton,
@@ -22,6 +26,7 @@ import {
   addDays,
   groupShiftsByDate,
   opsAccent,
+  opsTeal,
   shiftHours,
   startOfWeek,
   toDateKey,
@@ -33,7 +38,7 @@ import { palette, semanticColors } from '@/styles/colors';
 import { radius, spacing } from '@/styles/tokens';
 import { getOwnerRestaurant, type OwnerRestaurant } from '../../packages/supabase';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 const STAFF_ROLES = ['manager', 'server', 'bartender', 'host', 'busser', 'runner', 'chef'];
 const AUTO_GENERATE_MANUAL_THRESHOLD = 4;
@@ -42,6 +47,7 @@ const SCHEDULE_CACHE_MAX_STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
 type ManagerScheduleCacheData = {
   schedules: ManagerSchedulePayload[];
+  scheduleHistory: ManagerSchedulePayload[];
   staff: StaffContact[];
   manualScheduleCount: number;
 };
@@ -51,6 +57,7 @@ export default function ManagerSchedule() {
   const [weekStart, setWeekStart] = useState(() => toDateKey(startOfWeek()));
   const [selectedDate, setSelectedDate] = useState(() => toDateKey(new Date()));
   const [schedules, setSchedules] = useState<ManagerSchedulePayload[]>([]);
+  const [scheduleHistory, setScheduleHistory] = useState<ManagerSchedulePayload[]>([]);
   const [staff, setStaff] = useState<StaffContact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -70,6 +77,7 @@ export default function ManagerSchedule() {
 
   const applyCachedData = useCallback((data: ManagerScheduleCacheData) => {
     setSchedules(data.schedules);
+    setScheduleHistory(data.scheduleHistory);
     setStaff(data.staff);
     setManualScheduleCount(data.manualScheduleCount);
     staffRef.current = data.staff;
@@ -88,15 +96,6 @@ export default function ManagerSchedule() {
     ).catch(() => undefined);
   }, []);
 
-  const commitManagerData = useCallback(async (
-    id: string,
-    targetWeekStart: string,
-    data: ManagerScheduleCacheData,
-  ) => {
-    applyCachedData(data);
-    await persistScheduleCache(id, targetWeekStart, data);
-  }, [applyCachedData, persistScheduleCache]);
-
   const refreshManagerData = useCallback(async (id: string, targetWeekStart = weekStart): Promise<ManagerScheduleCacheData> => {
     const scheduleData = await fetchManagerSchedules(id, targetWeekStart);
     const optionalResults = await Promise.allSettled([
@@ -104,16 +103,18 @@ export default function ManagerSchedule() {
       fetchManagerStaff(id),
     ]);
     const [historyResult, staffResult] = optionalResults;
+    const history = historyResult.status === 'fulfilled' ? historyResult.value : scheduleHistory;
     const nextData = {
       schedules: scheduleData,
+      scheduleHistory: history,
       staff: staffResult.status === 'fulfilled' ? staffResult.value : staffRef.current,
       manualScheduleCount: historyResult.status === 'fulfilled'
-        ? historyResult.value.filter((schedule) => schedule.generated_by === 'manual').length
+        ? history.filter((schedule) => schedule.generated_by === 'manual').length
         : manualScheduleCountRef.current,
     };
     await persistScheduleCache(id, targetWeekStart, nextData);
     return nextData;
-  }, [persistScheduleCache, weekStart]);
+  }, [persistScheduleCache, scheduleHistory, weekStart]);
 
   const loadManagerData = useCallback(async (id: string) => {
     const key = { namespace: 'manager-schedule', version: 1, parts: [id, weekStart] };
@@ -160,6 +161,17 @@ export default function ManagerSchedule() {
   );
   const selectedDayShifts = shiftsByDate[selectedDate] || [];
   const totalHours = scheduleItems.reduce((sum, shift) => sum + shiftHours(shift as EmployeeShift), 0);
+  const activeScheduleStatus = activeSchedule?.status || 'No draft';
+  const isPublished = activeSchedule?.status === 'published';
+  const isDraft = activeSchedule?.status === 'draft';
+  const lastSourceSchedule = useMemo(() => {
+    const candidates = scheduleHistory
+      .filter((schedule) => schedule.id !== activeSchedule?.id)
+      .filter((schedule) => String(schedule.week_start_date || '').slice(0, 10) !== String(visibleWeekStart).slice(0, 10))
+      .filter((schedule) => schedule.status === 'published' || schedule.status === 'draft')
+      .filter((schedule) => (schedule.items?.length || 0) > 0);
+    return candidates.find((schedule) => schedule.status === 'published') || candidates[0] || null;
+  }, [activeSchedule?.id, scheduleHistory, visibleWeekStart]);
   const selectedDayLabel = new Date(`${selectedDate}T12:00:00`).toLocaleDateString(undefined, {
     weekday: 'short',
     month: 'short',
@@ -203,30 +215,58 @@ export default function ManagerSchedule() {
     await updateManagerScheduleSummary(scheduleId, `Manager context: ${trimmed}`);
   };
 
-  const startManualSchedule = async () => {
+  const refreshAndApply = async (targetWeekStart = visibleWeekStart) => {
+    if (!restaurantId) return null;
+    const nextData = await refreshManagerData(restaurantId, targetWeekStart);
+    applyCachedData(nextData);
+    return nextData;
+  };
+
+  const startCopiedSchedule = async () => {
     if (!restaurantId) return;
     setIsSaving(true);
-    setStatus(activeSchedule ? 'Opening this week for manual scheduling.' : 'Creating a manual draft for this week.');
+    setStatus(activeSchedule ? 'Opening this draft.' : 'Starting from the last schedule.');
     try {
-      let schedule = activeSchedule;
-      let nextManualScheduleCount = manualScheduleCount;
-      if (!schedule) {
-        schedule = await createManagerSchedule(restaurantId, visibleWeekStart);
-        nextManualScheduleCount += 1;
+      if (activeSchedule) {
+        if (activeSchedule.id) await attachScheduleContext(activeSchedule.id, scheduleContext);
+        const refreshed = await refreshAndApply(visibleWeekStart);
+        const shiftCount = refreshed?.schedules[0]?.items?.length || scheduleItems.length;
+        setIsScheduleModalOpen(false);
+        setStatus(`This week already has ${shiftCount} shift${shiftCount === 1 ? '' : 's'} in ${activeScheduleStatus.toLowerCase()}. Edit, add shifts, or publish from here.`);
+        return;
       }
+
+      let copiedSchedule: ManagerSchedulePayload | null = null;
+      let copyFailed = false;
+      if (lastSourceSchedule) {
+        try {
+          copiedSchedule = await copyManagerSchedule(restaurantId, {
+            source_schedule_id: lastSourceSchedule.id,
+            target_week_start: visibleWeekStart,
+            force_replace: false,
+          });
+        } catch {
+          copyFailed = true;
+          copiedSchedule = null;
+        }
+      }
+
+      let schedule = copiedSchedule;
+      if (!schedule) schedule = await createManagerSchedule(restaurantId, visibleWeekStart);
       if (schedule?.id) {
         await attachScheduleContext(schedule.id, scheduleContext);
       }
-      const updated = await fetchManagerSchedules(restaurantId, visibleWeekStart);
-      await commitManagerData(restaurantId, visibleWeekStart, {
-        schedules: updated,
-        staff,
-        manualScheduleCount: nextManualScheduleCount,
-      });
+      const refreshed = await refreshAndApply(visibleWeekStart);
+      const shiftCount = refreshed?.schedules[0]?.items?.length || schedule.items?.length || 0;
+      const copiedFrom = copiedSchedule && lastSourceSchedule?.week_start_date
+        ? ` Copied from ${String(lastSourceSchedule.week_start_date).slice(0, 10)}.`
+        : copyFailed
+          ? ' Could not copy the previous schedule yet, so a blank draft was created.'
+          : ' No prior schedule was available, so a blank draft was created.';
       setIsScheduleModalOpen(false);
-      setStatus('Manual draft is ready. Tap shifts to edit; add-shift controls can build on this draft next.');
+      setStatus(`${shiftCount} shift${shiftCount === 1 ? '' : 's'} ready for this week.${copiedFrom}`);
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Could not create manual draft.');
+      setStatus(err instanceof Error ? err.message : 'Could not start schedule.');
     } finally {
       setIsSaving(false);
     }
@@ -248,11 +288,7 @@ export default function ManagerSchedule() {
       if (updated[0]?.id) {
         await attachScheduleContext(updated[0].id, context);
       }
-      await commitManagerData(restaurantId, nextWeekStart, {
-        schedules: updated,
-        staff,
-        manualScheduleCount,
-      });
+      await refreshAndApply(nextWeekStart);
       const shiftCount = updated[0]?.items?.length || 0;
       setSelectedShift(null);
       setIsScheduleModalOpen(false);
@@ -284,12 +320,7 @@ export default function ManagerSchedule() {
         shift_end: shiftForm.shift_end,
         is_manual_override: true,
       });
-      const updated = await fetchManagerSchedules(restaurantId, visibleWeekStart);
-      await commitManagerData(restaurantId, visibleWeekStart, {
-        schedules: updated,
-        staff,
-        manualScheduleCount,
-      });
+      await refreshAndApply(visibleWeekStart);
       setSelectedShift(null);
       setStatus('Shift saved. The generated draft now includes your edit.');
     } catch (err) {
@@ -328,12 +359,7 @@ export default function ManagerSchedule() {
         shift_end: newShiftForm.shift_end,
         source: 'manual',
       });
-      const updated = await fetchManagerSchedules(restaurantId, visibleWeekStart);
-      await commitManagerData(restaurantId, visibleWeekStart, {
-        schedules: updated,
-        staff,
-        manualScheduleCount,
-      });
+      await refreshAndApply(visibleWeekStart);
       setIsAddShiftOpen(false);
       setStatus('Manual shift added.');
     } catch (err) {
@@ -341,6 +367,62 @@ export default function ManagerSchedule() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const deleteSelectedShift = () => {
+    if (!restaurantId || !selectedShift) return;
+    Alert.alert(
+      'Delete shift?',
+      `${selectedShift.waiter_name || 'This shift'} will be removed from the draft.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setIsSaving(true);
+            setStatus('Deleting shift...');
+            try {
+              await deleteManagerScheduleItem(selectedShift.id);
+              await refreshAndApply(visibleWeekStart);
+              setSelectedShift(null);
+              setStatus('Shift deleted.');
+            } catch (err) {
+              setStatus(err instanceof Error ? err.message : 'Could not delete shift.');
+            } finally {
+              setIsSaving(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const publishSchedule = () => {
+    if (!restaurantId || !activeSchedule?.id) return;
+    Alert.alert(
+      'Publish schedule?',
+      'Employees will see this week as the posted schedule.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Publish',
+          onPress: async () => {
+            setIsSaving(true);
+            setStatus('Publishing schedule...');
+            try {
+              await publishManagerSchedule(activeSchedule.id);
+              await refreshAndApply(visibleWeekStart);
+              setStatus('Schedule published for the team.');
+            } catch (err) {
+              setStatus(err instanceof Error ? err.message : 'Could not publish schedule.');
+            } finally {
+              setIsSaving(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -377,32 +459,56 @@ export default function ManagerSchedule() {
             <View style={styles.summaryCard}>
               <View style={styles.summaryHeader}>
                 <View>
-                  <UiText variant="eyebrow" tone="muted">Generated week</UiText>
+                  <UiText variant="eyebrow" tone="muted">{activeSchedule ? 'Schedule draft' : 'No schedule yet'}</UiText>
                   <UiText variant="title" style={styles.summaryTitle}>{visibleWeekStart}</UiText>
                 </View>
-                <UiText variant="caption" tone="muted">{activeSchedule?.status || 'No draft'}</UiText>
+                <View style={[styles.statusPill, isPublished && styles.statusPillPublished]}>
+                  <UiText variant="caption" style={[styles.statusPillText, isPublished && styles.statusPillTextPublished]}>
+                    {activeScheduleStatus}
+                  </UiText>
+                </View>
               </View>
               <View style={styles.summaryStats}>
-                <View>
+                <View style={styles.summaryStat}>
                   <UiText variant="metricSmall" style={styles.summaryMetric}>{scheduleItems.length}</UiText>
                   <UiText variant="bodySmall" tone="muted">week shifts</UiText>
                 </View>
-                <View>
+                <View style={styles.summaryStat}>
                   <UiText variant="metricSmall" style={styles.summaryMetric}>{selectedDayShifts.length}</UiText>
                   <UiText variant="bodySmall" tone="muted">{selectedDayLabel}</UiText>
                 </View>
-                <View>
+                <View style={styles.summaryStat}>
                   <UiText variant="metricSmall" style={styles.summaryMetric}>{totalHours.toFixed(1)}</UiText>
                   <UiText variant="bodySmall" tone="muted">week hours</UiText>
                 </View>
               </View>
+              <View style={styles.workflowRail}>
+                <View style={[styles.workflowStep, activeSchedule && styles.workflowStepDone]}>
+                  <Feather name="copy" size={14} color={activeSchedule ? '#FFFFFF' : palette.ink[500]} />
+                </View>
+                <View style={styles.workflowLine} />
+                <View style={[styles.workflowStep, scheduleItems.length > 0 && styles.workflowStepDone]}>
+                  <Feather name="edit-3" size={14} color={scheduleItems.length > 0 ? '#FFFFFF' : palette.ink[500]} />
+                </View>
+                <View style={styles.workflowLine} />
+                <View style={[styles.workflowStep, isPublished && styles.workflowStepDone]}>
+                  <Feather name="send" size={14} color={isPublished ? '#FFFFFF' : palette.ink[500]} />
+                </View>
+              </View>
               <UiText variant="bodySmall" tone="muted" style={styles.summaryHelp}>
-                Generate creates a draft for this week. Tap a shift below, adjust role or time, then save it back to the backend.
+                Start from a recent schedule, tune shifts on the selected day, then publish when this week is ready.
               </UiText>
               <View style={styles.summaryActions}>
-                <UiButton label={isSaving ? 'Working...' : 'Start / generate'} disabled={isSaving || !restaurantId} onPress={() => setIsScheduleModalOpen(true)} style={styles.actionButton} />
+                <UiButton label={isSaving ? 'Working...' : activeSchedule ? 'Open tools' : 'Start from last'} disabled={isSaving || !restaurantId} onPress={() => setIsScheduleModalOpen(true)} style={styles.actionButton} />
                 <UiButton label="Add shift" variant="secondary" disabled={!activeSchedule?.id || isSaving} onPress={() => setIsAddShiftOpen((open) => !open)} style={styles.actionButton} />
               </View>
+              <UiButton
+                label={isPublished ? 'Published' : 'Publish schedule'}
+                variant={isPublished ? 'secondary' : 'primary'}
+                disabled={!activeSchedule?.id || !isDraft || isSaving}
+                onPress={publishSchedule}
+                style={styles.publishButton}
+              />
             </View>
             {isAddShiftOpen && activeSchedule?.id && (
               <View style={styles.editorCard}>
@@ -478,7 +584,7 @@ export default function ManagerSchedule() {
             <View style={styles.editorHeader}>
               <View>
                 <UiText variant="eyebrow" tone="muted">This week</UiText>
-                <UiText variant="title">Start schedule</UiText>
+                <UiText variant="title">Schedule tools</UiText>
               </View>
               <Pressable onPress={() => setIsScheduleModalOpen(false)} style={styles.closeButton}>
                 <UiText variant="caption" style={styles.closeText}>Close</UiText>
@@ -497,13 +603,20 @@ export default function ManagerSchedule() {
 
             <Pressable
               disabled={isSaving}
-              onPress={startManualSchedule}
-              style={styles.scheduleOption}
+              onPress={startCopiedSchedule}
+              style={[styles.scheduleOption, styles.scheduleOptionPrimary]}
             >
+              <View style={styles.optionIcon}>
+                <Feather name={activeSchedule ? 'calendar' : 'copy'} size={18} color="#FFFFFF" />
+              </View>
               <View style={{ flex: 1 }}>
-                <UiText variant="title">Generate manually</UiText>
+                <UiText variant="title">{activeSchedule ? 'Open current draft' : 'Start from last schedule'}</UiText>
                 <UiText variant="bodySmall" tone="muted" style={styles.optionCopy}>
-                  Create or open this week as a manual draft, then tap shifts to edit it.
+                  {activeSchedule
+                    ? `${scheduleItems.length} shift${scheduleItems.length === 1 ? '' : 's'} are ready to edit for this week.`
+                    : lastSourceSchedule
+                      ? `Copy ${String(lastSourceSchedule.week_start_date).slice(0, 10)} into this week.`
+                      : 'No previous schedule found yet; this creates a blank draft.'}
                 </UiText>
               </View>
               <UiText variant="caption" style={styles.optionAction}>Start</UiText>
@@ -514,6 +627,9 @@ export default function ManagerSchedule() {
               onPress={() => generateDraft(scheduleContext)}
               style={[styles.scheduleOption, !canAutoGenerate && styles.scheduleOptionLocked]}
             >
+              <View style={[styles.optionIcon, styles.aiOptionIcon]}>
+                <Feather name="zap" size={18} color="#FFFFFF" />
+              </View>
               <View style={{ flex: 1 }}>
                 <UiText variant="title">Auto generate with AI</UiText>
                 <UiText variant="bodySmall" tone="muted" style={styles.optionCopy}>
@@ -568,7 +684,15 @@ export default function ManagerSchedule() {
               <TextField value={shiftForm.shift_start} onChangeText={(value) => setShiftForm((prev) => ({ ...prev, shift_start: value }))} placeholder="Start HH:MM" />
               <TextField value={shiftForm.shift_end} onChangeText={(value) => setShiftForm((prev) => ({ ...prev, shift_end: value }))} placeholder="End HH:MM" />
             </View>
-            <UiButton label={isSaving ? 'Saving...' : 'Save shift'} disabled={isSaving} onPress={saveSelectedShift} />
+            <View style={styles.shiftModalActions}>
+              <UiButton label={isSaving ? 'Saving...' : 'Save shift'} disabled={isSaving || isPublished} onPress={saveSelectedShift} style={styles.actionButton} />
+              <UiButton label="Delete" variant="danger" disabled={isSaving || isPublished} onPress={deleteSelectedShift} style={styles.actionButton} />
+            </View>
+            {isPublished ? (
+              <UiText variant="caption" tone="muted">
+                Published schedules are locked. Create a new draft before editing this shift.
+              </UiText>
+            ) : null}
           </View>
         </View>
       </Modal>
@@ -613,6 +737,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  statusPill: {
+    backgroundColor: palette.sky[50],
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+  },
+  statusPillPublished: {
+    backgroundColor: palette.ink[900],
+  },
+  statusPillText: {
+    color: palette.sky[700],
+    fontFamily: 'Inter_700Bold',
+    textTransform: 'capitalize',
+  },
+  statusPillTextPublished: {
+    color: '#FFFFFF',
+  },
   summaryTitle: {
     marginTop: spacing[1],
   },
@@ -621,9 +762,34 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: spacing[4],
   },
+  summaryStat: {
+    minWidth: 88,
+  },
   summaryMetric: {
     color: palette.ink[900],
     marginTop: spacing[2],
+  },
+  workflowRail: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    marginTop: spacing[5],
+  },
+  workflowStep: {
+    alignItems: 'center',
+    backgroundColor: palette.ink[100],
+    borderRadius: radius.pill,
+    height: 30,
+    justifyContent: 'center',
+    width: 30,
+  },
+  workflowStepDone: {
+    backgroundColor: opsTeal,
+  },
+  workflowLine: {
+    backgroundColor: palette.ink[100],
+    flex: 1,
+    height: 2,
+    marginHorizontal: spacing[2],
   },
   summaryHelp: {
     marginTop: spacing[4],
@@ -635,6 +801,9 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flex: 1,
+  },
+  publishButton: {
+    marginTop: spacing[3],
   },
   editorCard: {
     backgroundColor: semanticColors.elevated,
@@ -734,6 +903,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     padding: spacing[4],
   },
+  scheduleOptionPrimary: {
+    backgroundColor: palette.sky[50],
+    borderColor: palette.sky[200],
+  },
+  optionIcon: {
+    alignItems: 'center',
+    backgroundColor: opsTeal,
+    borderRadius: radius.pill,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  aiOptionIcon: {
+    backgroundColor: opsAccent,
+  },
   scheduleOptionLocked: {
     opacity: 0.58,
   },
@@ -747,5 +931,9 @@ const styles = StyleSheet.create({
   lockedSheen: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(255, 255, 255, 0.36)',
+  },
+  shiftModalActions: {
+    flexDirection: 'row',
+    gap: spacing[3],
   },
 });

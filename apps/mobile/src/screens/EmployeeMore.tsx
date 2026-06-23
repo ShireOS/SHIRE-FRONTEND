@@ -18,7 +18,7 @@ import {
 } from '@/components/scheduling/ScheduleKit';
 import { UiButton } from '@/components/ui/Button';
 import { UiText } from '@/components/ui/Text';
-import { palette, semanticColors } from '@/styles/colors';
+import { semanticColors } from '@/styles/colors';
 import { radius, spacing } from '@/styles/tokens';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';

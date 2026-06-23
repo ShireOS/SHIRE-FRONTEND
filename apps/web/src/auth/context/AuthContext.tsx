@@ -135,6 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [hydratedUserId, setHydratedUserId] = useState<string | null>(null)
 
   // Restaurant state
   const [currentRestaurant, setCurrentRestaurant] = useState<Restaurant | null>(null)
@@ -170,6 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRestaurants([])
     setMembership(null)
     setRestaurantLoading(false)
+    setHydratedUserId(null)
     membershipQueryDisabledRef.current = false
     membershipErrorLoggedRef.current = false
     localStorage.removeItem(CURRENT_RESTAURANT_STORAGE_KEY)
@@ -478,28 +480,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCurrentRestaurant(null)
       setRestaurants([])
       setMembership(null)
+      setHydratedUserId(null)
       return () => {
         mounted = false
       }
     }
 
+    setHydratedUserId(null)
+
     const hydrateUserState = async () => {
-      const userProfile = await fetchProfile(userId)
-      if (!mounted || hydrateRequestRef.current !== requestId) return
-      setProfile(userProfile)
+      try {
+        const userProfile = await fetchProfile(userId)
+        if (!mounted || hydrateRequestRef.current !== requestId) return
+        setProfile(userProfile)
 
-      const userRestaurants = await fetchRestaurants(userId)
-      if (!mounted || hydrateRequestRef.current !== requestId) return
+        const userRestaurants = await fetchRestaurants(userId)
+        if (!mounted || hydrateRequestRef.current !== requestId) return
 
-      const savedRestaurantId = localStorage.getItem(CURRENT_RESTAURANT_STORAGE_KEY)
-      const restaurantToSelect = pickRestaurant(userRestaurants, null, savedRestaurantId)
+        const savedRestaurantId = localStorage.getItem(CURRENT_RESTAURANT_STORAGE_KEY)
+        const restaurantToSelect = pickRestaurant(userRestaurants, null, savedRestaurantId)
 
-      setCurrentRestaurant(restaurantToSelect)
+        setCurrentRestaurant(restaurantToSelect)
 
-      if (restaurantToSelect) {
-        localStorage.setItem(CURRENT_RESTAURANT_STORAGE_KEY, restaurantToSelect.id)
-      } else {
-        localStorage.removeItem(CURRENT_RESTAURANT_STORAGE_KEY)
+        if (restaurantToSelect) {
+          localStorage.setItem(CURRENT_RESTAURANT_STORAGE_KEY, restaurantToSelect.id)
+        } else {
+          localStorage.removeItem(CURRENT_RESTAURANT_STORAGE_KEY)
+        }
+      } finally {
+        if (mounted && hydrateRequestRef.current === requestId) {
+          setHydratedUserId(userId)
+        }
       }
     }
 
@@ -545,12 +556,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       initializedRef.current = true
       setIsLoading(false)
       setRestaurantLoading(false)
+      setHydratedUserId(user?.id ?? null)
     }, AUTH_BOOTSTRAP_GUARD_MS)
 
     return () => {
       clearTimeout(timer)
     }
-  }, [isLoading, restaurantLoading])
+  }, [isLoading, restaurantLoading, user?.id])
 
   // ----------------------------------------
   // AUTH METHODS
@@ -584,6 +596,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (error) throw error
 
+      if (data.session) {
+        setSession(data.session)
+        setUser(data.session.user)
+        setHydratedUserId(null)
+      }
+
       // Check if email confirmation is required
       if (data.user && !data.session) {
         return {
@@ -605,7 +623,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const { error } = await withTimeout(
+      const { data, error } = await withTimeout(
         supabase.auth.signInWithPassword({
           email,
           password,
@@ -614,6 +632,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       )
 
       if (error) throw error
+
+      if (data.session) {
+        setSession(data.session)
+        setUser(data.session.user)
+        setHydratedUserId(null)
+      }
 
       return { success: true }
     } catch (error) {
@@ -738,7 +762,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       currentRestaurant,
       restaurants,
       membership,
-      isLoading: restaurantLoading,
+      isLoading: restaurantLoading || Boolean(user && hydratedUserId !== user.id),
     },
 
     // Auth methods

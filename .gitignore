@@ -24,6 +24,13 @@ npm-debug.log*
 
 # TypeScript
 *.tsbuildinfo
+
+# Expo local state
+apps/mobile/.expo/cache/
+apps/mobile/.expo/devices.json
+apps/mobile/.expo/prebuild/cached-packages.json
+apps/mobile/.expo/types/
+
 CLAUDE.md
 claude.md
 AGENTS.md
