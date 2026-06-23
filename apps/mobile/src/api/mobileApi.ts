@@ -1,7 +1,8 @@
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getSBClient } from '../../packages/supabase';
 
-function getApiBaseUrl() {
+export function getApiBaseUrl() {
   const value = Constants.expoConfig?.extra?.apiBaseUrl;
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new Error('API_BASE_URL is not configured for the mobile app.');
@@ -9,7 +10,23 @@ function getApiBaseUrl() {
   return value.replace(/\/+$/, '');
 }
 
-export async function apiGet<T>(endpoint: string): Promise<T> {
+type ApiAuthMode = 'supabase' | 'employee' | 'none';
+
+type ApiRequestOptions = {
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  body?: unknown;
+  auth?: ApiAuthMode;
+  headers?: Record<string, string>;
+};
+
+async function resolveAuthorization(auth: ApiAuthMode) {
+  if (auth === 'none') return null;
+
+  if (auth === 'employee') {
+    const employeeToken = await AsyncStorage.getItem('shire_employee_token');
+    if (employeeToken) return `Bearer ${employeeToken}`;
+  }
+
   const client = getSBClient();
   const {
     data: { session },
@@ -17,17 +34,28 @@ export async function apiGet<T>(endpoint: string): Promise<T> {
   } = await client.auth.getSession();
 
   if (error) throw error;
+  return session?.access_token ? `Bearer ${session.access_token}` : null;
+}
 
+export async function apiRequest<T>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
+  const authorization = await resolveAuthorization(options.auth ?? 'supabase');
   const headers: Record<string, string> = {
     Accept: 'application/json',
+    ...options.headers,
   };
-  if (session?.access_token) {
-    headers.Authorization = `Bearer ${session.access_token}`;
+  if (authorization) headers.Authorization = authorization;
+  if (options.body !== undefined && !(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
   }
 
   const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
-    method: 'GET',
+    method: options.method ?? 'GET',
     headers,
+    body: options.body === undefined
+      ? undefined
+      : options.body instanceof FormData
+        ? options.body
+        : JSON.stringify(options.body),
   });
 
   if (!response.ok) {
@@ -40,5 +68,18 @@ export async function apiGet<T>(endpoint: string): Promise<T> {
     throw new Error(detail);
   }
 
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+export async function apiGet<T>(endpoint: string): Promise<T> {
+  return apiRequest<T>(endpoint);
+}
+
+export async function apiPost<T>(endpoint: string, body?: unknown): Promise<T> {
+  return apiRequest<T>(endpoint, { method: 'POST', body });
+}
+
+export async function apiPatch<T>(endpoint: string, body?: unknown): Promise<T> {
+  return apiRequest<T>(endpoint, { method: 'PATCH', body });
 }

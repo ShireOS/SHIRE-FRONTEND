@@ -1,5 +1,5 @@
-import { View } from "react-native";
+import EmployeeSchedule from '@/screens/EmployeeSchedule';
 
 export default function schedule() {
-    return (<View></View>);
+  return <EmployeeSchedule />;
 }

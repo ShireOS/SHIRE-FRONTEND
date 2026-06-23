@@ -46,28 +46,28 @@ const OWNER_TABS: RoleTab[] = [
 
 const EMPLOYEE_TABS: RoleTab[] = [
   {
-    name: 'scans',
-    title: 'Scan',
-    androidIcon: 'scan',
-    sfSymbol: 'viewfinder',
-  },
-  {
-    name: 'analytics',
-    title: 'Analytics',
-    androidIcon: 'analytics',
-    sfSymbol: 'chart.xyaxis.line',
-  },
-  {
-    name: 'menu',
-    title: 'Menu',
-    androidIcon: 'menu',
-    sfSymbol: 'line.3.horizontal',
+    name: 'home',
+    title: 'Home',
+    androidIcon: 'home',
+    sfSymbol: { default: 'house', selected: 'house.fill' },
   },
   {
     name: 'schedule',
     title: 'Schedule',
     androidIcon: 'calendar',
     sfSymbol: 'calendar',
+  },
+  {
+    name: 'messages',
+    title: 'Messages',
+    androidIcon: 'chatbubble-outline',
+    sfSymbol: { default: 'bubble.left', selected: 'bubble.left.fill' },
+  },
+  {
+    name: 'more',
+    title: 'More',
+    androidIcon: 'menu',
+    sfSymbol: 'line.3.horizontal',
   },
 ];
 
@@ -77,7 +77,7 @@ type RoleTabsLayoutProps = {
 
 const HIDDEN_TABS_BY_VARIANT: Record<RoleTabsLayoutProps['variant'], string[]> = {
   owner: ['analytics', 'scans'],
-  employee: [],
+  employee: ['analytics', 'menu', 'scans'],
 };
 
 export function RoleTabsLayout({ variant }: RoleTabsLayoutProps) {

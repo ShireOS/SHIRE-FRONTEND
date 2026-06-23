@@ -19,7 +19,7 @@ const BRAND_EYEBROW_TRACKING = 0.06 * 12
 
 function routeForRole(role: userRole) {
   if (role === 'owner' || role === 'developer') return '/(admin)/overview'
-  if (role === 'employee') return '/(employee)/scans'
+  if (role === 'employee') return '/(employee)/home'
   return null
 }
 
@@ -40,7 +40,7 @@ export default function AuthPage() {
     getStoredUserRole()
       .then((role) => {
         const route = routeForRole(role)
-        if (active && route) router.replace(route)
+        if (active && route) router.replace(route as never)
       })
       .catch(() => {})
 
@@ -61,7 +61,7 @@ export default function AuthPage() {
     }
     const route = routeForRole(result.role)
     if (route) {
-      router.replace(route)
+      router.replace(route as never)
     } else {
       setError('No role assigned to this account. Contact your administrator.')
     }

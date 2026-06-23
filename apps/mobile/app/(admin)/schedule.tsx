@@ -1,5 +1,5 @@
-import { View } from "react-native";
+import ManagerSchedule from '@/screens/ManagerSchedule';
 
 export default function schedule() {
-    return (<View></View>);
+  return <ManagerSchedule />;
 }
