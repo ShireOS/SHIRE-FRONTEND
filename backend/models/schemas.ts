@@ -4134,6 +4134,15 @@ export type Database = {
           client_payment_id: string | null
           completed_at: string | null
           created_at: string
+          deposit_batch_id: string | null
+          deposit_expected_at: string | null
+          deposit_status: string
+          deposited_at: string | null
+          net_deposit_amount: number | null
+          processor_fee_amount: number | null
+          processor_fee_currency: string
+          processor_fee_recorded_at: string | null
+          processor_fee_source: string | null
           failure_code: string | null
           failure_reason: string | null
           helcim_approval_code: string | null
@@ -4165,6 +4174,15 @@ export type Database = {
           client_payment_id?: string | null
           completed_at?: string | null
           created_at?: string
+          deposit_batch_id?: string | null
+          deposit_expected_at?: string | null
+          deposit_status?: string
+          deposited_at?: string | null
+          net_deposit_amount?: number | null
+          processor_fee_amount?: number | null
+          processor_fee_currency?: string
+          processor_fee_recorded_at?: string | null
+          processor_fee_source?: string | null
           failure_code?: string | null
           failure_reason?: string | null
           helcim_approval_code?: string | null
@@ -4196,6 +4214,15 @@ export type Database = {
           client_payment_id?: string | null
           completed_at?: string | null
           created_at?: string
+          deposit_batch_id?: string | null
+          deposit_expected_at?: string | null
+          deposit_status?: string
+          deposited_at?: string | null
+          net_deposit_amount?: number | null
+          processor_fee_amount?: number | null
+          processor_fee_currency?: string
+          processor_fee_recorded_at?: string | null
+          processor_fee_source?: string | null
           failure_code?: string | null
           failure_reason?: string | null
           helcim_approval_code?: string | null
@@ -4538,6 +4565,15 @@ export type Database = {
           client_tender_id: string | null
           completed_at: string | null
           created_at: string
+          deposit_batch_id: string | null
+          deposit_expected_at: string | null
+          deposit_status: string
+          deposited_at: string | null
+          net_deposit_amount: number | null
+          processor_fee_amount: number | null
+          processor_fee_currency: string
+          processor_fee_recorded_at: string | null
+          processor_fee_source: string | null
           failure_reason: string | null
           gift_card_id: string | null
           id: string
@@ -4557,6 +4593,15 @@ export type Database = {
           client_tender_id?: string | null
           completed_at?: string | null
           created_at?: string
+          deposit_batch_id?: string | null
+          deposit_expected_at?: string | null
+          deposit_status?: string
+          deposited_at?: string | null
+          net_deposit_amount?: number | null
+          processor_fee_amount?: number | null
+          processor_fee_currency?: string
+          processor_fee_recorded_at?: string | null
+          processor_fee_source?: string | null
           failure_reason?: string | null
           gift_card_id?: string | null
           id?: string
@@ -4576,6 +4621,15 @@ export type Database = {
           client_tender_id?: string | null
           completed_at?: string | null
           created_at?: string
+          deposit_batch_id?: string | null
+          deposit_expected_at?: string | null
+          deposit_status?: string
+          deposited_at?: string | null
+          net_deposit_amount?: number | null
+          processor_fee_amount?: number | null
+          processor_fee_currency?: string
+          processor_fee_recorded_at?: string | null
+          processor_fee_source?: string | null
           failure_reason?: string | null
           gift_card_id?: string | null
           id?: string

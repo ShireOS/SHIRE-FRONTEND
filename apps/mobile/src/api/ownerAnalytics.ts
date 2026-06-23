@@ -33,10 +33,19 @@ export type OwnerAnalyticsPayload = {
   };
   sections?: {
     revenue?: AnalyticsSection<{
+      sales?: number;
+      gross_sales?: number;
+      net_sales?: number;
+      sales_excluding_tax_tip?: number;
       total_revenue?: number;
       order_count?: number;
       avg_order_value?: number;
       tips?: number;
+      tax?: number;
+      card_deposit_estimate?: number;
+      processor_fees_known?: number;
+      processor_fees_pending?: boolean;
+      configured_fee_in_sales?: boolean;
       paid_orders?: number;
       closed_orders?: number;
     }>;

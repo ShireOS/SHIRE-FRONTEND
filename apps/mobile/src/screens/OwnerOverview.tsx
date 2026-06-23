@@ -240,6 +240,8 @@ export default function OwnerOverview() {
             <MetricRow label="Orders" value={formatNumber(metrics.orders)} detail="Tap to inspect checks" onPress={openChecks} />
             <MetricRow label="Avg Check" value={formatCurrency(metrics.avgOrder)} />
             <MetricRow label="Tips" value={formatCurrency(metrics.tips)} />
+            <MetricRow label="Card Deposit" value={formatCurrency(metrics.cardDeposit)} detail={metrics.processorFeesPending ? 'Fees pending' : 'After known fees'} muted={metrics.processorFeesPending} />
+            <MetricRow label="Processing Fees" value={formatCurrency(metrics.processorFees)} detail={metrics.configuredFeeInSales ? 'Card price stays in sales' : 'Known fees'} muted={metrics.processorFeesPending} />
             <MetricRow label="SPLH" value="DNE" detail="Needs labor feed" muted />
           </View>
 
@@ -268,10 +270,14 @@ function buildMetrics(payload: OwnerAnalyticsPayload | null) {
   const staff = payload?.sections?.staff?.data || {};
 
   return {
-    sales: revenue.total_revenue,
+    sales: firstDefined(revenue.sales, revenue.sales_excluding_tax_tip, revenue.net_sales, revenue.total_revenue),
     orders: revenue.order_count,
     avgOrder: revenue.avg_order_value,
     tips: revenue.tips,
+    processorFees: revenue.processor_fees_known,
+    processorFeesPending: Boolean(revenue.processor_fees_pending),
+    cardDeposit: revenue.card_deposit_estimate,
+    configuredFeeInSales: Boolean(revenue.configured_fee_in_sales),
     covers: visits.covers,
     turnTime: visits.avg_turn_minutes,
     team: firstDefined(staff.staff_worked, staff.shift_count),
