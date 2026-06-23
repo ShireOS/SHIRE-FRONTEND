@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AccessibilityInfo,
-  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -20,7 +19,6 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
-import * as ImagePicker from 'expo-image-picker'
 import { signUp, uploadUserPfp } from '../packages/supabase'
 import { DottedSkyBackground } from '@/components/DottedSkyBackground'
 import { color_pallet } from '@/styles/colors'
@@ -151,13 +149,14 @@ export default function SignUpPage() {
 
   async function pickPfp() {
     setError(null)
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
-    if (!perm.granted) {
-      setError('Photo library permission is required to add a profile photo.')
-      return
-    }
-    setPickerLoading(true)
     try {
+      setPickerLoading(true)
+      const ImagePicker = await import('expo-image-picker')
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
+      if (!perm.granted) {
+        setError('Photo library permission is required to add a profile photo.')
+        return
+      }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -173,6 +172,13 @@ export default function SignUpPage() {
         return
       }
       setPfpBase64(base64)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setError(
+        message.includes('ExponentImagePicker')
+          ? 'This dev build does not include photo picking yet. Continue without a profile photo.'
+          : message,
+      )
     } finally {
       setPickerLoading(false)
     }
@@ -248,7 +254,9 @@ export default function SignUpPage() {
               }}
             >
               {pickerLoading ? (
-                <ActivityIndicator color={color_pallet.sky[700]} />
+                <Text style={{ color: color_pallet.sky[700], fontSize: 13, fontWeight: '600' }}>
+                  Loading...
+                </Text>
               ) : pfpBase64 ? (
                 <Image
                   source={{ uri: `data:image/jpeg;base64,${pfpBase64}` }}
@@ -438,13 +446,9 @@ export default function SignUpPage() {
                   transform: [{ scale: pressed && canSubmit ? 0.98 : 1 }],
                 }}
               >
-                {submitting ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '500' }}>
-                    Create account
-                  </Text>
-                )}
+                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '500' }}>
+                  {submitting ? 'Creating account...' : 'Create account'}
+                </Text>
               </View>
             )}
           </Pressable>

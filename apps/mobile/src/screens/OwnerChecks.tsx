@@ -5,7 +5,7 @@ import { typography } from '@/styles/typography';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 function paramValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -100,7 +100,6 @@ export default function OwnerChecks() {
 
       {isLoading && (
         <View style={styles.stateCard}>
-          <ActivityIndicator color={color_pallet.sky[700]} />
           <Text style={[typography.bodySmall, styles.stateText]}>Loading checks...</Text>
         </View>
       )}

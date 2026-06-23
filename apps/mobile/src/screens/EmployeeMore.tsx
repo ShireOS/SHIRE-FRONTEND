@@ -21,7 +21,7 @@ import { UiText } from '@/components/ui/Text';
 import { palette, semanticColors } from '@/styles/colors';
 import { radius, spacing } from '@/styles/tokens';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 type MoreTab = 'availability' | 'time_off' | 'contacts';
 
@@ -151,7 +151,6 @@ export default function EmployeeMore() {
 
       {isLoading && (
         <View style={styles.stateCard}>
-          <ActivityIndicator color={palette.sky[700]} />
           <UiText variant="bodySmall" tone="muted">Loading employee tools...</UiText>
         </View>
       )}

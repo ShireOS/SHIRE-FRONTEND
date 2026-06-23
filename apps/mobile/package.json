@@ -9,6 +9,7 @@
     "@fortawesome/fontawesome-svg-core": "^7.2.0",
     "@fortawesome/react-native-fontawesome": "^1.0.0",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native/assets-registry": "0.81.5",
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@shire/db": "workspace:*",
     "@supabase/supabase-js": "^2.108.2",
@@ -51,7 +52,12 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@babel/plugin-transform-react-jsx": "7.29.7",
+    "@babel/plugin-transform-react-jsx-development": "7.29.7",
+    "@babel/plugin-transform-react-jsx-self": "7.29.7",
+    "@babel/plugin-transform-react-jsx-source": "7.29.7",
     "@types/react": "^19.1.17",
+    "babel-preset-expo": "54.0.11",
     "eslint": "^9.39.4",
     "eslint-config-expo": "~10.0.0",
     "typescript": "~5.9.3"

@@ -18,11 +18,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import type { Room } from '@shire/db';
-import {Camera} from "react-native-vision-camera"
 import { PlushyButton } from '@/components/PlushyButton';
 import { color_pallet } from '@/styles/colors';
 import { typography } from '@/styles/typography';
@@ -245,25 +242,8 @@ export default function AddScan() {
             shadowMd,
           ]}
         >
-          {/* Simulated camera feed — replace with real preview later */}
-          <Camera
-            style={StyleSheet.absoluteFill}
-            device="back"
-            isActive={true}
-          />
-          <LinearGradient
-            colors={['#1A1615', '#221E1D', '#0F0D0D']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-          />
-          {/* Subtle sky vignette for premium feel */}
-          <LinearGradient
-            colors={['rgba(132,185,239,0.18)', 'transparent']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 0.6 }}
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-          />
+          <View style={[StyleSheet.absoluteFill, styles.cameraPlaceholder]} />
+          <View style={styles.cameraSkyWash} />
 
          
 
@@ -280,19 +260,7 @@ export default function AddScan() {
             }}
             pointerEvents="box-none"
           >
-            <BlurView
-              intensity={32}
-              tint="dark"
-              style={{
-                paddingHorizontal: 24,
-                paddingVertical: 20,
-                borderRadius: 28,
-                overflow: 'hidden',
-                alignItems: 'center',
-                gap: 14,
-                maxWidth: 280,
-              }}
-            >
+            <View style={styles.scanCtaPanel}>
               <PlushyButton
                 onPress={handleStartScan}
                 accessibilityLabel="Start 3D scan"
@@ -321,7 +289,7 @@ export default function AddScan() {
                   Start 3D scan
                 </Text>
               </PlushyButton>
-            </BlurView>
+            </View>
           </View>
         </View>
       </View>
@@ -338,6 +306,33 @@ export default function AddScan() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  cameraPlaceholder: {
+    backgroundColor: '#171313',
+  },
+  cameraSkyWash: {
+    position: 'absolute',
+    top: -120,
+    left: -80,
+    right: -80,
+    height: 280,
+    borderRadius: 160,
+    backgroundColor: 'rgba(132,185,239,0.18)',
+  },
+  scanCtaPanel: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(24, 20, 18, 0.72)',
+    borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 28,
+    borderWidth: 1,
+    gap: 14,
+    maxWidth: 280,
+    overflow: 'hidden',
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+  },
+});
 
 /**
  * Anchored, shadcn-style dropdown menu translated to React Native primitives.

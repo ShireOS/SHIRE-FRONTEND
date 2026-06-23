@@ -106,6 +106,8 @@ export type ManagerSchedule = {
   id: string;
   week_start_date: string;
   status?: string;
+  generated_by?: 'manual' | 'engine' | string;
+  schedule_summary?: string | null;
   items?: EmployeeShift[];
   run_coverage_gaps?: {
     role?: string;
@@ -119,69 +121,92 @@ export type ManagerSchedule = {
   }[];
 };
 
+export type UpdateScheduleItemPayload = Partial<{
+  waiter_id: string | null;
+  role: string;
+  shift_date: string;
+  shift_start: string;
+  shift_end: string;
+  section_id: string | null;
+  is_locked: boolean;
+  is_manual_override: boolean;
+  notes: string | null;
+}>;
+
+export type CreateScheduleItemPayload = {
+  waiter_id: string;
+  role: string;
+  shift_date: string;
+  shift_start: string;
+  shift_end: string;
+  section_id?: string | null;
+  source?: 'manual' | 'engine' | string;
+  notes?: string | null;
+};
+
 export function fetchEmployeeProfile() {
-  return apiRequest<EmployeeProfile>('/employee/me', { auth: 'employee' });
+  return apiRequest<EmployeeProfile>('/employee/me', { auth: 'supabase' });
 }
 
 export function fetchEmployeeWeekSchedule(weekStart: string, scope: 'mine' | 'all') {
   return apiRequest<EmployeeWeekSchedule>(
     `/employee/schedule/week?week_start=${encodeURIComponent(weekStart)}&scope=${scope}`,
-    { auth: 'employee' },
+    { auth: 'supabase' },
   );
 }
 
 export function fetchEmployeeAvailability() {
-  return apiRequest<AvailabilityEntry[]>('/employee/availability', { auth: 'employee' });
+  return apiRequest<AvailabilityEntry[]>('/employee/availability', { auth: 'supabase' });
 }
 
 export function saveEmployeeAvailability(entries: AvailabilityEntry[]) {
   return apiRequest<AvailabilityEntry[]>('/employee/availability', {
     method: 'PUT',
-    auth: 'employee',
+    auth: 'supabase',
     body: entries,
   });
 }
 
 export function fetchEmployeeRequests() {
-  return apiRequest<EmployeeRequest[]>('/employee/requests', { auth: 'employee' });
+  return apiRequest<EmployeeRequest[]>('/employee/requests', { auth: 'supabase' });
 }
 
 export function createEmployeeRequest(body: Record<string, unknown>) {
   return apiRequest<EmployeeRequest>('/employee/requests', {
     method: 'POST',
-    auth: 'employee',
+    auth: 'supabase',
     body,
   });
 }
 
 export function fetchEmployeeContacts() {
-  return apiRequest<StaffContact[]>('/employee/contacts', { auth: 'employee' });
+  return apiRequest<StaffContact[]>('/employee/contacts', { auth: 'supabase' });
 }
 
 export function fetchEmployeeEarnings() {
-  return apiRequest<EarningsSummary>('/employee/earnings/biweekly', { auth: 'employee' });
+  return apiRequest<EarningsSummary>('/employee/earnings/biweekly', { auth: 'supabase' });
 }
 
 export function fetchEmployeeConversations() {
-  return apiRequest<Conversation[]>('/employee/messages/conversations', { auth: 'employee' });
+  return apiRequest<Conversation[]>('/employee/messages/conversations', { auth: 'supabase' });
 }
 
 export function fetchEmployeeMessages(conversationId: string) {
   return apiRequest<ConversationMessage[]>(
     `/employee/messages/conversations/${conversationId}/messages`,
-    { auth: 'employee' },
+    { auth: 'supabase' },
   );
 }
 
 export function sendEmployeeMessage(conversationId: string, body: string) {
   return apiRequest<ConversationMessage>(
     `/employee/messages/conversations/${conversationId}/messages`,
-    { method: 'POST', auth: 'employee', body: { body } },
+    { method: 'POST', auth: 'supabase', body: { body } },
   );
 }
 
 export function fetchEmployeeAnnouncements() {
-  return apiRequest<Announcement[]>('/employee/announcements', { auth: 'employee' });
+  return apiRequest<Announcement[]>('/employee/announcements', { auth: 'supabase' });
 }
 
 export function fetchManagerSchedules(restaurantId: string, weekStart: string) {
@@ -190,11 +215,43 @@ export function fetchManagerSchedules(restaurantId: string, weekStart: string) {
   );
 }
 
+export function fetchManagerScheduleHistory(restaurantId: string) {
+  return apiRequest<ManagerSchedule[]>(`/restaurants/${restaurantId}/schedules?limit=50`);
+}
+
+export function fetchManagerStaff(restaurantId: string) {
+  return apiRequest<StaffContact[]>(`/restaurants/${restaurantId}/waiters?include_inactive=false`);
+}
+
+export function createManagerSchedule(restaurantId: string, weekStart: string) {
+  return apiPost<ManagerSchedule>(`/restaurants/${restaurantId}/schedules`, {
+    week_start_date: weekStart,
+    generated_by: 'manual',
+  });
+}
+
 export function runManagerScheduler(restaurantId: string, weekStart: string) {
   return apiPost<ScheduleRun>(
     `/restaurants/${restaurantId}/schedules/run?run_engine=true&force_regenerate=true`,
     { week_start_date: weekStart },
   );
+}
+
+export function updateManagerScheduleSummary(scheduleId: string, scheduleSummary: string | null) {
+  return apiPatch<ManagerSchedule>(`/schedules/${scheduleId}/summary`, {
+    schedule_summary: scheduleSummary,
+  });
+}
+
+export function createManagerScheduleItem(scheduleId: string, body: CreateScheduleItemPayload) {
+  return apiPost<EmployeeShift>(`/schedules/${scheduleId}/items`, body);
+}
+
+export function updateManagerScheduleItem(itemId: string, body: UpdateScheduleItemPayload) {
+  return apiRequest<EmployeeShift>(`/schedule-items/${itemId}`, {
+    method: 'PATCH',
+    body,
+  });
 }
 
 export function fetchManagerRequests(restaurantId: string) {

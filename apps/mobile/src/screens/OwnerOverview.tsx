@@ -12,7 +12,7 @@ import { typography } from '@/styles/typography';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getOwnerRestaurant, type OwnerRestaurant } from '../../packages/supabase';
 
 const PERIODS: { id: AnalyticsPeriod; label: string }[] = [
@@ -202,7 +202,6 @@ export default function OwnerOverview() {
 
       {isLoading && (
         <View style={styles.loadingCard}>
-          <ActivityIndicator color={color_pallet.sky[700]} />
           <Text style={[typography.bodySmall, styles.loadingText]}>Loading owner analytics...</Text>
         </View>
       )}
@@ -528,11 +527,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing[3],
+    justifyContent: 'space-between',
     marginTop: spacing[3],
   },
   metricTile: {
     ...card.base,
-    width: '48.4%',
+    width: '47%',
     padding: spacing[4],
   },
   tileLabel: {

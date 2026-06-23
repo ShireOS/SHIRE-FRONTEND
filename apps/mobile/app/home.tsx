@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { color_pallet } from '@/styles/colors';
 import { typography } from '@/styles/typography';
@@ -75,7 +75,7 @@ export default function HomePage() {
 
         {loading ? (
           <View style={{ paddingVertical: 32, alignItems: 'center' }}>
-            <ActivityIndicator color={color_pallet.sky[700]} />
+            <Text style={{ color: color_pallet.ink[500], fontSize: 13 }}>Loading restaurants...</Text>
           </View>
         ) : restaurants && restaurants.length > 0 ? (
           restaurants.map((r) => <RestaurantRow key={r.id} restaurant={r} />)

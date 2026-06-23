@@ -8,13 +8,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LiquidGlassTabBar } from './LiquidGlassTabBar';
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
-type NativeIconSource = Extract<ComponentProps<typeof Icon>, { sf?: unknown }>['sf'];
+type SFSymbolSource = ComponentProps<typeof Icon>['sf'];
 
 type RoleTab = {
   name: string;
   title: string;
   androidIcon: IoniconName;
-  sfSymbol: NativeIconSource;
+  sfSymbol: SFSymbolSource;
 };
 
 const OWNER_TABS: RoleTab[] = [
@@ -27,8 +27,8 @@ const OWNER_TABS: RoleTab[] = [
   {
     name: 'menu',
     title: 'Menu',
-    androidIcon: 'menu',
-    sfSymbol: 'line.3.horizontal',
+    androidIcon: 'restaurant',
+    sfSymbol: 'fork.knife',
   },
   {
     name: 'schedule',
@@ -46,28 +46,28 @@ const OWNER_TABS: RoleTab[] = [
 
 const EMPLOYEE_TABS: RoleTab[] = [
   {
-    name: 'home',
-    title: 'Home',
-    androidIcon: 'home',
-    sfSymbol: { default: 'house', selected: 'house.fill' },
+    name: 'scans',
+    title: 'Scan',
+    androidIcon: 'scan',
+    sfSymbol: { default: 'viewfinder', selected: 'viewfinder.circle.fill' },
+  },
+  {
+    name: 'analytics',
+    title: 'Analytics',
+    androidIcon: 'analytics',
+    sfSymbol: 'chart.xyaxis.line',
+  },
+  {
+    name: 'menu',
+    title: 'Menu',
+    androidIcon: 'menu',
+    sfSymbol: { default: 'menucard', selected: 'menucard.fill' },
   },
   {
     name: 'schedule',
     title: 'Schedule',
     androidIcon: 'calendar',
     sfSymbol: 'calendar',
-  },
-  {
-    name: 'messages',
-    title: 'Messages',
-    androidIcon: 'chatbubble-outline',
-    sfSymbol: { default: 'bubble.left', selected: 'bubble.left.fill' },
-  },
-  {
-    name: 'more',
-    title: 'More',
-    androidIcon: 'menu',
-    sfSymbol: 'line.3.horizontal',
   },
 ];
 
@@ -77,18 +77,22 @@ type RoleTabsLayoutProps = {
 
 const HIDDEN_TABS_BY_VARIANT: Record<RoleTabsLayoutProps['variant'], string[]> = {
   owner: ['analytics', 'scans'],
-  employee: ['analytics', 'menu', 'scans'],
+  employee: [],
 };
 
 export function RoleTabsLayout({ variant }: RoleTabsLayoutProps) {
   const tabs = variant === 'owner' ? OWNER_TABS : EMPLOYEE_TABS;
   const hiddenTabs = HIDDEN_TABS_BY_VARIANT[variant];
+  const safeAreaEdges = Platform.OS === 'ios' ? (['top', 'bottom'] as const) : (['top'] as const);
 
   return (
-    <SafeAreaView edges={['top']} style={styles.safeArea}>
+    <SafeAreaView
+      edges={safeAreaEdges}
+      style={[styles.safeArea, Platform.OS === 'ios' && styles.iosNativeTabsLift]}
+    >
       <View style={styles.content}>
         {Platform.OS === 'ios' ? (
-          <IOSNativeTabs tabs={tabs} />
+          <IOSNativeTabs tabs={tabs} hiddenTabs={hiddenTabs} />
         ) : (
           <BottomTabs tabs={tabs} hiddenTabs={hiddenTabs} />
         )}
@@ -97,7 +101,7 @@ export function RoleTabsLayout({ variant }: RoleTabsLayoutProps) {
   );
 }
 
-function IOSNativeTabs({ tabs }: { tabs: RoleTab[] }) {
+function IOSNativeTabs({ tabs, hiddenTabs }: { tabs: RoleTab[]; hiddenTabs: string[] }) {
   return (
     <NativeTabs
       backgroundColor={null}
@@ -108,11 +112,15 @@ function IOSNativeTabs({ tabs }: { tabs: RoleTab[] }) {
         selected: color_pallet.elevated.dark,
       }}
       labelStyle={{
-        default: styles.nativeTabLabel,
-        selected: styles.nativeTabLabelSelected,
+        default: nativeLabelStyle,
+        selected: {
+          ...nativeLabelStyle,
+          color: color_pallet.elevated.dark,
+          fontWeight: '700',
+        },
       }}
       minimizeBehavior="never"
-      shadowColor="rgba(24, 20, 18, 0.16)"
+      shadowColor="rgba(24,20,18,0.16)"
       tintColor={color_pallet.elevated.dark}
     >
       {tabs.map((tab) => (
@@ -120,6 +128,9 @@ function IOSNativeTabs({ tabs }: { tabs: RoleTab[] }) {
           <Label>{tab.title}</Label>
           <Icon sf={tab.sfSymbol} />
         </NativeTabs.Trigger>
+      ))}
+      {hiddenTabs.map((name) => (
+        <NativeTabs.Trigger key={name} name={name} hidden />
       ))}
     </NativeTabs>
   );
@@ -139,7 +150,13 @@ function BottomTabs({ tabs, hiddenTabs }: { tabs: RoleTab[]; hiddenTabs: string[
           paddingBottom: 0,
         },
       }}
-      tabBar={(props) => <LiquidGlassTabBar {...props} />}
+      tabBar={(props) => (
+        <LiquidGlassTabBar
+          {...props}
+          bottomOffset={Platform.OS === 'ios' ? 22 : 0}
+          visibleRouteNames={tabs.map((tab) => tab.name)}
+        />
+      )}
     >
       {tabs.map((tab) => (
         <Tabs.Screen
@@ -170,18 +187,18 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: color_pallet.bg.DEFAULT,
+    justifyContent: 'flex-start',
+  },
+  iosNativeTabsLift: {
+    paddingBottom: 18,
   },
   content: {
     flex: 1,
   },
-  nativeTabLabel: {
-    color: color_pallet.ink[500],
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  nativeTabLabelSelected: {
-    color: color_pallet.elevated.dark,
-    fontSize: 11,
-    fontWeight: '700',
-  },
 });
+
+const nativeLabelStyle = {
+  color: color_pallet.ink[500],
+  fontSize: 11,
+  fontWeight: '600' as const,
+};

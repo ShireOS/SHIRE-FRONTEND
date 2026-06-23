@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -53,17 +52,22 @@ export default function AuthPage() {
     if (!canSubmit) return
     setSubmitting(true)
     setError(null)
-    const result = await login(email.trim(), password)
-    setSubmitting(false)
-    if (!result.ok) {
-      setError(result.error)
-      return
-    }
-    const route = routeForRole(result.role)
-    if (route) {
-      router.replace(route as never)
-    } else {
-      setError('No role assigned to this account. Contact your administrator.')
+    try {
+      const result = await login(email.trim(), password)
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      const route = routeForRole(result.role)
+      if (route) {
+        router.replace(route as never)
+      } else {
+        setError('No role assigned to this account. Contact your administrator.')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not sign in.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -203,13 +207,9 @@ export default function AuthPage() {
                   transform: [{ scale: pressed && canSubmit ? 0.98 : 1 }],
                 }}
               >
-                {submitting ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '500' }}>
-                    Log in
-                  </Text>
-                )}
+                <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '500' }}>
+                  {submitting ? 'Logging in...' : 'Log in'}
+                </Text>
               </View>
             )}
           </Pressable>

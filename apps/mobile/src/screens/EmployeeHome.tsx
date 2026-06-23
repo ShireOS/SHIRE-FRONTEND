@@ -26,7 +26,7 @@ import { radius, spacing } from '@/styles/tokens';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 export default function EmployeeHome() {
   const router = useRouter();
@@ -175,7 +175,6 @@ function greetingForNow() {
 function LoadingCard({ label }: { label: string }) {
   return (
     <View style={styles.stateCard}>
-      <ActivityIndicator color={palette.sky[700]} />
       <UiText variant="bodySmall" tone="muted">{label}</UiText>
     </View>
   );

@@ -1,6 +1,5 @@
 import Constants from 'expo-constants';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getSBClient } from '../../packages/supabase';
+import { getCurrentAccessToken, getSBClient } from '../../packages/supabase';
 
 export function getApiBaseUrl() {
   const value = Constants.expoConfig?.extra?.apiBaseUrl;
@@ -10,7 +9,7 @@ export function getApiBaseUrl() {
   return value.replace(/\/+$/, '');
 }
 
-type ApiAuthMode = 'supabase' | 'employee' | 'none';
+type ApiAuthMode = 'supabase' | 'none';
 
 type ApiRequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -22,10 +21,8 @@ type ApiRequestOptions = {
 async function resolveAuthorization(auth: ApiAuthMode) {
   if (auth === 'none') return null;
 
-  if (auth === 'employee') {
-    const employeeToken = await AsyncStorage.getItem('shire_employee_token');
-    if (employeeToken) return `Bearer ${employeeToken}`;
-  }
+  const accessToken = getCurrentAccessToken();
+  if (accessToken) return `Bearer ${accessToken}`;
 
   const client = getSBClient();
   const {

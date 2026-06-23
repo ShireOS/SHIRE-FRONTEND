@@ -221,14 +221,20 @@ export function LocationFilterRow({
 export function ShiftRow({
   shift,
   showPerson = false,
+  onPress,
 }: {
   shift: EmployeeShift;
   showPerson?: boolean;
+  onPress?: (shift: EmployeeShift) => void;
 }) {
   const role = shift.role || shift.waiter_role || 'Staff';
   const name = shift.waiter_name || 'Assigned staff';
   return (
-    <Pressable style={styles.shiftRow}>
+    <Pressable
+      accessibilityRole={onPress ? 'button' : undefined}
+      onPress={onPress ? () => onPress(shift) : undefined}
+      style={styles.shiftRow}
+    >
       <View style={styles.avatar}>
         <UiText variant="caption" style={styles.avatarText}>
           {(showPerson ? name : role).slice(0, 1).toUpperCase()}
@@ -261,10 +267,12 @@ export function DayScheduleSection({
   dateKey,
   shifts,
   showPerson = false,
+  onShiftPress,
 }: {
   dateKey: string;
   shifts: EmployeeShift[];
   showPerson?: boolean;
+  onShiftPress?: (shift: EmployeeShift) => void;
 }) {
   const date = new Date(`${dateKey}T12:00:00`);
   return (
@@ -283,7 +291,14 @@ export function DayScheduleSection({
           You are not scheduled to work.
         </UiText>
       ) : (
-        shifts.map((shift) => <ShiftRow key={shift.id} shift={shift} showPerson={showPerson} />)
+        shifts.map((shift) => (
+          <ShiftRow
+            key={shift.id}
+            shift={shift}
+            showPerson={showPerson}
+            onPress={onShiftPress}
+          />
+        ))
       )}
     </View>
   );

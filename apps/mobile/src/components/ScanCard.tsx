@@ -1,7 +1,6 @@
 import React, { useRef } from 'react';
 import { View, Text, Image, Pressable, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import Animated, { Easing, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { typography } from '@/styles/typography';
 import { color_pallet } from '@/styles/colors';
@@ -87,13 +86,13 @@ export function ScanCard({ data, onPress, onDelete }: ScanCardProps) {
 function ThumbnailTile() {
   return (
     <View style={styles.thumb}>
-      <LinearGradient colors={['#F0F6FF', '#E9EFFF']} style={styles.thumbGradient}>
+      <View style={styles.thumbSurface}>
         <Image
           source={require('../../assets/images/3d-demo.png')}
           resizeMode="contain"
           style={styles.thumbImage}
         />
-      </LinearGradient>
+      </View>
     </View>
   );
 }
@@ -132,7 +131,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(228,226,226,0.6)',
   },
-  thumbGradient: { flex: 1, padding: 1 },
+  thumbSurface: { flex: 1, padding: 1, backgroundColor: '#EEF4FF' },
   thumbImage: { flex: 1, width: '100%', height: '100%' },
 });
 

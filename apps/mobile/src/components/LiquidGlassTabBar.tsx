@@ -21,6 +21,7 @@ export type LiquidGlassTabBarProps = BottomTabBarProps & {
   activeColor?: string;
   inactiveColor?: string;
   bottomOffset?: number;
+  visibleRouteNames?: string[];
   /** Tint applied to the glass surface (iOS 26 only). */
   tintColor?: string;
 };
@@ -32,13 +33,18 @@ export function LiquidGlassTabBar({
   activeColor = color_pallet.cream[50],
   inactiveColor = color_pallet.ink[700],
   bottomOffset = 0,
+  visibleRouteNames,
   tintColor,
 }: LiquidGlassTabBarProps) {
   const insets = useSafeAreaInsets();
   const [pillWidth, setPillWidth] = useState(0);
+  const visibleRouteNameSet = visibleRouteNames ? new Set(visibleRouteNames) : null;
 
   const visibleRoutes = state.routes.filter((route) => {
     const { options } = descriptors[route.key];
+    if (visibleRouteNameSet && !visibleRouteNameSet.has(route.name)) {
+      return false;
+    }
     return (options as { href?: string | null }).href !== null;
   });
 
@@ -152,9 +158,10 @@ function GlassSurface({ tintColor }: { tintColor?: string }) {
   if (isLiquidGlassAvailable()) {
     return (
       <GlassView
-        glassEffectStyle="clear"
+        colorScheme="light"
+        glassEffectStyle="regular"
         isInteractive
-        tintColor={tintColor}
+        tintColor={tintColor ?? 'rgba(255,255,255,0.32)'}
         style={StyleSheet.absoluteFill}
       />
     );
@@ -163,12 +170,14 @@ function GlassSurface({ tintColor }: { tintColor?: string }) {
   return (
     <View style={StyleSheet.absoluteFill}>
       <BlurView
-        intensity={Platform.OS === 'android' ? 80 : 60}
-        tint="systemUltraThinMaterialLight"
+        intensity={Platform.OS === 'android' ? 82 : 92}
+        tint={Platform.OS === 'ios' ? 'systemUltraThinMaterialLight' : 'systemMaterialLight'}
         experimentalBlurMethod="dimezisBlurView"
         style={StyleSheet.absoluteFill}
       />
-      
+      <View style={[StyleSheet.absoluteFill, styles.glassWash]} pointerEvents="none" />
+      <View style={[StyleSheet.absoluteFill, styles.surfaceTint]} pointerEvents="none" />
+      <View style={[StyleSheet.absoluteFill, styles.highlight]} pointerEvents="none" />
     </View>
   );
 }
@@ -189,7 +198,15 @@ const styles = StyleSheet.create({
     ...shadowLgDark,
   },
   surfaceTint: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  glassWash: {
+    borderRadius: PILL_RADIUS,
+    borderWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.86)',
+    borderLeftColor: 'rgba(255,255,255,0.54)',
+    borderRightColor: 'rgba(255,255,255,0.28)',
+    borderBottomColor: 'rgba(97,74,68,0.06)',
   },
   highlight: {
     borderTopWidth: 1,
