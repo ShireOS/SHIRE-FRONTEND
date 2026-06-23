@@ -2,11 +2,27 @@ import { color_pallet } from '@/styles/colors';
 import { typography } from '@/styles/typography';
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Image, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LiquidGlassTabBar } from '@/components/LiquidGlassTabBar';
+import { getUserPfp } from '../../packages/supabase';
+
+const FALLBACK_PFP = 'https://static.vecteezy.com/system/resources/thumbnails/075/640/866/small/man-sitting-at-cafe-table-with-camera-and-tableware-in-foreground-urban-leisure-creative-lifestyle-streetgraphy-and-relaxed-social-atmosphere-photo.jpg';
 
 export default function RootLayout() {
+  const [pfpUri, setPfpUri] = useState<string>(FALLBACK_PFP);
+
+  useEffect(() => {
+    let active = true;
+    getUserPfp().then((base64) => {
+      if (active && base64) setPfpUri(`data:image/jpeg;base64,${base64}`);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <SafeAreaView
       edges={['top']}
@@ -22,7 +38,7 @@ export default function RootLayout() {
         justifyContent: 'space-between',
       }}>
         <Image
-          source={{ uri: 'https://static.vecteezy.com/system/resources/thumbnails/075/640/866/small/man-sitting-at-cafe-table-with-camera-and-tableware-in-foreground-urban-leisure-creative-lifestyle-streetgraphy-and-relaxed-social-atmosphere-photo.jpg' }}
+          source={{ uri: pfpUri }}
           style={{
             height: 45,
             width: 45,

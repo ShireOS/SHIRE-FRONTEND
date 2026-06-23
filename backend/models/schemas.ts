@@ -8578,6 +8578,21 @@ export type Database = {
           },
         ]
       }
+      user_meta: {
+        Row: {
+          picture: string
+          user_id: string | null
+        }
+        Insert: {
+          picture: string
+          user_id?: string | null
+        }
+        Update: {
+          picture?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           restaraunt_role: Database["public"]["Enums"]["restaraunt_role"] | null

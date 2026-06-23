@@ -5,7 +5,8 @@
         "ios": "pnpm --filter mobile ios",
         "ios_device": "pnpm --filter mobile ios_device",
         "ios_server": "pnpm --filter mobile start",
-        "schema": "pnpm --filter @shire/backend generate-schema"
+        "schema": "pnpm --filter @shire/backend generate-schema",
+        "update-native": "cd /Users/raghavunnam/Documents/joshik/programming/Projects/Shire/SHIRE-FRONTEND/apps/mobile && rm -rf ios && rm -rf ~/Library/Developer/Xcode/DerivedData/frontend-* && npx expo prebuild -p ios"
     },
     "pnpm": {
         "patchedDependencies": {

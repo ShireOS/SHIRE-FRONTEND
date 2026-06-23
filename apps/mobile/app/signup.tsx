@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -10,9 +11,14 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
-import { signUp } from '../packages/supabase'
+import { Ionicons } from '@expo/vector-icons'
+import * as ImagePicker from 'expo-image-picker'
+import { signUp, uploadUserPfp } from '../packages/supabase'
 import { DottedSkyBackground } from '@/components/DottedSkyBackground'
 import { color_pallet } from '@/styles/colors'
+
+const MAX_PFP_KB = 200
+const AVATAR_SIZE = 96
 
 const EYEBROW_TRACKING = 0.06 * 10
 const BRAND_EYEBROW_TRACKING = 0.06 * 12
@@ -28,10 +34,41 @@ export default function SignUpPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
+  const [pfpBase64, setPfpBase64] = useState<string | null>(null)
+  const [pickerLoading, setPickerLoading] = useState(false)
 
   const passwordsMatch = password.length > 0 && password === confirmPassword
   const canSubmit =
     email.trim().length > 0 && password.length >= 6 && passwordsMatch && !submitting
+
+  async function pickPfp() {
+    setError(null)
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (!perm.granted) {
+      setError('Photo library permission is required to add a profile photo.')
+      return
+    }
+    setPickerLoading(true)
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.4,
+        base64: true,
+      })
+      if (result.canceled || !result.assets?.[0]?.base64) return
+      const base64 = result.assets[0].base64
+      const approxKB = (base64.length * 0.75) / 1024
+      if (approxKB > MAX_PFP_KB) {
+        setError(`Photo is too large (${Math.round(approxKB)} KB). Pick something under ${MAX_PFP_KB} KB.`)
+        return
+      }
+      setPfpBase64(base64)
+    } finally {
+      setPickerLoading(false)
+    }
+  }
 
   async function onSubmit() {
     if (!canSubmit) return
@@ -43,6 +80,12 @@ export default function SignUpPage() {
     if (!result.ok) {
       setError(result.error)
       return
+    }
+    if (pfpBase64) {
+      const upload = await uploadUserPfp(pfpBase64)
+      if (!upload.ok) {
+        setError(`Account created but profile photo failed to upload: ${upload.error}`)
+      }
     }
     if (result.needsConfirmation) {
       setInfo('Account created. Check your email to confirm before signing in.')
@@ -72,6 +115,64 @@ export default function SignUpPage() {
             >
               Create account
             </Text>
+          </View>
+
+          <View className="items-center mb-6">
+            <Pressable
+              onPress={pickPfp}
+              disabled={pickerLoading || submitting}
+              accessibilityRole="button"
+              accessibilityLabel={pfpBase64 ? 'Change profile photo' : 'Add profile photo'}
+              hitSlop={8}
+              style={{
+                width: AVATAR_SIZE,
+                height: AVATAR_SIZE,
+                borderRadius: AVATAR_SIZE / 2,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: pfpBase64 ? 'transparent' : color_pallet.cream[200],
+                borderWidth: pfpBase64 ? 2 : 1.5,
+                borderColor: pfpBase64 ? color_pallet.sky[600] : color_pallet.stone[200],
+                borderStyle: pfpBase64 ? 'solid' : 'dashed',
+                overflow: 'hidden',
+                shadowColor: color_pallet.sky[700],
+                shadowOpacity: pfpBase64 ? 0.15 : 0,
+                shadowRadius: 14,
+                shadowOffset: { width: 0, height: 6 },
+                elevation: pfpBase64 ? 3 : 0,
+              }}
+            >
+              {pickerLoading ? (
+                <ActivityIndicator color={color_pallet.sky[700]} />
+              ) : pfpBase64 ? (
+                <Image
+                  source={{ uri: `data:image/jpeg;base64,${pfpBase64}` }}
+                  style={{ width: AVATAR_SIZE, height: AVATAR_SIZE }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Ionicons name="camera-outline" size={28} color={color_pallet.ink[500]} />
+              )}
+            </Pressable>
+            <Text
+              className="font-mono text-ink-500 mt-3"
+              style={{ fontSize: 10, letterSpacing: EYEBROW_TRACKING, textTransform: 'uppercase' }}
+            >
+              {pfpBase64 ? 'Tap to change' : 'Add a photo (optional)'}
+            </Text>
+            {pfpBase64 && (
+              <Pressable
+                onPress={() => setPfpBase64(null)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Remove photo"
+                style={{ marginTop: 6, paddingHorizontal: 10, paddingVertical: 4 }}
+              >
+                <Text style={{ fontSize: 12, color: color_pallet.danger[600], fontWeight: '500' }}>
+                  Remove
+                </Text>
+              </Pressable>
+            )}
           </View>
 
           <View className="mb-5">

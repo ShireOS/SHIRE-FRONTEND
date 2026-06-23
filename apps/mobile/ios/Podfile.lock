@@ -1,6 +1,9 @@
 PODS:
   - EXConstants (18.0.13):
     - ExpoModulesCore
+  - EXImageLoader (6.0.0):
+    - ExpoModulesCore
+    - React-Core
   - EXJSONUtils (0.15.0)
   - EXManifests (1.0.11):
     - ExpoModulesCore
@@ -226,6 +229,8 @@ PODS:
     - SDWebImageAVIFCoder (~> 0.11.0)
     - SDWebImageSVGCoder (~> 1.7.0)
     - SDWebImageWebPCoder (~> 0.14.6)
+  - ExpoImagePicker (17.0.11):
+    - ExpoModulesCore
   - ExpoKeepAwake (15.0.8):
     - ExpoModulesCore
   - ExpoLinearGradient (15.0.8):
@@ -2357,6 +2362,7 @@ PODS:
 
 DEPENDENCIES:
   - "EXConstants (from `../../../node_modules/.pnpm/expo-constants@18.0.13_expo@54.0.35_react-native@0.81.5_patch_hash=38436402553757d893ca_4b5e28cf75d717fdbbdf90774e7a1923/node_modules/expo-constants/ios`)"
+  - "EXImageLoader (from `../../../node_modules/.pnpm/expo-image-loader@6.0.0_expo@54.0.35/node_modules/expo-image-loader/ios`)"
   - "EXJSONUtils (from `../../../node_modules/.pnpm/expo-json-utils@0.15.0/node_modules/expo-json-utils/ios`)"
   - "EXManifests (from `../../../node_modules/.pnpm/expo-manifests@1.0.11_expo@54.0.35/node_modules/expo-manifests/ios`)"
   - "Expo (from `../../../node_modules/.pnpm/expo@54.0.35_@babel+core@7.29.7_@expo+metro-runtime@6.1.2_expo-router@6.0.24_react-nati_5739e1f19fd6d3fe7d8bc611dd229c83/node_modules/expo`)"
@@ -2373,6 +2379,7 @@ DEPENDENCIES:
   - "ExpoGlassEffect (from `../../../node_modules/.pnpm/expo-glass-effect@0.1.10_expo@54.0.35_react-native@0.81.5_patch_hash=38436402553757d893_b2d8e64912d83a8e4af0792f9db92533/node_modules/expo-glass-effect/ios`)"
   - "ExpoHead (from `../../../node_modules/.pnpm/expo-router@6.0.24_9961d091b3a0232f376b318a9b62dc80/node_modules/expo-router/ios`)"
   - "ExpoImage (from `../../../node_modules/.pnpm/expo-image@3.0.11_expo@54.0.35_react-native-web@0.21.2_react-dom@19.1.0_react@19.1.0__r_d6d11d04e5afadab5df92baa25f2612a/node_modules/expo-image/ios`)"
+  - "ExpoImagePicker (from `../../../node_modules/.pnpm/expo-image-picker@17.0.11_expo@54.0.35/node_modules/expo-image-picker/ios`)"
   - "ExpoKeepAwake (from `../../../node_modules/.pnpm/expo-keep-awake@15.0.8_expo@54.0.35_react@19.1.0/node_modules/expo-keep-awake/ios`)"
   - "ExpoLinearGradient (from `../../../node_modules/.pnpm/expo-linear-gradient@15.0.8_expo@54.0.35_react-native@0.81.5_patch_hash=38436402553757d_d2bcafc1c81174063167faad85d63581/node_modules/expo-linear-gradient/ios`)"
   - "ExpoLinking (from `../../../node_modules/.pnpm/expo-linking@8.0.12_expo@54.0.35_react-native@0.81.5_patch_hash=38436402553757d893cafed_1845ab453780a248d10fe48b618cefc7/node_modules/expo-linking/ios`)"
@@ -2475,6 +2482,8 @@ SPEC REPOS:
 EXTERNAL SOURCES:
   EXConstants:
     :path: "../../../node_modules/.pnpm/expo-constants@18.0.13_expo@54.0.35_react-native@0.81.5_patch_hash=38436402553757d893ca_4b5e28cf75d717fdbbdf90774e7a1923/node_modules/expo-constants/ios"
+  EXImageLoader:
+    :path: "../../../node_modules/.pnpm/expo-image-loader@6.0.0_expo@54.0.35/node_modules/expo-image-loader/ios"
   EXJSONUtils:
     :path: "../../../node_modules/.pnpm/expo-json-utils@0.15.0/node_modules/expo-json-utils/ios"
   EXManifests:
@@ -2507,6 +2516,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/expo-router@6.0.24_9961d091b3a0232f376b318a9b62dc80/node_modules/expo-router/ios"
   ExpoImage:
     :path: "../../../node_modules/.pnpm/expo-image@3.0.11_expo@54.0.35_react-native-web@0.21.2_react-dom@19.1.0_react@19.1.0__r_d6d11d04e5afadab5df92baa25f2612a/node_modules/expo-image/ios"
+  ExpoImagePicker:
+    :path: "../../../node_modules/.pnpm/expo-image-picker@17.0.11_expo@54.0.35/node_modules/expo-image-picker/ios"
   ExpoKeepAwake:
     :path: "../../../node_modules/.pnpm/expo-keep-awake@15.0.8_expo@54.0.35_react@19.1.0/node_modules/expo-keep-awake/ios"
   ExpoLinearGradient:
@@ -2683,6 +2694,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   EXConstants: 3feb66fd1d94202fc1f0946d74e029d8b224b60e
+  EXImageLoader: e501c001bc40b8326605e82e6e80363c80fe06b5
   EXJSONUtils: 1d3e4590438c3ee593684186007028a14b3686cd
   EXManifests: 4eb6d80e7f6e07b4db68d2e1a5da58a915825b68
   Expo: 0402aa13b318225ab96c28f8f6ed374efd62ca16
@@ -2699,6 +2711,7 @@ SPEC CHECKSUMS:
   ExpoGlassEffect: 73fd0ca0f64de046ad778ea1318c43a726b9e143
   ExpoHead: f9362a2c2b1ae9ad47f1347bf7515d17900c4bfb
   ExpoImage: f6bcd30bb98d4c484869668fbc32834bb3ee5bfb
+  ExpoImagePicker: 5d49cb62c78c86ee7945e10338210e69b9266064
   ExpoKeepAwake: 44bf6715bc1d2ddb17afe19d927cd039cda123f0
   ExpoLinearGradient: 814a21fc4056c3cf606e4f19e31e47074c5b5a86
   ExpoLinking: 4f1fc07ec4b3c10d60ec91617db973575104ec7e

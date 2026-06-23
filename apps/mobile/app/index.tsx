@@ -39,10 +39,8 @@ export default function AuthPage() {
       setError(result.error)
       return
     }
-    if (result.role === 'owner' || result.role === 'developer') {
-      router.replace('/(admin)/scans')
-    } else if (result.role === 'employee') {
-      router.replace('/(employee)/scans')
+    if (result.role === 'owner' || result.role === 'developer' || result.role === 'employee') {
+      router.replace('/home')
     } else {
       setError('No role assigned to this account. Contact your administrator.')
     }

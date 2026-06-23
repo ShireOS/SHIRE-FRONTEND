@@ -84,6 +84,55 @@ function humanizeAuthError(raw: string): string {
     return raw || 'Something went wrong. Please try again.'
 }
 
+export async function uploadUserPfp(base64: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+        const client = getSBClient()
+        const user = await client.auth.getUser()
+        if (user.data.user == null) return { ok: false, error: 'Not signed in.' }
+        const userId = user.data.user.id
+
+        const existing = await client
+            .from('user_meta')
+            .select('user_id')
+            .eq('user_id', userId)
+            .maybeSingle()
+
+        if (existing.data) {
+            const { error } = await client
+                .from('user_meta')
+                .update({ picture: base64 })
+                .eq('user_id', userId)
+            if (error) return { ok: false, error: error.message }
+        } else {
+            const { error } = await client
+                .from('user_meta')
+                .insert({ user_id: userId, picture: base64 })
+            if (error) return { ok: false, error: error.message }
+        }
+        return { ok: true }
+    } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+}
+
+export async function getUserPfp(): Promise<string | null> {
+    try {
+        const client = getSBClient()
+        const user = await client.auth.getUser()
+        if (user.data.user == null) return null
+
+        const { data, error } = await client
+            .from('user_meta')
+            .select('picture')
+            .eq('user_id', user.data.user.id)
+            .maybeSingle()
+        if (error || !data) return null
+        return data.picture ?? null
+    } catch {
+        return null
+    }
+}
+
 export async function getUserRole(): Promise<userRole | undefined> {
     const client = getSBClient()
     const user = await client.auth.getUser()
