@@ -18,7 +18,7 @@ import { DottedSkyBackground } from '@/components/DottedSkyBackground'
 import { color_pallet } from '@/styles/colors'
 
 const MAX_PFP_KB = 200
-const AVATAR_SIZE = 96
+const AVATAR_SIZE = 120
 
 const EYEBROW_TRACKING = 0.06 * 10
 const BRAND_EYEBROW_TRACKING = 0.06 * 12
@@ -113,7 +113,7 @@ export default function SignUpPage() {
               className="text-ink-900 mt-3"
               style={{ fontSize: 32, fontWeight: '800', letterSpacing: -0.015 * 32, lineHeight: 32 }}
             >
-              Create account
+              Welcome
             </Text>
           </View>
 
@@ -127,12 +127,12 @@ export default function SignUpPage() {
               style={{
                 width: AVATAR_SIZE,
                 height: AVATAR_SIZE,
-                borderRadius: AVATAR_SIZE / 2,
+                borderRadius: 10,
                 alignItems: 'center',
                 justifyContent: 'center',
                 backgroundColor: pfpBase64 ? 'transparent' : color_pallet.cream[200],
                 borderWidth: pfpBase64 ? 2 : 1.5,
-                borderColor: pfpBase64 ? color_pallet.sky[600] : color_pallet.stone[200],
+                borderColor: pfpBase64 ? color_pallet.ink[600] : color_pallet.stone[200],
                 borderStyle: pfpBase64 ? 'solid' : 'dashed',
                 overflow: 'hidden',
                 shadowColor: color_pallet.sky[700],
@@ -154,25 +154,6 @@ export default function SignUpPage() {
                 <Ionicons name="camera-outline" size={28} color={color_pallet.ink[500]} />
               )}
             </Pressable>
-            <Text
-              className="font-mono text-ink-500 mt-3"
-              style={{ fontSize: 10, letterSpacing: EYEBROW_TRACKING, textTransform: 'uppercase' }}
-            >
-              {pfpBase64 ? 'Tap to change' : 'Add a photo (optional)'}
-            </Text>
-            {pfpBase64 && (
-              <Pressable
-                onPress={() => setPfpBase64(null)}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Remove photo"
-                style={{ marginTop: 6, paddingHorizontal: 10, paddingVertical: 4 }}
-              >
-                <Text style={{ fontSize: 12, color: color_pallet.danger[600], fontWeight: '500' }}>
-                  Remove
-                </Text>
-              </Pressable>
-            )}
           </View>
 
           <View className="mb-5">

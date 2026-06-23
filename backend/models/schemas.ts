@@ -5774,16 +5774,19 @@ export type Database = {
       }
       restaraunt_assignments: {
         Row: {
+          approved: boolean | null
           id: number
           restaraunt: string | null
           user: string
         }
         Insert: {
+          approved?: boolean | null
           id?: number
           restaraunt?: string | null
           user: string
         }
         Update: {
+          approved?: boolean | null
           id?: number
           restaraunt?: string | null
           user?: string
@@ -6013,6 +6016,7 @@ export type Database = {
           floor_plan_image_url: string | null
           floor_plan_updated_at: string | null
           id: string
+          join_code: string
           logo_url: string | null
           name: string
           onboarding_completed_at: string | null
@@ -6046,6 +6050,7 @@ export type Database = {
           floor_plan_image_url?: string | null
           floor_plan_updated_at?: string | null
           id?: string
+          join_code?: string
           logo_url?: string | null
           name: string
           onboarding_completed_at?: string | null
@@ -6079,6 +6084,7 @@ export type Database = {
           floor_plan_image_url?: string | null
           floor_plan_updated_at?: string | null
           id?: string
+          join_code?: string
           logo_url?: string | null
           name?: string
           onboarding_completed_at?: string | null
