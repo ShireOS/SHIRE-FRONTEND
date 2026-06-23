@@ -156,8 +156,42 @@ export async function getUserRestaraunts(): Promise<Restaurant[] | undefined> {
     if (data.data == null) return
 
     const restaraunt_ids = data.data.map((rest) => rest.restaraunt ?? "")
-    const restaraunts = await client.from("restaurants").select("*").contains("id", restaraunt_ids)
+    const restaraunts = await client.from("restaurants").select("*").in("id", restaraunt_ids)
 
     if (restaraunts.data == null) return
     return restaraunts.data
+}
+
+export async function addUserRequest(join_code: string): Promise<string> {
+    const client = getSBClient()
+    const user = await client.auth.getUser()
+    const restaraunt = await client.from("restaurants").select("*").eq("join_code", join_code)
+
+    if (user.data.user == null) return "user is not authenticated"
+    if (restaraunt.data == null || restaraunt.count == 0) return "Restaraunt joining code is invalid"
+
+    await client.from("restaraunt_assignments").insert({
+        user: user.data.user.id, 
+        approved: false, 
+        restaraunt: restaraunt.data[0].id
+    })
+
+    return ""
+}
+
+export async function getWorkerRequests(restaraunt_id: string): Promise<any> {
+    const client = getSBClient()
+    const user = await client.auth.getUser()
+    const restaraunt = await client.from("restaurants").select("*").eq("id", restaraunt_id)
+
+    if (user.data.user == null) return "user is not authenticated"
+    if (restaraunt.data == null || restaraunt.count == 0) return "Restaraunt id is invalid"
+
+    let pending_users = await client.from("restaraunt_assignments").select("*").eq("restaraunt", restaraunt_id).eq("approved", false)
+    if (pending_users.data == null || pending_users.count == 0) return []
+
+    let final_pending_users = await client.from("user_meta").select("*").in("user_id", pending_users.data.map((user) => user.user))
+    if (final_pending_users.data == null || final_pending_users.count == 0) return []
+
+    return final_pending_users
 }

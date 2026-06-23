@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Image,
   KeyboardAvoidingView,
@@ -9,6 +10,13 @@ import {
   TextInput,
   View,
 } from 'react-native'
+import Animated, {
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
@@ -22,6 +30,106 @@ const AVATAR_SIZE = 120
 
 const EYEBROW_TRACKING = 0.06 * 10
 const BRAND_EYEBROW_TRACKING = 0.06 * 12
+
+const GREETINGS = ['Welcome in', 'Right this way', 'Pull up a chair'] as const
+const GREETING_INTERVAL_MS = 2500
+const GREETING_FADE_MS = 350
+const HEADLINE_HEIGHT = 40
+
+function CyclingGreeting() {
+  const [index, setIndex] = useState(0)
+  const [reduceMotion, setReduceMotion] = useState(false)
+  const reduceMotionRef = useRef(false)
+  const mountedRef = useRef(true)
+  const opacity = useSharedValue(1)
+
+  useEffect(() => {
+    mountedRef.current = true
+    let cancelled = false
+    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (cancelled) return
+      reduceMotionRef.current = enabled
+      setReduceMotion(enabled)
+    })
+    const sub = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      (enabled) => {
+        reduceMotionRef.current = enabled
+        setReduceMotion(enabled)
+      },
+    )
+    return () => {
+      cancelled = true
+      mountedRef.current = false
+      sub.remove()
+    }
+  }, [])
+
+  useEffect(() => {
+    const advance = () => {
+      if (!mountedRef.current) return
+      setIndex((i) => (i + 1) % GREETINGS.length)
+    }
+    const interval = setInterval(() => {
+      if (!mountedRef.current) return
+      if (reduceMotionRef.current) {
+        advance()
+        return
+      }
+      opacity.value = withTiming(
+        0,
+        { duration: GREETING_FADE_MS, easing: Easing.out(Easing.cubic) },
+        (finished) => {
+          'worklet'
+          if (!finished) return
+          runOnJS(advance)()
+          opacity.value = withTiming(1, {
+            duration: GREETING_FADE_MS,
+            easing: Easing.out(Easing.cubic),
+          })
+        },
+      )
+    }, GREETING_INTERVAL_MS)
+    return () => {
+      clearInterval(interval)
+    }
+  }, [opacity])
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    opacity: reduceMotion ? 1 : opacity.value,
+  }))
+
+  return (
+    <View
+      accessibilityLiveRegion="polite"
+      accessible
+      accessibilityLabel={GREETINGS[index]}
+      style={{
+        height: HEADLINE_HEIGHT,
+        alignSelf: 'stretch',
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+      }}
+    >
+      <Animated.Text
+        className="text-ink-900"
+        style={[
+          {
+            fontSize: 32,
+            fontWeight: '800',
+            letterSpacing: -0.015 * 32,
+            lineHeight: 32,
+            textAlign: 'center',
+          },
+          animatedStyle,
+        ]}
+      >
+        {GREETINGS[index]}
+      </Animated.Text>
+    </View>
+  )
+}
 
 export default function SignUpPage() {
   const router = useRouter()
@@ -109,12 +217,9 @@ export default function SignUpPage() {
             >
               Shire
             </Text>
-            <Text
-              className="text-ink-900 mt-3"
-              style={{ fontSize: 32, fontWeight: '800', letterSpacing: -0.015 * 32, lineHeight: 32 }}
-            >
-              Welcome
-            </Text>
+            <View className="mt-3" style={{ alignSelf: 'stretch' }}>
+              <CyclingGreeting />
+            </View>
           </View>
 
           <View className="items-center mb-6">
