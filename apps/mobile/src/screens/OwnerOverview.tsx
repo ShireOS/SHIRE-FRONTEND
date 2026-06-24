@@ -5,6 +5,13 @@ import {
   type MenuSalesItem,
   type OwnerAnalyticsPayload,
 } from '@/api/ownerAnalytics';
+import {
+  fetchManagerTimeClockRequests,
+  reviewTimeClockRequest,
+  type TimeClockRequest,
+} from '@/api/timeClock';
+import { staleWhileRevalidate } from '@/cache/staleWhileRevalidate';
+import { registerManagerPushToken } from '@/notifications/pushNotifications';
 import { color_pallet, semanticColors, statusColors } from '@/styles/colors';
 import { shadowMd } from '@/styles/shadows';
 import { card, divider, layout, radius, spacing } from '@/styles/tokens';
@@ -22,6 +29,8 @@ const PERIODS: { id: AnalyticsPeriod; label: string }[] = [
   { id: 'year', label: 'Year' },
   { id: 'full', label: 'Full' },
 ];
+const TIME_CLOCK_REQUEST_CACHE_TTL_MS = 15_000;
+const TIME_CLOCK_REQUEST_MAX_STALE_MS = 24 * 60 * 60 * 1000;
 
 function toDateKey(date: Date) {
   const year = date.getFullYear();
@@ -78,7 +87,9 @@ export default function OwnerOverview() {
   const [period, setPeriod] = useState<AnalyticsPeriod>('day');
   const [date, setDate] = useState(() => new Date());
   const [payload, setPayload] = useState<OwnerAnalyticsPayload | null>(null);
+  const [timeClockRequests, setTimeClockRequests] = useState<TimeClockRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isReviewingTime, setIsReviewingTime] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const dateKey = toDateKey(date);
@@ -89,7 +100,10 @@ export default function OwnerOverview() {
     async function loadRestaurant() {
       try {
         const nextRestaurant = await getOwnerRestaurant();
-        if (!cancelled) setRestaurant(nextRestaurant);
+        if (!cancelled) {
+          setRestaurant(nextRestaurant);
+          if (nextRestaurant?.id) registerManagerPushToken(nextRestaurant.id).catch(() => undefined);
+        }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Could not load restaurant.');
@@ -135,6 +149,28 @@ export default function OwnerOverview() {
     };
   }, [dateKey, period, restaurant]);
 
+  useEffect(() => {
+    if (!restaurant?.id) return;
+    let cancelled = false;
+    staleWhileRevalidate<TimeClockRequest[]>({
+      namespace: 'manager-time-clock-requests',
+      version: 1,
+      parts: [restaurant.id, 'pending'],
+      ttlMs: TIME_CLOCK_REQUEST_CACHE_TTL_MS,
+      maxStaleMs: TIME_CLOCK_REQUEST_MAX_STALE_MS,
+      fetcher: () => fetchManagerTimeClockRequests(restaurant.id, 'pending'),
+      onRevalidate: (items) => {
+        if (!cancelled) setTimeClockRequests(items);
+      },
+      onError: () => undefined,
+    }).then((result) => {
+      if (!cancelled) setTimeClockRequests(result.data);
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurant]);
+
   const metrics = useMemo(() => buildMetrics(payload), [payload]);
   const salesBars = useMemo(() => buildSalesBars(payload), [payload]);
   const menuItems = payload?.sections?.menu?.items || [];
@@ -144,6 +180,22 @@ export default function OwnerOverview() {
     router.push(
       `/owner-checks?restaurantId=${encodeURIComponent(restaurant.id)}&restaurantName=${encodeURIComponent(restaurant.name)}&date=${encodeURIComponent(dateKey)}`,
     );
+  };
+
+  const reviewRemoteTime = async (request: TimeClockRequest, status: 'approved' | 'denied') => {
+    if (!restaurant?.id) return;
+    const requestId = request.request_id || request.id;
+    setIsReviewingTime(true);
+    setTimeClockRequests((current) => current.filter((item) => (item.request_id || item.id) !== requestId));
+    try {
+      await reviewTimeClockRequest(requestId, status);
+      const refreshed = await fetchManagerTimeClockRequests(restaurant.id, 'pending');
+      setTimeClockRequests(refreshed);
+    } catch {
+      setTimeClockRequests((current) => [request, ...current]);
+    } finally {
+      setIsReviewingTime(false);
+    }
   };
 
   if (!restaurant && !isLoading && !error) {
@@ -215,6 +267,37 @@ export default function OwnerOverview() {
 
       {!isLoading && !error && (
         <>
+          {timeClockRequests.length > 0 && (
+            <View style={styles.timeAlertCard}>
+              <View style={styles.timeAlertHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[typography.eyebrow, styles.cardEyebrow]}>Admin alerts</Text>
+                  <Text style={[typography.h3, styles.timeAlertTitle]}>
+                    {timeClockRequests.length} remote time request{timeClockRequests.length === 1 ? '' : 's'}
+                  </Text>
+                </View>
+                <Feather name="bell" size={20} color={color_pallet.sky[700]} />
+              </View>
+              {timeClockRequests.slice(0, 3).map((request) => (
+                <View key={request.request_id || request.id} style={styles.timeAlertRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[typography.body, styles.timeAlertName]}>{request.waiter_name || 'Employee'}</Text>
+                    <Text style={[typography.bodySmall, styles.timeAlertCopy]} numberOfLines={2}>
+                      {(request.structured_payload?.reason || request.notes || String(request.request_type || 'Remote time')).toString()}
+                    </Text>
+                  </View>
+                  <View style={styles.timeAlertActions}>
+                    <Pressable disabled={isReviewingTime} onPress={() => reviewRemoteTime(request, 'approved')} style={styles.timeApproveButton}>
+                      <Feather name="check" size={16} color="#FFFFFF" />
+                    </Pressable>
+                    <Pressable disabled={isReviewingTime} onPress={() => reviewRemoteTime(request, 'denied')} style={styles.timeDenyButton}>
+                      <Feather name="x" size={16} color={color_pallet.danger[700]} />
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
           <Pressable style={[styles.salesCard, shadowMd]} onPress={openChecks}>
             <View style={styles.cardHeader}>
               <Text style={[typography.eyebrow, styles.cardEyebrow]}>Sales</Text>
@@ -489,6 +572,63 @@ const styles = StyleSheet.create({
   errorCopy: {
     color: color_pallet.ink[700],
     marginTop: 4,
+  },
+  timeAlertCard: {
+    ...card.base,
+    backgroundColor: color_pallet.sky[50],
+    borderColor: color_pallet.sky[200],
+    gap: spacing[3],
+    marginTop: spacing[5],
+    padding: spacing[4],
+  },
+  timeAlertHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing[3],
+  },
+  timeAlertTitle: {
+    color: color_pallet.ink[900],
+    marginTop: spacing[1],
+  },
+  timeAlertRow: {
+    alignItems: 'center',
+    backgroundColor: semanticColors.elevated,
+    borderColor: semanticColors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing[3],
+    padding: spacing[3],
+  },
+  timeAlertName: {
+    color: color_pallet.ink[900],
+    fontFamily: 'Inter_700Bold',
+  },
+  timeAlertCopy: {
+    color: color_pallet.ink[500],
+    marginTop: spacing[1],
+  },
+  timeAlertActions: {
+    flexDirection: 'row',
+    gap: spacing[2],
+  },
+  timeApproveButton: {
+    alignItems: 'center',
+    backgroundColor: color_pallet.success[600],
+    borderRadius: radius.pill,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  timeDenyButton: {
+    alignItems: 'center',
+    backgroundColor: color_pallet.danger[50],
+    borderColor: color_pallet.danger[100],
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
   },
   salesCard: {
     ...card.base,

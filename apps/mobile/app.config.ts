@@ -14,6 +14,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     apiBaseUrl: process.env.API_BASE_URL,
   },
   plugins: [
-    "expo-web-browser"
+    'expo-web-browser',
+    'expo-notifications',
   ]
 })

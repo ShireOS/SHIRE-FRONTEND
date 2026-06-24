@@ -14,6 +14,11 @@ import {
   type ManagerSchedule as ManagerSchedulePayload,
   type StaffContact,
 } from '@/api/employeeOps';
+import {
+  fetchManagerTimeClockRequests,
+  reviewTimeClockRequest,
+  type TimeClockRequest,
+} from '@/api/timeClock';
 import { Feather } from '@expo/vector-icons';
 import {
   DayScheduleSection,
@@ -34,6 +39,7 @@ import {
 import { UiButton } from '@/components/ui/Button';
 import { UiText } from '@/components/ui/Text';
 import { staleWhileRevalidate, writeCacheRecord } from '@/cache/staleWhileRevalidate';
+import { registerManagerPushToken } from '@/notifications/pushNotifications';
 import { palette, semanticColors } from '@/styles/colors';
 import { radius, spacing } from '@/styles/tokens';
 import { getOwnerRestaurant, type OwnerRestaurant } from '../../packages/supabase';
@@ -49,6 +55,7 @@ type ManagerScheduleCacheData = {
   schedules: ManagerSchedulePayload[];
   scheduleHistory: ManagerSchedulePayload[];
   staff: StaffContact[];
+  timeClockRequests: TimeClockRequest[];
   manualScheduleCount: number;
 };
 
@@ -59,6 +66,7 @@ export default function ManagerSchedule() {
   const [schedules, setSchedules] = useState<ManagerSchedulePayload[]>([]);
   const [scheduleHistory, setScheduleHistory] = useState<ManagerSchedulePayload[]>([]);
   const [staff, setStaff] = useState<StaffContact[]>([]);
+  const [timeClockRequests, setTimeClockRequests] = useState<TimeClockRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
@@ -71,17 +79,22 @@ export default function ManagerSchedule() {
   const [scheduleContext, setScheduleContext] = useState('');
   const [manualScheduleCount, setManualScheduleCount] = useState(0);
   const staffRef = useRef<StaffContact[]>([]);
+  const timeClockRequestsRef = useRef<TimeClockRequest[]>([]);
   const manualScheduleCountRef = useRef(0);
 
   const restaurantId = restaurant?.id;
 
   const applyCachedData = useCallback((data: ManagerScheduleCacheData) => {
-    setSchedules(data.schedules);
-    setScheduleHistory(data.scheduleHistory);
-    setStaff(data.staff);
-    setManualScheduleCount(data.manualScheduleCount);
-    staffRef.current = data.staff;
-    manualScheduleCountRef.current = data.manualScheduleCount;
+    const safeStaff = data.staff ?? [];
+    const safeRequests = data.timeClockRequests ?? [];
+    setSchedules(data.schedules ?? []);
+    setScheduleHistory(data.scheduleHistory ?? []);
+    setStaff(safeStaff);
+    setTimeClockRequests(safeRequests);
+    setManualScheduleCount(data.manualScheduleCount ?? 0);
+    staffRef.current = safeStaff;
+    timeClockRequestsRef.current = safeRequests;
+    manualScheduleCountRef.current = data.manualScheduleCount ?? 0;
   }, []);
 
   const persistScheduleCache = useCallback(async (
@@ -101,13 +114,15 @@ export default function ManagerSchedule() {
     const optionalResults = await Promise.allSettled([
       fetchManagerScheduleHistory(id),
       fetchManagerStaff(id),
+      fetchManagerTimeClockRequests(id, 'pending'),
     ]);
-    const [historyResult, staffResult] = optionalResults;
+    const [historyResult, staffResult, requestsResult] = optionalResults;
     const history = historyResult.status === 'fulfilled' ? historyResult.value : scheduleHistory;
     const nextData = {
       schedules: scheduleData,
       scheduleHistory: history,
       staff: staffResult.status === 'fulfilled' ? staffResult.value : staffRef.current,
+      timeClockRequests: requestsResult.status === 'fulfilled' ? requestsResult.value : timeClockRequestsRef.current,
       manualScheduleCount: historyResult.status === 'fulfilled'
         ? history.filter((schedule) => schedule.generated_by === 'manual').length
         : manualScheduleCountRef.current,
@@ -135,7 +150,10 @@ export default function ManagerSchedule() {
       .then(async (ownerRestaurant) => {
         if (cancelled) return;
         setRestaurant(ownerRestaurant);
-        if (ownerRestaurant?.id) await loadManagerData(ownerRestaurant.id);
+        if (ownerRestaurant?.id) {
+          registerManagerPushToken(ownerRestaurant.id).catch(() => undefined);
+          await loadManagerData(ownerRestaurant.id);
+        }
       })
       .then(() => {
         if (!cancelled) setError(null);
@@ -425,6 +443,32 @@ export default function ManagerSchedule() {
     );
   };
 
+  const reviewRemoteTimeRequest = async (request: TimeClockRequest, nextStatus: 'approved' | 'denied') => {
+    const requestId = request.request_id || request.id;
+    setIsSaving(true);
+    setStatus(nextStatus === 'approved' ? 'Approving remote time...' : 'Denying remote time...');
+    setTimeClockRequests((current) => current.filter((item) => (item.request_id || item.id) !== requestId));
+    try {
+      await reviewTimeClockRequest(requestId, nextStatus);
+      const refreshed = restaurantId ? await fetchManagerTimeClockRequests(restaurantId, 'pending') : [];
+      setTimeClockRequests(refreshed);
+      timeClockRequestsRef.current = refreshed;
+      setStatus(nextStatus === 'approved' ? 'Remote time approved.' : 'Remote time denied and voided.');
+    } catch (err) {
+      if (restaurantId) {
+        fetchManagerTimeClockRequests(restaurantId, 'pending')
+          .then((items) => {
+            setTimeClockRequests(items);
+            timeClockRequestsRef.current = items;
+          })
+          .catch(() => setTimeClockRequests((current) => [request, ...current]));
+      }
+      setStatus(err instanceof Error ? err.message : 'Could not review remote time.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <ScreenShell>
       <PageHeader
@@ -510,6 +554,28 @@ export default function ManagerSchedule() {
                 style={styles.publishButton}
               />
             </View>
+            {timeClockRequests.length > 0 && (
+              <View style={styles.remoteQueueCard}>
+                <View style={styles.remoteQueueHeader}>
+                  <View style={{ flex: 1 }}>
+                    <UiText variant="eyebrow" tone="muted">Admin alerts</UiText>
+                    <UiText variant="title" style={styles.remoteQueueTitle}>
+                      {timeClockRequests.length} remote time request{timeClockRequests.length === 1 ? '' : 's'}
+                    </UiText>
+                  </View>
+                  <Feather name="bell" size={20} color={palette.sky[700]} />
+                </View>
+                {timeClockRequests.map((request) => (
+                  <RemoteTimeRequestRow
+                    key={request.request_id || request.id}
+                    request={request}
+                    disabled={isSaving}
+                    onApprove={() => reviewRemoteTimeRequest(request, 'approved')}
+                    onDeny={() => reviewRemoteTimeRequest(request, 'denied')}
+                  />
+                ))}
+              </View>
+            )}
             {isAddShiftOpen && activeSchedule?.id && (
               <View style={styles.editorCard}>
                 <View style={styles.editorHeader}>
@@ -700,6 +766,55 @@ export default function ManagerSchedule() {
   );
 }
 
+function RemoteTimeRequestRow({
+  request,
+  disabled,
+  onApprove,
+  onDeny,
+}: {
+  request: TimeClockRequest;
+  disabled?: boolean;
+  onApprove: () => void;
+  onDeny: () => void;
+}) {
+  const payload = request.structured_payload || {};
+  const reason = payload.reason || request.notes || 'No reason provided';
+  const type = String(request.request_type || 'remote_time').replaceAll('_', ' ');
+  const start = request.start_time || payload.manual_start_time || payload.requested_clock_in_at;
+  const end = request.end_time || payload.manual_end_time || payload.requested_clock_out_at;
+  const date = request.start_date || payload.manual_entry_date || request.submitted_at;
+
+  return (
+    <View style={styles.remoteRequestRow}>
+      <View style={styles.remoteRequestTop}>
+        <View style={{ flex: 1 }}>
+          <UiText variant="body" style={styles.remoteRequestName}>
+            {request.waiter_name || 'Employee'}
+          </UiText>
+          <UiText variant="caption" tone="muted" style={styles.remoteRequestType}>
+            {type}
+          </UiText>
+        </View>
+        {request.mentioned_manager_name ? (
+          <View style={styles.mentionPill}>
+            <UiText variant="caption" style={styles.mentionPillText}>@ {request.mentioned_manager_name}</UiText>
+          </View>
+        ) : null}
+      </View>
+      <UiText variant="bodySmall" tone="muted" style={styles.remoteReason}>{String(reason)}</UiText>
+      <UiText variant="caption" tone="muted">
+        {[date ? String(date).slice(0, 10) : null, start ? String(start).slice(0, 5) : null, end ? String(end).slice(0, 5) : null]
+          .filter(Boolean)
+          .join(' · ') || 'No time attached'}
+      </UiText>
+      <View style={styles.remoteActions}>
+        <UiButton label="Approve" disabled={disabled} size="small" onPress={onApprove} style={styles.remoteActionButton} />
+        <UiButton label="Deny" disabled={disabled} size="small" variant="secondary" onPress={onDeny} style={styles.remoteActionButton} />
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   content: {
     gap: spacing[4],
@@ -804,6 +919,67 @@ const styles = StyleSheet.create({
   },
   publishButton: {
     marginTop: spacing[3],
+  },
+  remoteQueueCard: {
+    backgroundColor: palette.sky[50],
+    borderColor: palette.sky[200],
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: spacing[3],
+    padding: spacing[4],
+  },
+  remoteQueueHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing[3],
+  },
+  remoteQueueTitle: {
+    color: palette.ink[900],
+    marginTop: spacing[1],
+  },
+  remoteRequestRow: {
+    backgroundColor: semanticColors.elevated,
+    borderColor: semanticColors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: spacing[2],
+    padding: spacing[3],
+  },
+  remoteRequestTop: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: spacing[2],
+  },
+  remoteRequestName: {
+    color: palette.ink[900],
+    fontFamily: 'Inter_700Bold',
+  },
+  remoteRequestType: {
+    textTransform: 'capitalize',
+  },
+  mentionPill: {
+    backgroundColor: palette.cream[100],
+    borderColor: palette.sand[200],
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
+  },
+  mentionPillText: {
+    color: palette.warmth[700],
+  },
+  remoteReason: {
+    backgroundColor: semanticColors.surface,
+    borderRadius: radius.sm,
+    padding: spacing[2],
+  },
+  remoteActions: {
+    flexDirection: 'row',
+    gap: spacing[2],
+    marginTop: spacing[1],
+  },
+  remoteActionButton: {
+    flex: 1,
   },
   editorCard: {
     backgroundColor: semanticColors.elevated,
