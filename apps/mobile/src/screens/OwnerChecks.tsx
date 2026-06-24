@@ -16,7 +16,8 @@ function formatCurrency(value: unknown) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
   }).format(Number.isFinite(number) ? number : 0);
 }
 
@@ -37,6 +38,10 @@ function formatTime(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value).slice(0, 5);
   return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+function firstDefined<T>(...values: T[]) {
+  return values.find((value) => value !== null && value !== undefined);
 }
 
 export default function OwnerChecks() {
@@ -84,6 +89,12 @@ export default function OwnerChecks() {
 
   const checks = payload?.checks || [];
   const buckets = useMemo(() => payload?.hourly_buckets || [], [payload]);
+  const salesTotal = firstDefined(
+    payload?.totals?.sales_excluding_tax_tip,
+    payload?.totals?.net_sales,
+    payload?.totals?.sales,
+    payload?.totals?.gross_sales,
+  );
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -117,7 +128,7 @@ export default function OwnerChecks() {
       {!isLoading && !error && (
         <>
           <View style={styles.summaryGrid}>
-            <SummaryTile label="Sales" value={formatCurrency(payload?.totals?.sales)} />
+            <SummaryTile label="Sales" value={formatCurrency(salesTotal)} />
             <SummaryTile label="Orders" value={formatNumber(payload?.totals?.orders || checks.length)} />
             <SummaryTile label="Covers" value={formatNumber(payload?.totals?.covers)} />
             <SummaryTile label="Avg Check" value={formatCurrency(payload?.totals?.avg_check)} />
@@ -160,7 +171,10 @@ export default function OwnerChecks() {
                       {check.waiter_name || 'Unassigned'} · {formatPartySize(check.party_size)} · {check.payment_status || check.status || 'status DNE'}
                     </Text>
                   </View>
-                  <Text style={[typography.title, styles.checkTotal]}>{formatCurrency(check.total)}</Text>
+                  <View style={styles.checkMoney}>
+                    <Text style={[typography.title, styles.checkTotal]}>{formatCurrency(check.total)}</Text>
+                    <Text style={[typography.caption, styles.checkMoneyLabel]}>Total</Text>
+                  </View>
                 </View>
               ))
             ) : (
@@ -310,8 +324,15 @@ const styles = StyleSheet.create({
     color: color_pallet.ink[500],
     marginTop: spacing[1] / 2,
   },
+  checkMoney: {
+    alignItems: 'flex-end',
+  },
   checkTotal: {
     color: color_pallet.ink[900],
+  },
+  checkMoneyLabel: {
+    color: color_pallet.ink[500],
+    marginTop: spacing[1] / 2,
   },
   emptyText: {
     color: color_pallet.ink[500],

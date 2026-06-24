@@ -5,8 +5,8 @@ import type {
   OwnerChecksPayload,
 } from '@/api/ownerAnalytics';
 
-const OWNER_ANALYTICS_CACHE_VERSION = 1;
-const OWNER_CHECKS_CACHE_VERSION = 1;
+const OWNER_ANALYTICS_CACHE_VERSION = 2;
+const OWNER_CHECKS_CACHE_VERSION = 2;
 
 const OWNER_ANALYTICS_TTL_MS = 60 * 1000;
 const OWNER_CHECKS_TTL_MS = 30 * 1000;

@@ -40,6 +40,7 @@ export type OwnerAnalyticsPayload = {
       total_revenue?: number;
       order_count?: number;
       avg_order_value?: number;
+      average_check?: number;
       tips?: number;
       tax?: number;
       card_deposit_estimate?: number;
@@ -87,6 +88,11 @@ export type OwnerChecksPayload = {
   date?: string;
   totals?: {
     sales?: number;
+    gross_sales?: number;
+    net_sales?: number;
+    sales_excluding_tax_tip?: number;
+    tax?: number;
+    tips?: number;
     orders?: number;
     covers?: number;
     avg_check?: number;
@@ -109,6 +115,9 @@ export type OwnerChecksPayload = {
     subtotal?: number;
     tax_amount?: number;
     tip_amount?: number;
+    sales?: number;
+    sales_excluding_tax_tip?: number;
+    net_sales?: number;
     fees?: number | null;
     total?: number;
     payment_status?: string;

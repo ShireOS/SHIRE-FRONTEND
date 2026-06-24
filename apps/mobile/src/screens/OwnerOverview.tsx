@@ -59,7 +59,8 @@ function formatCurrency(value: unknown) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
   }).format(Number.isFinite(number) ? number : 0);
 }
 
@@ -79,6 +80,15 @@ function formatMinutes(value: unknown) {
 
 function firstDefined<T>(...values: T[]) {
   return values.find((value) => value !== null && value !== undefined);
+}
+
+function divideCurrency(total: unknown, count: unknown) {
+  const totalNumber = Number(total || 0);
+  const countNumber = Number(count || 0);
+  if (!Number.isFinite(totalNumber) || !Number.isFinite(countNumber) || countNumber <= 0) {
+    return undefined;
+  }
+  return totalNumber / countNumber;
 }
 
 export default function OwnerOverview() {
@@ -350,11 +360,19 @@ function buildMetrics(payload: OwnerAnalyticsPayload | null) {
   const revenue = payload?.sections?.revenue?.data || {};
   const visits = payload?.sections?.visits?.data || {};
   const staff = payload?.sections?.staff?.data || {};
+  const sales = firstDefined(
+    revenue.sales_excluding_tax_tip,
+    revenue.net_sales,
+    revenue.sales,
+    revenue.gross_sales,
+    revenue.total_revenue,
+  );
+  const orderCount = revenue.order_count;
 
   return {
-    sales: firstDefined(revenue.sales, revenue.sales_excluding_tax_tip, revenue.net_sales, revenue.total_revenue),
-    orders: revenue.order_count,
-    avgOrder: revenue.avg_order_value,
+    sales,
+    orders: orderCount,
+    avgOrder: firstDefined(revenue.avg_order_value, revenue.average_check, divideCurrency(sales, orderCount)),
     tips: revenue.tips,
     processorFees: revenue.processor_fees_known,
     processorFeesPending: Boolean(revenue.processor_fees_pending),
