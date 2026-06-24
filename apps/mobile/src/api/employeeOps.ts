@@ -58,6 +58,9 @@ export type AvailabilityEntry = {
 
 export type EarningsSummary = {
   estimated_wages?: number | null;
+  actual_labor_cost?: number | null;
+  labor_cost?: number | null;
+  has_missing_labor_rate?: boolean | null;
   wage_status?: string | null;
   shift_count?: number;
   hours?: number;

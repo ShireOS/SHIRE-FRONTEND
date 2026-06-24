@@ -19,6 +19,10 @@ export type TimeClockEntry = {
   staff_id?: string;
   staff_name?: string;
   role?: string;
+  job_code_id?: string | null;
+  hourly_rate?: number | string | null;
+  labor_cost?: number | null;
+  worked_minutes?: number;
   clock_in_at: string;
   clock_out_at?: string | null;
   status?: string;
@@ -63,6 +67,18 @@ export type TimeClockStatus = {
   latest_request?: TimeClockRequest | null;
   pending_requests?: TimeClockRequest[];
   server_time?: string;
+};
+
+export type JobCode = {
+  id: string;
+  code: string;
+  label: string;
+  permission_tier?: string;
+  default_hourly_rate?: number | string | null;
+  is_tipped?: boolean;
+  tipout_role?: string | null;
+  sort_order?: number;
+  is_active?: boolean;
 };
 
 export type AdminContact = {
@@ -189,6 +205,17 @@ export function reviewTimeClockRequest(
   status: 'approved' | 'denied',
 ) {
   return apiPatch<TimeClockRequest>(`/time-clock/requests/${requestId}`, { status });
+}
+
+export function fetchManagerJobCodes() {
+  return apiRequest<JobCode[]>('/manager/job-codes');
+}
+
+export function updateManagerJobCode(
+  jobCodeId: string,
+  body: Partial<Pick<JobCode, 'label' | 'permission_tier' | 'default_hourly_rate' | 'is_tipped' | 'tipout_role' | 'sort_order' | 'is_active'>>,
+) {
+  return apiPatch<JobCode>(`/manager/job-codes/${jobCodeId}`, body);
 }
 
 export function registerMobilePushToken(body: {

@@ -91,6 +91,12 @@ function divideCurrency(total: unknown, count: unknown) {
   return totalNumber / countNumber;
 }
 
+function laborHours(minutes: unknown) {
+  const number = Number(minutes || 0);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return number / 60;
+}
+
 export default function OwnerOverview() {
   const router = useRouter();
   const [restaurant, setRestaurant] = useState<OwnerRestaurant | null>(null);
@@ -324,7 +330,12 @@ export default function OwnerOverview() {
             <MetricTile label="Covers" value={formatNumber(metrics.covers)} />
             <MetricTile label="Turn Time" value={formatMinutes(metrics.turnTime)} />
             <MetricTile label="Team" value={formatNumber(metrics.team)} detail="staffed" />
-            <MetricTile label="Labor Cost" value="DNE" detail="Pending" muted />
+            <MetricTile
+              label="Labor Cost"
+              value={metrics.laborCost == null ? 'DNE' : formatCurrency(metrics.laborCost)}
+              detail={metrics.missingLaborRate ? 'Missing rates' : 'Clocked'}
+              muted={metrics.laborCost == null}
+            />
           </View>
 
           <View style={styles.section}>
@@ -334,7 +345,12 @@ export default function OwnerOverview() {
             <MetricRow label="Tips" value={formatCurrency(metrics.tips)} />
             <MetricRow label="Card Deposit" value={formatCurrency(metrics.cardDeposit)} detail={metrics.processorFeesPending ? 'Fees pending' : 'After known fees'} muted={metrics.processorFeesPending} />
             <MetricRow label="Processing Fees" value={formatCurrency(metrics.processorFees)} detail={metrics.configuredFeeInSales ? 'Card price stays in sales' : 'Known fees'} muted={metrics.processorFeesPending} />
-            <MetricRow label="SPLH" value="DNE" detail="Needs labor feed" muted />
+            <MetricRow
+              label="SPLH"
+              value={metrics.salesPerLaborHour == null ? 'DNE' : formatCurrency(metrics.salesPerLaborHour)}
+              detail={metrics.laborMinutes ? `${formatNumber(metrics.laborMinutes / 60, 1)} labor hrs` : 'Needs clocked hours'}
+              muted={metrics.salesPerLaborHour == null}
+            />
           </View>
 
           <View style={styles.section}>
@@ -360,6 +376,7 @@ function buildMetrics(payload: OwnerAnalyticsPayload | null) {
   const revenue = payload?.sections?.revenue?.data || {};
   const visits = payload?.sections?.visits?.data || {};
   const staff = payload?.sections?.staff?.data || {};
+  const labor = payload?.sections?.labor?.data || payload?.labor?.totals || {};
   const sales = firstDefined(
     revenue.sales_excluding_tax_tip,
     revenue.net_sales,
@@ -381,6 +398,10 @@ function buildMetrics(payload: OwnerAnalyticsPayload | null) {
     covers: visits.covers,
     turnTime: visits.avg_turn_minutes,
     team: firstDefined(staff.staff_worked, staff.shift_count),
+    laborCost: firstDefined(staff.labor_cost, labor.labor_cost),
+    laborMinutes: firstDefined(staff.worked_minutes, labor.worked_minutes),
+    missingLaborRate: Boolean(staff.has_missing_labor_rate || labor.has_missing_labor_rate),
+    salesPerLaborHour: divideCurrency(sales, laborHours(firstDefined(staff.worked_minutes, labor.worked_minutes))),
   };
 }
 
@@ -488,7 +509,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: layout.screenPadding,
-    paddingTop: spacing[1],
+    paddingTop: spacing[4],
     paddingBottom: 128,
   },
   heading: {

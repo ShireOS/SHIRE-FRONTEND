@@ -1,6 +1,9 @@
 import {
   DEFAULT_REMOTE_TIME_CLOCK_POLICY,
+  fetchManagerJobCodes,
   fetchManagerTimeClockPolicy,
+  updateManagerJobCode,
+  type JobCode,
   saveManagerTimeClockPolicy,
   type RemoteTimeClockPolicy,
   type RemoteTimeClockSettings,
@@ -12,7 +15,7 @@ import { UiText } from '@/components/ui/Text';
 import { palette, semanticColors, statusColors } from '@/styles/colors';
 import { radius, spacing } from '@/styles/tokens';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { getOwnerRestaurant, type OwnerRestaurant } from '../../packages/supabase';
 
 const POLICY_CACHE_TTL_MS = 60_000;
@@ -21,6 +24,9 @@ const POLICY_MAX_STALE_MS = 7 * 24 * 60 * 60 * 1000;
 export default function OwnerSettings() {
   const [restaurant, setRestaurant] = useState<OwnerRestaurant | null>(null);
   const [policy, setPolicy] = useState<RemoteTimeClockPolicy | null>(null);
+  const [jobCodes, setJobCodes] = useState<JobCode[]>([]);
+  const [rateEdits, setRateEdits] = useState<Record<string, string>>({});
+  const [savingRateId, setSavingRateId] = useState<string | null>(null);
   const [freshness, setFreshness] = useState<'fresh' | 'stale' | 'miss' | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -49,6 +55,10 @@ export default function OwnerSettings() {
         if (cancelled) return;
         setPolicy(result.data);
         setFreshness(result.freshness);
+        const codes = await fetchManagerJobCodes();
+        if (cancelled) return;
+        setJobCodes(codes);
+        setRateEdits(Object.fromEntries(codes.map((code) => [code.id, String(code.default_hourly_rate ?? '')])));
       })
       .catch((err) => {
         if (!cancelled) setMessage(err instanceof Error ? err.message : 'Could not load settings.');
@@ -95,6 +105,29 @@ export default function OwnerSettings() {
       setMessage(err instanceof Error ? err.message : 'Could not save remote clock settings.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const saveRoleRate = async (jobCode: JobCode) => {
+    const rawRate = rateEdits[jobCode.id] ?? '';
+    const parsed = Number(rawRate);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setMessage('Enter a valid hourly rate.');
+      return;
+    }
+    setSavingRateId(jobCode.id);
+    setMessage(`Saving ${jobCode.label || jobCode.code} rate...`);
+    try {
+      const saved = await updateManagerJobCode(jobCode.id, {
+        default_hourly_rate: parsed.toFixed(2),
+      });
+      setJobCodes((current) => current.map((code) => (code.id === saved.id ? saved : code)));
+      setRateEdits((current) => ({ ...current, [saved.id]: String(saved.default_hourly_rate ?? parsed.toFixed(2)) }));
+      setMessage('Role rate saved.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not save role rate.');
+    } finally {
+      setSavingRateId(null);
     }
   };
 
@@ -153,6 +186,50 @@ export default function OwnerSettings() {
           disabled={isSaving || isLoading || !restaurantId}
           onPress={savePolicy}
         />
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <UiText variant="title">Role rates</UiText>
+            <UiText variant="bodySmall" tone="muted" style={{ marginTop: spacing[1] }}>
+              Clocked labor uses these role rates unless an employee has a personal override.
+            </UiText>
+          </View>
+        </View>
+        {jobCodes.length === 0 ? (
+          <View style={styles.messageCard}>
+            <UiText variant="bodySmall" tone="muted">Role rates are not available yet.</UiText>
+          </View>
+        ) : (
+          jobCodes
+            .filter((code) => code.is_active !== false)
+            .map((code) => (
+              <View key={code.id} style={styles.rateRow}>
+                <View style={{ flex: 1 }}>
+                  <UiText variant="body" style={styles.settingTitle}>{code.label || code.code}</UiText>
+                  <UiText variant="caption" tone="muted" style={{ marginTop: spacing[1] }}>
+                    {code.is_tipped ? 'Tipped role' : 'Hourly role'}
+                  </UiText>
+                </View>
+                <TextInput
+                  value={rateEdits[code.id] ?? ''}
+                  onChangeText={(value) => setRateEdits((current) => ({ ...current, [code.id]: value }))}
+                  keyboardType="decimal-pad"
+                  editable={!savingRateId}
+                  placeholder="0.00"
+                  placeholderTextColor={palette.ink[400]}
+                  style={styles.rateInput}
+                />
+                <UiButton
+                  label={savingRateId === code.id ? '...' : 'Save'}
+                  disabled={Boolean(savingRateId)}
+                  onPress={() => saveRoleRate(code)}
+                  style={styles.rateButton}
+                />
+              </View>
+            ))
+        )}
       </View>
 
       <View style={styles.scanSection}>
@@ -242,6 +319,30 @@ const styles = StyleSheet.create({
   settingTitle: {
     color: palette.ink[900],
     fontFamily: 'Inter_600SemiBold',
+  },
+  rateRow: {
+    alignItems: 'center',
+    borderColor: semanticColors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing[3],
+    padding: spacing[3],
+  },
+  rateInput: {
+    backgroundColor: semanticColors.surface,
+    borderColor: semanticColors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    color: palette.ink[900],
+    fontFamily: 'Inter_600SemiBold',
+    minWidth: 88,
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    textAlign: 'right',
+  },
+  rateButton: {
+    minWidth: 72,
   },
   warningCard: {
     backgroundColor: statusColors.warning.bg,

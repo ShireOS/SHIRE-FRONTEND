@@ -45,6 +45,21 @@ const EMPLOYEE_POLICY_MAX_STALE_MS = 7 * 24 * 60 * 60 * 1000;
 const EMPLOYEE_STATUS_CACHE_TTL_MS = 10_000;
 const EMPLOYEE_STATUS_MAX_STALE_MS = 24 * 60 * 60 * 1000;
 
+function firstPresent<T>(...values: T[]) {
+  return values.find((value) => value !== null && value !== undefined);
+}
+
+function formatMoney(value: unknown, digits = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 'Unset';
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits,
+  }).format(number);
+}
+
 export default function EmployeeHome() {
   const router = useRouter();
   const [profile, setProfile] = useState<EmployeeProfile | null>(null);
@@ -216,6 +231,11 @@ export default function EmployeeHome() {
   const canUseRemoteClock = Boolean(timeClockPolicy && remoteSettings.enabled);
   const activeEntry = timeClockStatus?.active_entry || null;
   const latestRequest = timeClockStatus?.latest_request || null;
+  const actualWages = firstPresent(
+    earnings?.actual_labor_cost,
+    earnings?.labor_cost,
+    earnings?.estimated_wages,
+  );
   const upcomingShifts = useMemo(
     () => shifts
       .filter((shift) => String(shift.shift_date).slice(0, 10) >= todayKey)
@@ -344,7 +364,7 @@ export default function EmployeeHome() {
               <StatTile label="Shifts" value={String(earnings?.shift_count ?? upcomingShifts.length)} />
               <StatTile
                 label="Wages"
-                value={earnings?.estimated_wages == null ? 'Unset' : `$${Number(earnings.estimated_wages).toFixed(0)}`}
+                value={formatMoney(actualWages)}
               />
             </View>
 

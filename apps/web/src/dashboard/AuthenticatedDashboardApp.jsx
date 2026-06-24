@@ -218,6 +218,13 @@ const formatNumber = (value, digits = 0) =>
 const formatMinutes = (value) =>
   value === null || value === undefined ? 'DNE' : `${formatNumber(value, 1)} min`
 
+const firstPresent = (...values) => values.find(value => value !== null && value !== undefined)
+
+const laborHours = (minutes) => {
+  const number = Number(minutes || 0)
+  return Number.isFinite(number) && number > 0 ? number / 60 : 0
+}
+
 const renderNumber = (value) => formatNumber(value)
 const renderCurrency = (value) => formatCurrency(value)
 
@@ -322,6 +329,14 @@ function AnalyticsDashboard({ restaurant }) {
   const floorData = floor.data || {}
   const staff = sections.staff || {}
   const staffData = staff.data || {}
+  const labor = sections.labor || payload?.labor || {}
+  const laborData = labor.data || labor.totals || {}
+  const laborCost = firstPresent(staffData.labor_cost, laborData.labor_cost)
+  const laborMinutes = firstPresent(staffData.worked_minutes, laborData.worked_minutes)
+  const salesPerLaborHour = laborHours(laborMinutes) > 0
+    ? Number(revenueData.sales_excluding_tax_tip || revenueData.net_sales || revenueData.total_revenue || 0) / laborHours(laborMinutes)
+    : null
+  const missingLaborRate = Boolean(staffData.has_missing_labor_rate || laborData.has_missing_labor_rate)
   const stateEvents = sections.state_events || {}
   const stateData = stateEvents.data || {}
   const menu = sections.menu || {}
@@ -371,8 +386,8 @@ function AnalyticsDashboard({ restaurant }) {
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard label="Revenue" value={formatCurrency(revenueData.total_revenue)} detail={`${formatNumber(revenueData.order_count)} POS orders`} />
             <MetricCard label="Covers" value={formatNumber(visitData.covers)} detail={`${formatNumber(visitData.visit_count)} host visits`} />
+            <MetricCard label="Labor Cost" value={laborCost == null ? 'DNE' : formatCurrency(laborCost)} detail={missingLaborRate ? 'Some roles are missing rates.' : 'From approved clocked time.'} muted={laborCost == null} />
             <MetricCard label="Avg Turn Time" value={formatMinutes(visitData.avg_turn_minutes)} detail={visits.quality?.message} muted={!visits.quality?.turn_time_available} />
-            <MetricCard label="Reservations" value={formatNumber(reservationData.reservation_count)} detail={`${formatNumber(reservationData.booked_covers)} booked covers`} />
           </div>
 
           <AnalyticsSection
@@ -480,7 +495,8 @@ function AnalyticsDashboard({ restaurant }) {
               <div className="grid gap-4 md:grid-cols-3">
                 <MetricCard label="Shifts" value={formatNumber(staffData.shift_count)} />
                 <MetricCard label="Staff Worked" value={formatNumber(staffData.staff_worked)} />
-                <MetricCard label="Shift Sales" value={formatCurrency(staffData.sales)} />
+                <MetricCard label="Labor Cost" value={laborCost == null ? 'DNE' : formatCurrency(laborCost)} detail={missingLaborRate ? 'Missing role rates' : `${formatNumber(laborHours(laborMinutes), 1)} labor hrs`} muted={laborCost == null} />
+                <MetricCard label="SPLH" value={salesPerLaborHour == null ? 'DNE' : formatCurrency(salesPerLaborHour)} />
               </div>
               <div className="mt-4">
                 <MiniTable
@@ -2618,6 +2634,7 @@ function EmployeePortal() {
     .filter(shift => String(shift.shift_date) >= todayKey)
     .slice(0, 5)
   const totalWeekHours = weekSchedule.mine.reduce((sum, shift) => sum + shiftDurationHours(shift), 0)
+  const employeeLaborCost = firstPresent(earnings?.actual_labor_cost, earnings?.labor_cost, earnings?.estimated_wages)
   const selectedConversation = conversations.find(item => String(item.id) === String(selectedConversationId))
 
   const moveWeek = (direction) => {
@@ -2693,8 +2710,10 @@ function EmployeePortal() {
             <section className="grid gap-3 rounded-2xl border border-white/10 bg-white/[0.025] p-5 sm:grid-cols-3">
               <div>
                 <p className="label-mono">Biweekly wages</p>
-                <p className="mt-2 text-2xl font-semibold">{earnings?.estimated_wages == null ? 'Unset' : `$${Number(earnings.estimated_wages).toFixed(2)}`}</p>
-                <p className="mt-1 text-xs text-dash-tertiary">{earnings?.wage_status || 'Using saved wage data when configured.'}</p>
+                <p className="mt-2 text-2xl font-semibold">{employeeLaborCost == null ? 'Unset' : `$${Number(employeeLaborCost).toFixed(2)}`}</p>
+                <p className="mt-1 text-xs text-dash-tertiary">
+                  {earnings?.has_missing_labor_rate ? 'Some role rates are missing.' : earnings?.wage_status || 'Using clocked time and role rates when configured.'}
+                </p>
               </div>
               <div>
                 <p className="label-mono">Shifts</p>

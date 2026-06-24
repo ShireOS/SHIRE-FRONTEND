@@ -69,6 +69,9 @@ export type OwnerAnalyticsPayload = {
       shift_count?: number;
       staff_worked?: number;
       sales?: number;
+      labor_cost?: number;
+      worked_minutes?: number;
+      has_missing_labor_rate?: boolean;
     }> & {
       top_staff?: {
         name?: string;
@@ -77,9 +80,25 @@ export type OwnerAnalyticsPayload = {
         sales?: number;
       }[];
     };
+    labor?: AnalyticsSection<{
+      labor_cost?: number;
+      worked_minutes?: number;
+      open_entries?: number;
+      staff_count?: number;
+      has_missing_labor_rate?: boolean;
+    }>;
     menu?: AnalyticsSection;
     time_series?: AnalyticsSection & {
       revenue?: HourlySalesBucket[];
+    };
+  };
+  labor?: {
+    totals?: {
+      labor_cost?: number;
+      worked_minutes?: number;
+      open_entries?: number;
+      staff_count?: number;
+      has_missing_labor_rate?: boolean;
     };
   };
 };

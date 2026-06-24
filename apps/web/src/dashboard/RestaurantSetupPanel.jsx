@@ -480,6 +480,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [menuItems, setMenuItems] = useState([])
   const [menuMode, setMenuMode] = useState(null)
   const [waiters, setWaiters] = useState([])
+  const [jobCodes, setJobCodes] = useState([])
+  const [rateEdits, setRateEdits] = useState({})
+  const [savingRateId, setSavingRateId] = useState('')
   const [staffForm, setStaffForm] = useState({ name: '', email: '', role: 'server', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
   const [pinEdits, setPinEdits] = useState({})
   const [pinSaving, setPinSaving] = useState({})
@@ -513,9 +516,10 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     if (!restaurantId) return
     setSetupError('')
     try {
-      const [staffRows, menuRows, hoursResult, floorPlan] = await Promise.all([
+      const [staffRows, menuRows, jobCodeRows, hoursResult, floorPlan] = await Promise.all([
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`),
+        fetchWithSupabaseAuth('/manager/job-codes').catch(() => []),
         supabase
           .from('operating_hours')
           .select('day_of_week, open_time, close_time, is_closed')
@@ -529,6 +533,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setHours(normalized)
       setSameHours(deriveSameHours(normalized))
       setWaiters(Array.isArray(staffRows) ? staffRows : [])
+      const normalizedJobCodes = Array.isArray(jobCodeRows) ? jobCodeRows : []
+      setJobCodes(normalizedJobCodes)
+      setRateEdits(Object.fromEntries(normalizedJobCodes.map(code => [code.id, String(code.default_hourly_rate ?? '')])))
       setMenuItems(mapMenuItems(menuRows))
       setFloorTables(mapFloorPlanTables(floorPlan))
     } catch (err) {
@@ -699,6 +706,31 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     await fetchWithSupabaseAuth(`/waiters/${waiterId}`, { method: 'DELETE' })
     setWaiters(prev => prev.filter(item => item.id !== waiterId))
     onSetupChanged?.()
+  }
+
+  const saveRoleRate = async (jobCode) => {
+    const rawRate = rateEdits[jobCode.id] ?? ''
+    const parsed = Number(rawRate)
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setSetupError('Enter a valid hourly rate.')
+      return
+    }
+    setSavingRateId(jobCode.id)
+    setSetupError('')
+    try {
+      const saved = await fetchWithSupabaseAuth(`/manager/job-codes/${jobCode.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ default_hourly_rate: parsed.toFixed(2) }),
+      })
+      setJobCodes(prev => prev.map(code => code.id === saved.id ? saved : code))
+      setRateEdits(prev => ({ ...prev, [saved.id]: String(saved.default_hourly_rate ?? parsed.toFixed(2)) }))
+      setSaveMessage('Saved role rate.')
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save role rate.')
+    } finally {
+      setSavingRateId('')
+    }
   }
 
   const saveEditedPin = async (waiterId) => {
@@ -1109,6 +1141,43 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
             <TextInput placeholder="PIN" value={staffForm.pin} onChange={event => setStaffForm(prev => ({ ...prev, pin: event.target.value.replace(/\D/g, '').slice(0, 8) }))} />
             <TextInput placeholder="ID" value={staffForm.employee_login_id} onChange={event => setStaffForm(prev => ({ ...prev, employee_login_id: event.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, '') }))} />
             <SmallButton variant="primary" onClick={() => void addStaff()}>Add</SmallButton>
+          </div>
+
+          <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.025] p-4">
+            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="label-mono">Role rates</p>
+                <h3 className="text-lg font-semibold">Default hourly rates</h3>
+              </div>
+              <p className="text-sm text-dash-tertiary">Clocked labor snapshots these rates unless an employee override exists.</p>
+            </div>
+            {jobCodes.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-dash-secondary">Role rates are not available yet.</p>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {jobCodes.filter(code => code.is_active !== false).map(code => (
+                  <div key={code.id} className="grid grid-cols-[1fr_110px_auto] items-center gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3">
+                    <div>
+                      <p className="text-sm font-semibold capitalize">{code.label || code.code}</p>
+                      <p className="mt-1 text-xs text-dash-tertiary">{code.is_tipped ? 'Tipped role' : 'Hourly role'}</p>
+                    </div>
+                    <TextInput
+                      value={rateEdits[code.id] ?? ''}
+                      onChange={event => setRateEdits(prev => ({ ...prev, [code.id]: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))}
+                      inputMode="decimal"
+                      placeholder="0.00"
+                    />
+                    <SmallButton
+                      onClick={() => void saveRoleRate(code)}
+                      disabled={Boolean(savingRateId)}
+                      variant={savingRateId === code.id ? 'primary' : 'secondary'}
+                    >
+                      {savingRateId === code.id ? 'Saving...' : 'Save'}
+                    </SmallButton>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="mt-5 space-y-3">
