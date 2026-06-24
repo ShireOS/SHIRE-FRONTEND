@@ -65,6 +65,13 @@ function sortMenuItems(rows: AdminMenuItem[]) {
   });
 }
 
+function mergeMenuItemUpdate(current: AdminMenuItem, updated: AdminMenuItem) {
+  return {
+    ...updated,
+    image_url: updated.image_url ?? current.image_url ?? null,
+  };
+}
+
 function formatNumber(value: number | null | undefined, suffix = '') {
   if (value === null || value === undefined || !Number.isFinite(Number(value))) return 'No data';
   return `${Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 })}${suffix}`;
@@ -169,8 +176,12 @@ export default function AdminMenu() {
     try {
       const updated = await setMenuItemAvailability(restaurant.id, item.id, nextAvailable);
       if (updated) {
-        setItems((current) => current.map((row) => (row.id === item.id ? updated : row)));
-        setSelectedItem((current) => (current?.id === item.id ? updated : current));
+        setItems((current) => current.map((row) => (
+          row.id === item.id ? mergeMenuItemUpdate(row, updated) : row
+        )));
+        setSelectedItem((current) => (
+          current?.id === item.id ? mergeMenuItemUpdate(current, updated) : current
+        ));
       }
     } catch (err) {
       setItems(previousItems);
@@ -205,12 +216,13 @@ export default function AdminMenu() {
 
   const submitNewItem = async () => {
     if (!restaurant?.id || isSavingItem) return;
-    const price = Number(form.price);
+    const priceText = form.price.trim();
+    const price = Number(priceText);
     if (!form.name.trim()) {
       setFormError('Item name is required.');
       return;
     }
-    if (!Number.isFinite(price) || price < 0) {
+    if (!priceText || !Number.isFinite(price) || price < 0) {
       setFormError('Enter a valid price.');
       return;
     }
@@ -517,80 +529,86 @@ function AddItemModal({
             </Pressable>
           </View>
 
-          <FieldLabel label="Name" />
-          <TextInput
-            value={form.name}
-            onChangeText={(value) => updateField('name', value)}
-            placeholder="Chicken sandwich"
-            placeholderTextColor={color_pallet.ink[400]}
-            style={styles.fieldInput}
-          />
-
-          <View style={styles.formRow}>
-            <View style={styles.formColumn}>
-              <FieldLabel label="Category" />
-              <TextInput
-                value={form.category}
-                onChangeText={(value) => updateField('category', value)}
-                placeholder="Entrees"
-                placeholderTextColor={color_pallet.ink[400]}
-                style={styles.fieldInput}
-              />
-            </View>
-            <View style={styles.priceColumn}>
-              <FieldLabel label="Price" />
-              <TextInput
-                value={form.price}
-                onChangeText={(value) => updateField('price', value)}
-                keyboardType="decimal-pad"
-                placeholder="12.00"
-                placeholderTextColor={color_pallet.ink[400]}
-                style={styles.fieldInput}
-              />
-            </View>
-          </View>
-
-          <FieldLabel label="Description" />
-          <TextInput
-            value={form.description}
-            onChangeText={(value) => updateField('description', value)}
-            multiline
-            placeholder="Optional"
-            placeholderTextColor={color_pallet.ink[400]}
-            style={[styles.fieldInput, styles.descriptionInput]}
-          />
-
-          <FieldLabel label="Image URL" />
-          <TextInput
-            value={form.imageUrl}
-            onChangeText={(value) => updateField('imageUrl', value)}
-            autoCapitalize="none"
-            keyboardType="url"
-            placeholder="https://..."
-            placeholderTextColor={color_pallet.ink[400]}
-            style={styles.fieldInput}
-          />
-
-          {error && (
-            <View style={styles.inlineError}>
-              <Text style={[typography.caption, styles.errorCopy]}>{error}</Text>
-            </View>
-          )}
-
-          <Pressable
-            disabled={isSaving}
-            onPress={onSubmit}
-            style={[styles.primaryAction, isSaving && styles.disabledButton]}
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            style={styles.sheetScroll}
           >
-            {isSaving ? (
-              <ActivityIndicator size="small" color={color_pallet.cream[50]} />
-            ) : (
-              <Feather name="plus" size={17} color={color_pallet.cream[50]} />
+            <FieldLabel label="Name" />
+            <TextInput
+              value={form.name}
+              onChangeText={(value) => updateField('name', value)}
+              placeholder="Chicken sandwich"
+              placeholderTextColor={color_pallet.ink[400]}
+              style={styles.fieldInput}
+            />
+
+            <View style={styles.formRow}>
+              <View style={styles.formColumn}>
+                <FieldLabel label="Category" />
+                <TextInput
+                  value={form.category}
+                  onChangeText={(value) => updateField('category', value)}
+                  placeholder="Entrees"
+                  placeholderTextColor={color_pallet.ink[400]}
+                  style={styles.fieldInput}
+                />
+              </View>
+              <View style={styles.priceColumn}>
+                <FieldLabel label="Price" />
+                <TextInput
+                  value={form.price}
+                  onChangeText={(value) => updateField('price', value)}
+                  keyboardType="decimal-pad"
+                  placeholder="12.00"
+                  placeholderTextColor={color_pallet.ink[400]}
+                  style={styles.fieldInput}
+                />
+              </View>
+            </View>
+
+            <FieldLabel label="Description" />
+            <TextInput
+              value={form.description}
+              onChangeText={(value) => updateField('description', value)}
+              multiline
+              placeholder="Optional"
+              placeholderTextColor={color_pallet.ink[400]}
+              style={[styles.fieldInput, styles.descriptionInput]}
+            />
+
+            <FieldLabel label="Image URL" />
+            <TextInput
+              value={form.imageUrl}
+              onChangeText={(value) => updateField('imageUrl', value)}
+              autoCapitalize="none"
+              keyboardType="url"
+              placeholder="https://..."
+              placeholderTextColor={color_pallet.ink[400]}
+              style={styles.fieldInput}
+            />
+
+            {error && (
+              <View style={styles.inlineError}>
+                <Text style={[typography.caption, styles.errorCopy]}>{error}</Text>
+              </View>
             )}
-            <Text style={[typography.caption, styles.primaryActionText]}>
-              {isSaving ? 'Saving' : 'Add item'}
-            </Text>
-          </Pressable>
+
+            <Pressable
+              disabled={isSaving}
+              onPress={onSubmit}
+              style={[styles.primaryAction, isSaving && styles.disabledButton]}
+            >
+              {isSaving ? (
+                <ActivityIndicator size="small" color={color_pallet.cream[50]} />
+              ) : (
+                <Feather name="plus" size={17} color={color_pallet.cream[50]} />
+              )}
+              <Text style={[typography.caption, styles.primaryActionText]}>
+                {isSaving ? 'Saving' : 'Add item'}
+              </Text>
+            </Pressable>
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -639,94 +657,100 @@ function ItemDetailModal({
             </Pressable>
           </View>
 
-          {item.description ? (
-            <Text style={[typography.bodySmall, styles.detailCopy]}>{item.description}</Text>
-          ) : null}
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            style={styles.sheetScroll}
+          >
+            {item.description ? (
+              <Text style={[typography.bodySmall, styles.detailCopy]}>{item.description}</Text>
+            ) : null}
 
-          <View style={styles.imageConfigBox}>
-            <FieldLabel label="Image URL" />
-            <View style={styles.imageConfigRow}>
-              <TextInput
-                value={imageDraft}
-                onChangeText={onChangeImage}
-                autoCapitalize="none"
-                keyboardType="url"
-                placeholder="https://..."
-                placeholderTextColor={color_pallet.ink[400]}
-                style={[styles.fieldInput, styles.imageConfigInput]}
-              />
+            <View style={styles.imageConfigBox}>
+              <FieldLabel label="Image URL" />
+              <View style={styles.imageConfigRow}>
+                <TextInput
+                  value={imageDraft}
+                  onChangeText={onChangeImage}
+                  autoCapitalize="none"
+                  keyboardType="url"
+                  placeholder="https://..."
+                  placeholderTextColor={color_pallet.ink[400]}
+                  style={[styles.fieldInput, styles.imageConfigInput]}
+                />
+                <Pressable
+                  disabled={isSavingImage}
+                  onPress={onSaveImage}
+                  style={[styles.saveImageButton, isSavingImage && styles.disabledButton]}
+                >
+                  {isSavingImage ? (
+                    <ActivityIndicator size="small" color={color_pallet.cream[50]} />
+                  ) : (
+                    <Feather name="image" size={16} color={color_pallet.cream[50]} />
+                  )}
+                </Pressable>
+              </View>
+            </View>
+
+            <View style={styles.detailStatusRow}>
+              <View style={[
+                styles.statusBadge,
+                available ? styles.statusBadgeAvailable : styles.statusBadgeUnavailable,
+              ]}>
+                <Text style={[
+                  typography.eyebrow,
+                  styles.statusBadgeText,
+                  available ? styles.statusBadgeTextAvailable : styles.statusBadgeTextUnavailable,
+                ]}>
+                  {available ? 'Available' : "86'd"}
+                </Text>
+              </View>
               <Pressable
-                disabled={isSavingImage}
-                onPress={onSaveImage}
-                style={[styles.saveImageButton, isSavingImage && styles.disabledButton]}
+                disabled={pending}
+                onPress={onToggle}
+                style={[styles.toggleButton, !available && styles.restoreButton, pending && styles.disabledButton]}
               >
-                {isSavingImage ? (
-                  <ActivityIndicator size="small" color={color_pallet.cream[50]} />
-                ) : (
-                  <Feather name="image" size={16} color={color_pallet.cream[50]} />
-                )}
+                <Feather
+                  name={available ? 'slash' : 'rotate-ccw'}
+                  size={15}
+                  color={available ? color_pallet.danger[700] : color_pallet.success[700]}
+                />
+                <Text style={[typography.caption, styles.toggleButtonText, !available && styles.restoreButtonText]}>
+                  {available ? '86' : 'Restore'}
+                </Text>
               </Pressable>
             </View>
-          </View>
 
-          <View style={styles.detailStatusRow}>
-            <View style={[
-              styles.statusBadge,
-              available ? styles.statusBadgeAvailable : styles.statusBadgeUnavailable,
-            ]}>
-              <Text style={[
-                typography.eyebrow,
-                styles.statusBadgeText,
-                available ? styles.statusBadgeTextAvailable : styles.statusBadgeTextUnavailable,
-              ]}>
-                {available ? 'Available' : "86'd"}
-              </Text>
+            <View style={styles.metricsGrid}>
+              <MetricTile label="Ordered" value={formatNumber(insight?.times_ordered)} />
+              <MetricTile label="Per day" value={formatNumber(insight?.orders_per_day)} />
+              <MetricTile label="Demand" value={formatNumber(insight?.demand_score, '%')} />
+              <MetricTile label="Score" value={formatNumber(insight?.combined_score)} />
             </View>
-            <Pressable
-              disabled={pending}
-              onPress={onToggle}
-              style={[styles.toggleButton, !available && styles.restoreButton, pending && styles.disabledButton]}
-            >
-              <Feather
-                name={available ? 'slash' : 'rotate-ccw'}
-                size={15}
-                color={available ? color_pallet.danger[700] : color_pallet.success[700]}
-              />
-              <Text style={[typography.caption, styles.toggleButtonText, !available && styles.restoreButtonText]}>
-                {available ? '86' : 'Restore'}
-              </Text>
-            </Pressable>
-          </View>
 
-          <View style={styles.metricsGrid}>
-            <MetricTile label="Ordered" value={formatNumber(insight?.times_ordered)} />
-            <MetricTile label="Per day" value={formatNumber(insight?.orders_per_day)} />
-            <MetricTile label="Demand" value={formatNumber(insight?.demand_score, '%')} />
-            <MetricTile label="Score" value={formatNumber(insight?.combined_score)} />
-          </View>
-
-          <View style={styles.detailList}>
-            <DetailLine label="Revenue" value={insight?.revenue == null ? 'No data' : formatCurrency(insight.revenue)} />
-            <DetailLine label="Margin" value={formatNumber(insight?.margin_pct, '%')} />
-            <DetailLine label="Rank" value={insight?.rank == null ? 'No data' : `#${insight.rank}`} />
-            <DetailLine label="Source" value={formatInsightSource(insight?.source)} />
-          </View>
-
-          {isLoading && (
-            <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="small" color={color_pallet.ink[700]} />
-              <Text style={[typography.caption, styles.stateText]}>Loading stats...</Text>
+            <View style={styles.detailList}>
+              <DetailLine label="Revenue" value={insight?.revenue == null ? 'No data' : formatCurrency(insight.revenue)} />
+              <DetailLine label="Margin" value={formatNumber(insight?.margin_pct, '%')} />
+              <DetailLine label="Rank" value={insight?.rank == null ? 'No data' : `#${insight.rank}`} />
+              <DetailLine label="Source" value={formatInsightSource(insight?.source)} />
             </View>
-          )}
 
-          {insight?.recommendation_reason ? (
-            <View style={styles.recommendationBox}>
-              <Text style={[typography.eyebrow, styles.recommendationTitle]}>86 signal</Text>
-              <Text style={[typography.bodySmall, styles.recommendationCopy]}>
-                {insight.recommendation_reason}
-              </Text>
-            </View>
-          ) : null}
+            {isLoading && (
+              <View style={styles.loadingOverlay}>
+                <ActivityIndicator size="small" color={color_pallet.ink[700]} />
+                <Text style={[typography.caption, styles.stateText]}>Loading stats...</Text>
+              </View>
+            )}
+
+            {insight?.recommendation_reason ? (
+              <View style={styles.recommendationBox}>
+                <Text style={[typography.eyebrow, styles.recommendationTitle]}>86 signal</Text>
+                <Text style={[typography.bodySmall, styles.recommendationCopy]}>
+                  {insight.recommendation_reason}
+                </Text>
+              </View>
+            ) : null}
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -1101,6 +1125,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[8],
     paddingHorizontal: layout.screenPadding,
     paddingTop: spacing[5],
+  },
+  sheetScroll: {
+    flexShrink: 1,
   },
   sheetHeader: {
     alignItems: 'flex-start',
