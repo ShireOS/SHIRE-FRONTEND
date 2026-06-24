@@ -6527,6 +6527,86 @@ export type Database = {
           },
         ]
       }
+      shift_trade_requests: {
+        Row: {
+          created_at: string
+          id: string
+          manager_approved_at: string | null
+          manager_denied_at: string | null
+          reason: string | null
+          requesting_waiter_id: string
+          requester_approved_at: string | null
+          restaurant_id: string
+          reviewed_by: string | null
+          schedule_item_id: string
+          status: string
+          target_waiter_id: string
+          target_approved_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          manager_approved_at?: string | null
+          manager_denied_at?: string | null
+          reason?: string | null
+          requesting_waiter_id: string
+          requester_approved_at?: string | null
+          restaurant_id: string
+          reviewed_by?: string | null
+          schedule_item_id: string
+          status?: string
+          target_waiter_id: string
+          target_approved_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          manager_approved_at?: string | null
+          manager_denied_at?: string | null
+          reason?: string | null
+          requesting_waiter_id?: string
+          requester_approved_at?: string | null
+          restaurant_id?: string
+          reviewed_by?: string | null
+          schedule_item_id?: string
+          status?: string
+          target_waiter_id?: string
+          target_approved_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_trade_requests_requesting_waiter_id_fkey"
+            columns: ["requesting_waiter_id"]
+            isOneToOne: false
+            referencedRelation: "waiters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_trade_requests_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_trade_requests_schedule_item_id_fkey"
+            columns: ["schedule_item_id"]
+            isOneToOne: false
+            referencedRelation: "schedule_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_trade_requests_target_waiter_id_fkey"
+            columns: ["target_waiter_id"]
+            isOneToOne: false
+            referencedRelation: "waiters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       schedule_reasoning: {
         Row: {
           confidence_score: number | null
@@ -9819,4 +9899,3 @@ export const Constants = {
     },
   },
 } as const
-

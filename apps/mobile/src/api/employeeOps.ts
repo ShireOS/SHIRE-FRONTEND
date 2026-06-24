@@ -99,6 +99,38 @@ export type Announcement = {
   created_at?: string;
 };
 
+export type ShiftTradeStatus =
+  | 'pending_target'
+  | 'pending_manager'
+  | 'approved'
+  | 'denied'
+  | 'cancelled'
+  | 'expired';
+
+export type ShiftTradeRequest = {
+  id: string;
+  restaurant_id?: string;
+  schedule_item_id: string;
+  requesting_waiter_id?: string;
+  requesting_waiter_name?: string | null;
+  target_waiter_id?: string;
+  target_waiter_name?: string | null;
+  reviewed_by?: string | null;
+  reviewed_by_name?: string | null;
+  status: ShiftTradeStatus | string;
+  reason?: string | null;
+  shift_date?: string | null;
+  shift_start?: string | null;
+  shift_end?: string | null;
+  role?: string | null;
+  requester_approved_at?: string | null;
+  target_approved_at?: string | null;
+  manager_approved_at?: string | null;
+  manager_denied_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type ScheduleRun = {
   id?: string;
   run_status?: string;
@@ -201,6 +233,18 @@ export function fetchEmployeeConversations() {
   return apiRequest<Conversation[]>('/employee/messages/conversations', { auth: 'supabase' });
 }
 
+export function createEmployeeConversation(memberIds: string[], title?: string | null) {
+  return apiRequest<Conversation>('/employee/messages/conversations', {
+    method: 'POST',
+    auth: 'supabase',
+    body: {
+      member_ids: memberIds,
+      conversation_type: memberIds.length > 1 ? 'group' : 'dm',
+      title: memberIds.length > 1 ? title || null : null,
+    },
+  });
+}
+
 export function fetchEmployeeMessages(conversationId: string) {
   return apiRequest<ConversationMessage[]>(
     `/employee/messages/conversations/${conversationId}/messages`,
@@ -217,6 +261,26 @@ export function sendEmployeeMessage(conversationId: string, body: string) {
 
 export function fetchEmployeeAnnouncements() {
   return apiRequest<Announcement[]>('/employee/announcements', { auth: 'supabase' });
+}
+
+export function fetchEmployeeShiftTrades() {
+  return apiRequest<ShiftTradeRequest[]>('/employee/shift-trades', { auth: 'supabase' });
+}
+
+export function createEmployeeShiftTrade(scheduleItemId: string, targetWaiterId: string, reason?: string | null) {
+  return apiRequest<ShiftTradeRequest>('/employee/shift-trades', {
+    method: 'POST',
+    auth: 'supabase',
+    body: {
+      schedule_item_id: scheduleItemId,
+      target_waiter_id: targetWaiterId,
+      reason: reason?.trim() || null,
+    },
+  });
+}
+
+export function respondEmployeeShiftTrade(tradeId: string, status: 'approved' | 'denied' | 'cancelled') {
+  return apiPatch<ShiftTradeRequest>(`/employee/shift-trades/${tradeId}`, { status });
 }
 
 export function fetchManagerSchedules(restaurantId: string, weekStart: string) {
@@ -284,6 +348,16 @@ export function fetchManagerRequests(restaurantId: string) {
 
 export function reviewManagerRequest(requestId: string, status: 'approved' | 'denied') {
   return apiPatch<EmployeeRequest>(`/employee-requests/${requestId}`, { status });
+}
+
+export function fetchManagerShiftTrades(restaurantId: string, status = 'pending_manager') {
+  return apiRequest<ShiftTradeRequest[]>(
+    `/restaurants/${restaurantId}/shift-trade-requests?status=${encodeURIComponent(status)}`,
+  );
+}
+
+export function reviewManagerShiftTrade(tradeId: string, status: 'approved' | 'denied') {
+  return apiPatch<ShiftTradeRequest>(`/shift-trade-requests/${tradeId}`, { status });
 }
 
 export function fetchManagerConversations(restaurantId: string) {

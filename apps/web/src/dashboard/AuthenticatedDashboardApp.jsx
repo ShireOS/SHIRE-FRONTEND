@@ -611,6 +611,12 @@ const DEFAULT_OPTIMIZATION_WEIGHTS = {
   fairness: 1,
   prime_balance: 1,
 }
+const DEFAULT_SHIFT_TRADE_POLICY = {
+  enabled: true,
+  require_manager_approval: true,
+  allow_employee_to_employee_trades: true,
+  notify_managers_in_chat: true,
+}
 const OPTIMIZATION_WEIGHT_FIELDS = [
   ['coverage', 'Coverage'],
   ['weekly_hours', 'Target hours'],
@@ -820,6 +826,7 @@ function SchedulingPanel({ restaurantId }) {
   const [schedules, setSchedules] = useState([])
   const [staff, setStaff] = useState([])
   const [employeeRequests, setEmployeeRequests] = useState([])
+  const [shiftTradeRequests, setShiftTradeRequests] = useState([])
   const [requestPolicy, setRequestPolicy] = useState(null)
   const [optimizationWeights, setOptimizationWeights] = useState(DEFAULT_OPTIMIZATION_WEIGHTS)
   const [scheduleRoleFilter, setScheduleRoleFilter] = useState('all')
@@ -880,6 +887,12 @@ function SchedulingPanel({ restaurantId }) {
   const loadEmployeeRequests = async () => {
     const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/employee-requests?status=all`)
     setEmployeeRequests(Array.isArray(data) ? data : [])
+    return data
+  }
+
+  const loadShiftTradeRequests = async () => {
+    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/shift-trade-requests?status=pending_manager`)
+    setShiftTradeRequests(Array.isArray(data) ? data : [])
     return data
   }
 
@@ -967,7 +980,7 @@ function SchedulingPanel({ restaurantId }) {
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([loadCoverageBlocks(), loadSuggestedBlocks(), loadSchedules(), loadStaff(), loadRequestPolicy(), loadEmployeeRequests()])
+    Promise.all([loadCoverageBlocks(), loadSuggestedBlocks(), loadSchedules(), loadStaff(), loadRequestPolicy(), loadEmployeeRequests(), loadShiftTradeRequests()])
       .then(([saved, suggestions]) => {
         if (!cancelled) void ensureCoverageDefaults(saved, suggestions)
       })
@@ -1028,6 +1041,10 @@ function SchedulingPanel({ restaurantId }) {
 
   const calendarHeight = ((calendarBounds.end - calendarBounds.start) / 60) * COVERAGE_PIXELS_PER_HOUR
   const scheduleCalendarHeight = ((calendarBounds.end - calendarBounds.start) / 60) * SCHEDULE_PIXELS_PER_HOUR
+  const shiftTradePolicy = {
+    ...DEFAULT_SHIFT_TRADE_POLICY,
+    ...(requestPolicy?.manager_settings?.shift_trades || {}),
+  }
   const timelineHours = useMemo(() => {
     const hours = []
     for (let minute = calendarBounds.start; minute <= calendarBounds.end; minute += 60) hours.push(minute)
@@ -1175,6 +1192,20 @@ function SchedulingPanel({ restaurantId }) {
       setStatus(nextStatus === 'approved' ? 'Request approved.' : 'Request updated.')
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Could not update request')
+    }
+  }
+
+  const reviewShiftTradeRequest = async (requestId, nextStatus) => {
+    setStatus(nextStatus === 'approved' ? 'Approving shift trade...' : 'Updating shift trade...')
+    try {
+      await fetchWithSupabaseAuth(`/shift-trade-requests/${requestId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: nextStatus }),
+      })
+      await Promise.all([loadShiftTradeRequests(), loadSchedules(activeSchedule?.week_start_date || weekStart), loadStaff()])
+      setStatus(nextStatus === 'approved' ? 'Shift trade approved and schedule updated.' : 'Shift trade updated.')
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Could not update shift trade')
     }
   }
 
@@ -1528,6 +1559,7 @@ function SchedulingPanel({ restaurantId }) {
       const managerSettings = {
         ...(requestPolicy.manager_settings || {}),
         optimization_weights: optimizationWeights,
+        shift_trades: shiftTradePolicy,
       }
       const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/employee-request-policy`, {
         method: 'PUT',
@@ -1891,6 +1923,57 @@ function SchedulingPanel({ restaurantId }) {
       )}
 
       {activeSchedulingTab === 'requests' && (
+        <div className="space-y-4">
+        <section className="rounded-2xl border border-dash-gold/25 bg-dash-gold/10 p-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">Approvals</h3>
+              <p className="mt-1 text-sm text-dash-secondary">Approve employee-to-employee shift trades after both staff members agree.</p>
+            </div>
+            <button type="button" onClick={() => void loadShiftTradeRequests()} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Refresh</button>
+          </div>
+          <div className="mt-5 space-y-3">
+            {shiftTradeRequests.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-white/15 p-5 text-sm text-dash-secondary">No shift trades need approval.</p>
+            ) : (
+              shiftTradeRequests.map(request => (
+                <div key={request.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.04] p-4 lg:grid-cols-[1fr_180px_210px] lg:items-center">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="font-semibold text-dash-cream">{request.requesting_waiter_name || 'Employee'} {'->'} {request.target_waiter_name || 'Coworker'}</h4>
+                      <span className="rounded-full border border-white/10 px-2 py-0.5 text-xs capitalize text-dash-secondary">{String(request.status || '').replaceAll('_', ' ')}</span>
+                    </div>
+                    <p className="mt-2 text-sm text-dash-secondary">{request.reason || 'Shift trade request'}</p>
+                    <p className="mt-1 text-xs text-dash-tertiary">
+                      {[request.shift_date, request.shift_start ? formatDisplayTime(request.shift_start) : null, request.shift_end ? formatDisplayTime(request.shift_end) : null].filter(Boolean).join(' · ') || 'No shift time attached'}
+                    </p>
+                  </div>
+                  <div className="text-sm text-dash-secondary">
+                    <p className="capitalize">{request.role || 'staff'}</p>
+                    <p className="mt-1 text-dash-tertiary">Both employees approved</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void reviewShiftTradeRequest(request.id, 'approved')}
+                      className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void reviewShiftTradeRequest(request.id, 'denied')}
+                      className="rounded-xl border border-red-400/30 px-4 py-2 text-sm font-semibold text-red-100 transition hover:border-red-300/70"
+                    >
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
         <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
@@ -1953,6 +2036,7 @@ function SchedulingPanel({ restaurantId }) {
             )}
           </div>
         </section>
+        </div>
       )}
 
       {activeSchedulingTab === 'config' && (
@@ -2201,6 +2285,37 @@ function SchedulingPanel({ restaurantId }) {
                           [field]: event.target.value === '' ? null : Number(event.target.value),
                         }))}
                         className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="mt-5 space-y-3 rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-dash-cream">Shift Trades</h4>
+                    <p className="mt-1 text-xs leading-5 text-dash-tertiary">Controls employee-to-employee full-shift trade requests.</p>
+                  </div>
+                  {[
+                    ['enabled', 'Allow shift trade requests'],
+                    ['allow_employee_to_employee_trades', 'Employees can choose coworkers'],
+                    ['require_manager_approval', 'Require manager final approval'],
+                    ['notify_managers_in_chat', 'Notify managers in chat'],
+                  ].map(([field, label]) => (
+                    <label key={field} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.025] px-3 py-2 text-sm text-dash-secondary">
+                      <span>{label}</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(shiftTradePolicy[field])}
+                        onChange={event => setRequestPolicy(prev => ({
+                          ...prev,
+                          manager_settings: {
+                            ...(prev?.manager_settings || {}),
+                            shift_trades: {
+                              ...DEFAULT_SHIFT_TRADE_POLICY,
+                              ...(prev?.manager_settings?.shift_trades || {}),
+                              [field]: event.target.checked,
+                            },
+                          },
+                        }))}
                       />
                     </label>
                   ))}

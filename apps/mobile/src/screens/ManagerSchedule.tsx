@@ -5,13 +5,16 @@ import {
   deleteManagerScheduleItem,
   fetchManagerScheduleHistory,
   fetchManagerSchedules,
+  fetchManagerShiftTrades,
   fetchManagerStaff,
   publishManagerSchedule,
+  reviewManagerShiftTrade,
   runManagerScheduler,
   updateManagerScheduleItem,
   updateManagerScheduleSummary,
   type EmployeeShift,
   type ManagerSchedule as ManagerSchedulePayload,
+  type ShiftTradeRequest,
   type StaffContact,
 } from '@/api/employeeOps';
 import {
@@ -56,6 +59,7 @@ type ManagerScheduleCacheData = {
   scheduleHistory: ManagerSchedulePayload[];
   staff: StaffContact[];
   timeClockRequests: TimeClockRequest[];
+  shiftTradeRequests: ShiftTradeRequest[];
   manualScheduleCount: number;
 };
 
@@ -67,6 +71,7 @@ export default function ManagerSchedule() {
   const [scheduleHistory, setScheduleHistory] = useState<ManagerSchedulePayload[]>([]);
   const [staff, setStaff] = useState<StaffContact[]>([]);
   const [timeClockRequests, setTimeClockRequests] = useState<TimeClockRequest[]>([]);
+  const [shiftTradeRequests, setShiftTradeRequests] = useState<ShiftTradeRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
@@ -80,6 +85,7 @@ export default function ManagerSchedule() {
   const [manualScheduleCount, setManualScheduleCount] = useState(0);
   const staffRef = useRef<StaffContact[]>([]);
   const timeClockRequestsRef = useRef<TimeClockRequest[]>([]);
+  const shiftTradeRequestsRef = useRef<ShiftTradeRequest[]>([]);
   const manualScheduleCountRef = useRef(0);
 
   const restaurantId = restaurant?.id;
@@ -87,13 +93,16 @@ export default function ManagerSchedule() {
   const applyCachedData = useCallback((data: ManagerScheduleCacheData) => {
     const safeStaff = data.staff ?? [];
     const safeRequests = data.timeClockRequests ?? [];
+    const safeTrades = data.shiftTradeRequests ?? [];
     setSchedules(data.schedules ?? []);
     setScheduleHistory(data.scheduleHistory ?? []);
     setStaff(safeStaff);
     setTimeClockRequests(safeRequests);
+    setShiftTradeRequests(safeTrades);
     setManualScheduleCount(data.manualScheduleCount ?? 0);
     staffRef.current = safeStaff;
     timeClockRequestsRef.current = safeRequests;
+    shiftTradeRequestsRef.current = safeTrades;
     manualScheduleCountRef.current = data.manualScheduleCount ?? 0;
   }, []);
 
@@ -115,14 +124,16 @@ export default function ManagerSchedule() {
       fetchManagerScheduleHistory(id),
       fetchManagerStaff(id),
       fetchManagerTimeClockRequests(id, 'pending'),
+      fetchManagerShiftTrades(id, 'pending_manager'),
     ]);
-    const [historyResult, staffResult, requestsResult] = optionalResults;
+    const [historyResult, staffResult, requestsResult, tradesResult] = optionalResults;
     const history = historyResult.status === 'fulfilled' ? historyResult.value : scheduleHistory;
     const nextData = {
       schedules: scheduleData,
       scheduleHistory: history,
       staff: staffResult.status === 'fulfilled' ? staffResult.value : staffRef.current,
       timeClockRequests: requestsResult.status === 'fulfilled' ? requestsResult.value : timeClockRequestsRef.current,
+      shiftTradeRequests: tradesResult.status === 'fulfilled' ? tradesResult.value : shiftTradeRequestsRef.current,
       manualScheduleCount: historyResult.status === 'fulfilled'
         ? history.filter((schedule) => schedule.generated_by === 'manual').length
         : manualScheduleCountRef.current,
@@ -469,6 +480,32 @@ export default function ManagerSchedule() {
     }
   };
 
+  const reviewShiftTrade = async (request: ShiftTradeRequest, nextStatus: 'approved' | 'denied') => {
+    setIsSaving(true);
+    setStatus(nextStatus === 'approved' ? 'Approving shift trade...' : 'Denying shift trade...');
+    setShiftTradeRequests((current) => current.filter((item) => item.id !== request.id));
+    try {
+      await reviewManagerShiftTrade(request.id, nextStatus);
+      const refreshed = restaurantId ? await fetchManagerShiftTrades(restaurantId, 'pending_manager') : [];
+      setShiftTradeRequests(refreshed);
+      shiftTradeRequestsRef.current = refreshed;
+      await refreshAndApply(visibleWeekStart);
+      setStatus(nextStatus === 'approved' ? 'Shift trade approved and schedule updated.' : 'Shift trade denied.');
+    } catch (err) {
+      if (restaurantId) {
+        fetchManagerShiftTrades(restaurantId, 'pending_manager')
+          .then((items) => {
+            setShiftTradeRequests(items);
+            shiftTradeRequestsRef.current = items;
+          })
+          .catch(() => setShiftTradeRequests((current) => [request, ...current]));
+      }
+      setStatus(err instanceof Error ? err.message : 'Could not review shift trade.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <ScreenShell>
       <PageHeader
@@ -572,6 +609,28 @@ export default function ManagerSchedule() {
                     disabled={isSaving}
                     onApprove={() => reviewRemoteTimeRequest(request, 'approved')}
                     onDeny={() => reviewRemoteTimeRequest(request, 'denied')}
+                  />
+                ))}
+              </View>
+            )}
+            {shiftTradeRequests.length > 0 && (
+              <View style={styles.approvalsCard}>
+                <View style={styles.remoteQueueHeader}>
+                  <View style={{ flex: 1 }}>
+                    <UiText variant="eyebrow" tone="muted">Approvals</UiText>
+                    <UiText variant="title" style={styles.remoteQueueTitle}>
+                      {shiftTradeRequests.length} shift trade request{shiftTradeRequests.length === 1 ? '' : 's'}
+                    </UiText>
+                  </View>
+                  <Feather name="repeat" size={20} color={palette.sky[700]} />
+                </View>
+                {shiftTradeRequests.map((request) => (
+                  <ShiftTradeApprovalRow
+                    key={request.id}
+                    request={request}
+                    disabled={isSaving}
+                    onApprove={() => reviewShiftTrade(request, 'approved')}
+                    onDeny={() => reviewShiftTrade(request, 'denied')}
                   />
                 ))}
               </View>
@@ -815,6 +874,48 @@ function RemoteTimeRequestRow({
   );
 }
 
+function ShiftTradeApprovalRow({
+  request,
+  disabled,
+  onApprove,
+  onDeny,
+}: {
+  request: ShiftTradeRequest;
+  disabled?: boolean;
+  onApprove: () => void;
+  onDeny: () => void;
+}) {
+  const date = request.shift_date ? String(request.shift_date).slice(0, 10) : 'No date';
+  const start = request.shift_start ? String(request.shift_start).slice(0, 5) : null;
+  const end = request.shift_end ? String(request.shift_end).slice(0, 5) : null;
+
+  return (
+    <View style={styles.remoteRequestRow}>
+      <View style={styles.remoteRequestTop}>
+        <View style={{ flex: 1 }}>
+          <UiText variant="body" style={styles.remoteRequestName}>
+            {request.requesting_waiter_name || 'Employee'} {'->'} {request.target_waiter_name || 'Coworker'}
+          </UiText>
+          <UiText variant="caption" tone="muted" style={styles.remoteRequestType}>
+            {String(request.status || 'pending manager').replaceAll('_', ' ')}
+          </UiText>
+        </View>
+        <View style={styles.mentionPill}>
+          <UiText variant="caption" style={styles.mentionPillText}>Trade</UiText>
+        </View>
+      </View>
+      {request.reason ? <UiText variant="bodySmall" tone="muted" style={styles.remoteReason}>{request.reason}</UiText> : null}
+      <UiText variant="caption" tone="muted">
+        {[date, start, end, request.role].filter(Boolean).join(' · ')}
+      </UiText>
+      <View style={styles.remoteActions}>
+        <UiButton label="Approve" disabled={disabled} size="small" onPress={onApprove} style={styles.remoteActionButton} />
+        <UiButton label="Deny" disabled={disabled} size="small" variant="secondary" onPress={onDeny} style={styles.remoteActionButton} />
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   content: {
     gap: spacing[4],
@@ -923,6 +1024,14 @@ const styles = StyleSheet.create({
   remoteQueueCard: {
     backgroundColor: palette.sky[50],
     borderColor: palette.sky[200],
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: spacing[3],
+    padding: spacing[4],
+  },
+  approvalsCard: {
+    backgroundColor: '#fff0ea',
+    borderColor: '#ffd1c3',
     borderRadius: radius.md,
     borderWidth: 1,
     gap: spacing[3],

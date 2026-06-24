@@ -1,11 +1,14 @@
 import {
+  createEmployeeConversation,
   fetchEmployeeAnnouncements,
+  fetchEmployeeContacts,
   fetchEmployeeConversations,
   fetchEmployeeMessages,
   sendEmployeeMessage,
   type Announcement,
   type Conversation,
   type ConversationMessage,
+  type StaffContact,
 } from '@/api/employeeOps';
 import {
   AnnouncementCard,
@@ -20,8 +23,9 @@ import { UiButton } from '@/components/ui/Button';
 import { UiText } from '@/components/ui/Text';
 import { palette, semanticColors } from '@/styles/colors';
 import { radius, spacing } from '@/styles/tokens';
+import { Feather } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 type MessageTab = 'messages' | 'announcements';
 
@@ -29,20 +33,26 @@ export default function EmployeeMessages() {
   const [tab, setTab] = useState<MessageTab>('messages');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [contacts, setContacts] = useState<StaffContact[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [draft, setDraft] = useState('');
+  const [isNewChatOpen, setIsNewChatOpen] = useState(false);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [newChatTitle, setNewChatTitle] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
-    Promise.all([fetchEmployeeConversations(), fetchEmployeeAnnouncements()])
-      .then(([conversationData, announcementData]) => {
+    Promise.all([fetchEmployeeConversations(), fetchEmployeeAnnouncements(), fetchEmployeeContacts()])
+      .then(([conversationData, announcementData, contactData]) => {
         if (cancelled) return;
         setConversations(conversationData);
         setAnnouncements(announcementData);
+        setContacts(contactData);
         if (!selectedId && conversationData[0]?.id) setSelectedId(String(conversationData[0].id));
         setError(null);
       })
@@ -75,6 +85,19 @@ export default function EmployeeMessages() {
     };
   }, [selectedId]);
 
+  useEffect(() => {
+    if (!selectedId) return undefined;
+    const intervalId = setInterval(() => {
+      fetchEmployeeMessages(selectedId)
+        .then(setMessages)
+        .catch(() => undefined);
+      fetchEmployeeConversations()
+        .then(setConversations)
+        .catch(() => undefined);
+    }, 15000);
+    return () => clearInterval(intervalId);
+  }, [selectedId]);
+
   const send = async () => {
     if (!selectedId || !draft.trim()) return;
     const body = draft.trim();
@@ -89,7 +112,42 @@ export default function EmployeeMessages() {
     }
   };
 
+  const toggleMember = (memberId: string) => {
+    setSelectedMemberIds((current) => (
+      current.includes(memberId)
+        ? current.filter((id) => id !== memberId)
+        : [...current, memberId]
+    ));
+  };
+
+  const resetNewChat = () => {
+    setIsNewChatOpen(false);
+    setSelectedMemberIds([]);
+    setNewChatTitle('');
+  };
+
+  const startConversation = async () => {
+    if (selectedMemberIds.length === 0) {
+      setError('Choose at least one staff member.');
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const conversation = await createEmployeeConversation(selectedMemberIds, newChatTitle);
+      const next = await fetchEmployeeConversations();
+      setConversations(next);
+      setSelectedId(String(conversation.id));
+      resetNewChat();
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start chat.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const selectedConversation = conversations.find((conversation) => String(conversation.id) === String(selectedId));
+  const chatContacts = contacts.filter((contact) => !contact.is_me);
 
   return (
     <ScreenShell>
@@ -97,6 +155,7 @@ export default function EmployeeMessages() {
         eyebrow="Staff Ops"
         title="Messaging"
         subtitle="Direct messages, group chats, and restaurant announcements."
+        action={<IconChatButton onPress={() => setIsNewChatOpen(true)} />}
       />
       <SegmentedControl
         value={tab}
@@ -121,6 +180,9 @@ export default function EmployeeMessages() {
 
       {!isLoading && !error && tab === 'messages' && (
         <View style={styles.messagesLayout}>
+          <View style={styles.newChatRow}>
+            <UiButton label="New chat" size="small" onPress={() => setIsNewChatOpen(true)} style={styles.newChatButton} />
+          </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.threadStrip}>
             {conversations.length === 0 ? (
               <UiText variant="bodySmall" tone="muted">No active chats yet.</UiText>
@@ -192,7 +254,73 @@ export default function EmployeeMessages() {
           )}
         </ScrollView>
       )}
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={isNewChatOpen}
+        onRequestClose={resetNewChat}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.glassModal}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <UiText variant="eyebrow" tone="muted">New Chat</UiText>
+                <UiText variant="h3" style={styles.modalTitle}>Choose staff</UiText>
+              </View>
+              <Pressable onPress={resetNewChat} style={styles.closeButton}>
+                <Feather name="x" size={18} color={palette.ink[600]} />
+              </Pressable>
+            </View>
+            {selectedMemberIds.length > 1 ? (
+              <TextField value={newChatTitle} onChangeText={setNewChatTitle} placeholder="Group name optional" />
+            ) : null}
+            <ScrollView contentContainerStyle={styles.contactList}>
+              {chatContacts.length === 0 ? (
+                <UiText variant="bodySmall" tone="muted">No staff contacts returned yet.</UiText>
+              ) : chatContacts.map((contact) => {
+                const active = selectedMemberIds.includes(contact.id);
+                return (
+                  <Pressable
+                    key={contact.id}
+                    onPress={() => toggleMember(contact.id)}
+                    style={[styles.contactChoice, active && styles.contactChoiceActive]}
+                  >
+                    <View style={styles.contactAvatar}>
+                      <UiText variant="caption" style={styles.contactAvatarText}>
+                        {(contact.name || contact.email || '?').slice(0, 1).toUpperCase()}
+                      </UiText>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <UiText variant="body" style={styles.contactName}>{contact.name || contact.email || 'Staff'}</UiText>
+                      <UiText variant="caption" tone="muted">{contact.role || 'Staff'}</UiText>
+                    </View>
+                    <Feather name={active ? 'check-circle' : 'circle'} size={19} color={active ? opsAccent : palette.ink[300]} />
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <View style={styles.modalActions}>
+              <UiButton label="Cancel" variant="secondary" onPress={resetNewChat} style={styles.modalActionButton} />
+              <UiButton
+                label={isSaving ? 'Starting...' : selectedMemberIds.length > 1 ? 'Create group' : 'Start DM'}
+                disabled={isSaving || selectedMemberIds.length === 0}
+                onPress={startConversation}
+                style={styles.modalActionButton}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScreenShell>
+  );
+}
+
+function IconChatButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable accessibilityRole="button" accessibilityLabel="Start new chat" onPress={onPress} style={styles.headerIconButton}>
+      <Feather name="edit-3" size={19} color="#FFFFFF" />
+    </Pressable>
   );
 }
 
@@ -209,6 +337,14 @@ const styles = StyleSheet.create({
   },
   messagesLayout: {
     flex: 1,
+  },
+  newChatRow: {
+    alignItems: 'flex-end',
+    paddingHorizontal: spacing[5],
+    paddingTop: spacing[3],
+  },
+  newChatButton: {
+    minWidth: 112,
   },
   threadStrip: {
     gap: spacing[2],
@@ -278,5 +414,87 @@ const styles = StyleSheet.create({
     gap: spacing[3],
     padding: spacing[5],
     paddingBottom: 120,
+  },
+  headerIconButton: {
+    alignItems: 'center',
+    backgroundColor: opsAccent,
+    borderRadius: radius.pill,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  modalOverlay: {
+    backgroundColor: 'rgba(21, 19, 19, 0.38)',
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  glassModal: {
+    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+    borderColor: 'rgba(255, 255, 255, 0.78)',
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    borderWidth: 1,
+    gap: spacing[4],
+    maxHeight: '82%',
+    padding: spacing[5],
+  },
+  modalHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing[3],
+  },
+  modalTitle: {
+    marginTop: spacing[1],
+  },
+  closeButton: {
+    alignItems: 'center',
+    backgroundColor: semanticColors.elevated,
+    borderColor: semanticColors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
+  },
+  contactList: {
+    gap: spacing[2],
+    paddingBottom: spacing[2],
+  },
+  contactChoice: {
+    alignItems: 'center',
+    backgroundColor: semanticColors.elevated,
+    borderColor: semanticColors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing[3],
+    padding: spacing[3],
+  },
+  contactChoiceActive: {
+    backgroundColor: '#fff0ea',
+    borderColor: '#ffd1c3',
+  },
+  contactAvatar: {
+    alignItems: 'center',
+    backgroundColor: palette.sky[50],
+    borderRadius: radius.pill,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  contactAvatarText: {
+    color: palette.sky[700],
+    fontFamily: 'Inter_700Bold',
+  },
+  contactName: {
+    color: palette.ink[900],
+    fontFamily: 'Inter_700Bold',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: spacing[3],
+  },
+  modalActionButton: {
+    flex: 1,
   },
 });
