@@ -73,6 +73,12 @@ export type StaffContact = {
   email?: string | null;
   phone?: string | null;
   is_me?: boolean;
+  employee_login_id?: string | null;
+  suggested_weekly_hours?: number | string | null;
+  hourly_rate?: number | string | null;
+  pay_rate?: number | string | null;
+  default_hourly_rate?: number | string | null;
+  job_code_id?: string | null;
 };
 
 export type Conversation = {
@@ -297,6 +303,10 @@ export function fetchManagerStaff(restaurantId: string) {
   return apiRequest<StaffContact[]>(`/restaurants/${restaurantId}/waiters?include_inactive=false`);
 }
 
+export function updateManagerStaff(waiterId: string, body: Partial<StaffContact>) {
+  return apiPatch<StaffContact>(`/waiters/${waiterId}`, body);
+}
+
 export function createManagerSchedule(restaurantId: string, weekStart: string) {
   return apiPost<ManagerSchedule>(`/restaurants/${restaurantId}/schedules`, {
     week_start_date: weekStart,
@@ -362,6 +372,31 @@ export function reviewManagerShiftTrade(tradeId: string, status: 'approved' | 'd
 
 export function fetchManagerConversations(restaurantId: string) {
   return apiRequest<Conversation[]>(`/restaurants/${restaurantId}/messages/conversations`);
+}
+
+export function createManagerConversation(
+  restaurantId: string,
+  memberIds: string[],
+  title?: string | null,
+) {
+  return apiPost<Conversation>(`/restaurants/${restaurantId}/messages/conversations`, {
+    member_ids: memberIds,
+    conversation_type: memberIds.length > 1 ? 'group' : 'dm',
+    title: memberIds.length > 1 ? title || null : null,
+  });
+}
+
+export function fetchManagerMessages(restaurantId: string, conversationId: string) {
+  return apiRequest<ConversationMessage[]>(
+    `/restaurants/${restaurantId}/messages/conversations/${conversationId}/messages`,
+  );
+}
+
+export function sendManagerMessage(restaurantId: string, conversationId: string, body: string) {
+  return apiPost<ConversationMessage>(
+    `/restaurants/${restaurantId}/messages/conversations/${conversationId}/messages`,
+    { body },
+  );
 }
 
 export function fetchManagerAnnouncements(restaurantId: string) {

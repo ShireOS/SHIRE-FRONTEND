@@ -37,6 +37,12 @@ const OWNER_TABS: RoleTab[] = [
     sfSymbol: 'calendar',
   },
   {
+    name: 'messages',
+    title: 'Messages',
+    androidIcon: 'chatbubbles',
+    sfSymbol: { default: 'message', selected: 'message.fill' },
+  },
+  {
     name: 'settings',
     title: 'Settings',
     androidIcon: 'settings',
