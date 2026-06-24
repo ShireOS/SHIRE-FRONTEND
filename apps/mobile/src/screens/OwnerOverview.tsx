@@ -1,6 +1,9 @@
 import {
+  fetchHostShiftAnalytics,
   fetchOwnerAnalytics,
   type AnalyticsPeriod,
+  type HostShiftAnalyticsPayload,
+  type HostShiftAnalyticsRange,
   type HourlySalesBucket,
   type MenuSalesItem,
   type OwnerAnalyticsPayload,
@@ -103,6 +106,7 @@ export default function OwnerOverview() {
   const [period, setPeriod] = useState<AnalyticsPeriod>('day');
   const [date, setDate] = useState(() => new Date());
   const [payload, setPayload] = useState<OwnerAnalyticsPayload | null>(null);
+  const [hostShiftAnalytics, setHostShiftAnalytics] = useState<HostShiftAnalyticsPayload | null>(null);
   const [timeClockRequests, setTimeClockRequests] = useState<TimeClockRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isReviewingTime, setIsReviewingTime] = useState(false);
@@ -145,13 +149,22 @@ export default function OwnerOverview() {
     setIsLoading(true);
     setError(null);
 
+    const hostAnalyticsRange = getHostAnalyticsRange(period, dateKey);
+
     fetchOwnerAnalytics(restaurant.id, period, dateKey, {
       onRevalidate: (data) => {
         if (!cancelled) setPayload(data);
       },
     })
-      .then((data) => {
+      .then(async (data) => {
+        const [shiftAnalytics] = await Promise.all([
+          hostAnalyticsRange
+            ? fetchHostShiftAnalytics(restaurant.id, hostAnalyticsRange).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+        if (cancelled) return;
         if (!cancelled) setPayload(data);
+        setHostShiftAnalytics(shiftAnalytics);
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load analytics.');
@@ -187,7 +200,10 @@ export default function OwnerOverview() {
     };
   }, [restaurant]);
 
-  const metrics = useMemo(() => buildMetrics(payload), [payload]);
+  const metrics = useMemo(
+    () => buildMetrics(payload, hostShiftAnalytics),
+    [payload, hostShiftAnalytics],
+  );
   const salesBars = useMemo(() => buildSalesBars(payload), [payload]);
   const menuItems = payload?.sections?.menu?.items || [];
 
@@ -372,11 +388,25 @@ export default function OwnerOverview() {
   );
 }
 
-function buildMetrics(payload: OwnerAnalyticsPayload | null) {
+function getHostAnalyticsRange(
+  period: AnalyticsPeriod,
+  dateKey: string,
+): HostShiftAnalyticsRange | null {
+  if (dateKey !== toDateKey(new Date())) return null;
+  if (period === 'day') return 'today';
+  if (period === 'week') return 'week';
+  return null;
+}
+
+function buildMetrics(
+  payload: OwnerAnalyticsPayload | null,
+  hostShiftAnalytics: HostShiftAnalyticsPayload | null,
+) {
   const revenue = payload?.sections?.revenue?.data || {};
   const visits = payload?.sections?.visits?.data || {};
   const staff = payload?.sections?.staff?.data || {};
   const labor = payload?.sections?.labor?.data || payload?.labor?.totals || {};
+  const hostSummary = hostShiftAnalytics?.summary || {};
   const sales = firstDefined(
     revenue.sales_excluding_tax_tip,
     revenue.net_sales,
@@ -395,13 +425,16 @@ function buildMetrics(payload: OwnerAnalyticsPayload | null) {
     processorFeesPending: Boolean(revenue.processor_fees_pending),
     cardDeposit: revenue.card_deposit_estimate,
     configuredFeeInSales: Boolean(revenue.configured_fee_in_sales),
-    covers: visits.covers,
-    turnTime: visits.avg_turn_minutes,
-    team: firstDefined(staff.staff_worked, staff.shift_count),
+    covers: firstDefined(hostSummary.covers, visits.covers),
+    turnTime: firstDefined(hostSummary.avgTurnTimeMinutes, visits.avg_turn_minutes),
+    team: firstDefined(staff.staff_worked, staff.shift_count, hostShiftAnalytics?.waiters?.length),
     laborCost: firstDefined(staff.labor_cost, labor.labor_cost),
     laborMinutes: firstDefined(staff.worked_minutes, labor.worked_minutes),
     missingLaborRate: Boolean(staff.has_missing_labor_rate || labor.has_missing_labor_rate),
-    salesPerLaborHour: divideCurrency(sales, laborHours(firstDefined(staff.worked_minutes, labor.worked_minutes))),
+    salesPerLaborHour: divideCurrency(
+      sales,
+      laborHours(firstDefined(staff.worked_minutes, labor.worked_minutes)),
+    ),
   };
 }
 

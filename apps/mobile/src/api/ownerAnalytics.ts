@@ -1,4 +1,5 @@
 import { fetchCachedOwnerAnalytics, fetchCachedOwnerChecks } from '@/data/ownerAnalyticsCache';
+import { apiRequest } from './mobileApi';
 
 export type AnalyticsPeriod = 'day' | 'week' | 'month' | 'year' | 'full';
 
@@ -103,6 +104,30 @@ export type OwnerAnalyticsPayload = {
   };
 };
 
+export type HostShiftAnalyticsRange = 'current_shift' | 'today' | 'week';
+
+export type HostShiftAnalyticsPayload = {
+  range?: HostShiftAnalyticsRange;
+  generatedAt?: string;
+  windowStart?: string;
+  windowEnd?: string;
+  summary?: {
+    covers?: number;
+    parties?: number;
+    tablesTurned?: number;
+    avgTurnTimeMinutes?: number | null;
+    peakBucketLabel?: string | null;
+  };
+  waiters?: {
+    waiterId?: string;
+    waiterName?: string;
+    covers?: number;
+    tablesServed?: number;
+    liveTables?: number;
+    avgTurnTimeMinutes?: number | null;
+  }[];
+};
+
 export type OwnerChecksPayload = {
   date?: string;
   totals?: {
@@ -171,4 +196,10 @@ export function fetchOwnerChecks(
   options?: OwnerChecksFetchOptions,
 ) {
   return fetchCachedOwnerChecks(restaurantId, dateKey, options);
+}
+
+export function fetchHostShiftAnalytics(locationId: string, range: HostShiftAnalyticsRange = 'today') {
+  return apiRequest<HostShiftAnalyticsPayload>(
+    `/locations/${encodeURIComponent(locationId)}/analytics/shift?range=${encodeURIComponent(range)}`,
+  );
 }
