@@ -1,5 +1,6 @@
 import { fetchCachedOwnerAnalytics, fetchCachedOwnerChecks } from '@/data/ownerAnalyticsCache';
 import { apiRequest } from './mobileApi';
+import { getSBClient } from '../../packages/supabase';
 
 export type AnalyticsPeriod = 'day' | 'week' | 'month' | 'year' | 'full';
 
@@ -55,7 +56,12 @@ export type OwnerAnalyticsPayload = {
       covers?: number;
       visit_count?: number;
       avg_turn_minutes?: number;
+      avg_turn_time_minutes?: number;
+      avg_turnover_minutes?: number;
+      average_turn_minutes?: number;
       completed_turns?: number;
+      avg_payment_to_clear_minutes?: number;
+      avg_seated_to_payment_minutes?: number;
     }> & {
       quality?: {
         message?: string;
@@ -169,6 +175,14 @@ export type OwnerChecksPayload = {
   }[];
 };
 
+export type OwnerOperationalMetrics = {
+  avgTurnMinutes?: number;
+  laborCost?: number;
+  workedMinutes?: number;
+  staffWorked?: number;
+  missingLaborRate?: boolean;
+};
+
 export type OwnerAnalyticsFetchOptions = {
   forceRefresh?: boolean;
   onRevalidate?: (data: OwnerAnalyticsPayload) => void;
@@ -202,4 +216,94 @@ export function fetchHostShiftAnalytics(locationId: string, range: HostShiftAnal
   return apiRequest<HostShiftAnalyticsPayload>(
     `/locations/${encodeURIComponent(locationId)}/analytics/shift?range=${encodeURIComponent(range)}`,
   );
+}
+
+export async function fetchOwnerOperationalMetrics(
+  restaurantId: string,
+  dateKey: string,
+): Promise<OwnerOperationalMetrics> {
+  const { startAt, endAt } = getLocalDayBounds(dateKey);
+  const clockLookbackStart = new Date(startAt);
+  clockLookbackStart.setDate(clockLookbackStart.getDate() - 1);
+  const nowMs = Date.now();
+  const dayEndMs = Math.min(endAt.getTime(), nowMs);
+  const client = getSBClient();
+
+  const [ordersResult, clockResult] = await Promise.all([
+    client
+      .from('pos_orders')
+      .select('created_at,closed_at')
+      .eq('restaurant_id', restaurantId)
+      .gte('created_at', startAt.toISOString())
+      .lt('created_at', endAt.toISOString())
+      .not('closed_at', 'is', null),
+    client
+      .from('pos_time_clock_entries')
+      .select('staff_id,clock_in_at,clock_out_at,hourly_rate,is_voided')
+      .eq('restaurant_id', restaurantId)
+      .gte('clock_in_at', clockLookbackStart.toISOString())
+      .lt('clock_in_at', endAt.toISOString()),
+  ]);
+
+  if (ordersResult.error) throw ordersResult.error;
+  if (clockResult.error) throw clockResult.error;
+
+  const turnDurations = (ordersResult.data || [])
+    .map((order) => minutesBetween(order.created_at, order.closed_at))
+    .filter((value): value is number => value !== null && value > 0 && value <= 8 * 60);
+
+  const activeClockRows = (clockResult.data || []).filter((entry) => !entry.is_voided && entry.clock_in_at);
+  let workedMinutes = 0;
+  let laborCost = 0;
+  let ratedRows = 0;
+  const staffIds = new Set<string>();
+
+  for (const entry of activeClockRows) {
+    const clockInMs = new Date(entry.clock_in_at as string).getTime();
+    const rawClockOutMs = entry.clock_out_at ? new Date(entry.clock_out_at as string).getTime() : dayEndMs;
+    if (!Number.isFinite(clockInMs) || !Number.isFinite(rawClockOutMs)) continue;
+
+    const clippedStart = Math.max(clockInMs, startAt.getTime());
+    const clippedEnd = Math.min(rawClockOutMs, dayEndMs);
+    if (clippedEnd <= clippedStart) continue;
+
+    const minutes = (clippedEnd - clippedStart) / 60000;
+    workedMinutes += minutes;
+    if (entry.staff_id) staffIds.add(String(entry.staff_id));
+
+    const hourlyRate = Number(entry.hourly_rate);
+    if (Number.isFinite(hourlyRate)) {
+      ratedRows += 1;
+      laborCost += (minutes / 60) * hourlyRate;
+    }
+  }
+
+  return {
+    avgTurnMinutes: average(turnDurations),
+    laborCost: ratedRows > 0 ? laborCost : undefined,
+    workedMinutes: workedMinutes > 0 ? workedMinutes : undefined,
+    staffWorked: staffIds.size > 0 ? staffIds.size : undefined,
+    missingLaborRate: activeClockRows.some((entry) => entry.hourly_rate === null || entry.hourly_rate === undefined),
+  };
+}
+
+function getLocalDayBounds(dateKey: string) {
+  const [year, month, day] = dateKey.split('-').map((part) => Number(part));
+  const startAt = new Date(year, (month || 1) - 1, day || 1, 0, 0, 0, 0);
+  const endAt = new Date(startAt);
+  endAt.setDate(startAt.getDate() + 1);
+  return { startAt, endAt };
+}
+
+function minutesBetween(start?: string | null, end?: string | null) {
+  if (!start || !end) return null;
+  const startMs = new Date(start).getTime();
+  const endMs = new Date(end).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return null;
+  return (endMs - startMs) / 60000;
+}
+
+function average(values: number[]) {
+  if (values.length === 0) return undefined;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }

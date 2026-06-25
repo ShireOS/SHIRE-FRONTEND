@@ -6,6 +6,7 @@ import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function paramValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -46,6 +47,7 @@ function firstDefined<T>(...values: T[]) {
 
 export default function OwnerChecks() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const restaurantId = paramValue(params.restaurantId);
   const restaurantName = paramValue(params.restaurantName) || 'Restaurant';
@@ -97,7 +99,11 @@ export default function OwnerChecks() {
   );
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing[3] }]}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.header}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Feather name="chevron-left" size={22} color={color_pallet.ink[800]} />
@@ -203,7 +209,6 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: layout.screenPadding,
-    paddingTop: spacing[10],
     paddingBottom: spacing[12],
   },
   header: {

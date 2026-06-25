@@ -1,10 +1,14 @@
 import {
   fetchHostShiftAnalytics,
+  fetchOwnerChecks,
+  fetchOwnerOperationalMetrics,
   fetchOwnerAnalytics,
   type AnalyticsPeriod,
   type HostShiftAnalyticsPayload,
   type HostShiftAnalyticsRange,
   type HourlySalesBucket,
+  type OwnerChecksPayload,
+  type OwnerOperationalMetrics,
   type MenuSalesItem,
   type OwnerAnalyticsPayload,
 } from '@/api/ownerAnalytics';
@@ -77,12 +81,18 @@ function formatNumber(value: unknown, digits = 0) {
 
 function formatMinutes(value: unknown) {
   const number = Number(value);
-  if (!Number.isFinite(number) || number <= 0) return 'DNE';
+  if (!Number.isFinite(number) || number <= 0) return 'No data';
   return `${Math.round(number)}m`;
 }
 
 function firstDefined<T>(...values: T[]) {
   return values.find((value) => value !== null && value !== undefined);
+}
+
+function firstPositiveNumber(...values: unknown[]) {
+  return values
+    .map((value) => Number(value))
+    .find((value) => Number.isFinite(value) && value > 0);
 }
 
 function divideCurrency(total: unknown, count: unknown) {
@@ -106,6 +116,8 @@ export default function OwnerOverview() {
   const [period, setPeriod] = useState<AnalyticsPeriod>('day');
   const [date, setDate] = useState(() => new Date());
   const [payload, setPayload] = useState<OwnerAnalyticsPayload | null>(null);
+  const [checksPayload, setChecksPayload] = useState<OwnerChecksPayload | null>(null);
+  const [operationalMetrics, setOperationalMetrics] = useState<OwnerOperationalMetrics | null>(null);
   const [hostShiftAnalytics, setHostShiftAnalytics] = useState<HostShiftAnalyticsPayload | null>(null);
   const [timeClockRequests, setTimeClockRequests] = useState<TimeClockRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -157,13 +169,21 @@ export default function OwnerOverview() {
       },
     })
       .then(async (data) => {
-        const [shiftAnalytics] = await Promise.all([
+        const [shiftAnalytics, checksData, operationalData] = await Promise.all([
           hostAnalyticsRange
             ? fetchHostShiftAnalytics(restaurant.id, hostAnalyticsRange).catch(() => null)
+            : Promise.resolve(null),
+          period === 'day'
+            ? fetchOwnerChecks(restaurant.id, dateKey).catch(() => null)
+            : Promise.resolve(null),
+          period === 'day'
+            ? fetchOwnerOperationalMetrics(restaurant.id, dateKey).catch(() => null)
             : Promise.resolve(null),
         ]);
         if (cancelled) return;
         if (!cancelled) setPayload(data);
+        setChecksPayload(checksData);
+        setOperationalMetrics(operationalData);
         setHostShiftAnalytics(shiftAnalytics);
       })
       .catch((err) => {
@@ -201,8 +221,8 @@ export default function OwnerOverview() {
   }, [restaurant]);
 
   const metrics = useMemo(
-    () => buildMetrics(payload, hostShiftAnalytics),
-    [payload, hostShiftAnalytics],
+    () => buildMetrics(payload, hostShiftAnalytics, checksPayload, operationalMetrics),
+    [payload, hostShiftAnalytics, checksPayload, operationalMetrics],
   );
   const salesBars = useMemo(() => buildSalesBars(payload), [payload]);
   const menuItems = payload?.sections?.menu?.items || [];
@@ -344,12 +364,23 @@ export default function OwnerOverview() {
 
           <View style={styles.metricGrid}>
             <MetricTile label="Covers" value={formatNumber(metrics.covers)} />
-            <MetricTile label="Turn Time" value={formatMinutes(metrics.turnTime)} />
+            <MetricTile
+              label="Turn Time"
+              value={formatMinutes(metrics.turnTime)}
+              detail={metrics.turnTime ? 'Avg check duration' : 'Needs closed checks'}
+              muted={!metrics.turnTime}
+            />
             <MetricTile label="Team" value={formatNumber(metrics.team)} detail="staffed" />
             <MetricTile
               label="Labor Cost"
-              value={metrics.laborCost == null ? 'DNE' : formatCurrency(metrics.laborCost)}
-              detail={metrics.missingLaborRate ? 'Missing rates' : 'Clocked'}
+              value={metrics.laborCost == null ? 'No data' : formatCurrency(metrics.laborCost)}
+              detail={
+                metrics.laborCost == null
+                  ? 'Needs clocked hours'
+                  : metrics.missingLaborRate
+                    ? 'Missing rates'
+                    : 'Clocked'
+              }
               muted={metrics.laborCost == null}
             />
           </View>
@@ -401,6 +432,8 @@ function getHostAnalyticsRange(
 function buildMetrics(
   payload: OwnerAnalyticsPayload | null,
   hostShiftAnalytics: HostShiftAnalyticsPayload | null,
+  checksPayload: OwnerChecksPayload | null,
+  operationalMetrics: OwnerOperationalMetrics | null,
 ) {
   const revenue = payload?.sections?.revenue?.data || {};
   const visits = payload?.sections?.visits?.data || {};
@@ -425,17 +458,41 @@ function buildMetrics(
     processorFeesPending: Boolean(revenue.processor_fees_pending),
     cardDeposit: revenue.card_deposit_estimate,
     configuredFeeInSales: Boolean(revenue.configured_fee_in_sales),
-    covers: firstDefined(hostSummary.covers, visits.covers),
-    turnTime: firstDefined(hostSummary.avgTurnTimeMinutes, visits.avg_turn_minutes),
-    team: firstDefined(staff.staff_worked, staff.shift_count, hostShiftAnalytics?.waiters?.length),
-    laborCost: firstDefined(staff.labor_cost, labor.labor_cost),
-    laborMinutes: firstDefined(staff.worked_minutes, labor.worked_minutes),
-    missingLaborRate: Boolean(staff.has_missing_labor_rate || labor.has_missing_labor_rate),
+    covers: firstDefined(hostSummary.covers, visits.covers, checksPayload?.totals?.covers),
+    turnTime: firstPositiveNumber(
+      hostSummary.avgTurnTimeMinutes,
+      visits.avg_turn_minutes,
+      visits.avg_turn_time_minutes,
+      visits.avg_turnover_minutes,
+      visits.average_turn_minutes,
+      averageCheckTurnMinutes(checksPayload),
+      operationalMetrics?.avgTurnMinutes,
+    ),
+    team: firstDefined(staff.staff_worked, staff.shift_count, hostShiftAnalytics?.waiters?.length, operationalMetrics?.staffWorked),
+    laborCost: firstDefined(staff.labor_cost, labor.labor_cost, operationalMetrics?.laborCost),
+    laborMinutes: firstDefined(staff.worked_minutes, labor.worked_minutes, operationalMetrics?.workedMinutes),
+    missingLaborRate: Boolean(staff.has_missing_labor_rate || labor.has_missing_labor_rate || operationalMetrics?.missingLaborRate),
     salesPerLaborHour: divideCurrency(
       sales,
-      laborHours(firstDefined(staff.worked_minutes, labor.worked_minutes)),
+      laborHours(firstDefined(staff.worked_minutes, labor.worked_minutes, operationalMetrics?.workedMinutes)),
     ),
   };
+}
+
+function averageCheckTurnMinutes(checksPayload: OwnerChecksPayload | null) {
+  const durations = (checksPayload?.checks || [])
+    .map((check) => minutesBetween(check.opened_at, check.closed_at))
+    .filter((value): value is number => value !== null && value > 0 && value <= 8 * 60);
+  if (durations.length === 0) return undefined;
+  return durations.reduce((sum, value) => sum + value, 0) / durations.length;
+}
+
+function minutesBetween(start?: string | null, end?: string | null) {
+  if (!start || !end) return null;
+  const startMs = new Date(start).getTime();
+  const endMs = new Date(end).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return null;
+  return (endMs - startMs) / 60000;
 }
 
 function buildSalesBars(payload: OwnerAnalyticsPayload | null) {
@@ -481,9 +538,9 @@ function MetricTile({
   muted?: boolean;
 }) {
   return (
-    <View style={styles.metricTile}>
+    <View style={[styles.metricTile, muted && styles.metricTileMuted]}>
       <Text style={[typography.caption, styles.tileLabel]}>{label}</Text>
-      <Text style={[typography.h2, styles.tileValue, muted && styles.mutedText]}>{value}</Text>
+      <Text style={[typography.h2, styles.tileValue, muted && styles.tileValueUnavailable]}>{value}</Text>
       {detail && <Text style={[typography.caption, styles.tileDetail]}>{detail}</Text>}
     </View>
   );
@@ -744,8 +801,14 @@ const styles = StyleSheet.create({
   },
   metricTile: {
     ...card.base,
+    justifyContent: 'space-between',
+    minHeight: 116,
     width: '47%',
     padding: spacing[4],
+  },
+  metricTileMuted: {
+    backgroundColor: color_pallet.stone[50],
+    borderColor: color_pallet.stone[300],
   },
   tileLabel: {
     color: color_pallet.ink[500],
@@ -754,8 +817,13 @@ const styles = StyleSheet.create({
     color: color_pallet.ink[900],
     marginTop: spacing[2],
   },
+  tileValueUnavailable: {
+    color: color_pallet.ink[800],
+    fontSize: 21,
+    lineHeight: 28,
+  },
   tileDetail: {
-    color: color_pallet.ink[500],
+    color: color_pallet.ink[600],
     marginTop: spacing[1] / 2,
   },
   section: {
