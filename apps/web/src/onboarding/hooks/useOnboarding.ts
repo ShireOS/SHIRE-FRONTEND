@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../shared/lib/supabase'
+import { API_CONFIG } from '../../shared/api/config'
 import { useAuth } from '../../auth'
 import type { Restaurant } from '@shire/db'
 
@@ -52,34 +53,84 @@ export interface OnboardingData {
   credit_card_tip_payout: 'nightly' | 'payroll'
   refund_approval_threshold: string
 
-  // Step 3: Goals & Priorities
+  // Step 3: Taxes & Charges
+  tax_rates: TaxRateData[]
+  service_charges: ServiceChargeData[]
+
+  // Step 4: Discounts, Comps & Promos
+  discount_rules: DiscountRuleData[]
+
+  // Step 5: Goals & Priorities
   challenges: string[]
   daily_covers_range: string | null
   team_size_range: string | null
   primary_goal: string | null
 
-  // Step 5: Current Tools & Service Model
+  // Step 6: Current Tools & Service Model
   current_pos: string | null
   current_scheduling: string | null
   current_reservations: string | null
   service_modes: string[]
   default_guest_flow: string | null
 
-  // Step 6: Hours
+  // Step 7: Sections & Areas
+  sections: string[]
+
+  // Step 8: Hours
   operating_hours: OperatingHoursData[]
   same_hours_every_day: boolean
 
-  // Step 7: Capacity
+  // Step 9: Capacity
   seating_capacity: number | null
   table_count: number | null
-  sections: string[]
 
-  // Step 8: Menu
+  // Step 10: Menu
   menu_import_method: 'skip' | 'manual' | 'upload' | 'toast' | 'scrape' | 'template'
 
-  // Step 11: Team
+  // Step 13: Team
   team_setup_method: 'skip' | 'invite' | 'sevenshifts'
   invites: TeamInvite[]
+}
+
+export interface TaxRateData {
+  id?: string | null
+  name: string
+  rate: string
+  applies_to: 'all' | 'food' | 'alcohol' | 'non_alcohol' | 'merchandise'
+  is_default: boolean
+  is_inclusive: boolean
+  is_active?: boolean
+}
+
+export interface ServiceChargeData {
+  id?: string | null
+  name: string
+  charge_type: 'percentage' | 'fixed'
+  amount: string
+  applies_to: 'all' | 'dine_in' | 'bar' | 'takeout' | 'delivery' | 'catering' | 'large_party'
+  taxable: boolean
+  auto_apply: boolean
+  is_tip: boolean
+  is_active?: boolean
+}
+
+export interface DiscountRuleData {
+  id?: string | null
+  name: string
+  discount_type: 'discount' | 'comp' | 'promo' | 'employee_meal' | 'service_recovery'
+  applies_to: 'item' | 'check' | 'both'
+  value_type: 'percent' | 'fixed' | 'open'
+  default_value: string
+  editable_by_employee: boolean
+  min_value: string
+  max_value: string
+  allowed_roles: string[]
+  requires_manager_approval: boolean
+  tax_behavior: 'reduce_taxable_amount' | 'apply_after_tax' | 'no_tax_impact'
+  reason_required: boolean
+  service_modes: string[]
+  days_of_week: number[]
+  is_active?: boolean
 }
 
 export interface OperatingHoursData {
@@ -150,6 +201,19 @@ const INITIAL_DATA: OnboardingData = {
   credit_card_tip_payout: 'payroll',
   refund_approval_threshold: '',
 
+  tax_rates: [
+    {
+      name: 'Sales Tax',
+      rate: '',
+      applies_to: 'all',
+      is_default: true,
+      is_inclusive: false,
+      is_active: true,
+    },
+  ],
+  service_charges: [],
+  discount_rules: [],
+
   challenges: [],
   daily_covers_range: null,
   team_size_range: null,
@@ -166,7 +230,7 @@ const INITIAL_DATA: OnboardingData = {
 
   seating_capacity: null,
   table_count: null,
-  sections: ['Main Floor', 'Bar', 'Patio'],
+  sections: ['Table', 'Main Floor', 'Bar', 'Patio'],
 
   menu_import_method: 'skip',
 
@@ -174,7 +238,7 @@ const INITIAL_DATA: OnboardingData = {
   invites: [],
 }
 
-const ONBOARDING_MAX_STEP = 11
+const ONBOARDING_MAX_STEP = 14
 const REQUEST_TIMEOUT_MS = 20000
 const ONBOARDING_DRAFT_VERSION = 1
 
@@ -199,6 +263,15 @@ const PAYOUT_SCHEDULES: OnboardingData['payout_schedule'][] = ['daily', 'weekly'
 const REFUND_FUNDING_SOURCES: OnboardingData['refund_funding_source'][] = ['processor_balance', 'bank_account']
 const BATCH_CLOSE_MODES: OnboardingData['batch_close_mode'][] = ['automatic', 'manual']
 const CREDIT_CARD_TIP_PAYOUTS: OnboardingData['credit_card_tip_payout'][] = ['nightly', 'payroll']
+const TAX_APPLIES_TO: TaxRateData['applies_to'][] = ['all', 'food', 'alcohol', 'non_alcohol', 'merchandise']
+const CHARGE_TYPES: ServiceChargeData['charge_type'][] = ['percentage', 'fixed']
+const CHARGE_APPLIES_TO: ServiceChargeData['applies_to'][] = ['all', 'dine_in', 'bar', 'takeout', 'delivery', 'catering', 'large_party']
+const DISCOUNT_TYPES: DiscountRuleData['discount_type'][] = ['discount', 'comp', 'promo', 'employee_meal', 'service_recovery']
+const DISCOUNT_APPLIES_TO: DiscountRuleData['applies_to'][] = ['item', 'check', 'both']
+const DISCOUNT_VALUE_TYPES: DiscountRuleData['value_type'][] = ['percent', 'fixed', 'open']
+const DISCOUNT_TAX_BEHAVIORS: DiscountRuleData['tax_behavior'][] = ['reduce_taxable_amount', 'apply_after_tax', 'no_tax_impact']
+const DISCOUNT_ROLES = ['owner', 'manager', 'server', 'bartender', 'cashier', 'host', 'runner', 'busser']
+const DISCOUNT_SERVICE_MODES = ['dine_in', 'bar', 'counter_service', 'takeout', 'delivery', 'catering']
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -215,12 +288,32 @@ const asNullableString = (value: unknown): string | null => {
 const asNullableNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null
 
+const asStringNumber = (value: unknown): string => {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  if (typeof value === 'string') return value.replace(/[^\d.]/g, '').slice(0, 10)
+  return ''
+}
+
 const asStringArray = (value: unknown): string[] => {
   if (!Array.isArray(value)) return []
   return value
     .filter((item): item is string => typeof item === 'string')
     .map(item => item.trim())
     .filter(Boolean)
+}
+
+const normalizeSectionNames = (sections: string[]): string[] => {
+  const normalized: string[] = []
+  const seen = new Set<string>()
+  for (const raw of ['Table', ...sections]) {
+    const name = raw.trim().replace(/\s+/g, ' ')
+    if (!name) continue
+    const key = name.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    normalized.push(key === 'table' ? 'Table' : name)
+  }
+  return normalized.length > 0 ? normalized : ['Table']
 }
 
 const asEnum = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
@@ -281,9 +374,139 @@ const normalizeOperatingHours = (value: unknown): OperatingHoursData[] => {
   return seeded
 }
 
+const normalizeTaxRates = (value: unknown): TaxRateData[] => {
+  const rows = Array.isArray(value) ? value : []
+  const normalized = rows
+    .filter(isRecord)
+    .map(row => ({
+      id: asNullableString(row.id),
+      name: asString(row.name).trim(),
+      rate: asStringNumber(row.rate),
+      applies_to: asEnum(row.applies_to, TAX_APPLIES_TO, 'all'),
+      is_default: typeof row.is_default === 'boolean' ? row.is_default : false,
+      is_inclusive: typeof row.is_inclusive === 'boolean' ? row.is_inclusive : false,
+      is_active: typeof row.is_active === 'boolean' ? row.is_active : true,
+    }))
+    .filter(row => row.name && row.is_active !== false)
+
+  if (normalized.length === 0) {
+    return INITIAL_DATA.tax_rates.map(row => ({ ...row }))
+  }
+
+  const hasDefault = normalized.some(row => row.is_default)
+  return normalized.map((row, index) => ({
+    ...row,
+    is_default: row.is_default || (!hasDefault && index === 0),
+  }))
+}
+
+const normalizeServiceCharges = (value: unknown): ServiceChargeData[] => {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter(isRecord)
+    .map(row => ({
+      id: asNullableString(row.id),
+      name: asString(row.name).trim(),
+      charge_type: asEnum(row.charge_type, CHARGE_TYPES, 'percentage'),
+      amount: asStringNumber(row.amount),
+      applies_to: asEnum(row.applies_to, CHARGE_APPLIES_TO, 'all'),
+      taxable: typeof row.taxable === 'boolean' ? row.taxable : true,
+      auto_apply: typeof row.auto_apply === 'boolean' ? row.auto_apply : false,
+      is_tip: typeof row.is_tip === 'boolean' ? row.is_tip : false,
+      is_active: typeof row.is_active === 'boolean' ? row.is_active : true,
+    }))
+    .filter(row => row.name && row.is_active !== false)
+}
+
+const normalizeDiscountRoles = (value: unknown): string[] => {
+  const roles = asStringArray(value).map(role => role.toLowerCase()).filter(role => DISCOUNT_ROLES.includes(role))
+  return Array.from(new Set(roles.length > 0 ? roles : ['owner', 'manager']))
+}
+
+const normalizeDiscountServiceModes = (value: unknown): string[] =>
+  Array.from(new Set(asStringArray(value).map(mode => mode.toLowerCase()).filter(mode => DISCOUNT_SERVICE_MODES.includes(mode))))
+
+const normalizeDaysOfWeek = (value: unknown): number[] => {
+  if (!Array.isArray(value)) return []
+  return Array.from(new Set(
+    value
+      .map(day => Number(day))
+      .filter(day => Number.isInteger(day) && day >= 0 && day <= 6)
+  )).sort((a, b) => a - b)
+}
+
+const normalizeDiscountRules = (value: unknown): DiscountRuleData[] => {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter(isRecord)
+    .map(row => ({
+      id: asNullableString(row.id),
+      name: asString(row.name).trim(),
+      discount_type: asEnum(row.discount_type, DISCOUNT_TYPES, 'discount'),
+      applies_to: asEnum(row.applies_to, DISCOUNT_APPLIES_TO, 'check'),
+      value_type: asEnum(row.value_type, DISCOUNT_VALUE_TYPES, 'percent'),
+      default_value: asStringNumber(row.default_value),
+      editable_by_employee: typeof row.editable_by_employee === 'boolean' ? row.editable_by_employee : false,
+      min_value: asStringNumber(row.min_value),
+      max_value: asStringNumber(row.max_value),
+      allowed_roles: normalizeDiscountRoles(row.allowed_roles),
+      requires_manager_approval: typeof row.requires_manager_approval === 'boolean' ? row.requires_manager_approval : false,
+      tax_behavior: asEnum(row.tax_behavior, DISCOUNT_TAX_BEHAVIORS, 'reduce_taxable_amount'),
+      reason_required: typeof row.reason_required === 'boolean' ? row.reason_required : false,
+      service_modes: normalizeDiscountServiceModes(row.service_modes),
+      days_of_week: normalizeDaysOfWeek(row.days_of_week),
+      is_active: typeof row.is_active === 'boolean' ? row.is_active : true,
+    }))
+    .filter(row => row.name && row.is_active !== false)
+}
+
+const taxesChargesToPayload = (data: OnboardingData) => ({
+  tax_rates: normalizeTaxRates(data.tax_rates).map(row => ({
+    id: row.id || undefined,
+    name: row.name,
+    rate: row.rate === '' ? 0 : Number(row.rate),
+    applies_to: row.applies_to,
+    is_default: row.is_default,
+    is_inclusive: row.is_inclusive,
+    is_active: true,
+  })),
+  service_charges: normalizeServiceCharges(data.service_charges).map(row => ({
+    id: row.id || undefined,
+    name: row.name,
+    charge_type: row.charge_type,
+    amount: row.amount === '' ? 0 : Number(row.amount),
+    applies_to: row.applies_to,
+    taxable: row.taxable,
+    auto_apply: row.auto_apply,
+    is_tip: row.is_tip,
+    is_active: true,
+  })),
+})
+
+const discountRulesToPayload = (data: OnboardingData) => ({
+  discount_rules: normalizeDiscountRules(data.discount_rules).map(row => ({
+    id: row.id || undefined,
+    name: row.name,
+    discount_type: row.discount_type,
+    applies_to: row.applies_to,
+    value_type: row.value_type,
+    default_value: row.default_value === '' ? null : Number(row.default_value),
+    editable_by_employee: row.editable_by_employee,
+    min_value: row.editable_by_employee && row.min_value !== '' ? Number(row.min_value) : null,
+    max_value: row.editable_by_employee && row.max_value !== '' ? Number(row.max_value) : null,
+    allowed_roles: row.allowed_roles,
+    requires_manager_approval: row.requires_manager_approval,
+    tax_behavior: row.tax_behavior,
+    reason_required: row.reason_required,
+    service_modes: row.service_modes,
+    days_of_week: row.days_of_week,
+    is_active: true,
+  })),
+})
+
 const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): OnboardingData => {
   const input = value ?? {}
-  const sections = asStringArray(input.sections)
+  const sections = normalizeSectionNames(asStringArray(input.sections))
 
   return {
     name: asString(input.name),
@@ -315,6 +538,9 @@ const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): On
     batch_close_time: asString(input.batch_close_time, INITIAL_DATA.batch_close_time),
     credit_card_tip_payout: asEnum(input.credit_card_tip_payout, CREDIT_CARD_TIP_PAYOUTS, INITIAL_DATA.credit_card_tip_payout),
     refund_approval_threshold: asString(input.refund_approval_threshold),
+    tax_rates: normalizeTaxRates(input.tax_rates),
+    service_charges: normalizeServiceCharges(input.service_charges),
+    discount_rules: normalizeDiscountRules(input.discount_rules),
     challenges: asStringArray(input.challenges),
     daily_covers_range: asNullableString(input.daily_covers_range),
     team_size_range: asNullableString(input.team_size_range),
@@ -333,7 +559,7 @@ const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): On
         : INITIAL_DATA.same_hours_every_day,
     seating_capacity: asNullableNumber(input.seating_capacity),
     table_count: asNullableNumber(input.table_count),
-    sections: sections.length > 0 ? sections : INITIAL_DATA.sections,
+    sections,
     menu_import_method: asMenuImportMethod(input.menu_import_method),
     team_setup_method: asTeamSetupMethod(input.team_setup_method),
     invites: asInvites(input.invites),
@@ -422,6 +648,37 @@ const parseConfig = (value: unknown): Partial<OnboardingData> => {
     team_setup_method: asTeamSetupMethod(value.team_setup_method),
     invites: asInvites(value.invites),
   }
+}
+
+const getApiHeaders = async (): Promise<Headers> => {
+  const { data: { session } } = await supabase.auth.getSession()
+  const headers = new Headers({ 'Content-Type': 'application/json' })
+  if (session?.access_token) {
+    headers.set('Authorization', `Bearer ${session.access_token}`)
+  }
+  return headers
+}
+
+const fetchTaxesCharges = async (restaurantId: string) => {
+  const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/taxes-charges`, {
+    headers: await getApiHeaders(),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(asString(body.detail) || asString(body.message) || `Loading taxes and charges failed (${response.status})`)
+  }
+  return response.json()
+}
+
+const fetchDiscountRules = async (restaurantId: string) => {
+  const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/discount-rules`, {
+    headers: await getApiHeaders(),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(asString(body.detail) || asString(body.message) || `Loading discounts failed (${response.status})`)
+  }
+  return response.json()
 }
 
 const slugify = (name: string): string =>
@@ -543,7 +800,7 @@ export function useOnboarding() {
   }, [])
 
   const hydrateFromRestaurant = useCallback(async (restaurant: Restaurant): Promise<Partial<OnboardingData>> => {
-    const [hoursResult, sectionsResult] = await Promise.all([
+    const [hoursResult, sectionsResult, taxesChargesResult, discountRulesResult] = await Promise.all([
       runWithTimeout(
         () =>
           supabase
@@ -561,6 +818,20 @@ export function useOnboarding() {
             .eq('is_active', true),
         'Loading sections timed out.'
       ),
+      runWithTimeout(
+        () => fetchTaxesCharges(restaurant.id),
+        'Loading taxes and charges timed out.'
+      ).catch(err => {
+        console.warn('[Onboarding] Could not hydrate taxes and charges:', err)
+        return null
+      }),
+      runWithTimeout(
+        () => fetchDiscountRules(restaurant.id),
+        'Loading discounts timed out.'
+      ).catch(err => {
+        console.warn('[Onboarding] Could not hydrate discounts:', err)
+        return null
+      }),
     ])
 
     if (hoursResult.error) {
@@ -570,7 +841,7 @@ export function useOnboarding() {
       console.warn('[Onboarding] Could not hydrate sections:', sectionsResult.error.message)
     }
 
-    const sectionNames = asStringArray((sectionsResult.data || []).map(section => section.name))
+    const sectionNames = normalizeSectionNames(asStringArray((sectionsResult.data || []).map(section => section.name)))
     const configData = parseConfig(restaurant.config)
 
     return {
@@ -588,6 +859,9 @@ export function useOnboarding() {
       table_count: restaurant.table_count,
       operating_hours: normalizeOperatingHours(hoursResult.data),
       sections: sectionNames.length > 0 ? sectionNames : INITIAL_DATA.sections,
+      tax_rates: normalizeTaxRates(isRecord(taxesChargesResult) ? taxesChargesResult.tax_rates : []),
+      service_charges: normalizeServiceCharges(isRecord(taxesChargesResult) ? taxesChargesResult.service_charges : []),
+      discount_rules: normalizeDiscountRules(isRecord(discountRulesResult) ? discountRulesResult.discount_rules : []),
       ...configData,
     }
   }, [runWithTimeout])
@@ -1018,6 +1292,101 @@ export function useOnboarding() {
     }
   }, [data, getActiveRestaurantId, fetchRestaurantConfig, onboardingProgressPatch, runWithTimeout])
 
+  const saveTaxesCharges = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const activeRestaurantId = getActiveRestaurantId()
+      const response = await runWithTimeout(
+        async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/taxes-charges`, {
+          method: 'PUT',
+          headers: await getApiHeaders(),
+          body: JSON.stringify(taxesChargesToPayload(data)),
+        }),
+        'Saving taxes and charges timed out. Please retry.'
+      )
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(asString(body.detail) || asString(body.message) || `Saving taxes and charges failed (${response.status})`)
+      }
+
+      const saved = await response.json().catch(() => ({}))
+      setData(prev => mergeOnboardingData(prev, {
+        tax_rates: normalizeTaxRates(isRecord(saved) ? saved.tax_rates : []),
+        service_charges: normalizeServiceCharges(isRecord(saved) ? saved.service_charges : []),
+      }))
+
+      const { error: stepError } = isSetupEditor
+        ? { error: null }
+        : await runWithTimeout(
+            () =>
+              supabase
+                .from('restaurants')
+                .update({ onboarding_step: 4 })
+                .eq('id', activeRestaurantId),
+            'Updating onboarding progress timed out. Please retry.'
+          )
+
+      if (stepError) throw stepError
+      setRestaurantId(activeRestaurantId)
+    } catch (err) {
+      const message = toErrorMessage(err, 'Failed to save taxes and charges')
+      setError(message)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [data, getActiveRestaurantId, isSetupEditor, runWithTimeout])
+
+  const saveDiscountRules = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const activeRestaurantId = getActiveRestaurantId()
+      const response = await runWithTimeout(
+        async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/discount-rules`, {
+          method: 'PUT',
+          headers: await getApiHeaders(),
+          body: JSON.stringify(discountRulesToPayload(data)),
+        }),
+        'Saving discounts timed out. Please retry.'
+      )
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(asString(body.detail) || asString(body.message) || `Saving discounts failed (${response.status})`)
+      }
+
+      const saved = await response.json().catch(() => ({}))
+      setData(prev => mergeOnboardingData(prev, {
+        discount_rules: normalizeDiscountRules(isRecord(saved) ? saved.discount_rules : []),
+      }))
+
+      const { error: stepError } = isSetupEditor
+        ? { error: null }
+        : await runWithTimeout(
+            () =>
+              supabase
+                .from('restaurants')
+                .update({ onboarding_step: 5 })
+                .eq('id', activeRestaurantId),
+            'Updating onboarding progress timed out. Please retry.'
+          )
+
+      if (stepError) throw stepError
+      setRestaurantId(activeRestaurantId)
+    } catch (err) {
+      const message = toErrorMessage(err, 'Failed to save discounts')
+      setError(message)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [data, getActiveRestaurantId, isSetupEditor, runWithTimeout])
+
   // Save goals & priorities
   const saveGoals = useCallback(async () => {
     setIsLoading(true)
@@ -1039,7 +1408,7 @@ export function useOnboarding() {
                 team_size_range: data.team_size_range,
                 primary_goal: data.primary_goal,
               },
-              ...onboardingProgressPatch(4),
+              ...onboardingProgressPatch(6),
             })
             .eq('id', activeRestaurantId),
         'Saving goals timed out. Please retry.'
@@ -1079,7 +1448,7 @@ export function useOnboarding() {
                 service_modes: data.service_modes,
                 default_guest_flow: data.default_guest_flow,
               },
-              ...onboardingProgressPatch(6),
+              ...onboardingProgressPatch(8),
             })
             .eq('id', activeRestaurantId),
         'Saving current tools timed out. Please retry.'
@@ -1096,6 +1465,53 @@ export function useOnboarding() {
       setIsLoading(false)
     }
   }, [data, getActiveRestaurantId, fetchRestaurantConfig, onboardingProgressPatch, runWithTimeout])
+
+  const saveSections = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const activeRestaurantId = getActiveRestaurantId()
+      const sectionNames = normalizeSectionNames(data.sections)
+      const response = await runWithTimeout(
+        async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/sections`, {
+          method: 'PUT',
+          headers: await getApiHeaders(),
+          body: JSON.stringify({ sections: sectionNames }),
+        }),
+        'Saving restaurant sections timed out. Please retry.'
+      )
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(asString(body.detail) || asString(body.message) || `Saving sections failed (${response.status})`)
+      }
+
+      const saved = await response.json().catch(() => [])
+      const savedNames = normalizeSectionNames(asStringArray((saved || []).map((section: { name?: unknown }) => section.name)))
+      setData(prev => mergeOnboardingData(prev, { sections: savedNames }))
+
+      const { error: stepError } = isSetupEditor
+        ? { error: null }
+        : await runWithTimeout(
+            () =>
+              supabase
+                .from('restaurants')
+                .update({ onboarding_step: 9 })
+                .eq('id', activeRestaurantId),
+            'Updating onboarding progress timed out. Please retry.'
+          )
+
+      if (stepError) throw stepError
+      setRestaurantId(activeRestaurantId)
+    } catch (err) {
+      const message = toErrorMessage(err, 'Failed to save restaurant sections')
+      setError(message)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [data.sections, getActiveRestaurantId, isSetupEditor, runWithTimeout])
 
   // Save operating hours (after step 4)
   const saveOperatingHours = useCallback(async () => {
@@ -1142,7 +1558,7 @@ export function useOnboarding() {
             () =>
               supabase
                 .from('restaurants')
-                .update({ onboarding_step: 7 })
+                .update({ onboarding_step: 10 })
                 .eq('id', activeRestaurantId),
             'Updating onboarding progress timed out. Please retry.'
           )
@@ -1175,54 +1591,13 @@ export function useOnboarding() {
             .update({
               seating_capacity: data.seating_capacity,
               table_count: data.table_count,
-              ...onboardingProgressPatch(8),
+              ...onboardingProgressPatch(11),
             })
             .eq('id', activeRestaurantId),
         'Saving capacity settings timed out. Please retry.'
       )
 
       if (updateError) throw updateError
-
-      // Replace sections to avoid duplicates on retries/resume.
-      const { error: deleteSectionsError } = await runWithTimeout(
-        () =>
-          supabase
-            .from('sections')
-            .delete()
-            .eq('restaurant_id', activeRestaurantId),
-        'Refreshing sections timed out. Please retry.'
-      )
-
-      if (deleteSectionsError) throw deleteSectionsError
-
-      // Create sections
-      const uniqueSections = Array.from(
-        new Set(
-          data.sections
-            .map(section => section.trim())
-            .filter(Boolean)
-        )
-      )
-
-      if (uniqueSections.length > 0) {
-        const { error: sectionsError } = await runWithTimeout(
-          () =>
-            supabase
-              .from('sections')
-              .insert(
-                uniqueSections.map(name => ({
-                  restaurant_id: activeRestaurantId,
-                  name,
-                  is_active: true,
-                }))
-              ),
-          'Saving sections timed out. Please retry.'
-        )
-
-        if (sectionsError) {
-          console.warn('[Onboarding] Could not create sections:', sectionsError.message)
-        }
-      }
 
       setRestaurantId(activeRestaurantId)
     } catch (err) {
@@ -1232,7 +1607,7 @@ export function useOnboarding() {
     } finally {
       setIsLoading(false)
     }
-  }, [data, getActiveRestaurantId, onboardingProgressPatch, runWithTimeout])
+  }, [data.seating_capacity, data.table_count, getActiveRestaurantId, onboardingProgressPatch, runWithTimeout])
 
   // Save menu step progress (after step 6)
   const saveMenuProgress = useCallback(async () => {
@@ -1252,7 +1627,7 @@ export function useOnboarding() {
                 ...existingConfig,
                 menu_import_method: data.menu_import_method,
               },
-              ...onboardingProgressPatch(9),
+              ...onboardingProgressPatch(12),
             })
             .eq('id', activeRestaurantId),
         'Saving menu setup timed out. Please retry.'
@@ -1404,8 +1779,11 @@ export function useOnboarding() {
     createRestaurant,
     saveLegal,
     savePayments,
+    saveTaxesCharges,
+    saveDiscountRules,
     saveGoals,
     saveTechStack,
+    saveSections,
     saveOperatingHours,
     saveCapacity,
     saveMenuProgress,

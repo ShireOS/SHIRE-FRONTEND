@@ -2,12 +2,13 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { supabase } from '../../shared/lib/supabase'
 import { API_CONFIG } from '../../shared/api/config'
 import { FloorPlanCanvas } from './FloorPlanCanvas'
-import type { FloorPlanTable } from './FloorPlanCanvas'
+import type { FloorPlanSection, FloorPlanTable } from './FloorPlanCanvas'
 
 interface FloorPlanEditorProps {
   restaurantId: string
   mode: 'upload' | 'manual'
   initialTables?: FloorPlanTable[]
+  initialSections?: FloorPlanSection[]
   onBack: () => void
   onSave: (tables: FloorPlanTable[]) => void
 }
@@ -22,8 +23,9 @@ const getToken = async (): Promise<string> => {
 const baseUrl = (restaurantId: string) =>
   `${API_CONFIG.baseUrl}/restaurants/${restaurantId}/floor-plan`
 
-export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onSave }: FloorPlanEditorProps) {
+export function FloorPlanEditor({ restaurantId, mode, initialTables, initialSections = [], onBack, onSave }: FloorPlanEditorProps) {
   const [tables, setTables] = useState<FloorPlanTable[]>(initialTables ?? [])
+  const [sections, setSections] = useState<FloorPlanSection[]>(initialSections)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [phase, setPhase] = useState<Phase>(mode === 'manual' ? 'editing' : 'idle')
   const [error, setError] = useState<string | null>(null)
@@ -35,6 +37,37 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
     setIsDirty(true)
     setTables(next)
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadSections = async () => {
+      try {
+        const token = await getToken()
+        const res = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/sections`, {
+          headers: { Authorization: token },
+        })
+        if (!res.ok) return
+        const rows = await res.json()
+        if (!cancelled && Array.isArray(rows)) {
+          setSections(rows.map((row: any) => ({ id: row.id, name: row.name })).filter((row: FloorPlanSection) => row.id && row.name))
+        }
+      } catch {
+        // The save endpoint will still default missing sections to Table.
+      }
+    }
+    void loadSections()
+    return () => {
+      cancelled = true
+    }
+  }, [restaurantId])
+
+  const defaultSection = sections.find(section => section.name.toLowerCase() === 'table') ?? sections[0] ?? null
+
+  const withDefaultSection = useCallback((table: FloorPlanTable): FloorPlanTable => ({
+    ...table,
+    section_id: table.section_id || defaultSection?.id || null,
+    section_name: table.section_name || defaultSection?.name || 'Table',
+  }), [defaultSection])
 
   // Handle file upload + analyze
   const processFile = useCallback(async (file: File) => {
@@ -91,7 +124,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
       const analysis = await analyzeRes.json()
 
       // Map API response to FloorPlanTable
-      const detected: FloorPlanTable[] = (analysis.tables || []).map((t: any) => ({
+      const detected: FloorPlanTable[] = (analysis.tables || []).map((t: any) => withDefaultSection({
         id: t.id || crypto.randomUUID(),
         center_x: t.position?.center_x ?? 50,
         center_y: t.position?.center_y ?? 50,
@@ -99,6 +132,8 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
         height: t.position?.height ?? 10,
         capacity: t.capacity ?? 4,
         shape: 'rectangular' as const,
+        section_id: t.section_id ?? null,
+        section_name: t.section_name ?? null,
         confidence: t.confidence,
         notes: t.notes,
       }))
@@ -109,7 +144,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setPhase('idle')
     }
-  }, [restaurantId, updateTables])
+  }, [restaurantId, updateTables, withDefaultSection])
 
   // Drag-and-drop on the upload zone
   useEffect(() => {
@@ -146,11 +181,13 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
         body: JSON.stringify({
           image_url: imageUrl,
           // Transform internal flat format → API nested position format
-          tables: tables.map(t => ({
+          tables: tables.map(t => withDefaultSection(t)).map(t => ({
             id: t.id,
             position: { center_x: t.center_x, center_y: t.center_y, width: t.width, height: t.height },
             shape: t.shape,
             capacity: t.capacity,
+            section_id: t.section_id,
+            section_name: t.section_name,
             confidence: t.confidence,
             notes: t.notes,
           })),
@@ -163,7 +200,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
       }
 
       setIsDirty(false)
-      onSave(tables)
+      onSave(tables.map(t => withDefaultSection(t)))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
       setPhase('editing')
@@ -172,7 +209,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
 
   const addTable = () => {
     const offset = (tables.length % 5) * 3
-    const newTable: FloorPlanTable = {
+    const newTable: FloorPlanTable = withDefaultSection({
       id: crypto.randomUUID(),
       center_x: 30 + offset,
       center_y: 30 + offset,
@@ -180,7 +217,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
       height: 10,
       capacity: 4,
       shape: 'rectangular',
-    }
+    })
     updateTables(prev => [...prev, newTable])
   }
 
@@ -274,6 +311,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
           <FloorPlanCanvas
             tables={tables}
             onTablesChange={updateTables}
+            sections={sections}
             mode="manual"
           />
 
@@ -304,7 +342,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, onBack, onS
             )}
 
             <p className="text-xs text-[rgb(var(--text-tertiary))]">
-              {tables.length} table{tables.length !== 1 ? 's' : ''} · drag to move · corner handles to resize · click to edit seats
+              {tables.length} table{tables.length !== 1 ? 's' : ''} · drag to move · corner handles to resize · click to edit seats and area
             </p>
           </div>
         </div>

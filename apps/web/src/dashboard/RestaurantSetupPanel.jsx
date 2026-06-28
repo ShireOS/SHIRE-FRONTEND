@@ -11,6 +11,9 @@ const SETUP_TABS = [
   { id: 'basics', label: 'Basics' },
   { id: 'legal', label: 'Legal' },
   { id: 'payments', label: 'Payments' },
+  { id: 'taxes_charges', label: 'Taxes & Charges' },
+  { id: 'discounts', label: 'Discounts' },
+  { id: 'sections', label: 'Sections' },
   { id: 'hours', label: 'Hours' },
   { id: 'capacity', label: 'Capacity / Floor Plan' },
   { id: 'menu', label: 'Menu' },
@@ -81,6 +84,60 @@ const GUEST_FLOW_OPTIONS = [
   { id: 'order_first', label: 'Order first' },
   { id: 'tab_first', label: 'Tab first' },
   { id: 'counter_pay', label: 'Counter pay' },
+]
+
+const TAX_APPLIES_TO_OPTIONS = [
+  { value: 'all', label: 'All sales' },
+  { value: 'food', label: 'Food' },
+  { value: 'alcohol', label: 'Alcohol' },
+  { value: 'non_alcohol', label: 'Non-alcohol' },
+  { value: 'merchandise', label: 'Merchandise' },
+]
+
+const CHARGE_APPLIES_TO_OPTIONS = [
+  { value: 'all', label: 'All orders' },
+  { value: 'dine_in', label: 'Dine-in' },
+  { value: 'bar', label: 'Bar' },
+  { value: 'takeout', label: 'Takeout' },
+  { value: 'delivery', label: 'Delivery' },
+  { value: 'catering', label: 'Catering' },
+  { value: 'large_party', label: 'Large party' },
+]
+
+const DISCOUNT_TYPE_OPTIONS = [
+  { value: 'discount', label: 'Discount' },
+  { value: 'comp', label: 'Comp' },
+  { value: 'promo', label: 'Promo' },
+  { value: 'employee_meal', label: 'Employee meal' },
+  { value: 'service_recovery', label: 'Service recovery' },
+]
+
+const DISCOUNT_APPLIES_TO_OPTIONS = [
+  { value: 'item', label: 'Item' },
+  { value: 'check', label: 'Check' },
+  { value: 'both', label: 'Both' },
+]
+
+const DISCOUNT_VALUE_TYPE_OPTIONS = [
+  { value: 'percent', label: 'Percent' },
+  { value: 'fixed', label: 'Fixed $' },
+  { value: 'open', label: 'Open' },
+]
+
+const DISCOUNT_TAX_BEHAVIOR_OPTIONS = [
+  { value: 'reduce_taxable_amount', label: 'Reduce taxable amount' },
+  { value: 'apply_after_tax', label: 'Apply after tax' },
+  { value: 'no_tax_impact', label: 'No tax impact' },
+]
+
+const DISCOUNT_ROLE_OPTIONS = ['owner', 'manager', 'server', 'bartender', 'cashier', 'host', 'runner', 'busser']
+const DISCOUNT_SERVICE_MODE_OPTIONS = [
+  { value: 'dine_in', label: 'Dine-in' },
+  { value: 'bar', label: 'Bar' },
+  { value: 'counter_service', label: 'Counter' },
+  { value: 'takeout', label: 'Takeout' },
+  { value: 'delivery', label: 'Delivery' },
+  { value: 'catering', label: 'Catering' },
 ]
 
 const initialLegal = (restaurant) => {
@@ -542,9 +599,178 @@ function mapFloorPlanTables(fp) {
     height: table.position?.height ?? 10,
     capacity: table.capacity ?? 4,
     shape: table.shape || 'rectangular',
+    section_id: table.section_id ?? null,
+    section_name: table.section_name ?? null,
     confidence: table.confidence,
     notes: table.notes,
   })))
+}
+
+function normalizeSectionNames(sections) {
+  const seen = new Set()
+  const out = []
+  ;['Table', ...(Array.isArray(sections) ? sections : [])].forEach(raw => {
+    const name = String(raw || '').trim().replace(/\s+/g, ' ')
+    if (!name) return
+    const key = name.toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(key === 'table' ? 'Table' : name)
+  })
+  return out.length > 0 ? out : ['Table']
+}
+
+function sanitizeNumber(value) {
+  return String(value ?? '').replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1').slice(0, 10)
+}
+
+function defaultTaxRate() {
+  return {
+    name: 'Sales Tax',
+    rate: '',
+    applies_to: 'all',
+    is_default: true,
+    is_inclusive: false,
+    is_active: true,
+  }
+}
+
+function defaultServiceCharge(index = 0) {
+  return {
+    name: index === 0 ? 'Service Charge' : `Service Charge ${index + 1}`,
+    charge_type: 'percentage',
+    amount: '',
+    applies_to: 'all',
+    taxable: true,
+    auto_apply: false,
+    is_tip: false,
+    is_active: true,
+  }
+}
+
+function defaultDiscountRule(index = 0) {
+  return {
+    name: index === 0 ? 'Manager Comp' : `Discount ${index + 1}`,
+    discount_type: 'discount',
+    applies_to: 'check',
+    value_type: 'percent',
+    default_value: '',
+    editable_by_employee: false,
+    min_value: '',
+    max_value: '',
+    allowed_roles: ['owner', 'manager'],
+    requires_manager_approval: false,
+    tax_behavior: 'reduce_taxable_amount',
+    reason_required: false,
+    service_modes: [],
+    days_of_week: [],
+    is_active: true,
+  }
+}
+
+function normalizeTaxRates(rows) {
+  const normalized = (Array.isArray(rows) ? rows : [])
+    .map(row => ({
+      id: row?.id || null,
+      name: String(row?.name || '').trim(),
+      rate: row?.rate == null ? '' : sanitizeNumber(row.rate),
+      applies_to: TAX_APPLIES_TO_OPTIONS.some(option => option.value === row?.applies_to) ? row.applies_to : 'all',
+      is_default: Boolean(row?.is_default),
+      is_inclusive: Boolean(row?.is_inclusive),
+      is_active: row?.is_active !== false,
+    }))
+    .filter(row => row.name && row.is_active)
+  if (normalized.length === 0) return [defaultTaxRate()]
+  const hasDefault = normalized.some(row => row.is_default)
+  return normalized.map((row, index) => ({ ...row, is_default: row.is_default || (!hasDefault && index === 0) }))
+}
+
+function normalizeServiceCharges(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map(row => ({
+      id: row?.id || null,
+      name: String(row?.name || '').trim(),
+      charge_type: row?.charge_type === 'fixed' ? 'fixed' : 'percentage',
+      amount: row?.amount == null ? '' : sanitizeNumber(row.amount),
+      applies_to: CHARGE_APPLIES_TO_OPTIONS.some(option => option.value === row?.applies_to) ? row.applies_to : 'all',
+      taxable: row?.taxable !== false,
+      auto_apply: Boolean(row?.auto_apply),
+      is_tip: Boolean(row?.is_tip),
+      is_active: row?.is_active !== false,
+    }))
+    .filter(row => row.name && row.is_active)
+}
+
+function normalizeDiscountRules(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map(row => ({
+      id: row?.id || null,
+      name: String(row?.name || '').trim(),
+      discount_type: DISCOUNT_TYPE_OPTIONS.some(option => option.value === row?.discount_type) ? row.discount_type : 'discount',
+      applies_to: DISCOUNT_APPLIES_TO_OPTIONS.some(option => option.value === row?.applies_to) ? row.applies_to : 'check',
+      value_type: DISCOUNT_VALUE_TYPE_OPTIONS.some(option => option.value === row?.value_type) ? row.value_type : 'percent',
+      default_value: row?.default_value == null ? '' : sanitizeNumber(row.default_value),
+      editable_by_employee: Boolean(row?.editable_by_employee),
+      min_value: row?.min_value == null ? '' : sanitizeNumber(row.min_value),
+      max_value: row?.max_value == null ? '' : sanitizeNumber(row.max_value),
+      allowed_roles: Array.from(new Set((Array.isArray(row?.allowed_roles) ? row.allowed_roles : ['owner', 'manager']).map(String).filter(role => DISCOUNT_ROLE_OPTIONS.includes(role)))),
+      requires_manager_approval: Boolean(row?.requires_manager_approval),
+      tax_behavior: DISCOUNT_TAX_BEHAVIOR_OPTIONS.some(option => option.value === row?.tax_behavior) ? row.tax_behavior : 'reduce_taxable_amount',
+      reason_required: Boolean(row?.reason_required),
+      service_modes: Array.from(new Set((Array.isArray(row?.service_modes) ? row.service_modes : []).map(String).filter(mode => DISCOUNT_SERVICE_MODE_OPTIONS.some(option => option.value === mode)))),
+      days_of_week: Array.from(new Set((Array.isArray(row?.days_of_week) ? row.days_of_week : []).map(Number).filter(day => Number.isInteger(day) && day >= 0 && day <= 6))).sort((a, b) => a - b),
+      is_active: row?.is_active !== false,
+    }))
+    .map(row => ({ ...row, allowed_roles: row.allowed_roles.length > 0 ? row.allowed_roles : ['owner', 'manager'] }))
+    .filter(row => row.name && row.is_active)
+}
+
+function taxesChargesPayload(taxRates, serviceCharges) {
+  return {
+    tax_rates: normalizeTaxRates(taxRates).map(row => ({
+      id: row.id || undefined,
+      name: row.name,
+      rate: row.rate === '' ? 0 : Number(row.rate),
+      applies_to: row.applies_to,
+      is_default: row.is_default,
+      is_inclusive: row.is_inclusive,
+      is_active: true,
+    })),
+    service_charges: normalizeServiceCharges(serviceCharges).map(row => ({
+      id: row.id || undefined,
+      name: row.name,
+      charge_type: row.charge_type,
+      amount: row.amount === '' ? 0 : Number(row.amount),
+      applies_to: row.applies_to,
+      taxable: row.taxable,
+      auto_apply: row.auto_apply,
+      is_tip: row.is_tip,
+      is_active: true,
+    })),
+  }
+}
+
+function discountRulesPayload(discountRules) {
+  return {
+    discount_rules: normalizeDiscountRules(discountRules).map(row => ({
+      id: row.id || undefined,
+      name: row.name,
+      discount_type: row.discount_type,
+      applies_to: row.applies_to,
+      value_type: row.value_type,
+      default_value: row.default_value === '' ? null : Number(row.default_value),
+      editable_by_employee: row.editable_by_employee,
+      min_value: row.editable_by_employee && row.min_value !== '' ? Number(row.min_value) : null,
+      max_value: row.editable_by_employee && row.max_value !== '' ? Number(row.max_value) : null,
+      allowed_roles: row.allowed_roles,
+      requires_manager_approval: row.requires_manager_approval,
+      tax_behavior: row.tax_behavior,
+      reason_required: row.reason_required,
+      service_modes: row.service_modes,
+      days_of_week: row.days_of_week,
+      is_active: true,
+    })),
+  }
 }
 
 function mapMenuItems(items) {
@@ -581,6 +807,9 @@ export function buildSetupWarnings(restaurant, waiterCount = null, floorPlanStat
     basics: [],
     legal: [],
     payments: [],
+    taxes_charges: [],
+    discounts: [],
+    sections: [],
     hours: [],
     capacity: [],
     menu: [],
@@ -600,7 +829,9 @@ export function buildSetupWarnings(restaurant, waiterCount = null, floorPlanStat
   if (!config.bank_name) warnings.payments.push('Bank name')
   if (!config.bank_routing_number) warnings.payments.push('Routing number')
   if (!config.bank_account_number) warnings.payments.push('Account number')
-  if (!Array.isArray(config.service_modes) || config.service_modes.length === 0) warnings.basics.push('Service model')
+  // Missing service_modes means the saved setup should use the onboarding default.
+  // Do not show an unfinished badge just because the owner accepted that default.
+  warnings.taxes_charges = []
 
   const floorPlanTableCount = floorPlanStatus?.total_tables || floorPlanStatus?.tables?.length || 0
   const floorPlanCapacity = floorPlanStatus?.total_capacity || 0
@@ -634,6 +865,10 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [legal, setLegal] = useState(() => initialLegal(restaurant))
   const [payments, setPayments] = useState(() => initialPayments(restaurant))
   const [serviceModel, setServiceModel] = useState(() => initialServiceModel(restaurant))
+  const [taxRates, setTaxRates] = useState([defaultTaxRate()])
+  const [serviceCharges, setServiceCharges] = useState([])
+  const [discountRules, setDiscountRules] = useState([])
+  const [sections, setSections] = useState(['Table'])
   const [hours, setHours] = useState(DEFAULT_HOURS)
   const [sameHours, setSameHours] = useState(true)
   const [floorTables, setFloorTables] = useState([])
@@ -680,7 +915,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     if (!restaurantId) return
     setSetupError('')
     try {
-      const [staffRows, menuRows, jobCodeRows, hoursResult, floorPlan] = await Promise.all([
+      const [staffRows, menuRows, jobCodeRows, hoursResult, sectionRows, floorPlan, taxesCharges, discountData] = await Promise.all([
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`),
         fetchWithSupabaseAuth('/manager/job-codes').catch(() => []),
@@ -689,7 +924,10 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
           .select('day_of_week, open_time, close_time, is_closed')
           .eq('restaurant_id', restaurantId)
           .order('day_of_week'),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`).catch(() => []),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`).catch(() => null),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/taxes-charges`).catch(() => null),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/discount-rules`).catch(() => null),
       ])
 
       if (hoursResult.error) throw hoursResult.error
@@ -701,7 +939,11 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setJobCodes(normalizedJobCodes)
       setRateEdits(Object.fromEntries(normalizedJobCodes.map(code => [code.id, String(code.default_hourly_rate ?? '')])))
       setMenuItems(mapMenuItems(menuRows))
+      setSections(normalizeSectionNames((Array.isArray(sectionRows) ? sectionRows : []).map(section => section.name)))
       setFloorTables(mapFloorPlanTables(floorPlan))
+      setTaxRates(normalizeTaxRates(taxesCharges?.tax_rates))
+      setServiceCharges(normalizeServiceCharges(taxesCharges?.service_charges))
+      setDiscountRules(normalizeDiscountRules(discountData?.discount_rules))
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : 'Could not load setup data.')
     }
@@ -765,6 +1007,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       return
     }
     auth.seedCurrentRestaurant(updatedRestaurant)
+    await auth.refreshRestaurants?.(restaurantId)
     onSetupChanged?.()
     setSaveMessage('Saved basics.')
   }
@@ -792,6 +1035,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       return null
     }
     auth.seedCurrentRestaurant(updatedRestaurant)
+    await auth.refreshRestaurants?.(restaurantId)
     onSetupChanged?.()
     setSaveMessage(successMessage)
     return updatedRestaurant
@@ -822,6 +1066,99 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
 
   const saveServiceModel = async () => {
     await updateRestaurantConfig(serviceModel, 'Saved service model.')
+  }
+
+  const updateTaxRate = (index, patch) => {
+    setTaxRates(prev => normalizeTaxRates(prev).map((row, currentIndex) => {
+      const updated = currentIndex === index ? { ...row, ...patch } : row
+      if (patch.is_default && currentIndex !== index) return { ...updated, is_default: false }
+      return updated
+    }))
+  }
+
+  const removeTaxRate = (index) => {
+    setTaxRates(prev => {
+      const next = normalizeTaxRates(prev).filter((_, currentIndex) => currentIndex !== index)
+      if (next.length === 0) return [defaultTaxRate()]
+      if (!next.some(row => row.is_default)) next[0] = { ...next[0], is_default: true }
+      return next
+    })
+  }
+
+  const updateServiceCharge = (index, patch) => {
+    setServiceCharges(prev => prev.map((row, currentIndex) => currentIndex === index ? { ...row, ...patch } : row))
+  }
+
+  const saveTaxesCharges = async () => {
+    setIsSaving(true)
+    setSaveMessage('')
+    setSetupError('')
+    try {
+      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/taxes-charges`, {
+        method: 'PUT',
+        body: JSON.stringify(taxesChargesPayload(taxRates, serviceCharges)),
+      })
+      setTaxRates(normalizeTaxRates(saved?.tax_rates))
+      setServiceCharges(normalizeServiceCharges(saved?.service_charges))
+      setSaveMessage('Saved taxes and charges.')
+      await auth.refreshRestaurants?.(restaurantId)
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save taxes and charges.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const updateDiscountRule = (index, patch) => {
+    setDiscountRules(prev => prev.map((row, currentIndex) => currentIndex === index ? { ...row, ...patch } : row))
+  }
+
+  const toggleDiscountArrayValue = (values, value) =>
+    values.includes(value) ? values.filter(item => item !== value) : [...values, value]
+
+  const saveDiscountRules = async () => {
+    setIsSaving(true)
+    setSaveMessage('')
+    setSetupError('')
+    try {
+      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/discount-rules`, {
+        method: 'PUT',
+        body: JSON.stringify(discountRulesPayload(discountRules)),
+      })
+      setDiscountRules(normalizeDiscountRules(saved?.discount_rules))
+      setSaveMessage('Saved discounts.')
+      await auth.refreshRestaurants?.(restaurantId)
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save discounts.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const saveSections = async () => {
+    setIsSaving(true)
+    setSaveMessage('')
+    setSetupError('')
+    try {
+      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`, {
+        method: 'PUT',
+        body: JSON.stringify({ sections: normalizeSectionNames(sections) }),
+      })
+      setSections(normalizeSectionNames((Array.isArray(saved) ? saved : []).map(section => section.name)))
+      setFloorTables(prev => prev.map(table => {
+        if (table.section_id) return table
+        return { ...table, section_name: table.section_name || 'Table' }
+      }))
+      setSaveMessage('Saved sections.')
+      await auth.refreshRestaurants?.(restaurantId)
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save sections.')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const saveHours = async () => {
@@ -876,6 +1213,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     }
     setProfile(prev => ({ ...prev, seating_capacity: nextCapacity, table_count: nextCount }))
     auth.seedCurrentRestaurant(updatedRestaurant)
+    await auth.refreshRestaurants?.(restaurantId)
     onSetupChanged?.()
     setSaveMessage('Saved capacity.')
   }
@@ -1280,6 +1618,234 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
             <Field label="Refund Approval Threshold">
               <TextInput inputMode="decimal" value={payments.refund_approval_threshold} onChange={event => setPayments(prev => ({ ...prev, refund_approval_threshold: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))} placeholder="Manager approval over $..." />
             </Field>
+          </div>
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'taxes_charges' && (
+        <SectionShell
+          title="Taxes & Charges"
+          description="Tax categories and service charges used by the POS for order totals, refunds, closeout, and reports."
+          actions={<SmallButton variant="primary" onClick={() => void saveTaxesCharges()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save taxes & charges'}</SmallButton>}
+        >
+          <div className="space-y-8">
+            <div className="space-y-4">
+              <div>
+                <p className="label-mono">Tax Rates</p>
+                <p className="mt-2 text-sm text-dash-secondary">Add one or more tax categories. The default tax also syncs to legacy POS tax settings.</p>
+              </div>
+              {normalizeTaxRates(taxRates).map((tax, index) => (
+                <div key={tax.id || `tax:${index}`} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                  <div className="grid gap-3 md:grid-cols-[1.2fr_0.7fr_1fr]">
+                    <TextInput value={tax.name} onChange={event => updateTaxRate(index, { name: event.target.value })} placeholder="Sales Tax" />
+                    <TextInput inputMode="decimal" value={tax.rate} onChange={event => updateTaxRate(index, { rate: sanitizeNumber(event.target.value) })} placeholder="Rate %" />
+                    <SelectInput value={tax.applies_to} onChange={event => updateTaxRate(index, { applies_to: event.target.value })}>
+                      {TAX_APPLIES_TO_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </SelectInput>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <SmallButton variant={tax.is_default ? 'primary' : 'secondary'} onClick={() => updateTaxRate(index, { is_default: true })}>Default tax</SmallButton>
+                    <SmallButton variant={tax.is_inclusive ? 'primary' : 'secondary'} onClick={() => updateTaxRate(index, { is_inclusive: !tax.is_inclusive })}>Tax included in price</SmallButton>
+                    <SmallButton variant="danger" onClick={() => removeTaxRate(index)}>Remove</SmallButton>
+                  </div>
+                </div>
+              ))}
+              <SmallButton onClick={() => setTaxRates(prev => [...normalizeTaxRates(prev), { ...defaultTaxRate(), name: 'Additional Tax', is_default: false }])}>Add tax rate</SmallButton>
+            </div>
+
+            <div className="space-y-4 border-t border-white/10 pt-6">
+              <div>
+                <p className="label-mono">Service Charges</p>
+                <p className="mt-2 text-sm text-dash-secondary">Use for automatic gratuity, delivery, catering, large-party, or house service fees.</p>
+              </div>
+              {serviceCharges.length === 0 && (
+                <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 text-sm text-dash-secondary">
+                  No service charges configured.
+                </div>
+              )}
+              {serviceCharges.map((charge, index) => (
+                <div key={charge.id || `charge:${index}`} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                  <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr_0.7fr_1fr]">
+                    <TextInput value={charge.name} onChange={event => updateServiceCharge(index, { name: event.target.value })} placeholder="Service Charge" />
+                    <SelectInput value={charge.charge_type} onChange={event => updateServiceCharge(index, { charge_type: event.target.value })}>
+                      <option value="percentage">Percent</option>
+                      <option value="fixed">Fixed $</option>
+                    </SelectInput>
+                    <TextInput inputMode="decimal" value={charge.amount} onChange={event => updateServiceCharge(index, { amount: sanitizeNumber(event.target.value) })} placeholder={charge.charge_type === 'fixed' ? 'Amount' : 'Rate %'} />
+                    <SelectInput value={charge.applies_to} onChange={event => updateServiceCharge(index, { applies_to: event.target.value })}>
+                      {CHARGE_APPLIES_TO_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </SelectInput>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <SmallButton variant={charge.taxable ? 'primary' : 'secondary'} onClick={() => updateServiceCharge(index, { taxable: !charge.taxable })}>Taxable</SmallButton>
+                    <SmallButton variant={charge.auto_apply ? 'primary' : 'secondary'} onClick={() => updateServiceCharge(index, { auto_apply: !charge.auto_apply })}>Auto apply</SmallButton>
+                    <SmallButton variant={charge.is_tip ? 'primary' : 'secondary'} onClick={() => updateServiceCharge(index, { is_tip: !charge.is_tip })}>Counts as gratuity</SmallButton>
+                    <SmallButton variant="danger" onClick={() => setServiceCharges(prev => prev.filter((_, currentIndex) => currentIndex !== index))}>Remove</SmallButton>
+                  </div>
+                </div>
+              ))}
+              <SmallButton onClick={() => setServiceCharges(prev => [...prev, defaultServiceCharge(prev.length)])}>Add service charge</SmallButton>
+            </div>
+          </div>
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'discounts' && (
+        <SectionShell
+          title="Discounts, Comps & Promos"
+          description="Preset POS rules for item discounts, whole-check discounts, comps, employee meals, promos, and service recovery."
+          actions={<SmallButton variant="primary" onClick={() => void saveDiscountRules()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save discounts'}</SmallButton>}
+        >
+          <div className="space-y-5">
+            {discountRules.length === 0 && (
+              <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 text-sm text-dash-secondary">
+                No discount rules configured. This is okay if the restaurant does not want preset discounts yet.
+              </div>
+            )}
+
+            {discountRules.map((rule, index) => (
+              <div key={rule.id || `discount:${index}`} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                <div className="grid gap-3 lg:grid-cols-[1.2fr_0.9fr_0.8fr]">
+                  <TextInput value={rule.name} onChange={event => updateDiscountRule(index, { name: event.target.value })} placeholder="Manager Comp" />
+                  <SelectInput value={rule.discount_type} onChange={event => updateDiscountRule(index, { discount_type: event.target.value })}>
+                    {DISCOUNT_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </SelectInput>
+                  <SelectInput value={rule.applies_to} onChange={event => updateDiscountRule(index, { applies_to: event.target.value })}>
+                    {DISCOUNT_APPLIES_TO_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </SelectInput>
+                </div>
+
+                <div className="mt-3 grid gap-3 lg:grid-cols-[0.9fr_0.7fr_1.2fr]">
+                  <SelectInput value={rule.value_type} onChange={event => updateDiscountRule(index, { value_type: event.target.value })}>
+                    {DISCOUNT_VALUE_TYPE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </SelectInput>
+                  <TextInput
+                    inputMode="decimal"
+                    disabled={rule.value_type === 'open'}
+                    value={rule.default_value}
+                    onChange={event => updateDiscountRule(index, { default_value: sanitizeNumber(event.target.value) })}
+                    placeholder={rule.value_type === 'fixed' ? 'Default $' : 'Default %'}
+                  />
+                  <SelectInput value={rule.tax_behavior} onChange={event => updateDiscountRule(index, { tax_behavior: event.target.value })}>
+                    {DISCOUNT_TAX_BEHAVIOR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </SelectInput>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <SmallButton variant={rule.editable_by_employee ? 'primary' : 'secondary'} onClick={() => updateDiscountRule(index, { editable_by_employee: !rule.editable_by_employee })}>Editable by employee</SmallButton>
+                  <SmallButton variant={rule.requires_manager_approval ? 'primary' : 'secondary'} onClick={() => updateDiscountRule(index, { requires_manager_approval: !rule.requires_manager_approval })}>Manager approval</SmallButton>
+                  <SmallButton variant={rule.reason_required ? 'primary' : 'secondary'} onClick={() => updateDiscountRule(index, { reason_required: !rule.reason_required })}>Reason required</SmallButton>
+                  <SmallButton variant="danger" onClick={() => setDiscountRules(prev => prev.filter((_, currentIndex) => currentIndex !== index))}>Remove</SmallButton>
+                </div>
+
+                {rule.editable_by_employee && (
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <TextInput inputMode="decimal" value={rule.min_value} onChange={event => updateDiscountRule(index, { min_value: sanitizeNumber(event.target.value) })} placeholder="Minimum" />
+                    <TextInput inputMode="decimal" value={rule.max_value} onChange={event => updateDiscountRule(index, { max_value: sanitizeNumber(event.target.value) })} placeholder="Maximum" />
+                  </div>
+                )}
+
+                <div className="mt-4 space-y-4 border-t border-white/10 pt-4">
+                  <div>
+                    <p className="label-mono mb-2">Allowed Roles</p>
+                    <div className="flex flex-wrap gap-2">
+                      {DISCOUNT_ROLE_OPTIONS.map(role => (
+                        <SmallButton
+                          key={role}
+                          variant={rule.allowed_roles.includes(role) ? 'primary' : 'secondary'}
+                          onClick={() => updateDiscountRule(index, { allowed_roles: toggleDiscountArrayValue(rule.allowed_roles, role) })}
+                        >
+                          {role}
+                        </SmallButton>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="label-mono mb-2">Service Availability</p>
+                    <div className="flex flex-wrap gap-2">
+                      {DISCOUNT_SERVICE_MODE_OPTIONS.map(mode => (
+                        <SmallButton
+                          key={mode.value}
+                          variant={rule.service_modes.includes(mode.value) ? 'primary' : 'secondary'}
+                          onClick={() => updateDiscountRule(index, { service_modes: toggleDiscountArrayValue(rule.service_modes, mode.value) })}
+                        >
+                          {mode.label}
+                        </SmallButton>
+                      ))}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {DAYS.map((day, dayIndex) => (
+                        <SmallButton
+                          key={day}
+                          variant={rule.days_of_week.includes(dayIndex) ? 'primary' : 'secondary'}
+                          onClick={() => updateDiscountRule(index, { days_of_week: toggleDiscountArrayValue(rule.days_of_week, dayIndex).sort((a, b) => a - b) })}
+                        >
+                          {day.slice(0, 3)}
+                        </SmallButton>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <div className="flex flex-wrap gap-2">
+              <SmallButton onClick={() => setDiscountRules(prev => [...prev, defaultDiscountRule(prev.length)])}>Add discount</SmallButton>
+              {[
+                { ...defaultDiscountRule(discountRules.length), name: 'Manager Comp', discount_type: 'comp', applies_to: 'both', value_type: 'open', editable_by_employee: true, max_value: '100', reason_required: true },
+                { ...defaultDiscountRule(discountRules.length), name: 'Employee Meal', discount_type: 'employee_meal', applies_to: 'item', value_type: 'percent', default_value: '50' },
+                { ...defaultDiscountRule(discountRules.length), name: 'Service Recovery', discount_type: 'service_recovery', applies_to: 'check', value_type: 'fixed', default_value: '20', reason_required: true },
+              ].filter(template => !discountRules.some(rule => rule.name.toLowerCase() === template.name.toLowerCase())).map(template => (
+                <SmallButton key={template.name} onClick={() => setDiscountRules(prev => [...prev, template])}>{template.name}</SmallButton>
+              ))}
+            </div>
+          </div>
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'sections' && (
+        <SectionShell
+          title="Sections"
+          description="Sections are areas in your restaurant, such as Bar, Patio, Outdoor, or Main Dining. Tables in the floor plan are assigned to one of these categories, and unassigned tables default to Table."
+          actions={<SmallButton variant="primary" onClick={() => void saveSections()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save sections'}</SmallButton>}
+        >
+          {setupWarnings.sections?.length > 0 && (
+            <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
+              Missing: {setupWarnings.sections.join(', ')}
+            </div>
+          )}
+          <div className="space-y-3">
+            {normalizeSectionNames(sections).map((section, index) => (
+              <div key={`${index}:${index === 0 ? 'default' : section}`} className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                <TextInput
+                  value={section}
+                  disabled={index === 0}
+                  placeholder="Bar, Patio, Outdoor..."
+                  onChange={event => {
+                    const next = normalizeSectionNames(sections)
+                    next[index] = index === 0 ? 'Table' : event.target.value
+                    setSections(next)
+                  }}
+                />
+                <SmallButton
+                  variant={index === 0 ? 'secondary' : 'danger'}
+                  disabled={index === 0}
+                  onClick={() => setSections(prev => normalizeSectionNames(prev).filter((_, currentIndex) => currentIndex !== index))}
+                >
+                  Remove
+                </SmallButton>
+              </div>
+            ))}
+            <div className="flex flex-wrap gap-2 pt-2">
+              <SmallButton onClick={() => setSections(prev => {
+                const current = normalizeSectionNames(prev)
+                return [...current, `New Section ${current.length}`]
+              })}>Add section</SmallButton>
+              {['Main Dining', 'Bar', 'Patio', 'Outdoor'].filter(name => !normalizeSectionNames(sections).some(section => section.toLowerCase() === name.toLowerCase())).map(name => (
+                <SmallButton key={name} onClick={() => setSections(prev => [...normalizeSectionNames(prev), name])}>{name}</SmallButton>
+              ))}
+            </div>
           </div>
         </SectionShell>
       )}

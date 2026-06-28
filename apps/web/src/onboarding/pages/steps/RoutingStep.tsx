@@ -131,6 +131,14 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
           {blockedItems} menu item{blockedItems === 1 ? '' : 's'} still need explicit confirmation or route coverage before they should be published.
         </p>
       </div>
+
+      <button
+        type="button"
+        onClick={onboarding.nextStep}
+        className="w-full rounded-xl bg-white px-4 py-4 text-sm font-semibold text-black transition-colors hover:bg-gray-100"
+      >
+        Continue
+      </button>
     </div>
   )
 }

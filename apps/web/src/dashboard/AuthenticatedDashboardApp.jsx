@@ -3532,6 +3532,20 @@ function defaultEmployeeId(value) {
   return value.trim().split(/\s+/)[0]?.toLowerCase().replace(/[^a-z0-9_]+/g, '') || ''
 }
 
+function normalizeSectionNames(values) {
+  const seen = new Set()
+  const out = []
+  ;['Table', ...(Array.isArray(values) ? values : [])].forEach(raw => {
+    const name = String(raw || '').trim().replace(/\s+/g, ' ')
+    if (!name) return
+    const key = name.toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(key === 'table' ? 'Table' : name)
+  })
+  return out.length > 0 ? out : ['Table']
+}
+
 function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, onSetupChanged }) {
   const [activeSetupTab, setActiveSetupTab] = useState('profile')
   const [activeSubTab, setActiveSubTab] = useState('Basics')
@@ -3550,10 +3564,12 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
   const [saveMessage, setSaveMessage] = useState('')
   const [waiters, setWaiters] = useState([])
   const [tables, setTables] = useState([])
+  const [sections, setSections] = useState(['Table'])
+  const [sectionRecords, setSectionRecords] = useState([])
   const [menuItems, setMenuItems] = useState([])
   const [setupError, setSetupError] = useState('')
   const [staffForm, setStaffForm] = useState({ name: '', email: '', role: 'server', pin: '1111', employee_login_id: '' })
-  const [tableForm, setTableForm] = useState({ table_number: '', capacity: '2', table_type: 'standard', location: 'inside' })
+  const [tableForm, setTableForm] = useState({ table_number: '', capacity: '2', table_type: 'standard', location: 'inside', section_id: '' })
   const [menuForm, setMenuForm] = useState({ name: '', category: '', price: '', cost: '', description: '' })
 
   useEffect(() => {
@@ -3587,13 +3603,17 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
     if (!restaurantId) return
     setSetupError('')
     try {
-      const [staffRows, tableRows, menuRows] = await Promise.all([
+      const [staffRows, tableRows, sectionRows, menuRows] = await Promise.all([
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tables?include_inactive=false`),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`).catch(() => []),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`),
       ])
       setWaiters(Array.isArray(staffRows) ? staffRows : [])
       setTables(Array.isArray(tableRows) ? tableRows : [])
+      const normalizedSectionRows = Array.isArray(sectionRows) ? sectionRows : []
+      setSectionRecords(normalizedSectionRows)
+      setSections(normalizeSectionNames(normalizedSectionRows.map(section => section.name)))
       setMenuItems(Array.isArray(menuRows) ? menuRows : [])
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : 'Could not load setup data.')
@@ -3685,11 +3705,32 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
         capacity: Number(tableForm.capacity || 2),
         table_type: tableForm.table_type,
         location: tableForm.location,
+        section_id: tableForm.section_id || null,
       }),
     })
     setTables(prev => [...prev, created])
-    setTableForm({ table_number: '', capacity: '2', table_type: 'standard', location: 'inside' })
+    setTableForm({ table_number: '', capacity: '2', table_type: 'standard', location: 'inside', section_id: tableForm.section_id })
     onSetupChanged?.()
+  }
+
+  const saveSections = async () => {
+    setIsSaving(true)
+    setSetupError('')
+    try {
+      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`, {
+        method: 'PUT',
+        body: JSON.stringify({ sections: normalizeSectionNames(sections) }),
+      })
+      const savedRows = Array.isArray(saved) ? saved : []
+      setSectionRecords(savedRows)
+      setSections(normalizeSectionNames(savedRows.map(section => section.name)))
+      setSaveMessage('Saved sections.')
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save sections.')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const updateTable = async (tableId, updates) => {
@@ -3937,7 +3978,7 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
 
           {activeSetupTab === 'operations' && activeSubTab === 'Capacity' && (
             <div className="space-y-5">
-              <div className="grid gap-3 md:grid-cols-4">
+              <div className="grid gap-3 md:grid-cols-[1fr_120px_140px_150px_auto]">
                 <TextInput placeholder="Table #" value={tableForm.table_number} onChange={event => setTableForm(prev => ({ ...prev, table_number: event.target.value }))} />
                 <TextInput type="number" min="1" placeholder="Capacity" value={tableForm.capacity} onChange={event => setTableForm(prev => ({ ...prev, capacity: event.target.value }))} />
                 <select value={tableForm.table_type} onChange={event => setTableForm(prev => ({ ...prev, table_type: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm text-dash-cream outline-none focus:border-dash-gold/70">
@@ -3945,6 +3986,10 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
                   <option value="bar">Bar</option>
                   <option value="booth">Booth</option>
                   <option value="patio">Patio</option>
+                </select>
+                <select value={tableForm.section_id} onChange={event => setTableForm(prev => ({ ...prev, section_id: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm text-dash-cream outline-none focus:border-dash-gold/70">
+                  <option value="">Table</option>
+                  {sectionRecords.map(section => <option key={section.id} value={section.id}>{section.name}</option>)}
                 </select>
                 <SmallButton variant="primary" onClick={() => void addTable()}>Add table</SmallButton>
               </div>
@@ -3955,10 +4000,14 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
               ) : (
                 <div className="space-y-2">
                   {tables.map(table => (
-                    <div key={table.id} className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 md:grid-cols-[1fr_110px_140px_auto]">
+                    <div key={table.id} className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 md:grid-cols-[1fr_110px_140px_160px_auto]">
                       <TextInput defaultValue={table.table_number || ''} onBlur={event => void updateTable(table.id, { table_number: event.target.value })} />
                       <TextInput type="number" min="1" defaultValue={table.capacity || ''} onBlur={event => void updateTable(table.id, { capacity: Number(event.target.value || 0) })} />
                       <span className="px-3 py-3 text-sm capitalize text-dash-secondary">{table.table_type || 'standard'}</span>
+                      <select defaultValue={table.section_id || ''} onChange={event => void updateTable(table.id, { section_id: event.target.value || null })} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none focus:border-dash-gold/70">
+                        <option value="">Table</option>
+                        {sectionRecords.map(section => <option key={section.id} value={section.id}>{section.name}</option>)}
+                      </select>
                       <SmallButton variant="danger" onClick={() => void removeTable(table.id)}>Remove</SmallButton>
                     </div>
                   ))}
@@ -3968,9 +4017,44 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
           )}
 
           {activeSetupTab === 'operations' && activeSubTab === 'Sections' && (
-            <SetupPlaceholder title="Sections">
-              Section editing will connect to the floor-plan section records. Tables are editable in Capacity right now.
-            </SetupPlaceholder>
+            <div className="space-y-4">
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                <h3 className="text-lg font-semibold">Restaurant sections</h3>
+                <p className="mt-2 text-sm leading-6 text-dash-secondary">
+                  Sections are areas such as Bar, Patio, Outdoor, or Main Dining. Tables in the floor plan use these categories, and unassigned tables default to Table.
+                </p>
+              </div>
+              {normalizeSectionNames(sections).map((section, index) => (
+                <div key={`${index}:${index === 0 ? 'default' : section}`} className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <TextInput
+                    value={section}
+                    disabled={index === 0}
+                    placeholder="Bar, Patio, Outdoor..."
+                    onChange={event => {
+                      const next = normalizeSectionNames(sections)
+                      next[index] = index === 0 ? 'Table' : event.target.value
+                      setSections(next)
+                    }}
+                  />
+                  <SmallButton
+                    variant={index === 0 ? 'secondary' : 'danger'}
+                    disabled={index === 0}
+                    onClick={() => setSections(prev => normalizeSectionNames(prev).filter((_, currentIndex) => currentIndex !== index))}
+                  >
+                    Remove
+                  </SmallButton>
+                </div>
+              ))}
+              <div className="flex flex-wrap gap-2">
+                <SmallButton onClick={() => setSections(prev => {
+                  const current = normalizeSectionNames(prev)
+                  return [...current, `New Section ${current.length}`]
+                })}>Add section</SmallButton>
+                <SmallButton variant="primary" onClick={() => void saveSections()} disabled={isSaving}>
+                  {isSaving ? 'Saving...' : 'Save sections'}
+                </SmallButton>
+              </div>
+            </div>
           )}
 
           {activeSetupTab === 'menu' && activeSubTab === 'Items' && (

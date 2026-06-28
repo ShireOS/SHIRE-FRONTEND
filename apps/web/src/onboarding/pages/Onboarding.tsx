@@ -8,9 +8,12 @@ import { LaunchScreen } from '../components/LaunchScreen'
 import { BasicsStep } from './steps/BasicsStep'
 import { LegalStep } from './steps/LegalStep'
 import { PaymentsStep } from './steps/PaymentsStep'
+import { TaxesChargesStep } from './steps/TaxesChargesStep'
+import { DiscountRulesStep } from './steps/DiscountRulesStep'
 import { GoalsStep } from './steps/GoalsStep'
 import { DemoShowcase } from './steps/DemoShowcase'
 import { TechStackStep } from './steps/TechStackStep'
+import { SectionsStep } from './steps/SectionsStep'
 import { HoursStep } from './steps/HoursStep'
 import { CapacityStep } from './steps/CapacityStep'
 import { MenuStep } from './steps/MenuStep'
@@ -82,22 +85,28 @@ export function OnboardingPage() {
       case 2:
         return <PaymentsStep onboarding={onboarding} />
       case 3:
-        return <GoalsStep onboarding={onboarding} />
+        return <TaxesChargesStep onboarding={onboarding} />
       case 4:
-        return <DemoShowcase onboarding={onboarding} />
+        return <DiscountRulesStep onboarding={onboarding} />
       case 5:
-        return <TechStackStep onboarding={onboarding} />
+        return <GoalsStep onboarding={onboarding} />
       case 6:
-        return <HoursStep onboarding={onboarding} />
+        return <DemoShowcase onboarding={onboarding} />
       case 7:
-        return <CapacityStep onboarding={onboarding} />
+        return <TechStackStep onboarding={onboarding} />
       case 8:
-        return <MenuStep onboarding={onboarding} />
+        return <SectionsStep onboarding={onboarding} />
       case 9:
-        return <ModifierStep onboarding={onboarding} />
+        return <HoursStep onboarding={onboarding} />
       case 10:
-        return <RoutingStep onboarding={onboarding} />
+        return <CapacityStep onboarding={onboarding} />
       case 11:
+        return <MenuStep onboarding={onboarding} />
+      case 12:
+        return <ModifierStep onboarding={onboarding} />
+      case 13:
+        return <RoutingStep onboarding={onboarding} />
+      case 14:
         return <TeamStep onboarding={onboarding} />
       default:
         return null
@@ -105,7 +114,7 @@ export function OnboardingPage() {
   }
 
   // Optional setup steps can be skipped; required basics are enforced in the step UI.
-  const canSkip = currentStep === 3 || (currentStep >= 5 && currentStep <= 9)
+  const canSkip = currentStep === 4 || currentStep === 5 || (currentStep >= 7 && currentStep <= 12)
   const canGoBack = currentStep > 0
 
   return (

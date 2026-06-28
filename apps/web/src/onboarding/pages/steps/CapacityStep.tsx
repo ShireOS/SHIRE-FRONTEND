@@ -45,6 +45,8 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
           height: t.position.height,
           capacity: t.capacity,
           shape: t.shape,
+          section_id: t.section_id ?? null,
+          section_name: t.section_name ?? null,
           confidence: t.confidence,
           notes: t.notes,
         })))
@@ -131,6 +133,9 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
         <label className="label-mono block mb-3 text-[rgb(var(--gold))]">
           Floor Plan <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
         </label>
+        <p className="mb-3 text-sm leading-6 text-[rgb(var(--text-secondary))]">
+          Assign each table to a section such as Bar, Patio, Outdoor, or Main Dining. Tables without a section save as Table.
+        </p>
 
         {savedTableCount !== null && (
           <div className="mb-3 flex items-center gap-2 text-sm text-[rgb(var(--text-secondary))]">

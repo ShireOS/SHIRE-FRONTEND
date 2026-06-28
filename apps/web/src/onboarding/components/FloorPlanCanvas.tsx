@@ -8,8 +8,15 @@ export interface FloorPlanTable {
   height: number
   capacity: number
   shape: 'rectangular'
+  section_id?: string | null
+  section_name?: string | null
   confidence?: number
   notes?: string
+}
+
+export interface FloorPlanSection {
+  id: string
+  name: string
 }
 
 export function normalizeFloorPlanTablesForEditor(tables: FloorPlanTable[], padding = 6): FloorPlanTable[] {
@@ -66,6 +73,7 @@ type DragState =
 interface FloorPlanCanvasProps {
   tables: FloorPlanTable[]
   onTablesChange: (tables: FloorPlanTable[]) => void
+  sections?: FloorPlanSection[]
   backgroundImage?: string
   mode: 'upload' | 'manual'
 }
@@ -74,7 +82,7 @@ const MIN_SIZE = 5
 const MAX_SIZE = 50
 const HANDLE_SIZE = 10 // px
 
-export function FloorPlanCanvas({ tables, onTablesChange, backgroundImage, mode }: FloorPlanCanvasProps) {
+export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgroundImage, mode }: FloorPlanCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
@@ -89,6 +97,7 @@ export function FloorPlanCanvas({ tables, onTablesChange, backgroundImage, mode 
   useEffect(() => { onChangeRef.current = onTablesChange }, [onTablesChange])
 
   const selectedTable = tables.find(t => t.id === selectedId) ?? null
+  const defaultSection = sections.find(section => section.name.toLowerCase() === 'table') ?? sections[0] ?? null
   useEffect(() => {
     if (selectedTable) setEditingCapacity(String(selectedTable.capacity))
   }, [selectedId]) // intentionally only on selectedId change
@@ -213,6 +222,20 @@ export function FloorPlanCanvas({ tables, onTablesChange, backgroundImage, mode 
     setSelectedId(null)
   }
 
+  const updateSelectedSection = (sectionId: string) => {
+    if (!selectedId) return
+    const section = sections.find(item => item.id === sectionId) ?? defaultSection
+    onTablesChange(tables.map(table =>
+      table.id === selectedId
+        ? {
+            ...table,
+            section_id: section?.id ?? null,
+            section_name: section?.name ?? 'Table',
+          }
+        : table
+    ))
+  }
+
   const gridStyle = mode === 'manual' ? {
     backgroundImage: `linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)`,
     backgroundSize: '5% 5%',
@@ -268,6 +291,7 @@ export function FloorPlanCanvas({ tables, onTablesChange, backgroundImage, mode 
         {tables.map((table, idx) => {
           const isSelected = table.id === selectedId
           const isHovered = table.id === hoveredId
+          const sectionLabel = table.section_name || defaultSection?.name || 'Table'
           const style: React.CSSProperties = {
             position: 'absolute',
             left: `${table.center_x - table.width / 2}%`,
@@ -320,6 +344,21 @@ export function FloorPlanCanvas({ tables, onTablesChange, backgroundImage, mode 
                 }}>
                   {table.capacity}p
                 </span>
+                <span style={{
+                  maxWidth: '90%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  fontSize: 8,
+                  color: '#fff',
+                  lineHeight: 1,
+                  marginTop: 2,
+                  background: 'rgba(0,0,0,0.45)',
+                  borderRadius: 3,
+                  padding: '1px 3px',
+                }}>
+                  {sectionLabel}
+                </span>
               </div>
 
               {/* Resize handles — rendered when selected or hovered, positioned at corners */}
@@ -358,10 +397,11 @@ export function FloorPlanCanvas({ tables, onTablesChange, backgroundImage, mode 
                     padding: '6px 8px',
                     display: 'flex',
                     alignItems: 'center',
+                    flexWrap: 'wrap',
                     gap: 6,
                     boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                    minWidth: 130,
-                    whiteSpace: 'nowrap',
+                    minWidth: 190,
+                    maxWidth: 260,
                   }}
                 >
                   <span style={{ fontSize: 11, color: 'rgb(var(--text-tertiary))' }}>Seats:</span>
@@ -384,6 +424,30 @@ export function FloorPlanCanvas({ tables, onTablesChange, backgroundImage, mode 
                       outline: 'none',
                     }}
                   />
+                  {sections.length > 0 && (
+                    <>
+                      <span style={{ fontSize: 11, color: 'rgb(var(--text-tertiary))' }}>Area:</span>
+                      <select
+                        value={selectedTable?.section_id || defaultSection?.id || ''}
+                        onChange={(e) => updateSelectedSection(e.target.value)}
+                        style={{
+                          minWidth: 96,
+                          maxWidth: 140,
+                          padding: '2px 6px',
+                          fontSize: 12,
+                          background: 'rgba(255,255,255,0.07)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: 4,
+                          color: 'rgb(var(--text-primary))',
+                          outline: 'none',
+                        }}
+                      >
+                        {sections.map(section => (
+                          <option key={section.id} value={section.id}>{section.name}</option>
+                        ))}
+                      </select>
+                    </>
+                  )}
                   <button
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); deleteSelected() }}
