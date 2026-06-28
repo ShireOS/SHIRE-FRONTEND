@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../shared/lib/supabase'
 import { API_CONFIG } from '../shared/api/config'
@@ -9,6 +9,8 @@ import { ModifierEditor } from '../onboarding/components/ModifierEditor'
 
 const SETUP_TABS = [
   { id: 'basics', label: 'Basics' },
+  { id: 'legal', label: 'Legal' },
+  { id: 'payments', label: 'Payments' },
   { id: 'hours', label: 'Hours' },
   { id: 'capacity', label: 'Capacity / Floor Plan' },
   { id: 'menu', label: 'Menu' },
@@ -64,6 +66,61 @@ const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
 })
 
 const ROLE_OPTIONS = ['server', 'bartender', 'host', 'manager', 'busser', 'runner']
+
+const SERVICE_MODE_OPTIONS = [
+  { id: 'dine_in', label: 'Dine-in' },
+  { id: 'bar', label: 'Bar service' },
+  { id: 'counter_service', label: 'Counter service' },
+  { id: 'takeout', label: 'Takeout' },
+  { id: 'delivery', label: 'Delivery' },
+  { id: 'catering', label: 'Catering' },
+]
+
+const GUEST_FLOW_OPTIONS = [
+  { id: 'seat_first', label: 'Seat first' },
+  { id: 'order_first', label: 'Order first' },
+  { id: 'tab_first', label: 'Tab first' },
+  { id: 'counter_pay', label: 'Counter pay' },
+]
+
+const initialLegal = (restaurant) => {
+  const config = restaurant.config && typeof restaurant.config === 'object' ? restaurant.config : {}
+  return {
+    legal_business_name: config.legal_business_name || '',
+    dba_name: config.dba_name || '',
+    ein: config.ein || '',
+    legal_contact_name: config.legal_contact_name || '',
+    legal_contact_title: config.legal_contact_title || '',
+    legal_contact_email: config.legal_contact_email || '',
+    legal_contact_phone: config.legal_contact_phone || '',
+    tos_signature_data_url: config.tos_signature_data_url || '',
+    tos_signed_at: config.tos_signed_at || '',
+  }
+}
+
+const initialPayments = (restaurant) => {
+  const config = restaurant.config && typeof restaurant.config === 'object' ? restaurant.config : {}
+  return {
+    bank_account_holder: config.bank_account_holder || '',
+    bank_name: config.bank_name || '',
+    bank_routing_number: config.bank_routing_number || '',
+    bank_account_number: config.bank_account_number || '',
+    payout_schedule: config.payout_schedule || 'daily',
+    refund_funding_source: config.refund_funding_source || 'processor_balance',
+    batch_close_mode: config.batch_close_mode || 'automatic',
+    batch_close_time: config.batch_close_time || '04:00',
+    credit_card_tip_payout: config.credit_card_tip_payout || 'payroll',
+    refund_approval_threshold: config.refund_approval_threshold || '',
+  }
+}
+
+const initialServiceModel = (restaurant) => {
+  const config = restaurant.config && typeof restaurant.config === 'object' ? restaurant.config : {}
+  return {
+    service_modes: Array.isArray(config.service_modes) && config.service_modes.length > 0 ? config.service_modes : ['dine_in'],
+    default_guest_flow: config.default_guest_flow || 'seat_first',
+  }
+}
 
 function WarningTriangle({ className = '' }) {
   return (
@@ -181,6 +238,96 @@ function SectionShell({ title, description, children, actions }) {
       </div>
       <div className="mt-5">{children}</div>
     </section>
+  )
+}
+
+function SignaturePad({ value, signedAt, onChange }) {
+  const canvasRef = useRef(null)
+  const drawingRef = useRef(false)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const scale = window.devicePixelRatio || 1
+    canvas.width = Math.max(1, Math.floor(rect.width * scale))
+    canvas.height = Math.max(1, Math.floor(rect.height * scale))
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.scale(scale, scale)
+    ctx.lineWidth = 2
+    ctx.lineCap = 'round'
+    ctx.strokeStyle = '#f4f1e8'
+    if (value) {
+      const image = new Image()
+      image.onload = () => {
+        ctx.clearRect(0, 0, rect.width, rect.height)
+        ctx.drawImage(image, 0, 0, rect.width, rect.height)
+      }
+      image.src = value
+    }
+  }, [value])
+
+  const getPoint = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top }
+  }
+
+  const begin = (event) => {
+    const ctx = event.currentTarget.getContext('2d')
+    if (!ctx) return
+    const point = getPoint(event)
+    drawingRef.current = true
+    event.currentTarget.setPointerCapture(event.pointerId)
+    ctx.beginPath()
+    ctx.moveTo(point.x, point.y)
+  }
+
+  const draw = (event) => {
+    if (!drawingRef.current) return
+    const ctx = event.currentTarget.getContext('2d')
+    if (!ctx) return
+    const point = getPoint(event)
+    ctx.lineTo(point.x, point.y)
+    ctx.stroke()
+  }
+
+  const end = (event) => {
+    if (!drawingRef.current) return
+    drawingRef.current = false
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    onChange({
+      tos_signature_data_url: event.currentTarget.toDataURL('image/png'),
+      tos_signed_at: new Date().toISOString(),
+    })
+  }
+
+  const clear = () => {
+    const canvas = canvasRef.current
+    const ctx = canvas?.getContext('2d')
+    if (!canvas || !ctx) return
+    const rect = canvas.getBoundingClientRect()
+    ctx.clearRect(0, 0, rect.width, rect.height)
+    onChange({ tos_signature_data_url: '', tos_signed_at: '' })
+  }
+
+  return (
+    <div>
+      <canvas
+        ref={canvasRef}
+        onPointerDown={begin}
+        onPointerMove={draw}
+        onPointerUp={end}
+        onPointerCancel={end}
+        className="h-36 w-full touch-none rounded-xl border border-dashed border-white/20 bg-black/25"
+      />
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-dash-tertiary">
+          {signedAt ? `Signed ${new Date(signedAt).toLocaleString()}` : 'Draw signature above.'}
+        </p>
+        <SmallButton onClick={clear}>Clear signature</SmallButton>
+      </div>
+    </div>
   )
 }
 
@@ -432,6 +579,8 @@ async function fetchWithSupabaseAuth(endpoint, options = {}) {
 export function buildSetupWarnings(restaurant, waiterCount = null, floorPlanStatus = null) {
   const warnings = {
     basics: [],
+    legal: [],
+    payments: [],
     hours: [],
     capacity: [],
     menu: [],
@@ -443,6 +592,15 @@ export function buildSetupWarnings(restaurant, waiterCount = null, floorPlanStat
   if (!restaurant.name) warnings.basics.push('Restaurant name')
   if (!restaurant.city || !restaurant.state) warnings.basics.push('Location')
   if (!restaurant.phone) warnings.basics.push('Phone')
+  const config = restaurant.config && typeof restaurant.config === 'object' ? restaurant.config : {}
+  if (!config.legal_business_name) warnings.legal.push('Legal business name')
+  if (!config.legal_contact_name) warnings.legal.push('Authorized signer')
+  if (!config.tos_signature_data_url) warnings.legal.push('Signed terms')
+  if (!config.bank_account_holder) warnings.payments.push('Account holder')
+  if (!config.bank_name) warnings.payments.push('Bank name')
+  if (!config.bank_routing_number) warnings.payments.push('Routing number')
+  if (!config.bank_account_number) warnings.payments.push('Account number')
+  if (!Array.isArray(config.service_modes) || config.service_modes.length === 0) warnings.basics.push('Service model')
 
   const floorPlanTableCount = floorPlanStatus?.total_tables || floorPlanStatus?.tables?.length || 0
   const floorPlanCapacity = floorPlanStatus?.total_capacity || 0
@@ -473,6 +631,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     seating_capacity: restaurant.seating_capacity || '',
     table_count: restaurant.table_count || '',
   }))
+  const [legal, setLegal] = useState(() => initialLegal(restaurant))
+  const [payments, setPayments] = useState(() => initialPayments(restaurant))
+  const [serviceModel, setServiceModel] = useState(() => initialServiceModel(restaurant))
   const [hours, setHours] = useState(DEFAULT_HOURS)
   const [sameHours, setSameHours] = useState(true)
   const [floorTables, setFloorTables] = useState([])
@@ -504,6 +665,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       seating_capacity: restaurant.seating_capacity || '',
       table_count: restaurant.table_count || '',
     })
+    setLegal(initialLegal(restaurant))
+    setPayments(initialPayments(restaurant))
+    setServiceModel(initialServiceModel(restaurant))
     setSaveMessage('')
   }, [restaurant])
 
@@ -603,6 +767,61 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     auth.seedCurrentRestaurant(updatedRestaurant)
     onSetupChanged?.()
     setSaveMessage('Saved basics.')
+  }
+
+  const updateRestaurantConfig = async (patch, successMessage) => {
+    setIsSaving(true)
+    setSaveMessage('')
+    setSetupError('')
+    const baseRestaurant = auth.restaurant.currentRestaurant?.id === restaurantId
+      ? auth.restaurant.currentRestaurant
+      : restaurant
+    const nextConfig = {
+      ...(baseRestaurant.config && typeof baseRestaurant.config === 'object' ? baseRestaurant.config : {}),
+      ...patch,
+    }
+    const { data: updatedRestaurant, error } = await supabase
+      .from('restaurants')
+      .update({ config: nextConfig })
+      .eq('id', restaurantId)
+      .select()
+      .single()
+    setIsSaving(false)
+    if (error) {
+      setSetupError(error.message || 'Could not save setup.')
+      return null
+    }
+    auth.seedCurrentRestaurant(updatedRestaurant)
+    onSetupChanged?.()
+    setSaveMessage(successMessage)
+    return updatedRestaurant
+  }
+
+  const saveLegal = async () => {
+    if (!legal.legal_business_name.trim()) {
+      setSetupError('Legal business name is required.')
+      return
+    }
+    if (!legal.legal_contact_name.trim()) {
+      setSetupError('Authorized signer name is required.')
+      return
+    }
+    if (!legal.tos_signature_data_url) {
+      setSetupError('Signature is required.')
+      return
+    }
+    await updateRestaurantConfig({
+      ...legal,
+      tos_version: 'shire-placeholder-tos-v1',
+    }, 'Saved legal setup.')
+  }
+
+  const savePayments = async () => {
+    await updateRestaurantConfig(payments, 'Saved payment setup.')
+  }
+
+  const saveServiceModel = async () => {
+    await updateRestaurantConfig(serviceModel, 'Saved service model.')
   }
 
   const saveHours = async () => {
@@ -847,8 +1066,13 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       {activeSetupTab === 'basics' && (
         <SectionShell
           title="Basics"
-          description="Restaurant name, location, type, phone, and cuisine tags from the original onboarding basics step."
-          actions={<SmallButton variant="primary" onClick={() => void saveBasics()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save basics'}</SmallButton>}
+          description="Restaurant profile, service modes, and default guest flow from Stage 1 onboarding."
+          actions={(
+            <>
+              <SmallButton variant="primary" onClick={() => void saveBasics()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save basics'}</SmallButton>
+              <SmallButton onClick={() => void saveServiceModel()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save service model'}</SmallButton>
+            </>
+          )}
         >
           {setupWarnings.basics?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
@@ -906,6 +1130,155 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   </button>
                 ))}
               </div>
+            </Field>
+            <div className="border-t border-white/10 pt-6">
+              <div className="mb-4">
+                <p className="label-mono">Service Modes</p>
+                <p className="mt-2 text-sm text-dash-secondary">Select every service style this location will operate.</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {SERVICE_MODE_OPTIONS.map(option => {
+                  const selected = serviceModel.service_modes.includes(option.id)
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setServiceModel(prev => ({
+                        ...prev,
+                        service_modes: selected
+                          ? prev.service_modes.filter(item => item !== option.id)
+                          : [...prev.service_modes, option.id],
+                      }))}
+                      className={[
+                        'rounded-xl border p-4 text-left text-sm font-semibold transition',
+                        selected
+                          ? 'border-dash-gold bg-dash-gold/10 text-dash-cream'
+                          : 'border-white/10 bg-white/[0.03] text-dash-secondary hover:border-white/20 hover:text-dash-cream',
+                      ].join(' ')}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+              <Field label="Default Guest Flow">
+                <SelectInput
+                  value={serviceModel.default_guest_flow}
+                  onChange={event => setServiceModel(prev => ({ ...prev, default_guest_flow: event.target.value }))}
+                  className="mt-3"
+                >
+                  {GUEST_FLOW_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+                </SelectInput>
+              </Field>
+            </div>
+          </div>
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'legal' && (
+        <SectionShell
+          title="Business & Legal"
+          description="Legal entity details and the placeholder Shire agreement signature captured during Stage 1 onboarding."
+          actions={<SmallButton variant="primary" onClick={() => void saveLegal()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save legal'}</SmallButton>}
+        >
+          {setupWarnings.legal?.length > 0 && (
+            <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
+              Missing: {setupWarnings.legal.join(', ')}
+            </div>
+          )}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Legal Business Name">
+              <TextInput value={legal.legal_business_name} onChange={event => setLegal(prev => ({ ...prev, legal_business_name: event.target.value }))} placeholder="The Golden Fork LLC" />
+            </Field>
+            <Field label="DBA / Trade Name">
+              <TextInput value={legal.dba_name} onChange={event => setLegal(prev => ({ ...prev, dba_name: event.target.value }))} placeholder="The Golden Fork" />
+            </Field>
+            <Field label="EIN">
+              <TextInput value={legal.ein} onChange={event => setLegal(prev => ({ ...prev, ein: event.target.value }))} placeholder="12-3456789" />
+            </Field>
+            <Field label="Authorized Signer">
+              <TextInput value={legal.legal_contact_name} onChange={event => setLegal(prev => ({ ...prev, legal_contact_name: event.target.value }))} placeholder="Owner or officer name" />
+            </Field>
+            <Field label="Signer Title">
+              <TextInput value={legal.legal_contact_title} onChange={event => setLegal(prev => ({ ...prev, legal_contact_title: event.target.value }))} placeholder="Owner" />
+            </Field>
+            <Field label="Legal Contact Email">
+              <TextInput type="email" value={legal.legal_contact_email} onChange={event => setLegal(prev => ({ ...prev, legal_contact_email: event.target.value }))} placeholder="owner@restaurant.com" />
+            </Field>
+            <Field label="Legal Contact Phone">
+              <TextInput value={legal.legal_contact_phone} onChange={event => setLegal(prev => ({ ...prev, legal_contact_phone: event.target.value }))} placeholder="(555) 123-4567" />
+            </Field>
+          </div>
+          <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.025] p-4">
+            <p className="label-mono">Placeholder Shire Terms of Service</p>
+            <p className="mt-3 max-h-32 overflow-auto rounded-xl border border-white/10 bg-black/20 p-3 text-sm leading-6 text-dash-secondary">
+              By signing, the authorized restaurant representative confirms that the information entered during setup is accurate, authorizes Shire to configure restaurant operations based on this setup, and agrees to complete payment processing and hardware validation before go-live. Final production terms will replace this placeholder agreement.
+            </p>
+            <div className="mt-4">
+              <SignaturePad
+                value={legal.tos_signature_data_url}
+                signedAt={legal.tos_signed_at}
+                onChange={patch => setLegal(prev => ({ ...prev, ...patch }))}
+              />
+            </div>
+          </div>
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'payments' && (
+        <SectionShell
+          title="Payments & Payouts"
+          description="Bank account readiness and default processing behavior for refunds, tips, and batch close."
+          actions={<SmallButton variant="primary" onClick={() => void savePayments()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save payments'}</SmallButton>}
+        >
+          {setupWarnings.payments?.length > 0 && (
+            <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
+              Missing: {setupWarnings.payments.join(', ')}
+            </div>
+          )}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Account Holder">
+              <TextInput value={payments.bank_account_holder} onChange={event => setPayments(prev => ({ ...prev, bank_account_holder: event.target.value }))} placeholder="The Golden Fork LLC" />
+            </Field>
+            <Field label="Bank Name">
+              <TextInput value={payments.bank_name} onChange={event => setPayments(prev => ({ ...prev, bank_name: event.target.value }))} placeholder="Bank name" />
+            </Field>
+            <Field label="Routing Number">
+              <TextInput inputMode="numeric" value={payments.bank_routing_number} onChange={event => setPayments(prev => ({ ...prev, bank_routing_number: event.target.value.replace(/\D/g, '').slice(0, 9) }))} placeholder="9 digits" />
+            </Field>
+            <Field label="Account Number">
+              <TextInput inputMode="numeric" value={payments.bank_account_number} onChange={event => setPayments(prev => ({ ...prev, bank_account_number: event.target.value.replace(/\D/g, '').slice(0, 17) }))} placeholder="Account number" />
+            </Field>
+            <Field label="Payout Schedule">
+              <SelectInput value={payments.payout_schedule} onChange={event => setPayments(prev => ({ ...prev, payout_schedule: event.target.value }))}>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="manual">Manual</option>
+              </SelectInput>
+            </Field>
+            <Field label="Refund Funding">
+              <SelectInput value={payments.refund_funding_source} onChange={event => setPayments(prev => ({ ...prev, refund_funding_source: event.target.value }))}>
+                <option value="processor_balance">Processor balance first</option>
+                <option value="bank_account">Linked bank account</option>
+              </SelectInput>
+            </Field>
+            <Field label="Batch Close">
+              <SelectInput value={payments.batch_close_mode} onChange={event => setPayments(prev => ({ ...prev, batch_close_mode: event.target.value }))}>
+                <option value="automatic">Automatic</option>
+                <option value="manual">Manual manager close</option>
+              </SelectInput>
+            </Field>
+            <Field label="Batch Close Time">
+              <TextInput type="time" value={payments.batch_close_time} onChange={event => setPayments(prev => ({ ...prev, batch_close_time: event.target.value }))} />
+            </Field>
+            <Field label="Credit Card Tips Paid">
+              <SelectInput value={payments.credit_card_tip_payout} onChange={event => setPayments(prev => ({ ...prev, credit_card_tip_payout: event.target.value }))}>
+                <option value="nightly">Nightly</option>
+                <option value="payroll">Through payroll</option>
+              </SelectInput>
+            </Field>
+            <Field label="Refund Approval Threshold">
+              <TextInput inputMode="decimal" value={payments.refund_approval_threshold} onChange={event => setPayments(prev => ({ ...prev, refund_approval_threshold: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))} placeholder="Manager approval over $..." />
             </Field>
           </div>
         </SectionShell>

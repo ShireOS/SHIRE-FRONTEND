@@ -6,6 +6,8 @@ import { useOnboarding } from '../hooks/useOnboarding'
 import { OnboardingLayout, ONBOARDING_STEPS } from '../components/OnboardingLayout'
 import { LaunchScreen } from '../components/LaunchScreen'
 import { BasicsStep } from './steps/BasicsStep'
+import { LegalStep } from './steps/LegalStep'
+import { PaymentsStep } from './steps/PaymentsStep'
 import { GoalsStep } from './steps/GoalsStep'
 import { DemoShowcase } from './steps/DemoShowcase'
 import { TechStackStep } from './steps/TechStackStep'
@@ -76,22 +78,26 @@ export function OnboardingPage() {
       case 0:
         return <BasicsStep onboarding={onboarding} />
       case 1:
-        return <GoalsStep onboarding={onboarding} />
+        return <LegalStep onboarding={onboarding} />
       case 2:
-        return <DemoShowcase onboarding={onboarding} />
+        return <PaymentsStep onboarding={onboarding} />
       case 3:
-        return <TechStackStep onboarding={onboarding} />
+        return <GoalsStep onboarding={onboarding} />
       case 4:
-        return <HoursStep onboarding={onboarding} />
+        return <DemoShowcase onboarding={onboarding} />
       case 5:
-        return <CapacityStep onboarding={onboarding} />
+        return <TechStackStep onboarding={onboarding} />
       case 6:
-        return <MenuStep onboarding={onboarding} />
+        return <HoursStep onboarding={onboarding} />
       case 7:
-        return <ModifierStep onboarding={onboarding} />
+        return <CapacityStep onboarding={onboarding} />
       case 8:
-        return <RoutingStep onboarding={onboarding} />
+        return <MenuStep onboarding={onboarding} />
       case 9:
+        return <ModifierStep onboarding={onboarding} />
+      case 10:
+        return <RoutingStep onboarding={onboarding} />
+      case 11:
         return <TeamStep onboarding={onboarding} />
       default:
         return null
@@ -99,7 +105,7 @@ export function OnboardingPage() {
   }
 
   // Optional setup steps can be skipped; required basics are enforced in the step UI.
-  const canSkip = currentStep === 1 || (currentStep >= 3 && currentStep <= 7)
+  const canSkip = currentStep === 3 || (currentStep >= 5 && currentStep <= 9)
   const canGoBack = currentStep > 0
 
   return (

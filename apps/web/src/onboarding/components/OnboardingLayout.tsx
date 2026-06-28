@@ -9,9 +9,11 @@ export interface OnboardingStep {
 
 export const ONBOARDING_STEPS: OnboardingStep[] = [
   { id: 'basics', title: 'Restaurant Basics', description: 'Name, location, and type' },
+  { id: 'legal', title: 'Business & Legal', description: 'Legal entity, signer, and agreement' },
+  { id: 'payments', title: 'Payments & Payouts', description: 'Bank account and processing defaults' },
   { id: 'goals', title: 'Goals & Priorities', description: 'What matters most to you' },
   { id: 'demo', title: 'Your Dashboard Preview', description: 'See what SHIRE can do' },
-  { id: 'tools', title: 'Current Tools', description: 'Your existing tech stack' },
+  { id: 'tools', title: 'Tools & Service Model', description: 'Your existing tech stack and guest flow' },
   { id: 'hours', title: 'Operating Hours', description: 'When you\'re open' },
   { id: 'capacity', title: 'Tables & Capacity', description: 'Your floor layout' },
   { id: 'menu', title: 'Menu Setup', description: 'Import your menu' },

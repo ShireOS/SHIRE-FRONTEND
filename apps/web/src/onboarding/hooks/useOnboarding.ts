@@ -29,30 +29,55 @@ export interface OnboardingData {
   cuisine_types: string[]
   phone: string
 
-  // Step 1: Goals & Priorities
+  // Step 1: Legal & Agreements
+  legal_business_name: string
+  dba_name: string
+  ein: string
+  legal_contact_name: string
+  legal_contact_title: string
+  legal_contact_email: string
+  legal_contact_phone: string
+  tos_signature_data_url: string | null
+  tos_signed_at: string | null
+
+  // Step 2: Payments & Processing
+  bank_account_holder: string
+  bank_name: string
+  bank_routing_number: string
+  bank_account_number: string
+  payout_schedule: 'daily' | 'weekly' | 'manual'
+  refund_funding_source: 'processor_balance' | 'bank_account'
+  batch_close_mode: 'automatic' | 'manual'
+  batch_close_time: string
+  credit_card_tip_payout: 'nightly' | 'payroll'
+  refund_approval_threshold: string
+
+  // Step 3: Goals & Priorities
   challenges: string[]
   daily_covers_range: string | null
   team_size_range: string | null
   primary_goal: string | null
 
-  // Step 3: Current Tools
+  // Step 5: Current Tools & Service Model
   current_pos: string | null
   current_scheduling: string | null
   current_reservations: string | null
+  service_modes: string[]
+  default_guest_flow: string | null
 
-  // Step 4: Hours
+  // Step 6: Hours
   operating_hours: OperatingHoursData[]
   same_hours_every_day: boolean
 
-  // Step 5: Capacity
+  // Step 7: Capacity
   seating_capacity: number | null
   table_count: number | null
   sections: string[]
 
-  // Step 6: Menu
+  // Step 8: Menu
   menu_import_method: 'skip' | 'manual' | 'upload' | 'toast' | 'scrape' | 'template'
 
-  // Step 8: Team
+  // Step 11: Team
   team_setup_method: 'skip' | 'invite' | 'sevenshifts'
   invites: TeamInvite[]
 }
@@ -104,6 +129,27 @@ const INITIAL_DATA: OnboardingData = {
   cuisine_types: [],
   phone: '',
 
+  legal_business_name: '',
+  dba_name: '',
+  ein: '',
+  legal_contact_name: '',
+  legal_contact_title: '',
+  legal_contact_email: '',
+  legal_contact_phone: '',
+  tos_signature_data_url: null,
+  tos_signed_at: null,
+
+  bank_account_holder: '',
+  bank_name: '',
+  bank_routing_number: '',
+  bank_account_number: '',
+  payout_schedule: 'daily',
+  refund_funding_source: 'processor_balance',
+  batch_close_mode: 'automatic',
+  batch_close_time: '04:00',
+  credit_card_tip_payout: 'payroll',
+  refund_approval_threshold: '',
+
   challenges: [],
   daily_covers_range: null,
   team_size_range: null,
@@ -112,6 +158,8 @@ const INITIAL_DATA: OnboardingData = {
   current_pos: null,
   current_scheduling: null,
   current_reservations: null,
+  service_modes: ['dine_in'],
+  default_guest_flow: 'seat_first',
 
   operating_hours: DEFAULT_HOURS,
   same_hours_every_day: true,
@@ -126,7 +174,7 @@ const INITIAL_DATA: OnboardingData = {
   invites: [],
 }
 
-const ONBOARDING_MAX_STEP = 9
+const ONBOARDING_MAX_STEP = 11
 const REQUEST_TIMEOUT_MS = 20000
 const ONBOARDING_DRAFT_VERSION = 1
 
@@ -146,6 +194,11 @@ const TEAM_SETUP_METHODS: OnboardingData['team_setup_method'][] = [
 ]
 
 const TEAM_ROLES: TeamInvite['role'][] = ['manager', 'server', 'host', 'kitchen']
+
+const PAYOUT_SCHEDULES: OnboardingData['payout_schedule'][] = ['daily', 'weekly', 'manual']
+const REFUND_FUNDING_SOURCES: OnboardingData['refund_funding_source'][] = ['processor_balance', 'bank_account']
+const BATCH_CLOSE_MODES: OnboardingData['batch_close_mode'][] = ['automatic', 'manual']
+const CREDIT_CARD_TIP_PAYOUTS: OnboardingData['credit_card_tip_payout'][] = ['nightly', 'payroll']
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -169,6 +222,9 @@ const asStringArray = (value: unknown): string[] => {
     .map(item => item.trim())
     .filter(Boolean)
 }
+
+const asEnum = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
+  allowed.includes(value as T) ? (value as T) : fallback
 
 const asMenuImportMethod = (value: unknown): OnboardingData['menu_import_method'] =>
   MENU_IMPORT_METHODS.includes(value as OnboardingData['menu_import_method'])
@@ -240,6 +296,25 @@ const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): On
     type: input.type ?? INITIAL_DATA.type,
     cuisine_types: asStringArray(input.cuisine_types),
     phone: asString(input.phone),
+    legal_business_name: asString(input.legal_business_name),
+    dba_name: asString(input.dba_name),
+    ein: asString(input.ein),
+    legal_contact_name: asString(input.legal_contact_name),
+    legal_contact_title: asString(input.legal_contact_title),
+    legal_contact_email: asString(input.legal_contact_email),
+    legal_contact_phone: asString(input.legal_contact_phone),
+    tos_signature_data_url: asNullableString(input.tos_signature_data_url),
+    tos_signed_at: asNullableString(input.tos_signed_at),
+    bank_account_holder: asString(input.bank_account_holder),
+    bank_name: asString(input.bank_name),
+    bank_routing_number: asString(input.bank_routing_number),
+    bank_account_number: asString(input.bank_account_number),
+    payout_schedule: asEnum(input.payout_schedule, PAYOUT_SCHEDULES, INITIAL_DATA.payout_schedule),
+    refund_funding_source: asEnum(input.refund_funding_source, REFUND_FUNDING_SOURCES, INITIAL_DATA.refund_funding_source),
+    batch_close_mode: asEnum(input.batch_close_mode, BATCH_CLOSE_MODES, INITIAL_DATA.batch_close_mode),
+    batch_close_time: asString(input.batch_close_time, INITIAL_DATA.batch_close_time),
+    credit_card_tip_payout: asEnum(input.credit_card_tip_payout, CREDIT_CARD_TIP_PAYOUTS, INITIAL_DATA.credit_card_tip_payout),
+    refund_approval_threshold: asString(input.refund_approval_threshold),
     challenges: asStringArray(input.challenges),
     daily_covers_range: asNullableString(input.daily_covers_range),
     team_size_range: asNullableString(input.team_size_range),
@@ -247,6 +322,10 @@ const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): On
     current_pos: asNullableString(input.current_pos),
     current_scheduling: asNullableString(input.current_scheduling),
     current_reservations: asNullableString(input.current_reservations),
+    service_modes: asStringArray(input.service_modes).length > 0
+      ? asStringArray(input.service_modes)
+      : INITIAL_DATA.service_modes,
+    default_guest_flow: asNullableString(input.default_guest_flow) || INITIAL_DATA.default_guest_flow,
     operating_hours: normalizeOperatingHours(input.operating_hours),
     same_hours_every_day:
       typeof input.same_hours_every_day === 'boolean'
@@ -311,6 +390,25 @@ const parseConfig = (value: unknown): Partial<OnboardingData> => {
   if (!isRecord(value)) return {}
 
   return {
+    legal_business_name: asString(value.legal_business_name),
+    dba_name: asString(value.dba_name),
+    ein: asString(value.ein),
+    legal_contact_name: asString(value.legal_contact_name),
+    legal_contact_title: asString(value.legal_contact_title),
+    legal_contact_email: asString(value.legal_contact_email),
+    legal_contact_phone: asString(value.legal_contact_phone),
+    tos_signature_data_url: asNullableString(value.tos_signature_data_url),
+    tos_signed_at: asNullableString(value.tos_signed_at),
+    bank_account_holder: asString(value.bank_account_holder),
+    bank_name: asString(value.bank_name),
+    bank_routing_number: asString(value.bank_routing_number),
+    bank_account_number: asString(value.bank_account_number),
+    payout_schedule: asEnum(value.payout_schedule, PAYOUT_SCHEDULES, INITIAL_DATA.payout_schedule),
+    refund_funding_source: asEnum(value.refund_funding_source, REFUND_FUNDING_SOURCES, INITIAL_DATA.refund_funding_source),
+    batch_close_mode: asEnum(value.batch_close_mode, BATCH_CLOSE_MODES, INITIAL_DATA.batch_close_mode),
+    batch_close_time: asString(value.batch_close_time, INITIAL_DATA.batch_close_time),
+    credit_card_tip_payout: asEnum(value.credit_card_tip_payout, CREDIT_CARD_TIP_PAYOUTS, INITIAL_DATA.credit_card_tip_payout),
+    refund_approval_threshold: asString(value.refund_approval_threshold),
     challenges: asStringArray(value.challenges),
     daily_covers_range: asNullableString(value.daily_covers_range),
     team_size_range: asNullableString(value.team_size_range),
@@ -318,6 +416,8 @@ const parseConfig = (value: unknown): Partial<OnboardingData> => {
     current_pos: asNullableString(value.current_pos),
     current_scheduling: asNullableString(value.current_scheduling),
     current_reservations: asNullableString(value.current_reservations),
+    service_modes: asStringArray(value.service_modes),
+    default_guest_flow: asNullableString(value.default_guest_flow),
     menu_import_method: asMenuImportMethod(value.menu_import_method),
     team_setup_method: asTeamSetupMethod(value.team_setup_method),
     invites: asInvites(value.invites),
@@ -832,6 +932,93 @@ export function useOnboarding() {
   ])
 
   // Save goals & priorities (after step 1)
+  const saveLegal = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const activeRestaurantId = getActiveRestaurantId()
+      const existingConfig = await fetchRestaurantConfig(activeRestaurantId)
+
+      const { error: updateError } = await runWithTimeout(
+        () =>
+          supabase
+            .from('restaurants')
+            .update({
+              config: {
+                ...existingConfig,
+                legal_business_name: data.legal_business_name,
+                dba_name: data.dba_name,
+                ein: data.ein,
+                legal_contact_name: data.legal_contact_name,
+                legal_contact_title: data.legal_contact_title,
+                legal_contact_email: data.legal_contact_email,
+                legal_contact_phone: data.legal_contact_phone,
+                tos_signature_data_url: data.tos_signature_data_url,
+                tos_signed_at: data.tos_signed_at,
+                tos_version: 'shire-placeholder-tos-v1',
+              },
+              ...onboardingProgressPatch(2),
+            })
+            .eq('id', activeRestaurantId),
+        'Saving legal setup timed out. Please retry.'
+      )
+
+      if (updateError) throw updateError
+      setRestaurantId(activeRestaurantId)
+    } catch (err) {
+      const message = toErrorMessage(err, 'Failed to save legal setup')
+      setError(message)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [data, getActiveRestaurantId, fetchRestaurantConfig, onboardingProgressPatch, runWithTimeout])
+
+  const savePayments = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const activeRestaurantId = getActiveRestaurantId()
+      const existingConfig = await fetchRestaurantConfig(activeRestaurantId)
+
+      const { error: updateError } = await runWithTimeout(
+        () =>
+          supabase
+            .from('restaurants')
+            .update({
+              config: {
+                ...existingConfig,
+                bank_account_holder: data.bank_account_holder,
+                bank_name: data.bank_name,
+                bank_routing_number: data.bank_routing_number,
+                bank_account_number: data.bank_account_number,
+                payout_schedule: data.payout_schedule,
+                refund_funding_source: data.refund_funding_source,
+                batch_close_mode: data.batch_close_mode,
+                batch_close_time: data.batch_close_time,
+                credit_card_tip_payout: data.credit_card_tip_payout,
+                refund_approval_threshold: data.refund_approval_threshold,
+              },
+              ...onboardingProgressPatch(3),
+            })
+            .eq('id', activeRestaurantId),
+        'Saving payment setup timed out. Please retry.'
+      )
+
+      if (updateError) throw updateError
+      setRestaurantId(activeRestaurantId)
+    } catch (err) {
+      const message = toErrorMessage(err, 'Failed to save payment setup')
+      setError(message)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [data, getActiveRestaurantId, fetchRestaurantConfig, onboardingProgressPatch, runWithTimeout])
+
+  // Save goals & priorities
   const saveGoals = useCallback(async () => {
     setIsLoading(true)
     setError(null)
@@ -852,7 +1039,7 @@ export function useOnboarding() {
                 team_size_range: data.team_size_range,
                 primary_goal: data.primary_goal,
               },
-              ...onboardingProgressPatch(2),
+              ...onboardingProgressPatch(4),
             })
             .eq('id', activeRestaurantId),
         'Saving goals timed out. Please retry.'
@@ -889,8 +1076,10 @@ export function useOnboarding() {
                 current_pos: data.current_pos,
                 current_scheduling: data.current_scheduling,
                 current_reservations: data.current_reservations,
+                service_modes: data.service_modes,
+                default_guest_flow: data.default_guest_flow,
               },
-              ...onboardingProgressPatch(4),
+              ...onboardingProgressPatch(6),
             })
             .eq('id', activeRestaurantId),
         'Saving current tools timed out. Please retry.'
@@ -953,7 +1142,7 @@ export function useOnboarding() {
             () =>
               supabase
                 .from('restaurants')
-                .update({ onboarding_step: 5 })
+                .update({ onboarding_step: 7 })
                 .eq('id', activeRestaurantId),
             'Updating onboarding progress timed out. Please retry.'
           )
@@ -986,7 +1175,7 @@ export function useOnboarding() {
             .update({
               seating_capacity: data.seating_capacity,
               table_count: data.table_count,
-              ...onboardingProgressPatch(6),
+              ...onboardingProgressPatch(8),
             })
             .eq('id', activeRestaurantId),
         'Saving capacity settings timed out. Please retry.'
@@ -1063,7 +1252,7 @@ export function useOnboarding() {
                 ...existingConfig,
                 menu_import_method: data.menu_import_method,
               },
-              ...onboardingProgressPatch(7),
+              ...onboardingProgressPatch(9),
             })
             .eq('id', activeRestaurantId),
         'Saving menu setup timed out. Please retry.'
@@ -1110,9 +1299,31 @@ export function useOnboarding() {
                 current_pos: data.current_pos,
                 current_scheduling: data.current_scheduling,
                 current_reservations: data.current_reservations,
+                service_modes: data.service_modes,
+                default_guest_flow: data.default_guest_flow,
                 menu_import_method: data.menu_import_method,
                 team_setup_method: data.team_setup_method,
                 invites: data.invites,
+                legal_business_name: data.legal_business_name,
+                dba_name: data.dba_name,
+                ein: data.ein,
+                legal_contact_name: data.legal_contact_name,
+                legal_contact_title: data.legal_contact_title,
+                legal_contact_email: data.legal_contact_email,
+                legal_contact_phone: data.legal_contact_phone,
+                tos_signature_data_url: data.tos_signature_data_url,
+                tos_signed_at: data.tos_signed_at,
+                tos_version: 'shire-placeholder-tos-v1',
+                bank_account_holder: data.bank_account_holder,
+                bank_name: data.bank_name,
+                bank_routing_number: data.bank_routing_number,
+                bank_account_number: data.bank_account_number,
+                payout_schedule: data.payout_schedule,
+                refund_funding_source: data.refund_funding_source,
+                batch_close_mode: data.batch_close_mode,
+                batch_close_time: data.batch_close_time,
+                credit_card_tip_payout: data.credit_card_tip_payout,
+                refund_approval_threshold: data.refund_approval_threshold,
               },
               ...(isSetupEditor
                 ? {}
@@ -1191,6 +1402,8 @@ export function useOnboarding() {
     prevStep,
     goToStep,
     createRestaurant,
+    saveLegal,
+    savePayments,
     saveGoals,
     saveTechStack,
     saveOperatingHours,

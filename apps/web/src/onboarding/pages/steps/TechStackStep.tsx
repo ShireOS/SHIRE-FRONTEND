@@ -30,6 +30,22 @@ const RESERVATION_OPTIONS = [
   { id: 'other', label: 'Other' },
 ]
 
+const SERVICE_MODE_OPTIONS = [
+  { id: 'dine_in', label: 'Dine-in' },
+  { id: 'bar', label: 'Bar service' },
+  { id: 'counter_service', label: 'Counter service' },
+  { id: 'takeout', label: 'Takeout' },
+  { id: 'delivery', label: 'Delivery' },
+  { id: 'catering', label: 'Catering' },
+]
+
+const GUEST_FLOW_OPTIONS = [
+  { id: 'seat_first', label: 'Seat first', description: 'Host seats guests, then orders are attached to a table.' },
+  { id: 'order_first', label: 'Order first', description: 'Guests order before a table is assigned.' },
+  { id: 'tab_first', label: 'Tab first', description: 'Open a named or card-backed tab before ordering.' },
+  { id: 'counter_pay', label: 'Counter pay', description: 'Guests pay at the counter before or after pickup.' },
+]
+
 export function TechStackStep({ onboarding }: TechStackStepProps) {
   const { data, updateData, saveTechStack, nextStep, isLoading, error } = onboarding
 
@@ -70,6 +86,15 @@ export function TechStackStep({ onboarding }: TechStackStepProps) {
       ))}
     </div>
   )
+
+  const toggleServiceMode = (id: string) => {
+    const current = data.service_modes || []
+    updateData({
+      service_modes: current.includes(id)
+        ? current.filter(item => item !== id)
+        : [...current, id],
+    })
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-10">
@@ -113,6 +138,56 @@ export function TechStackStep({ onboarding }: TechStackStepProps) {
           data.current_reservations,
           (id) => updateData({ current_reservations: id })
         )}
+      </div>
+
+      <div>
+        <label className="label-mono block mb-4 text-[rgb(var(--gold))]">
+          Service Modes
+        </label>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {SERVICE_MODE_OPTIONS.map(opt => {
+            const selected = data.service_modes?.includes(opt.id)
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => toggleServiceMode(opt.id)}
+                className={`p-4 rounded-lg border text-center transition-all ${
+                  selected
+                    ? 'border-[rgb(var(--gold))] bg-[rgba(201,169,98,0.08)] shadow-[0_0_12px_rgba(201,169,98,0.1)]'
+                    : 'border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.2)]'
+                }`}
+              >
+                <span className={`text-sm font-medium ${selected ? 'text-[rgb(var(--text-primary))]' : 'text-[rgb(var(--text-secondary))]'}`}>
+                  {opt.label}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div>
+        <label className="label-mono block mb-4 text-[rgb(var(--gold))]">
+          Default Guest Flow
+        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {GUEST_FLOW_OPTIONS.map(opt => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => updateData({ default_guest_flow: opt.id })}
+              className={`p-4 rounded-lg border text-left transition-all ${
+                data.default_guest_flow === opt.id
+                  ? 'border-[rgb(var(--gold))] bg-[rgba(201,169,98,0.08)] shadow-[0_0_12px_rgba(201,169,98,0.1)]'
+                  : 'border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] hover:border-[rgba(255,255,255,0.2)]'
+              }`}
+            >
+              <span className="block text-sm font-semibold text-[rgb(var(--text-primary))]">{opt.label}</span>
+              <span className="mt-2 block text-sm leading-5 text-[rgb(var(--text-secondary))]">{opt.description}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Submit */}
