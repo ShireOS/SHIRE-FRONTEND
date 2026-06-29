@@ -8,7 +8,15 @@ interface MenuEditorProps {
   restaurantId: string
   mode: 'upload' | 'manual'
   initialItems?: MenuEditorItem[]
-  categories?: Array<{ id?: string | null; name: string }>
+  categories?: Array<{
+    id?: string | null
+    name: string
+    routing_station_id?: string
+    default_course_type?: string
+    default_fire_mode?: string
+    prep_time_minutes?: string
+    kds_display_group?: string
+  }>
   onBack: () => void
   onSave: (items: MenuEditorItem[]) => void
 }
@@ -34,6 +42,12 @@ const newBlankItem = (): MenuEditorItem => ({
   availability_mode: 'always',
   availability_days: [0, 1, 2, 3, 4, 5, 6],
   availability_service_modes: [],
+  course_type: '',
+  fire_mode: '',
+  routing_station_id: undefined,
+  prep_time_minutes: '',
+  kds_display_group: '',
+  item_routing_notes: '',
 })
 
 export function MenuEditor({ restaurantId, mode, initialItems, categories, onBack, onSave }: MenuEditorProps) {
@@ -94,18 +108,27 @@ export function MenuEditor({ restaurantId, mode, initialItems, categories, onBac
       }
 
       const extraction = await extractRes.json()
-      const extracted: MenuEditorItem[] = (extraction.items || []).map((t: any) => ({
-        id: crypto.randomUUID(),
-        name: t.name ?? '',
-        category: t.category ?? '',
-        menu_category_id: categories?.find(category => category.name.toLowerCase() === String(t.category || '').toLowerCase())?.id || undefined,
-        price: t.price != null ? String(t.price) : '',
-        description: t.description ?? '',
-        is_available: true,
-        availability_mode: 'always',
-        availability_days: [0, 1, 2, 3, 4, 5, 6],
-        availability_service_modes: [],
-      }))
+      const extracted: MenuEditorItem[] = (extraction.items || []).map((t: any) => {
+        const category = categories?.find(category => category.name.toLowerCase() === String(t.category || '').toLowerCase())
+        return {
+          id: crypto.randomUUID(),
+          name: t.name ?? '',
+          category: t.category ?? '',
+          menu_category_id: category?.id || undefined,
+          price: t.price != null ? String(t.price) : '',
+          description: t.description ?? '',
+          is_available: true,
+          availability_mode: 'always',
+          availability_days: [0, 1, 2, 3, 4, 5, 6],
+          availability_service_modes: [],
+          course_type: (category?.default_course_type || '') as MenuEditorItem['course_type'],
+          fire_mode: (category?.default_fire_mode || '') as MenuEditorItem['fire_mode'],
+          routing_station_id: category?.routing_station_id || undefined,
+          prep_time_minutes: category?.prep_time_minutes || '',
+          kds_display_group: category?.kds_display_group || '',
+          item_routing_notes: '',
+        }
+      })
 
       setItems(extracted)
       setPhase('editing')
@@ -157,6 +180,12 @@ export function MenuEditor({ restaurantId, mode, initialItems, categories, onBac
         availability_start_date: item.availability_start_date || undefined,
         availability_end_date: item.availability_end_date || undefined,
         availability_notes: item.availability_notes || undefined,
+        course_type: item.course_type || undefined,
+        fire_mode: item.fire_mode || undefined,
+        routing_station_id: item.routing_station_id || undefined,
+        prep_time_minutes: item.prep_time_minutes ? Number(item.prep_time_minutes) : undefined,
+        kds_display_group: item.kds_display_group || undefined,
+        item_routing_notes: item.item_routing_notes || undefined,
       }))
 
       const res = await fetch(`${baseUrl(restaurantId)}/items`, {

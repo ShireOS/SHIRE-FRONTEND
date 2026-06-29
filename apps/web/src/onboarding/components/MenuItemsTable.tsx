@@ -14,6 +14,12 @@ export interface MenuEditorItem {
   availability_start_date?: string
   availability_end_date?: string
   availability_notes?: string
+  course_type?: 'none' | 'appetizer' | 'entree' | 'dessert' | 'drink' | 'side' | 'other' | ''
+  fire_mode?: 'inherit' | 'immediate' | 'hold' | 'manual' | 'by_course' | ''
+  routing_station_id?: string
+  prep_time_minutes?: string
+  kds_display_group?: string
+  item_routing_notes?: string
 }
 
 const CATEGORIES = [
@@ -36,7 +42,7 @@ interface MenuItemsTableProps {
   items: MenuEditorItem[]
   onItemsChange: (items: MenuEditorItem[]) => void
   disabled?: boolean
-  categories?: Array<{ id?: string | null; name: string }>
+  categories?: Array<{ id?: string | null; name: string; routing_station_id?: string; routing_station_name?: string; default_course_type?: string; default_fire_mode?: string; prep_time_minutes?: string; kds_display_group?: string }>
 }
 
 const DAYS = [
@@ -50,6 +56,24 @@ const DAYS = [
 ] as const
 
 const SERVICE_MODES = ['dine_in', 'bar', 'takeout', 'delivery', 'catering']
+const COURSE_OPTIONS = [
+  ['', 'Category default'],
+  ['none', 'No course'],
+  ['appetizer', 'App'],
+  ['entree', 'Entree'],
+  ['dessert', 'Dessert'],
+  ['drink', 'Drink'],
+  ['side', 'Side'],
+  ['other', 'Other'],
+] as const
+const FIRE_OPTIONS = [
+  ['', 'Category default'],
+  ['inherit', 'Default'],
+  ['immediate', 'Immediate'],
+  ['hold', 'Hold'],
+  ['manual', 'Manual'],
+  ['by_course', 'By course'],
+] as const
 
 export function MenuItemsTable({ items, onItemsChange, disabled, categories }: MenuItemsTableProps) {
   const categoryOptions = categories?.length ? [{ id: null, name: '' }, ...categories] : CATEGORIES.map(name => ({ id: null, name }))
@@ -64,6 +88,11 @@ export function MenuItemsTable({ items, onItemsChange, disabled, categories }: M
       ...item,
       category: categoryName,
       menu_category_id: category?.id || undefined,
+      routing_station_id: item.routing_station_id || category?.routing_station_id || undefined,
+      course_type: (item.course_type || category?.default_course_type || '') as MenuEditorItem['course_type'],
+      fire_mode: (item.fire_mode || category?.default_fire_mode || '') as MenuEditorItem['fire_mode'],
+      prep_time_minutes: item.prep_time_minutes || category?.prep_time_minutes || '',
+      kds_display_group: item.kds_display_group || category?.kds_display_group || '',
     } : item))
   }
 
@@ -99,6 +128,7 @@ export function MenuItemsTable({ items, onItemsChange, disabled, categories }: M
             <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs w-[12%]">Price</th>
             <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs">Description</th>
             <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs w-[16%]">Availability</th>
+            <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs w-[16%]">Course / Routing</th>
             <th className="w-8" />
           </tr>
         </thead>
@@ -278,6 +308,41 @@ export function MenuItemsTable({ items, onItemsChange, disabled, categories }: M
                     </div>
                   </div>
                 )}
+              </td>
+
+              <td className="py-1.5 px-2 align-top">
+                <div className="space-y-2">
+                  <select
+                    value={item.course_type || ''}
+                    onChange={(e) => update(item.id, 'course_type', e.target.value)}
+                    disabled={disabled}
+                    className="w-full rounded border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-white"
+                  >
+                    {COURSE_OPTIONS.map(([value, label]) => <option key={value} value={value} style={{ background: '#1a1a1a', color: '#fff' }}>{label}</option>)}
+                  </select>
+                  <select
+                    value={item.fire_mode || ''}
+                    onChange={(e) => update(item.id, 'fire_mode', e.target.value)}
+                    disabled={disabled}
+                    className="w-full rounded border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-white"
+                  >
+                    {FIRE_OPTIONS.map(([value, label]) => <option key={value} value={value} style={{ background: '#1a1a1a', color: '#fff' }}>{label}</option>)}
+                  </select>
+                  <input
+                    value={item.kds_display_group || ''}
+                    onChange={(e) => update(item.id, 'kds_display_group', e.target.value)}
+                    disabled={disabled}
+                    placeholder="KDS group"
+                    className="w-full rounded border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-white placeholder:text-[rgb(var(--text-tertiary))]"
+                  />
+                  <input
+                    value={item.prep_time_minutes || ''}
+                    onChange={(e) => update(item.id, 'prep_time_minutes', e.target.value.replace(/\D/g, '').slice(0, 3))}
+                    disabled={disabled}
+                    placeholder="Prep min"
+                    className="w-full rounded border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-white placeholder:text-[rgb(var(--text-tertiary))]"
+                  />
+                </div>
               </td>
 
               {/* Delete */}

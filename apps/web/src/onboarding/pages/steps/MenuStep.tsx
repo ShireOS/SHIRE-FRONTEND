@@ -121,6 +121,12 @@ export function MenuStep({ onboarding }: MenuStepProps) {
           availability_start_date: item.availability_start_date || '',
           availability_end_date: item.availability_end_date || '',
           availability_notes: item.availability_notes || '',
+          course_type: item.course_type || '',
+          fire_mode: item.fire_mode || '',
+          routing_station_id: item.routing_station_id || '',
+          prep_time_minutes: item.prep_time_minutes != null ? String(item.prep_time_minutes) : '',
+          kds_display_group: item.kds_display_group || '',
+          item_routing_notes: item.item_routing_notes || '',
         })))
       }
     }

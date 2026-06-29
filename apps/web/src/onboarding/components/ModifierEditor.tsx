@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import type { ReactNode } from 'react'
 import { supabase } from '../../shared/lib/supabase'
 import { API_CONFIG } from '../../shared/api/config'
 import type { MenuEditorItem } from './MenuItemsTable'
@@ -8,8 +9,17 @@ import type { MenuEditorItem } from './MenuItemsTable'
 interface LocalModifier {
   localId: string       // stable client-side key
   savedId: string | null
+  groupName: string
   name: string
   priceDelta: string    // string for controlled input, parsed on save
+  isRequired: boolean
+  minSelections: string
+  maxSelections: string
+  freeModifierCount: string
+  allowQuantity: boolean
+  isDefault: boolean
+  printOnKitchenTicket: boolean
+  modifierNotes: string
   itemIds: Set<string>  // menu item UUIDs
 }
 
@@ -48,12 +58,21 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
         const token = await getToken()
         const res = await fetch(base(restaurantId), { headers: { Authorization: token } })
         if (!res.ok) return
-        const data: { id: string; name: string; price_delta: number; item_ids: string[] }[] = await res.json()
+        const data: any[] = await res.json()
         setModifiers(data.map(m => ({
           localId: m.id,
           savedId: m.id,
+          groupName: m.group_name || 'Add-ons',
           name: m.name,
           priceDelta: m.price_delta > 0 ? String(m.price_delta) : '',
+          isRequired: Boolean(m.is_required),
+          minSelections: m.min_selections != null ? String(m.min_selections) : '0',
+          maxSelections: m.max_selections != null ? String(m.max_selections) : '',
+          freeModifierCount: m.free_modifier_count != null ? String(m.free_modifier_count) : '0',
+          allowQuantity: Boolean(m.allow_quantity),
+          isDefault: Boolean(m.is_default),
+          printOnKitchenTicket: m.print_on_kitchen_ticket !== false,
+          modifierNotes: m.modifier_notes || '',
           itemIds: new Set(m.item_ids),
         })))
         setDeletedModifierIds(new Set())
@@ -69,11 +88,26 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
   const addRow = () => {
     setModifiers(prev => [
       ...prev,
-      { localId: crypto.randomUUID(), savedId: null, name: '', priceDelta: '', itemIds: new Set() },
+      {
+        localId: crypto.randomUUID(),
+        savedId: null,
+        groupName: 'Add-ons',
+        name: '',
+        priceDelta: '',
+        isRequired: false,
+        minSelections: '0',
+        maxSelections: '',
+        freeModifierCount: '0',
+        allowQuantity: false,
+        isDefault: false,
+        printOnKitchenTicket: true,
+        modifierNotes: '',
+        itemIds: new Set(),
+      },
     ])
   }
 
-  const updateRow = useCallback((localId: string, patch: Partial<Pick<LocalModifier, 'name' | 'priceDelta'>>) => {
+  const updateRow = useCallback((localId: string, patch: Partial<Omit<LocalModifier, 'localId' | 'savedId' | 'itemIds'>>) => {
     setModifiers(prev => prev.map(m => m.localId === localId ? { ...m, ...patch } : m))
   }, [])
 
@@ -107,7 +141,7 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
           const res = await fetch(base(restaurantId), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: token },
-            body: JSON.stringify({ name: mod.name.trim(), price_delta: delta }),
+            body: JSON.stringify(modifierPayload(mod, delta)),
           })
           if (!res.ok) throw new Error(`Failed to create modifier "${mod.name}"`)
           const created: { id: string } = await res.json()
@@ -117,7 +151,7 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
           await fetch(`${base(restaurantId)}/${savedId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', Authorization: token },
-            body: JSON.stringify({ name: mod.name.trim(), price_delta: delta }),
+            body: JSON.stringify(modifierPayload(mod, delta)),
           })
         }
 
@@ -197,9 +231,12 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
       {/* Table */}
       <div className="flex-1 rounded-xl border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.02)] overflow-hidden">
         {/* Column headers */}
-        <div className="grid grid-cols-[1fr_120px_140px_32px] gap-3 px-4 py-2.5 border-b border-[rgba(255,255,255,0.06)] text-[10px] uppercase tracking-wider text-[rgb(var(--text-tertiary))]">
-          <span>Modifier Name</span>
+        <div className="hidden gap-3 border-b border-[rgba(255,255,255,0.06)] px-4 py-2.5 text-[10px] uppercase tracking-wider text-[rgb(var(--text-tertiary))] lg:grid lg:grid-cols-[1fr_1fr_110px_150px_150px_32px]">
+          <span>Group</span>
+          <span>Option</span>
           <span>Price Add-on</span>
+          <span>Rules</span>
+          <span>Flags</span>
           <span>Applies To</span>
           <span />
         </div>
@@ -257,12 +294,29 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
   )
 }
 
+function modifierPayload(mod: LocalModifier, priceDelta: number) {
+  return {
+    group_name: mod.groupName.trim() || 'Add-ons',
+    name: mod.name.trim(),
+    price_delta: priceDelta,
+    is_required: mod.isRequired,
+    min_selections: Number(mod.minSelections || 0),
+    max_selections: mod.maxSelections === '' ? null : Number(mod.maxSelections),
+    free_modifier_count: Number(mod.freeModifierCount || 0),
+    allow_quantity: mod.allowQuantity,
+    is_default: mod.isDefault,
+    print_on_kitchen_ticket: mod.printOnKitchenTicket,
+    modifier_notes: mod.modifierNotes.trim() || null,
+    is_active: true,
+  }
+}
+
 // ── Modifier Row ───────────────────────────────────────────────────────────
 
 interface ModifierRowProps {
   modifier: LocalModifier
   menuItemCount: number
-  onUpdate: (patch: Partial<Pick<LocalModifier, 'name' | 'priceDelta'>>) => void
+  onUpdate: (patch: Partial<Omit<LocalModifier, 'localId' | 'savedId' | 'itemIds'>>) => void
   onRemove: () => void
   onOpenPopup: () => void
   disabled: boolean
@@ -273,16 +327,10 @@ function ModifierRow({ modifier, menuItemCount: _menuItemCount, onUpdate, onRemo
   const assigned = count > 0
 
   return (
-    <div className="grid grid-cols-[1fr_120px_140px_32px] gap-3 px-4 py-2.5 items-center">
-      {/* Name */}
-      <input
-        type="text"
-        value={modifier.name}
-        onChange={e => onUpdate({ name: e.target.value })}
-        disabled={disabled}
-        placeholder="e.g. Extra Cheese"
-        className="w-full px-3 py-1.5 rounded-lg bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] text-sm text-[rgb(var(--text-primary))] placeholder:text-[rgb(var(--text-tertiary))] focus:outline-none focus:border-[rgba(201,169,98,0.4)] transition-colors disabled:opacity-50"
-      />
+    <div className="grid grid-cols-1 gap-3 px-4 py-3 lg:grid-cols-[1fr_1fr_110px_150px_150px_32px] lg:items-center">
+      <input type="text" value={modifier.groupName} onChange={e => onUpdate({ groupName: e.target.value })} disabled={disabled} placeholder="Group, e.g. Cheese" className="w-full px-3 py-1.5 rounded-lg bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] text-sm text-[rgb(var(--text-primary))] placeholder:text-[rgb(var(--text-tertiary))] focus:outline-none focus:border-[rgba(201,169,98,0.4)] transition-colors disabled:opacity-50" />
+
+      <input type="text" value={modifier.name} onChange={e => onUpdate({ name: e.target.value })} disabled={disabled} placeholder="Option, e.g. Extra Cheese" className="w-full px-3 py-1.5 rounded-lg bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] text-sm text-[rgb(var(--text-primary))] placeholder:text-[rgb(var(--text-tertiary))] focus:outline-none focus:border-[rgba(201,169,98,0.4)] transition-colors disabled:opacity-50" />
 
       {/* Price delta */}
       <div className="relative">
@@ -299,7 +347,19 @@ function ModifierRow({ modifier, menuItemCount: _menuItemCount, onUpdate, onRemo
         />
       </div>
 
-      {/* Status chip */}
+      <div className="grid grid-cols-3 gap-1">
+        <input value={modifier.minSelections} onChange={e => onUpdate({ minSelections: e.target.value.replace(/\D/g, '').slice(0, 2) })} disabled={disabled} placeholder="Min" className="min-w-0 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-white" />
+        <input value={modifier.maxSelections} onChange={e => onUpdate({ maxSelections: e.target.value.replace(/\D/g, '').slice(0, 2) })} disabled={disabled} placeholder="Max" className="min-w-0 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-white" />
+        <input value={modifier.freeModifierCount} onChange={e => onUpdate({ freeModifierCount: e.target.value.replace(/\D/g, '').slice(0, 2) })} disabled={disabled} placeholder="Free" className="min-w-0 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-white" />
+      </div>
+
+      <div className="flex flex-wrap gap-1">
+        <ToggleChip active={modifier.isRequired} onClick={() => onUpdate({ isRequired: !modifier.isRequired })} disabled={disabled}>Req</ToggleChip>
+        <ToggleChip active={modifier.isDefault} onClick={() => onUpdate({ isDefault: !modifier.isDefault })} disabled={disabled}>Default</ToggleChip>
+        <ToggleChip active={modifier.allowQuantity} onClick={() => onUpdate({ allowQuantity: !modifier.allowQuantity })} disabled={disabled}>Qty</ToggleChip>
+        <ToggleChip active={modifier.printOnKitchenTicket} onClick={() => onUpdate({ printOnKitchenTicket: !modifier.printOnKitchenTicket })} disabled={disabled}>Ticket</ToggleChip>
+      </div>
+
       <button
         onClick={onOpenPopup}
         disabled={disabled}
@@ -335,6 +395,19 @@ function ModifierRow({ modifier, menuItemCount: _menuItemCount, onUpdate, onRemo
         </svg>
       </button>
     </div>
+  )
+}
+
+function ToggleChip({ active, disabled, onClick, children }: { active: boolean; disabled: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`rounded border px-2 py-1 text-[10px] font-semibold ${active ? 'border-[rgb(var(--gold))] text-[rgb(var(--gold))]' : 'border-white/10 text-[rgb(var(--text-tertiary))]'}`}
+    >
+      {children}
+    </button>
   )
 }
 

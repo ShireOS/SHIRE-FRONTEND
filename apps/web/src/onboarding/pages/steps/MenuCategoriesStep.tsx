@@ -6,6 +6,22 @@ interface MenuCategoriesStepProps {
 
 const inputClass = 'w-full min-w-0 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]'
 const DEFAULT_STATIONS = ['Kitchen', 'Bar', 'Expo', 'Dessert', 'Coffee']
+const COURSES = [
+  ['', 'No default'],
+  ['appetizer', 'App'],
+  ['entree', 'Entree'],
+  ['dessert', 'Dessert'],
+  ['drink', 'Drink'],
+  ['side', 'Side'],
+  ['other', 'Other'],
+] as const
+const FIRE_MODES = [
+  ['', 'Inherit'],
+  ['immediate', 'Immediate'],
+  ['hold', 'Hold'],
+  ['manual', 'Manual'],
+  ['by_course', 'By course'],
+] as const
 
 function blankCategory(index: number): MenuCategoryData {
   return {
@@ -13,6 +29,10 @@ function blankCategory(index: number): MenuCategoryData {
     tax_rate_id: '',
     routing_station_id: '',
     routing_station_name: 'Kitchen',
+    default_course_type: '',
+    default_fire_mode: 'inherit',
+    prep_time_minutes: '',
+    kds_display_group: '',
     is_active: true,
   }
 }
@@ -61,7 +81,7 @@ export function MenuCategoriesStep({ onboarding }: MenuCategoriesStepProps) {
       <div className="space-y-3">
         {categories.map((category, index) => (
           <div key={category.id || `${category.name}:${index}`} className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-4">
-            <div className="grid gap-3 md:grid-cols-[1.2fr_1fr_1fr_auto]">
+            <div className="grid gap-3 md:grid-cols-[1.2fr_1fr_1fr_0.8fr_0.8fr_0.7fr_auto]">
               <input
                 value={category.name}
                 onChange={(event) => updateCategory(index, { name: event.target.value })}
@@ -83,6 +103,18 @@ export function MenuCategoriesStep({ onboarding }: MenuCategoriesStepProps) {
                 list="menu-category-stations"
                 placeholder="Kitchen, Bar, Expo"
               />
+              <select value={category.default_course_type || ''} onChange={(event) => updateCategory(index, { default_course_type: event.target.value as MenuCategoryData['default_course_type'] })} className={inputClass}>
+                {COURSES.map(([value, label]) => <option key={value} value={value} className="bg-[#1a1a1a]">{label}</option>)}
+              </select>
+              <select value={category.default_fire_mode || ''} onChange={(event) => updateCategory(index, { default_fire_mode: event.target.value as MenuCategoryData['default_fire_mode'] })} className={inputClass}>
+                {FIRE_MODES.map(([value, label]) => <option key={value} value={value} className="bg-[#1a1a1a]">{label}</option>)}
+              </select>
+              <input
+                value={category.prep_time_minutes || ''}
+                onChange={(event) => updateCategory(index, { prep_time_minutes: event.target.value.replace(/\D/g, '').slice(0, 3) })}
+                className={inputClass}
+                placeholder="Prep min"
+              />
               <button
                 type="button"
                 onClick={() => removeCategory(index)}
@@ -91,6 +123,12 @@ export function MenuCategoriesStep({ onboarding }: MenuCategoriesStepProps) {
                 Remove
               </button>
             </div>
+            <input
+              value={category.kds_display_group || ''}
+              onChange={(event) => updateCategory(index, { kds_display_group: event.target.value })}
+              className={`${inputClass} mt-3`}
+              placeholder="KDS display group, e.g. Grill, Bar, Desserts"
+            />
           </div>
         ))}
       </div>

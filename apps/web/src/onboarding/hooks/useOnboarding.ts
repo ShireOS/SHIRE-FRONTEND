@@ -136,6 +136,10 @@ export interface MenuCategoryData {
   tax_rate_id: string
   routing_station_id: string
   routing_station_name: string
+  default_course_type?: 'none' | 'appetizer' | 'entree' | 'dessert' | 'drink' | 'side' | 'other' | ''
+  default_fire_mode?: 'inherit' | 'immediate' | 'hold' | 'manual' | 'by_course' | ''
+  prep_time_minutes?: string
+  kds_display_group?: string
   is_active?: boolean
 }
 
@@ -435,15 +439,15 @@ const defaultCloseoutSettings = (): CloseoutSettingsData => ({
 })
 
 const defaultMenuCategories = (): MenuCategoryData[] => [
-  { name: 'Appetizers', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true },
-  { name: 'Entrees', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true },
-  { name: 'Desserts', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true },
-  { name: 'Sides', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true },
-  { name: 'Drinks', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', is_active: true },
-  { name: 'Cocktails', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', is_active: true },
-  { name: 'Beer & Wine', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', is_active: true },
-  { name: 'Specials', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true },
-  { name: 'Other', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Expo', is_active: true },
+  { name: 'Appetizers', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'appetizer', default_fire_mode: 'by_course', prep_time_minutes: '', kds_display_group: 'Apps', is_active: true },
+  { name: 'Entrees', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'entree', default_fire_mode: 'by_course', prep_time_minutes: '', kds_display_group: 'Entrees', is_active: true },
+  { name: 'Desserts', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'dessert', default_fire_mode: 'by_course', prep_time_minutes: '', kds_display_group: 'Desserts', is_active: true },
+  { name: 'Sides', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'side', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: 'Sides', is_active: true },
+  { name: 'Drinks', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: '', kds_display_group: 'Drinks', is_active: true },
+  { name: 'Cocktails', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: '', kds_display_group: 'Bar', is_active: true },
+  { name: 'Beer & Wine', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: '', kds_display_group: 'Bar', is_active: true },
+  { name: 'Specials', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'other', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: 'Specials', is_active: true },
+  { name: 'Other', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Expo', default_course_type: 'none', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: 'Other', is_active: true },
 ]
 
 const defaultCheckWorkflowSettings = (): CheckWorkflowSettingsData => ({
@@ -752,6 +756,10 @@ const normalizeMenuCategories = (value: unknown): MenuCategoryData[] => {
       tax_rate_id: asString(row.tax_rate_id),
       routing_station_id: asString(row.routing_station_id),
       routing_station_name: asString(row.routing_station_name),
+      default_course_type: asString(row.default_course_type) as MenuCategoryData['default_course_type'],
+      default_fire_mode: asString(row.default_fire_mode) as MenuCategoryData['default_fire_mode'],
+      prep_time_minutes: asString(row.prep_time_minutes),
+      kds_display_group: asString(row.kds_display_group),
       is_active: typeof row.is_active === 'boolean' ? row.is_active : true,
     }))
     .filter(row => row.name && row.is_active !== false)
@@ -1046,6 +1054,10 @@ const menuCategoriesToPayload = (data: OnboardingData) => ({
     tax_rate_id: row.tax_rate_id || null,
     routing_station_id: row.routing_station_id || null,
     routing_station_name: row.routing_station_name || null,
+    default_course_type: row.default_course_type || null,
+    default_fire_mode: row.default_fire_mode || null,
+    prep_time_minutes: row.prep_time_minutes === '' ? null : Number(row.prep_time_minutes),
+    kds_display_group: row.kds_display_group || null,
     is_active: true,
   })),
 })
