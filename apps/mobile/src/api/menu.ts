@@ -6,10 +6,19 @@ export type AdminMenuItem = {
   restaurant_id: string;
   name: string;
   category: string | null;
+  menu_category_id?: string | null;
   description: string | null;
   price: number | null;
   cost: number | null;
   is_available: boolean | null;
+  availability_mode?: 'always' | 'schedule' | 'seasonal' | 'manual';
+  availability_days?: number[];
+  availability_start_time?: string | null;
+  availability_end_time?: string | null;
+  availability_service_modes?: string[];
+  availability_start_date?: string | null;
+  availability_end_date?: string | null;
+  availability_notes?: string | null;
   updated_at: string | null;
   image_url?: string | null;
 };
@@ -21,6 +30,14 @@ export type AdminMenuItemCreateInput = {
   description?: string | null;
   is_available?: boolean;
   image_url?: string | null;
+  availability_mode?: AdminMenuItem['availability_mode'];
+  availability_days?: number[];
+  availability_start_time?: string | null;
+  availability_end_time?: string | null;
+  availability_service_modes?: string[];
+  availability_start_date?: string | null;
+  availability_end_date?: string | null;
+  availability_notes?: string | null;
 };
 
 export type MenuItemInsight = {
@@ -60,7 +77,7 @@ type ManagerDashboardResponse = {
   top_items?: { name?: string; quantity?: number; sales?: number }[];
 };
 
-const MENU_ITEM_SELECT = 'id, restaurant_id, name, category, description, price, cost, is_available, updated_at';
+const MENU_ITEM_SELECT = 'id, restaurant_id, name, category, menu_category_id, description, price, cost, is_available, availability_mode, availability_days, availability_start_time, availability_end_time, availability_service_modes, availability_start_date, availability_end_date, availability_notes, updated_at';
 
 export async function fetchAdminMenuItems(restaurantId: string): Promise<AdminMenuItem[]> {
   const client = getSBClient();
@@ -88,10 +105,19 @@ function normalizeMenuItem(row: Partial<AdminMenuItem>, restaurantId: string): A
     restaurant_id: String(row.restaurant_id || restaurantId),
     name: String(row.name || ''),
     category: row.category ?? null,
+    menu_category_id: row.menu_category_id ?? null,
     description: row.description ?? null,
     price: row.price ?? null,
     cost: row.cost ?? null,
     is_available: row.is_available ?? true,
+    availability_mode: row.availability_mode ?? 'always',
+    availability_days: row.availability_days ?? [0, 1, 2, 3, 4, 5, 6],
+    availability_start_time: row.availability_start_time ?? null,
+    availability_end_time: row.availability_end_time ?? null,
+    availability_service_modes: row.availability_service_modes ?? [],
+    availability_start_date: row.availability_start_date ?? null,
+    availability_end_date: row.availability_end_date ?? null,
+    availability_notes: row.availability_notes ?? null,
     updated_at: row.updated_at ?? null,
     image_url: row.image_url ?? null,
   };
@@ -107,6 +133,14 @@ export async function createAdminMenuItem(
     price: input.price,
     description: input.description?.trim() || null,
     is_available: input.is_available ?? true,
+    availability_mode: input.availability_mode || 'always',
+    availability_days: input.availability_days?.length ? input.availability_days : [0, 1, 2, 3, 4, 5, 6],
+    availability_start_time: input.availability_start_time || null,
+    availability_end_time: input.availability_end_time || null,
+    availability_service_modes: input.availability_service_modes || [],
+    availability_start_date: input.availability_start_date || null,
+    availability_end_date: input.availability_end_date || null,
+    availability_notes: input.availability_notes?.trim() || null,
   };
 
   try {
@@ -137,6 +171,29 @@ export async function createAdminMenuItem(
     created.image_url = input.image_url.trim();
   }
   return created;
+}
+
+export async function updateAdminMenuItem(
+  restaurantId: string,
+  itemId: string,
+  patch: Partial<AdminMenuItem>,
+): Promise<AdminMenuItem> {
+  const body = {
+    ...patch,
+    availability_notes: patch.availability_notes?.trim() || null,
+    updated_at: new Date().toISOString(),
+  };
+  const client = getSBClient();
+  const { data, error } = await client
+    .from('menu_items')
+    .update(body)
+    .eq('restaurant_id', restaurantId)
+    .eq('id', itemId)
+    .select(MENU_ITEM_SELECT)
+    .single();
+
+  if (error) throw error;
+  return data as AdminMenuItem;
 }
 
 export async function setMenuItemAvailability(

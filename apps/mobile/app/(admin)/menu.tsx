@@ -4,6 +4,7 @@ import {
   fetchMenuItemInsight,
   setMenuItemImageUrl,
   setMenuItemAvailability,
+  updateAdminMenuItem,
   type AdminMenuItem,
   type MenuItemInsight,
 } from '@/api/menu';
@@ -29,6 +30,7 @@ import {
 import { getOwnerRestaurant, type OwnerRestaurant } from '../../packages/supabase';
 
 type AvailabilityFilter = 'all' | 'available' | 'unavailable';
+type AvailabilityMode = NonNullable<AdminMenuItem['availability_mode']>;
 type MenuItemForm = {
   name: string;
   category: string;
@@ -42,6 +44,25 @@ const FILTERS: { id: AvailabilityFilter; label: string }[] = [
   { id: 'available', label: 'Available' },
   { id: 'unavailable', label: "86'd" },
 ];
+
+const AVAILABILITY_MODES: { id: AvailabilityMode; label: string }[] = [
+  { id: 'always', label: 'Always' },
+  { id: 'schedule', label: 'Schedule' },
+  { id: 'seasonal', label: 'Seasonal' },
+  { id: 'manual', label: 'Manual' },
+];
+
+const DAY_OPTIONS = [
+  { id: 0, label: 'Sun' },
+  { id: 1, label: 'Mon' },
+  { id: 2, label: 'Tue' },
+  { id: 3, label: 'Wed' },
+  { id: 4, label: 'Thu' },
+  { id: 5, label: 'Fri' },
+  { id: 6, label: 'Sat' },
+];
+
+const SERVICE_MODE_OPTIONS = ['Dine-in', 'Takeout', 'Delivery', 'Bar', 'Patio'];
 
 function formatCurrency(value: unknown) {
   const number = Number(value || 0);
@@ -98,6 +119,7 @@ export default function AdminMenu() {
   const [selectedInsight, setSelectedInsight] = useState<MenuItemInsight | null>(null);
   const [imageDraft, setImageDraft] = useState('');
   const [isSavingImage, setIsSavingImage] = useState(false);
+  const [isSavingAvailability, setIsSavingAvailability] = useState(false);
   const [isInsightLoading, setIsInsightLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -269,6 +291,38 @@ export default function AdminMenu() {
     }
   };
 
+  const updateSelectedAvailability = (patch: Partial<AdminMenuItem>) => {
+    setSelectedItem((current) => (current ? { ...current, ...patch } : current));
+  };
+
+  const saveSelectedAvailability = async () => {
+    if (!restaurant?.id || !selectedItem || isSavingAvailability) return;
+    setIsSavingAvailability(true);
+    setError(null);
+    try {
+      const updated = await updateAdminMenuItem(restaurant.id, selectedItem.id, {
+        availability_mode: selectedItem.availability_mode || 'always',
+        availability_days: selectedItem.availability_days?.length
+          ? selectedItem.availability_days
+          : [0, 1, 2, 3, 4, 5, 6],
+        availability_start_time: selectedItem.availability_start_time || null,
+        availability_end_time: selectedItem.availability_end_time || null,
+        availability_service_modes: selectedItem.availability_service_modes || [],
+        availability_start_date: selectedItem.availability_start_date || null,
+        availability_end_date: selectedItem.availability_end_date || null,
+        availability_notes: selectedItem.availability_notes || null,
+      });
+      setItems((current) => current.map((row) => (
+        row.id === selectedItem.id ? mergeMenuItemUpdate(row, updated) : row
+      )));
+      setSelectedItem((current) => (current ? mergeMenuItemUpdate(current, updated) : current));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save item availability.');
+    } finally {
+      setIsSavingAvailability(false);
+    }
+  };
+
   return (
     <ScrollView
       style={styles.screen}
@@ -398,11 +452,14 @@ export default function AdminMenu() {
         insight={selectedInsight}
         isLoading={isInsightLoading}
         imageDraft={imageDraft}
+        isSavingAvailability={isSavingAvailability}
         isSavingImage={isSavingImage}
         item={selectedItem}
         pending={selectedItem ? pendingItemIds.has(selectedItem.id) : false}
         onChangeImage={setImageDraft}
+        onChangeAvailability={updateSelectedAvailability}
         onClose={() => setSelectedItem(null)}
+        onSaveAvailability={() => void saveSelectedAvailability()}
         onSaveImage={() => void saveSelectedImage()}
         onToggle={() => {
           if (selectedItem) void toggleAvailability(selectedItem);
@@ -619,27 +676,50 @@ function ItemDetailModal({
   insight,
   imageDraft,
   isLoading,
+  isSavingAvailability,
   isSavingImage,
   item,
   pending,
+  onChangeAvailability,
   onChangeImage,
   onClose,
+  onSaveAvailability,
   onSaveImage,
   onToggle,
 }: {
   insight: MenuItemInsight | null;
   imageDraft: string;
   isLoading: boolean;
+  isSavingAvailability: boolean;
   isSavingImage: boolean;
   item: AdminMenuItem | null;
   pending: boolean;
+  onChangeAvailability: (patch: Partial<AdminMenuItem>) => void;
   onChangeImage: (value: string) => void;
   onClose: () => void;
+  onSaveAvailability: () => void;
   onSaveImage: () => void;
   onToggle: () => void;
 }) {
   if (!item) return null;
   const available = isItemAvailable(item);
+  const availabilityMode = item.availability_mode || 'always';
+  const availabilityDays = item.availability_days?.length ? item.availability_days : [0, 1, 2, 3, 4, 5, 6];
+  const serviceModes = item.availability_service_modes || [];
+
+  const toggleDay = (day: number) => {
+    const nextDays = availabilityDays.includes(day)
+      ? availabilityDays.filter((value) => value !== day)
+      : [...availabilityDays, day].sort((a, b) => a - b);
+    onChangeAvailability({ availability_days: nextDays });
+  };
+
+  const toggleServiceMode = (mode: string) => {
+    const nextModes = serviceModes.includes(mode)
+      ? serviceModes.filter((value) => value !== mode)
+      : [...serviceModes, mode];
+    onChangeAvailability({ availability_service_modes: nextModes });
+  };
 
   return (
     <Modal animationType="slide" transparent visible={Boolean(item)} onRequestClose={onClose}>
@@ -719,6 +799,154 @@ function ItemDetailModal({
                   {available ? '86' : 'Restore'}
                 </Text>
               </Pressable>
+            </View>
+
+            <View style={styles.availabilityBox}>
+              <View style={styles.availabilityHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[typography.eyebrow, styles.eyebrow]}>Availability</Text>
+                  <Text style={[typography.caption, styles.availabilityHint]}>
+                    Controls when this item can be sold.
+                  </Text>
+                </View>
+                <Pressable
+                  disabled={isSavingAvailability}
+                  onPress={onSaveAvailability}
+                  style={[styles.saveAvailabilityButton, isSavingAvailability && styles.disabledButton]}
+                >
+                  {isSavingAvailability ? (
+                    <ActivityIndicator size="small" color={color_pallet.cream[50]} />
+                  ) : (
+                    <Feather name="save" size={15} color={color_pallet.cream[50]} />
+                  )}
+                  <Text style={[typography.caption, styles.saveAvailabilityText]}>
+                    Save
+                  </Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.choiceWrap}>
+                {AVAILABILITY_MODES.map((mode) => (
+                  <Pressable
+                    key={mode.id}
+                    onPress={() => onChangeAvailability({ availability_mode: mode.id })}
+                    style={[
+                      styles.choicePill,
+                      availabilityMode === mode.id && styles.choicePillActive,
+                    ]}
+                  >
+                    <Text style={[
+                      styles.choiceText,
+                      availabilityMode === mode.id && styles.choiceTextActive,
+                    ]}>
+                      {mode.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {availabilityMode === 'schedule' && (
+                <View style={styles.availabilitySection}>
+                  <FieldLabel label="Days" />
+                  <View style={styles.choiceWrap}>
+                    {DAY_OPTIONS.map((day) => {
+                      const selected = availabilityDays.includes(day.id);
+                      return (
+                        <Pressable
+                          key={day.id}
+                          onPress={() => toggleDay(day.id)}
+                          style={[styles.dayPill, selected && styles.choicePillActive]}
+                        >
+                          <Text style={[styles.choiceText, selected && styles.choiceTextActive]}>
+                            {day.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  <View style={styles.formRow}>
+                    <View style={styles.formColumn}>
+                      <FieldLabel label="Start time" />
+                      <TextInput
+                        value={item.availability_start_time || ''}
+                        onChangeText={(value) => onChangeAvailability({ availability_start_time: value })}
+                        placeholder="09:00"
+                        placeholderTextColor={color_pallet.ink[400]}
+                        style={styles.fieldInput}
+                      />
+                    </View>
+                    <View style={styles.formColumn}>
+                      <FieldLabel label="End time" />
+                      <TextInput
+                        value={item.availability_end_time || ''}
+                        onChangeText={(value) => onChangeAvailability({ availability_end_time: value })}
+                        placeholder="22:00"
+                        placeholderTextColor={color_pallet.ink[400]}
+                        style={styles.fieldInput}
+                      />
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {availabilityMode === 'seasonal' && (
+                <View style={styles.availabilitySection}>
+                  <View style={styles.formRow}>
+                    <View style={styles.formColumn}>
+                      <FieldLabel label="Start date" />
+                      <TextInput
+                        value={item.availability_start_date || ''}
+                        onChangeText={(value) => onChangeAvailability({ availability_start_date: value })}
+                        placeholder="2026-06-01"
+                        placeholderTextColor={color_pallet.ink[400]}
+                        style={styles.fieldInput}
+                      />
+                    </View>
+                    <View style={styles.formColumn}>
+                      <FieldLabel label="End date" />
+                      <TextInput
+                        value={item.availability_end_date || ''}
+                        onChangeText={(value) => onChangeAvailability({ availability_end_date: value })}
+                        placeholder="2026-08-31"
+                        placeholderTextColor={color_pallet.ink[400]}
+                        style={styles.fieldInput}
+                      />
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {(availabilityMode === 'schedule' || availabilityMode === 'seasonal') && (
+                <View style={styles.availabilitySection}>
+                  <FieldLabel label="Service modes" />
+                  <View style={styles.choiceWrap}>
+                    {SERVICE_MODE_OPTIONS.map((mode) => {
+                      const selected = serviceModes.includes(mode);
+                      return (
+                        <Pressable
+                          key={mode}
+                          onPress={() => toggleServiceMode(mode)}
+                          style={[styles.choicePill, selected && styles.choicePillActive]}
+                        >
+                          <Text style={[styles.choiceText, selected && styles.choiceTextActive]}>
+                            {mode}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
+              <FieldLabel label="Notes" />
+              <TextInput
+                value={item.availability_notes || ''}
+                onChangeText={(value) => onChangeAvailability({ availability_notes: value })}
+                multiline
+                placeholder="Happy hour only, weekend brunch, seasonal prep note..."
+                placeholderTextColor={color_pallet.ink[400]}
+                style={[styles.fieldInput, styles.descriptionInput]}
+              />
             </View>
 
             <View style={styles.metricsGrid}>
@@ -1223,6 +1451,83 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: spacing[4],
+  },
+  availabilityBox: {
+    backgroundColor: semanticColors.elevated,
+    borderColor: semanticColors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginBottom: spacing[4],
+    padding: spacing[3],
+  },
+  availabilityHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing[3],
+    justifyContent: 'space-between',
+    marginBottom: spacing[3],
+  },
+  availabilityHint: {
+    color: color_pallet.ink[500],
+    marginTop: 2,
+  },
+  availabilitySection: {
+    marginTop: spacing[2],
+  },
+  saveAvailabilityButton: {
+    alignItems: 'center',
+    backgroundColor: color_pallet.elevated.dark,
+    borderColor: color_pallet.elevated.dark,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing[1],
+    justifyContent: 'center',
+    minHeight: 36,
+    minWidth: 78,
+    paddingHorizontal: spacing[3],
+  },
+  saveAvailabilityText: {
+    color: color_pallet.cream[50],
+    fontFamily: 'Inter_700Bold',
+  },
+  choiceWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[2],
+  },
+  choicePill: {
+    alignItems: 'center',
+    backgroundColor: color_pallet.stone[50],
+    borderColor: semanticColors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 34,
+    paddingHorizontal: spacing[3],
+  },
+  dayPill: {
+    alignItems: 'center',
+    backgroundColor: color_pallet.stone[50],
+    borderColor: semanticColors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 34,
+    minWidth: 48,
+    paddingHorizontal: spacing[2],
+  },
+  choicePillActive: {
+    backgroundColor: color_pallet.elevated.dark,
+    borderColor: color_pallet.elevated.dark,
+  },
+  choiceText: {
+    color: color_pallet.ink[600],
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+  },
+  choiceTextActive: {
+    color: color_pallet.cream[50],
   },
   metricsGrid: {
     flexDirection: 'row',
