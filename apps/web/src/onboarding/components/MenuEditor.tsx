@@ -8,6 +8,7 @@ interface MenuEditorProps {
   restaurantId: string
   mode: 'upload' | 'manual'
   initialItems?: MenuEditorItem[]
+  categories?: Array<{ id?: string | null; name: string }>
   onBack: () => void
   onSave: (items: MenuEditorItem[]) => void
 }
@@ -26,11 +27,16 @@ const newBlankItem = (): MenuEditorItem => ({
   id: crypto.randomUUID(),
   name: '',
   category: '',
+  menu_category_id: undefined,
   price: '',
   description: '',
+  is_available: true,
+  availability_mode: 'always',
+  availability_days: [0, 1, 2, 3, 4, 5, 6],
+  availability_service_modes: [],
 })
 
-export function MenuEditor({ restaurantId, mode, initialItems, onBack, onSave }: MenuEditorProps) {
+export function MenuEditor({ restaurantId, mode, initialItems, categories, onBack, onSave }: MenuEditorProps) {
   const [items, setItems] = useState<MenuEditorItem[]>(initialItems ?? [])
   const [phase, setPhase] = useState<Phase>(mode === 'manual' ? 'editing' : 'idle')
   const [error, setError] = useState<string | null>(null)
@@ -92,8 +98,13 @@ export function MenuEditor({ restaurantId, mode, initialItems, onBack, onSave }:
         id: crypto.randomUUID(),
         name: t.name ?? '',
         category: t.category ?? '',
+        menu_category_id: categories?.find(category => category.name.toLowerCase() === String(t.category || '').toLowerCase())?.id || undefined,
         price: t.price != null ? String(t.price) : '',
         description: t.description ?? '',
+        is_available: true,
+        availability_mode: 'always',
+        availability_days: [0, 1, 2, 3, 4, 5, 6],
+        availability_service_modes: [],
       }))
 
       setItems(extracted)
@@ -134,8 +145,18 @@ export function MenuEditor({ restaurantId, mode, initialItems, onBack, onSave }:
         name: item.name.trim(),
         restaurant_id: restaurantId,
         category: item.category || undefined,
+        menu_category_id: item.menu_category_id || undefined,
         price: item.price ? parseFloat(item.price) : undefined,
         description: item.description.trim() || undefined,
+        is_available: item.is_available !== false,
+        availability_mode: item.availability_mode || 'always',
+        availability_days: item.availability_days?.length ? item.availability_days : [0, 1, 2, 3, 4, 5, 6],
+        availability_start_time: item.availability_start_time || undefined,
+        availability_end_time: item.availability_end_time || undefined,
+        availability_service_modes: item.availability_service_modes || [],
+        availability_start_date: item.availability_start_date || undefined,
+        availability_end_date: item.availability_end_date || undefined,
+        availability_notes: item.availability_notes || undefined,
       }))
 
       const res = await fetch(`${baseUrl(restaurantId)}/items`, {
@@ -253,6 +274,7 @@ export function MenuEditor({ restaurantId, mode, initialItems, onBack, onSave }:
               items={items}
               onItemsChange={setItems}
               disabled={phase === 'saving'}
+              categories={categories}
             />
           </div>
 

@@ -2,6 +2,7 @@ import { useRef, useState, useCallback, useEffect } from 'react'
 
 export interface FloorPlanTable {
   id: string
+  table_number?: string | null
   center_x: number
   center_y: number
   width: number
@@ -10,6 +11,7 @@ export interface FloorPlanTable {
   shape: 'rectangular'
   section_id?: string | null
   section_name?: string | null
+  setup_complete?: boolean
   confidence?: number
   notes?: string
 }
@@ -292,6 +294,7 @@ export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgro
           const isSelected = table.id === selectedId
           const isHovered = table.id === hoveredId
           const sectionLabel = table.section_name || defaultSection?.name || 'Table'
+          const isIncomplete = table.setup_complete === false
           const style: React.CSSProperties = {
             position: 'absolute',
             left: `${table.center_x - table.width / 2}%`,
@@ -323,9 +326,13 @@ export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgro
                   justifyContent: 'center',
                   border: isSelected
                     ? '2px solid rgb(201,169,98)'
-                    : '2px solid rgba(201,169,98,0.7)',
+                    : isIncomplete
+                      ? '2px solid rgba(248,113,113,0.95)'
+                      : '2px solid rgba(201,169,98,0.7)',
                   background: isSelected
                     ? 'rgba(201,169,98,0.25)'
+                    : isIncomplete
+                      ? 'rgba(127,29,29,0.52)'
                     : 'rgba(0,0,0,0.35)',
                   transition: 'background 0.15s, border-color 0.15s',
                   userSelect: 'none',
@@ -336,7 +343,7 @@ export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgro
                   fontSize: 10, fontWeight: 700, color: '#fff', lineHeight: 1,
                   background: 'rgba(0,0,0,0.6)', borderRadius: 3, padding: '1px 4px',
                 }}>
-                  T{idx + 1}
+                  {table.table_number?.trim() || `T${idx + 1}`}
                 </span>
                 <span style={{
                   fontSize: 9, color: '#fff', lineHeight: 1, marginTop: 2,

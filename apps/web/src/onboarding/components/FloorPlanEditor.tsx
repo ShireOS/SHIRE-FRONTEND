@@ -126,6 +126,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, initialSect
       // Map API response to FloorPlanTable
       const detected: FloorPlanTable[] = (analysis.tables || []).map((t: any) => withDefaultSection({
         id: t.id || crypto.randomUUID(),
+        table_number: t.table_number ?? '',
         center_x: t.position?.center_x ?? 50,
         center_y: t.position?.center_y ?? 50,
         width: t.position?.width ?? 12,
@@ -134,6 +135,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, initialSect
         shape: 'rectangular' as const,
         section_id: t.section_id ?? null,
         section_name: t.section_name ?? null,
+        setup_complete: Boolean(t.setup_complete),
         confidence: t.confidence,
         notes: t.notes,
       }))
@@ -183,11 +185,13 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, initialSect
           // Transform internal flat format → API nested position format
           tables: tables.map(t => withDefaultSection(t)).map(t => ({
             id: t.id,
+            table_number: t.table_number || null,
             position: { center_x: t.center_x, center_y: t.center_y, width: t.width, height: t.height },
             shape: t.shape,
             capacity: t.capacity,
             section_id: t.section_id,
             section_name: t.section_name,
+            setup_complete: Boolean(t.setup_complete),
             confidence: t.confidence,
             notes: t.notes,
           })),
@@ -211,12 +215,14 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, initialSect
     const offset = (tables.length % 5) * 3
     const newTable: FloorPlanTable = withDefaultSection({
       id: crypto.randomUUID(),
+      table_number: '',
       center_x: 30 + offset,
       center_y: 30 + offset,
       width: 12,
       height: 10,
       capacity: 4,
       shape: 'rectangular',
+      setup_complete: false,
     })
     updateTables(prev => [...prev, newTable])
   }

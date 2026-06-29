@@ -109,8 +109,18 @@ export function MenuStep({ onboarding }: MenuStepProps) {
           id: item.id ?? crypto.randomUUID(),
           name: item.name ?? '',
           category: item.category ?? '',
+          menu_category_id: item.menu_category_id ?? undefined,
           price: item.price != null ? String(item.price) : '',
           description: item.description ?? '',
+          is_available: item.is_available !== false,
+          availability_mode: item.availability_mode || 'always',
+          availability_days: item.availability_days || [0, 1, 2, 3, 4, 5, 6],
+          availability_start_time: item.availability_start_time || '',
+          availability_end_time: item.availability_end_time || '',
+          availability_service_modes: item.availability_service_modes || [],
+          availability_start_date: item.availability_start_date || '',
+          availability_end_date: item.availability_end_date || '',
+          availability_notes: item.availability_notes || '',
         })))
       }
     }
@@ -133,6 +143,7 @@ export function MenuStep({ onboarding }: MenuStepProps) {
         restaurantId={restaurantId}
         mode={menuMode}
         initialItems={savedItems}
+        categories={data.menu_categories}
         onBack={() => setMenuMode(null)}
         onSave={(items) => {
           updateData({ menu_import_method: menuMode })

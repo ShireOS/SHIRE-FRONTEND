@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
 import { FloorPlanEditor } from '../../components/FloorPlanEditor'
 import { normalizeFloorPlanTablesForEditor, type FloorPlanTable } from '../../components/FloorPlanCanvas'
+import { FloorPlanTableSetup, floorPlanIncompleteCount } from '../../components/FloorPlanTableSetup'
 import { supabase } from '../../../shared/lib/supabase'
 import { API_CONFIG } from '../../../shared/api/config'
 
@@ -22,6 +23,7 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
 
   const [floorPlanMode, setFloorPlanMode] = useState<null | 'upload' | 'manual'>(null)
   const [savedTables, setSavedTables] = useState<FloorPlanTable[]>([])
+  const [setupError, setSetupError] = useState('')
 
   // Load existing floor plan from DB on mount so tables survive page refresh
   useEffect(() => {
@@ -39,6 +41,7 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
         // Map API nested position format → internal flat format
         const tables: FloorPlanTable[] = normalizeFloorPlanTablesForEditor(fp.tables.map((t: any) => ({
           id: t.id,
+          table_number: t.table_number ?? '',
           center_x: t.position.center_x,
           center_y: t.position.center_y,
           width: t.position.width,
@@ -47,6 +50,7 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
           shape: t.shape,
           section_id: t.section_id ?? null,
           section_name: t.section_name ?? null,
+          setup_complete: Boolean(t.setup_complete),
           confidence: t.confidence,
           notes: t.notes,
         })))
@@ -60,6 +64,11 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
+      if (savedTables.length > 0 && floorPlanIncompleteCount(savedTables) > 0) {
+        setSetupError('Finish table numbers, sections, and capacities before continuing.')
+        return
+      }
+      setSetupError('')
       await saveCapacity()
       nextStep()
     } catch {
@@ -92,6 +101,11 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
       {error && (
         <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
           {error}
+        </div>
+      )}
+      {setupError && (
+        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
+          {setupError}
         </div>
       )}
 
@@ -151,6 +165,17 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
               Edit
             </button>
           </div>
+        )}
+
+        {savedTables.length > 0 && (
+          <FloorPlanTableSetup
+            restaurantId={restaurantId}
+            tables={savedTables}
+            onTablesChange={(tables) => {
+              setSavedTables(tables)
+              updateData({ table_count: tables.length })
+            }}
+          />
         )}
 
         <div className="grid grid-cols-2 gap-3">

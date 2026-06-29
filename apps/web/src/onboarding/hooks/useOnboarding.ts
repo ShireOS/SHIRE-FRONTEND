@@ -60,34 +60,50 @@ export interface OnboardingData {
   // Step 4: Discounts, Comps & Promos
   discount_rules: DiscountRuleData[]
 
-  // Step 5: Goals & Priorities
+  // Step 5: Manager Controls
+  role_permissions: RolePermissionData[]
+
+  // Step 6: Cash & Closeout
+  closeout_settings: CloseoutSettingsData
+
+  // Step 7: Check Workflow
+  check_workflow_settings: CheckWorkflowSettingsData
+
+  // Step 8: Tips & Payroll
+  job_codes: JobCodeData[]
+  tip_payroll_settings: TipPayrollSettingsData
+
+  // Step 9: Goals & Priorities
   challenges: string[]
   daily_covers_range: string | null
   team_size_range: string | null
   primary_goal: string | null
 
-  // Step 6: Current Tools & Service Model
+  // Step 10: Current Tools & Service Model
   current_pos: string | null
   current_scheduling: string | null
   current_reservations: string | null
   service_modes: string[]
   default_guest_flow: string | null
 
-  // Step 7: Sections & Areas
+  // Step 11: Sections & Areas
   sections: string[]
 
-  // Step 8: Hours
+  // Step 12: Hours
   operating_hours: OperatingHoursData[]
   same_hours_every_day: boolean
 
-  // Step 9: Capacity
+  // Step 13: Capacity
   seating_capacity: number | null
   table_count: number | null
 
-  // Step 10: Menu
+  // Step 14: Menu
+  menu_categories: MenuCategoryData[]
+
+  // Step 15: Menu
   menu_import_method: 'skip' | 'manual' | 'upload' | 'toast' | 'scrape' | 'template'
 
-  // Step 13: Team
+  // Step 18: Team
   team_setup_method: 'skip' | 'invite' | 'sevenshifts'
   invites: TeamInvite[]
 }
@@ -114,6 +130,15 @@ export interface ServiceChargeData {
   is_active?: boolean
 }
 
+export interface MenuCategoryData {
+  id?: string | null
+  name: string
+  tax_rate_id: string
+  routing_station_id: string
+  routing_station_name: string
+  is_active?: boolean
+}
+
 export interface DiscountRuleData {
   id?: string | null
   name: string
@@ -131,6 +156,127 @@ export interface DiscountRuleData {
   service_modes: string[]
   days_of_week: number[]
   is_active?: boolean
+}
+
+export interface RolePermissionData {
+  id?: string | null
+  role_key: string
+  can_refund: boolean
+  refund_limit: string
+  can_void: boolean
+  can_comp: boolean
+  can_discount: boolean
+  discount_limit_percent: string
+  can_open_cash_drawer: boolean
+  can_no_sale: boolean
+  can_paid_in_out: boolean
+  can_adjust_tips: boolean
+  can_edit_menu: boolean
+  can_edit_employees: boolean
+  can_edit_schedules: boolean
+  can_view_reports: boolean
+  can_close_drawer: boolean
+  can_close_day: boolean
+  can_change_payment_settings: boolean
+  require_manager_pin_for_approval: boolean
+}
+
+export interface CloseoutSettingsData {
+  cash_tracking_mode: 'shared_drawer' | 'per_terminal' | 'per_employee' | 'no_cash'
+  require_starting_bank: boolean
+  blind_drawer_close: boolean
+  allow_paid_in_out: boolean
+  require_manager_for_drawer_open: boolean
+  cash_drop_threshold: string
+  cash_variance_threshold: string
+  server_require_all_checks_closed: boolean
+  server_require_tabs_closed: boolean
+  server_require_cash_tips_declared: boolean
+  server_require_credit_tips_reviewed: boolean
+  server_require_tipout_entry: boolean
+  server_require_manager_approval: boolean
+  server_checkout_report_delivery: 'none' | 'print' | 'email' | 'print_and_email'
+  allow_clockout_before_checkout: boolean
+  eod_batch_close_mode: 'automatic' | 'manual' | 'prompt_manager'
+  eod_require_drawers_closed: boolean
+  eod_require_servers_checked_out: boolean
+  eod_require_open_checks_resolved: boolean
+  eod_require_paid_outs_reviewed: boolean
+  eod_require_tip_adjustments_reviewed: boolean
+  eod_report_recipients: string[]
+  eod_reports: string[]
+}
+
+export interface CheckWorkflowSettingsData {
+  seat_numbers_enabled: boolean
+  seat_number_required: boolean
+  course_required: boolean
+  allow_split_checks: boolean
+  split_by_seat_enabled: boolean
+  split_by_item_enabled: boolean
+  split_evenly_enabled: boolean
+  max_split_count: string
+  allow_partial_payments: boolean
+  require_manager_for_split_after_payment: boolean
+  allow_check_merge: boolean
+  allow_table_transfer: boolean
+  allow_server_transfer: boolean
+  require_manager_for_transfer: boolean
+  allow_bar_tabs: boolean
+  tab_name_required: boolean
+  card_preauth_required: boolean
+  default_preauth_amount: string
+  allow_tabs_without_table: boolean
+  auto_close_paid_tabs: boolean
+  allow_reopen_closed_checks: boolean
+  require_manager_for_reopen: boolean
+  allow_send_before_required_modifiers: boolean
+  allow_hold_and_fire: boolean
+  default_order_fire_mode: 'manual' | 'immediate' | 'by_course'
+  print_guest_check_by_default: boolean
+  notes: string
+}
+
+export interface JobCodeData {
+  id?: string | null
+  code: string
+  label: string
+  permission_tier: 'owner' | 'manager' | 'normal' | 'limited' | 'waiter'
+  default_hourly_rate: string
+  is_tipped: boolean
+  tipout_role: string
+  sort_order: number
+  is_active?: boolean
+}
+
+export interface TipRoleRuleData {
+  role_key: string
+  tip_eligible: boolean
+  contributes_to_pool: boolean
+  receives_from_pool: boolean
+  pool_points: string
+  tipout_percent: string
+  tipout_target_role: string
+  notes: string
+}
+
+export interface TipPayrollSettingsData {
+  tip_distribution_mode: 'individual' | 'pooled' | 'role_based' | 'sales_based' | 'hours_based' | 'points_based'
+  cash_tip_declaration_mode: 'not_tracked' | 'declared_by_employee' | 'declared_by_manager' | 'required_checkout'
+  credit_tip_payout_timing: 'nightly' | 'payroll'
+  payroll_provider: string
+  payroll_export_frequency: 'daily' | 'weekly' | 'biweekly' | 'semimonthly' | 'monthly' | 'manual'
+  tip_pooling_enabled: boolean
+  tip_pool_reset: 'shift' | 'day' | 'pay_period'
+  tipout_basis: 'none' | 'sales' | 'tips' | 'hours' | 'points' | 'custom'
+  tipout_sales_includes_tax: boolean
+  tipout_include_managers: boolean
+  require_tipout_at_checkout: boolean
+  allow_manager_tip_adjustments: boolean
+  auto_withhold_credit_card_fees: boolean
+  credit_card_fee_percent: string
+  role_tip_rules: TipRoleRuleData[]
+  notes: string
 }
 
 export interface OperatingHoursData {
@@ -167,6 +313,168 @@ const DEFAULT_HOURS: OperatingHoursData[] = [
   { day_of_week: 5, open_time: '11:00', close_time: '23:00', is_closed: false },
   { day_of_week: 6, open_time: '11:00', close_time: '23:00', is_closed: false },
 ]
+
+const DEFAULT_ROLE_KEYS = ['owner', 'manager', 'server', 'bartender', 'cashier', 'host', 'runner', 'busser', 'kitchen']
+const EOD_REPORT_OPTIONS = ['sales_summary', 'labor_summary', 'cash_drawer_summary', 'tip_summary', 'discounts_voids_refunds', 'tax_summary']
+
+const defaultJobCodes = (): JobCodeData[] => [
+  { code: 'owner', label: 'Owner', permission_tier: 'owner', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 10, is_active: true },
+  { code: 'manager', label: 'Manager', permission_tier: 'manager', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 20, is_active: true },
+  { code: 'server', label: 'Server', permission_tier: 'normal', default_hourly_rate: '', is_tipped: true, tipout_role: 'server', sort_order: 30, is_active: true },
+  { code: 'bartender', label: 'Bartender', permission_tier: 'normal', default_hourly_rate: '', is_tipped: true, tipout_role: 'bartender', sort_order: 40, is_active: true },
+  { code: 'host', label: 'Host', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: 'host', sort_order: 50, is_active: true },
+  { code: 'runner', label: 'Runner', permission_tier: 'normal', default_hourly_rate: '', is_tipped: true, tipout_role: 'runner', sort_order: 60, is_active: true },
+  { code: 'busser', label: 'Busser', permission_tier: 'normal', default_hourly_rate: '', is_tipped: true, tipout_role: 'busser', sort_order: 70, is_active: true },
+  { code: 'kitchen', label: 'Kitchen', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: 'kitchen', sort_order: 80, is_active: true },
+]
+
+const defaultTipRoleRules = (jobCodes: JobCodeData[] = defaultJobCodes()): TipRoleRuleData[] =>
+  jobCodes.map(code => ({
+    role_key: code.code,
+    tip_eligible: code.is_tipped,
+    contributes_to_pool: code.is_tipped,
+    receives_from_pool: code.is_tipped,
+    pool_points: code.is_tipped ? '1' : '',
+    tipout_percent: '',
+    tipout_target_role: '',
+    notes: '',
+  }))
+
+const defaultTipPayrollSettings = (): TipPayrollSettingsData => ({
+  tip_distribution_mode: 'individual',
+  cash_tip_declaration_mode: 'declared_by_employee',
+  credit_tip_payout_timing: 'payroll',
+  payroll_provider: '',
+  payroll_export_frequency: 'biweekly',
+  tip_pooling_enabled: false,
+  tip_pool_reset: 'day',
+  tipout_basis: 'none',
+  tipout_sales_includes_tax: false,
+  tipout_include_managers: false,
+  require_tipout_at_checkout: false,
+  allow_manager_tip_adjustments: true,
+  auto_withhold_credit_card_fees: false,
+  credit_card_fee_percent: '',
+  role_tip_rules: defaultTipRoleRules(),
+  notes: '',
+})
+
+function slugRoleCode(value: unknown, fallback = 'role'): string {
+  const raw = String(value || fallback).toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '')
+  const normalized = raw || fallback
+  return /^[a-z]/.test(normalized) ? normalized.slice(0, 80) : `role_${normalized}`.slice(0, 80)
+}
+
+const roleKeysForPermissions = (jobCodes: JobCodeData[] = defaultJobCodes()): string[] => {
+  const seen = new Set<string>()
+  const keys: string[] = []
+  for (const key of [...DEFAULT_ROLE_KEYS, ...jobCodes.map(code => code.code)]) {
+    const roleKey = slugRoleCode(key)
+    if (!roleKey || seen.has(roleKey)) continue
+    seen.add(roleKey)
+    keys.push(roleKey)
+  }
+  return keys
+}
+
+const defaultRolePermission = (roleKey: string): RolePermissionData => {
+  const normalizedRoleKey = slugRoleCode(roleKey)
+  const elevated = normalizedRoleKey === 'owner' || normalizedRoleKey === 'manager'
+  const cashier = normalizedRoleKey === 'cashier'
+  const service = normalizedRoleKey === 'server' || normalizedRoleKey === 'bartender' || normalizedRoleKey === 'cashier'
+  return {
+    role_key: normalizedRoleKey,
+    can_refund: elevated || cashier,
+    refund_limit: elevated ? '' : cashier ? '25' : '',
+    can_void: elevated,
+    can_comp: elevated,
+    can_discount: elevated || service,
+    discount_limit_percent: elevated ? '' : service ? '20' : '',
+    can_open_cash_drawer: elevated || cashier || normalizedRoleKey === 'bartender',
+    can_no_sale: elevated || cashier,
+    can_paid_in_out: elevated || cashier,
+    can_adjust_tips: elevated,
+    can_edit_menu: elevated,
+    can_edit_employees: elevated,
+    can_edit_schedules: elevated,
+    can_view_reports: elevated,
+    can_close_drawer: elevated || cashier,
+    can_close_day: elevated,
+    can_change_payment_settings: normalizedRoleKey === 'owner',
+    require_manager_pin_for_approval: !elevated,
+  }
+}
+
+const defaultRolePermissions = (jobCodes: JobCodeData[] = defaultJobCodes()): RolePermissionData[] =>
+  roleKeysForPermissions(jobCodes).map(roleKey => defaultRolePermission(roleKey))
+
+const defaultCloseoutSettings = (): CloseoutSettingsData => ({
+  cash_tracking_mode: 'shared_drawer',
+  require_starting_bank: true,
+  blind_drawer_close: true,
+  allow_paid_in_out: true,
+  require_manager_for_drawer_open: true,
+  cash_drop_threshold: '',
+  cash_variance_threshold: '',
+  server_require_all_checks_closed: true,
+  server_require_tabs_closed: true,
+  server_require_cash_tips_declared: true,
+  server_require_credit_tips_reviewed: true,
+  server_require_tipout_entry: false,
+  server_require_manager_approval: true,
+  server_checkout_report_delivery: 'print',
+  allow_clockout_before_checkout: false,
+  eod_batch_close_mode: 'prompt_manager',
+  eod_require_drawers_closed: true,
+  eod_require_servers_checked_out: true,
+  eod_require_open_checks_resolved: true,
+  eod_require_paid_outs_reviewed: true,
+  eod_require_tip_adjustments_reviewed: true,
+  eod_report_recipients: [],
+  eod_reports: ['sales_summary', 'cash_drawer_summary', 'tip_summary', 'discounts_voids_refunds', 'tax_summary'],
+})
+
+const defaultMenuCategories = (): MenuCategoryData[] => [
+  { name: 'Appetizers', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true },
+  { name: 'Entrees', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true },
+  { name: 'Desserts', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true },
+  { name: 'Sides', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true },
+  { name: 'Drinks', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', is_active: true },
+  { name: 'Cocktails', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', is_active: true },
+  { name: 'Beer & Wine', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', is_active: true },
+  { name: 'Specials', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true },
+  { name: 'Other', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Expo', is_active: true },
+]
+
+const defaultCheckWorkflowSettings = (): CheckWorkflowSettingsData => ({
+  seat_numbers_enabled: true,
+  seat_number_required: false,
+  course_required: false,
+  allow_split_checks: true,
+  split_by_seat_enabled: true,
+  split_by_item_enabled: true,
+  split_evenly_enabled: true,
+  max_split_count: '8',
+  allow_partial_payments: true,
+  require_manager_for_split_after_payment: true,
+  allow_check_merge: true,
+  allow_table_transfer: true,
+  allow_server_transfer: true,
+  require_manager_for_transfer: false,
+  allow_bar_tabs: true,
+  tab_name_required: true,
+  card_preauth_required: false,
+  default_preauth_amount: '',
+  allow_tabs_without_table: true,
+  auto_close_paid_tabs: true,
+  allow_reopen_closed_checks: false,
+  require_manager_for_reopen: true,
+  allow_send_before_required_modifiers: false,
+  allow_hold_and_fire: true,
+  default_order_fire_mode: 'manual',
+  print_guest_check_by_default: true,
+  notes: '',
+})
 
 const INITIAL_DATA: OnboardingData = {
   name: '',
@@ -213,6 +521,11 @@ const INITIAL_DATA: OnboardingData = {
   ],
   service_charges: [],
   discount_rules: [],
+  role_permissions: defaultRolePermissions(),
+  closeout_settings: defaultCloseoutSettings(),
+  check_workflow_settings: defaultCheckWorkflowSettings(),
+  job_codes: defaultJobCodes(),
+  tip_payroll_settings: defaultTipPayrollSettings(),
 
   challenges: [],
   daily_covers_range: null,
@@ -232,13 +545,14 @@ const INITIAL_DATA: OnboardingData = {
   table_count: null,
   sections: ['Table', 'Main Floor', 'Bar', 'Patio'],
 
+  menu_categories: defaultMenuCategories(),
   menu_import_method: 'skip',
 
   team_setup_method: 'skip',
   invites: [],
 }
 
-const ONBOARDING_MAX_STEP = 14
+const ONBOARDING_MAX_STEP = 19
 const REQUEST_TIMEOUT_MS = 20000
 const ONBOARDING_DRAFT_VERSION = 1
 
@@ -272,6 +586,16 @@ const DISCOUNT_VALUE_TYPES: DiscountRuleData['value_type'][] = ['percent', 'fixe
 const DISCOUNT_TAX_BEHAVIORS: DiscountRuleData['tax_behavior'][] = ['reduce_taxable_amount', 'apply_after_tax', 'no_tax_impact']
 const DISCOUNT_ROLES = ['owner', 'manager', 'server', 'bartender', 'cashier', 'host', 'runner', 'busser']
 const DISCOUNT_SERVICE_MODES = ['dine_in', 'bar', 'counter_service', 'takeout', 'delivery', 'catering']
+const CASH_TRACKING_MODES: CloseoutSettingsData['cash_tracking_mode'][] = ['shared_drawer', 'per_terminal', 'per_employee', 'no_cash']
+const SERVER_REPORT_DELIVERY: CloseoutSettingsData['server_checkout_report_delivery'][] = ['none', 'print', 'email', 'print_and_email']
+const EOD_BATCH_CLOSE_MODES: CloseoutSettingsData['eod_batch_close_mode'][] = ['automatic', 'manual', 'prompt_manager']
+const ORDER_FIRE_MODES: CheckWorkflowSettingsData['default_order_fire_mode'][] = ['manual', 'immediate', 'by_course']
+const PERMISSION_TIERS: JobCodeData['permission_tier'][] = ['owner', 'manager', 'normal', 'limited', 'waiter']
+const TIP_DISTRIBUTION_MODES: TipPayrollSettingsData['tip_distribution_mode'][] = ['individual', 'pooled', 'role_based', 'sales_based', 'hours_based', 'points_based']
+const CASH_TIP_DECLARATION_MODES: TipPayrollSettingsData['cash_tip_declaration_mode'][] = ['not_tracked', 'declared_by_employee', 'declared_by_manager', 'required_checkout']
+const PAYROLL_EXPORT_FREQUENCIES: TipPayrollSettingsData['payroll_export_frequency'][] = ['daily', 'weekly', 'biweekly', 'semimonthly', 'monthly', 'manual']
+const TIP_POOL_RESETS: TipPayrollSettingsData['tip_pool_reset'][] = ['shift', 'day', 'pay_period']
+const TIPOUT_BASES: TipPayrollSettingsData['tipout_basis'][] = ['none', 'sales', 'tips', 'hours', 'points', 'custom']
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -418,6 +742,23 @@ const normalizeServiceCharges = (value: unknown): ServiceChargeData[] => {
     .filter(row => row.name && row.is_active !== false)
 }
 
+const normalizeMenuCategories = (value: unknown): MenuCategoryData[] => {
+  const rows = Array.isArray(value) ? value : []
+  const normalized = rows
+    .filter(isRecord)
+    .map(row => ({
+      id: asNullableString(row.id),
+      name: asString(row.name).trim(),
+      tax_rate_id: asString(row.tax_rate_id),
+      routing_station_id: asString(row.routing_station_id),
+      routing_station_name: asString(row.routing_station_name),
+      is_active: typeof row.is_active === 'boolean' ? row.is_active : true,
+    }))
+    .filter(row => row.name && row.is_active !== false)
+
+  return normalized.length > 0 ? normalized : defaultMenuCategories()
+}
+
 const normalizeDiscountRoles = (value: unknown): string[] => {
   const roles = asStringArray(value).map(role => role.toLowerCase()).filter(role => DISCOUNT_ROLES.includes(role))
   return Array.from(new Set(roles.length > 0 ? roles : ['owner', 'manager']))
@@ -458,6 +799,182 @@ const normalizeDiscountRules = (value: unknown): DiscountRuleData[] => {
       is_active: typeof row.is_active === 'boolean' ? row.is_active : true,
     }))
     .filter(row => row.name && row.is_active !== false)
+}
+
+const normalizeRolePermissions = (value: unknown, jobCodes: JobCodeData[] = defaultJobCodes()): RolePermissionData[] => {
+  const rows = Array.isArray(value) ? value.filter(isRecord) : []
+  const roleKeys = roleKeysForPermissions(jobCodes)
+  const byRole = new Map<string, RolePermissionData>()
+  for (const row of rows) {
+    const role = slugRoleCode(row.role_key)
+    byRole.set(role, {
+      id: asNullableString(row.id),
+      role_key: role,
+      can_refund: typeof row.can_refund === 'boolean' ? row.can_refund : false,
+      refund_limit: asStringNumber(row.refund_limit),
+      can_void: typeof row.can_void === 'boolean' ? row.can_void : false,
+      can_comp: typeof row.can_comp === 'boolean' ? row.can_comp : false,
+      can_discount: typeof row.can_discount === 'boolean' ? row.can_discount : false,
+      discount_limit_percent: asStringNumber(row.discount_limit_percent),
+      can_open_cash_drawer: typeof row.can_open_cash_drawer === 'boolean' ? row.can_open_cash_drawer : false,
+      can_no_sale: typeof row.can_no_sale === 'boolean' ? row.can_no_sale : false,
+      can_paid_in_out: typeof row.can_paid_in_out === 'boolean' ? row.can_paid_in_out : false,
+      can_adjust_tips: typeof row.can_adjust_tips === 'boolean' ? row.can_adjust_tips : false,
+      can_edit_menu: typeof row.can_edit_menu === 'boolean' ? row.can_edit_menu : false,
+      can_edit_employees: typeof row.can_edit_employees === 'boolean' ? row.can_edit_employees : false,
+      can_edit_schedules: typeof row.can_edit_schedules === 'boolean' ? row.can_edit_schedules : false,
+      can_view_reports: typeof row.can_view_reports === 'boolean' ? row.can_view_reports : false,
+      can_close_drawer: typeof row.can_close_drawer === 'boolean' ? row.can_close_drawer : false,
+      can_close_day: typeof row.can_close_day === 'boolean' ? row.can_close_day : false,
+      can_change_payment_settings: typeof row.can_change_payment_settings === 'boolean' ? row.can_change_payment_settings : false,
+      require_manager_pin_for_approval: typeof row.require_manager_pin_for_approval === 'boolean'
+        ? row.require_manager_pin_for_approval
+        : true,
+    })
+  }
+  const normalized = roleKeys.map(role => byRole.get(role) || defaultRolePermission(role))
+  for (const [role, row] of byRole.entries()) {
+    if (!roleKeys.includes(role)) normalized.push(row)
+  }
+  return normalized
+}
+
+const normalizeReportRecipients = (value: unknown): string[] =>
+  asStringArray(value)
+    .map(email => email.toLowerCase())
+    .filter(email => email.includes('@'))
+
+const normalizeEodReports = (value: unknown): string[] => {
+  const reports = asStringArray(value).filter(report => EOD_REPORT_OPTIONS.includes(report))
+  return Array.from(new Set(reports.length > 0 ? reports : defaultCloseoutSettings().eod_reports))
+}
+
+const normalizeCloseoutSettings = (value: unknown): CloseoutSettingsData => {
+  const fallback = defaultCloseoutSettings()
+  if (!isRecord(value)) return fallback
+  return {
+    cash_tracking_mode: asEnum(value.cash_tracking_mode, CASH_TRACKING_MODES, fallback.cash_tracking_mode),
+    require_starting_bank: typeof value.require_starting_bank === 'boolean' ? value.require_starting_bank : fallback.require_starting_bank,
+    blind_drawer_close: typeof value.blind_drawer_close === 'boolean' ? value.blind_drawer_close : fallback.blind_drawer_close,
+    allow_paid_in_out: typeof value.allow_paid_in_out === 'boolean' ? value.allow_paid_in_out : fallback.allow_paid_in_out,
+    require_manager_for_drawer_open: typeof value.require_manager_for_drawer_open === 'boolean' ? value.require_manager_for_drawer_open : fallback.require_manager_for_drawer_open,
+    cash_drop_threshold: asStringNumber(value.cash_drop_threshold),
+    cash_variance_threshold: asStringNumber(value.cash_variance_threshold),
+    server_require_all_checks_closed: typeof value.server_require_all_checks_closed === 'boolean' ? value.server_require_all_checks_closed : fallback.server_require_all_checks_closed,
+    server_require_tabs_closed: typeof value.server_require_tabs_closed === 'boolean' ? value.server_require_tabs_closed : fallback.server_require_tabs_closed,
+    server_require_cash_tips_declared: typeof value.server_require_cash_tips_declared === 'boolean' ? value.server_require_cash_tips_declared : fallback.server_require_cash_tips_declared,
+    server_require_credit_tips_reviewed: typeof value.server_require_credit_tips_reviewed === 'boolean' ? value.server_require_credit_tips_reviewed : fallback.server_require_credit_tips_reviewed,
+    server_require_tipout_entry: typeof value.server_require_tipout_entry === 'boolean' ? value.server_require_tipout_entry : fallback.server_require_tipout_entry,
+    server_require_manager_approval: typeof value.server_require_manager_approval === 'boolean' ? value.server_require_manager_approval : fallback.server_require_manager_approval,
+    server_checkout_report_delivery: asEnum(value.server_checkout_report_delivery, SERVER_REPORT_DELIVERY, fallback.server_checkout_report_delivery),
+    allow_clockout_before_checkout: typeof value.allow_clockout_before_checkout === 'boolean' ? value.allow_clockout_before_checkout : fallback.allow_clockout_before_checkout,
+    eod_batch_close_mode: asEnum(value.eod_batch_close_mode, EOD_BATCH_CLOSE_MODES, fallback.eod_batch_close_mode),
+    eod_require_drawers_closed: typeof value.eod_require_drawers_closed === 'boolean' ? value.eod_require_drawers_closed : fallback.eod_require_drawers_closed,
+    eod_require_servers_checked_out: typeof value.eod_require_servers_checked_out === 'boolean' ? value.eod_require_servers_checked_out : fallback.eod_require_servers_checked_out,
+    eod_require_open_checks_resolved: typeof value.eod_require_open_checks_resolved === 'boolean' ? value.eod_require_open_checks_resolved : fallback.eod_require_open_checks_resolved,
+    eod_require_paid_outs_reviewed: typeof value.eod_require_paid_outs_reviewed === 'boolean' ? value.eod_require_paid_outs_reviewed : fallback.eod_require_paid_outs_reviewed,
+    eod_require_tip_adjustments_reviewed: typeof value.eod_require_tip_adjustments_reviewed === 'boolean' ? value.eod_require_tip_adjustments_reviewed : fallback.eod_require_tip_adjustments_reviewed,
+    eod_report_recipients: normalizeReportRecipients(value.eod_report_recipients),
+    eod_reports: normalizeEodReports(value.eod_reports),
+  }
+}
+
+const normalizeCheckWorkflowSettings = (value: unknown): CheckWorkflowSettingsData => {
+  const fallback = defaultCheckWorkflowSettings()
+  if (!isRecord(value)) return fallback
+  return {
+    seat_numbers_enabled: typeof value.seat_numbers_enabled === 'boolean' ? value.seat_numbers_enabled : fallback.seat_numbers_enabled,
+    seat_number_required: typeof value.seat_number_required === 'boolean' ? value.seat_number_required : fallback.seat_number_required,
+    course_required: typeof value.course_required === 'boolean' ? value.course_required : fallback.course_required,
+    allow_split_checks: typeof value.allow_split_checks === 'boolean' ? value.allow_split_checks : fallback.allow_split_checks,
+    split_by_seat_enabled: typeof value.split_by_seat_enabled === 'boolean' ? value.split_by_seat_enabled : fallback.split_by_seat_enabled,
+    split_by_item_enabled: typeof value.split_by_item_enabled === 'boolean' ? value.split_by_item_enabled : fallback.split_by_item_enabled,
+    split_evenly_enabled: typeof value.split_evenly_enabled === 'boolean' ? value.split_evenly_enabled : fallback.split_evenly_enabled,
+    max_split_count: asStringNumber(value.max_split_count) || fallback.max_split_count,
+    allow_partial_payments: typeof value.allow_partial_payments === 'boolean' ? value.allow_partial_payments : fallback.allow_partial_payments,
+    require_manager_for_split_after_payment: typeof value.require_manager_for_split_after_payment === 'boolean' ? value.require_manager_for_split_after_payment : fallback.require_manager_for_split_after_payment,
+    allow_check_merge: typeof value.allow_check_merge === 'boolean' ? value.allow_check_merge : fallback.allow_check_merge,
+    allow_table_transfer: typeof value.allow_table_transfer === 'boolean' ? value.allow_table_transfer : fallback.allow_table_transfer,
+    allow_server_transfer: typeof value.allow_server_transfer === 'boolean' ? value.allow_server_transfer : fallback.allow_server_transfer,
+    require_manager_for_transfer: typeof value.require_manager_for_transfer === 'boolean' ? value.require_manager_for_transfer : fallback.require_manager_for_transfer,
+    allow_bar_tabs: typeof value.allow_bar_tabs === 'boolean' ? value.allow_bar_tabs : fallback.allow_bar_tabs,
+    tab_name_required: typeof value.tab_name_required === 'boolean' ? value.tab_name_required : fallback.tab_name_required,
+    card_preauth_required: typeof value.card_preauth_required === 'boolean' ? value.card_preauth_required : fallback.card_preauth_required,
+    default_preauth_amount: asStringNumber(value.default_preauth_amount),
+    allow_tabs_without_table: typeof value.allow_tabs_without_table === 'boolean' ? value.allow_tabs_without_table : fallback.allow_tabs_without_table,
+    auto_close_paid_tabs: typeof value.auto_close_paid_tabs === 'boolean' ? value.auto_close_paid_tabs : fallback.auto_close_paid_tabs,
+    allow_reopen_closed_checks: typeof value.allow_reopen_closed_checks === 'boolean' ? value.allow_reopen_closed_checks : fallback.allow_reopen_closed_checks,
+    require_manager_for_reopen: typeof value.require_manager_for_reopen === 'boolean' ? value.require_manager_for_reopen : fallback.require_manager_for_reopen,
+    allow_send_before_required_modifiers: typeof value.allow_send_before_required_modifiers === 'boolean' ? value.allow_send_before_required_modifiers : fallback.allow_send_before_required_modifiers,
+    allow_hold_and_fire: typeof value.allow_hold_and_fire === 'boolean' ? value.allow_hold_and_fire : fallback.allow_hold_and_fire,
+    default_order_fire_mode: asEnum(value.default_order_fire_mode, ORDER_FIRE_MODES, fallback.default_order_fire_mode),
+    print_guest_check_by_default: typeof value.print_guest_check_by_default === 'boolean' ? value.print_guest_check_by_default : fallback.print_guest_check_by_default,
+    notes: asString(value.notes),
+  }
+}
+
+const normalizeJobCodes = (value: unknown): JobCodeData[] => {
+  const rows = Array.isArray(value) ? value.filter(isRecord) : []
+  const normalized = rows
+    .map((row, index) => ({
+      id: asNullableString(row.id),
+      code: slugRoleCode(row.code || row.label, `role_${index + 1}`),
+      label: asString(row.label, asString(row.code)).trim(),
+      permission_tier: asEnum(row.permission_tier, PERMISSION_TIERS, 'normal'),
+      default_hourly_rate: asStringNumber(row.default_hourly_rate),
+      is_tipped: typeof row.is_tipped === 'boolean' ? row.is_tipped : false,
+      tipout_role: asString(row.tipout_role),
+      sort_order: typeof row.sort_order === 'number' ? row.sort_order : index * 10,
+      is_active: typeof row.is_active === 'boolean' ? row.is_active : true,
+    }))
+    .filter(row => row.label && row.is_active !== false)
+
+  return normalized.length > 0 ? normalized : defaultJobCodes()
+}
+
+const normalizeTipRoleRules = (value: unknown, jobCodes: JobCodeData[] = defaultJobCodes()): TipRoleRuleData[] => {
+  const fallback = defaultTipRoleRules(jobCodes)
+  const rows = Array.isArray(value) ? value.filter(isRecord) : []
+  const byRole = new Map<string, TipRoleRuleData>()
+  for (const row of rows) {
+    const roleKey = slugRoleCode(row.role_key)
+    byRole.set(roleKey, {
+      role_key: roleKey,
+      tip_eligible: typeof row.tip_eligible === 'boolean' ? row.tip_eligible : true,
+      contributes_to_pool: typeof row.contributes_to_pool === 'boolean' ? row.contributes_to_pool : true,
+      receives_from_pool: typeof row.receives_from_pool === 'boolean' ? row.receives_from_pool : true,
+      pool_points: asStringNumber(row.pool_points),
+      tipout_percent: asStringNumber(row.tipout_percent),
+      tipout_target_role: asString(row.tipout_target_role),
+      notes: asString(row.notes),
+    })
+  }
+  return fallback.map(rule => byRole.get(rule.role_key) || rule)
+}
+
+const normalizeTipPayrollSettings = (value: unknown, jobCodes: JobCodeData[] = defaultJobCodes()): TipPayrollSettingsData => {
+  const fallback = defaultTipPayrollSettings()
+  if (!isRecord(value)) {
+    return { ...fallback, role_tip_rules: defaultTipRoleRules(jobCodes) }
+  }
+  return {
+    tip_distribution_mode: asEnum(value.tip_distribution_mode, TIP_DISTRIBUTION_MODES, fallback.tip_distribution_mode),
+    cash_tip_declaration_mode: asEnum(value.cash_tip_declaration_mode, CASH_TIP_DECLARATION_MODES, fallback.cash_tip_declaration_mode),
+    credit_tip_payout_timing: asEnum(value.credit_tip_payout_timing, CREDIT_CARD_TIP_PAYOUTS, fallback.credit_tip_payout_timing),
+    payroll_provider: asString(value.payroll_provider),
+    payroll_export_frequency: asEnum(value.payroll_export_frequency, PAYROLL_EXPORT_FREQUENCIES, fallback.payroll_export_frequency),
+    tip_pooling_enabled: typeof value.tip_pooling_enabled === 'boolean' ? value.tip_pooling_enabled : fallback.tip_pooling_enabled,
+    tip_pool_reset: asEnum(value.tip_pool_reset, TIP_POOL_RESETS, fallback.tip_pool_reset),
+    tipout_basis: asEnum(value.tipout_basis, TIPOUT_BASES, fallback.tipout_basis),
+    tipout_sales_includes_tax: typeof value.tipout_sales_includes_tax === 'boolean' ? value.tipout_sales_includes_tax : fallback.tipout_sales_includes_tax,
+    tipout_include_managers: typeof value.tipout_include_managers === 'boolean' ? value.tipout_include_managers : fallback.tipout_include_managers,
+    require_tipout_at_checkout: typeof value.require_tipout_at_checkout === 'boolean' ? value.require_tipout_at_checkout : fallback.require_tipout_at_checkout,
+    allow_manager_tip_adjustments: typeof value.allow_manager_tip_adjustments === 'boolean' ? value.allow_manager_tip_adjustments : fallback.allow_manager_tip_adjustments,
+    auto_withhold_credit_card_fees: typeof value.auto_withhold_credit_card_fees === 'boolean' ? value.auto_withhold_credit_card_fees : fallback.auto_withhold_credit_card_fees,
+    credit_card_fee_percent: asStringNumber(value.credit_card_fee_percent),
+    role_tip_rules: normalizeTipRoleRules(value.role_tip_rules, jobCodes),
+    notes: asString(value.notes),
+  }
 }
 
 const taxesChargesToPayload = (data: OnboardingData) => ({
@@ -504,6 +1021,60 @@ const discountRulesToPayload = (data: OnboardingData) => ({
   })),
 })
 
+const managerControlsToPayload = (data: OnboardingData) => ({
+  role_permissions: normalizeRolePermissions(data.role_permissions, data.job_codes).map(row => ({
+    ...row,
+    id: undefined,
+    refund_limit: row.refund_limit === '' ? null : Number(row.refund_limit),
+    discount_limit_percent: row.discount_limit_percent === '' ? null : Number(row.discount_limit_percent),
+  })),
+})
+
+const closeoutSettingsToPayload = (data: OnboardingData) => {
+  const settings = normalizeCloseoutSettings(data.closeout_settings)
+  return {
+    ...settings,
+    cash_drop_threshold: settings.cash_drop_threshold === '' ? null : Number(settings.cash_drop_threshold),
+    cash_variance_threshold: settings.cash_variance_threshold === '' ? null : Number(settings.cash_variance_threshold),
+  }
+}
+
+const menuCategoriesToPayload = (data: OnboardingData) => ({
+  categories: normalizeMenuCategories(data.menu_categories).map(row => ({
+    id: row.id || undefined,
+    name: row.name,
+    tax_rate_id: row.tax_rate_id || null,
+    routing_station_id: row.routing_station_id || null,
+    routing_station_name: row.routing_station_name || null,
+    is_active: true,
+  })),
+})
+
+const checkWorkflowSettingsToPayload = (data: OnboardingData) => {
+  const settings = normalizeCheckWorkflowSettings(data.check_workflow_settings)
+  return {
+    ...settings,
+    max_split_count: Math.max(1, Math.min(99, Number(settings.max_split_count || 8))),
+    default_preauth_amount: settings.default_preauth_amount === '' ? null : Number(settings.default_preauth_amount),
+    notes: settings.notes.trim() || null,
+  }
+}
+
+const tipPayrollToPayload = (data: OnboardingData) => {
+  const settings = normalizeTipPayrollSettings(data.tip_payroll_settings, data.job_codes)
+  return {
+    ...settings,
+    credit_card_fee_percent: settings.credit_card_fee_percent === '' ? null : Number(settings.credit_card_fee_percent),
+    role_tip_rules: settings.role_tip_rules.map(rule => ({
+      ...rule,
+      pool_points: rule.pool_points === '' ? null : Number(rule.pool_points),
+      tipout_percent: rule.tipout_percent === '' ? null : Number(rule.tipout_percent),
+      tipout_target_role: rule.tipout_target_role || null,
+      notes: rule.notes || null,
+    })),
+  }
+}
+
 const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): OnboardingData => {
   const input = value ?? {}
   const sections = normalizeSectionNames(asStringArray(input.sections))
@@ -540,7 +1111,13 @@ const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): On
     refund_approval_threshold: asString(input.refund_approval_threshold),
     tax_rates: normalizeTaxRates(input.tax_rates),
     service_charges: normalizeServiceCharges(input.service_charges),
+    menu_categories: normalizeMenuCategories(input.menu_categories),
     discount_rules: normalizeDiscountRules(input.discount_rules),
+    role_permissions: normalizeRolePermissions(input.role_permissions, normalizeJobCodes(input.job_codes)),
+    closeout_settings: normalizeCloseoutSettings(input.closeout_settings),
+    check_workflow_settings: normalizeCheckWorkflowSettings(input.check_workflow_settings),
+    job_codes: normalizeJobCodes(input.job_codes),
+    tip_payroll_settings: normalizeTipPayrollSettings(input.tip_payroll_settings, normalizeJobCodes(input.job_codes)),
     challenges: asStringArray(input.challenges),
     daily_covers_range: asNullableString(input.daily_covers_range),
     team_size_range: asNullableString(input.team_size_range),
@@ -681,6 +1258,72 @@ const fetchDiscountRules = async (restaurantId: string) => {
   return response.json()
 }
 
+const fetchMenuCategories = async (restaurantId: string) => {
+  const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/menu/categories`, {
+    headers: await getApiHeaders(),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(asString(body.detail) || asString(body.message) || `Loading menu categories failed (${response.status})`)
+  }
+  return response.json()
+}
+
+const fetchManagerControls = async (restaurantId: string) => {
+  const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/manager-controls`, {
+    headers: await getApiHeaders(),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(asString(body.detail) || asString(body.message) || `Loading manager controls failed (${response.status})`)
+  }
+  return response.json()
+}
+
+const fetchCloseoutSettings = async (restaurantId: string) => {
+  const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/closeout-settings`, {
+    headers: await getApiHeaders(),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(asString(body.detail) || asString(body.message) || `Loading closeout settings failed (${response.status})`)
+  }
+  return response.json()
+}
+
+const fetchCheckWorkflowSettings = async (restaurantId: string) => {
+  const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/check-workflow-settings`, {
+    headers: await getApiHeaders(),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(asString(body.detail) || asString(body.message) || `Loading check workflow settings failed (${response.status})`)
+  }
+  return response.json()
+}
+
+const fetchJobCodes = async (restaurantId: string) => {
+  const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/job-codes`, {
+    headers: await getApiHeaders(),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(asString(body.detail) || asString(body.message) || `Loading roles failed (${response.status})`)
+  }
+  return response.json()
+}
+
+const fetchTipPayrollSettings = async (restaurantId: string) => {
+  const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/tips-payroll-settings`, {
+    headers: await getApiHeaders(),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(asString(body.detail) || asString(body.message) || `Loading tips and payroll failed (${response.status})`)
+  }
+  return response.json()
+}
+
 const slugify = (name: string): string =>
   name
     .toLowerCase()
@@ -800,7 +1443,7 @@ export function useOnboarding() {
   }, [])
 
   const hydrateFromRestaurant = useCallback(async (restaurant: Restaurant): Promise<Partial<OnboardingData>> => {
-    const [hoursResult, sectionsResult, taxesChargesResult, discountRulesResult] = await Promise.all([
+    const [hoursResult, sectionsResult, taxesChargesResult, discountRulesResult, menuCategoriesResult, managerControlsResult, closeoutSettingsResult, checkWorkflowResult, jobCodesResult, tipPayrollResult] = await Promise.all([
       runWithTimeout(
         () =>
           supabase
@@ -832,6 +1475,48 @@ export function useOnboarding() {
         console.warn('[Onboarding] Could not hydrate discounts:', err)
         return null
       }),
+      runWithTimeout(
+        () => fetchMenuCategories(restaurant.id),
+        'Loading menu categories timed out.'
+      ).catch(err => {
+        console.warn('[Onboarding] Could not hydrate menu categories:', err)
+        return null
+      }),
+      runWithTimeout(
+        () => fetchManagerControls(restaurant.id),
+        'Loading manager controls timed out.'
+      ).catch(err => {
+        console.warn('[Onboarding] Could not hydrate manager controls:', err)
+        return null
+      }),
+      runWithTimeout(
+        () => fetchCloseoutSettings(restaurant.id),
+        'Loading closeout settings timed out.'
+      ).catch(err => {
+        console.warn('[Onboarding] Could not hydrate closeout settings:', err)
+        return null
+      }),
+      runWithTimeout(
+        () => fetchCheckWorkflowSettings(restaurant.id),
+        'Loading check workflow settings timed out.'
+      ).catch(err => {
+        console.warn('[Onboarding] Could not hydrate check workflow settings:', err)
+        return null
+      }),
+      runWithTimeout(
+        () => fetchJobCodes(restaurant.id),
+        'Loading roles timed out.'
+      ).catch(err => {
+        console.warn('[Onboarding] Could not hydrate roles:', err)
+        return []
+      }),
+      runWithTimeout(
+        () => fetchTipPayrollSettings(restaurant.id),
+        'Loading tips and payroll timed out.'
+      ).catch(err => {
+        console.warn('[Onboarding] Could not hydrate tips and payroll:', err)
+        return null
+      }),
     ])
 
     if (hoursResult.error) {
@@ -843,6 +1528,7 @@ export function useOnboarding() {
 
     const sectionNames = normalizeSectionNames(asStringArray((sectionsResult.data || []).map(section => section.name)))
     const configData = parseConfig(restaurant.config)
+    const jobCodes = normalizeJobCodes(jobCodesResult)
 
     return {
       name: asString(restaurant.name),
@@ -862,6 +1548,12 @@ export function useOnboarding() {
       tax_rates: normalizeTaxRates(isRecord(taxesChargesResult) ? taxesChargesResult.tax_rates : []),
       service_charges: normalizeServiceCharges(isRecord(taxesChargesResult) ? taxesChargesResult.service_charges : []),
       discount_rules: normalizeDiscountRules(isRecord(discountRulesResult) ? discountRulesResult.discount_rules : []),
+      menu_categories: normalizeMenuCategories(isRecord(menuCategoriesResult) ? menuCategoriesResult.categories : []),
+      role_permissions: normalizeRolePermissions(isRecord(managerControlsResult) ? managerControlsResult.role_permissions : [], jobCodes),
+      closeout_settings: normalizeCloseoutSettings(closeoutSettingsResult),
+      check_workflow_settings: normalizeCheckWorkflowSettings(checkWorkflowResult),
+      job_codes: jobCodes,
+      tip_payroll_settings: normalizeTipPayrollSettings(tipPayrollResult, jobCodes),
       ...configData,
     }
   }, [runWithTimeout])
@@ -1387,6 +2079,194 @@ export function useOnboarding() {
     }
   }, [data, getActiveRestaurantId, isSetupEditor, runWithTimeout])
 
+  const saveManagerControls = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const activeRestaurantId = getActiveRestaurantId()
+      const response = await runWithTimeout(
+        async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/manager-controls`, {
+          method: 'PUT',
+          headers: await getApiHeaders(),
+          body: JSON.stringify(managerControlsToPayload(data)),
+        }),
+        'Saving manager controls timed out. Please retry.'
+      )
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(asString(body.detail) || asString(body.message) || `Saving manager controls failed (${response.status})`)
+      }
+
+      const saved = await response.json().catch(() => ({}))
+      setData(prev => mergeOnboardingData(prev, {
+        role_permissions: normalizeRolePermissions(isRecord(saved) ? saved.role_permissions : [], prev.job_codes),
+      }))
+
+      const { error: stepError } = isSetupEditor
+        ? { error: null }
+        : await runWithTimeout(
+            () =>
+              supabase
+                .from('restaurants')
+                .update({ onboarding_step: 6 })
+                .eq('id', activeRestaurantId),
+            'Updating onboarding progress timed out. Please retry.'
+          )
+
+      if (stepError) throw stepError
+      setRestaurantId(activeRestaurantId)
+    } catch (err) {
+      const message = toErrorMessage(err, 'Failed to save manager controls')
+      setError(message)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [data, getActiveRestaurantId, isSetupEditor, runWithTimeout])
+
+  const saveCloseoutSettings = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const activeRestaurantId = getActiveRestaurantId()
+      const response = await runWithTimeout(
+        async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/closeout-settings`, {
+          method: 'PUT',
+          headers: await getApiHeaders(),
+          body: JSON.stringify(closeoutSettingsToPayload(data)),
+        }),
+        'Saving closeout settings timed out. Please retry.'
+      )
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(asString(body.detail) || asString(body.message) || `Saving closeout settings failed (${response.status})`)
+      }
+
+      const saved = await response.json().catch(() => ({}))
+      setData(prev => mergeOnboardingData(prev, {
+        closeout_settings: normalizeCloseoutSettings(saved),
+      }))
+
+      const { error: stepError } = isSetupEditor
+        ? { error: null }
+        : await runWithTimeout(
+            () =>
+              supabase
+                .from('restaurants')
+                .update({ onboarding_step: 7 })
+                .eq('id', activeRestaurantId),
+            'Updating onboarding progress timed out. Please retry.'
+          )
+
+      if (stepError) throw stepError
+      setRestaurantId(activeRestaurantId)
+    } catch (err) {
+      const message = toErrorMessage(err, 'Failed to save closeout settings')
+      setError(message)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [data, getActiveRestaurantId, isSetupEditor, runWithTimeout])
+
+  const saveTipPayrollSettings = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const activeRestaurantId = getActiveRestaurantId()
+      const response = await runWithTimeout(
+        async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/tips-payroll-settings`, {
+          method: 'PUT',
+          headers: await getApiHeaders(),
+          body: JSON.stringify(tipPayrollToPayload(data)),
+        }),
+        'Saving tips and payroll timed out. Please retry.'
+      )
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(asString(body.detail) || asString(body.message) || `Saving tips and payroll failed (${response.status})`)
+      }
+
+      const saved = await response.json().catch(() => ({}))
+      setData(prev => mergeOnboardingData(prev, {
+        tip_payroll_settings: normalizeTipPayrollSettings(saved, prev.job_codes),
+      }))
+
+      const { error: stepError } = isSetupEditor
+        ? { error: null }
+        : await runWithTimeout(
+            () =>
+              supabase
+                .from('restaurants')
+                .update({ onboarding_step: 9 })
+                .eq('id', activeRestaurantId),
+            'Updating onboarding progress timed out. Please retry.'
+          )
+
+      if (stepError) throw stepError
+      setRestaurantId(activeRestaurantId)
+    } catch (err) {
+      const message = toErrorMessage(err, 'Failed to save tips and payroll')
+      setError(message)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [data, getActiveRestaurantId, isSetupEditor, runWithTimeout])
+
+  const saveCheckWorkflowSettings = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const activeRestaurantId = getActiveRestaurantId()
+      const response = await runWithTimeout(
+        async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/check-workflow-settings`, {
+          method: 'PUT',
+          headers: await getApiHeaders(),
+          body: JSON.stringify(checkWorkflowSettingsToPayload(data)),
+        }),
+        'Saving check workflow settings timed out. Please retry.'
+      )
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(asString(body.detail) || asString(body.message) || `Saving check workflow settings failed (${response.status})`)
+      }
+
+      const saved = await response.json().catch(() => ({}))
+      setData(prev => mergeOnboardingData(prev, {
+        check_workflow_settings: normalizeCheckWorkflowSettings(saved),
+      }))
+
+      const { error: stepError } = isSetupEditor
+        ? { error: null }
+        : await runWithTimeout(
+            () =>
+              supabase
+                .from('restaurants')
+                .update({ onboarding_step: 8 })
+                .eq('id', activeRestaurantId),
+            'Updating onboarding progress timed out. Please retry.'
+          )
+
+      if (stepError) throw stepError
+      setRestaurantId(activeRestaurantId)
+    } catch (err) {
+      const message = toErrorMessage(err, 'Failed to save check workflow settings')
+      setError(message)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [data, getActiveRestaurantId, isSetupEditor, runWithTimeout])
+
   // Save goals & priorities
   const saveGoals = useCallback(async () => {
     setIsLoading(true)
@@ -1408,7 +2288,7 @@ export function useOnboarding() {
                 team_size_range: data.team_size_range,
                 primary_goal: data.primary_goal,
               },
-              ...onboardingProgressPatch(6),
+              ...onboardingProgressPatch(10),
             })
             .eq('id', activeRestaurantId),
         'Saving goals timed out. Please retry.'
@@ -1448,7 +2328,7 @@ export function useOnboarding() {
                 service_modes: data.service_modes,
                 default_guest_flow: data.default_guest_flow,
               },
-              ...onboardingProgressPatch(8),
+              ...onboardingProgressPatch(12),
             })
             .eq('id', activeRestaurantId),
         'Saving current tools timed out. Please retry.'
@@ -1497,7 +2377,7 @@ export function useOnboarding() {
             () =>
               supabase
                 .from('restaurants')
-                .update({ onboarding_step: 9 })
+                .update({ onboarding_step: 13 })
                 .eq('id', activeRestaurantId),
             'Updating onboarding progress timed out. Please retry.'
           )
@@ -1558,7 +2438,7 @@ export function useOnboarding() {
             () =>
               supabase
                 .from('restaurants')
-                .update({ onboarding_step: 10 })
+                .update({ onboarding_step: 14 })
                 .eq('id', activeRestaurantId),
             'Updating onboarding progress timed out. Please retry.'
           )
@@ -1591,7 +2471,7 @@ export function useOnboarding() {
             .update({
               seating_capacity: data.seating_capacity,
               table_count: data.table_count,
-              ...onboardingProgressPatch(11),
+              ...onboardingProgressPatch(15),
             })
             .eq('id', activeRestaurantId),
         'Saving capacity settings timed out. Please retry.'
@@ -1610,6 +2490,53 @@ export function useOnboarding() {
   }, [data.seating_capacity, data.table_count, getActiveRestaurantId, onboardingProgressPatch, runWithTimeout])
 
   // Save menu step progress (after step 6)
+  const saveMenuCategories = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const activeRestaurantId = getActiveRestaurantId()
+      const response = await runWithTimeout(
+        async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/menu/categories`, {
+          method: 'PUT',
+          headers: await getApiHeaders(),
+          body: JSON.stringify(menuCategoriesToPayload(data)),
+        }),
+        'Saving menu categories timed out. Please retry.'
+      )
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(asString(body.detail) || asString(body.message) || `Saving menu categories failed (${response.status})`)
+      }
+
+      const saved = await response.json().catch(() => ({}))
+      setData(prev => mergeOnboardingData(prev, {
+        menu_categories: normalizeMenuCategories(isRecord(saved) ? saved.categories : []),
+      }))
+
+      const { error: stepError } = isSetupEditor
+        ? { error: null }
+        : await runWithTimeout(
+            () =>
+              supabase
+                .from('restaurants')
+                .update({ onboarding_step: 16 })
+                .eq('id', activeRestaurantId),
+            'Updating onboarding progress timed out. Please retry.'
+          )
+
+      if (stepError) throw stepError
+      setRestaurantId(activeRestaurantId)
+    } catch (err) {
+      const message = toErrorMessage(err, 'Failed to save menu categories')
+      setError(message)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [data, getActiveRestaurantId, isSetupEditor, runWithTimeout])
+
   const saveMenuProgress = useCallback(async () => {
     setIsLoading(true)
     setError(null)
@@ -1627,7 +2554,7 @@ export function useOnboarding() {
                 ...existingConfig,
                 menu_import_method: data.menu_import_method,
               },
-              ...onboardingProgressPatch(12),
+              ...onboardingProgressPatch(17),
             })
             .eq('id', activeRestaurantId),
         'Saving menu setup timed out. Please retry.'
@@ -1781,11 +2708,16 @@ export function useOnboarding() {
     savePayments,
     saveTaxesCharges,
     saveDiscountRules,
+    saveManagerControls,
+    saveCloseoutSettings,
+    saveCheckWorkflowSettings,
+    saveTipPayrollSettings,
     saveGoals,
     saveTechStack,
     saveSections,
     saveOperatingHours,
     saveCapacity,
+    saveMenuCategories,
     saveMenuProgress,
     completeOnboarding,
     goToDashboard,

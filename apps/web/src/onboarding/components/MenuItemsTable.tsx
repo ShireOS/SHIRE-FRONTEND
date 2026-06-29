@@ -2,8 +2,18 @@ export interface MenuEditorItem {
   id: string
   name: string
   category: string
+  menu_category_id?: string
   price: string
   description: string
+  is_available?: boolean
+  availability_mode?: 'always' | 'schedule' | 'seasonal' | 'manual'
+  availability_days?: number[]
+  availability_start_time?: string
+  availability_end_time?: string
+  availability_service_modes?: string[]
+  availability_start_date?: string
+  availability_end_date?: string
+  availability_notes?: string
 }
 
 const CATEGORIES = [
@@ -26,11 +36,45 @@ interface MenuItemsTableProps {
   items: MenuEditorItem[]
   onItemsChange: (items: MenuEditorItem[]) => void
   disabled?: boolean
+  categories?: Array<{ id?: string | null; name: string }>
 }
 
-export function MenuItemsTable({ items, onItemsChange, disabled }: MenuItemsTableProps) {
-  const update = (id: string, field: keyof MenuEditorItem, value: string) => {
+const DAYS = [
+  [0, 'Sun'],
+  [1, 'Mon'],
+  [2, 'Tue'],
+  [3, 'Wed'],
+  [4, 'Thu'],
+  [5, 'Fri'],
+  [6, 'Sat'],
+] as const
+
+const SERVICE_MODES = ['dine_in', 'bar', 'takeout', 'delivery', 'catering']
+
+export function MenuItemsTable({ items, onItemsChange, disabled, categories }: MenuItemsTableProps) {
+  const categoryOptions = categories?.length ? [{ id: null, name: '' }, ...categories] : CATEGORIES.map(name => ({ id: null, name }))
+
+  const update = (id: string, field: keyof MenuEditorItem, value: unknown) => {
     onItemsChange(items.map(item => item.id === id ? { ...item, [field]: value } : item))
+  }
+
+  const updateCategory = (id: string, categoryName: string) => {
+    const category = categories?.find(row => row.name === categoryName)
+    onItemsChange(items.map(item => item.id === id ? {
+      ...item,
+      category: categoryName,
+      menu_category_id: category?.id || undefined,
+    } : item))
+  }
+
+  const toggleNumber = (values: number[] | undefined, value: number) => {
+    const current = values?.length ? values : [0, 1, 2, 3, 4, 5, 6]
+    return current.includes(value) ? current.filter(item => item !== value) : [...current, value].sort((a, b) => a - b)
+  }
+
+  const toggleString = (values: string[] | undefined, value: string) => {
+    const current = values || []
+    return current.includes(value) ? current.filter(item => item !== value) : [...current, value]
   }
 
   const remove = (id: string) => {
@@ -50,10 +94,11 @@ export function MenuItemsTable({ items, onItemsChange, disabled }: MenuItemsTabl
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="border-b border-[rgba(255,255,255,0.08)]">
-            <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs w-[28%]">Name*</th>
-            <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs w-[18%]">Category</th>
+            <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs w-[22%]">Name*</th>
+            <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs w-[16%]">Category</th>
             <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs w-[12%]">Price</th>
             <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs">Description</th>
+            <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs w-[16%]">Availability</th>
             <th className="w-8" />
           </tr>
         </thead>
@@ -86,11 +131,10 @@ export function MenuItemsTable({ items, onItemsChange, disabled }: MenuItemsTabl
                 />
               </td>
 
-              {/* Category */}
               <td className="py-1.5 px-2">
                 <select
                   value={item.category}
-                  onChange={(e) => update(item.id, 'category', e.target.value)}
+                  onChange={(e) => updateCategory(item.id, e.target.value)}
                   disabled={disabled}
                   style={{
                     width: '100%',
@@ -104,9 +148,9 @@ export function MenuItemsTable({ items, onItemsChange, disabled }: MenuItemsTabl
                     cursor: 'pointer',
                   }}
                 >
-                  {CATEGORIES.map(cat => (
-                    <option key={cat} value={cat} style={{ background: '#1a1a1a', color: '#fff' }}>
-                      {cat || '— Select —'}
+                  {categoryOptions.map(cat => (
+                    <option key={cat.id || cat.name || 'blank'} value={cat.name} style={{ background: '#1a1a1a', color: '#fff' }}>
+                      {cat.name || '— Select —'}
                     </option>
                   ))}
                 </select>
@@ -161,6 +205,79 @@ export function MenuItemsTable({ items, onItemsChange, disabled }: MenuItemsTabl
                   onFocus={(e) => (e.target.style.borderColor = 'rgba(201,169,98,0.6)')}
                   onBlur={(e) => (e.target.style.borderColor = 'rgba(255,255,255,0.08)')}
                 />
+              </td>
+
+              <td className="py-1.5 px-2 align-top">
+                <select
+                  value={item.availability_mode || 'always'}
+                  onChange={(e) => update(item.id, 'availability_mode', e.target.value)}
+                  disabled={disabled}
+                  style={{
+                    width: '100%',
+                    padding: '4px 8px',
+                    fontSize: 13,
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 4,
+                    color: 'rgb(var(--text-primary))',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="always" style={{ background: '#1a1a1a', color: '#fff' }}>Always</option>
+                  <option value="schedule" style={{ background: '#1a1a1a', color: '#fff' }}>By day/time</option>
+                  <option value="seasonal" style={{ background: '#1a1a1a', color: '#fff' }}>Seasonal</option>
+                  <option value="manual" style={{ background: '#1a1a1a', color: '#fff' }}>Manual/86 only</option>
+                </select>
+                {(item.availability_mode === 'schedule' || item.availability_mode === 'seasonal') && (
+                  <div className="mt-2 space-y-2">
+                    {item.availability_mode === 'schedule' && (
+                      <>
+                        <div className="flex flex-wrap gap-1">
+                          {DAYS.map(([value, label]) => {
+                            const active = (item.availability_days || [0, 1, 2, 3, 4, 5, 6]).includes(value)
+                            return (
+                              <button
+                                key={value}
+                                type="button"
+                                disabled={disabled}
+                                onClick={() => update(item.id, 'availability_days', toggleNumber(item.availability_days, value))}
+                                className={`rounded border px-1.5 py-1 text-[10px] ${active ? 'border-[rgb(var(--gold))] text-[rgb(var(--gold))]' : 'border-white/10 text-[rgb(var(--text-tertiary))]'}`}
+                              >
+                                {label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                        <div className="grid grid-cols-2 gap-1">
+                          <input type="time" value={item.availability_start_time || ''} disabled={disabled} onChange={(e) => update(item.id, 'availability_start_time', e.target.value)} className="min-w-0 rounded border border-white/10 bg-white/[0.05] px-1 py-1 text-xs text-white" />
+                          <input type="time" value={item.availability_end_time || ''} disabled={disabled} onChange={(e) => update(item.id, 'availability_end_time', e.target.value)} className="min-w-0 rounded border border-white/10 bg-white/[0.05] px-1 py-1 text-xs text-white" />
+                        </div>
+                      </>
+                    )}
+                    {item.availability_mode === 'seasonal' && (
+                      <div className="grid grid-cols-2 gap-1">
+                        <input type="date" value={item.availability_start_date || ''} disabled={disabled} onChange={(e) => update(item.id, 'availability_start_date', e.target.value)} className="min-w-0 rounded border border-white/10 bg-white/[0.05] px-1 py-1 text-xs text-white" />
+                        <input type="date" value={item.availability_end_date || ''} disabled={disabled} onChange={(e) => update(item.id, 'availability_end_date', e.target.value)} className="min-w-0 rounded border border-white/10 bg-white/[0.05] px-1 py-1 text-xs text-white" />
+                      </div>
+                    )}
+                    <div className="flex flex-wrap gap-1">
+                      {SERVICE_MODES.map(mode => {
+                        const active = (item.availability_service_modes || []).includes(mode)
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            disabled={disabled}
+                            onClick={() => update(item.id, 'availability_service_modes', toggleString(item.availability_service_modes, mode))}
+                            className={`rounded border px-1.5 py-1 text-[10px] ${active ? 'border-[rgb(var(--gold))] text-[rgb(var(--gold))]' : 'border-white/10 text-[rgb(var(--text-tertiary))]'}`}
+                          >
+                            {mode.replace('_', ' ')}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </td>
 
               {/* Delete */}

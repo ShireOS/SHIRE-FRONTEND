@@ -4,6 +4,7 @@ import { supabase } from '../shared/lib/supabase'
 import { API_CONFIG } from '../shared/api/config'
 import { FloorPlanEditor } from '../onboarding/components/FloorPlanEditor'
 import { normalizeFloorPlanTablesForEditor } from '../onboarding/components/FloorPlanCanvas'
+import { FloorPlanTableSetup } from '../onboarding/components/FloorPlanTableSetup'
 import { MenuEditor } from '../onboarding/components/MenuEditor'
 import { ModifierEditor } from '../onboarding/components/ModifierEditor'
 
@@ -13,9 +14,14 @@ const SETUP_TABS = [
   { id: 'payments', label: 'Payments' },
   { id: 'taxes_charges', label: 'Taxes & Charges' },
   { id: 'discounts', label: 'Discounts' },
+  { id: 'manager_controls', label: 'Manager Controls' },
+  { id: 'closeout', label: 'Cash & Closeout' },
+  { id: 'check_workflow', label: 'Check Workflow' },
+  { id: 'tips_payroll', label: 'Tips & Payroll' },
   { id: 'sections', label: 'Sections' },
   { id: 'hours', label: 'Hours' },
   { id: 'capacity', label: 'Capacity / Floor Plan' },
+  { id: 'menu_categories', label: 'Menu Categories' },
   { id: 'menu', label: 'Menu' },
   { id: 'modifiers', label: 'Modifiers' },
   { id: 'routing', label: 'Kitchen Routing' },
@@ -138,6 +144,96 @@ const DISCOUNT_SERVICE_MODE_OPTIONS = [
   { value: 'takeout', label: 'Takeout' },
   { value: 'delivery', label: 'Delivery' },
   { value: 'catering', label: 'Catering' },
+]
+
+const DEFAULT_ROLE_PERMISSION_OPTIONS = ['owner', 'manager', 'server', 'bartender', 'cashier', 'host', 'runner', 'busser', 'kitchen']
+const MANAGER_PERMISSION_OPTIONS = [
+  { key: 'can_refund', label: 'Refunds' },
+  { key: 'can_void', label: 'Voids' },
+  { key: 'can_comp', label: 'Comps' },
+  { key: 'can_discount', label: 'Discounts' },
+  { key: 'can_open_cash_drawer', label: 'Open drawer' },
+  { key: 'can_no_sale', label: 'No-sale' },
+  { key: 'can_paid_in_out', label: 'Paid in/out' },
+  { key: 'can_adjust_tips', label: 'Tip edits' },
+  { key: 'can_edit_menu', label: 'Menu edits' },
+  { key: 'can_edit_employees', label: 'Employee edits' },
+  { key: 'can_edit_schedules', label: 'Schedule edits' },
+  { key: 'can_view_reports', label: 'Reports' },
+  { key: 'can_close_drawer', label: 'Close drawer' },
+  { key: 'can_close_day', label: 'Close day' },
+  { key: 'can_change_payment_settings', label: 'Payment settings' },
+]
+const CASH_TRACKING_OPTIONS = [
+  { value: 'shared_drawer', label: 'Shared drawer' },
+  { value: 'per_terminal', label: 'Drawer per terminal' },
+  { value: 'per_employee', label: 'Drawer per employee/server bank' },
+  { value: 'no_cash', label: 'No cash accepted' },
+]
+const CHECKOUT_REPORT_OPTIONS = [
+  { value: 'none', label: 'No report' },
+  { value: 'print', label: 'Print' },
+  { value: 'email', label: 'Email' },
+  { value: 'print_and_email', label: 'Print + email' },
+]
+const EOD_BATCH_OPTIONS = [
+  { value: 'automatic', label: 'Automatic' },
+  { value: 'manual', label: 'Manual' },
+  { value: 'prompt_manager', label: 'Prompt manager' },
+]
+const EOD_REPORT_OPTIONS = [
+  { value: 'sales_summary', label: 'Sales' },
+  { value: 'labor_summary', label: 'Labor' },
+  { value: 'cash_drawer_summary', label: 'Cash drawer' },
+  { value: 'tip_summary', label: 'Tips' },
+  { value: 'discounts_voids_refunds', label: 'Discounts/voids/refunds' },
+  { value: 'tax_summary', label: 'Taxes' },
+]
+const ORDER_FIRE_MODE_OPTIONS = [
+  { value: 'manual', label: 'Manual fire' },
+  { value: 'immediate', label: 'Send immediately' },
+  { value: 'by_course', label: 'Course-based' },
+]
+const TIP_DISTRIBUTION_OPTIONS = [
+  { value: 'individual', label: 'Individual' },
+  { value: 'pooled', label: 'Pooled' },
+  { value: 'role_based', label: 'Role-based' },
+  { value: 'sales_based', label: 'Sales-based' },
+  { value: 'hours_based', label: 'Hours-based' },
+  { value: 'points_based', label: 'Point-based' },
+]
+const CASH_TIP_OPTIONS = [
+  { value: 'not_tracked', label: 'Not tracked' },
+  { value: 'declared_by_employee', label: 'Employee declares' },
+  { value: 'declared_by_manager', label: 'Manager declares' },
+  { value: 'required_checkout', label: 'Required at checkout' },
+]
+const PAYROLL_EXPORT_OPTIONS = [
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'biweekly', label: 'Biweekly' },
+  { value: 'semimonthly', label: 'Semimonthly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'manual', label: 'Manual' },
+]
+const TIP_POOL_RESET_OPTIONS = [
+  { value: 'shift', label: 'Shift' },
+  { value: 'day', label: 'Day' },
+  { value: 'pay_period', label: 'Pay period' },
+]
+const TIPOUT_BASIS_OPTIONS = [
+  { value: 'none', label: 'None' },
+  { value: 'sales', label: 'Sales' },
+  { value: 'tips', label: 'Tips' },
+  { value: 'hours', label: 'Hours' },
+  { value: 'points', label: 'Points' },
+  { value: 'custom', label: 'Custom' },
+]
+const PERMISSION_TIER_OPTIONS = [
+  { value: 'owner', label: 'Owner' },
+  { value: 'manager', label: 'Manager' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'limited', label: 'Limited' },
 ]
 
 const initialLegal = (restaurant) => {
@@ -593,6 +689,7 @@ function mapFloorPlanTables(fp) {
   if (!fp?.has_floor_plan || !Array.isArray(fp.tables)) return []
   return normalizeFloorPlanTablesForEditor(fp.tables.map(table => ({
     id: table.id || crypto.randomUUID(),
+    table_number: table.table_number ?? '',
     center_x: table.position?.center_x ?? 50,
     center_y: table.position?.center_y ?? 50,
     width: table.position?.width ?? 12,
@@ -601,6 +698,7 @@ function mapFloorPlanTables(fp) {
     shape: table.shape || 'rectangular',
     section_id: table.section_id ?? null,
     section_name: table.section_name ?? null,
+    setup_complete: Boolean(table.setup_complete),
     confidence: table.confidence,
     notes: table.notes,
   })))
@@ -668,6 +766,220 @@ function defaultDiscountRule(index = 0) {
   }
 }
 
+function defaultRolePermission(roleKey) {
+  const key = slugRoleCode(roleKey)
+  const elevated = key === 'owner' || key === 'manager'
+  const cashier = key === 'cashier'
+  const service = key === 'server' || key === 'bartender' || key === 'cashier'
+  return {
+    role_key: key,
+    can_refund: elevated || cashier,
+    refund_limit: elevated ? '' : cashier ? '25' : '',
+    can_void: elevated,
+    can_comp: elevated,
+    can_discount: elevated || service,
+    discount_limit_percent: elevated ? '' : service ? '20' : '',
+    can_open_cash_drawer: elevated || cashier || key === 'bartender',
+    can_no_sale: elevated || cashier,
+    can_paid_in_out: elevated || cashier,
+    can_adjust_tips: elevated,
+    can_edit_menu: elevated,
+    can_edit_employees: elevated,
+    can_edit_schedules: elevated,
+    can_view_reports: elevated,
+    can_close_drawer: elevated || cashier,
+    can_close_day: elevated,
+    can_change_payment_settings: key === 'owner',
+    require_manager_pin_for_approval: !elevated,
+  }
+}
+
+function rolePermissionKeys(jobCodes = []) {
+  const seen = new Set()
+  const keys = []
+  ;[...DEFAULT_ROLE_PERMISSION_OPTIONS, ...jobCodes.map(code => code.code)].forEach(raw => {
+    const key = slugRoleCode(raw)
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    keys.push(key)
+  })
+  return keys
+}
+
+function defaultRolePermissions(jobCodes = []) {
+  return rolePermissionKeys(jobCodes).map(defaultRolePermission)
+}
+
+function defaultCloseoutSettings() {
+  return {
+    cash_tracking_mode: 'shared_drawer',
+    require_starting_bank: true,
+    blind_drawer_close: true,
+    allow_paid_in_out: true,
+    require_manager_for_drawer_open: true,
+    cash_drop_threshold: '',
+    cash_variance_threshold: '',
+    server_require_all_checks_closed: true,
+    server_require_tabs_closed: true,
+    server_require_cash_tips_declared: true,
+    server_require_credit_tips_reviewed: true,
+    server_require_tipout_entry: false,
+    server_require_manager_approval: true,
+    server_checkout_report_delivery: 'print',
+    allow_clockout_before_checkout: false,
+    eod_batch_close_mode: 'prompt_manager',
+    eod_require_drawers_closed: true,
+    eod_require_servers_checked_out: true,
+    eod_require_open_checks_resolved: true,
+    eod_require_paid_outs_reviewed: true,
+    eod_require_tip_adjustments_reviewed: true,
+    eod_report_recipients: [],
+    eod_reports: ['sales_summary', 'cash_drawer_summary', 'tip_summary', 'discounts_voids_refunds', 'tax_summary'],
+  }
+}
+
+function defaultMenuCategories() {
+  return [
+    { name: 'Appetizers', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true },
+    { name: 'Entrees', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true },
+    { name: 'Desserts', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true },
+    { name: 'Sides', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true },
+    { name: 'Drinks', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', is_active: true },
+    { name: 'Cocktails', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', is_active: true },
+    { name: 'Beer & Wine', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', is_active: true },
+    { name: 'Specials', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true },
+    { name: 'Other', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Expo', is_active: true },
+  ]
+}
+
+function defaultCheckWorkflowSettings() {
+  return {
+    seat_numbers_enabled: true,
+    seat_number_required: false,
+    course_required: false,
+    allow_split_checks: true,
+    split_by_seat_enabled: true,
+    split_by_item_enabled: true,
+    split_evenly_enabled: true,
+    max_split_count: '8',
+    allow_partial_payments: true,
+    require_manager_for_split_after_payment: true,
+    allow_check_merge: true,
+    allow_table_transfer: true,
+    allow_server_transfer: true,
+    require_manager_for_transfer: false,
+    allow_bar_tabs: true,
+    tab_name_required: true,
+    card_preauth_required: false,
+    default_preauth_amount: '',
+    allow_tabs_without_table: true,
+    auto_close_paid_tabs: true,
+    allow_reopen_closed_checks: false,
+    require_manager_for_reopen: true,
+    allow_send_before_required_modifiers: false,
+    allow_hold_and_fire: true,
+    default_order_fire_mode: 'manual',
+    print_guest_check_by_default: true,
+    notes: '',
+  }
+}
+
+function slugRoleCode(value, fallback = 'role') {
+  const raw = String(value || fallback).toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '')
+  return /^[a-z]/.test(raw) ? raw.slice(0, 80) : `role_${raw || fallback}`.slice(0, 80)
+}
+
+function defaultTipPayrollSettings(jobCodes = []) {
+  const roles = jobCodes.length > 0 ? jobCodes : [
+    { code: 'server', is_tipped: true },
+    { code: 'bartender', is_tipped: true },
+    { code: 'host', is_tipped: false },
+    { code: 'runner', is_tipped: true },
+    { code: 'busser', is_tipped: true },
+  ]
+  return {
+    tip_distribution_mode: 'individual',
+    cash_tip_declaration_mode: 'declared_by_employee',
+    credit_tip_payout_timing: 'payroll',
+    payroll_provider: '',
+    payroll_export_frequency: 'biweekly',
+    tip_pooling_enabled: false,
+    tip_pool_reset: 'day',
+    tipout_basis: 'none',
+    tipout_sales_includes_tax: false,
+    tipout_include_managers: false,
+    require_tipout_at_checkout: false,
+    allow_manager_tip_adjustments: true,
+    auto_withhold_credit_card_fees: false,
+    credit_card_fee_percent: '',
+    role_tip_rules: roles.map(role => ({
+      role_key: role.code,
+      tip_eligible: Boolean(role.is_tipped),
+      contributes_to_pool: Boolean(role.is_tipped),
+      receives_from_pool: Boolean(role.is_tipped),
+      pool_points: role.is_tipped ? '1' : '',
+      tipout_percent: '',
+      tipout_target_role: '',
+      notes: '',
+    })),
+    notes: '',
+  }
+}
+
+function normalizeJobCodes(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row, index) => ({
+      id: row?.id || null,
+      code: slugRoleCode(row?.code || row?.label, `role_${index + 1}`),
+      label: String(row?.label || row?.code || '').trim(),
+      permission_tier: PERMISSION_TIER_OPTIONS.some(option => option.value === row?.permission_tier) ? row.permission_tier : 'normal',
+      default_hourly_rate: row?.default_hourly_rate == null ? '' : sanitizeNumber(row.default_hourly_rate),
+      is_tipped: Boolean(row?.is_tipped),
+      tipout_role: row?.tipout_role || '',
+      sort_order: Number.isFinite(Number(row?.sort_order)) ? Number(row.sort_order) : index * 10,
+      is_active: row?.is_active !== false,
+    }))
+    .filter(row => row.label && row.is_active)
+}
+
+function normalizeTipRoleRules(rows, jobCodes) {
+  const fallback = defaultTipPayrollSettings(jobCodes).role_tip_rules
+  const byRole = new Map()
+  ;(Array.isArray(rows) ? rows : []).forEach(row => {
+    const roleKey = slugRoleCode(row?.role_key)
+    byRole.set(roleKey, {
+      role_key: roleKey,
+      tip_eligible: row?.tip_eligible !== false,
+      contributes_to_pool: row?.contributes_to_pool !== false,
+      receives_from_pool: row?.receives_from_pool !== false,
+      pool_points: row?.pool_points == null ? '' : sanitizeNumber(row.pool_points),
+      tipout_percent: row?.tipout_percent == null ? '' : sanitizeNumber(row.tipout_percent),
+      tipout_target_role: row?.tipout_target_role || '',
+      notes: row?.notes || '',
+    })
+  })
+  return fallback.map(rule => byRole.get(rule.role_key) || rule)
+}
+
+function normalizeTipPayrollSettings(row, jobCodes = []) {
+  const fallback = defaultTipPayrollSettings(jobCodes)
+  const source = row && typeof row === 'object' ? row : {}
+  return {
+    ...fallback,
+    ...source,
+    tip_distribution_mode: TIP_DISTRIBUTION_OPTIONS.some(option => option.value === source.tip_distribution_mode) ? source.tip_distribution_mode : fallback.tip_distribution_mode,
+    cash_tip_declaration_mode: CASH_TIP_OPTIONS.some(option => option.value === source.cash_tip_declaration_mode) ? source.cash_tip_declaration_mode : fallback.cash_tip_declaration_mode,
+    credit_tip_payout_timing: source.credit_tip_payout_timing === 'nightly' ? 'nightly' : 'payroll',
+    payroll_provider: source.payroll_provider || '',
+    payroll_export_frequency: PAYROLL_EXPORT_OPTIONS.some(option => option.value === source.payroll_export_frequency) ? source.payroll_export_frequency : fallback.payroll_export_frequency,
+    tip_pool_reset: TIP_POOL_RESET_OPTIONS.some(option => option.value === source.tip_pool_reset) ? source.tip_pool_reset : fallback.tip_pool_reset,
+    tipout_basis: TIPOUT_BASIS_OPTIONS.some(option => option.value === source.tipout_basis) ? source.tipout_basis : fallback.tipout_basis,
+    credit_card_fee_percent: source.credit_card_fee_percent == null ? '' : sanitizeNumber(source.credit_card_fee_percent),
+    role_tip_rules: normalizeTipRoleRules(source.role_tip_rules, jobCodes),
+    notes: source.notes || '',
+  }
+}
+
 function normalizeTaxRates(rows) {
   const normalized = (Array.isArray(rows) ? rows : [])
     .map(row => ({
@@ -701,6 +1013,20 @@ function normalizeServiceCharges(rows) {
     .filter(row => row.name && row.is_active)
 }
 
+function normalizeMenuCategories(rows) {
+  const normalized = (Array.isArray(rows) ? rows : [])
+    .map(row => ({
+      id: row?.id || null,
+      name: String(row?.name || '').trim(),
+      tax_rate_id: row?.tax_rate_id || '',
+      routing_station_id: row?.routing_station_id || '',
+      routing_station_name: row?.routing_station_name || '',
+      is_active: row?.is_active !== false,
+    }))
+    .filter(row => row.name && row.is_active)
+  return normalized.length > 0 ? normalized : defaultMenuCategories()
+}
+
 function normalizeDiscountRules(rows) {
   return (Array.isArray(rows) ? rows : [])
     .map(row => ({
@@ -723,6 +1049,58 @@ function normalizeDiscountRules(rows) {
     }))
     .map(row => ({ ...row, allowed_roles: row.allowed_roles.length > 0 ? row.allowed_roles : ['owner', 'manager'] }))
     .filter(row => row.name && row.is_active)
+}
+
+function normalizeRolePermissions(rows, jobCodes = []) {
+  const keys = rolePermissionKeys(jobCodes)
+  const byRole = new Map()
+  ;(Array.isArray(rows) ? rows : []).forEach(row => {
+    const role = slugRoleCode(row?.role_key)
+    byRole.set(role, {
+      ...row,
+      id: row?.id || null,
+      role_key: role,
+      refund_limit: row?.refund_limit == null ? '' : sanitizeNumber(row.refund_limit),
+      discount_limit_percent: row?.discount_limit_percent == null ? '' : sanitizeNumber(row.discount_limit_percent),
+      require_manager_pin_for_approval: row?.require_manager_pin_for_approval !== false,
+    })
+  })
+  const normalized = keys.map(role => byRole.get(role) || defaultRolePermission(role))
+  byRole.forEach((row, role) => {
+    if (!keys.includes(role)) normalized.push(row)
+  })
+  return normalized
+}
+
+function normalizeCloseoutSettings(row) {
+  const fallback = defaultCloseoutSettings()
+  const source = row && typeof row === 'object' ? row : {}
+  return {
+    ...fallback,
+    ...source,
+    cash_tracking_mode: CASH_TRACKING_OPTIONS.some(option => option.value === source.cash_tracking_mode) ? source.cash_tracking_mode : fallback.cash_tracking_mode,
+    cash_drop_threshold: source.cash_drop_threshold == null ? '' : sanitizeNumber(source.cash_drop_threshold),
+    cash_variance_threshold: source.cash_variance_threshold == null ? '' : sanitizeNumber(source.cash_variance_threshold),
+    server_checkout_report_delivery: CHECKOUT_REPORT_OPTIONS.some(option => option.value === source.server_checkout_report_delivery) ? source.server_checkout_report_delivery : fallback.server_checkout_report_delivery,
+    eod_batch_close_mode: EOD_BATCH_OPTIONS.some(option => option.value === source.eod_batch_close_mode) ? source.eod_batch_close_mode : fallback.eod_batch_close_mode,
+    eod_report_recipients: Array.isArray(source.eod_report_recipients) ? source.eod_report_recipients.map(String).filter(Boolean) : [],
+    eod_reports: Array.isArray(source.eod_reports) && source.eod_reports.length > 0
+      ? source.eod_reports.map(String).filter(report => EOD_REPORT_OPTIONS.some(option => option.value === report))
+      : fallback.eod_reports,
+  }
+}
+
+function normalizeCheckWorkflowSettings(row) {
+  const fallback = defaultCheckWorkflowSettings()
+  const source = row && typeof row === 'object' ? row : {}
+  return {
+    ...fallback,
+    ...source,
+    max_split_count: source.max_split_count == null ? fallback.max_split_count : String(source.max_split_count).replace(/[^\d]/g, '').slice(0, 2) || fallback.max_split_count,
+    default_preauth_amount: source.default_preauth_amount == null ? '' : sanitizeNumber(source.default_preauth_amount),
+    default_order_fire_mode: ORDER_FIRE_MODE_OPTIONS.some(option => option.value === source.default_order_fire_mode) ? source.default_order_fire_mode : fallback.default_order_fire_mode,
+    notes: source.notes || '',
+  }
 }
 
 function taxesChargesPayload(taxRates, serviceCharges) {
@@ -750,6 +1128,19 @@ function taxesChargesPayload(taxRates, serviceCharges) {
   }
 }
 
+function menuCategoriesPayload(menuCategories) {
+  return {
+    categories: normalizeMenuCategories(menuCategories).map(row => ({
+      id: row.id || undefined,
+      name: row.name,
+      tax_rate_id: row.tax_rate_id || null,
+      routing_station_id: row.routing_station_id || null,
+      routing_station_name: row.routing_station_name || null,
+      is_active: true,
+    })),
+  }
+}
+
 function discountRulesPayload(discountRules) {
   return {
     discount_rules: normalizeDiscountRules(discountRules).map(row => ({
@@ -770,6 +1161,64 @@ function discountRulesPayload(discountRules) {
       days_of_week: row.days_of_week,
       is_active: true,
     })),
+  }
+}
+
+function managerControlsPayload(rolePermissions, jobCodes = []) {
+  return {
+    role_permissions: normalizeRolePermissions(rolePermissions, jobCodes).map(row => ({
+      ...row,
+      id: undefined,
+      refund_limit: row.refund_limit === '' ? null : Number(row.refund_limit),
+      discount_limit_percent: row.discount_limit_percent === '' ? null : Number(row.discount_limit_percent),
+    })),
+  }
+}
+
+function closeoutSettingsPayload(closeoutSettings) {
+  const settings = normalizeCloseoutSettings(closeoutSettings)
+  return {
+    ...settings,
+    cash_drop_threshold: settings.cash_drop_threshold === '' ? null : Number(settings.cash_drop_threshold),
+    cash_variance_threshold: settings.cash_variance_threshold === '' ? null : Number(settings.cash_variance_threshold),
+  }
+}
+
+function checkWorkflowSettingsPayload(checkWorkflowSettings) {
+  const settings = normalizeCheckWorkflowSettings(checkWorkflowSettings)
+  return {
+    ...settings,
+    max_split_count: Math.max(1, Math.min(99, Number(settings.max_split_count || 8))),
+    default_preauth_amount: settings.default_preauth_amount === '' ? null : Number(settings.default_preauth_amount),
+    notes: settings.notes.trim() || null,
+  }
+}
+
+function tipPayrollPayload(settings, jobCodes) {
+  const normalized = normalizeTipPayrollSettings(settings, jobCodes)
+  return {
+    ...normalized,
+    credit_card_fee_percent: normalized.credit_card_fee_percent === '' ? null : Number(normalized.credit_card_fee_percent),
+    role_tip_rules: normalized.role_tip_rules.map(rule => ({
+      ...rule,
+      pool_points: rule.pool_points === '' ? null : Number(rule.pool_points),
+      tipout_percent: rule.tipout_percent === '' ? null : Number(rule.tipout_percent),
+      tipout_target_role: rule.tipout_target_role || null,
+      notes: rule.notes || null,
+    })),
+  }
+}
+
+function jobCodePayload(jobCode) {
+  return {
+    code: slugRoleCode(jobCode.code || jobCode.label),
+    label: String(jobCode.label || jobCode.code).trim(),
+    permission_tier: jobCode.permission_tier || 'normal',
+    default_hourly_rate: jobCode.default_hourly_rate === '' ? 0 : Number(jobCode.default_hourly_rate),
+    is_tipped: Boolean(jobCode.is_tipped),
+    tipout_role: jobCode.tipout_role || null,
+    sort_order: Number(jobCode.sort_order) || 0,
+    is_active: jobCode.is_active !== false,
   }
 }
 
@@ -867,7 +1316,12 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [serviceModel, setServiceModel] = useState(() => initialServiceModel(restaurant))
   const [taxRates, setTaxRates] = useState([defaultTaxRate()])
   const [serviceCharges, setServiceCharges] = useState([])
+  const [menuCategories, setMenuCategories] = useState(defaultMenuCategories())
   const [discountRules, setDiscountRules] = useState([])
+  const [rolePermissions, setRolePermissions] = useState(defaultRolePermissions())
+  const [closeoutSettings, setCloseoutSettings] = useState(defaultCloseoutSettings())
+  const [checkWorkflowSettings, setCheckWorkflowSettings] = useState(defaultCheckWorkflowSettings())
+  const [tipPayrollSettings, setTipPayrollSettings] = useState(defaultTipPayrollSettings())
   const [sections, setSections] = useState(['Table'])
   const [hours, setHours] = useState(DEFAULT_HOURS)
   const [sameHours, setSameHours] = useState(true)
@@ -877,9 +1331,10 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [menuMode, setMenuMode] = useState(null)
   const [waiters, setWaiters] = useState([])
   const [jobCodes, setJobCodes] = useState([])
+  const [jobCodeDraft, setJobCodeDraft] = useState({ code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 100, is_active: true })
   const [rateEdits, setRateEdits] = useState({})
   const [savingRateId, setSavingRateId] = useState('')
-  const [staffForm, setStaffForm] = useState({ name: '', email: '', role: 'server', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
+  const [staffForm, setStaffForm] = useState({ name: '', email: '', role: 'server', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
   const [pinEdits, setPinEdits] = useState({})
   const [pinSaving, setPinSaving] = useState({})
   const [pinSaved, setPinSaved] = useState({})
@@ -915,10 +1370,10 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     if (!restaurantId) return
     setSetupError('')
     try {
-      const [staffRows, menuRows, jobCodeRows, hoursResult, sectionRows, floorPlan, taxesCharges, discountData] = await Promise.all([
+      const [staffRows, menuRows, jobCodeRows, hoursResult, sectionRows, floorPlan, taxesCharges, menuCategoryData, discountData, managerControls, closeoutData, checkWorkflowData, tipPayrollData] = await Promise.all([
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`),
-        fetchWithSupabaseAuth('/manager/job-codes').catch(() => []),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`).catch(() => []),
         supabase
           .from('operating_hours')
           .select('day_of_week, open_time, close_time, is_closed')
@@ -927,7 +1382,12 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`).catch(() => []),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`).catch(() => null),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/taxes-charges`).catch(() => null),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/categories`).catch(() => null),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/discount-rules`).catch(() => null),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-controls`).catch(() => null),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`).catch(() => null),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/check-workflow-settings`).catch(() => null),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`).catch(() => null),
       ])
 
       if (hoursResult.error) throw hoursResult.error
@@ -935,7 +1395,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setHours(normalized)
       setSameHours(deriveSameHours(normalized))
       setWaiters(Array.isArray(staffRows) ? staffRows : [])
-      const normalizedJobCodes = Array.isArray(jobCodeRows) ? jobCodeRows : []
+      const normalizedJobCodes = normalizeJobCodes(jobCodeRows)
       setJobCodes(normalizedJobCodes)
       setRateEdits(Object.fromEntries(normalizedJobCodes.map(code => [code.id, String(code.default_hourly_rate ?? '')])))
       setMenuItems(mapMenuItems(menuRows))
@@ -943,7 +1403,12 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setFloorTables(mapFloorPlanTables(floorPlan))
       setTaxRates(normalizeTaxRates(taxesCharges?.tax_rates))
       setServiceCharges(normalizeServiceCharges(taxesCharges?.service_charges))
+      setMenuCategories(normalizeMenuCategories(menuCategoryData?.categories))
       setDiscountRules(normalizeDiscountRules(discountData?.discount_rules))
+      setRolePermissions(normalizeRolePermissions(managerControls?.role_permissions, normalizedJobCodes))
+      setCloseoutSettings(normalizeCloseoutSettings(closeoutData))
+      setCheckWorkflowSettings(normalizeCheckWorkflowSettings(checkWorkflowData))
+      setTipPayrollSettings(normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes))
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : 'Could not load setup data.')
     }
@@ -1110,6 +1575,30 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     }
   }
 
+  const updateMenuCategory = (index, patch) => {
+    setMenuCategories(prev => normalizeMenuCategories(prev).map((row, currentIndex) => currentIndex === index ? { ...row, ...patch } : row))
+  }
+
+  const saveMenuCategories = async () => {
+    setIsSaving(true)
+    setSaveMessage('')
+    setSetupError('')
+    try {
+      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/categories`, {
+        method: 'PUT',
+        body: JSON.stringify(menuCategoriesPayload(menuCategories)),
+      })
+      setMenuCategories(normalizeMenuCategories(saved?.categories))
+      setSaveMessage('Saved menu categories.')
+      await auth.refreshRestaurants?.(restaurantId)
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save menu categories.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const updateDiscountRule = (index, patch) => {
     setDiscountRules(prev => prev.map((row, currentIndex) => currentIndex === index ? { ...row, ...patch } : row))
   }
@@ -1134,6 +1623,138 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setSetupError(err instanceof Error ? err.message : 'Could not save discounts.')
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const updateRolePermission = (index, patch) => {
+    setRolePermissions(prev => prev.map((row, currentIndex) => currentIndex === index ? { ...row, ...patch } : row))
+  }
+
+  const saveManagerControls = async () => {
+    setIsSaving(true)
+    setSaveMessage('')
+    setSetupError('')
+    try {
+      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-controls`, {
+        method: 'PUT',
+        body: JSON.stringify(managerControlsPayload(rolePermissions, jobCodes)),
+      })
+      setRolePermissions(normalizeRolePermissions(saved?.role_permissions, jobCodes))
+      setSaveMessage('Saved manager controls.')
+      await auth.refreshRestaurants?.(restaurantId)
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save manager controls.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const updateCloseoutSettings = (patch) => {
+    setCloseoutSettings(prev => ({ ...prev, ...patch }))
+  }
+
+  const updateCheckWorkflowSettings = (patch) => {
+    setCheckWorkflowSettings(prev => ({ ...prev, ...patch }))
+  }
+
+  const saveCloseoutSettings = async () => {
+    setIsSaving(true)
+    setSaveMessage('')
+    setSetupError('')
+    try {
+      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`, {
+        method: 'PUT',
+        body: JSON.stringify(closeoutSettingsPayload(closeoutSettings)),
+      })
+      setCloseoutSettings(normalizeCloseoutSettings(saved))
+      setSaveMessage('Saved closeout settings.')
+      await auth.refreshRestaurants?.(restaurantId)
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save closeout settings.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const saveCheckWorkflowSettings = async () => {
+    setIsSaving(true)
+    setSaveMessage('')
+    setSetupError('')
+    try {
+      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/check-workflow-settings`, {
+        method: 'PUT',
+        body: JSON.stringify(checkWorkflowSettingsPayload(checkWorkflowSettings)),
+      })
+      setCheckWorkflowSettings(normalizeCheckWorkflowSettings(saved))
+      setSaveMessage('Saved check workflow settings.')
+      await auth.refreshRestaurants?.(restaurantId)
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save check workflow settings.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const updateTipPayrollSettings = (patch) => {
+    setTipPayrollSettings(prev => ({ ...prev, ...patch }))
+  }
+
+  const updateTipRoleRule = (index, patch) => {
+    setTipPayrollSettings(prev => ({
+      ...prev,
+      role_tip_rules: prev.role_tip_rules.map((rule, currentIndex) => currentIndex === index ? { ...rule, ...patch } : rule),
+    }))
+  }
+
+  const saveTipPayrollSettings = async () => {
+    setIsSaving(true)
+    setSaveMessage('')
+    setSetupError('')
+    try {
+      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`, {
+        method: 'PUT',
+        body: JSON.stringify(tipPayrollPayload(tipPayrollSettings, jobCodes)),
+      })
+      setTipPayrollSettings(normalizeTipPayrollSettings(saved, jobCodes))
+      setSaveMessage('Saved tips and payroll.')
+      await auth.refreshRestaurants?.(restaurantId)
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save tips and payroll.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const saveJobCode = async (jobCode) => {
+    setSavingRateId(jobCode.id || 'new')
+    setSetupError('')
+    try {
+      const saved = await fetchWithSupabaseAuth(
+        jobCode.id ? `/manager/job-codes/${jobCode.id}` : `/restaurants/${restaurantId}/job-codes`,
+        {
+          method: jobCode.id ? 'PATCH' : 'POST',
+          body: JSON.stringify(jobCodePayload(jobCode)),
+        }
+      )
+      const nextCodes = jobCode.id
+        ? jobCodes.map(code => code.id === saved.id ? saved : code)
+        : [...jobCodes, saved]
+      const normalized = normalizeJobCodes(nextCodes)
+      setJobCodes(normalized)
+      setRateEdits(Object.fromEntries(normalized.map(code => [code.id, String(code.default_hourly_rate ?? '')])))
+      setTipPayrollSettings(prev => normalizeTipPayrollSettings(prev, normalized))
+      setRolePermissions(prev => normalizeRolePermissions(prev, normalized))
+      setJobCodeDraft({ code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: Math.max(100, ...normalized.map(code => Number(code.sort_order) || 0)) + 10, is_active: true })
+      setSaveMessage('Saved role.')
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save role.')
+    } finally {
+      setSavingRateId('')
     }
   }
 
@@ -1233,19 +1854,22 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       return
     }
     setSetupError('')
+    const selectedJobCode = jobCodes.find(code => code.code === staffForm.role)
     const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters`, {
       method: 'POST',
       body: JSON.stringify({
         name: staffForm.name.trim(),
         email: staffForm.email.trim() || null,
         role: staffForm.role,
+        job_code_id: selectedJobCode?.id || null,
+        hourly_rate: staffForm.hourly_rate === '' ? null : Number(staffForm.hourly_rate),
         pin: staffForm.pin,
         employee_login_id: staffForm.employee_login_id.trim() || defaultEmployeeId(staffForm.name),
         suggested_weekly_hours: staffForm.suggested_weekly_hours === '' ? null : Number(staffForm.suggested_weekly_hours),
       }),
     })
     setWaiters(prev => [...prev, created])
-    setStaffForm({ name: '', email: '', role: 'server', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
+    setStaffForm({ name: '', email: '', role: 'server', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
     onSetupChanged?.()
   }
 
@@ -1340,6 +1964,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
           restaurantId={restaurantId}
           mode={menuMode}
           initialItems={menuItems}
+          categories={normalizeMenuCategories(menuCategories)}
           onBack={() => setMenuMode(null)}
           onSave={(items) => {
             setMenuItems(items)
@@ -1804,6 +2429,341 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         </SectionShell>
       )}
 
+      {activeSetupTab === 'manager_controls' && (
+        <SectionShell
+          title="Manager Controls"
+          description="Role permissions for manager-level POS actions. Employee roles are assigned in the Employees tab; this controls what each role can do during service."
+          actions={<SmallButton variant="primary" onClick={() => void saveManagerControls()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save controls'}</SmallButton>}
+        >
+          <div className="space-y-4">
+            {rolePermissions.map((role, index) => (
+              <div key={role.role_key} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-base font-semibold capitalize">{role.role_key.replace('_', ' ')}</p>
+                    <p className="text-sm text-dash-tertiary">Permissions and approval thresholds</p>
+                  </div>
+                  <SmallButton
+                    variant={role.require_manager_pin_for_approval ? 'primary' : 'secondary'}
+                    onClick={() => updateRolePermission(index, { require_manager_pin_for_approval: !role.require_manager_pin_for_approval })}
+                  >
+                    Approval PIN
+                  </SmallButton>
+                </div>
+                <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-5">
+                  {MANAGER_PERMISSION_OPTIONS.map(permission => (
+                    <SmallButton
+                      key={permission.key}
+                      variant={role[permission.key] ? 'primary' : 'secondary'}
+                      onClick={() => updateRolePermission(index, { [permission.key]: !role[permission.key] })}
+                    >
+                      {permission.label}
+                    </SmallButton>
+                  ))}
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <TextInput value={role.refund_limit} inputMode="decimal" onChange={event => updateRolePermission(index, { refund_limit: sanitizeNumber(event.target.value) })} placeholder="Refund limit, blank for unlimited" />
+                  <TextInput value={role.discount_limit_percent} inputMode="decimal" onChange={event => updateRolePermission(index, { discount_limit_percent: sanitizeNumber(event.target.value) })} placeholder="Discount % limit, blank for unlimited" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'closeout' && (
+        <SectionShell
+          title="Cash & Closeout"
+          description="Cash drawer handling, server checkout requirements, and end-of-day close rules."
+          actions={<SmallButton variant="primary" onClick={() => void saveCloseoutSettings()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save closeout'}</SmallButton>}
+        >
+          <div className="space-y-5">
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <p className="label-mono mb-3">Cash Management</p>
+              <div className="grid gap-3 lg:grid-cols-3">
+                <SelectInput value={closeoutSettings.cash_tracking_mode} onChange={event => updateCloseoutSettings({ cash_tracking_mode: event.target.value })}>
+                  {CASH_TRACKING_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </SelectInput>
+                <TextInput value={closeoutSettings.cash_drop_threshold} inputMode="decimal" onChange={event => updateCloseoutSettings({ cash_drop_threshold: sanitizeNumber(event.target.value) })} placeholder="Cash drop threshold" />
+                <TextInput value={closeoutSettings.cash_variance_threshold} inputMode="decimal" onChange={event => updateCloseoutSettings({ cash_variance_threshold: sanitizeNumber(event.target.value) })} placeholder="Variance approval threshold" />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  ['require_starting_bank', 'Starting bank required'],
+                  ['blind_drawer_close', 'Blind close'],
+                  ['allow_paid_in_out', 'Paid in/out'],
+                  ['require_manager_for_drawer_open', 'Manager drawer open'],
+                ].map(([field, label]) => (
+                  <SmallButton key={field} variant={closeoutSettings[field] ? 'primary' : 'secondary'} onClick={() => updateCloseoutSettings({ [field]: !closeoutSettings[field] })}>{label}</SmallButton>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <p className="label-mono mb-3">Server Checkout</p>
+              <SelectInput value={closeoutSettings.server_checkout_report_delivery} onChange={event => updateCloseoutSettings({ server_checkout_report_delivery: event.target.value })}>
+                {CHECKOUT_REPORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </SelectInput>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  ['server_require_all_checks_closed', 'Checks closed'],
+                  ['server_require_tabs_closed', 'Tabs closed'],
+                  ['server_require_cash_tips_declared', 'Cash tips declared'],
+                  ['server_require_credit_tips_reviewed', 'Credit tips reviewed'],
+                  ['server_require_tipout_entry', 'Tipout entry'],
+                  ['server_require_manager_approval', 'Manager approval'],
+                  ['allow_clockout_before_checkout', 'Clockout before checkout'],
+                ].map(([field, label]) => (
+                  <SmallButton key={field} variant={closeoutSettings[field] ? 'primary' : 'secondary'} onClick={() => updateCloseoutSettings({ [field]: !closeoutSettings[field] })}>{label}</SmallButton>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <p className="label-mono mb-3">End of Day</p>
+              <div className="grid gap-3 lg:grid-cols-2">
+                <SelectInput value={closeoutSettings.eod_batch_close_mode} onChange={event => updateCloseoutSettings({ eod_batch_close_mode: event.target.value })}>
+                  {EOD_BATCH_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </SelectInput>
+                <TextInput value={closeoutSettings.eod_report_recipients.join(', ')} onChange={event => updateCloseoutSettings({ eod_report_recipients: event.target.value.split(',').map(email => email.trim()).filter(Boolean) })} placeholder="Report emails, comma-separated" />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  ['eod_require_drawers_closed', 'Drawers closed'],
+                  ['eod_require_servers_checked_out', 'Servers checked out'],
+                  ['eod_require_open_checks_resolved', 'Open checks resolved'],
+                  ['eod_require_paid_outs_reviewed', 'Paid outs reviewed'],
+                  ['eod_require_tip_adjustments_reviewed', 'Tip edits reviewed'],
+                ].map(([field, label]) => (
+                  <SmallButton key={field} variant={closeoutSettings[field] ? 'primary' : 'secondary'} onClick={() => updateCloseoutSettings({ [field]: !closeoutSettings[field] })}>{label}</SmallButton>
+                ))}
+              </div>
+              <div className="mt-4">
+                <p className="label-mono mb-2">Reports</p>
+                <div className="flex flex-wrap gap-2">
+                  {EOD_REPORT_OPTIONS.map(report => (
+                    <SmallButton
+                      key={report.value}
+                      variant={closeoutSettings.eod_reports.includes(report.value) ? 'primary' : 'secondary'}
+                      onClick={() => updateCloseoutSettings({ eod_reports: toggleDiscountArrayValue(closeoutSettings.eod_reports, report.value) })}
+                    >
+                      {report.label}
+                    </SmallButton>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'check_workflow' && (
+        <SectionShell
+          title="Check Workflow"
+          description="Split checks, seat numbers, bar tabs, preauthorization, transfers, check reopening, and order fire rules."
+          actions={<SmallButton variant="primary" onClick={() => void saveCheckWorkflowSettings()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save workflow'}</SmallButton>}
+        >
+          <div className="space-y-5">
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <p className="label-mono mb-3">Seats & Firing</p>
+              <div className="grid gap-3 lg:grid-cols-3">
+                <Field label="Default Fire Mode">
+                  <SelectInput value={checkWorkflowSettings.default_order_fire_mode} onChange={event => updateCheckWorkflowSettings({ default_order_fire_mode: event.target.value })}>
+                    {ORDER_FIRE_MODE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </SelectInput>
+                </Field>
+                <Field label="Guest Checks">
+                  <SelectInput value={checkWorkflowSettings.print_guest_check_by_default ? 'yes' : 'no'} onChange={event => updateCheckWorkflowSettings({ print_guest_check_by_default: event.target.value === 'yes' })}>
+                    <option value="yes">Print by default</option>
+                    <option value="no">Print on request</option>
+                  </SelectInput>
+                </Field>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  ['seat_numbers_enabled', 'Seat numbers'],
+                  ['seat_number_required', 'Seats required'],
+                  ['course_required', 'Course required'],
+                  ['allow_hold_and_fire', 'Hold & fire'],
+                  ['allow_send_before_required_modifiers', 'Send without required modifiers'],
+                ].map(([field, label]) => (
+                  <SmallButton key={field} variant={checkWorkflowSettings[field] ? 'primary' : 'secondary'} onClick={() => updateCheckWorkflowSettings({ [field]: !checkWorkflowSettings[field] })}>{label}</SmallButton>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <p className="label-mono mb-3">Split Checks & Payments</p>
+              <div className="grid gap-3 lg:grid-cols-3">
+                <Field label="Max Split Count">
+                  <TextInput value={checkWorkflowSettings.max_split_count} inputMode="numeric" onChange={event => updateCheckWorkflowSettings({ max_split_count: event.target.value.replace(/[^\d]/g, '').slice(0, 2) || '1' })} placeholder="8" />
+                </Field>
+                <Field label="Partial Payments">
+                  <SelectInput value={checkWorkflowSettings.allow_partial_payments ? 'yes' : 'no'} onChange={event => updateCheckWorkflowSettings({ allow_partial_payments: event.target.value === 'yes' })}>
+                    <option value="yes">Allow</option>
+                    <option value="no">Do not allow</option>
+                  </SelectInput>
+                </Field>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  ['allow_split_checks', 'Split checks'],
+                  ['split_by_seat_enabled', 'Split by seat'],
+                  ['split_by_item_enabled', 'Split by item'],
+                  ['split_evenly_enabled', 'Split evenly'],
+                  ['require_manager_for_split_after_payment', 'Manager after payment split'],
+                ].map(([field, label]) => (
+                  <SmallButton key={field} variant={checkWorkflowSettings[field] ? 'primary' : 'secondary'} onClick={() => updateCheckWorkflowSettings({ [field]: !checkWorkflowSettings[field] })}>{label}</SmallButton>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <p className="label-mono mb-3">Tabs & Preauthorization</p>
+              <div className="grid gap-3 lg:grid-cols-3">
+                <Field label="Default Preauth Amount">
+                  <TextInput value={checkWorkflowSettings.default_preauth_amount} inputMode="decimal" onChange={event => updateCheckWorkflowSettings({ default_preauth_amount: sanitizeNumber(event.target.value) })} placeholder="Optional" />
+                </Field>
+                <Field label="Tab Name">
+                  <SelectInput value={checkWorkflowSettings.tab_name_required ? 'required' : 'optional'} onChange={event => updateCheckWorkflowSettings({ tab_name_required: event.target.value === 'required' })}>
+                    <option value="required">Required</option>
+                    <option value="optional">Optional</option>
+                  </SelectInput>
+                </Field>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  ['allow_bar_tabs', 'Bar tabs'],
+                  ['card_preauth_required', 'Card preauth'],
+                  ['allow_tabs_without_table', 'Tabs without table'],
+                  ['auto_close_paid_tabs', 'Auto-close paid tabs'],
+                ].map(([field, label]) => (
+                  <SmallButton key={field} variant={checkWorkflowSettings[field] ? 'primary' : 'secondary'} onClick={() => updateCheckWorkflowSettings({ [field]: !checkWorkflowSettings[field] })}>{label}</SmallButton>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <p className="label-mono mb-3">Transfers & Reopening</p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ['allow_check_merge', 'Merge checks'],
+                  ['allow_table_transfer', 'Table transfer'],
+                  ['allow_server_transfer', 'Server transfer'],
+                  ['require_manager_for_transfer', 'Manager transfer approval'],
+                  ['allow_reopen_closed_checks', 'Reopen closed checks'],
+                  ['require_manager_for_reopen', 'Manager reopen approval'],
+                ].map(([field, label]) => (
+                  <SmallButton key={field} variant={checkWorkflowSettings[field] ? 'primary' : 'secondary'} onClick={() => updateCheckWorkflowSettings({ [field]: !checkWorkflowSettings[field] })}>{label}</SmallButton>
+                ))}
+              </div>
+              <textarea
+                value={checkWorkflowSettings.notes}
+                onChange={event => updateCheckWorkflowSettings({ notes: event.target.value })}
+                placeholder="Optional check workflow notes..."
+                className="mt-4 min-h-24 w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-dash-primary outline-none transition focus:border-gold/40 focus:ring-2 focus:ring-gold/10"
+              />
+            </div>
+          </div>
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'tips_payroll' && (
+        <SectionShell
+          title="Tips & Payroll"
+          description="Tip ownership, pooling, tipout rules, cash declarations, credit tip payout, and payroll export defaults."
+          actions={<SmallButton variant="primary" onClick={() => void saveTipPayrollSettings()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save tips & payroll'}</SmallButton>}
+        >
+          <div className="space-y-5">
+            <div className="grid gap-3 lg:grid-cols-3">
+              <Field label="Tip Distribution">
+                <SelectInput value={tipPayrollSettings.tip_distribution_mode} onChange={event => updateTipPayrollSettings({ tip_distribution_mode: event.target.value })}>
+                  {TIP_DISTRIBUTION_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </SelectInput>
+              </Field>
+              <Field label="Cash Tips">
+                <SelectInput value={tipPayrollSettings.cash_tip_declaration_mode} onChange={event => updateTipPayrollSettings({ cash_tip_declaration_mode: event.target.value })}>
+                  {CASH_TIP_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </SelectInput>
+              </Field>
+              <Field label="Credit Tips Paid">
+                <SelectInput value={tipPayrollSettings.credit_tip_payout_timing} onChange={event => updateTipPayrollSettings({ credit_tip_payout_timing: event.target.value })}>
+                  <option value="nightly">Nightly</option>
+                  <option value="payroll">Payroll</option>
+                </SelectInput>
+              </Field>
+              <Field label="Payroll Provider">
+                <TextInput value={tipPayrollSettings.payroll_provider} onChange={event => updateTipPayrollSettings({ payroll_provider: event.target.value })} placeholder="Gusto, ADP, manual..." />
+              </Field>
+              <Field label="Payroll Export">
+                <SelectInput value={tipPayrollSettings.payroll_export_frequency} onChange={event => updateTipPayrollSettings({ payroll_export_frequency: event.target.value })}>
+                  {PAYROLL_EXPORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </SelectInput>
+              </Field>
+              <Field label="Card Fee %">
+                <TextInput value={tipPayrollSettings.credit_card_fee_percent} inputMode="decimal" onChange={event => updateTipPayrollSettings({ credit_card_fee_percent: sanitizeNumber(event.target.value).slice(0, 6) })} placeholder="Optional" />
+              </Field>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <p className="label-mono mb-3">Pool & Tipout</p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <SelectInput value={tipPayrollSettings.tip_pool_reset} onChange={event => updateTipPayrollSettings({ tip_pool_reset: event.target.value })}>
+                  {TIP_POOL_RESET_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </SelectInput>
+                <SelectInput value={tipPayrollSettings.tipout_basis} onChange={event => updateTipPayrollSettings({ tipout_basis: event.target.value })}>
+                  {TIPOUT_BASIS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </SelectInput>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  ['tip_pooling_enabled', 'Pool tips'],
+                  ['require_tipout_at_checkout', 'Tipout at checkout'],
+                  ['allow_manager_tip_adjustments', 'Manager tip edits'],
+                  ['tipout_sales_includes_tax', 'Sales include tax'],
+                  ['tipout_include_managers', 'Managers included'],
+                  ['auto_withhold_credit_card_fees', 'Withhold card fees'],
+                ].map(([field, label]) => (
+                  <SmallButton key={field} variant={tipPayrollSettings[field] ? 'primary' : 'secondary'} onClick={() => updateTipPayrollSettings({ [field]: !tipPayrollSettings[field] })}>{label}</SmallButton>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <p className="label-mono">Role Tip Rules</p>
+              {tipPayrollSettings.role_tip_rules.map((rule, index) => {
+                const role = jobCodes.find(code => code.code === rule.role_key)
+                return (
+                  <div key={rule.role_key} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold">{role?.label || rule.role_key}</p>
+                        <p className="text-xs text-dash-tertiary">{rule.role_key}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <SmallButton variant={rule.tip_eligible ? 'primary' : 'secondary'} onClick={() => updateTipRoleRule(index, { tip_eligible: !rule.tip_eligible })}>Tip eligible</SmallButton>
+                        <SmallButton variant={rule.contributes_to_pool ? 'primary' : 'secondary'} onClick={() => updateTipRoleRule(index, { contributes_to_pool: !rule.contributes_to_pool })}>Contributes</SmallButton>
+                        <SmallButton variant={rule.receives_from_pool ? 'primary' : 'secondary'} onClick={() => updateTipRoleRule(index, { receives_from_pool: !rule.receives_from_pool })}>Receives</SmallButton>
+                      </div>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <TextInput value={rule.pool_points} inputMode="decimal" onChange={event => updateTipRoleRule(index, { pool_points: sanitizeNumber(event.target.value).slice(0, 6) })} placeholder="Pool points" />
+                      <TextInput value={rule.tipout_percent} inputMode="decimal" onChange={event => updateTipRoleRule(index, { tipout_percent: sanitizeNumber(event.target.value).slice(0, 6) })} placeholder="Tipout %" />
+                      <SelectInput value={rule.tipout_target_role} onChange={event => updateTipRoleRule(index, { tipout_target_role: event.target.value })}>
+                        <option value="">No target role</option>
+                        {jobCodes.map(code => <option key={code.code} value={code.code}>{code.label}</option>)}
+                      </SelectInput>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <TextInput value={tipPayrollSettings.notes} onChange={event => updateTipPayrollSettings({ notes: event.target.value })} placeholder="Payroll or tipout notes..." />
+          </div>
+        </SectionShell>
+      )}
+
       {activeSetupTab === 'sections' && (
         <SectionShell
           title="Sections"
@@ -1999,7 +2959,61 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                 <OptionCard title="Upload Image" description="Upload a floor plan image and let AI detect tables." onClick={() => setFloorPlanMode('upload')} />
                 <OptionCard title="Draw Manually" description="Open the visual table editor and place tables yourself." onClick={() => setFloorPlanMode('manual')} />
               </div>
+              {floorTables.length > 0 && (
+                <FloorPlanTableSetup
+                  restaurantId={restaurantId}
+                  tables={floorTables}
+                  onTablesChange={(tables) => {
+                    setFloorTables(tables)
+                    setProfile(prev => ({ ...prev, table_count: tables.length }))
+                  }}
+                  onSaved={(tables) => {
+                    setFloorTables(tables)
+                    setProfile(prev => ({ ...prev, table_count: tables.length }))
+                    onSetupChanged?.()
+                  }}
+                />
+              )}
             </div>
+          </div>
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'menu_categories' && (
+        <SectionShell
+          title="Menu Categories"
+          description="Define appetizer, entree, dessert, drink, and custom menu groups. Tax overrides are optional; routing stations are logical prep destinations."
+          actions={<SmallButton variant="primary" onClick={() => void saveMenuCategories()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save categories'}</SmallButton>}
+        >
+          <datalist id="desktop-menu-category-stations">
+            {['Kitchen', 'Bar', 'Expo', 'Dessert', 'Coffee'].map(station => <option key={station} value={station} />)}
+          </datalist>
+          <div className="space-y-3">
+            {normalizeMenuCategories(menuCategories).map((category, index) => (
+              <div key={category.id || `${category.name}:${index}`} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[1.2fr_1fr_1fr_auto]">
+                <TextInput value={category.name} onChange={event => updateMenuCategory(index, { name: event.target.value })} placeholder="Appetizers" />
+                <SelectInput value={category.tax_rate_id} onChange={event => updateMenuCategory(index, { tax_rate_id: event.target.value })}>
+                  <option value="">Default tax</option>
+                  {normalizeTaxRates(taxRates).map(rate => (
+                    <option key={rate.id || rate.name} value={rate.id || ''}>{rate.name}{rate.rate ? ` · ${rate.rate}%` : ''}</option>
+                  ))}
+                </SelectInput>
+                <TextInput
+                  value={category.routing_station_name}
+                  list="desktop-menu-category-stations"
+                  onChange={event => updateMenuCategory(index, { routing_station_name: event.target.value, routing_station_id: '' })}
+                  placeholder="Kitchen, Bar, Expo"
+                />
+                <SmallButton variant="danger" onClick={() => setMenuCategories(prev => normalizeMenuCategories(prev).filter((_, currentIndex) => currentIndex !== index))}>Remove</SmallButton>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4">
+            <SmallButton
+              onClick={() => setMenuCategories(prev => [...normalizeMenuCategories(prev), { name: `Custom Category ${prev.length + 1}`, tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', is_active: true }])}
+            >
+              Add category
+            </SmallButton>
           </div>
         </SectionShell>
       )}
@@ -2070,13 +3084,14 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               Missing: {setupWarnings.employees.join(', ')}
             </div>
           )}
-          <div className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[1fr_1fr_140px_110px_120px_130px_auto]">
+          <div className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[1fr_1fr_140px_110px_110px_120px_130px_auto]">
             <TextInput placeholder="Name" value={staffForm.name} onChange={event => setStaffForm(prev => ({ ...prev, name: event.target.value, employee_login_id: prev.employee_login_id || defaultEmployeeId(event.target.value) }))} />
             <TextInput placeholder="Email optional" value={staffForm.email} onChange={event => setStaffForm(prev => ({ ...prev, email: event.target.value }))} />
             <SelectInput value={staffForm.role} onChange={event => setStaffForm(prev => ({ ...prev, role: event.target.value }))}>
-              {ROLE_OPTIONS.map(role => <option key={role} value={role}>{role}</option>)}
+              {jobCodes.map(role => <option key={role.code} value={role.code}>{role.label}</option>)}
             </SelectInput>
             <TextInput placeholder="Hrs/week" value={staffForm.suggested_weekly_hours} onChange={event => setStaffForm(prev => ({ ...prev, suggested_weekly_hours: event.target.value.replace(/[^\d.]/g, '').slice(0, 5) }))} />
+            <TextInput placeholder="$/hr" value={staffForm.hourly_rate} onChange={event => setStaffForm(prev => ({ ...prev, hourly_rate: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))} />
             <TextInput placeholder="PIN" value={staffForm.pin} onChange={event => setStaffForm(prev => ({ ...prev, pin: event.target.value.replace(/\D/g, '').slice(0, 8) }))} />
             <TextInput placeholder="ID" value={staffForm.employee_login_id} onChange={event => setStaffForm(prev => ({ ...prev, employee_login_id: event.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, '') }))} />
             <SmallButton variant="primary" onClick={() => void addStaff()}>Add</SmallButton>
@@ -2085,29 +3100,36 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
           <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.025] p-4">
             <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <p className="label-mono">Role rates</p>
-                <h3 className="text-lg font-semibold">Default hourly rates</h3>
+                <p className="label-mono">Role Editor</p>
+                <h3 className="text-lg font-semibold">Roles, wages, and tipped status</h3>
               </div>
-              <p className="text-sm text-dash-tertiary">Clocked labor snapshots these rates unless an employee override exists.</p>
+              <p className="text-sm text-dash-tertiary">Clocked labor uses these role rates unless an employee override exists.</p>
             </div>
             {jobCodes.length === 0 ? (
               <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-dash-secondary">Role rates are not available yet.</p>
             ) : (
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-3">
                 {jobCodes.filter(code => code.is_active !== false).map(code => (
-                  <div key={code.id} className="grid grid-cols-[1fr_110px_auto] items-center gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3">
-                    <div>
-                      <p className="text-sm font-semibold capitalize">{code.label || code.code}</p>
-                      <p className="mt-1 text-xs text-dash-tertiary">{code.is_tipped ? 'Tipped role' : 'Hourly role'}</p>
-                    </div>
+                  <div key={code.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto]">
                     <TextInput
-                      value={rateEdits[code.id] ?? ''}
-                      onChange={event => setRateEdits(prev => ({ ...prev, [code.id]: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))}
+                      value={code.label || code.code}
+                      onChange={event => setJobCodes(prev => prev.map(item => item.id === code.id ? { ...item, label: event.target.value } : item))}
+                      placeholder="Role name"
+                    />
+                    <TextInput
+                      value={code.default_hourly_rate ?? rateEdits[code.id] ?? ''}
+                      onChange={event => setJobCodes(prev => prev.map(item => item.id === code.id ? { ...item, default_hourly_rate: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) } : item))}
                       inputMode="decimal"
                       placeholder="0.00"
                     />
+                    <SelectInput value={code.permission_tier || 'normal'} onChange={event => setJobCodes(prev => prev.map(item => item.id === code.id ? { ...item, permission_tier: event.target.value } : item))}>
+                      {PERMISSION_TIER_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </SelectInput>
+                    <SmallButton variant={code.is_tipped ? 'primary' : 'secondary'} onClick={() => setJobCodes(prev => prev.map(item => item.id === code.id ? { ...item, is_tipped: !item.is_tipped } : item))}>
+                      {code.is_tipped ? 'Tipped' : 'Hourly'}
+                    </SmallButton>
                     <SmallButton
-                      onClick={() => void saveRoleRate(code)}
+                      onClick={() => void saveJobCode(code)}
                       disabled={Boolean(savingRateId)}
                       variant={savingRateId === code.id ? 'primary' : 'secondary'}
                     >
@@ -2115,6 +3137,17 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                     </SmallButton>
                   </div>
                 ))}
+                <div className="grid gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto]">
+                  <TextInput value={jobCodeDraft.label} onChange={event => setJobCodeDraft(prev => ({ ...prev, label: event.target.value, code: slugRoleCode(event.target.value) }))} placeholder="New role" />
+                  <TextInput value={jobCodeDraft.default_hourly_rate} onChange={event => setJobCodeDraft(prev => ({ ...prev, default_hourly_rate: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))} placeholder="0.00" />
+                  <SelectInput value={jobCodeDraft.permission_tier} onChange={event => setJobCodeDraft(prev => ({ ...prev, permission_tier: event.target.value }))}>
+                    {PERMISSION_TIER_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </SelectInput>
+                  <SmallButton variant={jobCodeDraft.is_tipped ? 'primary' : 'secondary'} onClick={() => setJobCodeDraft(prev => ({ ...prev, is_tipped: !prev.is_tipped }))}>
+                    {jobCodeDraft.is_tipped ? 'Tipped' : 'Hourly'}
+                  </SmallButton>
+                  <SmallButton variant="primary" onClick={() => void saveJobCode(jobCodeDraft)} disabled={!jobCodeDraft.label.trim() || Boolean(savingRateId)}>Add role</SmallButton>
+                </div>
               </div>
             )}
           </div>
@@ -2126,13 +3159,18 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               </SetupEmptyState>
             ) : (
               waiters.map(waiter => (
-                <div key={waiter.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 xl:grid-cols-[1fr_1fr_130px_120px_150px_170px_100px_auto]">
+                <div key={waiter.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 xl:grid-cols-[1fr_1fr_130px_110px_110px_150px_170px_100px_auto]">
                   <TextInput defaultValue={waiter.name || ''} onBlur={event => void updateStaff(waiter.id, { name: event.target.value })} />
                   <TextInput defaultValue={waiter.email || ''} placeholder="Email" onBlur={event => void updateStaff(waiter.id, { email: event.target.value || null })} />
-                  <SelectInput defaultValue={waiter.role || 'server'} onChange={event => void updateStaff(waiter.id, { role: event.target.value })}>
-                    {ROLE_OPTIONS.map(role => <option key={role} value={role}>{role}</option>)}
+                  <SelectInput defaultValue={waiter.role || 'server'} onChange={event => {
+                    const nextRole = event.target.value
+                    const nextJobCode = jobCodes.find(code => code.code === nextRole)
+                    void updateStaff(waiter.id, { role: nextRole, job_code_id: nextJobCode?.id || null })
+                  }}>
+                    {jobCodes.map(role => <option key={role.code} value={role.code}>{role.label}</option>)}
                   </SelectInput>
                   <TextInput defaultValue={waiter.suggested_weekly_hours ?? ''} placeholder="Hrs/week" onBlur={event => void updateStaff(waiter.id, { suggested_weekly_hours: event.target.value === '' ? null : Number(event.target.value) })} />
+                  <TextInput defaultValue={waiter.hourly_rate ?? ''} placeholder="$/hr" onBlur={event => void updateStaff(waiter.id, { hourly_rate: event.target.value === '' ? null : Number(event.target.value) })} />
                   <TextInput defaultValue={waiter.employee_login_id || defaultEmployeeId(waiter.name || '')} placeholder="Login ID" onBlur={event => void updateStaff(waiter.id, { employee_login_id: event.target.value || defaultEmployeeId(waiter.name || '') })} />
                   <TextInput
                     placeholder="New PIN"

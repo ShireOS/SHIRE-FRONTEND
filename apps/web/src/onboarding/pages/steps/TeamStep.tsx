@@ -1,27 +1,26 @@
 import { useState } from 'react'
 import { supabase } from '../../../shared/lib/supabase'
 import { API_CONFIG } from '../../../shared/api/config'
-import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
+import type { JobCodeData, RolePermissionData, UseOnboardingReturn } from '../../hooks/useOnboarding'
 
 interface TeamStepProps {
   onboarding: UseOnboardingReturn
 }
 
-const ROLES = ['server', 'bartender', 'host'] as const
-type StaffRole = typeof ROLES[number]
-
 interface StaffMember {
   id: string
   name: string
   email?: string | null
-  role: StaffRole
+  role: string
+  job_code_id?: string | null
+  hourly_rate?: number | string | null
   pos_passcode: string
   employee_login_id?: string | null
   suggested_weekly_hours?: number | null
 }
 
 export function TeamStep({ onboarding }: TeamStepProps) {
-  const { restaurantId, completeOnboarding, isLoading, error, completionIssues } = onboarding
+  const { restaurantId, data, updateData, completeOnboarding, isLoading, error, completionIssues } = onboarding
   const completionError = completionIssues[0]?.message ?? null
   const cannotComplete = completionIssues.length > 0
 
@@ -30,11 +29,16 @@ export function TeamStep({ onboarding }: TeamStepProps) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [employeeLoginId, setEmployeeLoginId] = useState('')
-  const [role, setRole] = useState<StaffRole>('server')
+  const [role, setRole] = useState('server')
   const [passcode, setPasscode] = useState('1111')
   const [suggestedWeeklyHours, setSuggestedWeeklyHours] = useState('')
+  const [hourlyRate, setHourlyRate] = useState('')
+  const [roleDrafts, setRoleDrafts] = useState<JobCodeData[]>(data.job_codes)
+  const [isSavingRoles, setIsSavingRoles] = useState(false)
   const [isAdding, setIsAdding] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+
+  const jobCodes = roleDrafts.length > 0 ? roleDrafts : data.job_codes
 
   const resetForm = () => {
     setName('')
@@ -43,11 +47,137 @@ export function TeamStep({ onboarding }: TeamStepProps) {
     setRole('server')
     setPasscode('1111')
     setSuggestedWeeklyHours('')
+    setHourlyRate('')
     setFormError(null)
   }
 
   const defaultEmployeeId = (value: string) =>
     value.trim().split(/\s+/)[0]?.toLowerCase().replace(/[^a-z0-9_]+/g, '') || ''
+
+  const roleCode = (value: string) =>
+    value.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || 'role'
+
+  const defaultPermissionForRole = (code: JobCodeData): RolePermissionData => {
+    const roleKey = roleCode(code.code || code.label)
+    const elevated = code.permission_tier === 'owner' || code.permission_tier === 'manager' || roleKey === 'owner' || roleKey === 'manager'
+    const cashier = roleKey === 'cashier'
+    const service = roleKey === 'server' || roleKey === 'bartender' || roleKey === 'cashier'
+    return {
+      role_key: roleKey,
+      can_refund: elevated || cashier,
+      refund_limit: elevated ? '' : cashier ? '25' : '',
+      can_void: elevated,
+      can_comp: elevated,
+      can_discount: elevated || service,
+      discount_limit_percent: elevated ? '' : service ? '20' : '',
+      can_open_cash_drawer: elevated || cashier || roleKey === 'bartender',
+      can_no_sale: elevated || cashier,
+      can_paid_in_out: elevated || cashier,
+      can_adjust_tips: elevated,
+      can_edit_menu: elevated,
+      can_edit_employees: elevated,
+      can_edit_schedules: elevated,
+      can_view_reports: elevated,
+      can_close_drawer: elevated || cashier,
+      can_close_day: elevated,
+      can_change_payment_settings: roleKey === 'owner',
+      require_manager_pin_for_approval: !elevated,
+    }
+  }
+
+  const selectedJobCode = jobCodes.find(code => code.code === role)
+
+  const updateRoleDraft = (index: number, patch: Partial<JobCodeData>) => {
+    setRoleDrafts(current => current.map((row, currentIndex) => currentIndex === index ? { ...row, ...patch } : row))
+  }
+
+  const addRoleDraft = () => {
+    const sortOrder = Math.max(0, ...jobCodes.map(code => Number(code.sort_order) || 0)) + 10
+    setRoleDrafts(current => [
+      ...current,
+      {
+        code: `role_${current.length + 1}`,
+        label: 'New Role',
+        permission_tier: 'normal',
+        default_hourly_rate: '',
+        is_tipped: false,
+        tipout_role: '',
+        sort_order: sortOrder,
+        is_active: true,
+      },
+    ])
+  }
+
+  const saveRoles = async () => {
+    if (!restaurantId) return
+    setIsSavingRoles(true)
+    setFormError(null)
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData?.session?.access_token
+      if (!token) throw new Error('Not authenticated')
+      const saved: JobCodeData[] = []
+      for (const draft of roleDrafts) {
+        const payload = {
+          code: roleCode(draft.code || draft.label),
+          label: draft.label.trim() || draft.code,
+          permission_tier: draft.permission_tier,
+          default_hourly_rate: draft.default_hourly_rate === '' ? 0 : Number(draft.default_hourly_rate),
+          is_tipped: draft.is_tipped,
+          tipout_role: draft.tipout_role || null,
+          sort_order: draft.sort_order,
+          is_active: draft.is_active !== false,
+        }
+        const url = draft.id
+          ? `${API_CONFIG.baseUrl}/manager/job-codes/${draft.id}`
+          : `${API_CONFIG.baseUrl}/restaurants/${restaurantId}/job-codes`
+        const response = await fetch(url, {
+          method: draft.id ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(payload),
+        })
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}))
+          throw new Error((err as { detail?: string; message?: string }).detail || (err as { detail?: string; message?: string }).message || `Error ${response.status}`)
+        }
+        saved.push(await response.json() as JobCodeData)
+      }
+      const normalized = saved.map((item, index) => ({
+        ...item,
+        default_hourly_rate: String(item.default_hourly_rate ?? ''),
+        tipout_role: item.tipout_role || '',
+        sort_order: Number(item.sort_order ?? index * 10),
+      }))
+      setRoleDrafts(normalized)
+      updateData({
+        job_codes: normalized,
+        role_permissions: normalized.map(code => {
+          const roleKey = roleCode(code.code || code.label)
+          return data.role_permissions.find(row => row.role_key === roleKey) || defaultPermissionForRole(code)
+        }),
+        tip_payroll_settings: {
+          ...data.tip_payroll_settings,
+          role_tip_rules: normalized.map(code => {
+            const existing = data.tip_payroll_settings.role_tip_rules.find(rule => rule.role_key === code.code)
+            return existing || {
+              role_key: code.code,
+              tip_eligible: code.is_tipped,
+              contributes_to_pool: code.is_tipped,
+              receives_from_pool: code.is_tipped,
+              pool_points: code.is_tipped ? '1' : '',
+              tipout_percent: '',
+              tipout_target_role: '',
+              notes: '',
+            }
+          }),
+        },
+      })
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Could not save roles')
+    } finally {
+      setIsSavingRoles(false)
+    }
+  }
 
   const handleAddEmployee = async () => {
     if (!name.trim()) {
@@ -82,6 +212,8 @@ export function TeamStep({ onboarding }: TeamStepProps) {
             name: name.trim(),
             email: email.trim() || null,
             role,
+            job_code_id: selectedJobCode?.id || null,
+            hourly_rate: hourlyRate === '' ? null : Number(hourlyRate),
             pos_passcode: passcode,
             employee_login_id: employeeLoginId.trim() || defaultEmployeeId(name),
             suggested_weekly_hours: suggestedWeeklyHours === '' ? null : Number(suggestedWeeklyHours),
@@ -99,6 +231,8 @@ export function TeamStep({ onboarding }: TeamStepProps) {
         name?: string
         email?: string | null
         role?: string
+        job_code_id?: string | null
+        hourly_rate?: number | string | null
         pos_passcode?: string
         employee_login_id?: string | null
         suggested_weekly_hours?: number | null
@@ -110,7 +244,9 @@ export function TeamStep({ onboarding }: TeamStepProps) {
           id: created.id || String(Date.now()),
           name: created.name || name.trim(),
           email: created.email || email.trim() || null,
-          role: (created.role as StaffRole) || role,
+          role: created.role || role,
+          job_code_id: created.job_code_id || selectedJobCode?.id || null,
+          hourly_rate: created.hourly_rate ?? (hourlyRate === '' ? null : Number(hourlyRate)),
           pos_passcode: created.pos_passcode || passcode,
           employee_login_id: created.employee_login_id || employeeLoginId.trim() || defaultEmployeeId(name),
           suggested_weekly_hours: created.suggested_weekly_hours ?? (suggestedWeeklyHours === '' ? null : Number(suggestedWeeklyHours)),
@@ -145,6 +281,61 @@ export function TeamStep({ onboarding }: TeamStepProps) {
       )}
 
       {/* Staff list */}
+      <div className="space-y-3 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-4">
+        <div>
+          <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">Roles & wages</p>
+          <p className="mt-1 text-xs text-[rgb(var(--text-tertiary))]">Add roles here, then assign each employee to one below.</p>
+        </div>
+        {jobCodes.map((code, index) => (
+          <div key={code.id || `${code.code}:${index}`} className="grid gap-3 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-3 md:grid-cols-[1fr_110px_110px_auto]">
+            <input
+              value={code.label}
+              onChange={event => {
+                const label = event.target.value
+                updateRoleDraft(index, { label, code: code.id ? code.code : roleCode(label) })
+              }}
+              placeholder="Role name"
+              className="rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))]"
+            />
+            <input
+              value={code.default_hourly_rate}
+              onChange={event => updateRoleDraft(index, { default_hourly_rate: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) })}
+              inputMode="decimal"
+              placeholder="$/hr"
+              className="rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))]"
+            />
+            <select
+              value={code.permission_tier}
+              onChange={event => updateRoleDraft(index, { permission_tier: event.target.value as JobCodeData['permission_tier'] })}
+              className="rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))]"
+            >
+              <option value="normal" className="bg-[#1a1a1a]">Normal</option>
+              <option value="manager" className="bg-[#1a1a1a]">Manager</option>
+              <option value="limited" className="bg-[#1a1a1a]">Limited</option>
+              <option value="owner" className="bg-[#1a1a1a]">Owner</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => updateRoleDraft(index, { is_tipped: !code.is_tipped })}
+              className={[
+                'rounded-lg border px-3 py-2 text-sm',
+                code.is_tipped
+                  ? 'border-[rgba(212,168,84,0.45)] bg-[rgba(212,168,84,0.14)] text-[rgb(var(--gold))]'
+                  : 'border-[rgba(255,255,255,0.1)] text-[rgb(var(--text-secondary))]',
+              ].join(' ')}
+            >
+              {code.is_tipped ? 'Tipped' : 'Hourly'}
+            </button>
+          </div>
+        ))}
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button type="button" onClick={addRoleDraft} className="rounded-lg border border-dashed border-[rgba(255,255,255,0.2)] px-4 py-2 text-sm text-[rgb(var(--text-tertiary))]">Add role</button>
+          <button type="button" onClick={() => void saveRoles()} disabled={isSavingRoles} className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50">
+            {isSavingRoles ? 'Saving roles...' : 'Save roles'}
+          </button>
+        </div>
+      </div>
+
       <div className="space-y-3">
         {staffList.length === 0 && !showForm && (
           <div className="py-8 rounded-lg border border-dashed border-[rgba(255,255,255,0.1)] text-center">
@@ -165,6 +356,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
                 {staff.role} · ID:{' '}
                 <span className="font-mono normal-case">{staff.employee_login_id || 'auto'}</span>
                 {' '}· PIN: <span className="font-mono">{staff.pos_passcode}</span>
+                {staff.hourly_rate ? <span> · ${staff.hourly_rate}/hr</span> : null}
                 {staff.suggested_weekly_hours ? <span> · {staff.suggested_weekly_hours} hrs/week</span> : null}
                 {staff.email ? <span className="normal-case"> · {staff.email}</span> : null}
               </p>
@@ -244,12 +436,12 @@ export function TeamStep({ onboarding }: TeamStepProps) {
               </label>
               <select
                 value={role}
-                onChange={e => setRole(e.target.value as StaffRole)}
+                onChange={e => setRole(e.target.value)}
                 className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
               >
-                {ROLES.map(r => (
-                  <option key={r} value={r} className="bg-[#1a1a1a] capitalize">
-                    {r.charAt(0).toUpperCase() + r.slice(1)}
+                {jobCodes.map(r => (
+                  <option key={r.code} value={r.code} className="bg-[#1a1a1a] capitalize">
+                    {r.label}
                   </option>
                 ))}
               </select>
@@ -285,6 +477,18 @@ export function TeamStep({ onboarding }: TeamStepProps) {
                 className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
               />
             </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[rgb(var(--text-secondary))] mb-1.5">
+              Hourly override <span className="text-[rgb(var(--text-tertiary))] font-normal">(optional)</span>
+            </label>
+            <input
+              inputMode="decimal"
+              value={hourlyRate}
+              onChange={e => setHourlyRate(e.target.value.replace(/[^\d.]/g, '').slice(0, 8))}
+              placeholder={selectedJobCode?.default_hourly_rate || 'Role rate'}
+              className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
+            />
           </div>
 
           <p className="text-xs text-amber-400/70">
