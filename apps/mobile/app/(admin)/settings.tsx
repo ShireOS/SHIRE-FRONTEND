@@ -1,6 +1,7 @@
 import {
   DEFAULT_REMOTE_TIME_CLOCK_POLICY,
-  fetchManagerJobCodes,
+  createManagerJobCode,
+  fetchRestaurantJobCodes,
   fetchManagerTimeClockPolicy,
   updateManagerJobCode,
   type JobCode,
@@ -15,19 +16,40 @@ import {
 } from '@/api/employeeOps';
 import {
   fetchDiscountRules,
+  fetchCheckWorkflowSettings,
+  fetchCloseoutSettings,
+  fetchFloorPlan,
+  fetchManagerControls,
+  fetchMenuCategories,
   fetchRestaurantSetupConfig,
   fetchRestaurantSections,
   fetchTaxesCharges,
+  fetchTipPayrollSettings,
+  saveCloseoutSettings as saveRestaurantCloseoutSettings,
+  saveCheckWorkflowSettings as saveRestaurantCheckWorkflowSettings,
   saveDiscountRules as saveRestaurantDiscountRules,
+  saveFloorPlanTables,
+  saveManagerControls as saveRestaurantManagerControls,
+  saveMenuCategories as saveRestaurantMenuCategories,
   saveRestaurantSetupConfig,
   saveRestaurantSections,
   saveTaxesCharges as saveRestaurantTaxesCharges,
+  saveTipPayrollSettings as saveRestaurantTipPayrollSettings,
+  type CloseoutSettings,
+  type CheckWorkflowSettings,
   type DiscountRule,
   type DiscountRulesPayload,
+  type FloorPlanTable,
+  type ManagerControlsPayload,
+  type MenuCategory,
+  type MenuCategorySetupPayload,
+  type RolePermission,
   type ServiceCharge,
   type RestaurantSetupConfig,
   type TaxesChargesPayload,
   type TaxRate,
+  type TipPayrollSettings,
+  type TipRoleRule,
 } from '@/api/restaurantSetup';
 import { staleWhileRevalidate, writeCacheRecord } from '@/cache/staleWhileRevalidate';
 import ScanCatalog from '@/screens/ScanCatalog';
@@ -113,6 +135,95 @@ const DAY_OPTIONS = [
   [4, 'Thu'],
   [5, 'Fri'],
   [6, 'Sat'],
+] as const;
+const DEFAULT_ROLE_PERMISSION_OPTIONS = ['owner', 'manager', 'server', 'bartender', 'cashier', 'host', 'runner', 'busser', 'kitchen'] as const;
+const MANAGER_PERMISSION_FIELDS = [
+  ['can_refund', 'Refunds'],
+  ['can_void', 'Voids'],
+  ['can_comp', 'Comps'],
+  ['can_discount', 'Discounts'],
+  ['can_open_cash_drawer', 'Open drawer'],
+  ['can_no_sale', 'No-sale'],
+  ['can_paid_in_out', 'Paid in/out'],
+  ['can_adjust_tips', 'Tip edits'],
+  ['can_edit_menu', 'Menu edits'],
+  ['can_edit_employees', 'Employee edits'],
+  ['can_edit_schedules', 'Schedule edits'],
+  ['can_view_reports', 'Reports'],
+  ['can_close_drawer', 'Close drawer'],
+  ['can_close_day', 'Close day'],
+  ['can_change_payment_settings', 'Payment settings'],
+] as const;
+const CASH_TRACKING_OPTIONS = [
+  ['shared_drawer', 'Shared drawer'],
+  ['per_terminal', 'Per terminal'],
+  ['per_employee', 'Per employee'],
+  ['no_cash', 'No cash'],
+] as const;
+const CHECKOUT_REPORT_OPTIONS = [
+  ['none', 'None'],
+  ['print', 'Print'],
+  ['email', 'Email'],
+  ['print_and_email', 'Print + email'],
+] as const;
+const EOD_BATCH_OPTIONS = [
+  ['automatic', 'Automatic'],
+  ['manual', 'Manual'],
+  ['prompt_manager', 'Prompt manager'],
+] as const;
+const EOD_REPORT_OPTIONS = [
+  ['sales_summary', 'Sales'],
+  ['labor_summary', 'Labor'],
+  ['cash_drawer_summary', 'Cash drawer'],
+  ['tip_summary', 'Tips'],
+  ['discounts_voids_refunds', 'Discounts/voids/refunds'],
+  ['tax_summary', 'Taxes'],
+] as const;
+const ORDER_FIRE_MODE_OPTIONS = [
+  ['manual', 'Manual fire'],
+  ['immediate', 'Send now'],
+  ['by_course', 'By course'],
+] as const;
+const TIP_DISTRIBUTION_OPTIONS = [
+  ['individual', 'Individual'],
+  ['pooled', 'Pooled'],
+  ['role_based', 'Role-based'],
+  ['sales_based', 'Sales-based'],
+  ['hours_based', 'Hours-based'],
+  ['points_based', 'Point-based'],
+] as const;
+const CASH_TIP_OPTIONS = [
+  ['not_tracked', 'Not tracked'],
+  ['declared_by_employee', 'Employee declares'],
+  ['declared_by_manager', 'Manager declares'],
+  ['required_checkout', 'Required checkout'],
+] as const;
+const PAYROLL_EXPORT_OPTIONS = [
+  ['daily', 'Daily'],
+  ['weekly', 'Weekly'],
+  ['biweekly', 'Biweekly'],
+  ['semimonthly', 'Semimonthly'],
+  ['monthly', 'Monthly'],
+  ['manual', 'Manual'],
+] as const;
+const TIP_POOL_RESET_OPTIONS = [
+  ['shift', 'Shift'],
+  ['day', 'Day'],
+  ['pay_period', 'Pay period'],
+] as const;
+const TIPOUT_BASIS_OPTIONS = [
+  ['none', 'None'],
+  ['sales', 'Sales'],
+  ['tips', 'Tips'],
+  ['hours', 'Hours'],
+  ['points', 'Points'],
+  ['custom', 'Custom'],
+] as const;
+const PERMISSION_TIER_OPTIONS = [
+  ['owner', 'Owner'],
+  ['manager', 'Manager'],
+  ['normal', 'Normal'],
+  ['limited', 'Limited'],
 ] as const;
 
 type LegalEdits = Required<Pick<
@@ -203,6 +314,149 @@ const DEFAULT_DISCOUNT_RULE: DiscountRule = {
   is_active: true,
 };
 
+const DEFAULT_MENU_CATEGORIES: MenuCategory[] = [
+  { name: 'Appetizers', tax_rate_id: null, routing_station_name: 'Kitchen', is_active: true },
+  { name: 'Entrees', tax_rate_id: null, routing_station_name: 'Kitchen', is_active: true },
+  { name: 'Desserts', tax_rate_id: null, routing_station_name: 'Kitchen', is_active: true },
+  { name: 'Sides', tax_rate_id: null, routing_station_name: 'Kitchen', is_active: true },
+  { name: 'Drinks', tax_rate_id: null, routing_station_name: 'Bar', is_active: true },
+  { name: 'Cocktails', tax_rate_id: null, routing_station_name: 'Bar', is_active: true },
+  { name: 'Beer & Wine', tax_rate_id: null, routing_station_name: 'Bar', is_active: true },
+  { name: 'Specials', tax_rate_id: null, routing_station_name: 'Kitchen', is_active: true },
+  { name: 'Other', tax_rate_id: null, routing_station_name: 'Expo', is_active: true },
+];
+
+function rolePermissionKeys(jobCodes: JobCode[] = []): string[] {
+  const seen = new Set<string>();
+  const keys: string[] = [];
+  [...DEFAULT_ROLE_PERMISSION_OPTIONS, ...jobCodes.map((code) => code.code)].forEach((raw) => {
+    const key = roleCode(raw);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    keys.push(key);
+  });
+  return keys;
+}
+
+function defaultRolePermission(roleKey: string): RolePermission {
+  const key = roleCode(roleKey);
+  const elevated = key === 'owner' || key === 'manager';
+  const cashier = key === 'cashier';
+  const service = key === 'server' || key === 'bartender' || key === 'cashier';
+  return {
+    role_key: key,
+    can_refund: elevated || cashier,
+    refund_limit: elevated ? '' : cashier ? '25' : '',
+    can_void: elevated,
+    can_comp: elevated,
+    can_discount: elevated || service,
+    discount_limit_percent: elevated ? '' : service ? '20' : '',
+    can_open_cash_drawer: elevated || cashier || key === 'bartender',
+    can_no_sale: elevated || cashier,
+    can_paid_in_out: elevated || cashier,
+    can_adjust_tips: elevated,
+    can_edit_menu: elevated,
+    can_edit_employees: elevated,
+    can_edit_schedules: elevated,
+    can_view_reports: elevated,
+    can_close_drawer: elevated || cashier,
+    can_close_day: elevated,
+    can_change_payment_settings: key === 'owner',
+    require_manager_pin_for_approval: !elevated,
+  };
+}
+
+const DEFAULT_CLOSEOUT_SETTINGS: CloseoutSettings = {
+  cash_tracking_mode: 'shared_drawer',
+  require_starting_bank: true,
+  blind_drawer_close: true,
+  allow_paid_in_out: true,
+  require_manager_for_drawer_open: true,
+  cash_drop_threshold: '',
+  cash_variance_threshold: '',
+  server_require_all_checks_closed: true,
+  server_require_tabs_closed: true,
+  server_require_cash_tips_declared: true,
+  server_require_credit_tips_reviewed: true,
+  server_require_tipout_entry: false,
+  server_require_manager_approval: true,
+  server_checkout_report_delivery: 'print',
+  allow_clockout_before_checkout: false,
+  eod_batch_close_mode: 'prompt_manager',
+  eod_require_drawers_closed: true,
+  eod_require_servers_checked_out: true,
+  eod_require_open_checks_resolved: true,
+  eod_require_paid_outs_reviewed: true,
+  eod_require_tip_adjustments_reviewed: true,
+  eod_report_recipients: [],
+  eod_reports: ['sales_summary', 'cash_drawer_summary', 'tip_summary', 'discounts_voids_refunds', 'tax_summary'],
+};
+
+const DEFAULT_CHECK_WORKFLOW_SETTINGS: CheckWorkflowSettings = {
+  seat_numbers_enabled: true,
+  seat_number_required: false,
+  course_required: false,
+  allow_split_checks: true,
+  split_by_seat_enabled: true,
+  split_by_item_enabled: true,
+  split_evenly_enabled: true,
+  max_split_count: '8',
+  allow_partial_payments: true,
+  require_manager_for_split_after_payment: true,
+  allow_check_merge: true,
+  allow_table_transfer: true,
+  allow_server_transfer: true,
+  require_manager_for_transfer: false,
+  allow_bar_tabs: true,
+  tab_name_required: true,
+  card_preauth_required: false,
+  default_preauth_amount: '',
+  allow_tabs_without_table: true,
+  auto_close_paid_tabs: true,
+  allow_reopen_closed_checks: false,
+  require_manager_for_reopen: true,
+  allow_send_before_required_modifiers: false,
+  allow_hold_and_fire: true,
+  default_order_fire_mode: 'manual',
+  print_guest_check_by_default: true,
+  notes: '',
+};
+
+function defaultTipPayrollSettings(jobCodes: JobCode[] = []): TipPayrollSettings {
+  const roles = jobCodes.length > 0 ? jobCodes : [
+    { id: 'server', code: 'server', label: 'Server', is_tipped: true },
+    { id: 'bartender', code: 'bartender', label: 'Bartender', is_tipped: true },
+    { id: 'host', code: 'host', label: 'Host', is_tipped: false },
+  ];
+  return {
+    tip_distribution_mode: 'individual',
+    cash_tip_declaration_mode: 'declared_by_employee',
+    credit_tip_payout_timing: 'payroll',
+    payroll_provider: '',
+    payroll_export_frequency: 'biweekly',
+    tip_pooling_enabled: false,
+    tip_pool_reset: 'day',
+    tipout_basis: 'none',
+    tipout_sales_includes_tax: false,
+    tipout_include_managers: false,
+    require_tipout_at_checkout: false,
+    allow_manager_tip_adjustments: true,
+    auto_withhold_credit_card_fees: false,
+    credit_card_fee_percent: '',
+    role_tip_rules: roles.map((role) => ({
+      role_key: role.code,
+      tip_eligible: Boolean(role.is_tipped),
+      contributes_to_pool: Boolean(role.is_tipped),
+      receives_from_pool: Boolean(role.is_tipped),
+      pool_points: role.is_tipped ? '1' : '',
+      tipout_percent: '',
+      tipout_target_role: null,
+      notes: '',
+    })),
+    notes: '',
+  };
+}
+
 function normalizeSectionNames(values: string[]) {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -224,6 +478,27 @@ function textValue(value: unknown) {
 function numberText(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   return typeof value === 'string' ? sanitizeMoney(value).slice(0, 10) : '';
+}
+
+function roleCode(value: unknown, fallback = 'role') {
+  const raw = String(value || fallback).toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+  return /^[a-z]/.test(raw) ? raw.slice(0, 80) : `role_${raw || fallback}`.slice(0, 80);
+}
+
+function normalizeJobCodes(rows: JobCode[] | undefined): JobCode[] {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row, index) => ({
+      ...row,
+      code: roleCode(row.code || row.label, `role_${index + 1}`),
+      label: String(row.label || row.code || '').trim(),
+      permission_tier: PERMISSION_TIER_OPTIONS.some(([value]) => value === row.permission_tier) ? row.permission_tier : 'normal',
+      default_hourly_rate: numberText(row.default_hourly_rate),
+      is_tipped: Boolean(row.is_tipped),
+      tipout_role: row.tipout_role || null,
+      sort_order: Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : index * 10,
+      is_active: row.is_active !== false,
+    }))
+    .filter((row) => row.label && row.is_active);
 }
 
 function normalizeTaxRates(rows: TaxRate[] | undefined): TaxRate[] {
@@ -259,6 +534,34 @@ function normalizeServiceCharges(rows: ServiceCharge[] | undefined): ServiceChar
       is_active: row.is_active !== false,
     }))
     .filter((row) => row.name && row.is_active);
+}
+
+function normalizeMenuCategories(rows: MenuCategory[] | undefined): MenuCategory[] {
+  const normalized = (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      ...row,
+      id: row.id || null,
+      name: String(row.name || '').trim(),
+      tax_rate_id: row.tax_rate_id || null,
+      routing_station_id: row.routing_station_id || null,
+      routing_station_name: row.routing_station_name || '',
+      is_active: row.is_active !== false,
+    }))
+    .filter((row) => row.name && row.is_active);
+  return normalized.length > 0 ? normalized : DEFAULT_MENU_CATEGORIES.map((row) => ({ ...row }));
+}
+
+function menuCategoriesPayload(categories: MenuCategory[]): MenuCategorySetupPayload {
+  return {
+    categories: normalizeMenuCategories(categories).map((row) => ({
+      id: row.id || undefined,
+      name: row.name,
+      tax_rate_id: row.tax_rate_id || null,
+      routing_station_id: row.routing_station_id || null,
+      routing_station_name: row.routing_station_name || null,
+      is_active: true,
+    })),
+  };
 }
 
 function taxChargePayload(taxRates: TaxRate[], serviceCharges: ServiceCharge[]): TaxesChargesPayload {
@@ -344,6 +647,173 @@ function discountRulesPayload(discountRules: DiscountRule[]): DiscountRulesPaylo
   };
 }
 
+function normalizeRolePermissions(rows: RolePermission[] | undefined, jobCodes: JobCode[] = []): RolePermission[] {
+  const keys = rolePermissionKeys(jobCodes);
+  const byRole = new Map<string, RolePermission>();
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const roleKey = roleCode(row.role_key);
+    byRole.set(roleKey, {
+      ...row,
+      id: row.id || null,
+      role_key: roleKey,
+      refund_limit: numberText(row.refund_limit),
+      discount_limit_percent: numberText(row.discount_limit_percent),
+      require_manager_pin_for_approval: row.require_manager_pin_for_approval !== false,
+    });
+  });
+  const normalized = keys.map((roleKey) => byRole.get(roleKey) || defaultRolePermission(roleKey));
+  byRole.forEach((row, roleKey) => {
+    if (!keys.includes(roleKey)) normalized.push(row);
+  });
+  return normalized;
+}
+
+function managerControlsPayload(rows: RolePermission[], jobCodes: JobCode[]): ManagerControlsPayload {
+  return {
+    role_permissions: normalizeRolePermissions(rows, jobCodes).map((row) => ({
+      ...row,
+      id: undefined,
+      refund_limit: row.refund_limit === '' ? null : Number(row.refund_limit),
+      discount_limit_percent: row.discount_limit_percent === '' ? null : Number(row.discount_limit_percent),
+    })),
+  };
+}
+
+function normalizeReports(values: unknown) {
+  const allowed = EOD_REPORT_OPTIONS.map(([value]) => value);
+  const reports = normalizeStringList(values, allowed);
+  return reports.length > 0 ? reports : DEFAULT_CLOSEOUT_SETTINGS.eod_reports;
+}
+
+function normalizeCloseoutSettings(row: CloseoutSettings | undefined): CloseoutSettings {
+  const source = row || DEFAULT_CLOSEOUT_SETTINGS;
+  return {
+    ...DEFAULT_CLOSEOUT_SETTINGS,
+    ...source,
+    cash_tracking_mode: CASH_TRACKING_OPTIONS.some(([value]) => value === source.cash_tracking_mode) ? source.cash_tracking_mode : 'shared_drawer',
+    cash_drop_threshold: numberText(source.cash_drop_threshold),
+    cash_variance_threshold: numberText(source.cash_variance_threshold),
+    server_checkout_report_delivery: CHECKOUT_REPORT_OPTIONS.some(([value]) => value === source.server_checkout_report_delivery) ? source.server_checkout_report_delivery : 'print',
+    eod_batch_close_mode: EOD_BATCH_OPTIONS.some(([value]) => value === source.eod_batch_close_mode) ? source.eod_batch_close_mode : 'prompt_manager',
+    eod_report_recipients: Array.isArray(source.eod_report_recipients) ? source.eod_report_recipients.map(String).filter(Boolean) : [],
+    eod_reports: normalizeReports(source.eod_reports),
+  };
+}
+
+function closeoutPayload(row: CloseoutSettings): CloseoutSettings {
+  const settings = normalizeCloseoutSettings(row);
+  return {
+    ...settings,
+    cash_drop_threshold: settings.cash_drop_threshold === '' ? null : Number(settings.cash_drop_threshold),
+    cash_variance_threshold: settings.cash_variance_threshold === '' ? null : Number(settings.cash_variance_threshold),
+  };
+}
+
+function normalizeCheckWorkflowSettings(row: CheckWorkflowSettings | undefined): CheckWorkflowSettings {
+  const source = row || DEFAULT_CHECK_WORKFLOW_SETTINGS;
+  return {
+    ...DEFAULT_CHECK_WORKFLOW_SETTINGS,
+    ...source,
+    max_split_count: numberText(source.max_split_count) || '8',
+    default_preauth_amount: numberText(source.default_preauth_amount),
+    default_order_fire_mode: ORDER_FIRE_MODE_OPTIONS.some(([value]) => value === source.default_order_fire_mode) ? source.default_order_fire_mode : 'manual',
+    notes: source.notes || '',
+  };
+}
+
+function checkWorkflowPayload(row: CheckWorkflowSettings): CheckWorkflowSettings {
+  const settings = normalizeCheckWorkflowSettings(row);
+  return {
+    ...settings,
+    max_split_count: Math.max(1, Math.min(99, Number(settings.max_split_count || 8))),
+    default_preauth_amount: settings.default_preauth_amount === '' ? null : Number(settings.default_preauth_amount),
+    notes: settings.notes?.trim() || null,
+  };
+}
+
+function hasRequiredFloorTableFields(table: FloorPlanTable) {
+  return Boolean((table.table_number || '').trim())
+    && Number(table.capacity) > 0
+    && Boolean(table.section_id || table.section_name);
+}
+
+function isFloorTableComplete(table: FloorPlanTable) {
+  return hasRequiredFloorTableFields(table) && table.setup_complete === true;
+}
+
+function normalizeFloorTables(rows: FloorPlanTable[] | undefined): FloorPlanTable[] {
+  return (Array.isArray(rows) ? rows : []).map((table) => ({
+    ...table,
+    table_number: table.table_number || '',
+    capacity: Number(table.capacity) > 0 ? Number(table.capacity) : 0,
+    section_id: table.section_id || null,
+    section_name: table.section_name || null,
+    setup_complete: Boolean(table.setup_complete) && hasRequiredFloorTableFields(table),
+  }));
+}
+
+function floorTablePayload(table: FloorPlanTable): FloorPlanTable {
+  const normalized = normalizeFloorTables([table])[0];
+  return {
+    ...normalized,
+    table_number: normalized.table_number?.trim() || null,
+    setup_complete: hasRequiredFloorTableFields(normalized),
+  };
+}
+
+function normalizeTipRules(rows: TipRoleRule[] | undefined, jobCodes: JobCode[]): TipRoleRule[] {
+  const fallback = defaultTipPayrollSettings(jobCodes).role_tip_rules;
+  const byRole = new Map<string, TipRoleRule>();
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const key = roleCode(row.role_key);
+    byRole.set(key, {
+      role_key: key,
+      tip_eligible: row.tip_eligible !== false,
+      contributes_to_pool: row.contributes_to_pool !== false,
+      receives_from_pool: row.receives_from_pool !== false,
+      pool_points: numberText(row.pool_points),
+      tipout_percent: numberText(row.tipout_percent),
+      tipout_target_role: row.tipout_target_role || null,
+      notes: row.notes || '',
+    });
+  });
+  return fallback.map((rule) => byRole.get(rule.role_key) || rule);
+}
+
+function normalizeTipPayrollSettings(row: TipPayrollSettings | undefined, jobCodes: JobCode[]): TipPayrollSettings {
+  const fallback = defaultTipPayrollSettings(jobCodes);
+  const source = row || fallback;
+  return {
+    ...fallback,
+    ...source,
+    tip_distribution_mode: TIP_DISTRIBUTION_OPTIONS.some(([value]) => value === source.tip_distribution_mode) ? source.tip_distribution_mode : 'individual',
+    cash_tip_declaration_mode: CASH_TIP_OPTIONS.some(([value]) => value === source.cash_tip_declaration_mode) ? source.cash_tip_declaration_mode : 'declared_by_employee',
+    credit_tip_payout_timing: source.credit_tip_payout_timing === 'nightly' ? 'nightly' : 'payroll',
+    payroll_provider: source.payroll_provider || '',
+    payroll_export_frequency: PAYROLL_EXPORT_OPTIONS.some(([value]) => value === source.payroll_export_frequency) ? source.payroll_export_frequency : 'biweekly',
+    tip_pool_reset: TIP_POOL_RESET_OPTIONS.some(([value]) => value === source.tip_pool_reset) ? source.tip_pool_reset : 'day',
+    tipout_basis: TIPOUT_BASIS_OPTIONS.some(([value]) => value === source.tipout_basis) ? source.tipout_basis : 'none',
+    credit_card_fee_percent: numberText(source.credit_card_fee_percent),
+    role_tip_rules: normalizeTipRules(source.role_tip_rules, jobCodes),
+    notes: source.notes || '',
+  };
+}
+
+function tipPayrollPayload(row: TipPayrollSettings, jobCodes: JobCode[]): TipPayrollSettings {
+  const settings = normalizeTipPayrollSettings(row, jobCodes);
+  return {
+    ...settings,
+    credit_card_fee_percent: settings.credit_card_fee_percent === '' ? null : Number(settings.credit_card_fee_percent),
+    role_tip_rules: settings.role_tip_rules.map((rule) => ({
+      ...rule,
+      pool_points: rule.pool_points === '' ? null : Number(rule.pool_points),
+      tipout_percent: rule.tipout_percent === '' ? null : Number(rule.tipout_percent),
+      tipout_target_role: rule.tipout_target_role || null,
+      notes: rule.notes || null,
+    })),
+  };
+}
+
 function defaultServiceCharge(index: number): ServiceCharge {
   return {
     name: index === 0 ? 'Service Charge' : `Service Charge ${index + 1}`,
@@ -411,12 +881,20 @@ export default function OwnerSettings() {
   const [jobCodes, setJobCodes] = useState<JobCode[]>([]);
   const [staff, setStaff] = useState<StaffContact[]>([]);
   const [sectionEdits, setSectionEdits] = useState<string[]>(['Table']);
+  const [floorSections, setFloorSections] = useState<{ id: string; name: string }[]>([]);
+  const [floorTables, setFloorTables] = useState<FloorPlanTable[]>([]);
   const [legalEdits, setLegalEdits] = useState(DEFAULT_LEGAL);
   const [paymentEdits, setPaymentEdits] = useState(DEFAULT_PAYMENTS);
   const [serviceModelEdits, setServiceModelEdits] = useState(DEFAULT_SERVICE_MODEL);
   const [taxRateEdits, setTaxRateEdits] = useState<TaxRate[]>([{ ...DEFAULT_TAX_RATE }]);
   const [serviceChargeEdits, setServiceChargeEdits] = useState<ServiceCharge[]>([]);
+  const [menuCategoryEdits, setMenuCategoryEdits] = useState<MenuCategory[]>(DEFAULT_MENU_CATEGORIES);
   const [discountRuleEdits, setDiscountRuleEdits] = useState<DiscountRule[]>([]);
+  const [rolePermissionEdits, setRolePermissionEdits] = useState<RolePermission[]>(normalizeRolePermissions([]));
+  const [closeoutEdits, setCloseoutEdits] = useState<CloseoutSettings>({ ...DEFAULT_CLOSEOUT_SETTINGS });
+  const [checkWorkflowEdits, setCheckWorkflowEdits] = useState<CheckWorkflowSettings>({ ...DEFAULT_CHECK_WORKFLOW_SETTINGS });
+  const [tipPayrollEdits, setTipPayrollEdits] = useState<TipPayrollSettings>(defaultTipPayrollSettings());
+  const [jobCodeDraft, setJobCodeDraft] = useState<JobCode>({ id: '', code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: null, sort_order: 100, is_active: true });
   const [rateEdits, setRateEdits] = useState<Record<string, string>>({});
   const [staffPayEdits, setStaffPayEdits] = useState<Record<string, string>>({});
   const [staffHoursEdits, setStaffHoursEdits] = useState<Record<string, string>>({});
@@ -430,17 +908,29 @@ export default function OwnerSettings() {
   const [message, setMessage] = useState('');
   const [notificationMessage, setNotificationMessage] = useState('');
   const [sectionsMessage, setSectionsMessage] = useState('');
+  const [floorTablesMessage, setFloorTablesMessage] = useState('');
   const [legalMessage, setLegalMessage] = useState('');
   const [paymentsMessage, setPaymentsMessage] = useState('');
   const [serviceModelMessage, setServiceModelMessage] = useState('');
   const [taxesMessage, setTaxesMessage] = useState('');
+  const [menuCategoriesMessage, setMenuCategoriesMessage] = useState('');
   const [discountsMessage, setDiscountsMessage] = useState('');
+  const [managerControlsMessage, setManagerControlsMessage] = useState('');
+  const [closeoutMessage, setCloseoutMessage] = useState('');
+  const [checkWorkflowMessage, setCheckWorkflowMessage] = useState('');
+  const [tipPayrollMessage, setTipPayrollMessage] = useState('');
   const [isSavingSections, setIsSavingSections] = useState(false);
+  const [isSavingFloorTables, setIsSavingFloorTables] = useState(false);
   const [isSavingLegal, setIsSavingLegal] = useState(false);
   const [isSavingPayments, setIsSavingPayments] = useState(false);
   const [isSavingServiceModel, setIsSavingServiceModel] = useState(false);
   const [isSavingTaxes, setIsSavingTaxes] = useState(false);
+  const [isSavingMenuCategories, setIsSavingMenuCategories] = useState(false);
   const [isSavingDiscounts, setIsSavingDiscounts] = useState(false);
+  const [isSavingManagerControls, setIsSavingManagerControls] = useState(false);
+  const [isSavingCloseout, setIsSavingCloseout] = useState(false);
+  const [isSavingCheckWorkflow, setIsSavingCheckWorkflow] = useState(false);
+  const [isSavingTipPayroll, setIsSavingTipPayroll] = useState(false);
 
   const restaurantId = restaurant?.id;
   const settings = policy?.remote_time_clock || DEFAULT_REMOTE_TIME_CLOCK_POLICY.remote_time_clock;
@@ -470,26 +960,40 @@ export default function OwnerSettings() {
         if (cancelled) return;
         setPolicy(result.data);
         setFreshness(result.freshness);
-        const [codes, staffRows, sectionRows, setupConfig, taxesCharges, discountData] = await Promise.all([
-          fetchManagerJobCodes().catch(() => []),
+        const [codes, staffRows, sectionRows, floorPlan, setupConfig, taxesCharges, menuCategoryData, discountData, managerControls, closeoutSettings, checkWorkflowSettings, tipPayrollSettings] = await Promise.all([
+          fetchRestaurantJobCodes(ownerRestaurant.id).catch(() => []),
           fetchManagerStaff(ownerRestaurant.id),
           fetchRestaurantSections(ownerRestaurant.id).catch(() => []),
+          fetchFloorPlan(ownerRestaurant.id).catch(() => ({ has_floor_plan: false, tables: [], total_tables: 0, total_capacity: 0 })),
           fetchRestaurantSetupConfig(ownerRestaurant.id).catch(() => ({})),
           fetchTaxesCharges(ownerRestaurant.id).catch(() => ({ tax_rates: [], service_charges: [] })),
+          fetchMenuCategories(ownerRestaurant.id).catch(() => ({ categories: [] })),
           fetchDiscountRules(ownerRestaurant.id).catch(() => ({ discount_rules: [] })),
+          fetchManagerControls(ownerRestaurant.id).catch(() => ({ role_permissions: [] })),
+          fetchCloseoutSettings(ownerRestaurant.id).catch(() => DEFAULT_CLOSEOUT_SETTINGS),
+          fetchCheckWorkflowSettings(ownerRestaurant.id).catch(() => DEFAULT_CHECK_WORKFLOW_SETTINGS),
+          fetchTipPayrollSettings(ownerRestaurant.id).catch(() => defaultTipPayrollSettings()),
         ]);
         if (cancelled) return;
         const normalizedSetup = normalizeSetupConfig(setupConfig);
-        setJobCodes(codes);
+        const normalizedCodes = normalizeJobCodes(codes);
+        setJobCodes(normalizedCodes);
         setStaff(staffRows);
+        setFloorSections(sectionRows.map((section) => ({ id: section.id, name: section.name })).filter((section) => section.id && section.name));
         setSectionEdits(normalizeSectionNames(sectionRows.map((section) => section.name)));
+        setFloorTables(normalizeFloorTables(floorPlan.tables));
         setLegalEdits(normalizedSetup.legal);
         setPaymentEdits(normalizedSetup.payments);
         setServiceModelEdits(normalizedSetup.serviceModel);
         setTaxRateEdits(normalizeTaxRates(taxesCharges.tax_rates));
         setServiceChargeEdits(normalizeServiceCharges(taxesCharges.service_charges));
+        setMenuCategoryEdits(normalizeMenuCategories(menuCategoryData.categories));
         setDiscountRuleEdits(normalizeDiscountRules(discountData.discount_rules));
-        setRateEdits(Object.fromEntries(codes.map((code) => [code.id, String(code.default_hourly_rate ?? '')])));
+        setRolePermissionEdits(normalizeRolePermissions(managerControls.role_permissions, normalizedCodes));
+        setCloseoutEdits(normalizeCloseoutSettings(closeoutSettings));
+        setCheckWorkflowEdits(normalizeCheckWorkflowSettings(checkWorkflowSettings));
+        setTipPayrollEdits(normalizeTipPayrollSettings(tipPayrollSettings, normalizedCodes));
+        setRateEdits(Object.fromEntries(normalizedCodes.map((code) => [code.id, String(code.default_hourly_rate ?? '')])));
         setStaffPayEdits(Object.fromEntries(staffRows.map((person) => [person.id, stringifyPayRate(person)])));
         setStaffHoursEdits(Object.fromEntries(staffRows.map((person) => [person.id, String(person.suggested_weekly_hours ?? '')])));
         setStaffRoleEdits(Object.fromEntries(staffRows.map((person) => [person.id, String(person.role || '')])));
@@ -549,11 +1053,47 @@ export default function OwnerSettings() {
     try {
       const saved = await saveRestaurantSections(restaurantId, normalizeSectionNames(sectionEdits));
       setSectionEdits(normalizeSectionNames(saved.map((section) => section.name)));
+      setFloorSections(saved.map((section) => ({ id: section.id, name: section.name })).filter((section) => section.id && section.name));
       setSectionsMessage('Restaurant sections saved.');
     } catch (err) {
       setSectionsMessage(err instanceof Error ? err.message : 'Could not save restaurant sections.');
     } finally {
       setIsSavingSections(false);
+    }
+  };
+
+  const updateFloorTable = (tableId: string, patch: Partial<FloorPlanTable>) => {
+    setFloorTables((current) => normalizeFloorTables(current.map((table) => {
+      if (table.id !== tableId) return table;
+      const section = patch.section_id !== undefined
+        ? floorSections.find((item) => item.id === patch.section_id)
+        : null;
+      const nextTable = {
+        ...table,
+        ...patch,
+        ...(patch.section_id !== undefined ? { section_name: section?.name || null } : {}),
+      };
+      return {
+        ...nextTable,
+        setup_complete: hasRequiredFloorTableFields(nextTable),
+      };
+    })));
+  };
+
+  const saveFloorTables = async () => {
+    if (!restaurantId) return;
+    setIsSavingFloorTables(true);
+    setFloorTablesMessage('Saving table setup...');
+    try {
+      const prepared = normalizeFloorTables(floorTables).map(floorTablePayload);
+      await saveFloorPlanTables(restaurantId, prepared);
+      setFloorTables(normalizeFloorTables(prepared));
+      const unfinished = prepared.filter((table) => !isFloorTableComplete(table)).length;
+      setFloorTablesMessage(unfinished > 0 ? `${unfinished} table${unfinished === 1 ? '' : 's'} still unfinished.` : 'All floor-plan tables are complete.');
+    } catch (err) {
+      setFloorTablesMessage(err instanceof Error ? err.message : 'Could not save table setup.');
+    } finally {
+      setIsSavingFloorTables(false);
     }
   };
 
@@ -666,6 +1206,27 @@ export default function OwnerSettings() {
     }
   };
 
+  const updateMenuCategory = (index: number, patch: Partial<MenuCategory>) => {
+    setMenuCategoryEdits((current) => normalizeMenuCategories(current).map((row, currentIndex) => (
+      currentIndex === index ? { ...row, ...patch } : row
+    )));
+  };
+
+  const saveMenuCategories = async () => {
+    if (!restaurantId) return;
+    setIsSavingMenuCategories(true);
+    setMenuCategoriesMessage('Saving menu categories...');
+    try {
+      const saved = await saveRestaurantMenuCategories(restaurantId, menuCategoriesPayload(menuCategoryEdits));
+      setMenuCategoryEdits(normalizeMenuCategories(saved.categories));
+      setMenuCategoriesMessage('Menu categories saved.');
+    } catch (err) {
+      setMenuCategoriesMessage(err instanceof Error ? err.message : 'Could not save menu categories.');
+    } finally {
+      setIsSavingMenuCategories(false);
+    }
+  };
+
   const updateDiscountRule = (index: number, patch: Partial<DiscountRule>) => {
     setDiscountRuleEdits((current) => current.map((row, currentIndex) => (currentIndex === index ? { ...row, ...patch } : row)));
   };
@@ -688,6 +1249,89 @@ export default function OwnerSettings() {
     }
   };
 
+  const updateRolePermission = (index: number, patch: Partial<RolePermission>) => {
+    setRolePermissionEdits((current) => current.map((row, currentIndex) => (currentIndex === index ? { ...row, ...patch } : row)));
+  };
+
+  const saveManagerControls = async () => {
+    if (!restaurantId) return;
+    setIsSavingManagerControls(true);
+    setManagerControlsMessage('Saving manager controls...');
+    try {
+      const saved = await saveRestaurantManagerControls(restaurantId, managerControlsPayload(rolePermissionEdits, jobCodes));
+      setRolePermissionEdits(normalizeRolePermissions(saved.role_permissions, jobCodes));
+      setManagerControlsMessage('Manager controls saved.');
+    } catch (err) {
+      setManagerControlsMessage(err instanceof Error ? err.message : 'Could not save manager controls.');
+    } finally {
+      setIsSavingManagerControls(false);
+    }
+  };
+
+  const updateCloseout = (patch: Partial<CloseoutSettings>) => {
+    setCloseoutEdits((current) => ({ ...current, ...patch }));
+  };
+
+  const updateCheckWorkflow = (patch: Partial<CheckWorkflowSettings>) => {
+    setCheckWorkflowEdits((current) => ({ ...current, ...patch }));
+  };
+
+  const saveCloseoutSettings = async () => {
+    if (!restaurantId) return;
+    setIsSavingCloseout(true);
+    setCloseoutMessage('Saving closeout settings...');
+    try {
+      const saved = await saveRestaurantCloseoutSettings(restaurantId, closeoutPayload(closeoutEdits));
+      setCloseoutEdits(normalizeCloseoutSettings(saved));
+      setCloseoutMessage('Closeout settings saved.');
+    } catch (err) {
+      setCloseoutMessage(err instanceof Error ? err.message : 'Could not save closeout settings.');
+    } finally {
+      setIsSavingCloseout(false);
+    }
+  };
+
+  const saveCheckWorkflow = async () => {
+    if (!restaurantId) return;
+    setIsSavingCheckWorkflow(true);
+    setCheckWorkflowMessage('Saving check workflow settings...');
+    try {
+      const saved = await saveRestaurantCheckWorkflowSettings(restaurantId, checkWorkflowPayload(checkWorkflowEdits));
+      setCheckWorkflowEdits(normalizeCheckWorkflowSettings(saved));
+      setCheckWorkflowMessage('Check workflow settings saved.');
+    } catch (err) {
+      setCheckWorkflowMessage(err instanceof Error ? err.message : 'Could not save check workflow settings.');
+    } finally {
+      setIsSavingCheckWorkflow(false);
+    }
+  };
+
+  const updateTipPayroll = (patch: Partial<TipPayrollSettings>) => {
+    setTipPayrollEdits((current) => ({ ...current, ...patch }));
+  };
+
+  const updateTipRule = (index: number, patch: Partial<TipRoleRule>) => {
+    setTipPayrollEdits((current) => ({
+      ...current,
+      role_tip_rules: current.role_tip_rules.map((rule, currentIndex) => (currentIndex === index ? { ...rule, ...patch } : rule)),
+    }));
+  };
+
+  const saveTipPayroll = async () => {
+    if (!restaurantId) return;
+    setIsSavingTipPayroll(true);
+    setTipPayrollMessage('Saving tips and payroll...');
+    try {
+      const saved = await saveRestaurantTipPayrollSettings(restaurantId, tipPayrollPayload(tipPayrollEdits, jobCodes));
+      setTipPayrollEdits(normalizeTipPayrollSettings(saved, jobCodes));
+      setTipPayrollMessage('Tips and payroll saved.');
+    } catch (err) {
+      setTipPayrollMessage(err instanceof Error ? err.message : 'Could not save tips and payroll.');
+    } finally {
+      setIsSavingTipPayroll(false);
+    }
+  };
+
   const toggleServiceMode = (modeId: string) => {
     setServiceModelEdits((current) => {
       const selected = current.service_modes.includes(modeId);
@@ -702,23 +1346,38 @@ export default function OwnerSettings() {
   };
 
   const saveRoleRate = async (jobCode: JobCode) => {
-    const rawRate = rateEdits[jobCode.id] ?? '';
+    if (!restaurantId) return;
+    const rawRate = String(jobCode.default_hourly_rate ?? rateEdits[jobCode.id] ?? '');
     const parsed = Number(rawRate);
     if (!Number.isFinite(parsed) || parsed < 0) {
       setMessage('Enter a valid hourly rate.');
       return;
     }
-    setSavingRateId(jobCode.id);
-    setMessage(`Saving ${jobCode.label || jobCode.code} rate...`);
+    setSavingRateId(jobCode.id || 'new');
+    setMessage(`Saving ${jobCode.label || jobCode.code} role...`);
     try {
-      const saved = await updateManagerJobCode(jobCode.id, {
+      const payload = {
+        code: roleCode(jobCode.code || jobCode.label),
+        label: jobCode.label || jobCode.code,
+        permission_tier: jobCode.permission_tier || 'normal',
         default_hourly_rate: parsed.toFixed(2),
-      });
-      setJobCodes((current) => current.map((code) => (code.id === saved.id ? saved : code)));
-      setRateEdits((current) => ({ ...current, [saved.id]: String(saved.default_hourly_rate ?? parsed.toFixed(2)) }));
-      setMessage('Role rate saved.');
+        is_tipped: Boolean(jobCode.is_tipped),
+        tipout_role: jobCode.tipout_role || null,
+        sort_order: Number(jobCode.sort_order) || 0,
+        is_active: jobCode.is_active !== false,
+      };
+      const saved = jobCode.id
+        ? await updateManagerJobCode(jobCode.id, payload)
+        : await createManagerJobCode(restaurantId, payload);
+      const normalized = normalizeJobCodes(jobCode.id ? jobCodes.map((code) => (code.id === saved.id ? saved : code)) : [...jobCodes, saved]);
+      setJobCodes(normalized);
+      setRateEdits(Object.fromEntries(normalized.map((code) => [code.id, String(code.default_hourly_rate ?? '')])));
+      setTipPayrollEdits((current) => normalizeTipPayrollSettings(current, normalized));
+      setRolePermissionEdits((current) => normalizeRolePermissions(current, normalized));
+      setJobCodeDraft({ id: '', code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: null, sort_order: Math.max(100, ...normalized.map((code) => Number(code.sort_order) || 0)) + 10, is_active: true });
+      setMessage('Role saved.');
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not save role rate.');
+      setMessage(err instanceof Error ? err.message : 'Could not save role.');
     } finally {
       setSavingRateId(null);
     }
@@ -728,6 +1387,7 @@ export default function OwnerSettings() {
     const rawRate = staffPayEdits[person.id]?.trim() ?? '';
     const rawHours = staffHoursEdits[person.id]?.trim() ?? '';
     const role = staffRoleEdits[person.id]?.trim() || person.role || undefined;
+    const jobCode = jobCodes.find((code) => code.code === role);
     const parsedRate = rawRate === '' ? null : Number(rawRate);
     const parsedHours = rawHours === '' ? null : Number(rawHours);
     if (parsedRate !== null && (!Number.isFinite(parsedRate) || parsedRate < 0)) {
@@ -744,6 +1404,7 @@ export default function OwnerSettings() {
       const payPatch = buildPayPatch(person, parsedRate);
       const saved = await updateManagerStaff(person.id, {
         role,
+        job_code_id: jobCode?.id || null,
         suggested_weekly_hours: parsedHours,
         ...payPatch,
       });
@@ -781,6 +1442,79 @@ export default function OwnerSettings() {
         <UiText variant="bodySmall" tone="muted" style={styles.subtitle}>
           {restaurant?.name || 'Restaurant'} controls for employee tools.
         </UiText>
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <UiText variant="title">Floor-plan tables</UiText>
+            <UiText variant="bodySmall" tone="muted" style={{ marginTop: spacing[1] }}>
+              Complete table numbers, sections, and seat counts after drawing the floor plan on desktop.
+            </UiText>
+          </View>
+        </View>
+        {floorTables.length === 0 ? (
+          <View style={styles.messageCard}>
+            <UiText variant="bodySmall" tone="muted">No floor-plan tables are saved yet.</UiText>
+          </View>
+        ) : (
+          normalizeFloorTables(floorTables).map((table, index) => {
+            const complete = isFloorTableComplete(table);
+            return (
+              <View key={table.id} style={[styles.floorTableRow, !complete && styles.floorTableRowIncomplete]}>
+                <View style={styles.floorTableHeader}>
+                  <UiText variant="body" style={styles.settingTitle}>
+                    {table.table_number?.trim() || `Table ${index + 1}`}
+                  </UiText>
+                  <UiText variant="caption" tone={complete ? 'success' : 'danger'}>
+                    {complete ? 'Ready' : 'Unfinished'}
+                  </UiText>
+                </View>
+                <TextInput
+                  value={table.table_number || ''}
+                  onChangeText={(value) => updateFloorTable(table.id, { table_number: value })}
+                  placeholder={`Table ${index + 1}`}
+                  placeholderTextColor={palette.ink[400]}
+                  style={styles.setupInput}
+                />
+                <View style={styles.choiceWrap}>
+                  {floorSections.map((section) => {
+                    const active = table.section_id === section.id;
+                    return (
+                      <Pressable
+                        key={`${table.id}:${section.id}`}
+                        onPress={() => updateFloorTable(table.id, { section_id: section.id })}
+                        style={[styles.choicePill, active && styles.choicePillActive]}
+                      >
+                        <UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{section.name}</UiText>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <TextInput
+                  value={Number(table.capacity) > 0 ? String(table.capacity) : ''}
+                  onChangeText={(value) => updateFloorTable(table.id, { capacity: Number(value.replace(/[^\d]/g, '').slice(0, 3) || 0) })}
+                  placeholder="Seat count"
+                  keyboardType="number-pad"
+                  placeholderTextColor={palette.ink[400]}
+                  style={styles.setupInput}
+                />
+              </View>
+            );
+          })
+        )}
+        {floorTables.length > 0 ? (
+          <UiButton
+            label={isSavingFloorTables ? 'Saving...' : 'Save table setup'}
+            disabled={isSavingFloorTables || !restaurantId}
+            onPress={saveFloorTables}
+          />
+        ) : null}
+        {floorTablesMessage ? (
+          <View style={styles.messageCard}>
+            <UiText variant="bodySmall" tone="muted">{floorTablesMessage}</UiText>
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.card}>
@@ -964,6 +1698,505 @@ export default function OwnerSettings() {
         {discountsMessage ? (
           <View style={styles.messageCard}>
             <UiText variant="bodySmall" tone="muted">{discountsMessage}</UiText>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <UiText variant="title">Manager controls</UiText>
+            <UiText variant="bodySmall" tone="muted" style={{ marginTop: spacing[1] }}>
+              Role permissions for POS actions like refunds, voids, comps, drawer access, and reports.
+            </UiText>
+          </View>
+        </View>
+        {rolePermissionEdits.map((role, index) => (
+          <View key={role.role_key} style={styles.taxChargeRow}>
+            <UiText variant="body" style={{ textTransform: 'capitalize' }}>{role.role_key.replace('_', ' ')}</UiText>
+            <View style={styles.choiceWrap}>
+              {MANAGER_PERMISSION_FIELDS.map(([field, label]) => {
+                const active = Boolean(role[field]);
+                return (
+                  <Pressable
+                    key={field}
+                    onPress={() => updateRolePermission(index, { [field]: !active } as Partial<RolePermission>)}
+                    style={[styles.choicePill, active && styles.choicePillActive]}
+                  >
+                    <UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{label}</UiText>
+                  </Pressable>
+                );
+              })}
+              <Pressable
+                onPress={() => updateRolePermission(index, { require_manager_pin_for_approval: !role.require_manager_pin_for_approval })}
+                style={[styles.choicePill, role.require_manager_pin_for_approval && styles.choicePillActive]}
+              >
+                <UiText variant="caption" style={role.require_manager_pin_for_approval ? styles.choiceTextActive : styles.choiceText}>Approval PIN</UiText>
+              </Pressable>
+            </View>
+            <View style={styles.twoColumnFields}>
+              <TextInput
+                value={String(role.refund_limit ?? '')}
+                onChangeText={(value) => updateRolePermission(index, { refund_limit: sanitizeMoney(value).slice(0, 10) })}
+                placeholder="Refund limit"
+                keyboardType="decimal-pad"
+                placeholderTextColor={palette.ink[400]}
+                style={[styles.setupInput, styles.twoColumnInput]}
+              />
+              <TextInput
+                value={String(role.discount_limit_percent ?? '')}
+                onChangeText={(value) => updateRolePermission(index, { discount_limit_percent: sanitizeMoney(value).slice(0, 10) })}
+                placeholder="Discount % limit"
+                keyboardType="decimal-pad"
+                placeholderTextColor={palette.ink[400]}
+                style={[styles.setupInput, styles.twoColumnInput]}
+              />
+            </View>
+          </View>
+        ))}
+        <UiButton
+          label={isSavingManagerControls ? 'Saving...' : 'Save manager controls'}
+          disabled={isSavingManagerControls || !restaurantId}
+          onPress={saveManagerControls}
+        />
+        {managerControlsMessage ? (
+          <View style={styles.messageCard}>
+            <UiText variant="bodySmall" tone="muted">{managerControlsMessage}</UiText>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <UiText variant="title">Cash & closeout</UiText>
+            <UiText variant="bodySmall" tone="muted" style={{ marginTop: spacing[1] }}>
+              Cash drawers, server checkout requirements, and end-of-day close rules.
+            </UiText>
+          </View>
+        </View>
+        <ChoiceGroup
+          label="Cash tracking"
+          value={closeoutEdits.cash_tracking_mode}
+          options={CASH_TRACKING_OPTIONS}
+          onChange={(value) => updateCloseout({ cash_tracking_mode: value as CloseoutSettings['cash_tracking_mode'] })}
+        />
+        <View style={styles.twoColumnFields}>
+          <TextInput
+            value={String(closeoutEdits.cash_drop_threshold ?? '')}
+            onChangeText={(value) => updateCloseout({ cash_drop_threshold: sanitizeMoney(value).slice(0, 10) })}
+            placeholder="Cash drop threshold"
+            keyboardType="decimal-pad"
+            placeholderTextColor={palette.ink[400]}
+            style={[styles.setupInput, styles.twoColumnInput]}
+          />
+          <TextInput
+            value={String(closeoutEdits.cash_variance_threshold ?? '')}
+            onChangeText={(value) => updateCloseout({ cash_variance_threshold: sanitizeMoney(value).slice(0, 10) })}
+            placeholder="Variance threshold"
+            keyboardType="decimal-pad"
+            placeholderTextColor={palette.ink[400]}
+            style={[styles.setupInput, styles.twoColumnInput]}
+          />
+        </View>
+        <View style={styles.choiceWrap}>
+          {[
+            ['require_starting_bank', 'Starting bank'],
+            ['blind_drawer_close', 'Blind close'],
+            ['allow_paid_in_out', 'Paid in/out'],
+            ['require_manager_for_drawer_open', 'Manager drawer open'],
+          ].map(([field, label]) => {
+            const active = Boolean(closeoutEdits[field as keyof CloseoutSettings]);
+            return (
+              <Pressable
+                key={field}
+                onPress={() => updateCloseout({ [field]: !active } as Partial<CloseoutSettings>)}
+                style={[styles.choicePill, active && styles.choicePillActive]}
+              >
+                <UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{label}</UiText>
+              </Pressable>
+            );
+          })}
+        </View>
+        <ChoiceGroup
+          label="Checkout report"
+          value={closeoutEdits.server_checkout_report_delivery}
+          options={CHECKOUT_REPORT_OPTIONS}
+          onChange={(value) => updateCloseout({ server_checkout_report_delivery: value as CloseoutSettings['server_checkout_report_delivery'] })}
+        />
+        <View style={styles.choiceWrap}>
+          {[
+            ['server_require_all_checks_closed', 'Checks closed'],
+            ['server_require_tabs_closed', 'Tabs closed'],
+            ['server_require_cash_tips_declared', 'Cash tips'],
+            ['server_require_credit_tips_reviewed', 'Credit tips'],
+            ['server_require_tipout_entry', 'Tipout'],
+            ['server_require_manager_approval', 'Manager approval'],
+            ['allow_clockout_before_checkout', 'Clockout before checkout'],
+          ].map(([field, label]) => {
+            const active = Boolean(closeoutEdits[field as keyof CloseoutSettings]);
+            return (
+              <Pressable
+                key={field}
+                onPress={() => updateCloseout({ [field]: !active } as Partial<CloseoutSettings>)}
+                style={[styles.choicePill, active && styles.choicePillActive]}
+              >
+                <UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{label}</UiText>
+              </Pressable>
+            );
+          })}
+        </View>
+        <ChoiceGroup
+          label="EOD batch close"
+          value={closeoutEdits.eod_batch_close_mode}
+          options={EOD_BATCH_OPTIONS}
+          onChange={(value) => updateCloseout({ eod_batch_close_mode: value as CloseoutSettings['eod_batch_close_mode'] })}
+        />
+        <TextInput
+          value={closeoutEdits.eod_report_recipients.join(', ')}
+          onChangeText={(value) => updateCloseout({ eod_report_recipients: value.split(',').map((email) => email.trim()).filter(Boolean) })}
+          placeholder="EOD report emails"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          placeholderTextColor={palette.ink[400]}
+          style={styles.setupInput}
+        />
+        <View style={styles.choiceWrap}>
+          {[
+            ['eod_require_drawers_closed', 'Drawers closed'],
+            ['eod_require_servers_checked_out', 'Servers checked out'],
+            ['eod_require_open_checks_resolved', 'Open checks'],
+            ['eod_require_paid_outs_reviewed', 'Paid outs'],
+            ['eod_require_tip_adjustments_reviewed', 'Tip edits'],
+          ].map(([field, label]) => {
+            const active = Boolean(closeoutEdits[field as keyof CloseoutSettings]);
+            return (
+              <Pressable
+                key={field}
+                onPress={() => updateCloseout({ [field]: !active } as Partial<CloseoutSettings>)}
+                style={[styles.choicePill, active && styles.choicePillActive]}
+              >
+                <UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{label}</UiText>
+              </Pressable>
+            );
+          })}
+        </View>
+        <UiText variant="caption" tone="muted">EOD reports</UiText>
+        <View style={styles.choiceWrap}>
+          {EOD_REPORT_OPTIONS.map(([value, label]) => {
+            const active = closeoutEdits.eod_reports.includes(value);
+            return (
+              <Pressable
+                key={value}
+                onPress={() => updateCloseout({ eod_reports: toggleListValue(closeoutEdits.eod_reports, value) })}
+                style={[styles.choicePill, active && styles.choicePillActive]}
+              >
+                <UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{label}</UiText>
+              </Pressable>
+            );
+          })}
+        </View>
+        <UiButton
+          label={isSavingCloseout ? 'Saving...' : 'Save closeout'}
+          disabled={isSavingCloseout || !restaurantId}
+          onPress={saveCloseoutSettings}
+        />
+        {closeoutMessage ? (
+          <View style={styles.messageCard}>
+            <UiText variant="bodySmall" tone="muted">{closeoutMessage}</UiText>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <UiText variant="title">Check workflow</UiText>
+            <UiText variant="bodySmall" tone="muted" style={{ marginTop: spacing[1] }}>
+              Split checks, seat numbers, tabs, preauth, transfers, and fire rules.
+            </UiText>
+          </View>
+        </View>
+        <ChoiceGroup
+          label="Default fire mode"
+          value={checkWorkflowEdits.default_order_fire_mode}
+          options={ORDER_FIRE_MODE_OPTIONS}
+          onChange={(value) => updateCheckWorkflow({ default_order_fire_mode: value as CheckWorkflowSettings['default_order_fire_mode'] })}
+        />
+        <View style={styles.twoColumnFields}>
+          <TextInput
+            value={String(checkWorkflowEdits.max_split_count ?? '')}
+            onChangeText={(value) => updateCheckWorkflow({ max_split_count: value.replace(/[^\d]/g, '').slice(0, 2) || '1' })}
+            placeholder="Max splits"
+            keyboardType="number-pad"
+            placeholderTextColor={palette.ink[400]}
+            style={[styles.setupInput, styles.twoColumnInput]}
+          />
+          <TextInput
+            value={String(checkWorkflowEdits.default_preauth_amount ?? '')}
+            onChangeText={(value) => updateCheckWorkflow({ default_preauth_amount: sanitizeMoney(value).slice(0, 10) })}
+            placeholder="Preauth amount"
+            keyboardType="decimal-pad"
+            placeholderTextColor={palette.ink[400]}
+            style={[styles.setupInput, styles.twoColumnInput]}
+          />
+        </View>
+        <UiText variant="caption" tone="muted">Seats & firing</UiText>
+        <View style={styles.choiceWrap}>
+          {[
+            ['seat_numbers_enabled', 'Seat numbers'],
+            ['seat_number_required', 'Seats required'],
+            ['course_required', 'Course required'],
+            ['allow_hold_and_fire', 'Hold/fire'],
+            ['allow_send_before_required_modifiers', 'Send w/o modifiers'],
+            ['print_guest_check_by_default', 'Print guest check'],
+          ].map(([field, label]) => {
+            const active = Boolean(checkWorkflowEdits[field as keyof CheckWorkflowSettings]);
+            return (
+              <Pressable
+                key={field}
+                onPress={() => updateCheckWorkflow({ [field]: !active } as Partial<CheckWorkflowSettings>)}
+                style={[styles.choicePill, active && styles.choicePillActive]}
+              >
+                <UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{label}</UiText>
+              </Pressable>
+            );
+          })}
+        </View>
+        <UiText variant="caption" tone="muted">Split checks & payments</UiText>
+        <View style={styles.choiceWrap}>
+          {[
+            ['allow_split_checks', 'Split checks'],
+            ['split_by_seat_enabled', 'By seat'],
+            ['split_by_item_enabled', 'By item'],
+            ['split_evenly_enabled', 'Even split'],
+            ['allow_partial_payments', 'Partial payments'],
+            ['require_manager_for_split_after_payment', 'Approval after payment'],
+          ].map(([field, label]) => {
+            const active = Boolean(checkWorkflowEdits[field as keyof CheckWorkflowSettings]);
+            return (
+              <Pressable
+                key={field}
+                onPress={() => updateCheckWorkflow({ [field]: !active } as Partial<CheckWorkflowSettings>)}
+                style={[styles.choicePill, active && styles.choicePillActive]}
+              >
+                <UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{label}</UiText>
+              </Pressable>
+            );
+          })}
+        </View>
+        <UiText variant="caption" tone="muted">Tabs & preauth</UiText>
+        <View style={styles.choiceWrap}>
+          {[
+            ['allow_bar_tabs', 'Bar tabs'],
+            ['tab_name_required', 'Tab name'],
+            ['card_preauth_required', 'Card preauth'],
+            ['allow_tabs_without_table', 'No table tabs'],
+            ['auto_close_paid_tabs', 'Auto-close tabs'],
+          ].map(([field, label]) => {
+            const active = Boolean(checkWorkflowEdits[field as keyof CheckWorkflowSettings]);
+            return (
+              <Pressable
+                key={field}
+                onPress={() => updateCheckWorkflow({ [field]: !active } as Partial<CheckWorkflowSettings>)}
+                style={[styles.choicePill, active && styles.choicePillActive]}
+              >
+                <UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{label}</UiText>
+              </Pressable>
+            );
+          })}
+        </View>
+        <UiText variant="caption" tone="muted">Transfers & reopening</UiText>
+        <View style={styles.choiceWrap}>
+          {[
+            ['allow_check_merge', 'Merge checks'],
+            ['allow_table_transfer', 'Table transfer'],
+            ['allow_server_transfer', 'Server transfer'],
+            ['require_manager_for_transfer', 'Transfer approval'],
+            ['allow_reopen_closed_checks', 'Reopen checks'],
+            ['require_manager_for_reopen', 'Reopen approval'],
+          ].map(([field, label]) => {
+            const active = Boolean(checkWorkflowEdits[field as keyof CheckWorkflowSettings]);
+            return (
+              <Pressable
+                key={field}
+                onPress={() => updateCheckWorkflow({ [field]: !active } as Partial<CheckWorkflowSettings>)}
+                style={[styles.choicePill, active && styles.choicePillActive]}
+              >
+                <UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{label}</UiText>
+              </Pressable>
+            );
+          })}
+        </View>
+        <TextInput
+          value={checkWorkflowEdits.notes || ''}
+          onChangeText={(value) => updateCheckWorkflow({ notes: value })}
+          placeholder="Workflow notes"
+          placeholderTextColor={palette.ink[400]}
+          multiline
+          style={[styles.setupInput, styles.notesInput]}
+        />
+        <UiButton
+          label={isSavingCheckWorkflow ? 'Saving...' : 'Save check workflow'}
+          disabled={isSavingCheckWorkflow || !restaurantId}
+          onPress={saveCheckWorkflow}
+        />
+        {checkWorkflowMessage ? (
+          <View style={styles.messageCard}>
+            <UiText variant="bodySmall" tone="muted">{checkWorkflowMessage}</UiText>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <UiText variant="title">Tips & payroll</UiText>
+            <UiText variant="bodySmall" tone="muted" style={{ marginTop: spacing[1] }}>
+              Tip pooling, cash declarations, role eligibility, and payroll export settings.
+            </UiText>
+          </View>
+        </View>
+        <ChoiceGroup
+          label="Distribution"
+          value={tipPayrollEdits.tip_distribution_mode}
+          options={TIP_DISTRIBUTION_OPTIONS}
+          onChange={(value) => updateTipPayroll({ tip_distribution_mode: value as TipPayrollSettings['tip_distribution_mode'] })}
+        />
+        <ChoiceGroup
+          label="Cash tips"
+          value={tipPayrollEdits.cash_tip_declaration_mode}
+          options={CASH_TIP_OPTIONS}
+          onChange={(value) => updateTipPayroll({ cash_tip_declaration_mode: value as TipPayrollSettings['cash_tip_declaration_mode'] })}
+        />
+        <ChoiceGroup
+          label="Credit tips"
+          value={tipPayrollEdits.credit_tip_payout_timing}
+          options={[['payroll', 'Payroll'], ['nightly', 'Nightly']]}
+          onChange={(value) => updateTipPayroll({ credit_tip_payout_timing: value as TipPayrollSettings['credit_tip_payout_timing'] })}
+        />
+        <View style={styles.twoColumnFields}>
+          <TextInput
+            value={tipPayrollEdits.payroll_provider || ''}
+            onChangeText={(value) => updateTipPayroll({ payroll_provider: value })}
+            placeholder="Payroll provider"
+            placeholderTextColor={palette.ink[400]}
+            style={[styles.setupInput, styles.twoColumnInput]}
+          />
+          <TextInput
+            value={String(tipPayrollEdits.credit_card_fee_percent ?? '')}
+            onChangeText={(value) => updateTipPayroll({ credit_card_fee_percent: sanitizeMoney(value).slice(0, 6) })}
+            placeholder="Card fee %"
+            keyboardType="decimal-pad"
+            placeholderTextColor={palette.ink[400]}
+            style={[styles.setupInput, styles.twoColumnInput]}
+          />
+        </View>
+        <ChoiceGroup
+          label="Payroll export"
+          value={tipPayrollEdits.payroll_export_frequency}
+          options={PAYROLL_EXPORT_OPTIONS}
+          onChange={(value) => updateTipPayroll({ payroll_export_frequency: value as TipPayrollSettings['payroll_export_frequency'] })}
+        />
+        <ChoiceGroup
+          label="Pool reset"
+          value={tipPayrollEdits.tip_pool_reset}
+          options={TIP_POOL_RESET_OPTIONS}
+          onChange={(value) => updateTipPayroll({ tip_pool_reset: value as TipPayrollSettings['tip_pool_reset'] })}
+        />
+        <ChoiceGroup
+          label="Tipout basis"
+          value={tipPayrollEdits.tipout_basis}
+          options={TIPOUT_BASIS_OPTIONS}
+          onChange={(value) => updateTipPayroll({ tipout_basis: value as TipPayrollSettings['tipout_basis'] })}
+        />
+        <View style={styles.choiceWrap}>
+          {[
+            ['tip_pooling_enabled', 'Tip pool'],
+            ['tipout_sales_includes_tax', 'Sales include tax'],
+            ['tipout_include_managers', 'Managers included'],
+            ['require_tipout_at_checkout', 'Checkout tipout'],
+            ['allow_manager_tip_adjustments', 'Manager edits'],
+            ['auto_withhold_credit_card_fees', 'Withhold card fees'],
+          ].map(([field, label]) => {
+            const active = Boolean(tipPayrollEdits[field as keyof TipPayrollSettings]);
+            return (
+              <Pressable
+                key={field}
+                onPress={() => updateTipPayroll({ [field]: !active } as Partial<TipPayrollSettings>)}
+                style={[styles.choicePill, active && styles.choicePillActive]}
+              >
+                <UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{label}</UiText>
+              </Pressable>
+            );
+          })}
+        </View>
+        <UiText variant="caption" tone="muted">Role tip rules</UiText>
+        {tipPayrollEdits.role_tip_rules.map((rule, index) => (
+          <View key={rule.role_key || `tip-rule:${index}`} style={styles.taxChargeRow}>
+            <UiText variant="body" style={styles.settingTitle}>{rule.role_key.replace(/_/g, ' ')}</UiText>
+            <View style={styles.choiceWrap}>
+              {[
+                ['tip_eligible', 'Tip eligible'],
+                ['contributes_to_pool', 'Contributes'],
+                ['receives_from_pool', 'Receives'],
+              ].map(([field, label]) => {
+                const active = Boolean(rule[field as keyof TipRoleRule]);
+                return (
+                  <Pressable
+                    key={`${rule.role_key}:${field}`}
+                    onPress={() => updateTipRule(index, { [field]: !active } as Partial<TipRoleRule>)}
+                    style={[styles.choicePill, active && styles.choicePillActive]}
+                  >
+                    <UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{label}</UiText>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <View style={styles.twoColumnFields}>
+              <TextInput
+                value={String(rule.pool_points ?? '')}
+                onChangeText={(value) => updateTipRule(index, { pool_points: sanitizeMoney(value).slice(0, 6) })}
+                placeholder="Pool points"
+                keyboardType="decimal-pad"
+                placeholderTextColor={palette.ink[400]}
+                style={[styles.setupInput, styles.twoColumnInput]}
+              />
+              <TextInput
+                value={String(rule.tipout_percent ?? '')}
+                onChangeText={(value) => updateTipRule(index, { tipout_percent: sanitizeMoney(value).slice(0, 6) })}
+                placeholder="Tipout %"
+                keyboardType="decimal-pad"
+                placeholderTextColor={palette.ink[400]}
+                style={[styles.setupInput, styles.twoColumnInput]}
+              />
+            </View>
+            <TextInput
+              value={rule.tipout_target_role || ''}
+              onChangeText={(value) => updateTipRule(index, { tipout_target_role: roleCode(value) || null })}
+              placeholder="Tipout target role, e.g. bartender"
+              autoCapitalize="none"
+              placeholderTextColor={palette.ink[400]}
+              style={styles.setupInput}
+            />
+          </View>
+        ))}
+        <TextInput
+          value={tipPayrollEdits.notes || ''}
+          onChangeText={(value) => updateTipPayroll({ notes: value })}
+          placeholder="Payroll notes"
+          placeholderTextColor={palette.ink[400]}
+          multiline
+          style={[styles.setupInput, styles.notesInput]}
+        />
+        <UiButton
+          label={isSavingTipPayroll ? 'Saving...' : 'Save tips & payroll'}
+          disabled={isSavingTipPayroll || !restaurantId}
+          onPress={saveTipPayroll}
+        />
+        {tipPayrollMessage ? (
+          <View style={styles.messageCard}>
+            <UiText variant="bodySmall" tone="muted">{tipPayrollMessage}</UiText>
           </View>
         ) : null}
       </View>
@@ -1394,6 +2627,67 @@ export default function OwnerSettings() {
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <View style={{ flex: 1 }}>
+            <UiText variant="title">Menu categories</UiText>
+            <UiText variant="bodySmall" tone="muted" style={{ marginTop: spacing[1] }}>
+              Category names, optional tax overrides, and logical prep station defaults.
+            </UiText>
+          </View>
+        </View>
+        {normalizeMenuCategories(menuCategoryEdits).map((category, index) => (
+          <View key={category.id || `${category.name}:${index}`} style={styles.taxChargeRow}>
+            <TextInput
+              value={category.name}
+              onChangeText={(value) => updateMenuCategory(index, { name: value })}
+              placeholder="Appetizers"
+              placeholderTextColor={palette.ink[400]}
+              style={styles.setupInput}
+            />
+            <ChoiceGroup
+              label="Tax"
+              value={category.tax_rate_id || ''}
+              options={[['', 'Default'], ...normalizeTaxRates(taxRateEdits).map((rate) => [String(rate.id || ''), `${rate.name}${rate.rate ? ` ${rate.rate}%` : ''}`] as const)]}
+              onChange={(value) => updateMenuCategory(index, { tax_rate_id: value || null })}
+            />
+            <TextInput
+              value={category.routing_station_name || ''}
+              onChangeText={(value) => updateMenuCategory(index, { routing_station_name: value, routing_station_id: null })}
+              placeholder="Kitchen, Bar, Expo"
+              placeholderTextColor={palette.ink[400]}
+              style={styles.setupInput}
+            />
+            <Pressable
+              onPress={() => setMenuCategoryEdits((current) => normalizeMenuCategories(current).filter((_, currentIndex) => currentIndex !== index))}
+              style={styles.removePill}
+            >
+              <UiText variant="caption" tone="danger">Remove</UiText>
+            </Pressable>
+          </View>
+        ))}
+        <View style={styles.sectionActions}>
+          <UiButton
+            label="Add category"
+            variant="secondary"
+            disabled={isSavingMenuCategories}
+            onPress={() => setMenuCategoryEdits((current) => [...normalizeMenuCategories(current), { name: `Custom Category ${current.length + 1}`, tax_rate_id: null, routing_station_id: null, routing_station_name: 'Kitchen', is_active: true }])}
+            style={styles.sectionActionButton}
+          />
+          <UiButton
+            label={isSavingMenuCategories ? 'Saving...' : 'Save categories'}
+            disabled={isSavingMenuCategories || !restaurantId}
+            onPress={saveMenuCategories}
+            style={styles.sectionActionButton}
+          />
+        </View>
+        {menuCategoriesMessage ? (
+          <View style={styles.messageCard}>
+            <UiText variant="bodySmall" tone="muted">{menuCategoriesMessage}</UiText>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
             <UiText variant="title">Restaurant sections</UiText>
             <UiText variant="bodySmall" tone="muted" style={{ marginTop: spacing[1] }}>
               Sections are restaurant areas such as Bar, Patio, Outdoor, or Main Dining. Floor-plan tables use these categories, and unassigned tables default to Table.
@@ -1450,45 +2744,132 @@ export default function OwnerSettings() {
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <View style={{ flex: 1 }}>
-            <UiText variant="title">Role rates</UiText>
+            <UiText variant="title">Role editor</UiText>
             <UiText variant="bodySmall" tone="muted" style={{ marginTop: spacing[1] }}>
-              Clocked labor uses these role rates unless an employee has a personal override.
+              Define job codes, default wages, tipped status, and permission tier.
             </UiText>
           </View>
         </View>
         {jobCodes.length === 0 ? (
           <View style={styles.messageCard}>
-            <UiText variant="bodySmall" tone="muted">Role rates are not available yet.</UiText>
+            <UiText variant="bodySmall" tone="muted">No roles are available yet.</UiText>
           </View>
         ) : (
           jobCodes
             .filter((code) => code.is_active !== false)
             .map((code) => (
-              <View key={code.id} style={styles.rateRow}>
-                <View style={{ flex: 1 }}>
-                  <UiText variant="body" style={styles.settingTitle}>{code.label || code.code}</UiText>
-                  <UiText variant="caption" tone="muted" style={{ marginTop: spacing[1] }}>
-                    {code.is_tipped ? 'Tipped role' : 'Hourly role'}
-                  </UiText>
+              <View key={code.id} style={styles.taxChargeRow}>
+                <View style={styles.twoColumnFields}>
+                  <TextInput
+                    value={code.label || ''}
+                    onChangeText={(value) => setJobCodes((current) => current.map((row) => (row.id === code.id ? { ...row, label: value } : row)))}
+                    placeholder="Role label"
+                    editable={!savingRateId}
+                    placeholderTextColor={palette.ink[400]}
+                    style={[styles.setupInput, styles.twoColumnInput]}
+                  />
+                  <TextInput
+                    value={code.code || ''}
+                    onChangeText={(value) => setJobCodes((current) => current.map((row) => (row.id === code.id ? { ...row, code: roleCode(value) } : row)))}
+                    placeholder="role_code"
+                    autoCapitalize="none"
+                    editable={!savingRateId}
+                    placeholderTextColor={palette.ink[400]}
+                    style={[styles.setupInput, styles.twoColumnInput]}
+                  />
+                </View>
+                <ChoiceGroup
+                  label="Permission tier"
+                  value={code.permission_tier || 'normal'}
+                  options={PERMISSION_TIER_OPTIONS}
+                  onChange={(value) => setJobCodes((current) => current.map((row) => (row.id === code.id ? { ...row, permission_tier: value } : row)))}
+                />
+                <View style={styles.choiceWrap}>
+                  {[
+                    ['is_tipped', 'Tipped role'],
+                    ['is_active', 'Active'],
+                  ].map(([field, label]) => {
+                    const active = field === 'is_active' ? code.is_active !== false : Boolean(code.is_tipped);
+                    return (
+                      <Pressable
+                        key={`${code.id}:${field}`}
+                        onPress={() => setJobCodes((current) => current.map((row) => (row.id === code.id ? { ...row, [field]: !active } : row)))}
+                        style={[styles.choicePill, active && styles.choicePillActive]}
+                      >
+                        <UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{label}</UiText>
+                      </Pressable>
+                    );
+                  })}
                 </View>
                 <TextInput
-                  value={rateEdits[code.id] ?? ''}
-                  onChangeText={(value) => setRateEdits((current) => ({ ...current, [code.id]: value }))}
+                  value={String(code.default_hourly_rate ?? rateEdits[code.id] ?? '')}
+                  onChangeText={(value) => {
+                    const clean = sanitizeMoney(value);
+                    setRateEdits((current) => ({ ...current, [code.id]: clean }));
+                    setJobCodes((current) => current.map((row) => (row.id === code.id ? { ...row, default_hourly_rate: clean } : row)));
+                  }}
                   keyboardType="decimal-pad"
                   editable={!savingRateId}
-                  placeholder="0.00"
+                  placeholder="Default hourly rate"
                   placeholderTextColor={palette.ink[400]}
-                  style={styles.rateInput}
+                  style={styles.setupInput}
                 />
                 <UiButton
-                  label={savingRateId === code.id ? '...' : 'Save'}
+                  label={savingRateId === code.id ? 'Saving...' : 'Save role'}
                   disabled={Boolean(savingRateId)}
                   onPress={() => saveRoleRate(code)}
-                  style={styles.rateButton}
                 />
               </View>
             ))
         )}
+        <View style={styles.taxChargeRow}>
+          <UiText variant="body" style={styles.settingTitle}>Add role</UiText>
+          <View style={styles.twoColumnFields}>
+            <TextInput
+              value={jobCodeDraft.label}
+              onChangeText={(value) => setJobCodeDraft((current) => ({ ...current, label: value, code: current.code || roleCode(value) }))}
+              placeholder="Role label"
+              editable={!savingRateId}
+              placeholderTextColor={palette.ink[400]}
+              style={[styles.setupInput, styles.twoColumnInput]}
+            />
+            <TextInput
+              value={jobCodeDraft.code}
+              onChangeText={(value) => setJobCodeDraft((current) => ({ ...current, code: roleCode(value) }))}
+              placeholder="role_code"
+              autoCapitalize="none"
+              editable={!savingRateId}
+              placeholderTextColor={palette.ink[400]}
+              style={[styles.setupInput, styles.twoColumnInput]}
+            />
+          </View>
+          <ChoiceGroup
+            label="Permission tier"
+            value={jobCodeDraft.permission_tier || 'normal'}
+            options={PERMISSION_TIER_OPTIONS}
+            onChange={(value) => setJobCodeDraft((current) => ({ ...current, permission_tier: value }))}
+          />
+          <Pressable
+            onPress={() => setJobCodeDraft((current) => ({ ...current, is_tipped: !current.is_tipped }))}
+            style={[styles.choicePill, jobCodeDraft.is_tipped && styles.choicePillActive]}
+          >
+            <UiText variant="caption" style={jobCodeDraft.is_tipped ? styles.choiceTextActive : styles.choiceText}>Tipped role</UiText>
+          </Pressable>
+          <TextInput
+            value={String(jobCodeDraft.default_hourly_rate ?? '')}
+            onChangeText={(value) => setJobCodeDraft((current) => ({ ...current, default_hourly_rate: sanitizeMoney(value) }))}
+            keyboardType="decimal-pad"
+            editable={!savingRateId}
+            placeholder="Default hourly rate"
+            placeholderTextColor={palette.ink[400]}
+            style={styles.setupInput}
+          />
+          <UiButton
+            label={savingRateId === 'new' ? 'Adding...' : 'Add role'}
+            disabled={Boolean(savingRateId) || !jobCodeDraft.label.trim()}
+            onPress={() => saveRoleRate(jobCodeDraft)}
+          />
+        </View>
       </View>
 
       <View style={styles.card}>
@@ -1763,6 +3144,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[2],
   },
+  notesInput: {
+    minHeight: 92,
+    textAlignVertical: 'top',
+  },
   twoColumnFields: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1813,6 +3198,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing[3],
     padding: spacing[3],
+  },
+  floorTableRow: {
+    backgroundColor: semanticColors.surface,
+    borderColor: semanticColors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: spacing[3],
+    padding: spacing[3],
+  },
+  floorTableRowIncomplete: {
+    backgroundColor: statusColors.danger.bg,
+    borderColor: statusColors.danger.border,
+  },
+  floorTableHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing[2],
   },
   removePill: {
     alignItems: 'center',

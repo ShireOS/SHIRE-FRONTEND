@@ -211,11 +211,22 @@ export function fetchManagerJobCodes() {
   return apiRequest<JobCode[]>('/manager/job-codes');
 }
 
+export function fetchRestaurantJobCodes(restaurantId: string) {
+  return apiRequest<JobCode[]>(`/restaurants/${restaurantId}/job-codes`);
+}
+
 export function updateManagerJobCode(
   jobCodeId: string,
-  body: Partial<Pick<JobCode, 'label' | 'permission_tier' | 'default_hourly_rate' | 'is_tipped' | 'tipout_role' | 'sort_order' | 'is_active'>>,
+  body: Partial<Pick<JobCode, 'code' | 'label' | 'permission_tier' | 'default_hourly_rate' | 'is_tipped' | 'tipout_role' | 'sort_order' | 'is_active'>>,
 ) {
   return apiPatch<JobCode>(`/manager/job-codes/${jobCodeId}`, body);
+}
+
+export function createManagerJobCode(
+  restaurantId: string,
+  body: Pick<JobCode, 'code' | 'label'> & Partial<Pick<JobCode, 'permission_tier' | 'default_hourly_rate' | 'is_tipped' | 'tipout_role' | 'sort_order' | 'is_active'>>,
+) {
+  return apiPost<JobCode>(`/restaurants/${restaurantId}/job-codes`, body);
 }
 
 export function registerMobilePushToken(body: {
