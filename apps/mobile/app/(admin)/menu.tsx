@@ -63,6 +63,24 @@ const DAY_OPTIONS = [
 ];
 
 const SERVICE_MODE_OPTIONS = ['Dine-in', 'Takeout', 'Delivery', 'Bar', 'Patio'];
+const COURSE_OPTIONS: Array<[NonNullable<AdminMenuItem['course_type']> | '', string]> = [
+  ['', 'Default'],
+  ['none', 'None'],
+  ['appetizer', 'App'],
+  ['entree', 'Entree'],
+  ['dessert', 'Dessert'],
+  ['drink', 'Drink'],
+  ['side', 'Side'],
+  ['other', 'Other'],
+];
+const FIRE_OPTIONS: Array<[NonNullable<AdminMenuItem['fire_mode']> | '', string]> = [
+  ['', 'Default'],
+  ['inherit', 'Inherit'],
+  ['immediate', 'Immediate'],
+  ['hold', 'Hold'],
+  ['manual', 'Manual'],
+  ['by_course', 'By course'],
+];
 
 function formatCurrency(value: unknown) {
   const number = Number(value || 0);
@@ -311,6 +329,14 @@ export default function AdminMenu() {
         availability_start_date: selectedItem.availability_start_date || null,
         availability_end_date: selectedItem.availability_end_date || null,
         availability_notes: selectedItem.availability_notes || null,
+        course_type: selectedItem.course_type || null,
+        fire_mode: selectedItem.fire_mode || null,
+        routing_station_id: selectedItem.routing_station_id || null,
+        prep_time_minutes: selectedItem.prep_time_minutes === '' || selectedItem.prep_time_minutes == null
+          ? null
+          : Number(selectedItem.prep_time_minutes),
+        kds_display_group: selectedItem.kds_display_group || null,
+        item_routing_notes: selectedItem.item_routing_notes || null,
       });
       setItems((current) => current.map((row) => (
         row.id === selectedItem.id ? mergeMenuItemUpdate(row, updated) : row
@@ -944,6 +970,68 @@ function ItemDetailModal({
                 onChangeText={(value) => onChangeAvailability({ availability_notes: value })}
                 multiline
                 placeholder="Happy hour only, weekend brunch, seasonal prep note..."
+                placeholderTextColor={color_pallet.ink[400]}
+                style={[styles.fieldInput, styles.descriptionInput]}
+              />
+              <FieldLabel label="Course" />
+              <View style={styles.choiceWrap}>
+                {COURSE_OPTIONS.map(([value, label]) => {
+                  const selected = (item.course_type || '') === value;
+                  return (
+                    <Pressable
+                      key={value || 'default'}
+                      onPress={() => onChangeAvailability({ course_type: value || null })}
+                      style={[styles.choicePill, selected && styles.choicePillActive]}
+                    >
+                      <Text style={[styles.choiceText, selected && styles.choiceTextActive]}>{label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <FieldLabel label="Fire mode" />
+              <View style={styles.choiceWrap}>
+                {FIRE_OPTIONS.map(([value, label]) => {
+                  const selected = (item.fire_mode || '') === value;
+                  return (
+                    <Pressable
+                      key={value || 'default'}
+                      onPress={() => onChangeAvailability({ fire_mode: value || null })}
+                      style={[styles.choicePill, selected && styles.choicePillActive]}
+                    >
+                      <Text style={[styles.choiceText, selected && styles.choiceTextActive]}>{label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <View style={styles.formRow}>
+                <View style={styles.formColumn}>
+                  <FieldLabel label="Prep minutes" />
+                  <TextInput
+                    value={item.prep_time_minutes == null ? '' : String(item.prep_time_minutes)}
+                    onChangeText={(value) => onChangeAvailability({ prep_time_minutes: value.replace(/[^\d]/g, '').slice(0, 3) })}
+                    placeholder="12"
+                    keyboardType="number-pad"
+                    placeholderTextColor={color_pallet.ink[400]}
+                    style={styles.fieldInput}
+                  />
+                </View>
+                <View style={styles.formColumn}>
+                  <FieldLabel label="KDS group" />
+                  <TextInput
+                    value={item.kds_display_group || ''}
+                    onChangeText={(value) => onChangeAvailability({ kds_display_group: value })}
+                    placeholder="Grill"
+                    placeholderTextColor={color_pallet.ink[400]}
+                    style={styles.fieldInput}
+                  />
+                </View>
+              </View>
+              <FieldLabel label="Routing notes" />
+              <TextInput
+                value={item.item_routing_notes || ''}
+                onChangeText={(value) => onChangeAvailability({ item_routing_notes: value })}
+                multiline
+                placeholder="Expo note, bar garnish, special printer note..."
                 placeholderTextColor={color_pallet.ink[400]}
                 style={[styles.fieldInput, styles.descriptionInput]}
               />

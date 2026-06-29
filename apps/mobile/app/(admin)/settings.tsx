@@ -315,15 +315,15 @@ const DEFAULT_DISCOUNT_RULE: DiscountRule = {
 };
 
 const DEFAULT_MENU_CATEGORIES: MenuCategory[] = [
-  { name: 'Appetizers', tax_rate_id: null, routing_station_name: 'Kitchen', is_active: true },
-  { name: 'Entrees', tax_rate_id: null, routing_station_name: 'Kitchen', is_active: true },
-  { name: 'Desserts', tax_rate_id: null, routing_station_name: 'Kitchen', is_active: true },
-  { name: 'Sides', tax_rate_id: null, routing_station_name: 'Kitchen', is_active: true },
-  { name: 'Drinks', tax_rate_id: null, routing_station_name: 'Bar', is_active: true },
-  { name: 'Cocktails', tax_rate_id: null, routing_station_name: 'Bar', is_active: true },
-  { name: 'Beer & Wine', tax_rate_id: null, routing_station_name: 'Bar', is_active: true },
-  { name: 'Specials', tax_rate_id: null, routing_station_name: 'Kitchen', is_active: true },
-  { name: 'Other', tax_rate_id: null, routing_station_name: 'Expo', is_active: true },
+  { name: 'Appetizers', tax_rate_id: null, routing_station_name: 'Kitchen', default_course_type: 'appetizer', default_fire_mode: 'by_course', prep_time_minutes: null, kds_display_group: 'Apps', is_active: true },
+  { name: 'Entrees', tax_rate_id: null, routing_station_name: 'Kitchen', default_course_type: 'entree', default_fire_mode: 'by_course', prep_time_minutes: null, kds_display_group: 'Entrees', is_active: true },
+  { name: 'Desserts', tax_rate_id: null, routing_station_name: 'Kitchen', default_course_type: 'dessert', default_fire_mode: 'by_course', prep_time_minutes: null, kds_display_group: 'Desserts', is_active: true },
+  { name: 'Sides', tax_rate_id: null, routing_station_name: 'Kitchen', default_course_type: 'side', default_fire_mode: 'inherit', prep_time_minutes: null, kds_display_group: 'Sides', is_active: true },
+  { name: 'Drinks', tax_rate_id: null, routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: null, kds_display_group: 'Drinks', is_active: true },
+  { name: 'Cocktails', tax_rate_id: null, routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: null, kds_display_group: 'Bar', is_active: true },
+  { name: 'Beer & Wine', tax_rate_id: null, routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: null, kds_display_group: 'Bar', is_active: true },
+  { name: 'Specials', tax_rate_id: null, routing_station_name: 'Kitchen', default_course_type: 'other', default_fire_mode: 'inherit', prep_time_minutes: null, kds_display_group: 'Specials', is_active: true },
+  { name: 'Other', tax_rate_id: null, routing_station_name: 'Expo', default_course_type: 'none', default_fire_mode: 'inherit', prep_time_minutes: null, kds_display_group: 'Other', is_active: true },
 ];
 
 function rolePermissionKeys(jobCodes: JobCode[] = []): string[] {
@@ -545,6 +545,10 @@ function normalizeMenuCategories(rows: MenuCategory[] | undefined): MenuCategory
       tax_rate_id: row.tax_rate_id || null,
       routing_station_id: row.routing_station_id || null,
       routing_station_name: row.routing_station_name || '',
+      default_course_type: row.default_course_type || null,
+      default_fire_mode: row.default_fire_mode || null,
+      prep_time_minutes: row.prep_time_minutes == null ? null : String(row.prep_time_minutes),
+      kds_display_group: row.kds_display_group || '',
       is_active: row.is_active !== false,
     }))
     .filter((row) => row.name && row.is_active);
@@ -559,6 +563,10 @@ function menuCategoriesPayload(categories: MenuCategory[]): MenuCategorySetupPay
       tax_rate_id: row.tax_rate_id || null,
       routing_station_id: row.routing_station_id || null,
       routing_station_name: row.routing_station_name || null,
+      default_course_type: row.default_course_type || null,
+      default_fire_mode: row.default_fire_mode || null,
+      prep_time_minutes: row.prep_time_minutes === '' || row.prep_time_minutes == null ? null : Number(row.prep_time_minutes),
+      kds_display_group: row.kds_display_group || null,
       is_active: true,
     })),
   };
@@ -2655,6 +2663,51 @@ export default function OwnerSettings() {
               placeholderTextColor={palette.ink[400]}
               style={styles.setupInput}
             />
+            <ChoiceGroup
+              label="Default course"
+              value={category.default_course_type || ''}
+              options={[
+                ['', 'Default'],
+                ['appetizer', 'App'],
+                ['entree', 'Entree'],
+                ['dessert', 'Dessert'],
+                ['drink', 'Drink'],
+                ['side', 'Side'],
+                ['other', 'Other'],
+                ['none', 'None'],
+              ]}
+              onChange={(value) => updateMenuCategory(index, { default_course_type: (value || null) as MenuCategory['default_course_type'] })}
+            />
+            <ChoiceGroup
+              label="Fire"
+              value={category.default_fire_mode || ''}
+              options={[
+                ['', 'Default'],
+                ['inherit', 'Inherit'],
+                ['immediate', 'Immediate'],
+                ['hold', 'Hold'],
+                ['manual', 'Manual'],
+                ['by_course', 'By course'],
+              ]}
+              onChange={(value) => updateMenuCategory(index, { default_fire_mode: (value || null) as MenuCategory['default_fire_mode'] })}
+            />
+            <View style={styles.twoColumnFields}>
+              <TextInput
+                value={category.prep_time_minutes == null ? '' : String(category.prep_time_minutes)}
+                onChangeText={(value) => updateMenuCategory(index, { prep_time_minutes: value.replace(/[^\d]/g, '').slice(0, 3) })}
+                placeholder="Prep min"
+                keyboardType="number-pad"
+                placeholderTextColor={palette.ink[400]}
+                style={[styles.setupInput, styles.twoColumnInput]}
+              />
+              <TextInput
+                value={category.kds_display_group || ''}
+                onChangeText={(value) => updateMenuCategory(index, { kds_display_group: value })}
+                placeholder="KDS group"
+                placeholderTextColor={palette.ink[400]}
+                style={[styles.setupInput, styles.twoColumnInput]}
+              />
+            </View>
             <Pressable
               onPress={() => setMenuCategoryEdits((current) => normalizeMenuCategories(current).filter((_, currentIndex) => currentIndex !== index))}
               style={styles.removePill}
@@ -2668,7 +2721,7 @@ export default function OwnerSettings() {
             label="Add category"
             variant="secondary"
             disabled={isSavingMenuCategories}
-            onPress={() => setMenuCategoryEdits((current) => [...normalizeMenuCategories(current), { name: `Custom Category ${current.length + 1}`, tax_rate_id: null, routing_station_id: null, routing_station_name: 'Kitchen', is_active: true }])}
+            onPress={() => setMenuCategoryEdits((current) => [...normalizeMenuCategories(current), { name: `Custom Category ${current.length + 1}`, tax_rate_id: null, routing_station_id: null, routing_station_name: 'Kitchen', default_course_type: null, default_fire_mode: 'inherit', prep_time_minutes: null, kds_display_group: '', is_active: true }])}
             style={styles.sectionActionButton}
           />
           <UiButton

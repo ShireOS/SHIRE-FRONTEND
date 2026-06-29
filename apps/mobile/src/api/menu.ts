@@ -19,6 +19,12 @@ export type AdminMenuItem = {
   availability_start_date?: string | null;
   availability_end_date?: string | null;
   availability_notes?: string | null;
+  course_type?: 'none' | 'appetizer' | 'entree' | 'dessert' | 'drink' | 'side' | 'other' | null;
+  fire_mode?: 'inherit' | 'immediate' | 'hold' | 'manual' | 'by_course' | null;
+  routing_station_id?: string | null;
+  prep_time_minutes?: number | string | null;
+  kds_display_group?: string | null;
+  item_routing_notes?: string | null;
   updated_at: string | null;
   image_url?: string | null;
 };
@@ -38,6 +44,12 @@ export type AdminMenuItemCreateInput = {
   availability_start_date?: string | null;
   availability_end_date?: string | null;
   availability_notes?: string | null;
+  course_type?: AdminMenuItem['course_type'];
+  fire_mode?: AdminMenuItem['fire_mode'];
+  routing_station_id?: string | null;
+  prep_time_minutes?: number | string | null;
+  kds_display_group?: string | null;
+  item_routing_notes?: string | null;
 };
 
 export type MenuItemInsight = {
@@ -77,7 +89,7 @@ type ManagerDashboardResponse = {
   top_items?: { name?: string; quantity?: number; sales?: number }[];
 };
 
-const MENU_ITEM_SELECT = 'id, restaurant_id, name, category, menu_category_id, description, price, cost, is_available, availability_mode, availability_days, availability_start_time, availability_end_time, availability_service_modes, availability_start_date, availability_end_date, availability_notes, updated_at';
+const MENU_ITEM_SELECT = 'id, restaurant_id, name, category, menu_category_id, description, price, cost, is_available, availability_mode, availability_days, availability_start_time, availability_end_time, availability_service_modes, availability_start_date, availability_end_date, availability_notes, course_type, fire_mode, routing_station_id, prep_time_minutes, kds_display_group, item_routing_notes, updated_at';
 
 export async function fetchAdminMenuItems(restaurantId: string): Promise<AdminMenuItem[]> {
   const client = getSBClient();
@@ -118,6 +130,12 @@ function normalizeMenuItem(row: Partial<AdminMenuItem>, restaurantId: string): A
     availability_start_date: row.availability_start_date ?? null,
     availability_end_date: row.availability_end_date ?? null,
     availability_notes: row.availability_notes ?? null,
+    course_type: row.course_type ?? null,
+    fire_mode: row.fire_mode ?? null,
+    routing_station_id: row.routing_station_id ?? null,
+    prep_time_minutes: row.prep_time_minutes ?? null,
+    kds_display_group: row.kds_display_group ?? null,
+    item_routing_notes: row.item_routing_notes ?? null,
     updated_at: row.updated_at ?? null,
     image_url: row.image_url ?? null,
   };
@@ -141,6 +159,12 @@ export async function createAdminMenuItem(
     availability_start_date: input.availability_start_date || null,
     availability_end_date: input.availability_end_date || null,
     availability_notes: input.availability_notes?.trim() || null,
+    course_type: input.course_type || null,
+    fire_mode: input.fire_mode || null,
+    routing_station_id: input.routing_station_id || null,
+    prep_time_minutes: input.prep_time_minutes === '' ? null : input.prep_time_minutes ?? null,
+    kds_display_group: input.kds_display_group?.trim() || null,
+    item_routing_notes: input.item_routing_notes?.trim() || null,
   };
 
   try {
