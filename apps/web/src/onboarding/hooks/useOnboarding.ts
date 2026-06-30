@@ -237,6 +237,12 @@ export interface CheckWorkflowSettingsData {
   allow_send_before_required_modifiers: boolean
   allow_hold_and_fire: boolean
   default_order_fire_mode: 'manual' | 'immediate' | 'by_course'
+  default_hold_minutes: string
+  hold_preset_minutes: number[]
+  allow_manual_hold: boolean
+  allow_item_seat_move: boolean
+  allow_multi_item_seat_move: boolean
+  require_manager_for_item_move_after_send: boolean
   print_guest_check_by_default: boolean
   notes: string
 }
@@ -475,7 +481,13 @@ const defaultCheckWorkflowSettings = (): CheckWorkflowSettingsData => ({
   require_manager_for_reopen: true,
   allow_send_before_required_modifiers: false,
   allow_hold_and_fire: true,
-  default_order_fire_mode: 'manual',
+  default_order_fire_mode: 'immediate',
+  default_hold_minutes: '10',
+  hold_preset_minutes: [5, 10, 15],
+  allow_manual_hold: true,
+  allow_item_seat_move: true,
+  allow_multi_item_seat_move: true,
+  require_manager_for_item_move_after_send: false,
   print_guest_check_by_default: true,
   notes: '',
 })
@@ -890,6 +902,9 @@ const normalizeCloseoutSettings = (value: unknown): CloseoutSettingsData => {
 const normalizeCheckWorkflowSettings = (value: unknown): CheckWorkflowSettingsData => {
   const fallback = defaultCheckWorkflowSettings()
   if (!isRecord(value)) return fallback
+  const holdPresetValues = Array.isArray(value.hold_preset_minutes)
+    ? Array.from(new Set(value.hold_preset_minutes.map(Number).filter(minutes => Number.isFinite(minutes) && minutes > 0))).slice(0, 8)
+    : fallback.hold_preset_minutes
   return {
     seat_numbers_enabled: typeof value.seat_numbers_enabled === 'boolean' ? value.seat_numbers_enabled : fallback.seat_numbers_enabled,
     seat_number_required: typeof value.seat_number_required === 'boolean' ? value.seat_number_required : fallback.seat_number_required,
@@ -916,6 +931,12 @@ const normalizeCheckWorkflowSettings = (value: unknown): CheckWorkflowSettingsDa
     allow_send_before_required_modifiers: typeof value.allow_send_before_required_modifiers === 'boolean' ? value.allow_send_before_required_modifiers : fallback.allow_send_before_required_modifiers,
     allow_hold_and_fire: typeof value.allow_hold_and_fire === 'boolean' ? value.allow_hold_and_fire : fallback.allow_hold_and_fire,
     default_order_fire_mode: asEnum(value.default_order_fire_mode, ORDER_FIRE_MODES, fallback.default_order_fire_mode),
+    default_hold_minutes: asStringNumber(value.default_hold_minutes) || fallback.default_hold_minutes,
+    hold_preset_minutes: holdPresetValues.length > 0 ? holdPresetValues : fallback.hold_preset_minutes,
+    allow_manual_hold: typeof value.allow_manual_hold === 'boolean' ? value.allow_manual_hold : fallback.allow_manual_hold,
+    allow_item_seat_move: typeof value.allow_item_seat_move === 'boolean' ? value.allow_item_seat_move : fallback.allow_item_seat_move,
+    allow_multi_item_seat_move: typeof value.allow_multi_item_seat_move === 'boolean' ? value.allow_multi_item_seat_move : fallback.allow_multi_item_seat_move,
+    require_manager_for_item_move_after_send: typeof value.require_manager_for_item_move_after_send === 'boolean' ? value.require_manager_for_item_move_after_send : fallback.require_manager_for_item_move_after_send,
     print_guest_check_by_default: typeof value.print_guest_check_by_default === 'boolean' ? value.print_guest_check_by_default : fallback.print_guest_check_by_default,
     notes: asString(value.notes),
   }
@@ -1064,10 +1085,13 @@ const menuCategoriesToPayload = (data: OnboardingData) => ({
 
 const checkWorkflowSettingsToPayload = (data: OnboardingData) => {
   const settings = normalizeCheckWorkflowSettings(data.check_workflow_settings)
+  const holdPresetMinutes = Array.from(new Set(settings.hold_preset_minutes.map(Number).filter(minutes => Number.isFinite(minutes) && minutes > 0))).slice(0, 8)
   return {
     ...settings,
     max_split_count: Math.max(1, Math.min(99, Number(settings.max_split_count || 8))),
     default_preauth_amount: settings.default_preauth_amount === '' ? null : Number(settings.default_preauth_amount),
+    default_hold_minutes: Math.max(1, Math.min(360, Number(settings.default_hold_minutes || 10))),
+    hold_preset_minutes: holdPresetMinutes.length > 0 ? holdPresetMinutes : defaultCheckWorkflowSettings().hold_preset_minutes,
     notes: settings.notes.trim() || null,
   }
 }

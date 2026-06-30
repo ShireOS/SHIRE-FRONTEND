@@ -270,6 +270,12 @@ export type CheckWorkflowSettings = {
   allow_send_before_required_modifiers: boolean;
   allow_hold_and_fire: boolean;
   default_order_fire_mode: 'manual' | 'immediate' | 'by_course';
+  default_hold_minutes: string | number;
+  hold_preset_minutes: number[];
+  allow_manual_hold: boolean;
+  allow_item_seat_move: boolean;
+  allow_multi_item_seat_move: boolean;
+  require_manager_for_item_move_after_send: boolean;
   print_guest_check_by_default: boolean;
   notes?: string | null;
 };

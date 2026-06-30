@@ -417,7 +417,13 @@ const DEFAULT_CHECK_WORKFLOW_SETTINGS: CheckWorkflowSettings = {
   require_manager_for_reopen: true,
   allow_send_before_required_modifiers: false,
   allow_hold_and_fire: true,
-  default_order_fire_mode: 'manual',
+  default_order_fire_mode: 'immediate',
+  default_hold_minutes: '10',
+  hold_preset_minutes: [5, 10, 15],
+  allow_manual_hold: true,
+  allow_item_seat_move: true,
+  allow_multi_item_seat_move: true,
+  require_manager_for_item_move_after_send: false,
   print_guest_check_by_default: true,
   notes: '',
 };
@@ -719,12 +725,17 @@ function closeoutPayload(row: CloseoutSettings): CloseoutSettings {
 
 function normalizeCheckWorkflowSettings(row: CheckWorkflowSettings | undefined): CheckWorkflowSettings {
   const source = row || DEFAULT_CHECK_WORKFLOW_SETTINGS;
+  const presets = Array.isArray(source.hold_preset_minutes)
+    ? Array.from(new Set(source.hold_preset_minutes.map(Number).filter((value) => Number.isFinite(value) && value > 0))).slice(0, 8)
+    : DEFAULT_CHECK_WORKFLOW_SETTINGS.hold_preset_minutes;
   return {
     ...DEFAULT_CHECK_WORKFLOW_SETTINGS,
     ...source,
     max_split_count: numberText(source.max_split_count) || '8',
     default_preauth_amount: numberText(source.default_preauth_amount),
-    default_order_fire_mode: ORDER_FIRE_MODE_OPTIONS.some(([value]) => value === source.default_order_fire_mode) ? source.default_order_fire_mode : 'manual',
+    default_order_fire_mode: ORDER_FIRE_MODE_OPTIONS.some(([value]) => value === source.default_order_fire_mode) ? source.default_order_fire_mode : 'immediate',
+    default_hold_minutes: numberText(source.default_hold_minutes) || '10',
+    hold_preset_minutes: presets.length > 0 ? presets : DEFAULT_CHECK_WORKFLOW_SETTINGS.hold_preset_minutes,
     notes: source.notes || '',
   };
 }
@@ -735,6 +746,10 @@ function checkWorkflowPayload(row: CheckWorkflowSettings): CheckWorkflowSettings
     ...settings,
     max_split_count: Math.max(1, Math.min(99, Number(settings.max_split_count || 8))),
     default_preauth_amount: settings.default_preauth_amount === '' ? null : Number(settings.default_preauth_amount),
+    default_hold_minutes: Math.max(1, Math.min(360, Number(settings.default_hold_minutes || 10))),
+    hold_preset_minutes: (Array.from(new Set(settings.hold_preset_minutes.map(Number).filter((value) => Number.isFinite(value) && value > 0))).slice(0, 8).length > 0
+      ? Array.from(new Set(settings.hold_preset_minutes.map(Number).filter((value) => Number.isFinite(value) && value > 0))).slice(0, 8)
+      : DEFAULT_CHECK_WORKFLOW_SETTINGS.hold_preset_minutes),
     notes: settings.notes?.trim() || null,
   };
 }
@@ -1933,6 +1948,28 @@ export default function OwnerSettings() {
         />
         <View style={styles.twoColumnFields}>
           <TextInput
+            value={String(checkWorkflowEdits.default_hold_minutes ?? '')}
+            onChangeText={(value) => updateCheckWorkflow({ default_hold_minutes: value.replace(/[^\d]/g, '').slice(0, 3) || '1' })}
+            placeholder="Default hold min"
+            keyboardType="number-pad"
+            placeholderTextColor={palette.ink[400]}
+            style={[styles.setupInput, styles.twoColumnInput]}
+          />
+          <TextInput
+            value={(checkWorkflowEdits.hold_preset_minutes || []).join(', ')}
+            onChangeText={(value) => updateCheckWorkflow({
+              hold_preset_minutes: value
+                .split(',')
+                .map((part) => Number(part.replace(/[^\d]/g, '')))
+                .filter((minutes) => Number.isFinite(minutes) && minutes > 0)
+                .slice(0, 8),
+            })}
+            placeholder="Hold presets"
+            keyboardType="numbers-and-punctuation"
+            placeholderTextColor={palette.ink[400]}
+            style={[styles.setupInput, styles.twoColumnInput]}
+          />
+          <TextInput
             value={String(checkWorkflowEdits.max_split_count ?? '')}
             onChangeText={(value) => updateCheckWorkflow({ max_split_count: value.replace(/[^\d]/g, '').slice(0, 2) || '1' })}
             placeholder="Max splits"
@@ -1956,6 +1993,10 @@ export default function OwnerSettings() {
             ['seat_number_required', 'Seats required'],
             ['course_required', 'Course required'],
             ['allow_hold_and_fire', 'Hold/fire'],
+            ['allow_manual_hold', 'Manual hold'],
+            ['allow_item_seat_move', 'Move item seat'],
+            ['allow_multi_item_seat_move', 'Multi-move items'],
+            ['require_manager_for_item_move_after_send', 'Manager after send'],
             ['allow_send_before_required_modifiers', 'Send w/o modifiers'],
             ['print_guest_check_by_default', 'Print guest check'],
           ].map(([field, label]) => {

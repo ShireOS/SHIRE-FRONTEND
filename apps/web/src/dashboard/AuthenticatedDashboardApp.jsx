@@ -598,7 +598,9 @@ const ROLE_LABELS = {
 
 const COVERAGE_TIME_AXIS_WIDTH = 72
 const COVERAGE_PIXELS_PER_HOUR = 44
-const SCHEDULE_PIXELS_PER_HOUR = 46
+const SCHEDULE_DAY_AXIS_WIDTH = 76
+const SCHEDULE_TIMELINE_PIXELS_PER_HOUR = 112
+const SCHEDULE_LANE_HEIGHT = 54
 const COVERAGE_SLOT_MINUTES = 15
 const DEFAULT_CALENDAR_START = 0
 const DEFAULT_CALENDAR_END = 24 * 60
@@ -1040,7 +1042,6 @@ function SchedulingPanel({ restaurantId }) {
   const calendarBounds = useMemo(() => ({ start: DEFAULT_CALENDAR_START, end: DEFAULT_CALENDAR_END }), [])
 
   const calendarHeight = ((calendarBounds.end - calendarBounds.start) / 60) * COVERAGE_PIXELS_PER_HOUR
-  const scheduleCalendarHeight = ((calendarBounds.end - calendarBounds.start) / 60) * SCHEDULE_PIXELS_PER_HOUR
   const shiftTradePolicy = {
     ...DEFAULT_SHIFT_TRADE_POLICY,
     ...(requestPolicy?.manager_settings?.shift_trades || {}),
@@ -1098,9 +1099,9 @@ function SchedulingPanel({ restaurantId }) {
       if (!shiftCenters.length) return
 
       const averageMinute = shiftCenters.reduce((sum, value) => sum + value, 0) / shiftCenters.length
-      const averageTop = ((averageMinute - calendarBounds.start) / 60) * SCHEDULE_PIXELS_PER_HOUR
-      const targetTop = clamp(averageTop - (node.clientHeight / 2), 0, Math.max(0, node.scrollHeight - node.clientHeight))
-      node.scrollTop = targetTop
+      const averageLeft = ((averageMinute - calendarBounds.start) / 60) * SCHEDULE_TIMELINE_PIXELS_PER_HOUR
+      const targetLeft = clamp(averageLeft - (node.clientWidth / 2), 0, Math.max(0, node.scrollWidth - node.clientWidth))
+      node.scrollLeft = targetLeft
     })
     return () => window.cancelAnimationFrame(frame)
   }, [activeSchedulingTab, calendarBounds.start, filteredScheduleItems, restaurantId])
@@ -1583,6 +1584,8 @@ function SchedulingPanel({ restaurantId }) {
     }
   }
 
+  const scheduleTimelineWidth = ((calendarBounds.end - calendarBounds.start) / 60) * SCHEDULE_TIMELINE_PIXELS_PER_HOUR
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-6">
@@ -1673,123 +1676,123 @@ function SchedulingPanel({ restaurantId }) {
                 </label>
               </div>
             </div>
-            <div className="grid border-b border-white/10" style={{ gridTemplateColumns: `${COVERAGE_TIME_AXIS_WIDTH}px repeat(7, minmax(104px, 1fr))` }}>
-              <div className="border-r border-white/10 px-3 py-3 text-xs font-semibold text-dash-tertiary">Time</div>
-              {SCHEDULING_DAYS.map(day => (
-                <div key={day} className="border-r border-white/10 px-3 py-3 text-sm font-semibold text-dash-secondary last:border-r-0">{day}</div>
-              ))}
-            </div>
-            <div ref={scheduleCalendarRef} className="relative max-h-[620px] overflow-auto" style={{ minHeight: Math.min(scheduleCalendarHeight, 620) }}>
+            <div ref={scheduleCalendarRef} className="relative max-h-[620px] overflow-auto">
               <div
-                className="relative min-w-[840px]"
+                className="relative"
                 style={{
-                  height: scheduleCalendarHeight,
-                  display: 'grid',
-                  gridTemplateColumns: `${COVERAGE_TIME_AXIS_WIDTH}px repeat(7, minmax(104px, 1fr))`,
+                  minWidth: SCHEDULE_DAY_AXIS_WIDTH + scheduleTimelineWidth,
                 }}
               >
-                <div className="relative border-r border-white/10 bg-black/10">
-                  {timelineHours.map(minute => (
-                    <div
-                      key={minute}
-                      className="absolute left-0 right-0 -translate-y-2 px-3 text-right font-mono text-[11px] text-dash-tertiary"
-                      style={{ top: ((minute - calendarBounds.start) / 60) * SCHEDULE_PIXELS_PER_HOUR }}
-                    >
-                      {formatDisplayTime(minute)}
-                    </div>
-                  ))}
+                <div
+                  className="sticky top-0 z-20 grid border-b border-white/10 bg-[#12110f]"
+                  style={{ gridTemplateColumns: `${SCHEDULE_DAY_AXIS_WIDTH}px ${scheduleTimelineWidth}px` }}
+                >
+                  <div className="border-r border-white/10 px-3 py-3 text-xs font-semibold text-dash-tertiary">Day</div>
+                  <div className="relative h-11">
+                    {timelineHours.map(minute => (
+                      <div
+                        key={minute}
+                        className="absolute top-0 h-full border-l border-white/[0.08] pl-2 pt-3 font-mono text-[11px] text-dash-tertiary"
+                        style={{ left: ((minute - calendarBounds.start) / 60) * SCHEDULE_TIMELINE_PIXELS_PER_HOUR }}
+                      >
+                        {formatDisplayTime(minute)}
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 {SCHEDULING_DAYS.map((day, dayIndex) => {
                   const dayItems = itemsForDay(dayIndex)
                   const dayDiagnostics = diagnosticsForDay(dayIndex)
+                  const shiftLanes = Math.max(1, ...dayItems.map(item => item.layout_columns || 1))
+                  const rowHeight = Math.max(80, 16 + ((shiftLanes + dayDiagnostics.length) * SCHEDULE_LANE_HEIGHT))
                   return (
-                    <div key={day} className="relative border-r border-white/10 last:border-r-0">
-                      {timelineHours.map(minute => (
-                        <div
-                          key={minute}
-                          className="pointer-events-none absolute left-0 right-0 border-t border-white/[0.055]"
-                          style={{ top: ((minute - calendarBounds.start) / 60) * SCHEDULE_PIXELS_PER_HOUR }}
-                        />
-                      ))}
-                      {dayItems.map(item => {
-                        const start = item.layout_start ?? timeToMinutes(item.shift_start, calendarBounds.start)
-                        const end = item.layout_end ?? timeToMinutes(item.shift_end, start + 60)
-                        const top = ((start - calendarBounds.start) / 60) * SCHEDULE_PIXELS_PER_HOUR
-                        const height = Math.max(34, ((end - start) / 60) * SCHEDULE_PIXELS_PER_HOUR)
-                        const columns = item.layout_columns || 1
-                        const column = item.layout_column || 0
-                        const widthPercent = 100 / columns
-                        const isSelected = selectedShift?.id === item.id
-                        const personName = item.waiter_name || staff.find(person => person.id === item.waiter_id)?.name || 'Assigned staff'
-                        const roleKey = String(item.role || '').toLowerCase()
-                        const roleLabel = ROLE_SHORT_LABELS[roleKey] || item.role || 'Staff'
-                        const timeLabel = `${formatDisplayTime(item.shift_start)}-${formatDisplayTime(item.shift_end)}`
-                        return (
-                          <button
-                            type="button"
-                            key={item.id}
-                            title={`${personName} · ${roleLabel} · ${timeLabel}`}
-                            onClick={() => selectShift(item)}
-                            className={`absolute overflow-hidden rounded-lg border px-1 py-2 text-[11px] shadow-lg transition ${
-                              isSelected
-                                ? 'border-dash-gold bg-dash-gold/25'
-                                : 'border-dash-gold/30 bg-dash-gold/10 hover:border-dash-gold/70 hover:bg-dash-gold/15'
-                            }`}
-                            style={{
-                              top,
-                              height,
-                              left: `calc(${column * widthPercent}% + 3px)`,
-                              width: `calc(${widthPercent}% - 6px)`,
-                            }}
-                          >
-                            <span
-                              className="mx-auto flex h-full max-h-full items-center gap-2 whitespace-nowrap text-left font-semibold text-dash-cream"
-                              style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                    <div
+                      key={day}
+                      className="grid border-b border-white/[0.08] last:border-b-0"
+                      style={{ gridTemplateColumns: `${SCHEDULE_DAY_AXIS_WIDTH}px ${scheduleTimelineWidth}px` }}
+                    >
+                      <div className="sticky left-0 z-10 flex items-center border-r border-white/10 bg-[#12110f] px-3 text-sm font-semibold text-dash-secondary" style={{ height: rowHeight }}>
+                        {day}
+                      </div>
+                      <div className="relative" style={{ height: rowHeight }}>
+                        {timelineHours.map(minute => (
+                          <div
+                            key={minute}
+                            className="pointer-events-none absolute bottom-0 top-0 border-l border-white/[0.055]"
+                            style={{ left: ((minute - calendarBounds.start) / 60) * SCHEDULE_TIMELINE_PIXELS_PER_HOUR }}
+                          />
+                        ))}
+                        {dayItems.map(item => {
+                          const start = item.layout_start ?? timeToMinutes(item.shift_start, calendarBounds.start)
+                          const end = item.layout_end ?? timeToMinutes(item.shift_end, start + 60)
+                          const left = ((start - calendarBounds.start) / 60) * SCHEDULE_TIMELINE_PIXELS_PER_HOUR
+                          const width = Math.max(86, ((end - start) / 60) * SCHEDULE_TIMELINE_PIXELS_PER_HOUR - 8)
+                          const lane = item.layout_column || 0
+                          const isSelected = selectedShift?.id === item.id
+                          const personName = item.waiter_name || staff.find(person => person.id === item.waiter_id)?.name || 'Assigned staff'
+                          const roleKey = String(item.role || '').toLowerCase()
+                          const roleLabel = ROLE_SHORT_LABELS[roleKey] || item.role || 'Staff'
+                          const timeLabel = `${formatDisplayTime(item.shift_start)}-${formatDisplayTime(item.shift_end)}`
+                          return (
+                            <button
+                              type="button"
+                              key={item.id}
+                              title={`${personName} · ${roleLabel} · ${timeLabel}`}
+                              onClick={() => selectShift(item)}
+                              className={`absolute overflow-hidden rounded-lg border px-3 py-2 text-left text-[11px] shadow-lg transition ${
+                                isSelected
+                                  ? 'border-dash-gold bg-dash-gold/25'
+                                  : 'border-dash-gold/30 bg-dash-gold/10 hover:border-dash-gold/70 hover:bg-dash-gold/15'
+                              }`}
+                              style={{
+                                left,
+                                top: 8 + (lane * SCHEDULE_LANE_HEIGHT),
+                                width,
+                                height: 46,
+                              }}
                             >
-                              <span>{personName}</span>
-                              <span className="font-normal text-dash-secondary">{roleLabel}</span>
-                              <span className="font-mono font-normal text-dash-tertiary">{timeLabel}</span>
-                            </span>
-                          </button>
-                        )
-                      })}
-                      {dayDiagnostics.map((diagnostic, diagnosticIndex) => {
-                        const start = timeToMinutes(diagnostic.start_time, calendarBounds.start)
-                        const end = timeToMinutes(diagnostic.end_time, start + 60)
-                        const top = ((start - calendarBounds.start) / 60) * SCHEDULE_PIXELS_PER_HOUR
-                        const height = Math.max(34, ((end - start) / 60) * SCHEDULE_PIXELS_PER_HOUR)
-                        const timeLabel = `${formatDisplayTime(diagnostic.start_time)}-${formatDisplayTime(diagnostic.end_time)}`
-                        const severity = diagnostic.severity || 'medium'
-                        const isSelected = selectedDiagnostic === diagnostic
-                        return (
-                          <button
-                            type="button"
-                            key={`${diagnostic.role}-${diagnostic.shift_date || dayIndex}-${diagnostic.start_time}-${diagnosticIndex}`}
-                            title={`${diagnostic.role || 'Coverage'} gap · ${timeLabel}`}
-                            onClick={() => selectDiagnostic(diagnostic)}
-                            className={`absolute right-1 z-10 overflow-hidden rounded-lg border px-1 py-2 text-[11px] shadow-lg transition ${
-                              isSelected
-                                ? 'border-red-200 bg-red-300/25'
-                                : severity === 'high'
-                                  ? 'border-red-300/45 bg-red-300/15 hover:border-red-200/80'
-                                  : 'border-amber-300/45 bg-amber-300/15 hover:border-amber-200/80'
-                            }`}
-                            style={{
-                              top,
-                              height,
-                              width: '22px',
-                            }}
-                          >
-                            <span
-                              className="mx-auto flex h-full max-h-full items-center gap-2 whitespace-nowrap text-left font-semibold text-red-50"
-                              style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                              <span className="block truncate font-semibold text-dash-cream">{personName}</span>
+                              <span className="mt-0.5 flex min-w-0 items-center gap-2 whitespace-nowrap text-dash-secondary">
+                                <span className="truncate">{roleLabel}</span>
+                                <span className="font-mono text-dash-tertiary">{timeLabel}</span>
+                              </span>
+                            </button>
+                          )
+                        })}
+                        {dayDiagnostics.map((diagnostic, diagnosticIndex) => {
+                          const start = timeToMinutes(diagnostic.start_time, calendarBounds.start)
+                          const end = timeToMinutes(diagnostic.end_time, start + 60)
+                          const left = ((start - calendarBounds.start) / 60) * SCHEDULE_TIMELINE_PIXELS_PER_HOUR
+                          const width = Math.max(86, ((end - start) / 60) * SCHEDULE_TIMELINE_PIXELS_PER_HOUR - 8)
+                          const timeLabel = `${formatDisplayTime(diagnostic.start_time)}-${formatDisplayTime(diagnostic.end_time)}`
+                          const severity = diagnostic.severity || 'medium'
+                          const isSelected = selectedDiagnostic === diagnostic
+                          return (
+                            <button
+                              type="button"
+                              key={`${diagnostic.role}-${diagnostic.shift_date || dayIndex}-${diagnostic.start_time}-${diagnosticIndex}`}
+                              title={`${diagnostic.role || 'Coverage'} gap · ${timeLabel}`}
+                              onClick={() => selectDiagnostic(diagnostic)}
+                              className={`absolute z-10 overflow-hidden rounded-lg border px-3 py-2 text-left text-[11px] shadow-lg transition ${
+                                isSelected
+                                  ? 'border-red-200 bg-red-300/25'
+                                  : severity === 'high'
+                                    ? 'border-red-300/45 bg-red-300/15 hover:border-red-200/80'
+                                    : 'border-amber-300/45 bg-amber-300/15 hover:border-amber-200/80'
+                              }`}
+                              style={{
+                                left,
+                                top: 8 + ((shiftLanes + diagnosticIndex) * SCHEDULE_LANE_HEIGHT),
+                                width,
+                                height: 46,
+                              }}
                             >
-                              <span>{diagnostic.role || 'Gap'}</span>
-                              <span className="font-mono font-normal text-red-100/75">{timeLabel}</span>
-                            </span>
-                          </button>
-                        )
-                      })}
+                              <span className="block truncate font-semibold text-red-50">{diagnostic.role || 'Gap'} gap</span>
+                              <span className="mt-0.5 block truncate font-mono text-red-100/75">{timeLabel}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
                   )
                 })}

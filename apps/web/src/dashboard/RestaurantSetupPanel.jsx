@@ -878,7 +878,13 @@ function defaultCheckWorkflowSettings() {
     require_manager_for_reopen: true,
     allow_send_before_required_modifiers: false,
     allow_hold_and_fire: true,
-    default_order_fire_mode: 'manual',
+    default_order_fire_mode: 'immediate',
+    default_hold_minutes: '10',
+    hold_preset_minutes: [5, 10, 15],
+    allow_manual_hold: true,
+    allow_item_seat_move: true,
+    allow_multi_item_seat_move: true,
+    require_manager_for_item_move_after_send: false,
     print_guest_check_by_default: true,
     notes: '',
   }
@@ -1097,12 +1103,17 @@ function normalizeCloseoutSettings(row) {
 function normalizeCheckWorkflowSettings(row) {
   const fallback = defaultCheckWorkflowSettings()
   const source = row && typeof row === 'object' ? row : {}
+  const holdPresetMinutes = Array.isArray(source.hold_preset_minutes)
+    ? Array.from(new Set(source.hold_preset_minutes.map(Number).filter(minutes => Number.isFinite(minutes) && minutes > 0))).slice(0, 8)
+    : fallback.hold_preset_minutes
   return {
     ...fallback,
     ...source,
     max_split_count: source.max_split_count == null ? fallback.max_split_count : String(source.max_split_count).replace(/[^\d]/g, '').slice(0, 2) || fallback.max_split_count,
     default_preauth_amount: source.default_preauth_amount == null ? '' : sanitizeNumber(source.default_preauth_amount),
     default_order_fire_mode: ORDER_FIRE_MODE_OPTIONS.some(option => option.value === source.default_order_fire_mode) ? source.default_order_fire_mode : fallback.default_order_fire_mode,
+    default_hold_minutes: source.default_hold_minutes == null ? fallback.default_hold_minutes : String(source.default_hold_minutes).replace(/[^\d]/g, '').slice(0, 3) || fallback.default_hold_minutes,
+    hold_preset_minutes: holdPresetMinutes.length > 0 ? holdPresetMinutes : fallback.hold_preset_minutes,
     notes: source.notes || '',
   }
 }
@@ -1194,10 +1205,13 @@ function closeoutSettingsPayload(closeoutSettings) {
 
 function checkWorkflowSettingsPayload(checkWorkflowSettings) {
   const settings = normalizeCheckWorkflowSettings(checkWorkflowSettings)
+  const holdPresetMinutes = Array.from(new Set(settings.hold_preset_minutes.map(Number).filter(minutes => Number.isFinite(minutes) && minutes > 0))).slice(0, 8)
   return {
     ...settings,
     max_split_count: Math.max(1, Math.min(99, Number(settings.max_split_count || 8))),
     default_preauth_amount: settings.default_preauth_amount === '' ? null : Number(settings.default_preauth_amount),
+    default_hold_minutes: Math.max(1, Math.min(360, Number(settings.default_hold_minutes || 10))),
+    hold_preset_minutes: holdPresetMinutes.length > 0 ? holdPresetMinutes : defaultCheckWorkflowSettings().hold_preset_minutes,
     notes: settings.notes.trim() || null,
   }
 }
@@ -2586,6 +2600,23 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                     <option value="no">Print on request</option>
                   </SelectInput>
                 </Field>
+                <Field label="Default Hold Minutes">
+                  <TextInput value={checkWorkflowSettings.default_hold_minutes} inputMode="numeric" onChange={event => updateCheckWorkflowSettings({ default_hold_minutes: event.target.value.replace(/[^\d]/g, '').slice(0, 3) || '1' })} placeholder="10" />
+                </Field>
+                <Field label="Hold Presets">
+                  <TextInput
+                    value={(checkWorkflowSettings.hold_preset_minutes || []).join(', ')}
+                    inputMode="text"
+                    onChange={event => updateCheckWorkflowSettings({
+                      hold_preset_minutes: event.target.value
+                        .split(',')
+                        .map(part => Number(part.replace(/[^\d]/g, '')))
+                        .filter(minutes => Number.isFinite(minutes) && minutes > 0)
+                        .slice(0, 8),
+                    })}
+                    placeholder="5, 10, 15"
+                  />
+                </Field>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {[
@@ -2593,6 +2624,10 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   ['seat_number_required', 'Seats required'],
                   ['course_required', 'Course required'],
                   ['allow_hold_and_fire', 'Hold & fire'],
+                  ['allow_manual_hold', 'Manual hold'],
+                  ['allow_item_seat_move', 'Move item seat'],
+                  ['allow_multi_item_seat_move', 'Multi-move items'],
+                  ['require_manager_for_item_move_after_send', 'Manager after sent'],
                   ['allow_send_before_required_modifiers', 'Send without required modifiers'],
                 ].map(([field, label]) => (
                   <SmallButton key={field} variant={checkWorkflowSettings[field] ? 'primary' : 'secondary'} onClick={() => updateCheckWorkflowSettings({ [field]: !checkWorkflowSettings[field] })}>{label}</SmallButton>
