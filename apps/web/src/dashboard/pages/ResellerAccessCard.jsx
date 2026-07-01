@@ -10,6 +10,7 @@ import {
 
 const TAB_LABELS = {
   setup: 'Setup',
+  team: 'Team & pay',
   scheduling: 'Scheduling',
   messaging: 'Messaging',
   payments: 'Payments / Plan',

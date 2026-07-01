@@ -1,4 +1,5 @@
 import { supabase } from '../../shared/lib/supabase'
+import { queryClient, queryKeys, fetchWithSupabaseAuth } from '../../shared/query'
 
 export const PRICING_MODES = [
   { value: 'dual_pricing_posted_electronic', label: 'Dual pricing (posted electronic)' },
@@ -48,6 +49,31 @@ export async function fetchPendingRateRequests(restaurantIds) {
   return data || []
 }
 
+/**
+ * Rate plans are the single source of truth; the POS-facing pricing policy is
+ * a projection of them. Push the equivalent policy so dual pricing, labels,
+ * and disclosures update everywhere without re-entry. Non-fatal on failure —
+ * the plan row is saved regardless and the policy re-syncs on next save.
+ */
+export async function pushRatePlanToPricingPolicy(restaurantId, plan) {
+  try {
+    const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pricing-policy`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        enabled: plan.pricing_mode !== 'none' && plan.dual_pricing_enabled !== false,
+        mode: plan.pricing_mode,
+        rate: Number(plan.card_rate) || 0,
+        basis: plan.basis || 'subtotal_plus_tax',
+        applies_to: plan.applies_to || DEFAULT_RATE_PLAN.applies_to,
+      }),
+    })
+    queryClient.setQueryData(queryKeys.pricingPolicy(restaurantId), saved)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function upsertRatePlan(restaurantId, plan, userId) {
   const { data, error } = await supabase
     .from('restaurant_rate_plans')
@@ -66,6 +92,7 @@ export async function upsertRatePlan(restaurantId, plan, userId) {
     .select()
     .single()
   if (error) throw error
+  void pushRatePlanToPricingPolicy(restaurantId, plan)
   return data
 }
 
@@ -108,6 +135,32 @@ export async function resolveRateChangeRequest(request, status, userId) {
       },
       userId
     )
+  }
+}
+
+/**
+ * Reverse sync: when an owner edits pricing in Setup, mirror it into the rate
+ * plan so the reseller's Rates page reads the same numbers. Direct write (no
+ * policy push-back) to avoid a sync loop. Silent if the table isn't migrated.
+ */
+export async function syncRatePlanFromPricingPolicy(restaurantId, policy, userId) {
+  try {
+    await supabase
+      .from('restaurant_rate_plans')
+      .upsert(
+        {
+          restaurant_id: restaurantId,
+          card_rate: Number(policy.rate) || 0,
+          pricing_mode: policy.mode || 'none',
+          dual_pricing_enabled: policy.enabled !== false,
+          applies_to: policy.applies_to || DEFAULT_RATE_PLAN.applies_to,
+          basis: policy.basis || 'subtotal_plus_tax',
+          updated_by: userId || null,
+        },
+        { onConflict: 'restaurant_id' }
+      )
+  } catch {
+    // Rate plan table not migrated yet — pricing policy still saved.
   }
 }
 

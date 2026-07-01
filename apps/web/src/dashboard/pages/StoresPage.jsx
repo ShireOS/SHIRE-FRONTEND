@@ -1,9 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, LayoutGrid, List, Plus, Search } from 'lucide-react'
+import { Check, ChevronDown, Copy, FolderKanban, LayoutGrid, List, Plus, Search, Send, Store } from 'lucide-react'
 import { useAuth } from '../../auth'
 import { queryKeys, fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
+import BoardRestaurantModal from './BoardRestaurantModal'
+import StoreGroupsModal from './StoreGroupsModal'
+import ApplyToStoresModal from './ApplyToStoresModal'
+import { fetchStoreGroups } from '../data/storeGroups'
+import { fetchMyInvites, revokeInvite, claimUrl } from '../data/boarding'
 
 const ORDER_OPTIONS = [
   { value: 'name', label: 'Name A–Z' },
@@ -83,8 +88,29 @@ function StoreKpis({ restaurantId, layout = 'grid' }) {
   )
 }
 
-function StoreCard({ restaurant, layout, onOpen, onFinishSetup }) {
+function CopyLinkButton({ url }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(url)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1600)
+        } catch { /* clipboard unavailable */ }
+      }}
+      className="flex h-8 items-center gap-1.5 rounded-full border border-dash-border px-3 text-xs font-semibold text-dash-secondary transition hover:border-shell-accent/40 hover:text-shell-accent active:scale-[0.98]"
+    >
+      {copied ? <Check size={12} strokeWidth={2.5} aria-hidden="true" /> : <Copy size={12} strokeWidth={1.75} aria-hidden="true" />}
+      {copied ? 'Copied' : 'Copy claim link'}
+    </button>
+  )
+}
+
+function StoreCard({ restaurant, layout, onOpen, onFinishSetup, claimInvite, onRevokeInvite }) {
   const location = [restaurant.city, restaurant.state].filter(Boolean).join(', ')
+  const isDraft = restaurant.status === 'draft'
   const isActive = Boolean(restaurant.onboarding_completed_at)
 
   return (
@@ -108,17 +134,32 @@ function StoreCard({ restaurant, layout, onOpen, onFinishSetup }) {
           <span
             className={[
               'shrink-0 rounded-full px-2.5 py-1 font-mono text-[10px] uppercase tracking-eyebrow',
-              isActive
-                ? 'bg-dash-success/10 text-dash-success'
-                : 'bg-dash-warning/10 text-dash-warning',
+              isDraft
+                ? 'bg-shell-accent/10 text-shell-accent'
+                : isActive
+                  ? 'bg-dash-success/10 text-dash-success'
+                  : 'bg-dash-warning/10 text-dash-warning',
             ].join(' ')}
           >
-            {isActive ? 'Active' : 'Onboarding'}
+            {isDraft ? 'Awaiting claim' : isActive ? 'Active' : 'Onboarding'}
           </span>
         </div>
         <StoreKpis restaurantId={restaurant.id} layout={layout} />
       </button>
-      {!isActive && (
+      {isDraft ? (
+        <div className="flex flex-wrap items-center gap-2 border-t border-dash-border px-4 py-2.5">
+          {claimInvite && <CopyLinkButton url={claimUrl(claimInvite.token)} />}
+          {claimInvite && (
+            <button
+              type="button"
+              onClick={() => onRevokeInvite?.(claimInvite)}
+              className="text-xs font-semibold text-dash-tertiary transition hover:text-dash-danger"
+            >
+              Revoke
+            </button>
+          )}
+        </div>
+      ) : !isActive && (
         <div className="border-t border-dash-border px-4 py-2.5">
           <button
             type="button"
@@ -140,8 +181,51 @@ export default function StoresPage() {
 
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
+  const [groupFilter, setGroupFilter] = useState('all')
   const [orderBy, setOrderBy] = useState('name')
   const [layout, setLayout] = useState('grid')
+  const [groups, setGroups] = useState([])
+  const [invites, setInvites] = useState([])
+  const [modal, setModal] = useState(null) // 'board' | 'groups' | 'apply'
+
+  const canBoard = auth.accountType === 'reseller' || auth.accountType === 'admin'
+
+  const reloadGroups = useCallback(async () => {
+    if (!auth.user?.id) return
+    try {
+      setGroups(await fetchStoreGroups(auth.user.id))
+    } catch { /* migration not run yet */ }
+  }, [auth.user?.id])
+
+  const reloadInvites = useCallback(async () => {
+    if (!auth.user?.id || !canBoard) return
+    try {
+      setInvites(await fetchMyInvites(auth.user.id))
+    } catch { /* migration not run yet */ }
+  }, [auth.user?.id, canBoard])
+
+  useEffect(() => { void reloadGroups() }, [reloadGroups])
+  useEffect(() => { void reloadInvites() }, [reloadInvites])
+
+  const inviteByDraftId = useMemo(() => {
+    const map = {}
+    for (const invite of invites) {
+      if (invite.draft_restaurant_id) map[invite.draft_restaurant_id] = invite
+    }
+    return map
+  }, [invites])
+
+  const quickInvites = useMemo(
+    () => invites.filter((invite) => invite.kind === 'quick'),
+    [invites]
+  )
+
+  const handleRevoke = async (invite) => {
+    try {
+      await revokeInvite(invite.id)
+      await reloadInvites()
+    } catch { /* keep the card; next reload reflects reality */ }
+  }
 
   const types = useMemo(() => {
     const found = new Set(restaurants.map((r) => r.type).filter(Boolean))
@@ -150,8 +234,10 @@ export default function StoresPage() {
 
   const visible = useMemo(() => {
     const query = search.trim().toLowerCase()
+    const activeGroup = groups.find((group) => group.id === groupFilter)
     const filtered = restaurants.filter((restaurant) => {
       if (typeFilter !== 'all' && restaurant.type !== typeFilter) return false
+      if (activeGroup && !activeGroup.restaurantIds.has(restaurant.id)) return false
       if (!query) return true
       return [restaurant.name, restaurant.city, restaurant.state]
         .filter(Boolean)
@@ -166,7 +252,7 @@ export default function StoresPage() {
       }
       return (a.name || '').localeCompare(b.name || '')
     })
-  }, [restaurants, search, typeFilter, orderBy])
+  }, [restaurants, search, typeFilter, orderBy, groups, groupFilter])
 
   const openStore = async (restaurant) => {
     await auth.switchRestaurant(restaurant.id)
@@ -191,15 +277,37 @@ export default function StoresPage() {
           <p className="label-mono">Enterprise</p>
           <h1 className="mt-1 text-4xl font-semibold tracking-tight text-dash-cream">Stores</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            title="Store groups — coming soon"
-            aria-disabled="true"
-            className="h-9 cursor-default rounded-full border border-dash-border px-4 font-mono text-[11px] uppercase tracking-eyebrow text-dash-tertiary opacity-70"
-          >
-            Store groups · soon
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {restaurants.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setModal('groups')}
+              className="flex h-9 items-center gap-1.5 rounded-xl border border-dash-border px-3.5 text-sm font-semibold text-dash-secondary transition hover:border-shell-accent/40 hover:text-dash-cream active:scale-[0.98]"
+            >
+              <FolderKanban size={14} strokeWidth={1.75} aria-hidden="true" />
+              Store groups
+            </button>
+          )}
+          {restaurants.length > 1 && (
+            <button
+              type="button"
+              onClick={() => setModal('apply')}
+              className="flex h-9 items-center gap-1.5 rounded-xl border border-dash-border px-3.5 text-sm font-semibold text-dash-secondary transition hover:border-shell-accent/40 hover:text-dash-cream active:scale-[0.98]"
+            >
+              <Send size={14} strokeWidth={1.75} aria-hidden="true" />
+              Apply to stores
+            </button>
+          )}
+          {canBoard && (
+            <button
+              type="button"
+              onClick={() => setModal('board')}
+              className="flex h-9 items-center gap-1.5 rounded-xl border border-shell-accent/40 bg-shell-accent/10 px-3.5 text-sm font-semibold text-shell-accent transition hover:bg-shell-accent/20 active:scale-[0.98]"
+            >
+              <Store size={14} strokeWidth={1.75} aria-hidden="true" />
+              Board a restaurant
+            </button>
+          )}
           <Link
             to="/onboarding?new=1"
             className="flex h-9 items-center gap-1.5 rounded-xl bg-shell-cta px-4 text-sm font-medium text-shell-cta-text transition hover:opacity-90 active:scale-[0.98]"
@@ -229,6 +337,15 @@ export default function StoresPage() {
               label={type === 'all' ? 'All' : typeLabel(type)}
               isActive={typeFilter === type}
               onClick={() => setTypeFilter(type)}
+            />
+          ))}
+          {groups.length > 0 && <span className="h-5 w-px bg-dash-border" aria-hidden="true" />}
+          {groups.map((group) => (
+            <FilterPill
+              key={group.id}
+              label={group.name}
+              isActive={groupFilter === group.id}
+              onClick={() => setGroupFilter(groupFilter === group.id ? 'all' : group.id)}
             />
           ))}
         </div>
@@ -302,9 +419,57 @@ export default function StoresPage() {
               layout={layout}
               onOpen={() => void openStore(restaurant)}
               onFinishSetup={() => void finishSetup(restaurant)}
+              claimInvite={inviteByDraftId[restaurant.id] || null}
+              onRevokeInvite={(invite) => void handleRevoke(invite)}
             />
           ))}
         </section>
+      )}
+
+      {quickInvites.length > 0 && (
+        <section className="glass-card rounded-2xl p-4">
+          <p className="label-mono">Pending quick invites</p>
+          <div className="mt-2 space-y-2">
+            {quickInvites.map((invite) => (
+              <div key={invite.id} className="flex flex-wrap items-center gap-3 text-sm">
+                <span className="font-semibold text-dash-cream">{invite.email || invite.restaurant_name || 'Open invite'}</span>
+                <span className="label-mono !text-[9px]">expires {new Date(invite.expires_at).toLocaleDateString()}</span>
+                <span className="ml-auto flex items-center gap-2">
+                  <CopyLinkButton url={claimUrl(invite.token)} />
+                  <button
+                    type="button"
+                    onClick={() => void handleRevoke(invite)}
+                    className="text-xs font-semibold text-dash-tertiary transition hover:text-dash-danger"
+                  >
+                    Revoke
+                  </button>
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {modal === 'board' && (
+        <BoardRestaurantModal
+          onClose={() => { setModal(null); void reloadInvites() }}
+          onBoarded={() => void auth.refreshRestaurants()}
+        />
+      )}
+      {modal === 'groups' && (
+        <StoreGroupsModal
+          groups={groups}
+          restaurants={restaurants}
+          onClose={() => setModal(null)}
+          onChanged={reloadGroups}
+        />
+      )}
+      {modal === 'apply' && (
+        <ApplyToStoresModal
+          restaurants={restaurants.filter((restaurant) => restaurant.status !== 'draft')}
+          groups={groups}
+          onClose={() => setModal(null)}
+        />
       )}
     </div>
   )

@@ -5088,6 +5088,7 @@ export type Database = {
       profiles: {
         Row: {
           account_type: string | null
+          dashboard_prefs: Json | null
           avatar_url: string | null
           created_at: string | null
           first_name: string | null
@@ -5098,6 +5099,7 @@ export type Database = {
         }
         Insert: {
           account_type?: string | null
+          dashboard_prefs?: Json | null
           avatar_url?: string | null
           created_at?: string | null
           first_name?: string | null
@@ -5108,6 +5110,7 @@ export type Database = {
         }
         Update: {
           account_type?: string | null
+          dashboard_prefs?: Json | null
           avatar_url?: string | null
           created_at?: string | null
           first_name?: string | null

@@ -25,7 +25,12 @@ import RatesPage from './pages/RatesPage'
 import UsersPage from './pages/UsersPage'
 import RateApprovalBanner from './pages/RateApprovalBanner'
 import ResellerAccessCard from './pages/ResellerAccessCard'
+import OverviewPage from './pages/OverviewPage'
+import SettingsPage from './pages/SettingsPage'
+import TeamPage from './pages/TeamPage'
+import ClaimStorePage from './pages/ClaimStorePage'
 import { useAllowedStoreTabs } from './data/resellerAccess'
+import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
 
 function LoadingScreen() {
   return (
@@ -46,13 +51,21 @@ function OwnerGate() {
     return <Navigate to="/auth/login" replace />
   }
 
+  // A claim link survives the signup/login round-trip via localStorage.
+  const pendingClaim = localStorage.getItem(PENDING_CLAIM_STORAGE_KEY)
+  if (pendingClaim) {
+    return <Navigate to={`/claim/${pendingClaim}`} replace />
+  }
+
   // Resellers and admins live in the enterprise portal even with an empty
   // portfolio; only owners with no restaurants get sent to onboarding.
   if (auth.restaurant.restaurants.length === 0 && auth.accountType === 'owner') {
     return <Navigate to="/onboarding" replace />
   }
 
-  return <Navigate to="/enterprise/stores" replace />
+  const prefs = auth.profile?.dashboard_prefs
+  const landing = prefs && typeof prefs === 'object' ? prefs.default_landing : null
+  return <Navigate to={landing === 'overview' ? '/enterprise/overview' : '/enterprise/stores'} replace />
 }
 
 function ProtectedRoute({ children }) {
@@ -92,6 +105,7 @@ function EnterprisePage({ item, title, children }) {
 const TABS = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'setup', label: 'Edit Setup' },
+  { id: 'team', label: 'Team' },
   { id: 'scheduling', label: 'Scheduling' },
   { id: 'messaging', label: 'Messaging' },
   { id: 'payments', label: 'Payments / Plan' },
@@ -4283,6 +4297,7 @@ function RestaurantWorkspace() {
             <AnalyticsDashboard restaurant={restaurant} />
           </>
         )}
+        {activeTab === 'team' && <TeamPage restaurantId={restaurantId} />}
         {activeTab === 'scheduling' && <SchedulingPanel restaurantId={restaurantId} />}
         {activeTab === 'messaging' && <ManagerMessagingPanel restaurantId={restaurantId} />}
         {activeTab === 'payments' && (
@@ -4298,6 +4313,7 @@ function RestaurantWorkspace() {
 const WORKSPACE_BREADCRUMB_LABELS = {
   analytics: 'Overview',
   setup: 'Setup',
+  team: 'Team',
   scheduling: 'Scheduling',
   messaging: 'Messaging',
   payments: 'Payments / Plan',
@@ -4314,10 +4330,19 @@ export default function AuthenticatedDashboardApp() {
         <Route path="auth/callback" element={<AuthCallbackPage />} />
         <Route path="employee" element={<EmployeePortal />} />
         <Route path="onboarding" element={<OnboardingPage />} />
+        <Route path="claim/:token" element={<ClaimStorePage />} />
         <Route path="enterprise" element={<Navigate to="/enterprise/stores" replace />} />
+        <Route
+          path="enterprise/overview"
+          element={<EnterprisePage item="overview" title="Overview"><OverviewPage /></EnterprisePage>}
+        />
         <Route
           path="enterprise/stores"
           element={<EnterprisePage item="stores" title="Stores"><StoresPage /></EnterprisePage>}
+        />
+        <Route
+          path="enterprise/settings"
+          element={<EnterprisePage item="settings" title="Settings"><SettingsPage /></EnterprisePage>}
         />
         <Route
           path="enterprise/rates"

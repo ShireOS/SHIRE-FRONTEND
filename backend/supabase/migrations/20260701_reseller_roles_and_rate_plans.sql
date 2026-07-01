@@ -31,22 +31,6 @@ AS $$
   );
 $$;
 
--- Helper: is the current user an active reseller for a given restaurant?
-CREATE OR REPLACE FUNCTION public.is_reseller_for(target_restaurant_id uuid)
-RETURNS boolean
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = public
-STABLE
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.reseller_restaurants rr
-    WHERE rr.restaurant_id = target_restaurant_id
-      AND rr.reseller_id = auth.uid()
-      AND rr.status = 'active'
-  );
-$$;
-
 -- Admins can read every profile (Users management page).
 DROP POLICY IF EXISTS "Admins can view all profiles" ON public.profiles;
 CREATE POLICY "Admins can view all profiles"
@@ -76,6 +60,24 @@ CREATE TABLE IF NOT EXISTS public.reseller_restaurants (
 );
 
 ALTER TABLE public.reseller_restaurants ENABLE ROW LEVEL SECURITY;
+
+-- Helper: is the current user an active reseller for a given restaurant?
+-- Defined AFTER the table it references — Postgres validates SQL function
+-- bodies at creation time.
+CREATE OR REPLACE FUNCTION public.is_reseller_for(target_restaurant_id uuid)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.reseller_restaurants rr
+    WHERE rr.restaurant_id = target_restaurant_id
+      AND rr.reseller_id = auth.uid()
+      AND rr.status = 'active'
+  );
+$$;
 
 DROP POLICY IF EXISTS "Resellers can view their assignments" ON public.reseller_restaurants;
 CREATE POLICY "Resellers can view their assignments"

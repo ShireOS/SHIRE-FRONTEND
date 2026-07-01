@@ -7,6 +7,7 @@ import { normalizeFloorPlanTablesForEditor } from '../onboarding/components/Floo
 import { FloorPlanTableSetup } from '../onboarding/components/FloorPlanTableSetup'
 import { MenuEditor } from '../onboarding/components/MenuEditor'
 import { ModifierEditor } from '../onboarding/components/ModifierEditor'
+import { syncRatePlanFromPricingPolicy } from './data/ratePlans'
 
 const SETUP_TABS = [
   { id: 'basics', label: 'Basics' },
@@ -1651,6 +1652,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       })
       setPricingPolicy(normalizePricingPolicy(saved))
       queryClient.setQueryData(queryKeys.pricingPolicy(restaurantId), saved)
+      void syncRatePlanFromPricingPolicy(restaurantId, saved, auth?.user?.id)
       setSaveMessage('Saved pricing policy.')
       onSetupChanged?.()
     } catch (err) {

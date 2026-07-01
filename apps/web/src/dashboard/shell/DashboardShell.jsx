@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   Bell,
   Building2,
+  Gauge,
   CalendarClock,
   ChevronDown,
   CreditCard,
@@ -90,15 +91,25 @@ export function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
   }
 }
 
-const ACCOUNT_TYPE_LABELS = {
-  owner: 'Owner',
-  reseller: 'Reseller',
-  admin: 'Admin',
+// Derived from actual relationships so the label can't lie: an 'owner'
+// account that owns nothing but manages stores reads as Manager.
+function deriveRoleLabel(auth) {
+  if (auth.accountType === 'admin') return 'Admin'
+  if (auth.accountType === 'reseller') return 'Reseller'
+  const owned = (auth.restaurant.restaurants || []).some((r) => r.owner_id === auth.user?.id)
+  return owned ? 'Owner' : 'Manager'
+}
+
+function hiddenSurfaces(auth) {
+  const prefs = auth.profile?.dashboard_prefs
+  const hidden = prefs && typeof prefs === 'object' ? prefs.hidden_surfaces : null
+  return new Set(Array.isArray(hidden) ? hidden : [])
 }
 
 const STORE_NAV = [
   { id: 'analytics', label: 'Home', icon: Home },
   { id: 'setup', label: 'Setup', icon: Wrench },
+  { id: 'team', label: 'Team', icon: Users },
   { id: 'scheduling', label: 'Scheduling', icon: CalendarClock },
   { id: 'messaging', label: 'Messaging', icon: MessageSquare },
   { id: 'payments', label: 'Payments / Plan', icon: CreditCard },
@@ -249,6 +260,11 @@ export default function DashboardShell({
   const showRates = accountType === 'reseller' || accountType === 'admin'
   const showUsers = accountType === 'admin'
   const inStore = context === 'store' && Boolean(restaurant)
+  const roleLabel = deriveRoleLabel(auth)
+  const hidden = hiddenSurfaces(auth)
+  const storeNav = STORE_NAV.filter(
+    (item) => (!allowedStoreTabs || allowedStoreTabs.includes(item.id)) && !hidden.has(item.id)
+  )
 
   const initials = useMemo(() => {
     const first = auth.profile?.first_name?.[0] || auth.user?.email?.[0] || '?'
@@ -279,6 +295,12 @@ export default function DashboardShell({
           <div className="flex-1 overflow-y-auto px-2 pb-4">
             <SectionEyebrow>Enterprise</SectionEyebrow>
             <SidebarItem
+              icon={Gauge}
+              label="Overview"
+              isActive={activeItem === 'overview'}
+              onClick={() => navigate('/enterprise/overview')}
+            />
+            <SidebarItem
               icon={Building2}
               label="Stores"
               isActive={activeItem === 'stores'}
@@ -305,7 +327,7 @@ export default function DashboardShell({
             {inStore && (
               <>
                 <SectionEyebrow>{restaurant?.name || 'Current store'}</SectionEyebrow>
-                {STORE_NAV.filter((item) => !allowedStoreTabs || allowedStoreTabs.includes(item.id)).map((item) => (
+                {storeNav.map((item) => (
                   <SidebarItem
                     key={item.id}
                     icon={item.icon}
@@ -324,7 +346,12 @@ export default function DashboardShell({
           </div>
 
           <div className="border-t border-dash-border px-2 py-3">
-            <SidebarItem icon={Settings} label="Settings" soon />
+            <SidebarItem
+              icon={Settings}
+              label="Settings"
+              isActive={activeItem === 'settings'}
+              onClick={() => navigate('/enterprise/settings')}
+            />
           </div>
         </aside>
       )}
@@ -384,7 +411,7 @@ export default function DashboardShell({
               </span>
               <span className="hidden min-w-0 flex-col leading-tight sm:flex">
                 <span className="max-w-[140px] truncate text-xs font-semibold text-dash-cream">{displayName}</span>
-                <span className="label-mono !text-[9px]">{ACCOUNT_TYPE_LABELS[accountType] || 'Owner'}</span>
+                <span className="label-mono !text-[9px]">{roleLabel}</span>
               </span>
             </div>
             <button
