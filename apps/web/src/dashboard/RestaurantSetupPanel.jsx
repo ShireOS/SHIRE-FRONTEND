@@ -23,6 +23,7 @@ const SETUP_TABS = [
   { id: 'hours', label: 'Hours' },
   { id: 'capacity', label: 'Capacity / Floor Plan' },
   { id: 'menu_categories', label: 'Menu Categories' },
+  { id: 'specials', label: 'Specials' },
   { id: 'menu', label: 'Menu' },
   { id: 'modifiers', label: 'Modifiers' },
   { id: 'routing', label: 'Kitchen Routing' },
@@ -54,6 +55,31 @@ const CAPACITY_OPTIONS = [
 ]
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const DEFAULT_DAILY_SPECIAL_SETTINGS = {
+  enabled: true,
+  show_specials_lane: true,
+  show_in_source_categories: true,
+  manager_quick_pin_enabled: true,
+}
+const defaultSpecialDraft = () => ({
+  menu_item_id: '',
+  display_name: '',
+  note: '',
+  special_price: '',
+  schedule_kind: 'manual',
+  days_of_week: [1, 2, 3, 4, 5],
+  start_time: '11:00',
+  end_time: '',
+  start_date: '',
+  end_date: '',
+  cycle_anchor_date: '',
+  cycle_length_days: '',
+  cycle_day_number: '',
+  expires_at: '',
+  sort_order: 0,
+  is_active: true,
+})
 const DEFAULT_HOURS = [
   { day_of_week: 0, open_time: '11:00', close_time: '22:00', is_closed: true },
   { day_of_week: 1, open_time: '11:00', close_time: '22:00', is_closed: false },
@@ -1332,6 +1358,42 @@ function mapMenuItems(items) {
   }))
 }
 
+function normalizeDailySpecialSettings(config) {
+  const raw = config?.daily_specials && typeof config.daily_specials === 'object' ? config.daily_specials : {}
+  return { ...DEFAULT_DAILY_SPECIAL_SETTINGS, ...raw }
+}
+
+function mapDailySpecials(rows) {
+  return (Array.isArray(rows) ? rows : []).map(row => ({
+    ...row,
+    id: row.id,
+    menu_item_id: row.menu_item_id,
+    display_name: row.display_name || '',
+    note: row.note || '',
+    special_price: row.special_price == null ? '' : String(row.special_price),
+    schedule_kind: row.schedule_kind || 'manual',
+    days_of_week: Array.isArray(row.days_of_week) ? row.days_of_week : [0, 1, 2, 3, 4, 5, 6],
+    start_time: row.start_time ? String(row.start_time).slice(0, 5) : '',
+    end_time: row.end_time ? String(row.end_time).slice(0, 5) : '',
+    start_date: row.start_date || '',
+    end_date: row.end_date || '',
+    cycle_anchor_date: row.cycle_anchor_date || '',
+    cycle_length_days: row.cycle_length_days == null ? '' : String(row.cycle_length_days),
+    cycle_day_number: row.cycle_day_number == null ? '' : String(row.cycle_day_number),
+    expires_at: row.expires_at || '',
+    sort_order: Number(row.sort_order || 0),
+    is_active: row.is_active !== false,
+  }))
+}
+
+function isDailySpecialActiveNow(special) {
+  if (!special?.is_active) return false
+  if (special.expires_at && new Date(special.expires_at).getTime() <= Date.now()) return false
+  const today = new Date().getDay()
+  if (special.schedule_kind === 'weekly' && !special.days_of_week.includes(today)) return false
+  return true
+}
+
 export function buildSetupWarnings(restaurant, waiterCount = null, floorPlanStatus = null) {
   const warnings = {
     basics: [],
@@ -1411,6 +1473,10 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [floorPlanMode, setFloorPlanMode] = useState(null)
   const [menuItems, setMenuItems] = useState([])
   const [menuMode, setMenuMode] = useState(null)
+  const [specialsTab, setSpecialsTab] = useState('today')
+  const [dailySpecials, setDailySpecials] = useState([])
+  const [dailySpecialSettings, setDailySpecialSettings] = useState(() => normalizeDailySpecialSettings(restaurant.config))
+  const [specialDraft, setSpecialDraft] = useState(() => defaultSpecialDraft())
   const [waiters, setWaiters] = useState([])
   const [jobCodes, setJobCodes] = useState([])
   const [jobCodeDraft, setJobCodeDraft] = useState({ code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 100, is_active: true })
@@ -1440,6 +1506,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     setLegal(initialLegal(restaurant))
     setPayments(initialPayments(restaurant))
     setPricingPolicy(prev => normalizePricingPolicy({ ...prev, jurisdiction_state: prev.jurisdiction_state || restaurant.state || 'SC' }))
+    setDailySpecialSettings(normalizeDailySpecialSettings(restaurant.config))
     setServiceModel(initialServiceModel(restaurant))
     setSaveMessage('')
   }, [restaurant])
@@ -1451,6 +1518,154 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       0,
     )
     setMenuItems(mapMenuItems(rows))
+  }
+
+  const loadDailySpecials = async () => {
+    if (!restaurantId) return
+    const [specialResult, restaurantResult] = await Promise.all([
+      supabase
+        .from('pos_daily_specials')
+        .select('*')
+        .eq('restaurant_id', restaurantId)
+        .is('archived_at', null)
+        .order('sort_order', { ascending: true }),
+      supabase
+        .from('restaurants')
+        .select('config')
+        .eq('id', restaurantId)
+        .single(),
+    ])
+    if (specialResult.error) throw specialResult.error
+    if (restaurantResult.error) throw restaurantResult.error
+    setDailySpecials(mapDailySpecials(specialResult.data))
+    setDailySpecialSettings(normalizeDailySpecialSettings(restaurantResult.data?.config))
+  }
+
+  const auditDailySpecial = async (eventType, specialId, beforeData, afterData) => {
+    try {
+      await supabase.from('pos_daily_special_events').insert({
+        restaurant_id: restaurantId,
+        daily_special_id: specialId || null,
+        actor_name: auth?.user?.email || 'Owner dashboard',
+        event_type: eventType,
+        before_data: beforeData || null,
+        after_data: afterData || null,
+      })
+    } catch {
+      // Audit rows are helpful, but the saved special/settings row is the source of truth.
+    }
+  }
+
+  const saveDailySpecialSettings = async (patch) => {
+    if (!restaurantId) return
+    setIsSaving(true)
+    setSetupError('')
+    try {
+      const { data, error } = await supabase.from('restaurants').select('config').eq('id', restaurantId).single()
+      if (error) throw error
+      const currentConfig = data?.config && typeof data.config === 'object' ? data.config : {}
+      const beforeSettings = normalizeDailySpecialSettings(currentConfig)
+      const nextSettings = { ...beforeSettings, ...patch }
+      const nextConfig = { ...currentConfig, daily_specials: nextSettings }
+      const update = await supabase.from('restaurants').update({ config: nextConfig }).eq('id', restaurantId).select('config').single()
+      if (update.error) throw update.error
+      setDailySpecialSettings(nextSettings)
+      await auditDailySpecial('settings_updated', null, beforeSettings, nextSettings)
+      setSaveMessage('Daily Specials settings saved.')
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save Daily Specials settings.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const specialPayload = (draft) => ({
+    restaurant_id: restaurantId,
+    menu_item_id: draft.menu_item_id || null,
+    display_name: draft.display_name.trim() || null,
+    note: draft.note.trim() || null,
+    special_price: draft.special_price === '' ? null : Number(draft.special_price),
+    schedule_kind: draft.schedule_kind || 'manual',
+    days_of_week: draft.days_of_week,
+    start_time: draft.start_time || null,
+    end_time: draft.end_time || null,
+    start_date: draft.start_date || null,
+    end_date: draft.end_date || null,
+    cycle_anchor_date: draft.cycle_anchor_date || null,
+    cycle_length_days: draft.cycle_length_days === '' ? null : Number(draft.cycle_length_days),
+    cycle_day_number: draft.cycle_day_number === '' ? null : Number(draft.cycle_day_number),
+    expires_at: draft.expires_at ? new Date(draft.expires_at).toISOString() : null,
+    sort_order: Number(draft.sort_order || 0),
+    is_active: draft.is_active !== false,
+    created_by_name: auth?.user?.email || 'Owner dashboard',
+  })
+
+  const createDailySpecial = async () => {
+    if (!specialDraft.menu_item_id) {
+      setSetupError('Choose a base menu item first.')
+      return
+    }
+    setIsSaving(true)
+    setSetupError('')
+    try {
+      const payload = specialPayload(specialDraft)
+      const { data, error } = await supabase.from('pos_daily_specials').insert(payload).select('*').single()
+      if (error) throw error
+      await auditDailySpecial('created', data.id, null, data)
+      setSpecialDraft(defaultSpecialDraft())
+      await loadDailySpecials()
+      setSaveMessage('Daily special saved.')
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save daily special.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const updateDailySpecial = async (special, patch) => {
+    setIsSaving(true)
+    setSetupError('')
+    try {
+      const { data, error } = await supabase
+        .from('pos_daily_specials')
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq('id', special.id)
+        .eq('restaurant_id', restaurantId)
+        .select('*')
+        .single()
+      if (error) throw error
+      await auditDailySpecial('updated', special.id, special, data)
+      await loadDailySpecials()
+      setSaveMessage('Daily special updated.')
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not update daily special.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const archiveDailySpecial = async (special) => {
+    setIsSaving(true)
+    setSetupError('')
+    try {
+      const { error } = await supabase
+        .from('pos_daily_specials')
+        .update({ is_active: false, archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', special.id)
+        .eq('restaurant_id', restaurantId)
+      if (error) throw error
+      await auditDailySpecial('archived', special.id, special, null)
+      await loadDailySpecials()
+      setSaveMessage('Daily special archived.')
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not archive daily special.')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   // Reads go through the shared query cache: returning to this tab within the
@@ -1504,6 +1719,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setCheckWorkflowSettings(normalizeCheckWorkflowSettings(checkWorkflowData))
       setTipPayrollSettings(normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes))
       setPricingPolicy(normalizePricingPolicy(pricingPolicyData || { jurisdiction_state: restaurant.state || 'SC' }))
+      await loadDailySpecials()
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : 'Could not load setup data.')
     }
@@ -2125,6 +2341,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       </section>
     )
   }
+
+  const activeDailySpecials = dailySpecials.filter(isDailySpecialActiveNow)
+  const selectedDraftMenuItem = menuItems.find(item => item.id === specialDraft.menu_item_id)
 
   return (
     <div className="space-y-6">
@@ -3288,6 +3507,206 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               Add category
             </SmallButton>
           </div>
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'specials' && (
+        <SectionShell
+          title="Specials"
+          description="Configure daily specials as overlays on real menu items. The base item still carries tax, modifiers, kitchen routing, availability, and reporting."
+          actions={<SmallButton onClick={() => void loadDailySpecials()} disabled={isSaving}>Refresh</SmallButton>}
+        >
+          <div className="mb-5 flex flex-wrap gap-2">
+            {['today', 'schedule', 'settings'].map(tab => (
+              <SmallButton key={tab} variant={specialsTab === tab ? 'primary' : 'secondary'} onClick={() => setSpecialsTab(tab)}>
+                {tab === 'today' ? 'Today' : tab === 'schedule' ? 'Schedule' : 'Settings'}
+              </SmallButton>
+            ))}
+          </div>
+
+          {specialsTab === 'today' && (
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold">Active service set</h4>
+                {activeDailySpecials.length > 0 ? activeDailySpecials.map(special => {
+                  const baseItem = menuItems.find(item => item.id === special.menu_item_id)
+                  return (
+                    <div key={special.id} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-900">Special</span>
+                            <h4 className="font-semibold">{special.display_name || baseItem?.name || 'Daily special'}</h4>
+                          </div>
+                          <p className="mt-1 text-sm text-dash-secondary">{baseItem?.name || 'Base menu item'} · {baseItem?.category || 'Menu'}</p>
+                          {special.note && <p className="mt-2 text-sm text-dash-tertiary">{special.note}</p>}
+                        </div>
+                        <div className="text-right">
+                          <div className="text-lg font-semibold">${special.special_price || baseItem?.price || '0.00'}</div>
+                          <SmallButton variant={special.is_active ? 'primary' : 'secondary'} onClick={() => void updateDailySpecial(special, { is_active: !special.is_active })}>
+                            {special.is_active ? 'Active' : 'Paused'}
+                          </SmallButton>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }) : (
+                  <SetupEmptyState title="No active specials">
+                    Quick-pin a menu item for today or activate a scheduled special.
+                  </SetupEmptyState>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                <h4 className="text-sm font-semibold">Quick pin</h4>
+                <div className="mt-4 space-y-3">
+                  <Field label="Base menu item">
+                    <SelectInput
+                      value={specialDraft.menu_item_id}
+                      onChange={event => {
+                        const item = menuItems.find(row => row.id === event.target.value)
+                        setSpecialDraft(prev => ({
+                          ...prev,
+                          menu_item_id: event.target.value,
+                          display_name: prev.display_name || item?.name || '',
+                          special_price: prev.special_price || item?.price || '',
+                        }))
+                      }}
+                    >
+                      <option value="">Choose item...</option>
+                      {menuItems.map(item => <option key={item.id} value={item.id}>{item.name} · {item.category}</option>)}
+                    </SelectInput>
+                  </Field>
+                  <Field label="Display name">
+                    <TextInput value={specialDraft.display_name} onChange={event => setSpecialDraft(prev => ({ ...prev, display_name: event.target.value }))} placeholder={selectedDraftMenuItem?.name || 'Catch of the Day'} />
+                  </Field>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Special price">
+                      <TextInput inputMode="decimal" value={specialDraft.special_price} onChange={event => setSpecialDraft(prev => ({ ...prev, special_price: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))} placeholder="16.00" />
+                    </Field>
+                    <Field label="Expires">
+                      <TextInput type="datetime-local" value={specialDraft.expires_at} onChange={event => setSpecialDraft(prev => ({ ...prev, expires_at: event.target.value }))} />
+                    </Field>
+                  </div>
+                  <Field label="Note">
+                    <TextInput value={specialDraft.note} onChange={event => setSpecialDraft(prev => ({ ...prev, note: event.target.value }))} placeholder="Blackened mahi, lemon slaw" />
+                  </Field>
+                  <SmallButton variant="primary" onClick={() => void createDailySpecial()} disabled={isSaving || !dailySpecialSettings.enabled}>
+                    Pin special
+                  </SmallButton>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {specialsTab === 'schedule' && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr_120px_140px]">
+                  <Field label="Base item">
+                    <SelectInput value={specialDraft.menu_item_id} onChange={event => setSpecialDraft(prev => ({ ...prev, menu_item_id: event.target.value }))}>
+                      <option value="">Choose item...</option>
+                      {menuItems.map(item => <option key={item.id} value={item.id}>{item.name} · {item.category}</option>)}
+                    </SelectInput>
+                  </Field>
+                  <Field label="Special label">
+                    <TextInput value={specialDraft.display_name} onChange={event => setSpecialDraft(prev => ({ ...prev, display_name: event.target.value }))} placeholder="Tuesday Burger" />
+                  </Field>
+                  <Field label="Price">
+                    <TextInput inputMode="decimal" value={specialDraft.special_price} onChange={event => setSpecialDraft(prev => ({ ...prev, special_price: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))} />
+                  </Field>
+                  <Field label="Schedule">
+                    <SelectInput value={specialDraft.schedule_kind} onChange={event => setSpecialDraft(prev => ({ ...prev, schedule_kind: event.target.value }))}>
+                      <option value="manual">Manual</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="date_window">Date window</option>
+                      <option value="cycle">N-day cycle</option>
+                    </SelectInput>
+                  </Field>
+                </div>
+                {specialDraft.schedule_kind === 'weekly' && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {DAYS_SHORT.map((day, index) => (
+                      <SmallButton
+                        key={day}
+                        variant={specialDraft.days_of_week.includes(index) ? 'primary' : 'secondary'}
+                        onClick={() => setSpecialDraft(prev => ({
+                          ...prev,
+                          days_of_week: prev.days_of_week.includes(index)
+                            ? prev.days_of_week.filter(value => value !== index)
+                            : [...prev.days_of_week, index].sort(),
+                        }))}
+                      >
+                        {day}
+                      </SmallButton>
+                    ))}
+                  </div>
+                )}
+                {specialDraft.schedule_kind === 'date_window' && (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <Field label="Start date"><TextInput type="date" value={specialDraft.start_date} onChange={event => setSpecialDraft(prev => ({ ...prev, start_date: event.target.value }))} /></Field>
+                    <Field label="End date"><TextInput type="date" value={specialDraft.end_date} onChange={event => setSpecialDraft(prev => ({ ...prev, end_date: event.target.value }))} /></Field>
+                  </div>
+                )}
+                {specialDraft.schedule_kind === 'cycle' && (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                    <Field label="Anchor date"><TextInput type="date" value={specialDraft.cycle_anchor_date} onChange={event => setSpecialDraft(prev => ({ ...prev, cycle_anchor_date: event.target.value }))} /></Field>
+                    <Field label="Cycle days"><TextInput inputMode="numeric" value={specialDraft.cycle_length_days} onChange={event => setSpecialDraft(prev => ({ ...prev, cycle_length_days: event.target.value.replace(/\D/g, '').slice(0, 3) }))} /></Field>
+                    <Field label="Special day"><TextInput inputMode="numeric" value={specialDraft.cycle_day_number} onChange={event => setSpecialDraft(prev => ({ ...prev, cycle_day_number: event.target.value.replace(/\D/g, '').slice(0, 3) }))} /></Field>
+                  </div>
+                )}
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <Field label="Start time"><TextInput type="time" value={specialDraft.start_time} onChange={event => setSpecialDraft(prev => ({ ...prev, start_time: event.target.value }))} /></Field>
+                  <Field label="End time"><TextInput type="time" value={specialDraft.end_time} onChange={event => setSpecialDraft(prev => ({ ...prev, end_time: event.target.value }))} /></Field>
+                </div>
+                <div className="mt-3">
+                  <SmallButton variant="primary" onClick={() => void createDailySpecial()} disabled={isSaving || !specialDraft.menu_item_id}>Add scheduled special</SmallButton>
+                </div>
+              </div>
+
+              {dailySpecials.map(special => {
+                const baseItem = menuItems.find(item => item.id === special.menu_item_id)
+                return (
+                  <div key={special.id} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h4 className="font-semibold">{special.display_name || baseItem?.name || 'Daily special'}</h4>
+                        <p className="mt-1 text-sm text-dash-secondary">{baseItem?.name || 'Base item'} · {special.schedule_kind}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <SmallButton variant={special.is_active ? 'primary' : 'secondary'} onClick={() => void updateDailySpecial(special, { is_active: !special.is_active })}>{special.is_active ? 'Active' : 'Paused'}</SmallButton>
+                        <SmallButton variant="danger" onClick={() => void archiveDailySpecial(special)}>Archive</SmallButton>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {specialsTab === 'settings' && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                ['enabled', 'Enable location specials'],
+                ['show_specials_lane', 'Show Specials lane first'],
+                ['show_in_source_categories', 'Also show in source categories'],
+                ['manager_quick_pin_enabled', 'Allow manager quick pin'],
+              ].map(([field, label]) => (
+                <button
+                  key={field}
+                  type="button"
+                  onClick={() => void saveDailySpecialSettings({ [field]: !dailySpecialSettings[field] })}
+                  className={[
+                    'rounded-xl border p-4 text-left transition',
+                    dailySpecialSettings[field] ? 'border-dash-gold/60 bg-dash-gold/10' : 'border-white/10 bg-white/[0.025] hover:border-white/20',
+                  ].join(' ')}
+                >
+                  <span className="text-sm font-semibold">{label}</span>
+                  <span className="mt-1 block text-xs text-dash-tertiary">{dailySpecialSettings[field] ? 'On' : 'Off'}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </SectionShell>
       )}
 

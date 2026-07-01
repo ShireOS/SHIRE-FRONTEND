@@ -9,6 +9,7 @@ import StoreGroupsModal from './StoreGroupsModal'
 import ApplyToStoresModal from './ApplyToStoresModal'
 import { fetchStoreGroups } from '../data/storeGroups'
 import { fetchMyInvites, revokeInvite, claimUrl } from '../data/boarding'
+import { useAnalyticsSummary } from '../data/analyticsSummary'
 
 const ORDER_OPTIONS = [
   { value: 'name', label: 'Name A–Z' },
@@ -52,21 +53,37 @@ function FilterPill({ label, isActive, onClick }) {
   )
 }
 
-function StoreKpis({ restaurantId, layout = 'grid' }) {
+function StoreKpis({ restaurantId, layout = 'grid', summary, summaryFailed }) {
+  // Per-store fetch only as fallback when the batch summary is unavailable.
   const kpiQuery = useQuery({
     queryKey: queryKeys.ownerAnalytics(restaurantId, 'week'),
     queryFn: () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/owner-analytics?period=week`),
     staleTime: STALE_TIMES.analytics,
     retry: false,
+    enabled: Boolean(summaryFailed),
   })
 
   const revenue = kpiQuery.data?.sections?.revenue?.data || {}
   const visits = kpiQuery.data?.sections?.visits?.data || {}
+  const source = summary
+    ? {
+        net_sales: summary.net_sales ?? summary.total_revenue,
+        order_count: summary.order_count,
+        covers: summary.covers,
+        tips: summary.tips,
+      }
+    : {
+        net_sales: revenue.net_sales ?? revenue.total_revenue,
+        order_count: revenue.order_count,
+        covers: visits.covers,
+        tips: revenue.tips,
+      }
+  const pending = summary ? false : summaryFailed ? kpiQuery.isPending : true
   const kpis = [
-    { label: 'Net sales', value: formatMoney(revenue.net_sales ?? revenue.total_revenue) },
-    { label: 'Orders', value: formatCount(revenue.order_count) },
-    { label: 'Covers', value: formatCount(visits.covers) },
-    { label: 'Tips', value: formatMoney(revenue.tips) },
+    { label: 'Net sales', value: formatMoney(source.net_sales) },
+    { label: 'Orders', value: formatCount(source.order_count) },
+    { label: 'Covers', value: formatCount(source.covers) },
+    { label: 'Tips', value: formatMoney(source.tips) },
   ]
 
   return (
@@ -79,7 +96,7 @@ function StoreKpis({ restaurantId, layout = 'grid' }) {
       {kpis.map((kpi) => (
         <div key={kpi.label} className="min-w-0">
           <p className="truncate label-mono !text-[10px] normal-nums">{kpi.label}</p>
-          <p className={`truncate font-mono text-sm tabular-nums text-dash-cream ${kpiQuery.isPending ? 'opacity-40' : ''}`}>
+          <p className={`truncate font-mono text-sm tabular-nums text-dash-cream ${pending ? 'opacity-40' : ''}`}>
             {kpi.value}
           </p>
         </div>
@@ -108,7 +125,7 @@ function CopyLinkButton({ url }) {
   )
 }
 
-function StoreCard({ restaurant, layout, onOpen, onFinishSetup, claimInvite, onRevokeInvite }) {
+function StoreCard({ restaurant, layout, onOpen, onFinishSetup, claimInvite, onRevokeInvite, summary, summaryFailed }) {
   const location = [restaurant.city, restaurant.state].filter(Boolean).join(', ')
   const isDraft = restaurant.status === 'draft'
   const isActive = Boolean(restaurant.onboarding_completed_at)
@@ -144,7 +161,7 @@ function StoreCard({ restaurant, layout, onOpen, onFinishSetup, claimInvite, onR
             {isDraft ? 'Awaiting claim' : isActive ? 'Active' : 'Onboarding'}
           </span>
         </div>
-        <StoreKpis restaurantId={restaurant.id} layout={layout} />
+        <StoreKpis restaurantId={restaurant.id} layout={layout} summary={summary} summaryFailed={summaryFailed} />
       </button>
       {isDraft ? (
         <div className="flex flex-wrap items-center gap-2 border-t border-dash-border px-4 py-2.5">
@@ -206,6 +223,8 @@ export default function StoresPage() {
 
   useEffect(() => { void reloadGroups() }, [reloadGroups])
   useEffect(() => { void reloadInvites() }, [reloadInvites])
+
+  const kpiSummary = useAnalyticsSummary(restaurants.map((r) => r.id), 'week')
 
   const inviteByDraftId = useMemo(() => {
     const map = {}
@@ -421,6 +440,8 @@ export default function StoresPage() {
               onFinishSetup={() => void finishSetup(restaurant)}
               claimInvite={inviteByDraftId[restaurant.id] || null}
               onRevokeInvite={(invite) => void handleRevoke(invite)}
+              summary={kpiSummary.data?.restaurants?.[restaurant.id] || null}
+              summaryFailed={kpiSummary.isError}
             />
           ))}
         </section>

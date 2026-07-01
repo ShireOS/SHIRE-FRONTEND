@@ -4,6 +4,7 @@ import { useQueries } from '@tanstack/react-query'
 import { useAuth } from '../../auth'
 import { queryKeys, fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
 import { fetchStoreGroups } from '../data/storeGroups'
+import { useAnalyticsSummary } from '../data/analyticsSummary'
 
 const PERIODS = [
   { id: 'day', label: 'Day' },
@@ -56,29 +57,60 @@ export default function OverviewPage() {
     return group ? allRestaurants.filter((r) => group.restaurantIds.has(r.id)) : allRestaurants
   }, [allRestaurants, groups, groupFilter])
 
-  const analyticsQueries = useQueries({
-    queries: restaurants.map((restaurant) => ({
-      queryKey: queryKeys.ownerAnalytics(restaurant.id, period),
-      queryFn: () => fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/owner-analytics?period=${period}`),
-      staleTime: STALE_TIMES.analytics,
-      retry: false,
-    })),
+  // One batched request for every store; per-store fallback only if the
+  // deployed backend predates the summary endpoint.
+  const summaryQuery = useAnalyticsSummary(restaurants.map((r) => r.id), period)
+  const useFallback = summaryQuery.isError
+
+  const fallbackQueries = useQueries({
+    queries: useFallback
+      ? restaurants.map((restaurant) => ({
+          queryKey: queryKeys.ownerAnalytics(restaurant.id, period),
+          queryFn: () => fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/owner-analytics?period=${period}`),
+          staleTime: STALE_TIMES.analytics,
+          retry: false,
+        }))
+      : [],
   })
 
   const rows = restaurants.map((restaurant, index) => {
-    const payload = analyticsQueries[index]?.data
-    const revenue = payload?.sections?.revenue?.data || {}
-    const visits = payload?.sections?.visits?.data || {}
-    const staff = payload?.sections?.staff?.data || payload?.sections?.labor?.data || {}
-    const netSales = revenue.net_sales ?? revenue.total_revenue ?? null
-    const laborCost = staff.labor_cost ?? null
+    let netSales = null
+    let orders = null
+    let covers = null
+    let tips = null
+    let laborCost = null
+    let loading
+
+    if (useFallback) {
+      const payload = fallbackQueries[index]?.data
+      const revenue = payload?.sections?.revenue?.data || {}
+      const visits = payload?.sections?.visits?.data || {}
+      const staff = payload?.sections?.staff?.data || payload?.sections?.labor?.data || {}
+      loading = fallbackQueries[index]?.isPending
+      netSales = revenue.net_sales ?? revenue.total_revenue ?? null
+      orders = revenue.order_count ?? null
+      covers = visits.covers ?? null
+      tips = revenue.tips ?? null
+      laborCost = staff.labor_cost ?? null
+    } else {
+      const summary = summaryQuery.data?.restaurants?.[restaurant.id]
+      loading = summaryQuery.isPending
+      if (summary) {
+        netSales = summary.net_sales ?? summary.total_revenue ?? null
+        orders = summary.order_count ?? null
+        covers = summary.covers ?? null
+        tips = summary.tips ?? null
+        laborCost = summary.labor_cost ?? null
+      }
+    }
+
     return {
       restaurant,
-      loading: analyticsQueries[index]?.isPending,
+      loading,
       netSales,
-      orders: revenue.order_count ?? null,
-      covers: visits.covers ?? null,
-      tips: revenue.tips ?? null,
+      orders,
+      covers,
+      tips,
       laborCost,
       margin: netSales != null && laborCost != null && num(netSales) > 0
         ? (num(netSales) - num(laborCost)) / num(netSales)
