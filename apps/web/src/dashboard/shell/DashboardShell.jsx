@@ -237,6 +237,7 @@ export default function DashboardShell({
   restaurant = null,
   restaurantId = null,
   setupWarningCount = 0,
+  allowedStoreTabs = null, // null = all; array = owner-configured reseller visibility
   children,
 }) {
   const auth = useAuth()
@@ -304,7 +305,7 @@ export default function DashboardShell({
             {inStore && (
               <>
                 <SectionEyebrow>{restaurant?.name || 'Current store'}</SectionEyebrow>
-                {STORE_NAV.map((item) => (
+                {STORE_NAV.filter((item) => !allowedStoreTabs || allowedStoreTabs.includes(item.id)).map((item) => (
                   <SidebarItem
                     key={item.id}
                     icon={item.icon}

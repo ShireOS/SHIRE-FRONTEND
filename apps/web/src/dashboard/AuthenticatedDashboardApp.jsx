@@ -24,6 +24,8 @@ import StoresPage from './pages/StoresPage'
 import RatesPage from './pages/RatesPage'
 import UsersPage from './pages/UsersPage'
 import RateApprovalBanner from './pages/RateApprovalBanner'
+import ResellerAccessCard from './pages/ResellerAccessCard'
+import { useAllowedStoreTabs } from './data/resellerAccess'
 
 function LoadingScreen() {
   return (
@@ -4154,6 +4156,7 @@ function RestaurantWorkspace() {
   const [waiterCount, setWaiterCount] = useState(null)
   const [floorPlanStatus, setFloorPlanStatus] = useState(null)
   const [setupRefreshKey, setSetupRefreshKey] = useState(0)
+  const allowedStoreTabs = useAllowedStoreTabs(restaurant)
 
   const setupWarnings = useMemo(
     () => buildModernSetupWarnings(restaurant || {}, waiterCount, floorPlanStatus),
@@ -4220,6 +4223,11 @@ function RestaurantWorkspace() {
     )
   }
 
+  // Resellers only reach owner-permitted tabs; deep links bounce to Home.
+  if (allowedStoreTabs && !allowedStoreTabs.includes(activeTab)) {
+    return <Navigate to={`/restaurants/${restaurantId}/analytics`} replace />
+  }
+
   const breadcrumb = [
     { label: 'Home', to: `/restaurants/${restaurantId}/analytics` },
     { label: WORKSPACE_BREADCRUMB_LABELS[activeTab] || 'Overview' },
@@ -4243,6 +4251,7 @@ function RestaurantWorkspace() {
           restaurant={restaurant}
           restaurantId={restaurantId}
           setupWarningCount={modernWarningCount(setupWarnings || {})}
+          allowedStoreTabs={allowedStoreTabs}
         >
           <ModernRestaurantSetupPanel
             restaurant={restaurant}
@@ -4265,10 +4274,12 @@ function RestaurantWorkspace() {
         restaurant={restaurant}
         restaurantId={restaurantId}
         setupWarningCount={modernWarningCount(setupWarnings || {})}
+        allowedStoreTabs={allowedStoreTabs}
       >
         {activeTab === 'analytics' && (
           <>
             <RateApprovalBanner restaurant={restaurant} />
+            <ResellerAccessCard restaurant={restaurant} />
             <AnalyticsDashboard restaurant={restaurant} />
           </>
         )}

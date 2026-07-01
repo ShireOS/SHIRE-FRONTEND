@@ -67,6 +67,9 @@ CREATE TABLE IF NOT EXISTS public.reseller_restaurants (
   reseller_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   restaurant_id uuid NOT NULL REFERENCES public.restaurants(id) ON DELETE CASCADE,
   status text NOT NULL DEFAULT 'active', -- active, suspended
+  -- Owner-configurable visibility. Analytics (profit breakdowns) and rate/payout
+  -- data are mandatory for resellers and intentionally NOT represented here.
+  permissions jsonb NOT NULL DEFAULT '{"setup": true, "scheduling": false, "messaging": false, "payments": false}',
   assigned_by uuid REFERENCES public.profiles(id),
   created_at timestamptz DEFAULT now(),
   UNIQUE(reseller_id, restaurant_id)
@@ -95,6 +98,17 @@ CREATE POLICY "Admins manage reseller assignments"
   ON public.reseller_restaurants FOR ALL
   USING (public.is_platform_admin())
   WITH CHECK (public.is_platform_admin());
+
+-- Owners tune what their resellers can see (the permissions column).
+DROP POLICY IF EXISTS "Owners can update reseller permissions" ON public.reseller_restaurants;
+CREATE POLICY "Owners can update reseller permissions"
+  ON public.reseller_restaurants FOR UPDATE
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.restaurants r
+      WHERE r.id = restaurant_id AND r.owner_id = auth.uid()
+    )
+  );
 
 
 -- 3. RESTAURANT VISIBILITY FOR RESELLERS / ADMINS
