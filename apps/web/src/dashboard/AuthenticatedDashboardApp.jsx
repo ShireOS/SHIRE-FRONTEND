@@ -11,8 +11,10 @@ import {
   AuthCallbackPage,
 } from '../auth'
 import { OnboardingPage } from '../onboarding'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { supabase } from '../shared/lib/supabase'
 import { API_CONFIG } from '../shared/api/config'
+import { queryClient, queryKeys, fetchCached, fetchWithSupabaseAuth, STALE_TIMES } from '../shared/query'
 import ModernRestaurantSetupPanel, {
   buildSetupWarnings as buildModernSetupWarnings,
   warningCount as modernWarningCount,
@@ -294,29 +296,22 @@ function MiniTable({ columns, rows }) {
 
 function AnalyticsDashboard({ restaurant }) {
   const [period, setPeriod] = useState('week')
-  const [payload, setPayload] = useState(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState('')
+  const restaurantId = restaurant?.id
 
-  useEffect(() => {
-    if (!restaurant?.id) return
-    let cancelled = false
-    setIsLoading(true)
-    setError('')
-    fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/owner-analytics?period=${period}`)
-      .then(data => {
-        if (!cancelled) setPayload(data)
-      })
-      .catch(err => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load analytics')
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [restaurant?.id, period])
+  // Cached per restaurant + period; keepPreviousData keeps the current numbers
+  // on screen while a new period loads instead of flashing a spinner.
+  const analyticsQuery = useQuery({
+    queryKey: queryKeys.ownerAnalytics(restaurantId, period),
+    queryFn: () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/owner-analytics?period=${period}`),
+    enabled: Boolean(restaurantId),
+    staleTime: STALE_TIMES.analytics,
+    placeholderData: keepPreviousData,
+  })
+  const payload = analyticsQuery.data ?? null
+  const isLoading = analyticsQuery.isPending
+  const error = analyticsQuery.error
+    ? (analyticsQuery.error instanceof Error ? analyticsQuery.error.message : 'Could not load analytics')
+    : ''
 
   const sections = payload?.sections || {}
   const revenue = sections.revenue || {}
@@ -557,31 +552,6 @@ function AnalyticsDashboard({ restaurant }) {
       )}
     </div>
   )
-}
-
-async function fetchWithSupabaseAuth(endpoint, options = {}) {
-  const { data: sessionData } = await supabase.auth.getSession()
-  const token = sessionData?.session?.access_token
-  const headers = new Headers(options.headers || {})
-  headers.set('Content-Type', 'application/json')
-  if (token) headers.set('Authorization', `Bearer ${token}`)
-
-  const response = await fetch(`${API_CONFIG.baseUrl}${endpoint}`, {
-    ...options,
-    headers,
-  })
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}))
-    const detail = body.detail || body.message
-    const message = typeof detail === 'string'
-      ? detail
-      : detail
-        ? JSON.stringify(detail)
-        : `Request failed (${response.status})`
-    throw new Error(message)
-  }
-  if (response.status === 204) return null
-  return response.json()
 }
 
 const SCHEDULING_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -851,33 +821,57 @@ function SchedulingPanel({ restaurantId }) {
   const autoScrolledScheduleRef = useRef('')
   const draftBlockRef = useRef(null)
 
-  const loadCoverageBlocks = async () => {
-    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements/blocks`)
+  // Reads are cached in the shared query cache so tab switches don't re-hit
+  // the API; pass force=true after a write to refresh from the server.
+  const schedulingRead = (key, fn, force) => fetchCached(key, fn, force ? 0 : STALE_TIMES.scheduling)
+
+  const loadCoverageBlocks = async (force = false) => {
+    const data = await schedulingRead(
+      queryKeys.staffingBlocks(restaurantId),
+      () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements/blocks`),
+      force,
+    )
     setCoverageBlocks(Array.isArray(data) ? data : [])
     return data
   }
 
-  const loadSuggestedBlocks = async () => {
-    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements/suggestions`)
+  const loadSuggestedBlocks = async (force = false) => {
+    const data = await schedulingRead(
+      queryKeys.staffingSuggestions(restaurantId),
+      () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/staffing-requirements/suggestions`),
+      force,
+    )
     setSuggestedBlocks(Array.isArray(data) ? data : [])
     return data
   }
 
-  const loadSchedules = async (targetWeekStart = weekStart) => {
+  const loadSchedules = async (targetWeekStart = weekStart, force = false) => {
     const query = targetWeekStart ? `?week_start=${targetWeekStart}&limit=5` : '?limit=5'
-    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/schedules${query}`)
+    const data = await schedulingRead(
+      queryKeys.schedules(restaurantId, query),
+      () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/schedules${query}`),
+      force,
+    )
     setSchedules(Array.isArray(data) ? data : [])
     return data
   }
 
-  const loadStaff = async () => {
-    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`)
+  const loadStaff = async (force = false) => {
+    const data = await schedulingRead(
+      queryKeys.waiters(restaurantId),
+      () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`),
+      force,
+    )
     setStaff(Array.isArray(data) ? data : [])
     return data
   }
 
-  const loadRequestPolicy = async () => {
-    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/employee-request-policy`)
+  const loadRequestPolicy = async (force = false) => {
+    const data = await schedulingRead(
+      queryKeys.employeeRequestPolicy(restaurantId),
+      () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/employee-request-policy`),
+      force,
+    )
     setRequestPolicy(data)
     setOptimizationWeights({
       ...DEFAULT_OPTIMIZATION_WEIGHTS,
@@ -886,14 +880,22 @@ function SchedulingPanel({ restaurantId }) {
     return data
   }
 
-  const loadEmployeeRequests = async () => {
-    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/employee-requests?status=all`)
+  const loadEmployeeRequests = async (force = false) => {
+    const data = await schedulingRead(
+      queryKeys.employeeRequests(restaurantId, 'all'),
+      () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/employee-requests?status=all`),
+      force,
+    )
     setEmployeeRequests(Array.isArray(data) ? data : [])
     return data
   }
 
-  const loadShiftTradeRequests = async () => {
-    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/shift-trade-requests?status=pending_manager`)
+  const loadShiftTradeRequests = async (force = false) => {
+    const data = await schedulingRead(
+      queryKeys.shiftTradeRequests(restaurantId, 'pending_manager'),
+      () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/shift-trade-requests?status=pending_manager`),
+      force,
+    )
     setShiftTradeRequests(Array.isArray(data) ? data : [])
     return data
   }
@@ -928,7 +930,7 @@ function SchedulingPanel({ restaurantId }) {
         original_end_time: form.original_end_time,
       }),
     })
-    const updated = await loadCoverageBlocks()
+    const updated = await loadCoverageBlocks(true)
     if (options.keepEditor) {
       setCoverageForm({
         ...form,
@@ -973,7 +975,7 @@ function SchedulingPanel({ restaurantId }) {
           }),
         })
       }
-      await loadCoverageBlocks()
+      await loadCoverageBlocks(true)
       setStatus(`Generated ${missingBlocks.length} default coverage block${missingBlocks.length === 1 ? '' : 's'}.`)
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Could not generate default coverage blocks')
@@ -1158,7 +1160,7 @@ function SchedulingPanel({ restaurantId }) {
         method: 'POST',
         body: JSON.stringify(body),
       })
-      await loadSchedules(weekStart || run.week_start_date)
+      await loadSchedules(weekStart || run.week_start_date, true)
       setWeekStart(weekStart || run.week_start_date)
       setActiveSchedulingTab('schedule')
       setStatus(run.run_status === 'completed' ? 'Draft schedule generated.' : `Schedule run ${run.run_status}.`)
@@ -1174,7 +1176,7 @@ function SchedulingPanel({ restaurantId }) {
         method: 'POST',
       })
       setCoverageBlocks(Array.isArray(data) ? data : [])
-      await loadSuggestedBlocks()
+      await loadSuggestedBlocks(true)
       setCoverageForm(emptyCoverageBlockForm)
       setStatus('Coverage suggestions recalculated.')
     } catch (err) {
@@ -1189,7 +1191,7 @@ function SchedulingPanel({ restaurantId }) {
         method: 'PATCH',
         body: JSON.stringify({ status: nextStatus }),
       })
-      await Promise.all([loadEmployeeRequests(), loadStaff()])
+      await Promise.all([loadEmployeeRequests(true), loadStaff(true)])
       setStatus(nextStatus === 'approved' ? 'Request approved.' : 'Request updated.')
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Could not update request')
@@ -1203,7 +1205,7 @@ function SchedulingPanel({ restaurantId }) {
         method: 'PATCH',
         body: JSON.stringify({ status: nextStatus }),
       })
-      await Promise.all([loadShiftTradeRequests(), loadSchedules(activeSchedule?.week_start_date || weekStart), loadStaff()])
+      await Promise.all([loadShiftTradeRequests(true), loadSchedules(activeSchedule?.week_start_date || weekStart, true), loadStaff(true)])
       setStatus(nextStatus === 'approved' ? 'Shift trade approved and schedule updated.' : 'Shift trade updated.')
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Could not update shift trade')
@@ -1247,7 +1249,7 @@ function SchedulingPanel({ restaurantId }) {
           notes: shiftForm.notes || null,
         }),
       })
-      await loadSchedules(activeSchedule?.week_start_date || weekStart)
+      await loadSchedules(activeSchedule?.week_start_date || weekStart, true)
       setSelectedShift(null)
       setShiftForm(null)
       setStatus('Shift saved.')
@@ -1261,7 +1263,7 @@ function SchedulingPanel({ restaurantId }) {
     setStatus('Removing shift...')
     try {
       await fetchWithSupabaseAuth(`/schedule-items/${selectedShift.id}`, { method: 'DELETE' })
-      await loadSchedules(activeSchedule?.week_start_date || weekStart)
+      await loadSchedules(activeSchedule?.week_start_date || weekStart, true)
       setSelectedShift(null)
       setShiftForm(null)
       setStatus('Shift removed.')
@@ -1301,7 +1303,7 @@ function SchedulingPanel({ restaurantId }) {
           end_time: coverageForm.original_end_time,
         }),
       })
-      await loadCoverageBlocks()
+      await loadCoverageBlocks(true)
       setCoverageForm(emptyCoverageBlockForm)
       setStatus('Coverage block removed.')
     } catch (err) {
@@ -1321,7 +1323,7 @@ function SchedulingPanel({ restaurantId }) {
           end_time: form.original_end_time,
         }),
       })
-      await loadCoverageBlocks()
+      await loadCoverageBlocks(true)
       if (coverageForm.key === form.key) setCoverageForm(emptyCoverageBlockForm)
       setCoverageMenu(null)
       setStatus('Coverage block removed.')
@@ -1538,8 +1540,8 @@ function SchedulingPanel({ restaurantId }) {
         }),
       })
       setNote('')
-      if (result?.applied_coverage_block || result?.applied_coverage_closure) await loadCoverageBlocks()
-      if (result?.applied_request_id) await loadEmployeeRequests()
+      if (result?.applied_coverage_block || result?.applied_coverage_closure) await loadCoverageBlocks(true)
+      if (result?.applied_request_id) await loadEmployeeRequests(true)
       if (result?.applied_message) {
         setNoteStatus(result.applied_message)
         setNoteStatusKind('success')
@@ -1933,7 +1935,7 @@ function SchedulingPanel({ restaurantId }) {
               <h3 className="text-lg font-semibold">Approvals</h3>
               <p className="mt-1 text-sm text-dash-secondary">Approve employee-to-employee shift trades after both staff members agree.</p>
             </div>
-            <button type="button" onClick={() => void loadShiftTradeRequests()} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Refresh</button>
+            <button type="button" onClick={() => void loadShiftTradeRequests(true)} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Refresh</button>
           </div>
           <div className="mt-5 space-y-3">
             {shiftTradeRequests.length === 0 ? (
@@ -1983,7 +1985,7 @@ function SchedulingPanel({ restaurantId }) {
               <h3 className="text-lg font-semibold">Employee Requests</h3>
               <p className="mt-1 text-sm text-dash-secondary">Review time off, preferred shifts, availability exceptions, and requested weekly-hour changes.</p>
             </div>
-            <button type="button" onClick={() => void loadEmployeeRequests()} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Refresh</button>
+            <button type="button" onClick={() => void loadEmployeeRequests(true)} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Refresh</button>
           </div>
 
           <div className="mt-5 space-y-3">
@@ -3136,9 +3138,21 @@ function ManagerMessagingPanel({ restaurantId }) {
 
   const loadMessaging = async () => {
     const [staffRows, conversationRows, announcementRows] = await Promise.all([
-      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`),
-      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations`),
-      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/announcements`),
+      fetchCached(
+        queryKeys.waiters(restaurantId),
+        () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`),
+        STALE_TIMES.setup,
+      ),
+      fetchCached(
+        queryKeys.conversations(restaurantId),
+        () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations`),
+        STALE_TIMES.messaging,
+      ),
+      fetchCached(
+        queryKeys.announcements(restaurantId),
+        () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/announcements`),
+        STALE_TIMES.messaging,
+      ),
     ])
     setContacts(Array.isArray(staffRows) ? staffRows : [])
     setConversations(Array.isArray(conversationRows) ? conversationRows : [])
@@ -3163,7 +3177,11 @@ function ManagerMessagingPanel({ restaurantId }) {
       return
     }
     let cancelled = false
-    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations/${selectedConversationId}/messages`)
+    fetchCached(
+      queryKeys.conversationMessages(restaurantId, selectedConversationId),
+      () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations/${selectedConversationId}/messages`),
+      STALE_TIMES.messaging,
+    )
       .then(data => {
         if (!cancelled) setConversationMessages(Array.isArray(data) ? data : [])
       })
@@ -3211,7 +3229,11 @@ function ManagerMessagingPanel({ restaurantId }) {
             : null,
         }),
       })
-      const nextConversations = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations`)
+      const nextConversations = await fetchCached(
+        queryKeys.conversations(restaurantId),
+        () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations`),
+        0,
+      )
       setConversations(nextConversations)
       setSelectedConversationId(String(conversation.id))
       resetNewChatForm()
@@ -3234,7 +3256,15 @@ function ManagerMessagingPanel({ restaurantId }) {
         body: JSON.stringify({ body }),
       })
       setConversationMessages(prev => [...prev, sent])
-      const nextConversations = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations`)
+      queryClient.setQueryData(
+        queryKeys.conversationMessages(restaurantId, selectedConversationId),
+        prev => Array.isArray(prev) ? [...prev, sent] : prev,
+      )
+      const nextConversations = await fetchCached(
+        queryKeys.conversations(restaurantId),
+        () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/messages/conversations`),
+        0,
+      )
       setConversations(nextConversations)
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Could not send message')
@@ -3257,7 +3287,11 @@ function ManagerMessagingPanel({ restaurantId }) {
           audience: 'all',
         }),
       })
-      const nextAnnouncements = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/announcements`)
+      const nextAnnouncements = await fetchCached(
+        queryKeys.announcements(restaurantId),
+        () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/announcements`),
+        0,
+      )
       setAnnouncements(nextAnnouncements)
       setAnnouncementForm({ title: '', body: '' })
       setStatus('Announcement posted.')
@@ -4191,9 +4225,19 @@ function RestaurantWorkspace() {
   useEffect(() => {
     if (!restaurantId || !restaurant) return
     let cancelled = false
+    // setupRefreshKey bumps after setup edits; force a fresh read then.
+    const staleTime = setupRefreshKey > 0 ? 0 : STALE_TIMES.setup
     Promise.all([
-      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`),
-      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`).catch(() => null),
+      fetchCached(
+        queryKeys.waiters(restaurantId),
+        () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`),
+        staleTime,
+      ),
+      fetchCached(
+        queryKeys.floorPlan(restaurantId),
+        () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`),
+        staleTime,
+      ).catch(() => null),
     ])
       .then(([waiterData, floorPlan]) => {
         if (cancelled) return
@@ -4369,6 +4413,8 @@ function RestaurantWorkspaceHeader({ restaurant, restaurantId, activeTab, auth, 
           <button
             key={item.id}
             type="button"
+            onMouseEnter={() => prefetchWorkspaceTab(restaurantId, item.id, activeTab)}
+            onFocus={() => prefetchWorkspaceTab(restaurantId, item.id, activeTab)}
             onClick={() => navigate(`/restaurants/${restaurantId}/${item.id}`)}
             className={[
               'rounded-xl px-4 py-2 text-sm font-semibold transition',
@@ -4384,6 +4430,54 @@ function RestaurantWorkspaceHeader({ restaurant, restaurantId, activeTab, auth, 
       </nav>
     </header>
   )
+}
+
+// Warm the cache for a tab the moment the user shows intent (hover/focus),
+// so the data is usually already there when they click.
+function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
+  if (!restaurantId || tabId === activeTab) return
+  const prefetch = (queryKey, queryFn, staleTime) =>
+    void queryClient.prefetchQuery({ queryKey, queryFn, staleTime })
+  const api = (path) => () => fetchWithSupabaseAuth(path)
+
+  if (tabId === 'analytics') {
+    prefetch(queryKeys.ownerAnalytics(restaurantId, 'week'), api(`/restaurants/${restaurantId}/owner-analytics?period=week`), STALE_TIMES.analytics)
+  } else if (tabId === 'setup') {
+    prefetch(queryKeys.waiters(restaurantId), api(`/restaurants/${restaurantId}/waiters?include_inactive=false`), STALE_TIMES.setup)
+    prefetch(queryKeys.menuItems(restaurantId), api(`/restaurants/${restaurantId}/menu/items`), STALE_TIMES.setup)
+    prefetch(queryKeys.jobCodes(restaurantId), api(`/restaurants/${restaurantId}/job-codes`), STALE_TIMES.setup)
+    prefetch(queryKeys.sections(restaurantId), api(`/restaurants/${restaurantId}/sections`), STALE_TIMES.setup)
+    prefetch(queryKeys.floorPlan(restaurantId), api(`/restaurants/${restaurantId}/floor-plan`), STALE_TIMES.setup)
+    prefetch(queryKeys.taxesCharges(restaurantId), api(`/restaurants/${restaurantId}/taxes-charges`), STALE_TIMES.setup)
+    prefetch(queryKeys.menuCategories(restaurantId), api(`/restaurants/${restaurantId}/menu/categories`), STALE_TIMES.setup)
+    prefetch(queryKeys.discountRules(restaurantId), api(`/restaurants/${restaurantId}/discount-rules`), STALE_TIMES.setup)
+    prefetch(queryKeys.managerControls(restaurantId), api(`/restaurants/${restaurantId}/manager-controls`), STALE_TIMES.setup)
+    prefetch(queryKeys.closeoutSettings(restaurantId), api(`/restaurants/${restaurantId}/closeout-settings`), STALE_TIMES.setup)
+    prefetch(queryKeys.checkWorkflowSettings(restaurantId), api(`/restaurants/${restaurantId}/check-workflow-settings`), STALE_TIMES.setup)
+    prefetch(queryKeys.tipsPayrollSettings(restaurantId), api(`/restaurants/${restaurantId}/tips-payroll-settings`), STALE_TIMES.setup)
+    prefetch(queryKeys.pricingPolicy(restaurantId), api(`/restaurants/${restaurantId}/pricing-policy`), STALE_TIMES.setup)
+    prefetch(queryKeys.operatingHours(restaurantId), async () => {
+      const { data, error } = await supabase
+        .from('operating_hours')
+        .select('day_of_week, open_time, close_time, is_closed')
+        .eq('restaurant_id', restaurantId)
+        .order('day_of_week')
+      if (error) throw error
+      return data
+    }, STALE_TIMES.setup)
+  } else if (tabId === 'scheduling') {
+    prefetch(queryKeys.staffingBlocks(restaurantId), api(`/restaurants/${restaurantId}/staffing-requirements/blocks`), STALE_TIMES.scheduling)
+    prefetch(queryKeys.staffingSuggestions(restaurantId), api(`/restaurants/${restaurantId}/staffing-requirements/suggestions`), STALE_TIMES.scheduling)
+    prefetch(queryKeys.schedules(restaurantId, '?limit=5'), api(`/restaurants/${restaurantId}/schedules?limit=5`), STALE_TIMES.scheduling)
+    prefetch(queryKeys.waiters(restaurantId), api(`/restaurants/${restaurantId}/waiters?include_inactive=false`), STALE_TIMES.scheduling)
+    prefetch(queryKeys.employeeRequestPolicy(restaurantId), api(`/restaurants/${restaurantId}/employee-request-policy`), STALE_TIMES.scheduling)
+    prefetch(queryKeys.employeeRequests(restaurantId, 'all'), api(`/restaurants/${restaurantId}/employee-requests?status=all`), STALE_TIMES.scheduling)
+    prefetch(queryKeys.shiftTradeRequests(restaurantId, 'pending_manager'), api(`/restaurants/${restaurantId}/shift-trade-requests?status=pending_manager`), STALE_TIMES.scheduling)
+  } else if (tabId === 'messaging') {
+    prefetch(queryKeys.waiters(restaurantId), api(`/restaurants/${restaurantId}/waiters?include_inactive=false`), STALE_TIMES.setup)
+    prefetch(queryKeys.conversations(restaurantId), api(`/restaurants/${restaurantId}/messages/conversations`), STALE_TIMES.messaging)
+    prefetch(queryKeys.announcements(restaurantId), api(`/restaurants/${restaurantId}/announcements`), STALE_TIMES.messaging)
+  }
 }
 
 export default function AuthenticatedDashboardApp() {

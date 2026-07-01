@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../shared/lib/supabase'
-import { API_CONFIG } from '../shared/api/config'
+import { queryClient, queryKeys, fetchCached, fetchWithSupabaseAuth, STALE_TIMES } from '../shared/query'
 import { FloorPlanEditor } from '../onboarding/components/FloorPlanEditor'
 import { normalizeFloorPlanTablesForEditor } from '../onboarding/components/FloorPlanCanvas'
 import { FloorPlanTableSetup } from '../onboarding/components/FloorPlanTableSetup'
@@ -267,6 +267,67 @@ const initialPayments = (restaurant) => {
   }
 }
 
+const PRICING_MODE_OPTIONS = [
+  { value: 'dual_pricing_posted_electronic', label: 'Posted electronic price' },
+  { value: 'cash_discount', label: 'Cash discount' },
+  { value: 'credit_surcharge', label: 'Credit surcharge' },
+  { value: 'none', label: 'No pricing adjustment' },
+]
+
+const PRICING_BASIS_OPTIONS = [
+  { value: 'subtotal_plus_tax', label: 'Subtotal + tax' },
+  { value: 'subtotal', label: 'Subtotal before tax' },
+]
+
+const PRICING_TENDER_OPTIONS = [
+  { value: 'card', label: 'Card' },
+  { value: 'credit', label: 'Credit' },
+  { value: 'debit', label: 'Debit' },
+  { value: 'terminal', label: 'Terminal' },
+  { value: 'gift_card', label: 'Gift card' },
+  { value: 'standalone', label: 'Standalone tender' },
+]
+
+const DEFAULT_PRICING_POLICY = {
+  enabled: true,
+  mode: 'dual_pricing_posted_electronic',
+  rate: 0.035,
+  basis: 'subtotal_plus_tax',
+  applies_to: ['card', 'credit', 'debit', 'terminal', 'gift_card', 'standalone'],
+  jurisdiction_state: 'SC',
+  label: 'Cash discount',
+  disclosure: 'Posted prices reflect the electronic payment price. Cash payments may receive the listed cash discount.',
+}
+
+const normalizePricingPolicy = (raw = {}) => {
+  const merged = { ...DEFAULT_PRICING_POLICY, ...(raw && typeof raw === 'object' ? raw : {}) }
+  const rate = Number(merged.rate)
+  return {
+    ...merged,
+    enabled: merged.enabled !== false,
+    rate: Number.isFinite(rate) ? Math.max(0, rate) : DEFAULT_PRICING_POLICY.rate,
+    applies_to: Array.isArray(merged.applies_to) && merged.applies_to.length > 0 ? merged.applies_to : DEFAULT_PRICING_POLICY.applies_to,
+    jurisdiction_state: String(merged.jurisdiction_state || 'SC').toUpperCase().slice(0, 2),
+    label: merged.label || DEFAULT_PRICING_POLICY.label,
+    disclosure: merged.disclosure || DEFAULT_PRICING_POLICY.disclosure,
+    rate_percent: String(Number.isFinite(rate) ? Math.round(rate * 10000) / 100 : 3.5),
+  }
+}
+
+const pricingPolicyPayload = (policy) => {
+  const percent = Number(policy.rate_percent)
+  return {
+    enabled: policy.enabled !== false,
+    mode: policy.mode || DEFAULT_PRICING_POLICY.mode,
+    rate: Number.isFinite(percent) ? Math.max(0, percent) / 100 : DEFAULT_PRICING_POLICY.rate,
+    basis: policy.basis || DEFAULT_PRICING_POLICY.basis,
+    applies_to: Array.isArray(policy.applies_to) ? policy.applies_to : DEFAULT_PRICING_POLICY.applies_to,
+    jurisdiction_state: String(policy.jurisdiction_state || 'SC').toUpperCase().slice(0, 2),
+    label: policy.label || DEFAULT_PRICING_POLICY.label,
+    disclosure: policy.disclosure || DEFAULT_PRICING_POLICY.disclosure,
+  }
+}
+
 const initialServiceModel = (restaurant) => {
   const config = restaurant.config && typeof restaurant.config === 'object' ? restaurant.config : {}
   return {
@@ -300,6 +361,18 @@ function TextInput(props) {
       {...props}
       className={[
         'w-full rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm text-dash-cream outline-none transition placeholder:text-dash-tertiary focus:border-dash-gold/70',
+        props.className || '',
+      ].join(' ')}
+    />
+  )
+}
+
+function TextAreaInput(props) {
+  return (
+    <textarea
+      {...props}
+      className={[
+        'min-h-28 w-full rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm text-dash-cream outline-none transition placeholder:text-dash-tertiary focus:border-dash-gold/70',
         props.className || '',
       ].join(' ')}
     />
@@ -499,11 +572,15 @@ function KitchenRoutingSetup({ restaurantId }) {
     return Array.from(new Set((config?.menu_items || []).map(item => item.category || 'Other'))).sort()
   }, [config])
 
-  const load = async () => {
+  const load = async (force = false) => {
     setLoading(true)
     setError('')
     try {
-      const next = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing`)
+      const next = await fetchCached(
+        queryKeys.kitchenRouting(restaurantId),
+        () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing`),
+        force ? 0 : STALE_TIMES.setup,
+      )
       setConfig(next)
       setSelectedStationId(current => current || next.stations?.[0]?.id || '')
     } catch {
@@ -524,7 +601,7 @@ function KitchenRoutingSetup({ restaurantId }) {
       body: JSON.stringify({ name: stationName.trim(), is_active: true }),
     })
     setStationName('')
-    await load()
+    await load(true)
   }
 
   const createTarget = async () => {
@@ -539,7 +616,7 @@ function KitchenRoutingSetup({ restaurantId }) {
       }),
     })
     setTargetHost('')
-    await load()
+    await load(true)
   }
 
   const assignTarget = async (stationId, targetId) => {
@@ -547,7 +624,7 @@ function KitchenRoutingSetup({ restaurantId }) {
       method: 'POST',
       body: JSON.stringify({ station_id: stationId, target_id: targetId, priority: 0, is_active: true }),
     })
-    await load()
+    await load(true)
   }
 
   const setFallback = async (stationId) => {
@@ -556,7 +633,7 @@ function KitchenRoutingSetup({ restaurantId }) {
         method: 'PUT',
         body: JSON.stringify({ station_id: stationId }),
       })
-      await load()
+      await load(true)
     } catch {
       setError('Fallback station needs an active output target first.')
     }
@@ -568,7 +645,7 @@ function KitchenRoutingSetup({ restaurantId }) {
       method: 'POST',
       body: JSON.stringify({ source_type: 'category', category, station_id: selectedStationId, target_types: ['printer', 'display'] }),
     })
-    await load()
+    await load(true)
   }
 
   return (
@@ -1254,25 +1331,6 @@ function mapMenuItems(items) {
   }))
 }
 
-async function fetchWithSupabaseAuth(endpoint, options = {}) {
-  const { data: sessionData } = await supabase.auth.getSession()
-  const token = sessionData?.session?.access_token
-  const headers = new Headers(options.headers || {})
-  if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
-  if (token) headers.set('Authorization', `Bearer ${token}`)
-
-  const response = await fetch(`${API_CONFIG.baseUrl}${endpoint}`, {
-    ...options,
-    headers,
-  })
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}))
-    throw new Error(body.detail || body.message || `Request failed (${response.status})`)
-  }
-  if (response.status === 204) return null
-  return response.json()
-}
-
 export function buildSetupWarnings(restaurant, waiterCount = null, floorPlanStatus = null) {
   const warnings = {
     basics: [],
@@ -1335,6 +1393,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   }))
   const [legal, setLegal] = useState(() => initialLegal(restaurant))
   const [payments, setPayments] = useState(() => initialPayments(restaurant))
+  const [pricingPolicy, setPricingPolicy] = useState(() => normalizePricingPolicy({ jurisdiction_state: restaurant.state || 'SC' }))
   const [serviceModel, setServiceModel] = useState(() => initialServiceModel(restaurant))
   const [taxRates, setTaxRates] = useState([defaultTaxRate()])
   const [serviceCharges, setServiceCharges] = useState([])
@@ -1379,41 +1438,53 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     })
     setLegal(initialLegal(restaurant))
     setPayments(initialPayments(restaurant))
+    setPricingPolicy(prev => normalizePricingPolicy({ ...prev, jurisdiction_state: prev.jurisdiction_state || restaurant.state || 'SC' }))
     setServiceModel(initialServiceModel(restaurant))
     setSaveMessage('')
   }, [restaurant])
 
   const loadMenuItems = async () => {
-    const rows = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`)
+    const rows = await fetchCached(
+      queryKeys.menuItems(restaurantId),
+      () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`),
+      0,
+    )
     setMenuItems(mapMenuItems(rows))
   }
 
+  // Reads go through the shared query cache: returning to this tab within the
+  // stale window renders instantly from memory with zero network requests.
   const loadSetupData = async () => {
     if (!restaurantId) return
     setSetupError('')
+    const cached = (key, fn) => fetchCached(key, fn, STALE_TIMES.setup)
     try {
-      const [staffRows, menuRows, jobCodeRows, hoursResult, sectionRows, floorPlan, taxesCharges, menuCategoryData, discountData, managerControls, closeoutData, checkWorkflowData, tipPayrollData] = await Promise.all([
-        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`),
-        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`),
-        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`).catch(() => []),
-        supabase
-          .from('operating_hours')
-          .select('day_of_week, open_time, close_time, is_closed')
-          .eq('restaurant_id', restaurantId)
-          .order('day_of_week'),
-        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`).catch(() => []),
-        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`).catch(() => null),
-        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/taxes-charges`).catch(() => null),
-        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/categories`).catch(() => null),
-        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/discount-rules`).catch(() => null),
-        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-controls`).catch(() => null),
-        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`).catch(() => null),
-        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/check-workflow-settings`).catch(() => null),
-        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`).catch(() => null),
+      const [staffRows, menuRows, jobCodeRows, hoursRows, sectionRows, floorPlan, taxesCharges, menuCategoryData, discountData, managerControls, closeoutData, checkWorkflowData, tipPayrollData, pricingPolicyData] = await Promise.all([
+        cached(queryKeys.waiters(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`)),
+        cached(queryKeys.menuItems(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`)),
+        cached(queryKeys.jobCodes(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`)).catch(() => []),
+        cached(queryKeys.operatingHours(restaurantId), async () => {
+          const { data, error } = await supabase
+            .from('operating_hours')
+            .select('day_of_week, open_time, close_time, is_closed')
+            .eq('restaurant_id', restaurantId)
+            .order('day_of_week')
+          if (error) throw error
+          return data
+        }),
+        cached(queryKeys.sections(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`)).catch(() => []),
+        cached(queryKeys.floorPlan(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`)).catch(() => null),
+        cached(queryKeys.taxesCharges(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/taxes-charges`)).catch(() => null),
+        cached(queryKeys.menuCategories(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/categories`)).catch(() => null),
+        cached(queryKeys.discountRules(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/discount-rules`)).catch(() => null),
+        cached(queryKeys.managerControls(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-controls`)).catch(() => null),
+        cached(queryKeys.closeoutSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`)).catch(() => null),
+        cached(queryKeys.checkWorkflowSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/check-workflow-settings`)).catch(() => null),
+        cached(queryKeys.tipsPayrollSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`)).catch(() => null),
+        cached(queryKeys.pricingPolicy(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pricing-policy`)).catch(() => null),
       ])
 
-      if (hoursResult.error) throw hoursResult.error
-      const normalized = normalizeHours(hoursResult.data)
+      const normalized = normalizeHours(hoursRows)
       setHours(normalized)
       setSameHours(deriveSameHours(normalized))
       setWaiters(Array.isArray(staffRows) ? staffRows : [])
@@ -1431,6 +1502,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setCloseoutSettings(normalizeCloseoutSettings(closeoutData))
       setCheckWorkflowSettings(normalizeCheckWorkflowSettings(checkWorkflowData))
       setTipPayrollSettings(normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes))
+      setPricingPolicy(normalizePricingPolicy(pricingPolicyData || { jurisdiction_state: restaurant.state || 'SC' }))
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : 'Could not load setup data.')
     }
@@ -1551,6 +1623,43 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     await updateRestaurantConfig(payments, 'Saved payment setup.')
   }
 
+  const updatePricingPolicy = (patch) => {
+    setPricingPolicy(prev => {
+      const next = normalizePricingPolicy({ ...prev, ...patch })
+      if (Object.prototype.hasOwnProperty.call(patch, 'rate_percent')) next.rate_percent = patch.rate_percent
+      return next
+    })
+  }
+
+  const togglePricingTender = (tender) => {
+    setPricingPolicy(prev => {
+      const current = Array.isArray(prev.applies_to) ? prev.applies_to : []
+      const next = current.includes(tender)
+        ? current.filter(item => item !== tender)
+        : [...current, tender]
+      return normalizePricingPolicy({ ...prev, applies_to: next })
+    })
+  }
+
+  const savePricingPolicy = async () => {
+    setIsSaving(true)
+    setSetupError('')
+    try {
+      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pricing-policy`, {
+        method: 'PUT',
+        body: JSON.stringify(pricingPolicyPayload(pricingPolicy)),
+      })
+      setPricingPolicy(normalizePricingPolicy(saved))
+      queryClient.setQueryData(queryKeys.pricingPolicy(restaurantId), saved)
+      setSaveMessage('Saved pricing policy.')
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save pricing policy.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const saveServiceModel = async () => {
     await updateRestaurantConfig(serviceModel, 'Saved service model.')
   }
@@ -1587,6 +1696,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       })
       setTaxRates(normalizeTaxRates(saved?.tax_rates))
       setServiceCharges(normalizeServiceCharges(saved?.service_charges))
+      queryClient.setQueryData(queryKeys.taxesCharges(restaurantId), saved)
       setSaveMessage('Saved taxes and charges.')
       await auth.refreshRestaurants?.(restaurantId)
       onSetupChanged?.()
@@ -1611,6 +1721,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         body: JSON.stringify(menuCategoriesPayload(menuCategories)),
       })
       setMenuCategories(normalizeMenuCategories(saved?.categories))
+      queryClient.setQueryData(queryKeys.menuCategories(restaurantId), saved)
       setSaveMessage('Saved menu categories.')
       await auth.refreshRestaurants?.(restaurantId)
       onSetupChanged?.()
@@ -1638,6 +1749,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         body: JSON.stringify(discountRulesPayload(discountRules)),
       })
       setDiscountRules(normalizeDiscountRules(saved?.discount_rules))
+      queryClient.setQueryData(queryKeys.discountRules(restaurantId), saved)
       setSaveMessage('Saved discounts.')
       await auth.refreshRestaurants?.(restaurantId)
       onSetupChanged?.()
@@ -1662,6 +1774,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         body: JSON.stringify(managerControlsPayload(rolePermissions, jobCodes)),
       })
       setRolePermissions(normalizeRolePermissions(saved?.role_permissions, jobCodes))
+      queryClient.setQueryData(queryKeys.managerControls(restaurantId), saved)
       setSaveMessage('Saved manager controls.')
       await auth.refreshRestaurants?.(restaurantId)
       onSetupChanged?.()
@@ -1690,6 +1803,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         body: JSON.stringify(closeoutSettingsPayload(closeoutSettings)),
       })
       setCloseoutSettings(normalizeCloseoutSettings(saved))
+      queryClient.setQueryData(queryKeys.closeoutSettings(restaurantId), saved)
       setSaveMessage('Saved closeout settings.')
       await auth.refreshRestaurants?.(restaurantId)
       onSetupChanged?.()
@@ -1710,6 +1824,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         body: JSON.stringify(checkWorkflowSettingsPayload(checkWorkflowSettings)),
       })
       setCheckWorkflowSettings(normalizeCheckWorkflowSettings(saved))
+      queryClient.setQueryData(queryKeys.checkWorkflowSettings(restaurantId), saved)
       setSaveMessage('Saved check workflow settings.')
       await auth.refreshRestaurants?.(restaurantId)
       onSetupChanged?.()
@@ -1741,6 +1856,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         body: JSON.stringify(tipPayrollPayload(tipPayrollSettings, jobCodes)),
       })
       setTipPayrollSettings(normalizeTipPayrollSettings(saved, jobCodes))
+      queryClient.setQueryData(queryKeys.tipsPayrollSettings(restaurantId), saved)
       setSaveMessage('Saved tips and payroll.')
       await auth.refreshRestaurants?.(restaurantId)
       onSetupChanged?.()
@@ -1771,6 +1887,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setTipPayrollSettings(prev => normalizeTipPayrollSettings(prev, normalized))
       setRolePermissions(prev => normalizeRolePermissions(prev, normalized))
       setJobCodeDraft({ code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: Math.max(100, ...normalized.map(code => Number(code.sort_order) || 0)) + 10, is_active: true })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.jobCodes(restaurantId) })
       setSaveMessage('Saved role.')
       onSetupChanged?.()
     } catch (err) {
@@ -1790,6 +1907,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         body: JSON.stringify({ sections: normalizeSectionNames(sections) }),
       })
       setSections(normalizeSectionNames((Array.isArray(saved) ? saved : []).map(section => section.name)))
+      queryClient.setQueryData(queryKeys.sections(restaurantId), saved)
       setFloorTables(prev => prev.map(table => {
         if (table.section_id) return table
         return { ...table, section_name: table.section_name || 'Table' }
@@ -1831,6 +1949,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setSetupError(insertError.message || 'Could not save hours.')
       return
     }
+    void queryClient.invalidateQueries({ queryKey: queryKeys.operatingHours(restaurantId) })
     setSaveMessage('Saved hours.')
   }
 
@@ -1891,6 +2010,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       }),
     })
     setWaiters(prev => [...prev, created])
+    queryClient.setQueryData(queryKeys.waiters(restaurantId), prev => Array.isArray(prev) ? [...prev, created] : prev)
     setStaffForm({ name: '', email: '', role: 'server', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
     onSetupChanged?.()
   }
@@ -1902,12 +2022,14 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       body: JSON.stringify(updates),
     })
     setWaiters(prev => prev.map(item => item.id === waiterId ? updated : item))
+    queryClient.setQueryData(queryKeys.waiters(restaurantId), prev => Array.isArray(prev) ? prev.map(item => item.id === waiterId ? updated : item) : prev)
     onSetupChanged?.()
   }
 
   const removeStaff = async (waiterId) => {
     await fetchWithSupabaseAuth(`/waiters/${waiterId}`, { method: 'DELETE' })
     setWaiters(prev => prev.filter(item => item.id !== waiterId))
+    queryClient.setQueryData(queryKeys.waiters(restaurantId), prev => Array.isArray(prev) ? prev.filter(item => item.id !== waiterId) : prev)
     onSetupChanged?.()
   }
 
@@ -1927,6 +2049,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       })
       setJobCodes(prev => prev.map(code => code.id === saved.id ? saved : code))
       setRateEdits(prev => ({ ...prev, [saved.id]: String(saved.default_hourly_rate ?? parsed.toFixed(2)) }))
+      void queryClient.invalidateQueries({ queryKey: queryKeys.jobCodes(restaurantId) })
       setSaveMessage('Saved role rate.')
       onSetupChanged?.()
     } catch (err) {
@@ -1972,6 +2095,8 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
             setFloorPlanMode(null)
             setProfile(prev => ({ ...prev, table_count: tables.length }))
             void saveCapacity({ table_count: tables.length })
+            void queryClient.invalidateQueries({ queryKey: queryKeys.floorPlan(restaurantId) })
+            void queryClient.invalidateQueries({ queryKey: queryKeys.tables(restaurantId) })
             onSetupChanged?.()
           }}
         />
@@ -1991,6 +2116,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
           onSave={(items) => {
             setMenuItems(items)
             setMenuMode(null)
+            void queryClient.invalidateQueries({ queryKey: queryKeys.menuItems(restaurantId) })
             onSetupChanged?.()
           }}
         />
@@ -2265,6 +2391,84 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
             <Field label="Refund Approval Threshold">
               <TextInput inputMode="decimal" value={payments.refund_approval_threshold} onChange={event => setPayments(prev => ({ ...prev, refund_approval_threshold: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))} placeholder="Manager approval over $..." />
             </Field>
+          </div>
+          <div className="mt-8 border-t border-white/10 pt-6">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h4 className="text-lg font-semibold text-dash-cream">Pricing Policy</h4>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-dash-secondary">
+                  Posted electronic pricing defaults to South Carolina with cash discount presentation available.
+                </p>
+              </div>
+              <SmallButton variant="primary" onClick={() => void savePricingPolicy()} disabled={isSaving}>
+                {isSaving ? 'Saving...' : 'Save pricing policy'}
+              </SmallButton>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <Field label="Enabled">
+                <label className="flex min-h-[46px] items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm text-dash-cream">
+                  <input
+                    type="checkbox"
+                    checked={pricingPolicy.enabled !== false}
+                    onChange={event => updatePricingPolicy({ enabled: event.target.checked })}
+                    className="h-4 w-4 rounded border-white/20 bg-black/20"
+                  />
+                  Active
+                </label>
+              </Field>
+              <Field label="Mode">
+                <SelectInput value={pricingPolicy.mode} onChange={event => updatePricingPolicy({ mode: event.target.value })}>
+                  {PRICING_MODE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </SelectInput>
+              </Field>
+              <Field label="Rate %">
+                <TextInput
+                  inputMode="decimal"
+                  value={pricingPolicy.rate_percent}
+                  onChange={event => updatePricingPolicy({ rate_percent: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) })}
+                  placeholder="3.5"
+                />
+              </Field>
+              <Field label="Basis">
+                <SelectInput value={pricingPolicy.basis} onChange={event => updatePricingPolicy({ basis: event.target.value })}>
+                  {PRICING_BASIS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </SelectInput>
+              </Field>
+              <Field label="State">
+                <TextInput
+                  value={pricingPolicy.jurisdiction_state}
+                  onChange={event => updatePricingPolicy({ jurisdiction_state: event.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2) })}
+                  placeholder="SC"
+                />
+              </Field>
+              <Field label="Label">
+                <TextInput value={pricingPolicy.label} onChange={event => updatePricingPolicy({ label: event.target.value.slice(0, 120) })} placeholder="Cash discount" />
+              </Field>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <span className="label-mono">Applies To</span>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {PRICING_TENDER_OPTIONS.map(option => (
+                  <label key={option.value} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.025] px-4 py-3 text-sm text-dash-cream">
+                    <input
+                      type="checkbox"
+                      checked={(pricingPolicy.applies_to || []).includes(option.value)}
+                      onChange={() => togglePricingTender(option.value)}
+                      className="h-4 w-4 rounded border-white/20 bg-black/20"
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <Field label="Disclosure">
+                <TextAreaInput value={pricingPolicy.disclosure} onChange={event => updatePricingPolicy({ disclosure: event.target.value.slice(0, 1000) })} />
+              </Field>
+            </div>
           </div>
         </SectionShell>
       )}
@@ -3013,6 +3217,8 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   onSaved={(tables) => {
                     setFloorTables(tables)
                     setProfile(prev => ({ ...prev, table_count: tables.length }))
+                    void queryClient.invalidateQueries({ queryKey: queryKeys.floorPlan(restaurantId) })
+                    void queryClient.invalidateQueries({ queryKey: queryKeys.tables(restaurantId) })
                     onSetupChanged?.()
                   }}
                 />
