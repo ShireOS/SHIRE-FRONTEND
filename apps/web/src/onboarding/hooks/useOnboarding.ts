@@ -93,7 +93,16 @@ export interface OnboardingData {
   operating_hours: OperatingHoursData[]
   same_hours_every_day: boolean
 
-  // Step 13: Capacity
+  // Step 13: Reservation Timing
+  reservation_timing_same_for_channels: boolean
+  reservation_online_booking_horizon_days: string
+  reservation_online_lead_time_minutes: string
+  reservation_online_grace_period_minutes: string
+  reservation_staff_booking_horizon_days: string
+  reservation_staff_lead_time_minutes: string
+  reservation_staff_grace_period_minutes: string
+
+  // Step 14: Capacity
   seating_capacity: number | null
   table_count: number | null
 
@@ -545,6 +554,14 @@ const INITIAL_DATA: OnboardingData = {
   operating_hours: DEFAULT_HOURS,
   same_hours_every_day: true,
 
+  reservation_timing_same_for_channels: true,
+  reservation_online_booking_horizon_days: '30',
+  reservation_online_lead_time_minutes: '120',
+  reservation_online_grace_period_minutes: '15',
+  reservation_staff_booking_horizon_days: '30',
+  reservation_staff_lead_time_minutes: '120',
+  reservation_staff_grace_period_minutes: '15',
+
   seating_capacity: null,
   table_count: null,
   sections: ['Table', 'Main Floor', 'Bar', 'Patio'],
@@ -556,9 +573,14 @@ const INITIAL_DATA: OnboardingData = {
   invites: [],
 }
 
-const ONBOARDING_MAX_STEP = 19
+const ONBOARDING_MAX_STEP = 20
 const REQUEST_TIMEOUT_MS = 20000
 const ONBOARDING_DRAFT_VERSION = 1
+const RESERVATIONS_API_BASE_URL = (
+  import.meta.env.VITE_RESERVATIONS_API_BASE_URL ||
+  import.meta.env.VITE_RESERVATIONS_API_BASE ||
+  'http://localhost:4100/api/v1'
+).replace(/\/+$/, '')
 
 const MENU_IMPORT_METHODS: OnboardingData['menu_import_method'][] = [
   'skip',
@@ -1146,6 +1168,16 @@ const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): On
       typeof input.same_hours_every_day === 'boolean'
         ? input.same_hours_every_day
         : INITIAL_DATA.same_hours_every_day,
+    reservation_timing_same_for_channels:
+      typeof input.reservation_timing_same_for_channels === 'boolean'
+        ? input.reservation_timing_same_for_channels
+        : INITIAL_DATA.reservation_timing_same_for_channels,
+    reservation_online_booking_horizon_days: asString(input.reservation_online_booking_horizon_days, INITIAL_DATA.reservation_online_booking_horizon_days),
+    reservation_online_lead_time_minutes: asString(input.reservation_online_lead_time_minutes, INITIAL_DATA.reservation_online_lead_time_minutes),
+    reservation_online_grace_period_minutes: asString(input.reservation_online_grace_period_minutes, INITIAL_DATA.reservation_online_grace_period_minutes),
+    reservation_staff_booking_horizon_days: asString(input.reservation_staff_booking_horizon_days, INITIAL_DATA.reservation_staff_booking_horizon_days),
+    reservation_staff_lead_time_minutes: asString(input.reservation_staff_lead_time_minutes, INITIAL_DATA.reservation_staff_lead_time_minutes),
+    reservation_staff_grace_period_minutes: asString(input.reservation_staff_grace_period_minutes, INITIAL_DATA.reservation_staff_grace_period_minutes),
     seating_capacity: asNullableNumber(input.seating_capacity),
     table_count: asNullableNumber(input.table_count),
     sections,
@@ -1233,6 +1265,16 @@ const parseConfig = (value: unknown): Partial<OnboardingData> => {
     current_reservations: asNullableString(value.current_reservations),
     service_modes: asStringArray(value.service_modes),
     default_guest_flow: asNullableString(value.default_guest_flow),
+    reservation_timing_same_for_channels:
+      typeof value.reservation_timing_same_for_channels === 'boolean'
+        ? value.reservation_timing_same_for_channels
+        : undefined,
+    reservation_online_booking_horizon_days: asString(value.reservation_online_booking_horizon_days, INITIAL_DATA.reservation_online_booking_horizon_days),
+    reservation_online_lead_time_minutes: asString(value.reservation_online_lead_time_minutes, INITIAL_DATA.reservation_online_lead_time_minutes),
+    reservation_online_grace_period_minutes: asString(value.reservation_online_grace_period_minutes, INITIAL_DATA.reservation_online_grace_period_minutes),
+    reservation_staff_booking_horizon_days: asString(value.reservation_staff_booking_horizon_days, INITIAL_DATA.reservation_staff_booking_horizon_days),
+    reservation_staff_lead_time_minutes: asString(value.reservation_staff_lead_time_minutes, INITIAL_DATA.reservation_staff_lead_time_minutes),
+    reservation_staff_grace_period_minutes: asString(value.reservation_staff_grace_period_minutes, INITIAL_DATA.reservation_staff_grace_period_minutes),
     menu_import_method: asMenuImportMethod(value.menu_import_method),
     team_setup_method: asTeamSetupMethod(value.team_setup_method),
     invites: asInvites(value.invites),
@@ -1246,6 +1288,94 @@ const getApiHeaders = async (): Promise<Headers> => {
     headers.set('Authorization', `Bearer ${session.access_token}`)
   }
   return headers
+}
+
+const clampInteger = (value: string, fallback: number, min: number, max: number): number => {
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, parsed))
+}
+
+const reservationTimingPatch = (data: OnboardingData) => {
+  const online = {
+    bookingHorizonDays: clampInteger(data.reservation_online_booking_horizon_days, 30, 0, 365),
+    leadTimeMinutes: clampInteger(data.reservation_online_lead_time_minutes, 120, 0, 10080),
+    gracePeriodMinutes: clampInteger(data.reservation_online_grace_period_minutes, 15, 0, 360),
+  }
+  const staff = data.reservation_timing_same_for_channels
+    ? { ...online }
+    : {
+        bookingHorizonDays: clampInteger(data.reservation_staff_booking_horizon_days, online.bookingHorizonDays, 0, 365),
+        leadTimeMinutes: clampInteger(data.reservation_staff_lead_time_minutes, online.leadTimeMinutes, 0, 10080),
+        gracePeriodMinutes: clampInteger(data.reservation_staff_grace_period_minutes, online.gracePeriodMinutes, 0, 360),
+      }
+
+  return {
+    reservation_timing_same_for_channels: data.reservation_timing_same_for_channels,
+    reservation_online_booking_horizon_days: String(online.bookingHorizonDays),
+    reservation_online_lead_time_minutes: String(online.leadTimeMinutes),
+    reservation_online_grace_period_minutes: String(online.gracePeriodMinutes),
+    reservation_staff_booking_horizon_days: String(staff.bookingHorizonDays),
+    reservation_staff_lead_time_minutes: String(staff.leadTimeMinutes),
+    reservation_staff_grace_period_minutes: String(staff.gracePeriodMinutes),
+    timingPolicies: { online, staff },
+  }
+}
+
+const fetchReservationSettings = async (restaurantId: string): Promise<Record<string, unknown> | null> => {
+  try {
+    const headers = await getApiHeaders()
+    const response = await fetch(`${RESERVATIONS_API_BASE_URL}/locations/${restaurantId}/reservation-settings`, { headers })
+    if (!response.ok) return null
+    const body = await response.json()
+    return isRecord(body) ? body : null
+  } catch (err) {
+    console.warn('[Onboarding] Could not load reservation timing:', err)
+    return null
+  }
+}
+
+const saveReservationSettings = async (restaurantId: string, data: OnboardingData): Promise<void> => {
+  const patch = reservationTimingPatch(data)
+  const headers = await getApiHeaders()
+  const response = await fetch(`${RESERVATIONS_API_BASE_URL}/locations/${restaurantId}/reservation-settings`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({
+      bookingHorizonDays: Number(patch.reservation_online_booking_horizon_days),
+      gracePeriodMinutes: Number(patch.reservation_online_grace_period_minutes),
+      timingPolicies: patch.timingPolicies,
+    }),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new Error(asString(isRecord(body) ? body.message : null) || `Saving reservation timing failed (${response.status})`)
+  }
+}
+
+const reservationTimingFromSettings = (settings: Record<string, unknown> | null): Partial<OnboardingData> => {
+  if (!settings) return {}
+  const timingPolicies = isRecord(settings.timingPolicies) ? settings.timingPolicies : {}
+  const online = isRecord(timingPolicies.online) ? timingPolicies.online : {}
+  const staff = isRecord(timingPolicies.staff) ? timingPolicies.staff : {}
+  const onlinePatch = {
+    reservation_online_booking_horizon_days: asString(online.bookingHorizonDays, asString(settings.bookingHorizonDays, INITIAL_DATA.reservation_online_booking_horizon_days)),
+    reservation_online_lead_time_minutes: asString(online.leadTimeMinutes, INITIAL_DATA.reservation_online_lead_time_minutes),
+    reservation_online_grace_period_minutes: asString(online.gracePeriodMinutes, asString(settings.gracePeriodMinutes, INITIAL_DATA.reservation_online_grace_period_minutes)),
+  }
+  const staffPatch = {
+    reservation_staff_booking_horizon_days: asString(staff.bookingHorizonDays, onlinePatch.reservation_online_booking_horizon_days),
+    reservation_staff_lead_time_minutes: asString(staff.leadTimeMinutes, onlinePatch.reservation_online_lead_time_minutes),
+    reservation_staff_grace_period_minutes: asString(staff.gracePeriodMinutes, onlinePatch.reservation_online_grace_period_minutes),
+  }
+  return {
+    ...onlinePatch,
+    ...staffPatch,
+    reservation_timing_same_for_channels:
+      onlinePatch.reservation_online_booking_horizon_days === staffPatch.reservation_staff_booking_horizon_days &&
+      onlinePatch.reservation_online_lead_time_minutes === staffPatch.reservation_staff_lead_time_minutes &&
+      onlinePatch.reservation_online_grace_period_minutes === staffPatch.reservation_staff_grace_period_minutes,
+  }
 }
 
 const fetchTaxesCharges = async (restaurantId: string) => {
@@ -1455,7 +1585,7 @@ export function useOnboarding() {
   }, [])
 
   const hydrateFromRestaurant = useCallback(async (restaurant: Restaurant): Promise<Partial<OnboardingData>> => {
-    const [hoursResult, sectionsResult, taxesChargesResult, discountRulesResult, menuCategoriesResult, managerControlsResult, closeoutSettingsResult, checkWorkflowResult, jobCodesResult, tipPayrollResult] = await Promise.all([
+    const [hoursResult, sectionsResult, taxesChargesResult, discountRulesResult, menuCategoriesResult, managerControlsResult, closeoutSettingsResult, checkWorkflowResult, jobCodesResult, tipPayrollResult, reservationSettingsResult] = await Promise.all([
       runWithTimeout(
         () =>
           supabase
@@ -1529,6 +1659,13 @@ export function useOnboarding() {
         console.warn('[Onboarding] Could not hydrate tips and payroll:', err)
         return null
       }),
+      runWithTimeout(
+        () => fetchReservationSettings(restaurant.id),
+        'Loading reservation timing timed out.'
+      ).catch(err => {
+        console.warn('[Onboarding] Could not hydrate reservation timing:', err)
+        return null
+      }),
     ])
 
     if (hoursResult.error) {
@@ -1565,8 +1702,9 @@ export function useOnboarding() {
       closeout_settings: normalizeCloseoutSettings(closeoutSettingsResult),
       check_workflow_settings: normalizeCheckWorkflowSettings(checkWorkflowResult),
       job_codes: jobCodes,
-      tip_payroll_settings: normalizeTipPayrollSettings(tipPayrollResult, jobCodes),
       ...configData,
+      tip_payroll_settings: normalizeTipPayrollSettings(tipPayrollResult, jobCodes),
+      ...reservationTimingFromSettings(reservationSettingsResult),
     }
   }, [runWithTimeout])
 
@@ -2467,6 +2605,62 @@ export function useOnboarding() {
     }
   }, [data.operating_hours, getActiveRestaurantId, isSetupEditor, runWithTimeout])
 
+  const saveReservationTiming = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const activeRestaurantId = getActiveRestaurantId()
+      const existingConfig = await fetchRestaurantConfig(activeRestaurantId)
+      const timing = reservationTimingPatch(data)
+
+      await runWithTimeout(
+        () => saveReservationSettings(activeRestaurantId, data),
+        'Saving reservation timing timed out. Please retry.'
+      )
+
+      const { error: updateError } = await runWithTimeout(
+        () =>
+          supabase
+            .from('restaurants')
+            .update({
+              config: {
+                ...existingConfig,
+                reservation_timing_same_for_channels: timing.reservation_timing_same_for_channels,
+                reservation_online_booking_horizon_days: timing.reservation_online_booking_horizon_days,
+                reservation_online_lead_time_minutes: timing.reservation_online_lead_time_minutes,
+                reservation_online_grace_period_minutes: timing.reservation_online_grace_period_minutes,
+                reservation_staff_booking_horizon_days: timing.reservation_staff_booking_horizon_days,
+                reservation_staff_lead_time_minutes: timing.reservation_staff_lead_time_minutes,
+                reservation_staff_grace_period_minutes: timing.reservation_staff_grace_period_minutes,
+              },
+              ...onboardingProgressPatch(15),
+            })
+            .eq('id', activeRestaurantId),
+        'Saving reservation timing draft timed out. Please retry.'
+      )
+
+      if (updateError) throw updateError
+
+      setData(prev => mergeOnboardingData(prev, {
+        reservation_timing_same_for_channels: timing.reservation_timing_same_for_channels,
+        reservation_online_booking_horizon_days: timing.reservation_online_booking_horizon_days,
+        reservation_online_lead_time_minutes: timing.reservation_online_lead_time_minutes,
+        reservation_online_grace_period_minutes: timing.reservation_online_grace_period_minutes,
+        reservation_staff_booking_horizon_days: timing.reservation_staff_booking_horizon_days,
+        reservation_staff_lead_time_minutes: timing.reservation_staff_lead_time_minutes,
+        reservation_staff_grace_period_minutes: timing.reservation_staff_grace_period_minutes,
+      }))
+      setRestaurantId(activeRestaurantId)
+    } catch (err) {
+      const message = toErrorMessage(err, 'Failed to save reservation timing')
+      setError(message)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [data, getActiveRestaurantId, fetchRestaurantConfig, onboardingProgressPatch, runWithTimeout])
+
   // Save capacity (after step 5)
   const saveCapacity = useCallback(async () => {
     setIsLoading(true)
@@ -2483,7 +2677,7 @@ export function useOnboarding() {
             .update({
               seating_capacity: data.seating_capacity,
               table_count: data.table_count,
-              ...onboardingProgressPatch(15),
+              ...onboardingProgressPatch(16),
             })
             .eq('id', activeRestaurantId),
         'Saving capacity settings timed out. Please retry.'
@@ -2533,7 +2727,7 @@ export function useOnboarding() {
             () =>
               supabase
                 .from('restaurants')
-                .update({ onboarding_step: 16 })
+                .update({ onboarding_step: 17 })
                 .eq('id', activeRestaurantId),
             'Updating onboarding progress timed out. Please retry.'
           )
@@ -2566,7 +2760,7 @@ export function useOnboarding() {
                 ...existingConfig,
                 menu_import_method: data.menu_import_method,
               },
-              ...onboardingProgressPatch(17),
+              ...onboardingProgressPatch(18),
             })
             .eq('id', activeRestaurantId),
         'Saving menu setup timed out. Please retry.'
@@ -2593,6 +2787,11 @@ export function useOnboarding() {
       throwIfInvalid(getCompletionIssues(data, activeRestaurantId))
 
       const existingConfig = await fetchRestaurantConfig(activeRestaurantId)
+      const timing = reservationTimingPatch(data)
+      await runWithTimeout(
+        () => saveReservationSettings(activeRestaurantId, data),
+        'Saving reservation timing timed out. Please retry.'
+      )
 
       // Mark onboarding complete
       const { data: completedRestaurant, error: updateError } = await runWithTimeout(
@@ -2638,6 +2837,13 @@ export function useOnboarding() {
                 batch_close_time: data.batch_close_time,
                 credit_card_tip_payout: data.credit_card_tip_payout,
                 refund_approval_threshold: data.refund_approval_threshold,
+                reservation_timing_same_for_channels: timing.reservation_timing_same_for_channels,
+                reservation_online_booking_horizon_days: timing.reservation_online_booking_horizon_days,
+                reservation_online_lead_time_minutes: timing.reservation_online_lead_time_minutes,
+                reservation_online_grace_period_minutes: timing.reservation_online_grace_period_minutes,
+                reservation_staff_booking_horizon_days: timing.reservation_staff_booking_horizon_days,
+                reservation_staff_lead_time_minutes: timing.reservation_staff_lead_time_minutes,
+                reservation_staff_grace_period_minutes: timing.reservation_staff_grace_period_minutes,
               },
               ...(isSetupEditor
                 ? {}
@@ -2728,6 +2934,7 @@ export function useOnboarding() {
     saveTechStack,
     saveSections,
     saveOperatingHours,
+    saveReservationTiming,
     saveCapacity,
     saveMenuCategories,
     saveMenuProgress,

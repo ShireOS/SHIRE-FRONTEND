@@ -22,6 +22,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   { id: 'tools', title: 'Tools & Service Model', description: 'Your existing tech stack and guest flow' },
   { id: 'sections', title: 'Sections & Areas', description: 'Bar, patio, outdoor, and dining-room categories' },
   { id: 'hours', title: 'Operating Hours', description: 'When you\'re open' },
+  { id: 'reservation_timing', title: 'Reservation Timing', description: 'How online and staff reservations are allowed' },
   { id: 'capacity', title: 'Tables & Capacity', description: 'Your floor layout' },
   { id: 'menu_categories', title: 'Menu Categories & Routing', description: 'Apps, entrees, desserts, tax overrides, and station defaults' },
   { id: 'menu', title: 'Menu Setup', description: 'Import your menu' },

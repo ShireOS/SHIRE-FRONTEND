@@ -1,0 +1,199 @@
+import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
+
+interface ReservationTimingStepProps {
+  onboarding: UseOnboardingReturn
+}
+
+type TimingField =
+  | 'reservation_online_booking_horizon_days'
+  | 'reservation_online_lead_time_minutes'
+  | 'reservation_online_grace_period_minutes'
+  | 'reservation_staff_booking_horizon_days'
+  | 'reservation_staff_lead_time_minutes'
+  | 'reservation_staff_grace_period_minutes'
+
+function TimingInput({
+  label,
+  value,
+  suffix,
+  min,
+  max,
+  onChange,
+}: {
+  label: string
+  value: string
+  suffix: string
+  min: number
+  max: number
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="block">
+      <span className="label-mono block mb-2 text-[rgb(var(--gold))]">{label}</span>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          min={min}
+          max={max}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
+        />
+        <span className="w-20 text-sm text-[rgb(var(--text-tertiary))]">{suffix}</span>
+      </div>
+    </label>
+  )
+}
+
+export function ReservationTimingStep({ onboarding }: ReservationTimingStepProps) {
+  const { data, updateData, saveReservationTiming, nextStep, isLoading, error } = onboarding
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    try {
+      await saveReservationTiming()
+      nextStep()
+    } catch {
+      // Error handled by hook.
+    }
+  }
+
+  const setTiming = (field: TimingField, value: string) => {
+    const updates: Partial<typeof data> = { [field]: value }
+    if (data.reservation_timing_same_for_channels && field.startsWith('reservation_online_')) {
+      const staffField = field.replace('reservation_online_', 'reservation_staff_') as TimingField
+      updates[staffField] = value
+    }
+    updateData(updates)
+  }
+
+  const useSameRules = data.reservation_timing_same_for_channels
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-8">
+      {error && (
+        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
+          {error}
+        </div>
+      )}
+
+      <div className="p-5 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-[rgb(var(--text-primary))] font-medium">Use the same timing for every reservation channel?</h3>
+            <p className="mt-1 text-sm leading-6 text-[rgb(var(--text-secondary))]">
+              Online booking links and staff-created reservations start with the same rules. Split them when the host team needs more flexibility than guests booking themselves.
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                updateData({
+                  reservation_timing_same_for_channels: true,
+                  reservation_staff_booking_horizon_days: data.reservation_online_booking_horizon_days,
+                  reservation_staff_lead_time_minutes: data.reservation_online_lead_time_minutes,
+                  reservation_staff_grace_period_minutes: data.reservation_online_grace_period_minutes,
+                })
+              }
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                useSameRules
+                  ? 'bg-white text-black'
+                  : 'bg-[rgba(255,255,255,0.05)] text-[rgb(var(--text-tertiary))] hover:bg-[rgba(255,255,255,0.1)]'
+              }`}
+            >
+              Same
+            </button>
+            <button
+              type="button"
+              onClick={() => updateData({ reservation_timing_same_for_channels: false })}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                !useSameRules
+                  ? 'bg-white text-black'
+                  : 'bg-[rgba(255,255,255,0.05)] text-[rgb(var(--text-tertiary))] hover:bg-[rgba(255,255,255,0.1)]'
+              }`}
+            >
+              Different
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <section className="p-6 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] space-y-5">
+        <div>
+          <p className="label-mono text-[rgb(var(--gold))] tracking-[0.12em]">ONLINE BOOKING</p>
+          <p className="mt-1 text-sm text-[rgb(var(--text-secondary))]">Website, app, and Google booking links.</p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <TimingInput
+            label="Book ahead"
+            value={data.reservation_online_booking_horizon_days}
+            suffix="days"
+            min={0}
+            max={365}
+            onChange={(value) => setTiming('reservation_online_booking_horizon_days', value)}
+          />
+          <TimingInput
+            label="Lead time"
+            value={data.reservation_online_lead_time_minutes}
+            suffix="minutes"
+            min={0}
+            max={10080}
+            onChange={(value) => setTiming('reservation_online_lead_time_minutes', value)}
+          />
+          <TimingInput
+            label="No-show grace"
+            value={data.reservation_online_grace_period_minutes}
+            suffix="minutes"
+            min={0}
+            max={360}
+            onChange={(value) => setTiming('reservation_online_grace_period_minutes', value)}
+          />
+        </div>
+      </section>
+
+      {!useSameRules && (
+        <section className="p-6 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] space-y-5">
+          <div>
+            <p className="label-mono text-[rgb(var(--gold))] tracking-[0.12em]">STAFF, PHONE & WALK-IN</p>
+            <p className="mt-1 text-sm text-[rgb(var(--text-secondary))]">Reservations created by the host desk, by phone, or in person.</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <TimingInput
+              label="Book ahead"
+              value={data.reservation_staff_booking_horizon_days}
+              suffix="days"
+              min={0}
+              max={365}
+              onChange={(value) => setTiming('reservation_staff_booking_horizon_days', value)}
+            />
+            <TimingInput
+              label="Lead time"
+              value={data.reservation_staff_lead_time_minutes}
+              suffix="minutes"
+              min={0}
+              max={10080}
+              onChange={(value) => setTiming('reservation_staff_lead_time_minutes', value)}
+            />
+            <TimingInput
+              label="No-show grace"
+              value={data.reservation_staff_grace_period_minutes}
+              suffix="minutes"
+              min={0}
+              max={360}
+              onChange={(value) => setTiming('reservation_staff_grace_period_minutes', value)}
+            />
+          </div>
+        </section>
+      )}
+
+      <button
+        type="submit"
+        disabled={isLoading}
+        className="w-full px-6 py-4 rounded-lg bg-[rgb(var(--gold))] text-black font-medium hover:bg-[rgb(var(--gold-light))] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+      >
+        {isLoading ? 'Saving...' : 'Continue'}
+      </button>
+    </form>
+  )
+}
