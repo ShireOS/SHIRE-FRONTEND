@@ -67,6 +67,12 @@
     --scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
 
     --ambient-mesh: none;
+
+    /* Shell accent — gold in the dark cinematic theme */
+    --shell-accent: 201 169 98;
+    --shell-accent-ring: rgba(201, 169, 98, 0.18);
+    --shell-cta-bg: 201 169 98;
+    --shell-cta-text: 16 15 13;
   }
 
   /* === Light Theme (Cream Host UI Aesthetic) === */
@@ -131,6 +137,12 @@
     --scrollbar-thumb-hover: rgba(0, 0, 0, 0.2);
 
     --ambient-mesh: none;
+
+    /* Shell accent — design.md sky-700 on cream */
+    --shell-accent: 21 108 194;
+    --shell-accent-ring: rgba(21, 108, 194, 0.15);
+    --shell-cta-bg: 26 22 21;
+    --shell-cta-text: 255 255 255;
   }
 }
 

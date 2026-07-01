@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
-import { Building2, ChevronDown } from 'lucide-react'
 import {
   AuthProvider,
   useAuth,
@@ -20,6 +19,11 @@ import ModernRestaurantSetupPanel, {
   warningCount as modernWarningCount,
 } from './RestaurantSetupPanel'
 import { TimeEntry } from './components/shared/TimeEntry'
+import DashboardShell from './shell/DashboardShell'
+import StoresPage from './pages/StoresPage'
+import RatesPage from './pages/RatesPage'
+import UsersPage from './pages/UsersPage'
+import RateApprovalBanner from './pages/RateApprovalBanner'
 
 function LoadingScreen() {
   return (
@@ -40,11 +44,13 @@ function OwnerGate() {
     return <Navigate to="/auth/login" replace />
   }
 
-  if (auth.restaurant.restaurants.length === 0) {
+  // Resellers and admins live in the enterprise portal even with an empty
+  // portfolio; only owners with no restaurants get sent to onboarding.
+  if (auth.restaurant.restaurants.length === 0 && auth.accountType === 'owner') {
     return <Navigate to="/onboarding" replace />
   }
 
-  return <Navigate to="/restaurants" replace />
+  return <Navigate to="/enterprise/stores" replace />
 }
 
 function ProtectedRoute({ children }) {
@@ -61,83 +67,22 @@ function ProtectedRoute({ children }) {
   return children
 }
 
-function RestaurantSelector() {
-  const auth = useAuth()
-  const navigate = useNavigate()
-  const restaurants = auth.restaurant.restaurants
-
-  const openRestaurant = async (restaurantId) => {
-    await auth.switchRestaurant(restaurantId)
-    navigate(`/restaurants/${restaurantId}/analytics`)
-  }
-
+// Enterprise-context pages (Stores, Rates, Users) share the shell with an
+// Enterprise breadcrumb, mirroring the store-context workspace below.
+function EnterprisePage({ item, title, children }) {
   return (
     <ProtectedRoute>
-      <main className="min-h-screen bg-dash-base text-dash-cream px-6 py-8">
-        <div className="mx-auto max-w-6xl space-y-8">
-          <header className="flex flex-col gap-4 border-b border-white/10 pb-6 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="label-mono">Owner Console</p>
-              <h1 className="text-4xl font-semibold tracking-tight">Restaurants</h1>
-              <p className="mt-2 max-w-2xl text-dash-secondary">
-                Choose a restaurant to view analytics, update setup, manage schedules, and review plan details.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link
-                to="/onboarding?new=1"
-                className="inline-flex items-center justify-center rounded-xl bg-dash-gold px-4 py-3 text-sm font-semibold text-black transition hover:opacity-90"
-              >
-                Add restaurant
-              </Link>
-              <button
-                type="button"
-                onClick={() => void auth.signOut()}
-                className="rounded-xl border border-white/10 px-4 py-3 text-sm font-semibold text-dash-secondary transition hover:border-white/20 hover:text-dash-cream"
-              >
-                Sign out
-              </button>
-            </div>
-          </header>
-
-          {restaurants.length === 0 ? (
-            <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-8">
-              <h2 className="text-2xl font-semibold">No restaurants yet</h2>
-              <p className="mt-2 text-dash-secondary">Start onboarding to create your first restaurant workspace.</p>
-              <Link
-                to="/onboarding"
-                className="mt-6 inline-flex rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black"
-              >
-                Start onboarding
-              </Link>
-            </section>
-          ) : (
-            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {restaurants.map((restaurant) => (
-                <button
-                  key={restaurant.id}
-                  type="button"
-                  onClick={() => void openRestaurant(restaurant.id)}
-                  className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 text-left transition hover:border-dash-gold/70 hover:bg-white/[0.055]"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h2 className="text-xl font-semibold">{restaurant.name || 'Untitled restaurant'}</h2>
-                      <p className="mt-1 text-sm text-dash-secondary">
-                        {[restaurant.city, restaurant.state].filter(Boolean).join(', ') || 'Location not set'}
-                      </p>
-                    </div>
-                    <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-dash-secondary">
-                      {restaurant.onboarding_completed_at ? 'Active' : 'Onboarding'}
-                    </span>
-                  </div>
-                  <p className="mt-6 text-sm text-dash-tertiary">Open workspace</p>
-                </button>
-              ))}
-            </section>
-          )}
-        </div>
-      </main>
+      <DashboardShell
+        context="enterprise"
+        activeItem={item}
+        breadcrumb={[
+          { label: 'Home', to: '/' },
+          { label: 'Enterprise' },
+          { label: title },
+        ]}
+      >
+        {children}
+      </DashboardShell>
     </ProtectedRoute>
   )
 }
@@ -4275,6 +4220,11 @@ function RestaurantWorkspace() {
     )
   }
 
+  const breadcrumb = [
+    { label: 'Home', to: `/restaurants/${restaurantId}/analytics` },
+    { label: WORKSPACE_BREADCRUMB_LABELS[activeTab] || 'Overview' },
+  ]
+
   if (activeTab === 'setup') {
     if (auth.restaurant.currentRestaurant?.id !== restaurantId) {
       return (
@@ -4286,198 +4236,60 @@ function RestaurantWorkspace() {
 
     return (
       <ProtectedRoute>
-        <main className="min-h-screen bg-dash-base text-dash-cream px-6 py-8">
-          <div className="mx-auto max-w-7xl space-y-8">
-            <RestaurantWorkspaceHeader
-              restaurant={restaurant}
-              restaurantId={restaurantId}
-              activeTab={activeTab}
-              auth={auth}
-              navigate={navigate}
-              setupWarnings={setupWarnings}
-            />
-            <ModernRestaurantSetupPanel
-              restaurant={restaurant}
-              restaurantId={restaurantId}
-              auth={auth}
-              setupWarnings={setupWarnings}
-              onSetupChanged={() => setSetupRefreshKey(key => key + 1)}
-            />
-          </div>
-        </main>
+        <DashboardShell
+          context="store"
+          activeItem={activeTab}
+          breadcrumb={breadcrumb}
+          restaurant={restaurant}
+          restaurantId={restaurantId}
+          setupWarningCount={modernWarningCount(setupWarnings || {})}
+        >
+          <ModernRestaurantSetupPanel
+            restaurant={restaurant}
+            restaurantId={restaurantId}
+            auth={auth}
+            setupWarnings={setupWarnings}
+            onSetupChanged={() => setSetupRefreshKey(key => key + 1)}
+          />
+        </DashboardShell>
       </ProtectedRoute>
     )
   }
 
   return (
     <ProtectedRoute>
-      <main className="min-h-screen bg-dash-base text-dash-cream px-6 py-8">
-        <div className="mx-auto max-w-7xl space-y-8">
-          <RestaurantWorkspaceHeader
-            restaurant={restaurant}
-            restaurantId={restaurantId}
-            activeTab={activeTab}
-            auth={auth}
-            navigate={navigate}
-            setupWarnings={setupWarnings}
-          />
-
-          {activeTab === 'analytics' && <AnalyticsDashboard restaurant={restaurant} />}
-          {activeTab === 'scheduling' && <SchedulingPanel restaurantId={restaurantId} />}
-          {activeTab === 'messaging' && <ManagerMessagingPanel restaurantId={restaurantId} />}
-          {activeTab === 'payments' && (
-            <PlaceholderPanel title="Payments / Plan" eyebrow="Placeholder">
-              <p>Plan management, billing status, payment method, and subscription controls will live here.</p>
-            </PlaceholderPanel>
-          )}
-        </div>
-      </main>
+      <DashboardShell
+        context="store"
+        activeItem={activeTab}
+        breadcrumb={breadcrumb}
+        restaurant={restaurant}
+        restaurantId={restaurantId}
+        setupWarningCount={modernWarningCount(setupWarnings || {})}
+      >
+        {activeTab === 'analytics' && (
+          <>
+            <RateApprovalBanner restaurant={restaurant} />
+            <AnalyticsDashboard restaurant={restaurant} />
+          </>
+        )}
+        {activeTab === 'scheduling' && <SchedulingPanel restaurantId={restaurantId} />}
+        {activeTab === 'messaging' && <ManagerMessagingPanel restaurantId={restaurantId} />}
+        {activeTab === 'payments' && (
+          <PlaceholderPanel title="Payments / Plan" eyebrow="Placeholder">
+            <p>Plan management, billing status, payment method, and subscription controls will live here.</p>
+          </PlaceholderPanel>
+        )}
+      </DashboardShell>
     </ProtectedRoute>
   )
 }
 
-function RestaurantWorkspaceHeader({ restaurant, restaurantId, activeTab, auth, navigate, setupWarnings }) {
-  const needsSetupAttention = modernWarningCount(setupWarnings || {}) > 0
-  const [switchingRestaurantId, setSwitchingRestaurantId] = useState(null)
-  const restaurants = auth.restaurant.restaurants || []
-  const canSwitchRestaurants = restaurants.length > 1
-
-  const handleRestaurantChange = async (event) => {
-    const nextRestaurantId = event.target.value
-    if (!nextRestaurantId || nextRestaurantId === restaurantId) return
-
-    setSwitchingRestaurantId(nextRestaurantId)
-    try {
-      await auth.switchRestaurant(nextRestaurantId)
-      navigate(`/restaurants/${nextRestaurantId}/${activeTab}`)
-    } finally {
-      setSwitchingRestaurantId(null)
-    }
-  }
-
-  return (
-    <header className="space-y-5 border-b border-white/10 pb-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            {canSwitchRestaurants ? (
-              <label className="relative inline-flex max-w-full items-center rounded-xl border border-white/10 bg-white/[0.035] text-sm font-semibold text-dash-cream transition focus-within:border-dash-gold/70 hover:border-dash-gold/60">
-                <span className="pointer-events-none absolute left-3 text-dash-tertiary">
-                  <Building2 size={16} strokeWidth={1.8} />
-                </span>
-                <span className="sr-only">Switch restaurant</span>
-                <select
-                  value={restaurantId}
-                  onChange={handleRestaurantChange}
-                  disabled={Boolean(switchingRestaurantId)}
-                  className="min-h-[42px] max-w-[min(78vw,320px)] appearance-none truncate rounded-xl bg-transparent py-2 pl-10 pr-10 text-sm font-semibold text-dash-cream outline-none disabled:cursor-wait disabled:opacity-70"
-                >
-                  {restaurants.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name || 'Untitled restaurant'}
-                    </option>
-                  ))}
-                </select>
-                <span className="pointer-events-none absolute right-3 text-dash-tertiary">
-                  <ChevronDown size={16} strokeWidth={1.8} />
-                </span>
-              </label>
-            ) : (
-              <span className="inline-flex min-h-[42px] max-w-full items-center gap-2 rounded-xl border border-white/10 bg-white/[0.025] px-3 py-2 text-sm font-semibold text-dash-secondary">
-                <Building2 size={16} strokeWidth={1.8} />
-                <span className="truncate">{restaurant.name || 'Restaurant workspace'}</span>
-              </span>
-            )}
-            <Link
-              to="/restaurants"
-              className="inline-flex min-h-[42px] items-center rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream"
-            >
-              All restaurants
-            </Link>
-          </div>
-          <h1 className="mt-3 text-4xl font-semibold tracking-tight">{restaurant.name}</h1>
-          <p className="mt-2 text-dash-secondary">
-            {[restaurant.city, restaurant.state].filter(Boolean).join(', ') || 'Restaurant workspace'}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void auth.signOut()}
-          className="rounded-xl border border-white/10 px-4 py-2 text-sm text-dash-secondary transition hover:border-white/20 hover:text-dash-cream"
-        >
-          Sign out
-        </button>
-      </div>
-      <nav className="flex flex-wrap gap-2">
-        {TABS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onMouseEnter={() => prefetchWorkspaceTab(restaurantId, item.id, activeTab)}
-            onFocus={() => prefetchWorkspaceTab(restaurantId, item.id, activeTab)}
-            onClick={() => navigate(`/restaurants/${restaurantId}/${item.id}`)}
-            className={[
-              'rounded-xl px-4 py-2 text-sm font-semibold transition',
-              activeTab === item.id
-                ? 'bg-dash-gold text-black'
-                : 'border border-white/10 text-dash-secondary hover:border-white/20 hover:text-dash-cream',
-            ].join(' ')}
-          >
-            {item.label}
-            {item.id === 'setup' && needsSetupAttention && <WarningTriangle className="ml-2 align-middle" />}
-          </button>
-        ))}
-      </nav>
-    </header>
-  )
-}
-
-// Warm the cache for a tab the moment the user shows intent (hover/focus),
-// so the data is usually already there when they click.
-function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
-  if (!restaurantId || tabId === activeTab) return
-  const prefetch = (queryKey, queryFn, staleTime) =>
-    void queryClient.prefetchQuery({ queryKey, queryFn, staleTime })
-  const api = (path) => () => fetchWithSupabaseAuth(path)
-
-  if (tabId === 'analytics') {
-    prefetch(queryKeys.ownerAnalytics(restaurantId, 'week'), api(`/restaurants/${restaurantId}/owner-analytics?period=week`), STALE_TIMES.analytics)
-  } else if (tabId === 'setup') {
-    prefetch(queryKeys.waiters(restaurantId), api(`/restaurants/${restaurantId}/waiters?include_inactive=false`), STALE_TIMES.setup)
-    prefetch(queryKeys.menuItems(restaurantId), api(`/restaurants/${restaurantId}/menu/items`), STALE_TIMES.setup)
-    prefetch(queryKeys.jobCodes(restaurantId), api(`/restaurants/${restaurantId}/job-codes`), STALE_TIMES.setup)
-    prefetch(queryKeys.sections(restaurantId), api(`/restaurants/${restaurantId}/sections`), STALE_TIMES.setup)
-    prefetch(queryKeys.floorPlan(restaurantId), api(`/restaurants/${restaurantId}/floor-plan`), STALE_TIMES.setup)
-    prefetch(queryKeys.taxesCharges(restaurantId), api(`/restaurants/${restaurantId}/taxes-charges`), STALE_TIMES.setup)
-    prefetch(queryKeys.menuCategories(restaurantId), api(`/restaurants/${restaurantId}/menu/categories`), STALE_TIMES.setup)
-    prefetch(queryKeys.discountRules(restaurantId), api(`/restaurants/${restaurantId}/discount-rules`), STALE_TIMES.setup)
-    prefetch(queryKeys.managerControls(restaurantId), api(`/restaurants/${restaurantId}/manager-controls`), STALE_TIMES.setup)
-    prefetch(queryKeys.closeoutSettings(restaurantId), api(`/restaurants/${restaurantId}/closeout-settings`), STALE_TIMES.setup)
-    prefetch(queryKeys.checkWorkflowSettings(restaurantId), api(`/restaurants/${restaurantId}/check-workflow-settings`), STALE_TIMES.setup)
-    prefetch(queryKeys.tipsPayrollSettings(restaurantId), api(`/restaurants/${restaurantId}/tips-payroll-settings`), STALE_TIMES.setup)
-    prefetch(queryKeys.pricingPolicy(restaurantId), api(`/restaurants/${restaurantId}/pricing-policy`), STALE_TIMES.setup)
-    prefetch(queryKeys.operatingHours(restaurantId), async () => {
-      const { data, error } = await supabase
-        .from('operating_hours')
-        .select('day_of_week, open_time, close_time, is_closed')
-        .eq('restaurant_id', restaurantId)
-        .order('day_of_week')
-      if (error) throw error
-      return data
-    }, STALE_TIMES.setup)
-  } else if (tabId === 'scheduling') {
-    prefetch(queryKeys.staffingBlocks(restaurantId), api(`/restaurants/${restaurantId}/staffing-requirements/blocks`), STALE_TIMES.scheduling)
-    prefetch(queryKeys.staffingSuggestions(restaurantId), api(`/restaurants/${restaurantId}/staffing-requirements/suggestions`), STALE_TIMES.scheduling)
-    prefetch(queryKeys.schedules(restaurantId, '?limit=5'), api(`/restaurants/${restaurantId}/schedules?limit=5`), STALE_TIMES.scheduling)
-    prefetch(queryKeys.waiters(restaurantId), api(`/restaurants/${restaurantId}/waiters?include_inactive=false`), STALE_TIMES.scheduling)
-    prefetch(queryKeys.employeeRequestPolicy(restaurantId), api(`/restaurants/${restaurantId}/employee-request-policy`), STALE_TIMES.scheduling)
-    prefetch(queryKeys.employeeRequests(restaurantId, 'all'), api(`/restaurants/${restaurantId}/employee-requests?status=all`), STALE_TIMES.scheduling)
-    prefetch(queryKeys.shiftTradeRequests(restaurantId, 'pending_manager'), api(`/restaurants/${restaurantId}/shift-trade-requests?status=pending_manager`), STALE_TIMES.scheduling)
-  } else if (tabId === 'messaging') {
-    prefetch(queryKeys.waiters(restaurantId), api(`/restaurants/${restaurantId}/waiters?include_inactive=false`), STALE_TIMES.setup)
-    prefetch(queryKeys.conversations(restaurantId), api(`/restaurants/${restaurantId}/messages/conversations`), STALE_TIMES.messaging)
-    prefetch(queryKeys.announcements(restaurantId), api(`/restaurants/${restaurantId}/announcements`), STALE_TIMES.messaging)
-  }
+const WORKSPACE_BREADCRUMB_LABELS = {
+  analytics: 'Overview',
+  setup: 'Setup',
+  scheduling: 'Scheduling',
+  messaging: 'Messaging',
+  payments: 'Payments / Plan',
 }
 
 export default function AuthenticatedDashboardApp() {
@@ -4491,7 +4303,20 @@ export default function AuthenticatedDashboardApp() {
         <Route path="auth/callback" element={<AuthCallbackPage />} />
         <Route path="employee" element={<EmployeePortal />} />
         <Route path="onboarding" element={<OnboardingPage />} />
-        <Route path="restaurants" element={<RestaurantSelector />} />
+        <Route path="enterprise" element={<Navigate to="/enterprise/stores" replace />} />
+        <Route
+          path="enterprise/stores"
+          element={<EnterprisePage item="stores" title="Stores"><StoresPage /></EnterprisePage>}
+        />
+        <Route
+          path="enterprise/rates"
+          element={<EnterprisePage item="rates" title="Rates & Pricing"><RatesPage /></EnterprisePage>}
+        />
+        <Route
+          path="enterprise/users"
+          element={<EnterprisePage item="users" title="Users"><UsersPage /></EnterprisePage>}
+        />
+        <Route path="restaurants" element={<Navigate to="/enterprise/stores" replace />} />
         <Route path="restaurants/:restaurantId" element={<Navigate to="analytics" replace />} />
         <Route path="restaurants/:restaurantId/:tab" element={<RestaurantWorkspace />} />
         <Route index element={<OwnerGate />} />

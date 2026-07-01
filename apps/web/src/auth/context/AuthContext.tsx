@@ -91,7 +91,11 @@ interface RestaurantState {
   isLoading: boolean
 }
 
+type AccountType = 'owner' | 'reseller' | 'admin'
+
 interface AuthContextValue extends AuthState {
+  /** Platform-level role from profiles.account_type; defaults to 'owner'. */
+  accountType: AccountType
   restaurant: RestaurantState
   // Auth methods
   signUp: (email: string, password: string, metadata?: SignUpMetadata) => Promise<AuthResult>
@@ -275,11 +279,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ----------------------------------------
   // FETCH USER'S RESTAURANTS
   // ----------------------------------------
-  const fetchRestaurants = useCallback(async (userId: string): Promise<Restaurant[]> => {
+  const fetchRestaurants = useCallback(async (
+    userId: string,
+    accountType: AccountType = 'owner'
+  ): Promise<Restaurant[]> => {
     if (!isSupabaseConfigured) return []
     setRestaurantLoading(true)
 
     try {
+      // Admins see every restaurant (RLS permits); no further scoping needed.
+      if (accountType === 'admin') {
+        const { data: allRestaurants, error: allError } = await withTimeout(
+          supabase.from('restaurants').select('*').order('name'),
+          'Restaurant lookup timed out.'
+        )
+        if (allError) {
+          console.warn('[Auth] Could not fetch restaurants as admin:', allError.message)
+        }
+        const resolved = allRestaurants || []
+        setRestaurants(resolved)
+        return resolved
+      }
+
       // Get restaurants where user is owner
       const { data: ownedRestaurants, error: ownedError } = await withTimeout(
         supabase
@@ -291,6 +312,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (ownedError) {
         console.warn('[Auth] Could not fetch owned restaurants:', ownedError.message)
+      }
+
+      // Resellers additionally see their assigned portfolio.
+      let portfolioRestaurants: Restaurant[] = []
+      if (accountType === 'reseller') {
+        const { data: assignments, error: portfolioError } = await withTimeout(
+          supabase
+            .from('reseller_restaurants')
+            .select('restaurant:restaurants(*)')
+            .eq('reseller_id', userId)
+            .eq('status', 'active'),
+          'Reseller portfolio lookup timed out.'
+        )
+        if (portfolioError) {
+          console.warn('[Auth] Could not fetch reseller portfolio:', portfolioError.message)
+        } else {
+          portfolioRestaurants = assignments
+            ?.map((a: any) => a.restaurant)
+            .filter(Boolean) || []
+        }
       }
 
       let memberRestaurants: Restaurant[] = []
@@ -316,10 +357,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Combine owned and member restaurants (dedupe)
+      // Combine owned, member, and portfolio restaurants (dedupe)
       const allRestaurants = [...(ownedRestaurants || [])]
 
-      for (const restaurant of memberRestaurants) {
+      for (const restaurant of [...memberRestaurants, ...portfolioRestaurants]) {
         if (!allRestaurants.some(owned => owned.id === restaurant.id)) {
           allRestaurants.push(restaurant)
         }
@@ -365,7 +406,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshRestaurants = useCallback(async (preferredRestaurantId?: string | null) => {
     if (!user) return
 
-    const userRestaurants = await fetchRestaurants(user.id)
+    const userRestaurants = await fetchRestaurants(
+      user.id,
+      (profile?.account_type as AccountType) || 'owner'
+    )
 
     if (userRestaurants.length === 0) {
       if (preferredRestaurantId && currentRestaurant?.id === preferredRestaurantId) {
@@ -391,7 +435,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCurrentRestaurant(restaurantToSelect)
       localStorage.setItem(CURRENT_RESTAURANT_STORAGE_KEY, restaurantToSelect.id)
     }
-  }, [user, fetchRestaurants, currentRestaurant])
+  }, [user, profile?.account_type, fetchRestaurants, currentRestaurant])
 
   // Supabase can emit transient abort rejections internally during auth races.
   // Suppress those to avoid noisy uncaught errors in dev console.
@@ -494,7 +538,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!mounted || hydrateRequestRef.current !== requestId) return
         setProfile(userProfile)
 
-        const userRestaurants = await fetchRestaurants(userId)
+        const userRestaurants = await fetchRestaurants(
+          userId,
+          (userProfile?.account_type as AccountType) || 'owner'
+        )
         if (!mounted || hydrateRequestRef.current !== requestId) return
 
         const savedRestaurantId = localStorage.getItem(CURRENT_RESTAURANT_STORAGE_KEY)
@@ -756,6 +803,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     session,
     isLoading,
     isAuthenticated: !!user,
+    accountType: (profile?.account_type as AccountType) || 'owner',
 
     // Restaurant state
     restaurant: {

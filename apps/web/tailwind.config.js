@@ -55,6 +55,28 @@ export default {
         'dash-warning': 'rgb(var(--dash-warning) / <alpha-value>)',
         'dash-danger': 'rgb(var(--dash-danger) / <alpha-value>)',
         'dash-neutral': 'rgb(var(--dash-neutral) / <alpha-value>)',
+        // Shell accent: gold in dark, design.md sky-700 in light
+        'shell-accent': 'rgb(var(--shell-accent) / <alpha-value>)',
+        'shell-cta': 'rgb(var(--shell-cta-bg) / <alpha-value>)',
+        'shell-cta-text': 'rgb(var(--shell-cta-text) / <alpha-value>)',
+        // Shire design-system tokens (design.md — cream/sky/ink)
+        cream: { 50: '#FAFAFA', 100: '#F9F8F8', 200: '#F4F1EE', 300: '#F1EBE5' },
+        sand: { 200: '#EDDFD0', 300: '#F4E6DA' },
+        ink: {
+          400: '#616161', 500: '#757170', 600: '#614A44',
+          700: '#453F3D', 800: '#151313', 900: '#1A1615',
+        },
+        'shire-sky': {
+          50: '#F0F6FF', 100: '#E9EFFF', 200: '#E2ECF5', 300: '#A7CBF2',
+          400: '#9CC1E7', 500: '#84B9EF', 600: '#6F86FF', 700: '#156CC2',
+        },
+        'shire-stone': { 100: '#EDEFF0', 200: '#E4E2E2' },
+        'shire-success': { 600: '#0EA158', 700: '#118647' },
+        'shire-warning': { 600: '#CF8D13' },
+        'shire-danger': { 600: '#C9502E' },
+      },
+      letterSpacing: {
+        eyebrow: '0.06em',
       },
       boxShadow: {
         'subtle': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
@@ -62,6 +84,9 @@ export default {
         'floating': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
         'glass': '0 4px 24px rgba(0, 0, 0, 0.4)',
         'gold-glow': '0 0 20px rgba(201, 169, 98, 0.2)',
+        // design.md tinted shadows
+        'shire-card': '0 4px 50px rgba(97, 74, 68, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.7)',
+        'shire-float': '0 18px 45px rgba(60, 120, 190, 0.12), 0 4px 50px rgba(97, 74, 68, 0.10)',
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
