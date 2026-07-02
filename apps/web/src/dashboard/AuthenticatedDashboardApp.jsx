@@ -32,6 +32,7 @@ import ClaimStorePage from './pages/ClaimStorePage'
 import { useAllowedStoreTabs } from './data/resellerAccess'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
 import SalesTiles from './components/SalesTiles'
+import { usePersistedPeriod } from './data/analyticsSummary'
 
 function LoadingScreen() {
   return (
@@ -257,7 +258,7 @@ function MiniTable({ columns, rows }) {
 }
 
 function AnalyticsDashboard({ restaurant }) {
-  const [period, setPeriod] = useState('week')
+  const [period, setPeriod] = usePersistedPeriod('shire_home_period')
   const restaurantId = restaurant?.id
 
   // Cached per restaurant + period; keepPreviousData keeps the current numbers

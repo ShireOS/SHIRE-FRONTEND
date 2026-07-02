@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQueries } from '@tanstack/react-query'
+import { useQueries, keepPreviousData } from '@tanstack/react-query'
 import { useAuth } from '../../auth'
 import { queryKeys, fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
 import { fetchStoreGroups } from '../data/storeGroups'
-import { useAnalyticsSummary } from '../data/analyticsSummary'
+import { useAnalyticsSummary, usePersistedPeriod } from '../data/analyticsSummary'
 
 const PERIODS = [
   { id: 'day', label: 'Day' },
@@ -41,7 +41,7 @@ function MetricCard({ label, value, detail }) {
 export default function OverviewPage() {
   const auth = useAuth()
   const navigate = useNavigate()
-  const [period, setPeriod] = useState('week')
+  const [period, setPeriod] = usePersistedPeriod('shire_overview_period')
   const [groupFilter, setGroupFilter] = useState('all')
   const [groups, setGroups] = useState([])
 
@@ -69,6 +69,7 @@ export default function OverviewPage() {
           queryFn: () => fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/owner-analytics?period=${period}`),
           staleTime: STALE_TIMES.analytics,
           retry: false,
+          placeholderData: keepPreviousData,
         }))
       : [],
   })

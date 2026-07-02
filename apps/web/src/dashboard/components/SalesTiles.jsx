@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import {
   Ban,
   ChefHat,
@@ -231,10 +231,17 @@ export default function SalesTiles({ restaurantId, period }) {
     enabled: Boolean(restaurantId),
     staleTime: STALE_TIMES.analytics,
     retry: false,
+    placeholderData: keepPreviousData,
   })
 
   const payload = metricsQuery.data
-  if (metricsQuery.isError) return null // older deployed backend — hide quietly
+  if (metricsQuery.isError) {
+    return (
+      <p className="glass-card rounded-2xl px-4 py-3 text-sm text-dash-tertiary">
+        Sales tiles are waiting on the latest analytics backend — deploy the ML backend to turn them on.
+      </p>
+    )
+  }
   const totals = payload?.totals || {}
   const selected = TILES.find((tile) => tile.id === selectedId) || null
 

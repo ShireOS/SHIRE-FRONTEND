@@ -1,5 +1,21 @@
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
+
+/**
+ * Period selection that survives navigation and reloads. One key per surface
+ * so Overview and a store's Home can hold different periods.
+ */
+export function usePersistedPeriod(storageKey, fallback = 'week') {
+  const [period, setPeriod] = useState(() => {
+    const saved = localStorage.getItem(storageKey)
+    return ['day', 'week', 'month', 'year', 'full'].includes(saved) ? saved : fallback
+  })
+  useEffect(() => {
+    localStorage.setItem(storageKey, period)
+  }, [storageKey, period])
+  return [period, setPeriod]
+}
 
 /**
  * Batch KPI summary for many stores in ONE request (vs. a full owner-analytics
@@ -17,5 +33,8 @@ export function useAnalyticsSummary(restaurantIds, period) {
     enabled: ids.length > 0,
     staleTime: STALE_TIMES.analytics,
     retry: false,
+    // Keep the previous period's numbers on screen while the next loads —
+    // no flash of zeros/dashes when switching Day/Week/Month/Year.
+    placeholderData: keepPreviousData,
   })
 }
