@@ -8,6 +8,7 @@ import { FloorPlanTableSetup } from '../onboarding/components/FloorPlanTableSetu
 import { MenuEditor } from '../onboarding/components/MenuEditor'
 import { ModifierEditor } from '../onboarding/components/ModifierEditor'
 import { syncRatePlanFromPricingPolicy } from './data/ratePlans'
+import { assignedStaffRoles, buildStaffRoleUpdate, primaryStaffRole, roleCodeFromJobCode } from './utils/staffRoles'
 
 const SETUP_TABS = [
   { id: 'basics', label: 'Basics' },
@@ -415,6 +416,66 @@ function SelectInput(props) {
         props.className || '',
       ].join(' ')}
     />
+  )
+}
+
+function StaffRoleAssignment({ waiter, jobCodes, onChange }) {
+  const availableRoles = jobCodes.length > 0 ? jobCodes : [{ id: 'server', code: 'server', label: 'Server' }]
+  const assignedRoles = assignedStaffRoles(waiter, availableRoles)
+  const primaryRole = primaryStaffRole(waiter, availableRoles)
+
+  const commit = (nextPrimary, nextRoles) => {
+    const update = buildStaffRoleUpdate(nextPrimary, nextRoles, availableRoles)
+    if (update.role) onChange(update)
+  }
+
+  const toggleRole = (role) => {
+    const selected = assignedRoles.includes(role)
+    const nextRoles = selected
+      ? assignedRoles.filter(item => item !== role)
+      : [...assignedRoles, role]
+    if (nextRoles.length === 0) return
+    commit(selected && role === primaryRole ? nextRoles[0] : primaryRole || role, nextRoles)
+  }
+
+  return (
+    <div className="space-y-2">
+      <SelectInput
+        value={primaryRole}
+        onChange={event => {
+          const role = event.target.value
+          commit(role, [role, ...assignedRoles.filter(item => item !== role)])
+        }}
+      >
+        {availableRoles.map(role => <option key={role.id || role.code} value={roleCodeFromJobCode(role)}>{role.label || role.code}</option>)}
+        {primaryRole && availableRoles.every(role => roleCodeFromJobCode(role) !== primaryRole) && (
+          <option value={primaryRole}>{primaryRole}</option>
+        )}
+      </SelectInput>
+      <div className="flex flex-wrap gap-1">
+        {availableRoles.map(code => {
+          const role = roleCodeFromJobCode(code)
+          const selected = assignedRoles.includes(role)
+          return (
+            <button
+              key={code.id || code.code}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => toggleRole(role)}
+              disabled={selected && assignedRoles.length === 1}
+              className={[
+                'rounded-full border px-2 py-1 text-[11px] font-semibold transition disabled:cursor-default disabled:opacity-80',
+                selected
+                  ? 'border-dash-gold/60 bg-dash-gold/15 text-dash-cream'
+                  : 'border-white/10 text-dash-tertiary hover:border-dash-gold/60 hover:text-dash-cream',
+              ].join(' ')}
+            >
+              {code.label || code.code}
+            </button>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 
@@ -2213,14 +2274,13 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       return
     }
     setSetupError('')
-    const selectedJobCode = jobCodes.find(code => code.code === staffForm.role)
+    const roleUpdate = buildStaffRoleUpdate(staffForm.role, [staffForm.role], jobCodes)
     const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters`, {
       method: 'POST',
       body: JSON.stringify({
         name: staffForm.name.trim(),
         email: staffForm.email.trim() || null,
-        role: staffForm.role,
-        job_code_id: selectedJobCode?.id || null,
+        ...roleUpdate,
         hourly_rate: staffForm.hourly_rate === '' ? null : Number(staffForm.hourly_rate),
         pin: staffForm.pin,
         employee_login_id: staffForm.employee_login_id.trim() || defaultEmployeeId(staffForm.name),
@@ -3851,16 +3911,14 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               </SetupEmptyState>
             ) : (
               waiters.map(waiter => (
-                <div key={waiter.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 xl:grid-cols-[1fr_1fr_130px_110px_110px_150px_170px_100px_auto]">
+                <div key={waiter.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 xl:grid-cols-[1fr_1fr_240px_110px_110px_150px_170px_100px_auto]">
                   <TextInput defaultValue={waiter.name || ''} onBlur={event => void updateStaff(waiter.id, { name: event.target.value })} />
                   <TextInput defaultValue={waiter.email || ''} placeholder="Email" onBlur={event => void updateStaff(waiter.id, { email: event.target.value || null })} />
-                  <SelectInput defaultValue={waiter.role || 'server'} onChange={event => {
-                    const nextRole = event.target.value
-                    const nextJobCode = jobCodes.find(code => code.code === nextRole)
-                    void updateStaff(waiter.id, { role: nextRole, job_code_id: nextJobCode?.id || null })
-                  }}>
-                    {jobCodes.map(role => <option key={role.code} value={role.code}>{role.label}</option>)}
-                  </SelectInput>
+                  <StaffRoleAssignment
+                    waiter={waiter}
+                    jobCodes={jobCodes}
+                    onChange={updates => void updateStaff(waiter.id, updates)}
+                  />
                   <TextInput defaultValue={waiter.suggested_weekly_hours ?? ''} placeholder="Hrs/week" onBlur={event => void updateStaff(waiter.id, { suggested_weekly_hours: event.target.value === '' ? null : Number(event.target.value) })} />
                   <TextInput defaultValue={waiter.hourly_rate ?? ''} placeholder="$/hr" onBlur={event => void updateStaff(waiter.id, { hourly_rate: event.target.value === '' ? null : Number(event.target.value) })} />
                   <TextInput defaultValue={waiter.employee_login_id || defaultEmployeeId(waiter.name || '')} placeholder="Login ID" onBlur={event => void updateStaff(waiter.id, { employee_login_id: event.target.value || defaultEmployeeId(waiter.name || '') })} />

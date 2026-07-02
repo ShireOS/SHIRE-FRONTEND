@@ -29,6 +29,8 @@ import OverviewPage from './pages/OverviewPage'
 import SettingsPage from './pages/SettingsPage'
 import TeamPage from './pages/TeamPage'
 import ClaimStorePage from './pages/ClaimStorePage'
+import DevicesPage from './pages/DevicesPage'
+import StoreDevicesPanel from './components/devices/StoreDevicesPanel'
 import { useAllowedStoreTabs } from './data/resellerAccess'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
 import SalesTiles from './components/SalesTiles'
@@ -4341,6 +4343,7 @@ function RestaurantWorkspace() {
           </>
         )}
         {activeTab === 'team' && <TeamPage restaurantId={restaurantId} />}
+        {activeTab === 'devices' && <StoreDevicesPanel restaurantId={restaurantId} />}
         {activeTab === 'scheduling' && <SchedulingPanel restaurantId={restaurantId} />}
         {activeTab === 'messaging' && <ManagerMessagingPanel restaurantId={restaurantId} />}
         {activeTab === 'payments' && (
@@ -4357,6 +4360,7 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   analytics: 'Overview',
   setup: 'Setup',
   team: 'Team',
+  devices: 'Devices',
   scheduling: 'Scheduling',
   messaging: 'Messaging',
   payments: 'Payments / Plan',
@@ -4390,6 +4394,10 @@ export default function AuthenticatedDashboardApp() {
         <Route
           path="enterprise/rates"
           element={<EnterprisePage item="rates" title="Rates & Pricing"><RatesPage /></EnterprisePage>}
+        />
+        <Route
+          path="enterprise/devices"
+          element={<EnterprisePage item="devices" title="Devices"><DevicesPage /></EnterprisePage>}
         />
         <Route
           path="enterprise/users"

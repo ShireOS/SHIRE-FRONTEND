@@ -109,6 +109,7 @@ function hiddenSurfaces(auth) {
 const STORE_NAV = [
   { id: 'analytics', label: 'Home', icon: Home },
   { id: 'setup', label: 'Setup', icon: Wrench },
+  { id: 'devices', label: 'Devices', icon: Monitor },
   { id: 'team', label: 'Team', icon: Users },
   { id: 'scheduling', label: 'Scheduling', icon: CalendarClock },
   { id: 'messaging', label: 'Messaging', icon: MessageSquare },
@@ -120,7 +121,6 @@ const STORE_NAV_SOON = [
   { id: 'online-ordering', label: 'Online Ordering', icon: ShoppingCart },
   { id: 'integrations', label: 'Integration Hub', icon: SlidersHorizontal },
   { id: 'reports', label: 'Reports', icon: LayoutGrid },
-  { id: 'pos', label: 'POS', icon: Monitor },
 ]
 
 function SoonChip() {
@@ -314,6 +314,12 @@ export default function DashboardShell({
                 onClick={() => navigate('/enterprise/rates')}
               />
             )}
+            <SidebarItem
+              icon={Monitor}
+              label="Devices"
+              isActive={activeItem === 'devices'}
+              onClick={() => navigate('/enterprise/devices')}
+            />
             {showUsers && (
               <SidebarItem
                 icon={Users}

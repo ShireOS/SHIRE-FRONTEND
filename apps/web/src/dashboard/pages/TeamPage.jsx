@@ -3,6 +3,7 @@ import { BadgeDollarSign, Plus, ShieldCheck, Users } from 'lucide-react'
 import { useAuth } from '../../auth'
 import { supabase } from '../../shared/lib/supabase'
 import { fetchWithSupabaseAuth } from '../../shared/query'
+import { assignedStaffRoles, buildStaffRoleUpdate, primaryStaffRole, roleCodeFromJobCode } from '../utils/staffRoles'
 
 const money = (value) =>
   value === null || value === undefined || value === ''
@@ -44,6 +45,70 @@ function RateInput({ value, onCommit, placeholder }) {
       }}
       className="w-24 rounded-xl border border-dash-border bg-[var(--glass-bg)] px-2.5 py-1.5 font-mono text-xs tabular-nums text-dash-cream outline-none focus:border-shell-accent/60"
     />
+  )
+}
+
+function StaffRoleEditor({ waiter, jobCodes, onChange }) {
+  const availableRoles = jobCodes.length > 0 ? jobCodes : [{ id: 'server', code: 'server', label: 'Server' }]
+  const assignedRoles = assignedStaffRoles(waiter, availableRoles)
+  const primaryRole = primaryStaffRole(waiter, availableRoles)
+
+  const commit = (nextPrimary, nextRoles) => {
+    const update = buildStaffRoleUpdate(nextPrimary, nextRoles, availableRoles)
+    if (!update.role) return
+    onChange(update)
+  }
+
+  const toggleRole = (role) => {
+    const selected = assignedRoles.includes(role)
+    const nextRoles = selected
+      ? assignedRoles.filter(item => item !== role)
+      : [...assignedRoles, role]
+    if (nextRoles.length === 0) return
+    commit(selected && role === primaryRole ? nextRoles[0] : primaryRole || role, nextRoles)
+  }
+
+  return (
+    <span className="flex min-w-[280px] flex-wrap items-center gap-2">
+      <select
+        value={primaryRole}
+        onChange={(event) => {
+          const role = event.target.value
+          commit(role, [role, ...assignedRoles.filter(item => item !== role)])
+        }}
+        className="rounded-xl border border-dash-border bg-[var(--glass-bg)] px-2.5 py-1.5 text-xs font-semibold text-dash-secondary outline-none focus:border-shell-accent/60"
+      >
+        {availableRoles.map((code) => (
+          <option key={code.id || code.code} value={roleCodeFromJobCode(code)}>{code.label || code.code}</option>
+        ))}
+        {primaryRole && availableRoles.every((code) => roleCodeFromJobCode(code) !== primaryRole) && (
+          <option value={primaryRole}>{primaryRole}</option>
+        )}
+      </select>
+      <span className="flex flex-wrap gap-1">
+        {availableRoles.map((code) => {
+          const role = roleCodeFromJobCode(code)
+          const selected = assignedRoles.includes(role)
+          return (
+            <button
+              key={code.id || code.code}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => toggleRole(role)}
+              disabled={selected && assignedRoles.length === 1}
+              className={[
+                'rounded-full border px-2 py-1 text-[11px] font-semibold transition disabled:cursor-default disabled:opacity-80',
+                selected
+                  ? 'border-shell-accent/60 bg-shell-accent/15 text-dash-cream'
+                  : 'border-dash-border text-dash-tertiary hover:border-shell-accent/50 hover:text-dash-secondary',
+              ].join(' ')}
+            >
+              {code.label || code.code}
+            </button>
+          )
+        })}
+      </span>
+    </span>
   )
 }
 
@@ -97,13 +162,12 @@ export default function TeamPage({ restaurantId }) {
     act(async () => {
       if (!newEmployee.name.trim()) throw new Error('Employee name is required.')
       const role = newEmployee.role || jobCodes[0]?.code || 'server'
-      const jobCode = jobCodes.find((code) => code.code === role)
+      const roleUpdate = buildStaffRoleUpdate(role, [role], jobCodes)
       const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters`, {
         method: 'POST',
         body: JSON.stringify({
           name: newEmployee.name.trim(),
-          role,
-          job_code_id: jobCode?.id || null,
+          ...roleUpdate,
           hourly_rate: newEmployee.hourly_rate === '' ? null : Number(newEmployee.hourly_rate),
           pin: '1111',
         }),
@@ -164,7 +228,7 @@ export default function TeamPage({ restaurantId }) {
 
   const groupRate = (waiter) => {
     const byId = jobCodes.find((code) => code.id === waiter.job_code_id)
-    const byRole = jobCodes.find((code) => code.code === (waiter.pos_role || waiter.role))
+    const byRole = jobCodes.find((code) => roleCodeFromJobCode(code) === primaryStaffRole(waiter, jobCodes))
     return (byId || byRole)?.default_hourly_rate ?? null
   }
 
@@ -241,22 +305,11 @@ export default function TeamPage({ restaurantId }) {
                 <span className={`min-w-[130px] text-sm font-semibold ${waiter.is_active === false ? 'text-dash-tertiary line-through' : 'text-dash-cream'}`}>
                   {waiter.name}
                 </span>
-                <select
-                  value={waiter.pos_role || waiter.role || ''}
-                  onChange={(event) => {
-                    const role = event.target.value
-                    const jobCode = jobCodes.find((code) => code.code === role)
-                    void patchWaiter(waiter.id, { role, job_code_id: jobCode?.id || null })
-                  }}
-                  className="rounded-xl border border-dash-border bg-[var(--glass-bg)] px-2.5 py-1.5 text-xs font-semibold text-dash-secondary outline-none"
-                >
-                  {jobCodes.map((code) => (
-                    <option key={code.id} value={code.code}>{code.label || code.code}</option>
-                  ))}
-                  {jobCodes.every((code) => code.code !== (waiter.pos_role || waiter.role)) && (
-                    <option value={waiter.pos_role || waiter.role || ''}>{waiter.pos_role || waiter.role || 'unassigned'}</option>
-                  )}
-                </select>
+                <StaffRoleEditor
+                  waiter={waiter}
+                  jobCodes={jobCodes}
+                  onChange={(updates) => void patchWaiter(waiter.id, updates)}
+                />
                 <span className="ml-auto flex items-center gap-2">
                   <RateInput
                     value={override ?? ''}
