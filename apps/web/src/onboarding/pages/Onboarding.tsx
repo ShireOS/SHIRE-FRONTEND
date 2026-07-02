@@ -19,6 +19,7 @@ import { DemoShowcase } from './steps/DemoShowcase'
 import { TechStackStep } from './steps/TechStackStep'
 import { SectionsStep } from './steps/SectionsStep'
 import { HoursStep } from './steps/HoursStep'
+import { ReservationTimingStep } from './steps/ReservationTimingStep'
 import { CapacityStep } from './steps/CapacityStep'
 import { MenuCategoriesStep } from './steps/MenuCategoriesStep'
 import { MenuStep } from './steps/MenuStep'
@@ -112,16 +113,18 @@ export function OnboardingPage() {
       case 13:
         return <HoursStep onboarding={onboarding} />
       case 14:
-        return <CapacityStep onboarding={onboarding} />
+        return <ReservationTimingStep onboarding={onboarding} />
       case 15:
-        return <MenuCategoriesStep onboarding={onboarding} />
+        return <CapacityStep onboarding={onboarding} />
       case 16:
-        return <MenuStep onboarding={onboarding} />
+        return <MenuCategoriesStep onboarding={onboarding} />
       case 17:
-        return <ModifierStep onboarding={onboarding} />
+        return <MenuStep onboarding={onboarding} />
       case 18:
-        return <RoutingStep onboarding={onboarding} />
+        return <ModifierStep onboarding={onboarding} />
       case 19:
+        return <RoutingStep onboarding={onboarding} />
+      case 20:
         return <TeamStep onboarding={onboarding} />
       default:
         return null
@@ -129,7 +132,7 @@ export function OnboardingPage() {
   }
 
   // Optional setup steps can be skipped; required basics are enforced in the step UI.
-  const canSkip = currentStep >= 4 && currentStep <= 17
+  const canSkip = currentStep >= 4 && currentStep <= 18
   const canGoBack = currentStep > 0
 
   return (
