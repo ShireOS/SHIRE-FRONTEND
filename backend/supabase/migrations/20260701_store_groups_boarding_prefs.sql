@@ -16,6 +16,35 @@
 --     restaurant_members never carry role='owner'.
 -- ============================================
 
+-- 0. RESTAURANT DRAFT STATUS
+-- ============================================
+-- Reseller-created draft stores are real restaurant rows, but they are not
+-- owner-ready onboarding records until claim_store() transfers ownership.
+ALTER TABLE public.restaurants
+  DROP CONSTRAINT IF EXISTS restaurants_status_known;
+
+ALTER TABLE public.restaurants
+  ADD CONSTRAINT restaurants_status_known
+  CHECK (status IN ('draft', 'onboarding', 'active', 'paused', 'closed'));
+
+ALTER TABLE public.restaurants
+  DROP CONSTRAINT IF EXISTS restaurants_onboarding_completion_consistent;
+
+ALTER TABLE public.restaurants
+  ADD CONSTRAINT restaurants_onboarding_completion_consistent
+  CHECK (
+    (
+      status IN ('draft', 'onboarding')
+      AND onboarding_completed_at IS NULL
+      AND onboarding_step BETWEEN 0 AND 20
+    )
+    OR (
+      status IN ('active', 'paused', 'closed')
+      AND onboarding_completed_at IS NOT NULL
+      AND onboarding_step BETWEEN 8 AND 20
+    )
+  );
+
 -- 1. STORE GROUPS
 -- ============================================
 CREATE TABLE IF NOT EXISTS public.store_groups (
@@ -95,12 +124,44 @@ CREATE POLICY "Inviters manage their store invites"
 
 -- Claim page loads the invite by token pre-auth (same convention as invitations).
 DROP POLICY IF EXISTS "Anyone can view store invite by token" ON public.store_invites;
-CREATE POLICY "Anyone can view store invite by token"
-  ON public.store_invites FOR SELECT
-  USING (true);
 
 CREATE INDEX IF NOT EXISTS idx_store_invites_token ON public.store_invites(token);
 CREATE INDEX IF NOT EXISTS idx_store_invites_inviter ON public.store_invites(invited_by, status);
+
+-- Narrow public lookup for claim links. This keeps store_invites private under
+-- RLS while allowing the bearer of a token to render the claim page pre-auth.
+CREATE OR REPLACE FUNCTION public.get_store_invite_by_token(invite_token text)
+RETURNS TABLE (
+  id uuid,
+  token text,
+  kind text,
+  email text,
+  restaurant_name text,
+  summary jsonb,
+  status text,
+  expires_at timestamptz
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+STABLE
+AS $$
+  SELECT
+    si.id,
+    si.token,
+    si.kind,
+    NULL::text AS email,
+    si.restaurant_name,
+    si.summary,
+    si.status,
+    si.expires_at
+  FROM public.store_invites si
+  WHERE si.token = invite_token
+  LIMIT 1;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_store_invite_by_token(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_store_invite_by_token(text) TO anon, authenticated;
 
 
 -- 3. CLAIM FUNCTION (atomic ownership transfer)

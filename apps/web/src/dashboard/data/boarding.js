@@ -115,9 +115,7 @@ export async function revokeInvite(inviteId) {
 
 export async function fetchInviteByToken(token) {
   const { data, error } = await supabase
-    .from('store_invites')
-    .select('id, token, kind, email, restaurant_name, summary, status, expires_at')
-    .eq('token', token)
+    .rpc('get_store_invite_by_token', { invite_token: token })
     .maybeSingle()
   if (error) throw error
   return data
