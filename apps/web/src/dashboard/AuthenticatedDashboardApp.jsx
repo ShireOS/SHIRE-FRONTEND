@@ -31,6 +31,7 @@ import TeamPage from './pages/TeamPage'
 import ClaimStorePage from './pages/ClaimStorePage'
 import { useAllowedStoreTabs } from './data/resellerAccess'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
+import SalesTiles from './components/SalesTiles'
 
 function LoadingScreen() {
   return (
@@ -339,12 +340,7 @@ function AnalyticsDashboard({ restaurant }) {
 
       {!isLoading && !error && payload && (
         <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Revenue" value={formatCurrency(revenueData.total_revenue)} detail={`${formatNumber(revenueData.order_count)} POS orders`} />
-            <MetricCard label="Covers" value={formatNumber(visitData.covers)} detail={`${formatNumber(visitData.visit_count)} host visits`} />
-            <MetricCard label="Labor Cost" value={laborCost == null ? 'DNE' : formatCurrency(laborCost)} detail={missingLaborRate ? 'Some roles are missing rates.' : 'From approved clocked time.'} muted={laborCost == null} />
-            <MetricCard label="Avg Turn Time" value={formatMinutes(visitData.avg_turn_minutes)} detail={visits.quality?.message} muted={!visits.quality?.turn_time_available} />
-          </div>
+          <SalesTiles restaurantId={restaurantId} period={period} />
 
           <AnalyticsSection
             title="Revenue"
