@@ -281,6 +281,8 @@ function AnalyticsDashboard({ restaurant }) {
   const revenueData = revenue.data || {}
   const visits = sections.visits || {}
   const visitData = visits.data || {}
+  const turnTimes = sections.turn_times || {}
+  const turnTimeData = turnTimes.data || {}
   const reservations = sections.reservations || {}
   const reservationData = reservations.data || {}
   const floor = sections.floor || {}
@@ -413,6 +415,50 @@ function AnalyticsDashboard({ restaurant }) {
               </div>
             </AnalyticsSection>
           </div>
+
+          <AnalyticsSection
+            title="Turn Times"
+            source="pos_orders + visits"
+            status={turnTimes.status}
+            sampleSize={turnTimes.sample_size}
+            emptyMessage={turnTimes.empty_message}
+          >
+            <div className="grid gap-4 md:grid-cols-4">
+              <MetricCard
+                label="Median Turn"
+                value={formatMinutes(turnTimeData.median_turn_minutes)}
+                detail={`${formatNumber(turnTimeData.turn_count)} turns`}
+              />
+              <MetricCard label="P75 Turn" value={formatMinutes(turnTimeData.p75_turn_minutes)} />
+              <MetricCard
+                label="Time to First Order"
+                value={formatMinutes(turnTimeData.median_first_order_minutes)}
+                detail={`${formatNumber(turnTimeData.first_order_sample)} host-seated turns`}
+              />
+              <MetricCard
+                label="Host-Matched"
+                value={`${formatNumber(turnTimeData.turns_with_host_visit)} / ${formatNumber(turnTimeData.turn_count)}`}
+                detail="Turns with a host seating"
+              />
+            </div>
+            {turnTimes.by_waiter?.length > 0 && (
+              <div className="mt-4">
+                <MiniTable
+                  rows={turnTimes.by_waiter}
+                  columns={[
+                    { key: 'name', label: 'Waiter' },
+                    { key: 'turns', label: 'Turns', render: renderNumber },
+                    { key: 'median_turn_minutes', label: 'Median Turn', render: (v) => formatMinutes(v) },
+                    { key: 'median_first_order_minutes', label: 'First Order', render: (v) => formatMinutes(v) },
+                    { key: 'avg_checks_per_turn', label: 'Checks/Turn', render: (v) => formatNumber(v, 1) },
+                  ]}
+                />
+              </div>
+            )}
+            {turnTimes.quality?.message && (
+              <p className="mt-3 text-xs text-dash-tertiary">{turnTimes.quality.message}</p>
+            )}
+          </AnalyticsSection>
 
           <div className="grid gap-6 xl:grid-cols-2">
             <AnalyticsSection
