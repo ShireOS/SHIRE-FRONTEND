@@ -180,6 +180,43 @@ export async function setCategoryPrintGroup(categoryId, stationId) {
   if (error) throw error
 }
 
+// The portal can't reach a LAN printer itself; it queues a request that an
+// online POS device's print bridge claims and prints. Poll the row for the
+// outcome.
+export async function requestTestPrint(restaurantId, targetId) {
+  const { data, error } = await supabase
+    .from('pos_test_prints')
+    .insert({ restaurant_id: restaurantId, target_id: targetId })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function fetchTestPrint(id) {
+  const { data, error } = await supabase
+    .from('pos_test_prints')
+    .select('id, status, error, printed_at')
+    .eq('id', id)
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Printers configured on the POS app's legacy printer-setup screen live as
+// bare IPs on pos_restaurant_configs (id = restaurant id), not as
+// pos_routing_targets rows, so they don't show up as targets until imported.
+export async function fetchLegacyPrinterConfig(restaurantId) {
+  const { data, error } = await supabase
+    .from('pos_restaurant_configs')
+    .select('id, receipt_printer_ip, kitchen_printer_ip, printer_profile')
+    .eq('id', restaurantId)
+    .maybeSingle()
+  // Non-fatal: the column grant ships in a migration that may not be run yet.
+  if (error) return null
+  return data
+}
+
 export async function fetchActivePairingCodes(restaurantId) {
   const { data, error } = await supabase
     .from('pos_device_pairing_codes')

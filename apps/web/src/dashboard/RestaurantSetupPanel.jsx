@@ -323,9 +323,29 @@ const DEFAULT_PRICING_POLICY = {
   basis: 'subtotal_plus_tax',
   applies_to: ['card', 'credit', 'debit', 'terminal', 'gift_card', 'standalone'],
   jurisdiction_state: 'SC',
-  label: 'Cash discount',
-  disclosure: 'Posted prices reflect the electronic payment price. Cash payments may receive the listed cash discount.',
+  label: 'Dual pricing',
+  disclosure: 'Cash and electronic prices are shown before payment. The final receipt reflects the selected payment method.',
 }
+
+const DEFAULT_PRICING_LABELS = {
+  dual_pricing_posted_electronic: 'Dual pricing',
+  cash_discount: 'Cash discount',
+  credit_surcharge: 'Credit surcharge',
+  service_fee_all: 'Service fee',
+  none: 'Pricing adjustment',
+}
+
+const DEFAULT_PRICING_DISCLOSURES = {
+  dual_pricing_posted_electronic: DEFAULT_PRICING_POLICY.disclosure,
+  cash_discount: 'Posted total is shown before payment. Cash payments receive the listed cash discount.',
+  credit_surcharge: 'A card fee applies only to eligible card payments and is shown before payment.',
+  service_fee_all: 'A service fee is included in the payment total.',
+  none: '',
+}
+
+const defaultPricingLabel = (mode) => DEFAULT_PRICING_LABELS[mode] || DEFAULT_PRICING_POLICY.label
+const defaultPricingDisclosure = (mode) => DEFAULT_PRICING_DISCLOSURES[mode] ?? DEFAULT_PRICING_POLICY.disclosure
+const isDefaultPricingCopy = (value, defaults) => Object.values(defaults).includes(value)
 
 const normalizePricingPolicy = (raw = {}) => {
   const merged = { ...DEFAULT_PRICING_POLICY, ...(raw && typeof raw === 'object' ? raw : {}) }
@@ -336,8 +356,8 @@ const normalizePricingPolicy = (raw = {}) => {
     rate: Number.isFinite(rate) ? Math.max(0, rate) : DEFAULT_PRICING_POLICY.rate,
     applies_to: Array.isArray(merged.applies_to) && merged.applies_to.length > 0 ? merged.applies_to : DEFAULT_PRICING_POLICY.applies_to,
     jurisdiction_state: String(merged.jurisdiction_state || 'SC').toUpperCase().slice(0, 2),
-    label: merged.label || DEFAULT_PRICING_POLICY.label,
-    disclosure: merged.disclosure || DEFAULT_PRICING_POLICY.disclosure,
+    label: merged.label || defaultPricingLabel(merged.mode),
+    disclosure: merged.disclosure || defaultPricingDisclosure(merged.mode),
     rate_percent: String(Number.isFinite(rate) ? Math.round(rate * 10000) / 100 : 3.5),
   }
 }
@@ -351,8 +371,8 @@ const pricingPolicyPayload = (policy) => {
     basis: policy.basis || DEFAULT_PRICING_POLICY.basis,
     applies_to: Array.isArray(policy.applies_to) ? policy.applies_to : DEFAULT_PRICING_POLICY.applies_to,
     jurisdiction_state: String(policy.jurisdiction_state || 'SC').toUpperCase().slice(0, 2),
-    label: policy.label || DEFAULT_PRICING_POLICY.label,
-    disclosure: policy.disclosure || DEFAULT_PRICING_POLICY.disclosure,
+    label: policy.label || defaultPricingLabel(policy.mode),
+    disclosure: policy.disclosure || defaultPricingDisclosure(policy.mode),
   }
 }
 
@@ -1903,7 +1923,12 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
 
   const updatePricingPolicy = (patch) => {
     setPricingPolicy(prev => {
-      const next = normalizePricingPolicy({ ...prev, ...patch })
+      const normalizedPatch = { ...patch }
+      if (Object.prototype.hasOwnProperty.call(patch, 'mode')) {
+        if (!prev.label || isDefaultPricingCopy(prev.label, DEFAULT_PRICING_LABELS)) normalizedPatch.label = defaultPricingLabel(patch.mode)
+        if (!prev.disclosure || isDefaultPricingCopy(prev.disclosure, DEFAULT_PRICING_DISCLOSURES)) normalizedPatch.disclosure = defaultPricingDisclosure(patch.mode)
+      }
+      const next = normalizePricingPolicy({ ...prev, ...normalizedPatch })
       if (Object.prototype.hasOwnProperty.call(patch, 'rate_percent')) next.rate_percent = patch.rate_percent
       return next
     })
@@ -2678,7 +2703,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               <div>
                 <h4 className="text-lg font-semibold text-dash-cream">Pricing Policy</h4>
                 <p className="mt-1 max-w-3xl text-sm leading-6 text-dash-secondary">
-                  Posted electronic pricing defaults to South Carolina with cash discount presentation available.
+                  Dual pricing prints cash and electronic options before payment, then receipts show the selected tender outcome.
                 </p>
               </div>
               <SmallButton variant="primary" onClick={() => void savePricingPolicy()} disabled={isSaving}>
@@ -2724,7 +2749,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                 />
               </Field>
               <Field label="Label">
-                <TextInput value={pricingPolicy.label} onChange={event => updatePricingPolicy({ label: event.target.value.slice(0, 120) })} placeholder="Cash discount" />
+                <TextInput value={pricingPolicy.label} onChange={event => updatePricingPolicy({ label: event.target.value.slice(0, 120) })} placeholder={pricingPolicy.mode === 'cash_discount' ? 'Cash discount' : 'Dual pricing'} />
               </Field>
             </div>
 

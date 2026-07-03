@@ -301,7 +301,7 @@ export function dominantModifierCategory(options, modifiersById, fallback = '') 
 // another modifier. Three moves in one place: click an existing modifier
 // (bucketed by category), add a whole category at once, or create a brand-new
 // modifier inline (typing a new category name creates that category too).
-export function ModifierPicker({ modifiers, excludeIds, busy = false, onAddExisting, onCreateNew, autoFocus = false, defaultCategory = '' }) {
+export function ModifierPicker({ modifiers, excludeIds, busy = false, onAddExisting, onCreateNew, autoFocus = false, defaultCategory = '', extraCategoryNames = [] }) {
   const [query, setQuery] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [draft, setDraft] = useState({ name: '', price: '', category: defaultCategory })
@@ -318,8 +318,11 @@ export function ModifierPicker({ modifiers, excludeIds, busy = false, onAddExist
   }, [modifiers, excludeIds, query])
   const buckets = useMemo(() => bucketModifiersByCategory(available), [available])
   const categoryNames = useMemo(
-    () => Array.from(new Set(modifiers.map(modifierCategoryOf))).sort(),
-    [modifiers],
+    () => Array.from(new Set([
+      ...modifiers.map(modifierCategoryOf),
+      ...extraCategoryNames.map(name => (name || '').trim()).filter(Boolean),
+    ])).sort(),
+    [modifiers, extraCategoryNames],
   )
 
   const submitNew = () => {

@@ -24,6 +24,28 @@ export const DEFAULT_RATE_PLAN = {
   basis: 'subtotal_plus_tax',
 }
 
+const pricingCopyForMode = (mode) => {
+  if (mode === 'cash_discount') {
+    return {
+      label: 'Cash discount',
+      disclosure: 'Posted total is shown before payment. Cash payments receive the listed cash discount.',
+    }
+  }
+  if (mode === 'credit_surcharge') {
+    return {
+      label: 'Credit surcharge',
+      disclosure: 'A card fee applies only to eligible card payments and is shown before payment.',
+    }
+  }
+  if (mode === 'none') {
+    return { label: 'Pricing adjustment', disclosure: '' }
+  }
+  return {
+    label: 'Dual pricing',
+    disclosure: 'Cash and electronic prices are shown before payment. The final receipt reflects the selected payment method.',
+  }
+}
+
 export const formatRate = (rate) =>
   rate === null || rate === undefined ? '—' : `${(Number(rate) * 100).toFixed(2).replace(/\.?0+$/, '')}%`
 
@@ -65,6 +87,7 @@ export async function pushRatePlanToPricingPolicy(restaurantId, plan) {
         rate: Number(plan.card_rate) || 0,
         basis: plan.basis || 'subtotal_plus_tax',
         applies_to: plan.applies_to || DEFAULT_RATE_PLAN.applies_to,
+        ...pricingCopyForMode(plan.pricing_mode),
       }),
     })
     queryClient.setQueryData(queryKeys.pricingPolicy(restaurantId), saved)

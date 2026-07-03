@@ -341,6 +341,7 @@ function QuestionEditor({
               modifiers={modifiers}
               excludeIds={new Set(group.options.map(option => option.modifier_id))}
               defaultCategory={dominantModifierCategory(group.options, modifiersById, group.name)}
+              extraCategoryNames={groups.map(candidate => candidate.name)}
               onAddExisting={ids => void addModifiers(ids)}
               onCreateNew={draft => void createAndAddModifier(draft)}
             />
@@ -433,22 +434,36 @@ export function MenuItemDetail({
     await reloadGroups()
   }, modifierIds.length > 1 ? 'Modifiers added to this item.' : 'Modifier added to this item.')
 
-  const quickCreateModifier = (draft) => run(async () => {
-    const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/modifiers`, {
-      method: 'POST',
-      body: JSON.stringify({ ...draft, is_active: true }),
-    })
-    if (created?.id) {
-      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/modifiers/${created.id}/items`, {
-        method: 'PUT',
-        body: JSON.stringify({ item_ids: [item.id] }),
-      }).catch(() => null)
-      const extras = await ensureExtrasGroup()
-      await addGroupOption(extras.id, created.id, { display_order: extras.options?.length || 0 })
-    }
-    await reloadModifiers()
-    await reloadGroups()
-  }, 'Modifier created and added.')
+  // Quick-create routes by category: naming an existing question sends the
+  // modifier into that question (attaching it to this item if needed);
+  // anything else lands in this item's "Extras".
+  const quickCreateModifier = (draft) => {
+    const categoryNeedle = (draft.group_name || '').trim().toLowerCase()
+    const matchingGroup = categoryNeedle
+      ? groups.find(group => group.name.trim().toLowerCase() === categoryNeedle)
+      : null
+    return run(async () => {
+      const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/modifiers`, {
+        method: 'POST',
+        body: JSON.stringify({ ...draft, is_active: true }),
+      })
+      if (created?.id) {
+        await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/modifiers/${created.id}/items`, {
+          method: 'PUT',
+          body: JSON.stringify({ item_ids: [item.id] }),
+        }).catch(() => null)
+        const target = matchingGroup || await ensureExtrasGroup()
+        if (matchingGroup && !matchingGroup.item_ids.includes(item.id)) {
+          await attachGroupToItem(matchingGroup.id, item.id, itemGroups.length)
+        }
+        if (!target.options?.some(option => option.modifier_id === created.id)) {
+          await addGroupOption(target.id, created.id, { display_order: target.options?.length || 0 })
+        }
+      }
+      await reloadModifiers()
+      await reloadGroups()
+    }, matchingGroup ? `Modifier added to "${matchingGroup.name}" on this item.` : 'Modifier created and added.')
+  }
 
   const uploadPhoto = (file) => {
     if (!file) return
@@ -618,10 +633,11 @@ export function MenuItemDetail({
                     autoFocus
                     modifiers={modifiers}
                     excludeIds={new Set(itemGroups.flatMap(group => group.options.map(option => option.modifier_id)))}
+                    extraCategoryNames={groups.map(group => group.name)}
                     onAddExisting={ids => void quickAddModifiers(ids)}
                     onCreateNew={draft => void quickCreateModifier(draft)}
                   />
-                  <p className="text-xs text-dash-tertiary">These land in an "Extras" question on this item (created automatically) — move or rename it any time.</p>
+                  <p className="text-xs text-dash-tertiary">New modifiers land in an "Extras" question on this item — or, if the category you type names an existing question, straight into that question.</p>
                   <SmallButton onClick={() => setShowQuickPicker(false)}>Done</SmallButton>
                 </div>
               ) : (

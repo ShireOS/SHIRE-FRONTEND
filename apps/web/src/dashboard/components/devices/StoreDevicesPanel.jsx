@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, Copy, Layers, Monitor, Plus, Printer, RefreshCw, Trash2 } from 'lucide-react'
+import { Check, Copy, Layers, Monitor, Plus, Printer, RefreshCw, Send, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '../shared/Card'
 import { Button } from '../shared/Button'
 import { Badge } from '../shared/Badge'
@@ -15,8 +15,11 @@ import {
   createPrinterTarget,
   deviceTypeLabel,
   fetchActivePairingCodes,
+  fetchLegacyPrinterConfig,
   fetchStoreDeviceConfig,
+  fetchTestPrint,
   isDeviceOnline,
+  requestTestPrint,
   revokePairingCode,
   setCategoryPrintGroup,
   setDevicePrinter,
@@ -283,17 +286,24 @@ function PairingModal({ restaurantId, isOpen, onClose }) {
 // menu categories → print groups → printers, plus per-device printer roles.
 export default function StoreDevicesPanel({ restaurantId }) {
   const [config, setConfig] = useState(null)
+  const [legacyConfig, setLegacyConfig] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [pairingOpen, setPairingOpen] = useState(false)
   const [printerDraft, setPrinterDraft] = useState({ name: '', target_type: 'printer', connection_type: 'network', host: '', port: '' })
   const [groupDraft, setGroupDraft] = useState('')
+  const [testStates, setTestStates] = useState({})
 
   const load = useCallback(async () => {
     if (!restaurantId) return
     try {
-      setConfig(await fetchStoreDeviceConfig(restaurantId))
+      const [cfg, legacy] = await Promise.all([
+        fetchStoreDeviceConfig(restaurantId),
+        fetchLegacyPrinterConfig(restaurantId),
+      ])
+      setConfig(cfg)
+      setLegacyConfig(legacy)
       setError(null)
     } catch (err) {
       setError(err.message || 'Could not load device configuration')
@@ -324,6 +334,50 @@ export default function StoreDevicesPanel({ restaurantId }) {
     () => (config?.targets || []).filter((t) => t.is_active),
     [config?.targets]
   )
+
+  // Test tickets print via an online POS device's LAN bridge, so the request
+  // is queued in the DB and polled until a device picks it up (or we give up).
+  const runTestPrint = useCallback(async (target) => {
+    const setPhase = (phase, message) =>
+      setTestStates((prev) => ({ ...prev, [target.id]: { phase, message } }))
+    setPhase('queued')
+    try {
+      const job = await requestTestPrint(restaurantId, target.id)
+      const deadline = Date.now() + 30_000
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+        const row = await fetchTestPrint(job.id)
+        if (row.status === 'printed') {
+          setPhase('printed', 'Test ticket printed')
+          return
+        }
+        if (row.status === 'failed') {
+          setPhase('failed', row.error || 'Print failed')
+          return
+        }
+      }
+      setPhase('failed', 'No POS device picked this up — a paired terminal must be online at the store')
+    } catch (err) {
+      setPhase('failed', err.message || 'Could not queue the test ticket')
+    }
+  }, [restaurantId])
+
+  // Legacy POS-app printers (bare IPs on the store config) that aren't
+  // already registered as routing targets — offered as one-click imports.
+  const legacyPrinters = useMemo(() => {
+    if (!legacyConfig) return []
+    const knownHosts = new Set(
+      (config?.targets || [])
+        .map((t) => String(t.config?.host || '').trim())
+        .filter(Boolean)
+    )
+    return [
+      { key: 'receipt', name: 'Receipt printer', host: legacyConfig.receipt_printer_ip },
+      { key: 'kitchen', name: 'Kitchen printer', host: legacyConfig.kitchen_printer_ip },
+    ]
+      .map((p) => ({ ...p, host: String(p.host || '').trim() }))
+      .filter((p) => p.host && !knownHosts.has(p.host))
+  }, [legacyConfig, config?.targets])
 
   if (loading) {
     return <p className="text-sm text-dash-secondary">Loading devices…</p>
@@ -380,26 +434,77 @@ export default function StoreDevicesPanel({ restaurantId }) {
           <SectionTitle icon={Printer} title="Printers & screens" count={targets.length} />
         </CardHeader>
         <CardContent className="space-y-3">
-          {targets.map((target) => (
-            <div key={target.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-dash-border bg-[var(--glass-bg)] px-4 py-3">
-              <span className="text-sm font-semibold text-dash-cream">{target.name}</span>
-              <Badge variant="info">{TARGET_TYPES.find((t) => t.id === target.target_type)?.label || target.target_type}</Badge>
-              <span className="text-xs text-dash-tertiary">
-                {CONNECTION_TYPES.find((c) => c.id === target.connection_type)?.label || target.connection_type}
-                {target.config?.host ? ` · ${target.config.host}${target.config.port ? `:${target.config.port}` : ''}` : ''}
-              </span>
-              <div className="ml-auto">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => mutate(() => updatePrinterTarget(target.id, { is_active: !target.is_active }))}
-                >
-                  {target.is_active ? 'Disable' : 'Enable'}
-                </Button>
+          {targets.map((target) => {
+            const test = testStates[target.id]
+            const canTest = target.is_active && target.target_type === 'printer' && Boolean(target.config?.host)
+            return (
+              <div key={target.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-dash-border bg-[var(--glass-bg)] px-4 py-3">
+                <span className="text-sm font-semibold text-dash-cream">{target.name}</span>
+                <Badge variant="info">{TARGET_TYPES.find((t) => t.id === target.target_type)?.label || target.target_type}</Badge>
+                <span className="text-xs text-dash-tertiary">
+                  {CONNECTION_TYPES.find((c) => c.id === target.connection_type)?.label || target.connection_type}
+                  {target.config?.host ? ` · ${target.config.host}${target.config.port ? `:${target.config.port}` : ''}` : ''}
+                </span>
+                {test && (
+                  <span className={`text-xs ${test.phase === 'failed' ? 'text-dash-danger' : test.phase === 'printed' ? 'text-dash-success' : 'text-dash-secondary'}`}>
+                    {test.phase === 'queued' ? 'Sending test ticket…' : test.message}
+                  </span>
+                )}
+                <div className="ml-auto flex items-center gap-2">
+                  {canTest && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={test?.phase === 'queued'}
+                      onClick={() => runTestPrint(target)}
+                      icon={<Send size={13} aria-hidden="true" />}
+                    >
+                      Test print
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => mutate(() => updatePrinterTarget(target.id, { is_active: !target.is_active }))}
+                  >
+                    {target.is_active ? 'Disable' : 'Enable'}
+                  </Button>
+                </div>
+              </div>
+            )
+          })}
+          {legacyPrinters.length > 0 && (
+            <div className="rounded-xl border border-dashed border-dash-border p-4">
+              <p className="text-xs text-dash-secondary">
+                Found on the POS app&apos;s printer setup but not registered here yet — import to manage and route them from the portal.
+              </p>
+              <div className="mt-2 space-y-2">
+                {legacyPrinters.map((printer) => (
+                  <div key={printer.key} className="flex flex-wrap items-center gap-3">
+                    <span className="text-sm font-medium text-dash-cream">{printer.name}</span>
+                    <span className="text-xs text-dash-tertiary">Network (IP) · {printer.host}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto"
+                      disabled={busy}
+                      icon={<Plus size={13} aria-hidden="true" />}
+                      onClick={() => mutate(() => createPrinterTarget(restaurantId, {
+                        name: printer.name,
+                        target_type: 'printer',
+                        connection_type: 'network',
+                        host: printer.host,
+                        port: 9100,
+                      }))}
+                    >
+                      Import
+                    </Button>
+                  </div>
+                ))}
               </div>
             </div>
-          ))}
+          )}
           <div className="grid grid-cols-2 items-end gap-2 rounded-xl border border-dashed border-dash-border p-4 md:grid-cols-6">
             <TextField
               label="Name"

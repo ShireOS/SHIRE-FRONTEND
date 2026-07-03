@@ -3,6 +3,7 @@ import { supabase } from '../shared/lib/supabase'
 import { queryClient, queryKeys, fetchCached, fetchWithSupabaseAuth, STALE_TIMES } from '../shared/query'
 import {
   addGroupOption,
+  attachGroupToItem,
   archiveModifierGroup,
   createModifierGroup,
   fetchModifierGroups,
@@ -256,6 +257,7 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
                 excludeIds={new Set(group.options.map(option => option.modifier_id))}
                 busy={busy}
                 defaultCategory={dominantModifierCategory(group.options, modifiersById, group.name)}
+                extraCategoryNames={groups.map(candidate => candidate.name)}
                 onAddExisting={ids => onAddModifiers(ids)}
                 onCreateNew={draft => onCreateModifier(draft)}
               />
@@ -707,6 +709,20 @@ export function MenuPanel({ restaurantId }) {
     await loadCategories(true)
   }, `Tax rate "${name}" created — assign it to a category below and save.`, 'Couldn’t create the tax rate')
 
+  // Attach/detach a question (modifier group) to every item in a category in
+  // one click — from the Categories tab drill-in.
+  const toggleGroupOnCategory = (group, categoryItems, shouldAttach) => run(async () => {
+    const next = new Set(group.item_ids)
+    for (const row of categoryItems) {
+      if (shouldAttach) next.add(row.id)
+      else next.delete(row.id)
+    }
+    await replaceGroupItems(group.id, Array.from(next))
+    await loadGroups()
+  }, shouldAttach
+    ? `"${group.name}" is now asked on all ${categoryItems.length} item${categoryItems.length === 1 ? '' : 's'}.`
+    : `"${group.name}" removed from these items.`, 'Couldn’t update the question')
+
   const pickCategoryColor = (category, color) => run(async () => {
     await setCategoryColor(restaurantId, category.id, color)
     setCategoryColors(prev => {
@@ -719,11 +735,20 @@ export function MenuPanel({ restaurantId }) {
 
   // ── Modifiers ────────────────────────────────────────────────────────────
 
+  // A modifier "category" that names an existing question (modifier group) is
+  // treated as that question: the modifier lands in it, not just under a label.
+  const groupMatchingCategory = (categoryName) => {
+    const needle = (categoryName || '').trim().toLowerCase()
+    if (!needle) return null
+    return groups.find(group => group.name.trim().toLowerCase() === needle) || null
+  }
+
   const createModifier = () => {
     if (!modifierDraft.name.trim()) {
       setError('Give the modifier a name first.')
       return
     }
+    const matchingGroup = groupMatchingCategory(modifierDraft.category)
     return run(async () => {
       const created = await api(`/restaurants/${restaurantId}/menu/modifiers`, {
         method: 'POST',
@@ -740,9 +765,18 @@ export function MenuPanel({ restaurantId }) {
           body: JSON.stringify({ item_ids: Array.from(modifierDraft.item_ids) }),
         })
       }
+      if (created?.id && matchingGroup) {
+        for (const itemId of modifierDraft.item_ids) {
+          if (!matchingGroup.item_ids.includes(itemId)) {
+            await attachGroupToItem(matchingGroup.id, itemId, matchingGroup.item_ids.length)
+          }
+        }
+        await addGroupOption(matchingGroup.id, created.id, { display_order: matchingGroup.options.length })
+        await loadGroups()
+      }
       setModifierDraft(prev => ({ name: '', price_delta: '', category: prev.category, item_ids: new Set() }))
       await loadModifiers()
-    }, 'Modifier added.', 'Couldn’t add the modifier')
+    }, matchingGroup ? `Modifier added to the "${matchingGroup.name}" question.` : 'Modifier added.', 'Couldn’t add the modifier')
   }
 
   const updateModifier = (modifierId, patch) => run(async () => {
@@ -752,6 +786,22 @@ export function MenuPanel({ restaurantId }) {
     })
     await loadModifiers()
   }, undefined, 'Couldn’t update the modifier')
+
+  const recategorizeModifier = (modifier, nextCategory) => {
+    const matchingGroup = groupMatchingCategory(nextCategory)
+    const alreadyInGroup = matchingGroup?.options.some(option => option.modifier_id === modifier.id)
+    return run(async () => {
+      await api(`/restaurants/${restaurantId}/menu/modifiers/${modifier.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ group_name: nextCategory }),
+      })
+      if (matchingGroup && !alreadyInGroup) {
+        await addGroupOption(matchingGroup.id, modifier.id, { display_order: matchingGroup.options.length })
+        await loadGroups()
+      }
+      await loadModifiers()
+    }, matchingGroup && !alreadyInGroup ? `Also added to the "${matchingGroup.name}" question.` : undefined, 'Couldn’t update the modifier')
+  }
 
   const replaceModifierItems = (modifierId, itemIds) => run(async () => {
     await api(`/restaurants/${restaurantId}/menu/modifiers/${modifierId}/items`, {
@@ -1227,6 +1277,45 @@ export function MenuPanel({ restaurantId }) {
                           ))}
                         </div>
                       )}
+
+                      {categoryItems.length > 0 && (
+                        <div className="mt-4">
+                          <p className="label-mono mb-1">Questions asked in this category</p>
+                          <p className="mb-2 text-xs text-dash-tertiary">
+                            Click a question to ask it on all {categoryItems.length} item{categoryItems.length === 1 ? '' : 's'} here; click again to remove it from them.
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {groups.map(group => {
+                              const attachedCount = categoryItems.filter(row => group.item_ids.includes(row.id)).length
+                              const allAttached = attachedCount === categoryItems.length
+                              return (
+                                <button
+                                  key={group.id}
+                                  type="button"
+                                  disabled={busy}
+                                  title={groupRulesSummary(group)}
+                                  onClick={() => void toggleGroupOnCategory(group, categoryItems, !allAttached)}
+                                  className={[
+                                    'rounded-full border px-3 py-1.5 text-sm transition disabled:opacity-50',
+                                    allAttached
+                                      ? 'border-dash-gold/60 bg-dash-gold/15 text-dash-cream'
+                                      : 'border-white/10 bg-white/[0.03] text-dash-secondary hover:border-dash-gold/60 hover:text-dash-cream',
+                                  ].join(' ')}
+                                >
+                                  {allAttached ? '✓' : '+'} {group.name}
+                                  <span className="ml-1.5 text-xs text-dash-tertiary">
+                                    {attachedCount > 0 && !allAttached ? `${attachedCount}/${categoryItems.length} items · ` : ''}
+                                    {group.options.length} option{group.options.length === 1 ? '' : 's'}
+                                  </span>
+                                </button>
+                              )
+                            })}
+                            {groups.length === 0 && (
+                              <p className="text-sm text-dash-tertiary">No questions yet — build one on the Modifier Groups tab or inside any item.</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1276,10 +1365,13 @@ export function MenuPanel({ restaurantId }) {
       {!loading && activeTab === 'modifiers' && (
         <SectionShell
           title="Modifiers"
-          description="Individual add-ons and choices — Extra cheese, Ranch, Medium rare — organized into categories like Sauces or Temperatures. Type a new category name anywhere to create it. Attach modifiers to items here, or right inside an item's editor."
+          description="Individual add-ons and choices — Extra cheese, Ranch, Medium rare — organized into categories like Sauces or Temperatures. Type a new category name anywhere to create it. Use a question's name (from Modifier Groups) as the category and the modifier drops straight into that question."
         >
           <datalist id="menu-modifier-categories">
-            {Array.from(new Set(modifiers.map(modifierCategoryOf))).sort().map(name => <option key={name} value={name} />)}
+            {Array.from(new Set([
+              ...modifiers.map(modifierCategoryOf),
+              ...groups.map(group => group.name.trim()).filter(Boolean),
+            ])).sort().map(name => <option key={name} value={name} />)}
           </datalist>
           <div className="mb-5 grid gap-4 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 lg:grid-cols-[1fr_120px_160px_1.3fr_auto]">
             <Field label="Modifier name">
@@ -1333,7 +1425,7 @@ export function MenuPanel({ restaurantId }) {
                       busy={busy}
                       onRename={next => void updateModifier(modifier.id, { name: next })}
                       onReprice={next => void updateModifier(modifier.id, { price_delta: next })}
-                      onRecategorize={next => void updateModifier(modifier.id, { group_name: next })}
+                      onRecategorize={next => void recategorizeModifier(modifier, next)}
                       onReplaceItems={itemIds => void replaceModifierItems(modifier.id, itemIds)}
                       onDelete={() => void deleteModifier(modifier.id)}
                     />
