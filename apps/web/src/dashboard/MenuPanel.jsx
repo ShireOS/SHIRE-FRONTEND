@@ -526,6 +526,37 @@ export function MenuPanel({ restaurantId }) {
   }, [filteredItems])
 
   const selectedItem = selectedItemId ? mergedItems.find(item => item.id === selectedItemId) : null
+  const nestedReadiness = useMemo(() => {
+    const groupsById = Object.fromEntries(groups.map(group => [group.id, group]))
+    const parentEdges = []
+    const childUseCount = {}
+    for (const group of groups) {
+      for (const option of group.options || []) {
+        if (!option.child_group_id) continue
+        const child = groupsById[option.child_group_id]
+        parentEdges.push({ group, option, child })
+        childUseCount[option.child_group_id] = (childUseCount[option.child_group_id] || 0) + 1
+      }
+    }
+
+    const emptyChildren = parentEdges.filter(edge => !edge.child || (edge.child.options || []).length === 0)
+    const requiredChildren = parentEdges.filter(edge => edge.child && (edge.child.is_required || Number(edge.child.min_selections || 0) > 0))
+    const sharedChildren = parentEdges.filter(edge =>
+      edge.child &&
+      ((edge.child.item_ids || []).length > 1 || childUseCount[edge.child.id] > 1)
+    )
+    const chains = parentEdges.filter(edge =>
+      edge.child && (edge.child.options || []).some(childOption => childOption.child_group_id)
+    )
+
+    return {
+      edgeCount: parentEdges.length,
+      emptyChildren,
+      requiredChildren,
+      sharedChildren,
+      chains,
+    }
+  }, [groups])
 
   // ── Categories ───────────────────────────────────────────────────────────
 
@@ -1172,6 +1203,40 @@ export function MenuPanel({ restaurantId }) {
                 overage_price: groupDraft.overage_price === '' ? null : groupDraft.overage_price,
               })}
             </p>
+          </div>
+
+          <div className="mb-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="label-mono">Nested readiness</p>
+                <p className="mt-1 text-sm text-dash-secondary">Follow-up questions that POS will show after an option is selected.</p>
+              </div>
+              <span className="rounded-full border border-white/10 px-3 py-1 text-sm font-semibold text-dash-secondary">
+                {nestedReadiness.edgeCount} nested link{nestedReadiness.edgeCount === 1 ? '' : 's'}
+              </span>
+            </div>
+            <div className="grid gap-3 md:grid-cols-4">
+              {[
+                ['Empty child groups', nestedReadiness.emptyChildren, 'Add options before using this follow-up.'],
+                ['Required follow-ups', nestedReadiness.requiredChildren, 'Blocks add only after parent option is selected.'],
+                ['Shared questions', nestedReadiness.sharedChildren, 'Edits affect every item/path using this question.'],
+                ['Nested chains', nestedReadiness.chains, 'Option opens a question that opens another question.'],
+              ].map(([label, rows, hint]) => (
+                <div key={label} className="rounded-lg border border-white/10 bg-black/20 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold uppercase tracking-[0.08em] text-dash-secondary">{label}</p>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${rows.length ? 'bg-dash-gold/15 text-dash-gold' : 'bg-emerald-400/10 text-emerald-300'}`}>{rows.length}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-dash-tertiary">{hint}</p>
+                  {rows.slice(0, 3).map(edge => (
+                    <p key={`${edge.group.id}:${edge.option.modifier_id}:${edge.option.child_group_id}`} className="mt-2 truncate text-xs text-dash-primary">
+                      {edge.group.name} -> {edge.child?.name || 'Missing question'}
+                    </p>
+                  ))}
+                  {rows.length > 3 && <p className="mt-2 text-xs text-dash-tertiary">+{rows.length - 3} more</p>}
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="space-y-3">
