@@ -30,6 +30,7 @@ import {
   bucketModifiersByCategory,
   cleanDecimal,
   cleanDigits,
+  dominantModifierCategory,
   groupRulesSummary,
   modifierCategoryOf,
   money,
@@ -254,6 +255,7 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
                 modifiers={modifiers}
                 excludeIds={new Set(group.options.map(option => option.modifier_id))}
                 busy={busy}
+                defaultCategory={dominantModifierCategory(group.options, modifiersById, group.name)}
                 onAddExisting={ids => onAddModifiers(ids)}
                 onCreateNew={draft => onCreateModifier(draft)}
               />

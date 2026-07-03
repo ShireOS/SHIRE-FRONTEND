@@ -25,6 +25,7 @@ import {
   TextInput,
   cleanDecimal,
   cleanDigits,
+  dominantModifierCategory,
   groupRulesSummary,
   money,
 } from './components/menuUi'
@@ -339,6 +340,7 @@ function QuestionEditor({
               autoFocus
               modifiers={modifiers}
               excludeIds={new Set(group.options.map(option => option.modifier_id))}
+              defaultCategory={dominantModifierCategory(group.options, modifiersById, group.name)}
               onAddExisting={ids => void addModifiers(ids)}
               onCreateNew={draft => void createAndAddModifier(draft)}
             />
@@ -359,7 +361,7 @@ export function MenuItemDetail({
 }) {
   const fileInputRef = useRef(null)
   const [newQuestion, setNewQuestion] = useState('')
-  const [attachExisting, setAttachExisting] = useState('')
+  const [questionSearch, setQuestionSearch] = useState('')
   const [showQuickPicker, setShowQuickPicker] = useState(false)
   const [specialForm, setSpecialForm] = useState({ display_name: '', special_price: '', note: '', expires_at: '' })
   const [schedule, setSchedule] = useState(() => ({
@@ -375,7 +377,13 @@ export function MenuItemDetail({
   const itemGroups = groups
     .filter(group => group.item_ids.includes(item.id))
     .sort((a, b) => (a.display_order || 0) - (b.display_order || 0) || a.name.localeCompare(b.name))
-  const attachableGroups = groups.filter(group => !group.item_ids.includes(item.id))
+  // Questions this item doesn't ask yet, most-reused first — one click attaches.
+  const attachableGroups = groups
+    .filter(group => !group.item_ids.includes(item.id))
+    .sort((a, b) => b.item_ids.length - a.item_ids.length || a.name.localeCompare(b.name))
+  const filteredAttachableGroups = questionSearch.trim()
+    ? attachableGroups.filter(group => group.name.toLowerCase().includes(questionSearch.trim().toLowerCase()))
+    : attachableGroups
   const itemSpecials = specials.filter(special => special.menu_item_id === item.id)
   const category = categories.find(candidate => candidate.name === item.category)
   const stationName = (id) => stations.find(station => station.id === id)?.name
@@ -395,6 +403,23 @@ export function MenuItemDetail({
     })
     await attachGroupToItem(created.id, item.id, itemGroups.length)
     return { ...created, options: [] }
+  }
+
+  const createNamedQuestion = () => {
+    if (!newQuestion.trim() || busy) return
+    return run(async () => {
+      const created = await createModifierGroup(restaurantId, {
+        name: newQuestion.trim(),
+        min_selections: 0,
+        max_selections: null,
+        is_required: false,
+        prompt_on_order: true,
+        display_order: groups.length,
+      })
+      await attachGroupToItem(created.id, item.id, itemGroups.length)
+      setNewQuestion('')
+      await reloadGroups()
+    }, 'Question added.')
   }
 
   const quickAddModifiers = (modifierIds) => run(async () => {
@@ -600,49 +625,63 @@ export function MenuItemDetail({
                   <SmallButton onClick={() => setShowQuickPicker(false)}>Done</SmallButton>
                 </div>
               ) : (
-                <div className="flex flex-wrap items-center gap-2">
-                  <SmallButton variant="primary" onClick={() => setShowQuickPicker(true)}>+ Add modifiers</SmallButton>
-                  <span className="text-sm text-dash-tertiary">or a named question:</span>
-                  <div className="min-w-56 flex-1">
-                    <TextInput value={newQuestion} onChange={event => setNewQuestion(event.target.value)} placeholder='e.g. "Choose a side"' />
-                  </div>
-                  <SmallButton
-                    disabled={!newQuestion.trim() || busy}
-                    onClick={() => run(async () => {
-                      const created = await createModifierGroup(restaurantId, {
-                        name: newQuestion.trim(),
-                        min_selections: 0,
-                        max_selections: null,
-                        is_required: false,
-                        prompt_on_order: true,
-                        display_order: groups.length,
-                      })
-                      await attachGroupToItem(created.id, item.id, itemGroups.length)
-                      setNewQuestion('')
-                      await reloadGroups()
-                    }, 'Question added.')}
-                  >
-                    Add question
-                  </SmallButton>
-                  {attachableGroups.length > 0 && (
-                    <div className="min-w-48">
-                      <SelectInput
-                        value={attachExisting}
-                        onChange={event => {
-                          const groupId = event.target.value
-                          setAttachExisting('')
-                          if (!groupId) return
-                          void run(async () => {
-                            await attachGroupToItem(groupId, item.id, itemGroups.length)
-                            await reloadGroups()
-                          }, 'Question attached.')
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <SmallButton variant="primary" onClick={() => setShowQuickPicker(true)}>+ Add modifiers</SmallButton>
+                    <span className="text-sm text-dash-tertiary">or a named question:</span>
+                    <div className="min-w-56 flex-1">
+                      <TextInput
+                        value={newQuestion}
+                        onChange={event => setNewQuestion(event.target.value)}
+                        onKeyDown={event => {
+                          if (event.key === 'Enter') void createNamedQuestion()
                         }}
-                      >
-                        <option value="">Attach existing question...</option>
-                        {attachableGroups.map(group => (
-                          <option key={group.id} value={group.id}>{group.name} ({group.item_ids.length} items)</option>
+                        placeholder='e.g. "Choose a side"'
+                      />
+                    </div>
+                    <SmallButton disabled={!newQuestion.trim() || busy} onClick={() => void createNamedQuestion()}>
+                      Add question
+                    </SmallButton>
+                  </div>
+                  {attachableGroups.length > 0 && (
+                    <div>
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <p className="label-mono">Reuse an existing question — click to attach</p>
+                        {attachableGroups.length > 8 && (
+                          <div className="w-56">
+                            <TextInput
+                              value={questionSearch}
+                              onChange={event => setQuestionSearch(event.target.value)}
+                              placeholder="Search questions..."
+                              className="!py-1.5"
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {filteredAttachableGroups.map(group => (
+                          <button
+                            key={group.id}
+                            type="button"
+                            disabled={busy}
+                            title={groupRulesSummary(group)}
+                            onClick={() => run(async () => {
+                              await attachGroupToItem(group.id, item.id, itemGroups.length)
+                              await reloadGroups()
+                            }, `"${group.name}" now asked on this item.`)}
+                            className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream disabled:opacity-50"
+                          >
+                            + {group.name}
+                            <span className="ml-1.5 text-xs text-dash-tertiary">
+                              {group.options.length} option{group.options.length === 1 ? '' : 's'}
+                              {group.item_ids.length > 0 && ` · ${group.item_ids.length} item${group.item_ids.length === 1 ? '' : 's'}`}
+                            </span>
+                          </button>
                         ))}
-                      </SelectInput>
+                        {filteredAttachableGroups.length === 0 && (
+                          <p className="text-sm text-dash-tertiary">No questions match "{questionSearch}".</p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>

@@ -275,14 +275,36 @@ export function bucketModifiersByCategory(modifiers) {
   return Object.entries(buckets).sort(([a], [b]) => a.localeCompare(b))
 }
 
+// The category a new modifier should default to inside a group: whatever
+// category most of the group's existing options live in, else the fallback
+// (usually the group's own name).
+export function dominantModifierCategory(options, modifiersById, fallback = '') {
+  const counts = {}
+  for (const option of options || []) {
+    const modifier = modifiersById[option.modifier_id]
+    if (!modifier) continue
+    const category = modifierCategoryOf(modifier)
+    counts[category] = (counts[category] || 0) + 1
+  }
+  let best = ''
+  let bestCount = 0
+  for (const [category, count] of Object.entries(counts)) {
+    if (count > bestCount) {
+      best = category
+      bestCount = count
+    }
+  }
+  return best || fallback
+}
+
 // One picker for pulling modifiers in anywhere — onto an item or nested inside
 // another modifier. Three moves in one place: click an existing modifier
 // (bucketed by category), add a whole category at once, or create a brand-new
 // modifier inline (typing a new category name creates that category too).
-export function ModifierPicker({ modifiers, excludeIds, busy = false, onAddExisting, onCreateNew, autoFocus = false }) {
+export function ModifierPicker({ modifiers, excludeIds, busy = false, onAddExisting, onCreateNew, autoFocus = false, defaultCategory = '' }) {
   const [query, setQuery] = useState('')
   const [showNew, setShowNew] = useState(false)
-  const [draft, setDraft] = useState({ name: '', price: '', category: '' })
+  const [draft, setDraft] = useState({ name: '', price: '', category: defaultCategory })
   const categoryListId = useId()
 
   const available = useMemo(() => {
@@ -323,7 +345,13 @@ export function ModifierPicker({ modifiers, excludeIds, busy = false, onAddExist
             className="!py-2"
           />
         </div>
-        <SmallButton variant={showNew ? 'secondary' : 'primary'} onClick={() => setShowNew(current => !current)}>
+        <SmallButton
+          variant={showNew ? 'secondary' : 'primary'}
+          onClick={() => {
+            setShowNew(current => !current)
+            setDraft(prev => ({ ...prev, category: prev.category || defaultCategory }))
+          }}
+        >
           {showNew ? 'Cancel' : '+ New modifier'}
         </SmallButton>
       </div>
