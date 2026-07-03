@@ -7,8 +7,21 @@ export const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 // Same palette the Pike POS uses for its device-side category colors.
 export const MENU_COLOR_SWATCHES = [
-  '#5087BE', '#6E5A9C', '#4BA05A', '#B5654A', '#3D3E72', '#D67A3C', '#579090', '#827D6E',
+  { hex: '#5087BE', name: 'Steel Blue' },
+  { hex: '#6E5A9C', name: 'Plum' },
+  { hex: '#4BA05A', name: 'Fern Green' },
+  { hex: '#B5654A', name: 'Terracotta' },
+  { hex: '#3D3E72', name: 'Midnight' },
+  { hex: '#D67A3C', name: 'Amber' },
+  { hex: '#579090', name: 'Teal' },
+  { hex: '#827D6E', name: 'Stone' },
 ]
+
+export const menuColorName = (hex) => {
+  if (!hex) return null
+  const match = MENU_COLOR_SWATCHES.find(swatch => swatch.hex.toLowerCase() === String(hex).toLowerCase())
+  return match ? match.name : hex
+}
 
 export const money = (value) => {
   const parsed = Number(value)
@@ -108,22 +121,58 @@ export function MenuEmptyState({ title, children }) {
 }
 
 export function ColorSwatchPicker({ value, onPick, disabled = false }) {
+  const selected = value ? MENU_COLOR_SWATCHES.find(swatch => swatch.hex.toLowerCase() === String(value).toLowerCase()) : null
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {MENU_COLOR_SWATCHES.map(color => (
-        <button
-          key={color}
-          type="button"
-          disabled={disabled}
-          onClick={() => onPick(value === color ? null : color)}
-          title={value === color ? 'Clear color' : color}
-          className={[
-            'h-6 w-6 rounded-full border-2 transition disabled:opacity-40',
-            value === color ? 'border-dash-gold scale-110' : 'border-transparent hover:scale-105',
-          ].join(' ')}
-          style={{ backgroundColor: color }}
-        />
-      ))}
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        {MENU_COLOR_SWATCHES.map(swatch => {
+          const isSelected = selected?.hex === swatch.hex
+          return (
+            <button
+              key={swatch.hex}
+              type="button"
+              disabled={disabled}
+              onClick={() => onPick(isSelected ? null : swatch.hex)}
+              title={isSelected ? `${swatch.name} · ${swatch.hex} — click to clear` : `${swatch.name} · ${swatch.hex}`}
+              aria-label={`${swatch.name} ${swatch.hex}`}
+              className={[
+                'h-7 w-7 rounded-full border-2 transition disabled:opacity-40',
+                isSelected
+                  ? 'scale-110 border-dash-gold ring-2 ring-dash-gold/40 ring-offset-2 ring-offset-black/60'
+                  : 'border-white/20 hover:scale-105 hover:border-white/50',
+              ].join(' ')}
+              style={{ backgroundColor: swatch.hex }}
+            />
+          )
+        })}
+      </div>
+      <span className="text-xs text-dash-tertiary">
+        {selected
+          ? <><span className="font-semibold text-dash-secondary">{selected.name}</span> · {selected.hex}</>
+          : value
+            ? <><span className="font-semibold text-dash-secondary">Custom</span> · {value}</>
+            : 'No color — POS uses its default tile.'}
+      </span>
+    </div>
+  )
+}
+
+// How this button will actually render on the POS order screen: a solid
+// colored tile with the name (and optionally price) on it.
+export function PosTilePreview({ color, label, sublabel, size = 'md' }) {
+  const sizing = size === 'sm' ? 'h-12 w-20 rounded-lg p-1.5' : 'h-16 w-28 rounded-xl p-2'
+  if (!color) {
+    return (
+      <div className={`flex ${sizing} flex-col justify-between border border-dashed border-white/20 bg-white/[0.04]`}>
+        <span className={`line-clamp-2 font-semibold leading-tight text-dash-secondary ${size === 'sm' ? 'text-[10px]' : 'text-xs'}`}>{label || '—'}</span>
+        {sublabel && <span className="text-[10px] text-dash-tertiary">{sublabel}</span>}
+      </div>
+    )
+  }
+  return (
+    <div className={`flex ${sizing} flex-col justify-between shadow-lg`} style={{ backgroundColor: color }}>
+      <span className={`line-clamp-2 font-semibold leading-tight text-white ${size === 'sm' ? 'text-[10px]' : 'text-xs'}`}>{label || '—'}</span>
+      {sublabel && <span className="text-[10px] font-medium text-white/80">{sublabel}</span>}
     </div>
   )
 }
@@ -144,8 +193,11 @@ export function ItemThumb({ item, color }) {
   )
 }
 
-// Searchable multi-select over menu items (attach modifiers/groups to items).
-export function ItemChecklist({ menuItems, selectedIds, onToggle }) {
+// Searchable multi-select over menu items (attach modifiers/groups to items),
+// grouped by category. When `onBulk(ids, shouldSelect)` is provided, each
+// category header gets an "All"/"None" toggle so a group can be attached to
+// e.g. every sandwich in one click.
+export function ItemChecklist({ menuItems, selectedIds, onToggle, onBulk }) {
   const [query, setQuery] = useState('')
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -153,27 +205,57 @@ export function ItemChecklist({ menuItems, selectedIds, onToggle }) {
     return menuItems.filter(item =>
       item.name.toLowerCase().includes(needle) || (item.category || '').toLowerCase().includes(needle))
   }, [menuItems, query])
+  const buckets = useMemo(() => {
+    const map = {}
+    for (const item of filtered) {
+      ;(map[item.category || 'Other'] ||= []).push(item)
+    }
+    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b))
+  }, [filtered])
 
   return (
     <div className="space-y-2">
-      <TextInput value={query} onChange={event => setQuery(event.target.value)} placeholder="Search items..." />
-      <div className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-white/10 bg-white/[0.02] p-2">
+      <TextInput value={query} onChange={event => setQuery(event.target.value)} placeholder="Search items or categories..." />
+      <div className="max-h-56 space-y-3 overflow-y-auto rounded-xl border border-white/10 bg-white/[0.02] p-2">
         {filtered.length === 0 && <p className="p-2 text-sm text-dash-tertiary">No items match.</p>}
-        {filtered.map(item => {
-          const selected = selectedIds.has(item.id)
+        {buckets.map(([categoryName, bucketItems]) => {
+          const selectedCount = bucketItems.filter(item => selectedIds.has(item.id)).length
+          const allSelected = selectedCount === bucketItems.length
           return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onToggle(item.id)}
-              className={[
-                'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition',
-                selected ? 'bg-dash-gold/15 text-dash-cream' : 'text-dash-secondary hover:bg-white/[0.05]',
-              ].join(' ')}
-            >
-              <span>{item.name}</span>
-              <span className="text-xs text-dash-tertiary">{item.category}{selected ? ' · ✓' : ''}</span>
-            </button>
+            <div key={categoryName}>
+              <div className="mb-1 flex items-center gap-2 px-1">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-dash-tertiary">{categoryName}</span>
+                <span className="text-[11px] text-dash-tertiary">{selectedCount}/{bucketItems.length}</span>
+                {onBulk && (
+                  <button
+                    type="button"
+                    onClick={() => onBulk(bucketItems.map(item => item.id), !allSelected)}
+                    className="text-[11px] font-semibold text-dash-gold/90 transition hover:text-dash-gold"
+                  >
+                    {allSelected ? 'Remove all' : `Select all ${bucketItems.length}`}
+                  </button>
+                )}
+              </div>
+              <div className="space-y-1">
+                {bucketItems.map(item => {
+                  const selected = selectedIds.has(item.id)
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => onToggle(item.id)}
+                      className={[
+                        'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition',
+                        selected ? 'bg-dash-gold/15 text-dash-cream' : 'text-dash-secondary hover:bg-white/[0.05]',
+                      ].join(' ')}
+                    >
+                      <span>{item.name}</span>
+                      <span className="text-xs text-dash-tertiary">{selected ? '✓ attached' : ''}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           )
         })}
       </div>

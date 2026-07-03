@@ -18,6 +18,7 @@ import {
   Field,
   MenuEmptyState,
   ModifierPicker,
+  PosTilePreview,
   SelectInput,
   SmallButton,
   TextAreaInput,
@@ -496,6 +497,9 @@ export function MenuItemDetail({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <SmallButton onClick={onBack}>← All items</SmallButton>
+          <div title={category?.color ? 'How this button looks on the POS (color comes from the category)' : 'This item’s category has no button color yet — set one on the Categories tab'}>
+            <PosTilePreview color={category?.color} label={item.name} sublabel={money(item.price)} size="sm" />
+          </div>
           <div>
             <h3 className="text-2xl font-semibold tracking-tight">{item.name}</h3>
             <p className="text-sm text-dash-tertiary">{item.category || 'Uncategorized'} · {money(item.price)}</p>

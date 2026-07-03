@@ -22,6 +22,7 @@ import {
   ItemThumb,
   MenuEmptyState,
   ModifierPicker,
+  PosTilePreview,
   SectionShell,
   SelectInput,
   SmallButton,
@@ -271,6 +272,14 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
                     : [...group.item_ids, itemId]
                   onLink(() => replaceGroupItems(group.id, next))
                 }}
+                onBulk={(itemIds, shouldSelect) => {
+                  const next = new Set(group.item_ids)
+                  for (const itemId of itemIds) {
+                    if (shouldSelect) next.add(itemId)
+                    else next.delete(itemId)
+                  }
+                  onLink(() => replaceGroupItems(group.id, Array.from(next)))
+                }}
               />
             </div>
             <div>
@@ -309,6 +318,8 @@ export function MenuPanel({ restaurantId }) {
   const [itemCategoryFilter, setItemCategoryFilter] = useState('all')
   const [itemAvailabilityFilter, setItemAvailabilityFilter] = useState('all')
   const [itemDraft, setItemDraft] = useState({ name: '', category: '', price: '' })
+  const [expandedCategoryNames, setExpandedCategoryNames] = useState(() => new Set())
+  const [categoryScrollTarget, setCategoryScrollTarget] = useState(null)
 
   const [modifierDraft, setModifierDraft] = useState({ name: '', price_delta: '', category: '', item_ids: new Set() })
   const [groupDraft, setGroupDraft] = useState(() => defaultGroupDraft())
@@ -417,14 +428,30 @@ export function MenuPanel({ restaurantId }) {
   const invalidateItems = () => queryClient.invalidateQueries({ queryKey: queryKeys.menuItems(restaurantId) })
   const invalidateCategories = () => queryClient.invalidateQueries({ queryKey: queryKeys.menuCategories(restaurantId) })
 
-  const run = async (work, successMessage) => {
+  // Pull a human-readable reason out of whatever was thrown (Error, Supabase
+  // PostgrestError-shaped object, string, ...), so the banner never falls back
+  // to a generic message that hides the actual failure.
+  const describeError = (err) => {
+    if (typeof err === 'string' && err.trim()) return err
+    for (const candidate of [err?.message, err?.error_description, err?.details, err?.hint]) {
+      if (typeof candidate === 'string' && candidate.trim()) return candidate
+    }
+    try {
+      const encoded = JSON.stringify(err)
+      if (encoded && encoded !== '{}') return encoded
+    } catch { /* not serializable */ }
+    return 'Something went wrong. Try again.'
+  }
+
+  const run = async (work, successMessage, failLabel) => {
     setBusy(true)
     setError('')
     try {
       await work()
       if (successMessage) setNotice(successMessage)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong. Try again.')
+      const reason = describeError(err)
+      setError(failLabel ? `${failLabel} — ${reason}` : reason)
     } finally {
       setBusy(false)
     }
@@ -472,7 +499,7 @@ export function MenuPanel({ restaurantId }) {
     })
     setMenuItems(prev => prev.map(item => (item.id === itemId ? { ...item, ...updated } : item)))
     invalidateItems()
-  }, message)
+  }, message, 'Couldn’t update the item')
 
   const createItem = () => {
     if (!itemDraft.name.trim() || itemDraft.price === '') {
@@ -494,14 +521,14 @@ export function MenuPanel({ restaurantId }) {
       invalidateItems()
       await loadItems(true)
       if (created?.id) setSelectedItemId(created.id)
-    }, 'Item added — fill in the details.')
+    }, 'Item added — fill in the details.', 'Couldn’t add the item')
   }
 
   const deleteItem = (itemId) => run(async () => {
     await api(`/restaurants/${restaurantId}/menu/items/${itemId}`, { method: 'DELETE' })
     setMenuItems(prev => prev.filter(item => item.id !== itemId))
     invalidateItems()
-  }, 'Item removed.')
+  }, 'Item removed.', 'Couldn’t remove the item')
 
   const filteredItems = useMemo(() => {
     const needle = itemSearch.trim().toLowerCase()
@@ -524,6 +551,58 @@ export function MenuPanel({ restaurantId }) {
     }
     return Object.entries(buckets).sort(([a], [b]) => a.localeCompare(b))
   }, [filteredItems])
+
+  // Unfiltered per-category item buckets for the Categories tab drill-in
+  // (items reference categories by name string, not id).
+  const allItemsByCategoryName = useMemo(() => {
+    const buckets = {}
+    for (const item of mergedItems) {
+      ;(buckets[item.category || 'Other'] ||= []).push(item)
+    }
+    return buckets
+  }, [mergedItems])
+
+  // Item category names that have no matching category card — items still show
+  // on the POS, but inherit no color/tax/station defaults.
+  const orphanCategoryBuckets = useMemo(() => {
+    const known = new Set(mergedCategories.map(category => category.name).filter(Boolean))
+    return Object.entries(allItemsByCategoryName)
+      .filter(([name]) => !known.has(name))
+      .sort(([a], [b]) => a.localeCompare(b))
+  }, [allItemsByCategoryName, mergedCategories])
+
+  const toggleCategoryExpanded = (name) => {
+    if (!name) return
+    setExpandedCategoryNames(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
+
+  // Items tab → Categories tab: open that category's card, expanded and scrolled into view.
+  const jumpToCategory = (name) => {
+    setSelectedItemId(null)
+    setActiveTab('categories')
+    setExpandedCategoryNames(prev => new Set(prev).add(name))
+    setCategoryScrollTarget(name)
+  }
+
+  const openItemEditor = (itemId) => {
+    setActiveTab('items')
+    setSelectedItemId(itemId)
+  }
+
+  useEffect(() => {
+    if (activeTab !== 'categories' || !categoryScrollTarget) return
+    const timer = setTimeout(() => {
+      document.getElementById(`category-card-${encodeURIComponent(categoryScrollTarget)}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setCategoryScrollTarget(null)
+    }, 80)
+    return () => clearTimeout(timer)
+  }, [activeTab, categoryScrollTarget])
 
   const selectedItem = selectedItemId ? mergedItems.find(item => item.id === selectedItemId) : null
   const nestedReadiness = useMemo(() => {
@@ -583,7 +662,7 @@ export function MenuPanel({ restaurantId }) {
     })
     setCategories(Array.isArray(saved) ? saved : (saved?.categories || []))
     invalidateCategories()
-  }, 'Categories saved.')
+  }, 'Categories saved.', 'Couldn’t save categories')
 
   const updateCategory = (index, patch) => {
     setCategories(prev => prev.map((category, currentIndex) => (currentIndex === index ? { ...category, ...patch } : category)))
@@ -624,7 +703,7 @@ export function MenuPanel({ restaurantId }) {
     })
     queryClient.invalidateQueries({ queryKey: queryKeys.taxesCharges(restaurantId) })
     await loadCategories(true)
-  }, `Tax rate "${name}" created — assign it to a category below and save.`)
+  }, `Tax rate "${name}" created — assign it to a category below and save.`, 'Couldn’t create the tax rate')
 
   const pickCategoryColor = (category, color) => run(async () => {
     await setCategoryColor(restaurantId, category.id, color)
@@ -634,7 +713,7 @@ export function MenuPanel({ restaurantId }) {
       else delete next[category.id]
       return next
     })
-  }, color ? 'Category color set.' : 'Category color cleared.')
+  }, color ? 'Category color set.' : 'Category color cleared.', 'Couldn’t save the button color')
 
   // ── Modifiers ────────────────────────────────────────────────────────────
 
@@ -661,7 +740,7 @@ export function MenuPanel({ restaurantId }) {
       }
       setModifierDraft(prev => ({ name: '', price_delta: '', category: prev.category, item_ids: new Set() }))
       await loadModifiers()
-    }, 'Modifier added.')
+    }, 'Modifier added.', 'Couldn’t add the modifier')
   }
 
   const updateModifier = (modifierId, patch) => run(async () => {
@@ -670,7 +749,7 @@ export function MenuPanel({ restaurantId }) {
       body: JSON.stringify(patch),
     })
     await loadModifiers()
-  })
+  }, undefined, 'Couldn’t update the modifier')
 
   const replaceModifierItems = (modifierId, itemIds) => run(async () => {
     await api(`/restaurants/${restaurantId}/menu/modifiers/${modifierId}/items`, {
@@ -678,13 +757,13 @@ export function MenuPanel({ restaurantId }) {
       body: JSON.stringify({ item_ids: itemIds }),
     })
     await loadModifiers()
-  })
+  }, undefined, 'Couldn’t update the modifier’s items')
 
   const deleteModifier = (modifierId) => run(async () => {
     await api(`/restaurants/${restaurantId}/menu/modifiers/${modifierId}`, { method: 'DELETE' })
     await loadModifiers()
     await loadGroups()
-  }, 'Modifier removed.')
+  }, 'Modifier removed.', 'Couldn’t remove the modifier')
 
   // ── Modifier groups ──────────────────────────────────────────────────────
 
@@ -707,23 +786,23 @@ export function MenuPanel({ restaurantId }) {
       })
       setGroupDraft(defaultGroupDraft())
       await loadGroups()
-    }, 'Modifier group created.')
+    }, 'Modifier group created.', 'Couldn’t create the question')
   }
 
   const saveGroup = (groupId, patch) => run(async () => {
     await updateModifierGroup(groupId, patch)
     await loadGroups()
-  }, 'Group saved.')
+  }, 'Group saved.', 'Couldn’t save the question')
 
   const archiveGroup = (groupId) => run(async () => {
     await archiveModifierGroup(groupId)
     await loadGroups()
-  }, 'Group archived.')
+  }, 'Group archived.', 'Couldn’t archive the question')
 
   const runGroupLink = (work) => run(async () => {
     await work()
     await loadGroups()
-  })
+  }, undefined, 'Couldn’t update the question')
 
   const addModifiersToGroup = (group, modifierIds) => run(async () => {
     let order = group.options.length
@@ -733,7 +812,7 @@ export function MenuPanel({ restaurantId }) {
       order += 1
     }
     await loadGroups()
-  }, modifierIds.length > 1 ? 'Options added.' : 'Option added.')
+  }, modifierIds.length > 1 ? 'Options added.' : 'Option added.', 'Couldn’t add the options')
 
   const createModifierIntoGroup = (group, draft) => run(async () => {
     const created = await api(`/restaurants/${restaurantId}/menu/modifiers`, {
@@ -743,7 +822,7 @@ export function MenuPanel({ restaurantId }) {
     if (created?.id) await addGroupOption(group.id, created.id, { display_order: group.options.length })
     await loadModifiers()
     await loadGroups()
-  }, 'Modifier created and added.')
+  }, 'Modifier created and added.', 'Couldn’t create the modifier')
 
   // ── Specials (tab-level scheduling) ──────────────────────────────────────
 
@@ -795,7 +874,7 @@ export function MenuPanel({ restaurantId }) {
       await auditSpecial('created', data.id, null, data)
       setSpecialDraft(defaultSpecialDraft())
       await loadSpecials()
-    }, 'Special saved.')
+    }, 'Special saved.', 'Couldn’t save the special')
   }
 
   const updateSpecial = (special, patch) => run(async () => {
@@ -809,7 +888,7 @@ export function MenuPanel({ restaurantId }) {
     if (updateError) throw updateError
     await auditSpecial('updated', special.id, special, data)
     await loadSpecials()
-  })
+  }, undefined, 'Couldn’t update the special')
 
   const archiveSpecial = (special) => run(async () => {
     const { error: archiveError } = await supabase
@@ -820,7 +899,7 @@ export function MenuPanel({ restaurantId }) {
     if (archiveError) throw archiveError
     await auditSpecial('archived', special.id, special, null)
     await loadSpecials()
-  }, 'Special archived.')
+  }, 'Special archived.', 'Couldn’t archive the special')
 
   const scheduledItems = mergedItems.filter(item => item.availability_mode && item.availability_mode !== 'always')
 
@@ -833,7 +912,7 @@ export function MenuPanel({ restaurantId }) {
     })
     invalidateCategories()
     await Promise.all([loadRouting(true), loadCategories(true)])
-  }, 'Category routed.')
+  }, 'Category routed.', 'Couldn’t route the category')
 
   const createStation = (name) => run(async () => {
     await api(`/restaurants/${restaurantId}/kitchen-routing/stations`, {
@@ -841,7 +920,7 @@ export function MenuPanel({ restaurantId }) {
       body: JSON.stringify({ name, is_active: true }),
     })
     await loadRouting(true)
-  }, 'Station added.')
+  }, 'Station added.', 'Couldn’t add the station')
 
   const createTarget = (name, host) => run(async () => {
     await api(`/restaurants/${restaurantId}/kitchen-routing/targets`, {
@@ -855,7 +934,7 @@ export function MenuPanel({ restaurantId }) {
       }),
     })
     await loadRouting(true)
-  }, 'Printer target added.')
+  }, 'Printer target added.', 'Couldn’t add the printer')
 
   const assignTarget = (stationId, targetId) => run(async () => {
     await api(`/restaurants/${restaurantId}/kitchen-routing/station-targets`, {
@@ -863,7 +942,7 @@ export function MenuPanel({ restaurantId }) {
       body: JSON.stringify({ station_id: stationId, target_id: targetId, priority: 0, is_active: true }),
     })
     await loadRouting(true)
-  }, 'Printer assigned to station.')
+  }, 'Printer assigned to station.', 'Couldn’t assign the printer')
 
   const routingItems = useMemo(() => {
     const needle = routingItemSearch.trim().toLowerCase()
@@ -976,6 +1055,14 @@ export function MenuPanel({ restaurantId }) {
                       {categoryColor && <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: categoryColor }} />}
                       <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-dash-tertiary">{categoryName}</h4>
                       <span className="text-xs text-dash-tertiary">{items.length}</span>
+                      <button
+                        type="button"
+                        onClick={() => jumpToCategory(categoryName)}
+                        title="Color, tax rate, station, and course for this category"
+                        className="text-xs font-semibold text-dash-gold/80 transition hover:text-dash-gold"
+                      >
+                        Category settings →
+                      </button>
                     </div>
                     <div className="space-y-1.5">
                       {items.map(item => (
@@ -1030,65 +1117,152 @@ export function MenuPanel({ restaurantId }) {
       {!loading && activeTab === 'categories' && (
         <SectionShell
           title="Categories"
-          description="How the menu is organized on the POS. Pick a button color, a tax rate (liquor at 15%, everything else at the default), a default prep station, and a default course — items inherit them unless overridden."
+          description="How the menu is organized on the POS. Each category card shows exactly how its button will look on the device, and sets the tax rate, prep station, and course its items inherit. Click an item count to see what's inside."
           actions={<SmallButton variant="primary" onClick={() => void saveCategories(categories)} disabled={busy}>{busy ? 'Saving...' : 'Save categories'}</SmallButton>}
         >
           <NewTaxRateInline busy={busy} onCreate={(name, rate) => void createTaxRate(name, rate)} />
           <div className="space-y-3">
-            {mergedCategories.map((category, index) => (
-              <div key={category.id || `${category.name}:${index}`} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-                <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr_1fr_120px_auto]">
-                  <TextInput value={category.name || ''} onChange={event => updateCategory(index, { name: event.target.value })} placeholder="Appetizers" />
-                  <SelectInput
-                    value={category.routing_station_id || ''}
-                    onChange={event => updateCategory(index, { routing_station_id: event.target.value, routing_station_name: stationsById[event.target.value]?.name || '' })}
-                  >
-                    <option value="">No default station</option>
-                    {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
-                  </SelectInput>
-                  <SelectInput value={category.default_course_type || ''} onChange={event => updateCategory(index, { default_course_type: event.target.value })}>
-                    {COURSE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </SelectInput>
-                  <TextInput
-                    value={category.prep_time_minutes == null ? '' : String(category.prep_time_minutes)}
-                    onChange={event => updateCategory(index, { prep_time_minutes: cleanDigits(event.target.value) })}
-                    placeholder="Prep min"
-                  />
-                  <SmallButton variant="danger" onClick={() => setCategories(prev => prev.filter((_, currentIndex) => currentIndex !== index))}>Remove</SmallButton>
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-3">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="label-mono">Button color</span>
+            {mergedCategories.map((category, index) => {
+              const categoryItems = allItemsByCategoryName[category.name] || []
+              const isExpanded = Boolean(category.name) && expandedCategoryNames.has(category.name)
+              return (
+                <div
+                  key={category.id || `${category.name}:${index}`}
+                  id={`category-card-${encodeURIComponent(category.name || `new-${index}`)}`}
+                  className="rounded-xl border border-white/10 bg-white/[0.025] p-4"
+                >
+                  <div className="flex flex-wrap items-end gap-4">
+                    <div>
+                      <p className="label-mono mb-1.5">On the POS</p>
+                      <PosTilePreview
+                        color={category.color}
+                        label={category.name || 'New category'}
+                        sublabel={`${categoryItems.length} item${categoryItems.length === 1 ? '' : 's'}`}
+                      />
+                    </div>
+                    <div className="min-w-52 flex-1">
+                      <Field label="Category name">
+                        <TextInput value={category.name || ''} onChange={event => updateCategory(index, { name: event.target.value })} placeholder="Appetizers" />
+                      </Field>
+                    </div>
+                    <div className="flex gap-2 pb-0.5">
+                      <SmallButton
+                        onClick={() => toggleCategoryExpanded(category.name)}
+                        disabled={!category.name}
+                        title="See every item that lives in this category"
+                      >
+                        {isExpanded ? 'Hide items' : `View ${categoryItems.length} item${categoryItems.length === 1 ? '' : 's'}`}
+                      </SmallButton>
+                      <SmallButton variant="danger" onClick={() => setCategories(prev => prev.filter((_, currentIndex) => currentIndex !== index))}>Remove</SmallButton>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <Field label="Default prep station">
+                      <SelectInput
+                        value={category.routing_station_id || ''}
+                        onChange={event => updateCategory(index, { routing_station_id: event.target.value, routing_station_name: stationsById[event.target.value]?.name || '' })}
+                      >
+                        <option value="">No default station</option>
+                        {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
+                      </SelectInput>
+                    </Field>
+                    <Field label="Default course">
+                      <SelectInput value={category.default_course_type || ''} onChange={event => updateCategory(index, { default_course_type: event.target.value })}>
+                        {COURSE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </SelectInput>
+                    </Field>
+                    <Field label="Prep minutes">
+                      <TextInput
+                        value={category.prep_time_minutes == null ? '' : String(category.prep_time_minutes)}
+                        onChange={event => updateCategory(index, { prep_time_minutes: cleanDigits(event.target.value) })}
+                        placeholder="e.g. 12"
+                      />
+                    </Field>
+                    <Field label="Tax rate">
+                      <SelectInput
+                        title="Every item in this category is taxed at this rate on the POS"
+                        value={category.tax_rate_id || ''}
+                        onChange={event => updateCategory(index, { tax_rate_id: event.target.value || null })}
+                      >
+                        <option value="">Store default rate</option>
+                        {taxRates.map(rate => (
+                          <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
+                        ))}
+                      </SelectInput>
+                    </Field>
+                  </div>
+
+                  <div className="mt-4">
+                    <p className="label-mono mb-2">Button color</p>
                     <ColorSwatchPicker
                       value={category.color}
                       disabled={!category.id || busy}
                       onPick={color => category.id && void pickCategoryColor(category, color)}
                     />
-                    {!category.id && <span className="text-xs text-dash-tertiary">Save categories first to pick a color.</span>}
+                    {!category.id && <p className="mt-1.5 text-xs text-dash-tertiary">Save categories first to pick a color.</p>}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="label-mono">Tax</span>
-                    <SelectInput
-                      className="!w-auto !py-2"
-                      title="Every item in this category is taxed at this rate on the POS"
-                      value={category.tax_rate_id || ''}
-                      onChange={event => updateCategory(index, { tax_rate_id: event.target.value || null })}
-                    >
-                      <option value="">Store default rate</option>
-                      {taxRates.map(rate => (
-                        <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
-                      ))}
-                    </SelectInput>
-                  </div>
+
+                  {isExpanded && (
+                    <div className="mt-4 border-t border-white/10 pt-3">
+                      <p className="label-mono mb-2">Items in {category.name}</p>
+                      {categoryItems.length === 0 ? (
+                        <p className="text-sm text-dash-tertiary">No items here yet — add them on the Items tab, or move an existing item into this category from its editor.</p>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {categoryItems.map(item => (
+                            <div key={item.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-2.5">
+                              <ItemThumb item={item} color={category.color} />
+                              <div className="min-w-0 flex-1">
+                                <span className="font-medium text-dash-cream">{item.name}</span>
+                                {item.is_available === false && (
+                                  <span className="ml-2 rounded-full bg-amber-300/15 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-200">86'd</span>
+                                )}
+                              </div>
+                              <span className="text-sm font-semibold text-dash-cream">{money(item.price)}</span>
+                              <SmallButton onClick={() => openItemEditor(item.id)}>Edit item →</SmallButton>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              )
+            })}
             {mergedCategories.length === 0 && (
               <MenuEmptyState title="No categories yet">
                 Add your first category — Appetizers, Entrees, Drinks — then save.
               </MenuEmptyState>
             )}
           </div>
+
+          {orphanCategoryBuckets.length > 0 && (
+            <div className="mt-4 rounded-xl border border-amber-300/25 bg-amber-300/[0.04] p-4">
+              <p className="text-sm font-semibold text-amber-100">Items without a category card</p>
+              <p className="mt-1 text-sm text-dash-secondary">
+                These items name a category that isn't set up above, so they get no button color, tax rate, or station defaults. Create the card to configure them.
+              </p>
+              <div className="mt-3 space-y-2">
+                {orphanCategoryBuckets.map(([name, orphanItems]) => (
+                  <div key={name} id={`category-card-${encodeURIComponent(name)}`} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                    <span className="font-medium text-dash-cream">{name}</span>
+                    <span className="text-sm text-dash-tertiary">{orphanItems.length} item{orphanItems.length === 1 ? '' : 's'} · {orphanItems.slice(0, 4).map(item => item.name).join(', ')}{orphanItems.length > 4 ? '…' : ''}</span>
+                    <span className="flex-1" />
+                    <SmallButton
+                      onClick={() => {
+                        setCategories(prev => [...prev, { name, tax_rate_id: '', routing_station_id: '', routing_station_name: '', default_course_type: '', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: '', is_active: true }])
+                        setExpandedCategoryNames(prev => new Set(prev).add(name))
+                      }}
+                    >
+                      Create "{name}" category
+                    </SmallButton>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="mt-4">
             <SmallButton onClick={() => setCategories(prev => [...prev, { name: '', tax_rate_id: '', routing_station_id: '', routing_station_name: '', default_course_type: '', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: '', is_active: true }])}>
               Add category
@@ -1124,6 +1298,14 @@ export function MenuPanel({ restaurantId }) {
                   const next = new Set(prev.item_ids)
                   if (next.has(itemId)) next.delete(itemId)
                   else next.add(itemId)
+                  return { ...prev, item_ids: next }
+                })}
+                onBulk={(itemIds, shouldSelect) => setModifierDraft(prev => {
+                  const next = new Set(prev.item_ids)
+                  for (const itemId of itemIds) {
+                    if (shouldSelect) next.add(itemId)
+                    else next.delete(itemId)
+                  }
                   return { ...prev, item_ids: next }
                 })}
               />
@@ -1621,6 +1803,14 @@ function ModifierRow({ modifier, menuItems, busy, onRename, onReprice, onRecateg
                 ? (modifier.item_ids || []).filter(id => id !== itemId)
                 : [...(modifier.item_ids || []), itemId]
               onReplaceItems(next)
+            }}
+            onBulk={(itemIds, shouldSelect) => {
+              const next = new Set(modifier.item_ids || [])
+              for (const itemId of itemIds) {
+                if (shouldSelect) next.add(itemId)
+                else next.delete(itemId)
+              }
+              onReplaceItems(Array.from(next))
             }}
           />
         </div>
