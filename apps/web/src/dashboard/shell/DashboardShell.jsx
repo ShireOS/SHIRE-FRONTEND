@@ -22,6 +22,7 @@ import {
   SlidersHorizontal,
   Sun,
   Users,
+  UtensilsCrossed,
   Wrench,
 } from 'lucide-react'
 import { useAuth } from '../../auth'
@@ -88,6 +89,10 @@ export function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
     prefetch(queryKeys.waiters(restaurantId), api(`/restaurants/${restaurantId}/waiters?include_inactive=false`), STALE_TIMES.setup)
     prefetch(queryKeys.conversations(restaurantId), api(`/restaurants/${restaurantId}/messages/conversations`), STALE_TIMES.messaging)
     prefetch(queryKeys.announcements(restaurantId), api(`/restaurants/${restaurantId}/announcements`), STALE_TIMES.messaging)
+  } else if (tabId === 'menu') {
+    prefetch(queryKeys.menuItems(restaurantId), api(`/restaurants/${restaurantId}/menu/items`), STALE_TIMES.setup)
+    prefetch(queryKeys.menuCategories(restaurantId), api(`/restaurants/${restaurantId}/menu/categories`), STALE_TIMES.setup)
+    prefetch(queryKeys.kitchenRouting(restaurantId), api(`/restaurants/${restaurantId}/kitchen-routing`), STALE_TIMES.setup)
   }
 }
 
@@ -109,6 +114,7 @@ function hiddenSurfaces(auth) {
 const STORE_NAV = [
   { id: 'analytics', label: 'Home', icon: Home },
   { id: 'setup', label: 'Setup', icon: Wrench },
+  { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
   { id: 'devices', label: 'Devices', icon: Monitor },
   { id: 'team', label: 'Team', icon: Users },
   { id: 'scheduling', label: 'Scheduling', icon: CalendarClock },

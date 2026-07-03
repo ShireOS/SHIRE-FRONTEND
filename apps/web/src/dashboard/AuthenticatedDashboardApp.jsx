@@ -31,6 +31,7 @@ import TeamPage from './pages/TeamPage'
 import ClaimStorePage from './pages/ClaimStorePage'
 import DevicesPage from './pages/DevicesPage'
 import StoreDevicesPanel from './components/devices/StoreDevicesPanel'
+import MenuPanel from './MenuPanel'
 import { useAllowedStoreTabs } from './data/resellerAccess'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
 import SalesTiles from './components/SalesTiles'
@@ -109,6 +110,7 @@ function EnterprisePage({ item, title, children }) {
 const TABS = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'setup', label: 'Edit Setup' },
+  { id: 'menu', label: 'Menu' },
   { id: 'team', label: 'Team' },
   { id: 'scheduling', label: 'Scheduling' },
   { id: 'messaging', label: 'Messaging' },
@@ -4342,6 +4344,7 @@ function RestaurantWorkspace() {
             <AnalyticsDashboard restaurant={restaurant} />
           </>
         )}
+        {activeTab === 'menu' && <MenuPanel restaurantId={restaurantId} />}
         {activeTab === 'team' && <TeamPage restaurantId={restaurantId} />}
         {activeTab === 'devices' && <StoreDevicesPanel restaurantId={restaurantId} />}
         {activeTab === 'scheduling' && <SchedulingPanel restaurantId={restaurantId} />}
@@ -4359,6 +4362,7 @@ function RestaurantWorkspace() {
 const WORKSPACE_BREADCRUMB_LABELS = {
   analytics: 'Overview',
   setup: 'Setup',
+  menu: 'Menu',
   team: 'Team',
   devices: 'Devices',
   scheduling: 'Scheduling',

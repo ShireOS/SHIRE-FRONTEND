@@ -5,9 +5,10 @@ import { useAuth } from '../../auth'
 // Analytics (profit breakdowns by period), rates/payout data, and devices
 // (resellers do the IT for their stores) are mandatory for resellers; owners
 // toggle the remaining operational surfaces per store.
-export const RESELLER_TOGGLEABLE_TABS = ['setup', 'team', 'scheduling', 'messaging', 'payments']
+export const RESELLER_TOGGLEABLE_TABS = ['setup', 'menu', 'team', 'scheduling', 'messaging', 'payments']
 export const DEFAULT_RESELLER_PERMISSIONS = {
   setup: true,
+  menu: true,
   team: false,
   scheduling: false,
   messaging: false,
