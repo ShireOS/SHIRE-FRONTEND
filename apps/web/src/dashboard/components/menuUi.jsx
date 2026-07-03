@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 
 // Shared primitives for the Menu workspace (MenuPanel + MenuItemDetail),
 // mirroring the setup-panel visual idiom.
@@ -176,6 +176,153 @@ export function ItemChecklist({ menuItems, selectedIds, onToggle }) {
             </button>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+// Modifier "categories" are the group_name label on each modifier (defaults
+// to "Add-ons" server-side). Typing a new label anywhere creates the category.
+export const modifierCategoryOf = (modifier) => ((modifier?.group_name || '').trim() || 'Add-ons')
+
+export function bucketModifiersByCategory(modifiers) {
+  const buckets = {}
+  for (const modifier of modifiers) {
+    ;(buckets[modifierCategoryOf(modifier)] ||= []).push(modifier)
+  }
+  return Object.entries(buckets).sort(([a], [b]) => a.localeCompare(b))
+}
+
+// One picker for pulling modifiers in anywhere — onto an item or nested inside
+// another modifier. Three moves in one place: click an existing modifier
+// (bucketed by category), add a whole category at once, or create a brand-new
+// modifier inline (typing a new category name creates that category too).
+export function ModifierPicker({ modifiers, excludeIds, busy = false, onAddExisting, onCreateNew, autoFocus = false }) {
+  const [query, setQuery] = useState('')
+  const [showNew, setShowNew] = useState(false)
+  const [draft, setDraft] = useState({ name: '', price: '', category: '' })
+  const categoryListId = useId()
+
+  const available = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return modifiers.filter(modifier => {
+      if (excludeIds?.has(modifier.id)) return false
+      if (!needle) return true
+      return modifier.name.toLowerCase().includes(needle)
+        || modifierCategoryOf(modifier).toLowerCase().includes(needle)
+    })
+  }, [modifiers, excludeIds, query])
+  const buckets = useMemo(() => bucketModifiersByCategory(available), [available])
+  const categoryNames = useMemo(
+    () => Array.from(new Set(modifiers.map(modifierCategoryOf))).sort(),
+    [modifiers],
+  )
+
+  const submitNew = () => {
+    if (!draft.name.trim()) return
+    onCreateNew({
+      name: draft.name.trim(),
+      price_delta: draft.price === '' ? 0 : Number(draft.price),
+      group_name: draft.category.trim() || 'Add-ons',
+    })
+    setDraft(prev => ({ name: '', price: '', category: prev.category }))
+    setShowNew(false)
+  }
+
+  return (
+    <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="min-w-48 flex-1">
+          <TextInput
+            autoFocus={autoFocus}
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            placeholder="Search modifiers or categories..."
+            className="!py-2"
+          />
+        </div>
+        <SmallButton variant={showNew ? 'secondary' : 'primary'} onClick={() => setShowNew(current => !current)}>
+          {showNew ? 'Cancel' : '+ New modifier'}
+        </SmallButton>
+      </div>
+
+      {showNew && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-dash-gold/25 bg-white/[0.02] p-2">
+          <div className="w-44">
+            <TextInput
+              autoFocus
+              value={draft.name}
+              onChange={event => setDraft(prev => ({ ...prev, name: event.target.value }))}
+              onKeyDown={event => { if (event.key === 'Enter') submitNew() }}
+              placeholder="Ranch"
+              className="!py-2"
+            />
+          </div>
+          <div className="w-24">
+            <TextInput
+              inputMode="decimal"
+              value={draft.price}
+              onChange={event => setDraft(prev => ({ ...prev, price: cleanDecimal(event.target.value) }))}
+              onKeyDown={event => { if (event.key === 'Enter') submitNew() }}
+              placeholder="+$ 0.00"
+              className="!py-2"
+            />
+          </div>
+          <div className="w-44">
+            <TextInput
+              list={categoryListId}
+              value={draft.category}
+              onChange={event => setDraft(prev => ({ ...prev, category: event.target.value }))}
+              onKeyDown={event => { if (event.key === 'Enter') submitNew() }}
+              placeholder="Category (or new one)"
+              className="!py-2"
+            />
+            <datalist id={categoryListId}>
+              {categoryNames.map(name => <option key={name} value={name} />)}
+            </datalist>
+          </div>
+          <SmallButton variant="primary" disabled={!draft.name.trim() || busy} onClick={submitNew}>Create & add</SmallButton>
+        </div>
+      )}
+
+      <div className="mt-2 max-h-64 space-y-3 overflow-y-auto pr-1">
+        {buckets.map(([categoryName, bucketModifiers]) => (
+          <div key={categoryName}>
+            <div className="mb-1.5 flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.08em] text-dash-tertiary">{categoryName}</span>
+              <span className="text-xs text-dash-tertiary">{bucketModifiers.length}</span>
+              {bucketModifiers.length > 1 && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onAddExisting(bucketModifiers.map(modifier => modifier.id))}
+                  className="text-xs font-semibold text-dash-gold/90 transition hover:text-dash-gold disabled:opacity-50"
+                >
+                  Add all {bucketModifiers.length}
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {bucketModifiers.map(modifier => (
+                <button
+                  key={modifier.id}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onAddExisting([modifier.id])}
+                  className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream disabled:opacity-50"
+                >
+                  + {modifier.name}
+                  {Number(modifier.price_delta) > 0 && <span className="ml-1 text-xs text-dash-tertiary">{money(modifier.price_delta)}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        {buckets.length === 0 && (
+          <p className="py-2 text-sm text-dash-tertiary">
+            {modifiers.length === 0 ? 'No modifiers yet — create your first one above.' : 'Nothing matches — clear the search or create it new.'}
+          </p>
+        )}
       </div>
     </div>
   )

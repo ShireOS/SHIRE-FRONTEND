@@ -12,6 +12,27 @@ import {
   updateModifierGroup,
   wouldCreateCycle,
 } from './data/menuGroups'
+import { fetchCategoryColors, fetchItemImages, setCategoryColor } from './data/menuExtras'
+import { MenuItemDetail } from './MenuItemDetail'
+import {
+  ColorSwatchPicker,
+  DAYS_SHORT,
+  Field,
+  ItemChecklist,
+  ItemThumb,
+  MenuEmptyState,
+  ModifierPicker,
+  SectionShell,
+  SelectInput,
+  SmallButton,
+  TextInput,
+  bucketModifiersByCategory,
+  cleanDecimal,
+  cleanDigits,
+  groupRulesSummary,
+  modifierCategoryOf,
+  money,
+} from './components/menuUi'
 
 const MENU_TABS = [
   { id: 'items', label: 'Items' },
@@ -22,8 +43,6 @@ const MENU_TABS = [
   { id: 'printing', label: 'Printing & Routing' },
 ]
 
-const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
 const COURSE_OPTIONS = [
   { value: '', label: 'Course default' },
   { value: 'appetizer', label: 'Appetizer' },
@@ -33,13 +52,6 @@ const COURSE_OPTIONS = [
   { value: 'side', label: 'Side' },
   { value: 'other', label: 'Other' },
   { value: 'none', label: 'None' },
-]
-
-const AVAILABILITY_MODES = [
-  { value: 'always', label: 'Always available' },
-  { value: 'schedule', label: 'Weekly schedule' },
-  { value: 'seasonal', label: 'Seasonal (date window)' },
-  { value: 'manual', label: 'Manual only' },
 ]
 
 const defaultSpecialDraft = () => ({
@@ -69,131 +81,6 @@ const defaultGroupDraft = () => ({
   overage_price: '',
 })
 
-const money = (value) => {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? `$${parsed.toFixed(2)}` : '—'
-}
-
-const cleanDecimal = (value) => value.replace(/[^\d.]/g, '').slice(0, 8)
-const cleanDigits = (value, max = 3) => value.replace(/\D/g, '').slice(0, max)
-
-// ── Local UI primitives (setup-panel idiom) ─────────────────────────────────
-
-function Field({ label, children }) {
-  return (
-    <label className="block space-y-2">
-      <span className="label-mono">{label}</span>
-      {children}
-    </label>
-  )
-}
-
-function TextInput(props) {
-  return (
-    <input
-      {...props}
-      className={[
-        'w-full rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm text-dash-cream outline-none transition placeholder:text-dash-tertiary focus:border-dash-gold/70',
-        props.className || '',
-      ].join(' ')}
-    />
-  )
-}
-
-function SelectInput(props) {
-  return (
-    <select
-      {...props}
-      className={[
-        'w-full rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm text-dash-cream outline-none transition focus:border-dash-gold/70',
-        props.className || '',
-      ].join(' ')}
-    />
-  )
-}
-
-function SmallButton({ children, onClick, variant = 'secondary', disabled = false, title }) {
-  const classes = variant === 'primary'
-    ? 'bg-dash-gold text-black hover:opacity-90'
-    : variant === 'danger'
-      ? 'border border-red-400/30 text-red-200 hover:border-red-300/60'
-      : 'border border-white/10 text-dash-secondary hover:border-dash-gold/60 hover:text-dash-cream'
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      className={`rounded-xl px-3 py-2 text-sm font-semibold transition disabled:opacity-50 ${classes}`}
-    >
-      {children}
-    </button>
-  )
-}
-
-function SectionShell({ title, description, children, actions }) {
-  return (
-    <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-      <div className="flex flex-col gap-4 border-b border-white/10 pb-4 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h3 className="text-2xl font-semibold tracking-tight">{title}</h3>
-          {description && <p className="mt-2 max-w-3xl text-sm leading-6 text-dash-secondary">{description}</p>}
-        </div>
-        {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
-      </div>
-      <div className="mt-5">{children}</div>
-    </section>
-  )
-}
-
-function MenuEmptyState({ title, children }) {
-  return (
-    <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-6 text-center">
-      <h3 className="text-lg font-semibold">{title}</h3>
-      <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-dash-secondary">{children}</p>
-    </div>
-  )
-}
-
-// Searchable multi-select over menu items, used to attach modifiers and
-// modifier groups to the items they apply to.
-function ItemChecklist({ menuItems, selectedIds, onToggle }) {
-  const [query, setQuery] = useState('')
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (!needle) return menuItems
-    return menuItems.filter(item =>
-      item.name.toLowerCase().includes(needle) || (item.category || '').toLowerCase().includes(needle))
-  }, [menuItems, query])
-
-  return (
-    <div className="space-y-2">
-      <TextInput value={query} onChange={event => setQuery(event.target.value)} placeholder="Search items..." />
-      <div className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-white/10 bg-white/[0.02] p-2">
-        {filtered.length === 0 && <p className="p-2 text-sm text-dash-tertiary">No items match.</p>}
-        {filtered.map(item => {
-          const selected = selectedIds.has(item.id)
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onToggle(item.id)}
-              className={[
-                'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition',
-                selected ? 'bg-dash-gold/15 text-dash-cream' : 'text-dash-secondary hover:bg-white/[0.05]',
-              ].join(' ')}
-            >
-              <span>{item.name}</span>
-              <span className="text-xs text-dash-tertiary">{item.category}{selected ? ' · ✓' : ''}</span>
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 // Read-only recursive preview of how a group prompts on the POS, following
 // child_group_id edges. `seen` guards against cycles in existing data.
 function GroupTree({ groupId, groupsById, modifiersById, depth = 0, seen }) {
@@ -205,14 +92,7 @@ function GroupTree({ groupId, groupsById, modifiersById, depth = 0, seen }) {
     <div className={depth > 0 ? 'ml-4 mt-2 border-l border-dash-gold/25 pl-3' : ''}>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="font-semibold text-dash-cream">{group.name}</span>
-        <span className="rounded-full border border-white/10 px-2 py-0.5 text-[11px] text-dash-tertiary">
-          {group.is_required ? 'Required' : 'Optional'} · pick {group.min_selections}{group.max_selections != null ? `–${group.max_selections}` : '+'}
-        </span>
-        {Number(group.included_count) > 0 && (
-          <span className="rounded-full border border-white/10 px-2 py-0.5 text-[11px] text-dash-tertiary">
-            {group.included_count} included{group.overage_price != null ? ` · extras ${money(group.overage_price)}` : ''}
-          </span>
-        )}
+        <span className="rounded-full border border-white/10 px-2 py-0.5 text-[11px] text-dash-tertiary">{groupRulesSummary(group)}</span>
       </div>
       <div className="mt-1 space-y-1">
         {(group.options || []).map(option => {
@@ -242,9 +122,9 @@ function GroupTree({ groupId, groupsById, modifiersById, depth = 0, seen }) {
   )
 }
 
-// ── Modifier group editor card ──────────────────────────────────────────────
+// ── Modifier group editor card (Groups tab power view) ─────────────────────
 
-function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchive, onLink }) {
+function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchive, onLink, onAddModifiers, onCreateModifier }) {
   const [expanded, setExpanded] = useState(false)
   const [draft, setDraft] = useState(() => ({
     name: group.name,
@@ -255,12 +135,9 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
     included_count: String(group.included_count ?? 0),
     overage_price: group.overage_price == null ? '' : String(group.overage_price),
   }))
-  const [optionToAdd, setOptionToAdd] = useState('')
-
   const modifiersById = useMemo(() => Object.fromEntries(modifiers.map(m => [m.id, m])), [modifiers])
   const groupsById = useMemo(() => Object.fromEntries(groups.map(g => [g.id, g])), [groups])
   const attachedIds = useMemo(() => new Set(group.item_ids), [group])
-  const availableModifiers = modifiers.filter(m => !group.options.some(option => option.modifier_id === m.id))
   const nestableGroups = groups.filter(candidate =>
     candidate.id !== group.id && !wouldCreateCycle(groups, group.id, candidate.id))
 
@@ -286,13 +163,10 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
             <h4 className="font-semibold text-dash-cream">{group.name}</h4>
             {group.is_required && <span className="rounded-full bg-dash-gold/15 px-2 py-0.5 text-[11px] font-semibold text-dash-gold">Required</span>}
             <span className="rounded-full border border-white/10 px-2 py-0.5 text-[11px] text-dash-tertiary">
-              {group.options.length} option{group.options.length === 1 ? '' : 's'} · {group.item_ids.length} item{group.item_ids.length === 1 ? '' : 's'}
+              {group.options.length} option{group.options.length === 1 ? '' : 's'} · used by {group.item_ids.length} item{group.item_ids.length === 1 ? '' : 's'}
             </span>
           </div>
-          <p className="mt-1 text-sm text-dash-tertiary">
-            Pick {group.min_selections}{group.max_selections != null ? `–${group.max_selections}` : ' or more'}
-            {Number(group.included_count) > 0 ? ` · first ${group.included_count} included` : ''}
-          </p>
+          <p className="mt-1 text-sm text-dash-tertiary">{groupRulesSummary(group)}</p>
         </button>
         <div className="flex gap-2">
           <SmallButton onClick={() => setExpanded(current => !current)}>{expanded ? 'Close' : 'Edit'}</SmallButton>
@@ -302,23 +176,21 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
 
       {expanded && (
         <div className="mt-4 space-y-5 border-t border-white/10 pt-4">
-          <div className="grid gap-3 lg:grid-cols-[1.4fr_repeat(4,minmax(0,1fr))_auto]">
-            <Field label="Question">
+          <div className="space-y-3">
+            <Field label="Question guests are asked">
               <TextInput value={draft.name} onChange={event => setDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="Choose a side" />
             </Field>
-            <Field label="Min picks">
-              <TextInput inputMode="numeric" value={draft.min_selections} onChange={event => setDraft(prev => ({ ...prev, min_selections: cleanDigits(event.target.value) }))} />
-            </Field>
-            <Field label="Max picks">
-              <TextInput inputMode="numeric" value={draft.max_selections} onChange={event => setDraft(prev => ({ ...prev, max_selections: cleanDigits(event.target.value) }))} placeholder="No cap" />
-            </Field>
-            <Field label="Included free">
-              <TextInput inputMode="numeric" value={draft.included_count} onChange={event => setDraft(prev => ({ ...prev, included_count: cleanDigits(event.target.value) }))} />
-            </Field>
-            <Field label="Extra costs">
-              <TextInput inputMode="decimal" value={draft.overage_price} onChange={event => setDraft(prev => ({ ...prev, overage_price: cleanDecimal(event.target.value) }))} placeholder="1.50" />
-            </Field>
-            <div className="flex items-end gap-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-sm text-dash-secondary">
+              <span>Guest picks at least</span>
+              <TextInput inputMode="numeric" className="!w-16 !px-2 !py-1.5 text-center" value={draft.min_selections} onChange={event => setDraft(prev => ({ ...prev, min_selections: cleanDigits(event.target.value) }))} />
+              <span>and at most</span>
+              <TextInput inputMode="numeric" className="!w-16 !px-2 !py-1.5 text-center" placeholder="∞" value={draft.max_selections} onChange={event => setDraft(prev => ({ ...prev, max_selections: cleanDigits(event.target.value) }))} />
+              <span className="text-dash-tertiary">·</span>
+              <span>first</span>
+              <TextInput inputMode="numeric" className="!w-16 !px-2 !py-1.5 text-center" value={draft.included_count} onChange={event => setDraft(prev => ({ ...prev, included_count: cleanDigits(event.target.value) }))} />
+              <span>are free, then $</span>
+              <TextInput inputMode="decimal" className="!w-20 !px-2 !py-1.5 text-center" placeholder="0.00" value={draft.overage_price} onChange={event => setDraft(prev => ({ ...prev, overage_price: cleanDecimal(event.target.value) }))} />
+              <span>each extra</span>
               <SmallButton
                 variant={draft.is_required ? 'primary' : 'secondary'}
                 onClick={() => setDraft(prev => ({ ...prev, is_required: !prev.is_required }))}
@@ -376,28 +248,14 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
               })}
               {group.options.length === 0 && <p className="text-sm text-dash-tertiary">Add modifiers below to give this question answers.</p>}
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <div className="min-w-56">
-                <SelectInput value={optionToAdd} onChange={event => setOptionToAdd(event.target.value)}>
-                  <option value="">Add a modifier option...</option>
-                  {availableModifiers.map(modifier => (
-                    <option key={modifier.id} value={modifier.id}>
-                      {modifier.name}{Number(modifier.price_delta) > 0 ? ` (+${money(modifier.price_delta)})` : ''}
-                    </option>
-                  ))}
-                </SelectInput>
-              </div>
-              <SmallButton
-                variant="primary"
-                disabled={!optionToAdd || busy}
-                onClick={() => {
-                  const modifierId = optionToAdd
-                  setOptionToAdd('')
-                  onLink(() => addGroupOption(group.id, modifierId, { display_order: group.options.length }))
-                }}
-              >
-                Add option
-              </SmallButton>
+            <div className="mt-3">
+              <ModifierPicker
+                modifiers={modifiers}
+                excludeIds={new Set(group.options.map(option => option.modifier_id))}
+                busy={busy}
+                onAddExisting={ids => onAddModifiers(ids)}
+                onCreateNew={draft => onCreateModifier(draft)}
+              />
             </div>
           </div>
 
@@ -433,7 +291,10 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
 export function MenuPanel({ restaurantId }) {
   const [activeTab, setActiveTab] = useState('items')
   const [menuItems, setMenuItems] = useState([])
+  const [itemImages, setItemImages] = useState({})
   const [categories, setCategories] = useState([])
+  const [categoryColors, setCategoryColors] = useState({})
+  const [taxRates, setTaxRates] = useState([])
   const [modifiers, setModifiers] = useState([])
   const [groups, setGroups] = useState([])
   const [specials, setSpecials] = useState([])
@@ -442,17 +303,17 @@ export function MenuPanel({ restaurantId }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [selectedItemId, setSelectedItemId] = useState(null)
 
   const [itemSearch, setItemSearch] = useState('')
   const [itemCategoryFilter, setItemCategoryFilter] = useState('all')
   const [itemAvailabilityFilter, setItemAvailabilityFilter] = useState('all')
-  const [itemDraft, setItemDraft] = useState({ name: '', category: '', price: '', description: '' })
+  const [itemDraft, setItemDraft] = useState({ name: '', category: '', price: '' })
 
-  const [modifierDraft, setModifierDraft] = useState({ name: '', price_delta: '', item_ids: new Set() })
+  const [modifierDraft, setModifierDraft] = useState({ name: '', price_delta: '', category: '', item_ids: new Set() })
   const [groupDraft, setGroupDraft] = useState(() => defaultGroupDraft())
   const [specialDraft, setSpecialDraft] = useState(() => defaultSpecialDraft())
   const [scheduleItemId, setScheduleItemId] = useState('')
-  const [scheduleDraft, setScheduleDraft] = useState(null)
   const [routingItemSearch, setRoutingItemSearch] = useState('')
 
   const api = (path, init) => fetchWithSupabaseAuth(path, init)
@@ -472,6 +333,16 @@ export function MenuPanel({ restaurantId }) {
     setMenuItems(Array.isArray(rows) ? rows : [])
   }
 
+  // image_url is portal-managed and absent from the ML API response; merged in
+  // separately. Fails soft until the images/colors migration is applied.
+  const loadImages = async () => {
+    try {
+      setItemImages(await fetchItemImages(restaurantId))
+    } catch {
+      setItemImages({})
+    }
+  }
+
   const loadCategories = async (force = false) => {
     const data = await fetchCached(
       queryKeys.menuCategories(restaurantId),
@@ -479,6 +350,12 @@ export function MenuPanel({ restaurantId }) {
       force ? 0 : STALE_TIMES.setup,
     )
     setCategories(Array.isArray(data) ? data : (data?.categories || []))
+    setTaxRates(Array.isArray(data?.tax_rates) ? data.tax_rates : [])
+    try {
+      setCategoryColors(await fetchCategoryColors(restaurantId))
+    } catch {
+      setCategoryColors({})
+    }
   }
 
   const loadModifiers = async () => {
@@ -515,8 +392,10 @@ export function MenuPanel({ restaurantId }) {
     let cancelled = false
     setLoading(true)
     setError('')
+    setSelectedItemId(null)
     Promise.allSettled([
       loadItems(),
+      loadImages(),
       loadCategories(),
       loadModifiers(),
       loadGroups(),
@@ -525,7 +404,7 @@ export function MenuPanel({ restaurantId }) {
     ]).then(results => {
       if (cancelled) return
       if (results.some(result => result.status === 'rejected')) {
-        setError('Some menu data failed to load. Pull to refresh or try again.')
+        setError('Some menu data failed to load. Try again or refresh.')
       }
       setLoading(false)
     })
@@ -553,14 +432,35 @@ export function MenuPanel({ restaurantId }) {
 
   const stations = routing?.stations || []
   const stationsById = useMemo(() => Object.fromEntries(stations.map(station => [station.id, station])), [stations])
+
+  const mergedItems = useMemo(
+    () => menuItems.map(item => ({ ...item, image_url: itemImages[item.id] ?? null })),
+    [menuItems, itemImages],
+  )
+  const mergedCategories = useMemo(
+    () => categories.map(category => ({ ...category, color: categoryColors[category.id] ?? category.color ?? null })),
+    [categories, categoryColors],
+  )
   const categoryNames = useMemo(() => {
-    const names = new Set(categories.map(category => category.name).filter(Boolean))
+    const names = new Set(mergedCategories.map(category => category.name).filter(Boolean))
     for (const item of menuItems) if (item.category) names.add(item.category)
     return Array.from(names).sort()
-  }, [categories, menuItems])
+  }, [mergedCategories, menuItems])
   const categoriesByName = useMemo(
-    () => Object.fromEntries(categories.filter(category => category.name).map(category => [category.name, category])),
-    [categories],
+    () => Object.fromEntries(mergedCategories.filter(category => category.name).map(category => [category.name, category])),
+    [mergedCategories],
+  )
+  const activeSpecials = useMemo(
+    () => specials.filter(special => {
+      if (!special.is_active) return false
+      if (special.expires_at && new Date(special.expires_at).getTime() <= Date.now()) return false
+      return true
+    }),
+    [specials],
+  )
+  const activeSpecialItemIds = useMemo(
+    () => new Set(activeSpecials.map(special => special.menu_item_id)),
+    [activeSpecials],
   )
 
   // ── Items ────────────────────────────────────────────────────────────────
@@ -580,21 +480,21 @@ export function MenuPanel({ restaurantId }) {
       return
     }
     return run(async () => {
-      await api(`/restaurants/${restaurantId}/menu/items/single`, {
+      const created = await api(`/restaurants/${restaurantId}/menu/items/single`, {
         method: 'POST',
         body: JSON.stringify({
           restaurant_id: restaurantId,
           name: itemDraft.name.trim(),
           category: itemDraft.category.trim() || 'Other',
           price: Number(itemDraft.price) || 0,
-          description: itemDraft.description.trim() || null,
           is_available: true,
         }),
       })
-      setItemDraft({ name: '', category: itemDraft.category, price: '', description: '' })
+      setItemDraft({ name: '', category: itemDraft.category, price: '' })
       invalidateItems()
       await loadItems(true)
-    }, 'Item added.')
+      if (created?.id) setSelectedItemId(created.id)
+    }, 'Item added — fill in the details.')
   }
 
   const deleteItem = (itemId) => run(async () => {
@@ -605,16 +505,17 @@ export function MenuPanel({ restaurantId }) {
 
   const filteredItems = useMemo(() => {
     const needle = itemSearch.trim().toLowerCase()
-    return menuItems.filter(item => {
+    return mergedItems.filter(item => {
       if (itemCategoryFilter !== 'all' && (item.category || 'Other') !== itemCategoryFilter) return false
       if (itemAvailabilityFilter === 'available' && item.is_available === false) return false
       if (itemAvailabilityFilter === '86d' && item.is_available !== false) return false
+      if (itemAvailabilityFilter === 'specials' && !activeSpecialItemIds.has(item.id)) return false
       if (!needle) return true
       return item.name.toLowerCase().includes(needle)
         || (item.description || '').toLowerCase().includes(needle)
         || (item.category || '').toLowerCase().includes(needle)
     })
-  }, [menuItems, itemSearch, itemCategoryFilter, itemAvailabilityFilter])
+  }, [mergedItems, itemSearch, itemCategoryFilter, itemAvailabilityFilter, activeSpecialItemIds])
 
   const itemsByCategory = useMemo(() => {
     const buckets = {}
@@ -623,6 +524,8 @@ export function MenuPanel({ restaurantId }) {
     }
     return Object.entries(buckets).sort(([a], [b]) => a.localeCompare(b))
   }, [filteredItems])
+
+  const selectedItem = selectedItemId ? mergedItems.find(item => item.id === selectedItemId) : null
 
   // ── Categories ───────────────────────────────────────────────────────────
 
@@ -655,6 +558,53 @@ export function MenuPanel({ restaurantId }) {
     setCategories(prev => prev.map((category, currentIndex) => (currentIndex === index ? { ...category, ...patch } : category)))
   }
 
+  // The taxes-charges PUT is a full replace (it deactivates anything omitted),
+  // so creating one rate inline means re-fetching both lists and sending them
+  // back with the new rate appended.
+  const createTaxRate = (name, ratePercent) => run(async () => {
+    const current = await api(`/restaurants/${restaurantId}/taxes-charges`)
+    await api(`/restaurants/${restaurantId}/taxes-charges`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        tax_rates: [
+          ...(current?.tax_rates || []).map(row => ({
+            id: row.id,
+            name: row.name,
+            rate: Number(row.rate) || 0,
+            applies_to: row.applies_to || 'all',
+            is_default: Boolean(row.is_default),
+            is_inclusive: Boolean(row.is_inclusive),
+            is_active: true,
+          })),
+          { name, rate: ratePercent, applies_to: 'all', is_default: false, is_inclusive: false, is_active: true },
+        ],
+        service_charges: (current?.service_charges || []).map(row => ({
+          id: row.id,
+          name: row.name,
+          charge_type: row.charge_type || 'percentage',
+          amount: Number(row.amount) || 0,
+          applies_to: row.applies_to || 'all',
+          taxable: Boolean(row.taxable),
+          auto_apply: Boolean(row.auto_apply),
+          is_tip: Boolean(row.is_tip),
+          is_active: true,
+        })),
+      }),
+    })
+    queryClient.invalidateQueries({ queryKey: queryKeys.taxesCharges(restaurantId) })
+    await loadCategories(true)
+  }, `Tax rate "${name}" created — assign it to a category below and save.`)
+
+  const pickCategoryColor = (category, color) => run(async () => {
+    await setCategoryColor(restaurantId, category.id, color)
+    setCategoryColors(prev => {
+      const next = { ...prev }
+      if (color) next[category.id] = color
+      else delete next[category.id]
+      return next
+    })
+  }, color ? 'Category color set.' : 'Category color cleared.')
+
   // ── Modifiers ────────────────────────────────────────────────────────────
 
   const createModifier = () => {
@@ -668,6 +618,7 @@ export function MenuPanel({ restaurantId }) {
         body: JSON.stringify({
           name: modifierDraft.name.trim(),
           price_delta: modifierDraft.price_delta === '' ? 0 : Number(modifierDraft.price_delta),
+          group_name: modifierDraft.category.trim() || 'Add-ons',
           is_active: true,
         }),
       })
@@ -677,7 +628,7 @@ export function MenuPanel({ restaurantId }) {
           body: JSON.stringify({ item_ids: Array.from(modifierDraft.item_ids) }),
         })
       }
-      setModifierDraft({ name: '', price_delta: '', item_ids: new Set() })
+      setModifierDraft(prev => ({ name: '', price_delta: '', category: prev.category, item_ids: new Set() }))
       await loadModifiers()
     }, 'Modifier added.')
   }
@@ -743,7 +694,27 @@ export function MenuPanel({ restaurantId }) {
     await loadGroups()
   })
 
-  // ── Specials ─────────────────────────────────────────────────────────────
+  const addModifiersToGroup = (group, modifierIds) => run(async () => {
+    let order = group.options.length
+    for (const modifierId of modifierIds) {
+      if (group.options.some(option => option.modifier_id === modifierId)) continue
+      await addGroupOption(group.id, modifierId, { display_order: order })
+      order += 1
+    }
+    await loadGroups()
+  }, modifierIds.length > 1 ? 'Options added.' : 'Option added.')
+
+  const createModifierIntoGroup = (group, draft) => run(async () => {
+    const created = await api(`/restaurants/${restaurantId}/menu/modifiers`, {
+      method: 'POST',
+      body: JSON.stringify({ ...draft, is_active: true }),
+    })
+    if (created?.id) await addGroupOption(group.id, created.id, { display_order: group.options.length })
+    await loadModifiers()
+    await loadGroups()
+  }, 'Modifier created and added.')
+
+  // ── Specials (tab-level scheduling) ──────────────────────────────────────
 
   const auditSpecial = async (eventType, specialId, before, after) => {
     try {
@@ -820,43 +791,7 @@ export function MenuPanel({ restaurantId }) {
     await loadSpecials()
   }, 'Special archived.')
 
-  const activeSpecials = specials.filter(special => {
-    if (!special.is_active) return false
-    if (special.expires_at && new Date(special.expires_at).getTime() <= Date.now()) return false
-    return true
-  })
-
-  // ── Item availability schedule ───────────────────────────────────────────
-
-  const openScheduleFor = (itemId) => {
-    const item = menuItems.find(row => row.id === itemId)
-    setScheduleItemId(itemId)
-    setScheduleDraft(item ? {
-      availability_mode: item.availability_mode || 'always',
-      availability_days: Array.isArray(item.availability_days) ? item.availability_days : [0, 1, 2, 3, 4, 5, 6],
-      availability_start_time: item.availability_start_time ? String(item.availability_start_time).slice(0, 5) : '',
-      availability_end_time: item.availability_end_time ? String(item.availability_end_time).slice(0, 5) : '',
-      availability_start_date: item.availability_start_date || '',
-      availability_end_date: item.availability_end_date || '',
-      availability_notes: item.availability_notes || '',
-    } : null)
-  }
-
-  const saveSchedule = () => {
-    if (!scheduleItemId || !scheduleDraft) return
-    const patch = {
-      availability_mode: scheduleDraft.availability_mode,
-      availability_days: scheduleDraft.availability_days,
-      availability_start_time: scheduleDraft.availability_start_time || null,
-      availability_end_time: scheduleDraft.availability_end_time || null,
-      availability_start_date: scheduleDraft.availability_start_date || null,
-      availability_end_date: scheduleDraft.availability_end_date || null,
-      availability_notes: scheduleDraft.availability_notes.trim() || null,
-    }
-    return patchItem(scheduleItemId, patch, 'Availability schedule saved.')
-  }
-
-  const scheduledItems = menuItems.filter(item => item.availability_mode && item.availability_mode !== 'always')
+  const scheduledItems = mergedItems.filter(item => item.availability_mode && item.availability_mode !== 'always')
 
   // ── Printing / routing ───────────────────────────────────────────────────
 
@@ -901,13 +836,11 @@ export function MenuPanel({ restaurantId }) {
 
   const routingItems = useMemo(() => {
     const needle = routingItemSearch.trim().toLowerCase()
-    if (!needle) return menuItems
-    return menuItems.filter(item => item.name.toLowerCase().includes(needle) || (item.category || '').toLowerCase().includes(needle))
-  }, [menuItems, routingItemSearch])
+    if (!needle) return mergedItems
+    return mergedItems.filter(item => item.name.toLowerCase().includes(needle) || (item.category || '').toLowerCase().includes(needle))
+  }, [mergedItems, routingItemSearch])
 
   // ── Render ───────────────────────────────────────────────────────────────
-
-  const scheduleItem = menuItems.find(item => item.id === scheduleItemId)
 
   return (
     <div className="space-y-5">
@@ -916,19 +849,27 @@ export function MenuPanel({ restaurantId }) {
           <p className="label-mono">Menu Workspace</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-tight">Menu</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-dash-secondary">
-            Items, categories, modifiers with unlimited follow-up questions, specials, and kitchen printing — changes reach the POS on its next sync.
+            Click any item to open its full editor — photo, availability, specials, and modifier questions with unlimited follow-ups. Changes reach the POS on its next sync.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-sm text-dash-tertiary">
           <span className="rounded-full border border-white/10 px-3 py-1">{menuItems.length} items</span>
           <span className="rounded-full border border-white/10 px-3 py-1">{modifiers.length} modifiers</span>
-          <span className="rounded-full border border-white/10 px-3 py-1">{groups.length} groups</span>
+          <span className="rounded-full border border-white/10 px-3 py-1">{groups.length} questions</span>
+          <span className="rounded-full border border-white/10 px-3 py-1">{activeSpecials.length} live specials</span>
         </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
         {MENU_TABS.map(tab => (
-          <SmallButton key={tab.id} variant={activeTab === tab.id ? 'primary' : 'secondary'} onClick={() => setActiveTab(tab.id)}>
+          <SmallButton
+            key={tab.id}
+            variant={activeTab === tab.id ? 'primary' : 'secondary'}
+            onClick={() => {
+              setActiveTab(tab.id)
+              setSelectedItemId(null)
+            }}
+          >
             {tab.label}
           </SmallButton>
         ))}
@@ -938,17 +879,39 @@ export function MenuPanel({ restaurantId }) {
       {notice && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">{notice}</div>}
       {loading && <div className="text-sm text-dash-tertiary">Loading menu...</div>}
 
-      {!loading && activeTab === 'items' && (
+      {!loading && activeTab === 'items' && selectedItem && (
+        <MenuItemDetail
+          key={selectedItem.id}
+          restaurantId={restaurantId}
+          item={selectedItem}
+          categories={mergedCategories}
+          categoryNames={categoryNames}
+          stations={stations}
+          groups={groups}
+          modifiers={modifiers}
+          specials={specials}
+          busy={busy}
+          onBack={() => setSelectedItemId(null)}
+          patchItem={patchItem}
+          deleteItem={deleteItem}
+          run={run}
+          reloadGroups={loadGroups}
+          reloadModifiers={loadModifiers}
+          reloadSpecials={loadSpecials}
+          reloadImages={loadImages}
+        />
+      )}
+
+      {!loading && activeTab === 'items' && !selectedItem && (
         <SectionShell
           title="Items"
-          description="Everything guests can order. Edit names, descriptions, and prices inline — changes save when you click away."
+          description="Click an item to open its full editor. Quick-add below, quick-86 on every row."
         >
-          <div className="mb-4 grid gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 lg:grid-cols-[1.2fr_1fr_120px_1.6fr_auto]">
+          <div className="mb-4 grid gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 md:grid-cols-[1.4fr_1fr_120px_auto]">
             <TextInput value={itemDraft.name} onChange={event => setItemDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="New item name" />
             <TextInput value={itemDraft.category} list="menu-panel-categories" onChange={event => setItemDraft(prev => ({ ...prev, category: event.target.value }))} placeholder="Category" />
             <TextInput inputMode="decimal" value={itemDraft.price} onChange={event => setItemDraft(prev => ({ ...prev, price: cleanDecimal(event.target.value) }))} placeholder="12.00" />
-            <TextInput value={itemDraft.description} onChange={event => setItemDraft(prev => ({ ...prev, description: event.target.value }))} placeholder="Short description guests will see" />
-            <SmallButton variant="primary" onClick={() => void createItem()} disabled={busy}>Add item</SmallButton>
+            <SmallButton variant="primary" onClick={() => void createItem()} disabled={busy}>Add & edit</SmallButton>
             <datalist id="menu-panel-categories">
               {categoryNames.map(name => <option key={name} value={name} />)}
             </datalist>
@@ -964,6 +927,7 @@ export function MenuPanel({ restaurantId }) {
               <option value="all">All items</option>
               <option value="available">Available</option>
               <option value="86d">86'd only</option>
+              <option value="specials">Running a special</option>
             </SelectInput>
           </div>
 
@@ -973,64 +937,60 @@ export function MenuPanel({ restaurantId }) {
             </MenuEmptyState>
           ) : (
             <div className="space-y-6">
-              {itemsByCategory.map(([categoryName, items]) => (
-                <div key={categoryName}>
-                  <div className="mb-2 flex items-center gap-3">
-                    <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-dash-tertiary">{categoryName}</h4>
-                    <span className="text-xs text-dash-tertiary">{items.length}</span>
-                  </div>
-                  <div className="space-y-2">
-                    {items.map(item => (
-                      <div
-                        key={item.id}
-                        className={[
-                          'grid gap-3 rounded-xl border p-3 lg:grid-cols-[1.2fr_1.8fr_110px_1fr_auto_auto] lg:items-center',
-                          item.is_available === false ? 'border-amber-300/25 bg-amber-300/[0.04]' : 'border-white/10 bg-white/[0.025]',
-                        ].join(' ')}
-                      >
-                        <TextInput
-                          defaultValue={item.name}
-                          onBlur={event => {
-                            const next = event.target.value.trim()
-                            if (next && next !== item.name) void patchItem(item.id, { name: next })
+              {itemsByCategory.map(([categoryName, items]) => {
+                const categoryColor = categoriesByName[categoryName]?.color || null
+                return (
+                  <div key={categoryName}>
+                    <div className="mb-2 flex items-center gap-2">
+                      {categoryColor && <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: categoryColor }} />}
+                      <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-dash-tertiary">{categoryName}</h4>
+                      <span className="text-xs text-dash-tertiary">{items.length}</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {items.map(item => (
+                        <div
+                          key={item.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setSelectedItemId(item.id)}
+                          onKeyDown={event => {
+                            if (event.key === 'Enter') setSelectedItemId(item.id)
                           }}
-                        />
-                        <TextInput
-                          defaultValue={item.description || ''}
-                          placeholder="Add a description..."
-                          onBlur={event => {
-                            const next = event.target.value.trim()
-                            if (next !== (item.description || '')) void patchItem(item.id, { description: next || null })
-                          }}
-                        />
-                        <TextInput
-                          inputMode="decimal"
-                          defaultValue={item.price != null ? String(item.price) : ''}
-                          onBlur={event => {
-                            const next = Number(cleanDecimal(event.target.value))
-                            if (Number.isFinite(next) && next !== Number(item.price)) void patchItem(item.id, { price: next })
-                          }}
-                        />
-                        <SelectInput
-                          value={item.category || 'Other'}
-                          onChange={event => void patchItem(item.id, { category: event.target.value })}
+                          className={[
+                            'flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition hover:border-dash-gold/40 hover:bg-white/[0.04]',
+                            item.is_available === false ? 'border-amber-300/25 bg-amber-300/[0.04]' : 'border-white/10 bg-white/[0.025]',
+                          ].join(' ')}
                         >
-                          {categoryNames.map(name => <option key={name} value={name}>{name}</option>)}
-                          {!categoryNames.includes(item.category || 'Other') && <option value={item.category || 'Other'}>{item.category || 'Other'}</option>}
-                        </SelectInput>
-                        <SmallButton
-                          variant={item.is_available === false ? 'danger' : 'secondary'}
-                          title={item.is_available === false ? 'Item is 86’d — tap to restore' : 'Take item off the menu (86)'}
-                          onClick={() => void patchItem(item.id, { is_available: item.is_available === false }, item.is_available === false ? 'Item restored.' : "Item 86'd.")}
-                        >
-                          {item.is_available === false ? "86'd" : 'Available'}
-                        </SmallButton>
-                        <SmallButton variant="danger" onClick={() => void deleteItem(item.id)} disabled={busy}>Remove</SmallButton>
-                      </div>
-                    ))}
+                          <ItemThumb item={item} color={categoryColor} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-medium text-dash-cream">{item.name}</span>
+                              {activeSpecialItemIds.has(item.id) && (
+                                <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-900">Special</span>
+                              )}
+                              {item.availability_mode && item.availability_mode !== 'always' && (
+                                <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-dash-tertiary">Scheduled</span>
+                              )}
+                            </div>
+                            {item.description && <p className="truncate text-sm text-dash-tertiary">{item.description}</p>}
+                          </div>
+                          <span className="text-sm font-semibold text-dash-cream">{money(item.price)}</span>
+                          <span onClick={event => event.stopPropagation()}>
+                            <SmallButton
+                              variant={item.is_available === false ? 'danger' : 'secondary'}
+                              title={item.is_available === false ? 'Item is 86’d — tap to restore' : 'Take item off the menu (86)'}
+                              onClick={() => void patchItem(item.id, { is_available: item.is_available === false }, item.is_available === false ? 'Item restored.' : "Item 86'd.")}
+                            >
+                              {item.is_available === false ? "86'd" : 'Available'}
+                            </SmallButton>
+                          </span>
+                          <span className="text-dash-tertiary">›</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </SectionShell>
@@ -1039,32 +999,60 @@ export function MenuPanel({ restaurantId }) {
       {!loading && activeTab === 'categories' && (
         <SectionShell
           title="Categories"
-          description="How the menu is organized on the POS and receipts. Set a default prep station and course per category; items inherit them unless overridden."
+          description="How the menu is organized on the POS. Pick a button color, a tax rate (liquor at 15%, everything else at the default), a default prep station, and a default course — items inherit them unless overridden."
           actions={<SmallButton variant="primary" onClick={() => void saveCategories(categories)} disabled={busy}>{busy ? 'Saving...' : 'Save categories'}</SmallButton>}
         >
+          <NewTaxRateInline busy={busy} onCreate={(name, rate) => void createTaxRate(name, rate)} />
           <div className="space-y-3">
-            {categories.map((category, index) => (
-              <div key={category.id || `${category.name}:${index}`} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[1.4fr_1fr_1fr_120px_auto]">
-                <TextInput value={category.name || ''} onChange={event => updateCategory(index, { name: event.target.value })} placeholder="Appetizers" />
-                <SelectInput
-                  value={category.routing_station_id || ''}
-                  onChange={event => updateCategory(index, { routing_station_id: event.target.value, routing_station_name: stationsById[event.target.value]?.name || '' })}
-                >
-                  <option value="">No default station</option>
-                  {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
-                </SelectInput>
-                <SelectInput value={category.default_course_type || ''} onChange={event => updateCategory(index, { default_course_type: event.target.value })}>
-                  {COURSE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </SelectInput>
-                <TextInput
-                  value={category.prep_time_minutes == null ? '' : String(category.prep_time_minutes)}
-                  onChange={event => updateCategory(index, { prep_time_minutes: cleanDigits(event.target.value) })}
-                  placeholder="Prep min"
-                />
-                <SmallButton variant="danger" onClick={() => setCategories(prev => prev.filter((_, currentIndex) => currentIndex !== index))}>Remove</SmallButton>
+            {mergedCategories.map((category, index) => (
+              <div key={category.id || `${category.name}:${index}`} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                <div className="grid gap-3 lg:grid-cols-[1.4fr_1fr_1fr_120px_auto]">
+                  <TextInput value={category.name || ''} onChange={event => updateCategory(index, { name: event.target.value })} placeholder="Appetizers" />
+                  <SelectInput
+                    value={category.routing_station_id || ''}
+                    onChange={event => updateCategory(index, { routing_station_id: event.target.value, routing_station_name: stationsById[event.target.value]?.name || '' })}
+                  >
+                    <option value="">No default station</option>
+                    {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
+                  </SelectInput>
+                  <SelectInput value={category.default_course_type || ''} onChange={event => updateCategory(index, { default_course_type: event.target.value })}>
+                    {COURSE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </SelectInput>
+                  <TextInput
+                    value={category.prep_time_minutes == null ? '' : String(category.prep_time_minutes)}
+                    onChange={event => updateCategory(index, { prep_time_minutes: cleanDigits(event.target.value) })}
+                    placeholder="Prep min"
+                  />
+                  <SmallButton variant="danger" onClick={() => setCategories(prev => prev.filter((_, currentIndex) => currentIndex !== index))}>Remove</SmallButton>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="label-mono">Button color</span>
+                    <ColorSwatchPicker
+                      value={category.color}
+                      disabled={!category.id || busy}
+                      onPick={color => category.id && void pickCategoryColor(category, color)}
+                    />
+                    {!category.id && <span className="text-xs text-dash-tertiary">Save categories first to pick a color.</span>}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="label-mono">Tax</span>
+                    <SelectInput
+                      className="!w-auto !py-2"
+                      title="Every item in this category is taxed at this rate on the POS"
+                      value={category.tax_rate_id || ''}
+                      onChange={event => updateCategory(index, { tax_rate_id: event.target.value || null })}
+                    >
+                      <option value="">Store default rate</option>
+                      {taxRates.map(rate => (
+                        <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
+                      ))}
+                    </SelectInput>
+                  </div>
+                </div>
               </div>
             ))}
-            {categories.length === 0 && (
+            {mergedCategories.length === 0 && (
               <MenuEmptyState title="No categories yet">
                 Add your first category — Appetizers, Entrees, Drinks — then save.
               </MenuEmptyState>
@@ -1081,19 +1069,25 @@ export function MenuPanel({ restaurantId }) {
       {!loading && activeTab === 'modifiers' && (
         <SectionShell
           title="Modifiers"
-          description="Individual add-ons and choices — Extra cheese, Ranch, Medium rare. Attach each to the items it applies to, then organize them into questions on the Modifier Groups tab."
+          description="Individual add-ons and choices — Extra cheese, Ranch, Medium rare — organized into categories like Sauces or Temperatures. Type a new category name anywhere to create it. Attach modifiers to items here, or right inside an item's editor."
         >
-          <div className="mb-5 grid gap-4 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 lg:grid-cols-[1fr_140px_1.4fr_auto]">
+          <datalist id="menu-modifier-categories">
+            {Array.from(new Set(modifiers.map(modifierCategoryOf))).sort().map(name => <option key={name} value={name} />)}
+          </datalist>
+          <div className="mb-5 grid gap-4 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 lg:grid-cols-[1fr_120px_160px_1.3fr_auto]">
             <Field label="Modifier name">
               <TextInput value={modifierDraft.name} onChange={event => setModifierDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="Extra cheese" />
             </Field>
             <Field label="Price +$">
               <TextInput inputMode="decimal" value={modifierDraft.price_delta} onChange={event => setModifierDraft(prev => ({ ...prev, price_delta: cleanDecimal(event.target.value) }))} placeholder="0.00" />
             </Field>
+            <Field label="Category">
+              <TextInput list="menu-modifier-categories" value={modifierDraft.category} onChange={event => setModifierDraft(prev => ({ ...prev, category: event.target.value }))} placeholder="Add-ons" />
+            </Field>
             <div>
               <p className="label-mono mb-2">Applies to ({modifierDraft.item_ids.size} items)</p>
               <ItemChecklist
-                menuItems={menuItems}
+                menuItems={mergedItems}
                 selectedIds={modifierDraft.item_ids}
                 onToggle={itemId => setModifierDraft(prev => {
                   const next = new Set(prev.item_ids)
@@ -1108,18 +1102,29 @@ export function MenuPanel({ restaurantId }) {
             </div>
           </div>
 
-          <div className="space-y-2">
-            {modifiers.map(modifier => (
-              <ModifierRow
-                key={modifier.id}
-                modifier={modifier}
-                menuItems={menuItems}
-                busy={busy}
-                onRename={next => void updateModifier(modifier.id, { name: next })}
-                onReprice={next => void updateModifier(modifier.id, { price_delta: next })}
-                onReplaceItems={itemIds => void replaceModifierItems(modifier.id, itemIds)}
-                onDelete={() => void deleteModifier(modifier.id)}
-              />
+          <div className="space-y-5">
+            {bucketModifiersByCategory(modifiers).map(([bucketName, bucketModifiers]) => (
+              <div key={bucketName}>
+                <div className="mb-2 flex items-center gap-2">
+                  <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-dash-tertiary">{bucketName}</h4>
+                  <span className="text-xs text-dash-tertiary">{bucketModifiers.length}</span>
+                </div>
+                <div className="space-y-2">
+                  {bucketModifiers.map(modifier => (
+                    <ModifierRow
+                      key={modifier.id}
+                      modifier={modifier}
+                      menuItems={mergedItems}
+                      busy={busy}
+                      onRename={next => void updateModifier(modifier.id, { name: next })}
+                      onReprice={next => void updateModifier(modifier.id, { price_delta: next })}
+                      onRecategorize={next => void updateModifier(modifier.id, { group_name: next })}
+                      onReplaceItems={itemIds => void replaceModifierItems(modifier.id, itemIds)}
+                      onDelete={() => void deleteModifier(modifier.id)}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
             {modifiers.length === 0 && (
               <MenuEmptyState title="No modifiers yet">
@@ -1133,21 +1138,40 @@ export function MenuPanel({ restaurantId }) {
       {!loading && activeTab === 'groups' && (
         <SectionShell
           title="Modifier Groups"
-          description='Questions the POS asks when an item is ordered — "Choose a side", "Pick a dressing". Any answer can trigger a follow-up question, nested as deep as you need.'
+          description='Questions the POS asks when an item is ordered — "Choose a side", "Pick a dressing". A question can be shared by many items; edit it once, it updates everywhere. Any answer can trigger a follow-up question, nested as deep as you need.'
         >
-          <div className="mb-5 grid gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 lg:grid-cols-[1.6fr_repeat(4,minmax(0,1fr))_auto_auto]">
-            <TextInput value={groupDraft.name} onChange={event => setGroupDraft(prev => ({ ...prev, name: event.target.value }))} placeholder='Question, e.g. "Choose a side"' />
-            <TextInput inputMode="numeric" value={groupDraft.min_selections} onChange={event => setGroupDraft(prev => ({ ...prev, min_selections: cleanDigits(event.target.value) }))} placeholder="Min" />
-            <TextInput inputMode="numeric" value={groupDraft.max_selections} onChange={event => setGroupDraft(prev => ({ ...prev, max_selections: cleanDigits(event.target.value) }))} placeholder="Max (blank = no cap)" />
-            <TextInput inputMode="numeric" value={groupDraft.included_count} onChange={event => setGroupDraft(prev => ({ ...prev, included_count: cleanDigits(event.target.value) }))} placeholder="Included free" />
-            <TextInput inputMode="decimal" value={groupDraft.overage_price} onChange={event => setGroupDraft(prev => ({ ...prev, overage_price: cleanDecimal(event.target.value) }))} placeholder="Extra $" />
-            <SmallButton
-              variant={groupDraft.is_required ? 'primary' : 'secondary'}
-              onClick={() => setGroupDraft(prev => ({ ...prev, is_required: !prev.is_required }))}
-            >
-              {groupDraft.is_required ? 'Required' : 'Optional'}
-            </SmallButton>
-            <SmallButton variant="primary" onClick={() => void createGroup()} disabled={busy}>Create group</SmallButton>
+          <div className="mb-5 space-y-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4">
+            <div className="grid gap-3 md:grid-cols-[1.6fr_auto_auto]">
+              <TextInput value={groupDraft.name} onChange={event => setGroupDraft(prev => ({ ...prev, name: event.target.value }))} placeholder='Question guests are asked, e.g. "Choose a side"' />
+              <SmallButton
+                variant={groupDraft.is_required ? 'primary' : 'secondary'}
+                onClick={() => setGroupDraft(prev => ({ ...prev, is_required: !prev.is_required }))}
+              >
+                {groupDraft.is_required ? 'Required' : 'Optional'}
+              </SmallButton>
+              <SmallButton variant="primary" onClick={() => void createGroup()} disabled={busy}>Create question</SmallButton>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-sm text-dash-secondary">
+              <span>Guest picks at least</span>
+              <TextInput inputMode="numeric" className="!w-16 !px-2 !py-1.5 text-center" value={groupDraft.min_selections} onChange={event => setGroupDraft(prev => ({ ...prev, min_selections: cleanDigits(event.target.value) }))} />
+              <span>and at most</span>
+              <TextInput inputMode="numeric" className="!w-16 !px-2 !py-1.5 text-center" placeholder="∞" value={groupDraft.max_selections} onChange={event => setGroupDraft(prev => ({ ...prev, max_selections: cleanDigits(event.target.value) }))} />
+              <span className="text-dash-tertiary">·</span>
+              <span>first</span>
+              <TextInput inputMode="numeric" className="!w-16 !px-2 !py-1.5 text-center" value={groupDraft.included_count} onChange={event => setGroupDraft(prev => ({ ...prev, included_count: cleanDigits(event.target.value) }))} />
+              <span>selections are free, then $</span>
+              <TextInput inputMode="decimal" className="!w-20 !px-2 !py-1.5 text-center" placeholder="0.00" value={groupDraft.overage_price} onChange={event => setGroupDraft(prev => ({ ...prev, overage_price: cleanDecimal(event.target.value) }))} />
+              <span>each extra</span>
+            </div>
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-dash-gold/80">
+              {groupRulesSummary({
+                is_required: groupDraft.is_required,
+                min_selections: groupDraft.min_selections,
+                max_selections: groupDraft.max_selections === '' ? null : groupDraft.max_selections,
+                included_count: groupDraft.included_count,
+                overage_price: groupDraft.overage_price === '' ? null : groupDraft.overage_price,
+              })}
+            </p>
           </div>
 
           <div className="space-y-3">
@@ -1157,16 +1181,18 @@ export function MenuPanel({ restaurantId }) {
                 group={group}
                 groups={groups}
                 modifiers={modifiers}
-                menuItems={menuItems}
+                menuItems={mergedItems}
                 busy={busy}
                 onSave={saveGroup}
                 onArchive={archiveGroup}
                 onLink={runGroupLink}
+                onAddModifiers={ids => void addModifiersToGroup(group, ids)}
+                onCreateModifier={draft => void createModifierIntoGroup(group, draft)}
               />
             ))}
             {groups.length === 0 && (
               <MenuEmptyState title="No modifier groups yet">
-                Create a question above, add modifier options to it, and attach it to items. Nest follow-up questions on any option for mods-of-mods.
+                Create a question above, add modifier options to it, and attach it to items — or build questions directly inside an item's editor.
               </MenuEmptyState>
             )}
           </div>
@@ -1188,7 +1214,7 @@ export function MenuPanel({ restaurantId }) {
                   </MenuEmptyState>
                 )}
                 {specials.map(special => {
-                  const baseItem = menuItems.find(item => item.id === special.menu_item_id)
+                  const baseItem = mergedItems.find(item => item.id === special.menu_item_id)
                   const isLive = activeSpecials.includes(special)
                   return (
                     <div key={special.id} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
@@ -1234,7 +1260,7 @@ export function MenuPanel({ restaurantId }) {
                     <SelectInput
                       value={specialDraft.menu_item_id}
                       onChange={event => {
-                        const item = menuItems.find(row => row.id === event.target.value)
+                        const item = mergedItems.find(row => row.id === event.target.value)
                         setSpecialDraft(prev => ({
                           ...prev,
                           menu_item_id: event.target.value,
@@ -1244,7 +1270,7 @@ export function MenuPanel({ restaurantId }) {
                       }}
                     >
                       <option value="">Choose item...</option>
-                      {menuItems.map(item => <option key={item.id} value={item.id}>{item.name} · {item.category}</option>)}
+                      {mergedItems.map(item => <option key={item.id} value={item.id}>{item.name} · {item.category}</option>)}
                     </SelectInput>
                   </Field>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -1312,14 +1338,14 @@ export function MenuPanel({ restaurantId }) {
 
           <SectionShell
             title="Item Availability Schedule"
-            description="Limit when regular items appear on the POS — brunch-only dishes, seasonal plates, late-night menus."
+            description="Limit when regular items appear on the POS — brunch-only dishes, seasonal plates, late-night menus. Full editor lives inside each item."
           >
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px]">
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
               <div className="space-y-2">
                 <p className="label-mono">Items with schedules</p>
                 {scheduledItems.length === 0 && (
                   <MenuEmptyState title="Everything is always available">
-                    Pick an item on the right to give it a weekly or seasonal window.
+                    Open an item (or pick one on the right) to give it a weekly or seasonal window.
                   </MenuEmptyState>
                 )}
                 {scheduledItems.map(item => (
@@ -1334,63 +1360,27 @@ export function MenuPanel({ restaurantId }) {
                             : 'Manual only'}
                       </span>
                     </div>
-                    <SmallButton onClick={() => openScheduleFor(item.id)}>Edit</SmallButton>
+                    <SmallButton onClick={() => { setActiveTab('items'); setSelectedItemId(item.id) }}>Edit item</SmallButton>
                   </div>
                 ))}
               </div>
-
               <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-                <p className="label-mono">Set a schedule</p>
+                <p className="label-mono">Jump to an item</p>
                 <div className="mt-3 space-y-3">
-                  <Field label="Menu item">
-                    <SelectInput value={scheduleItemId} onChange={event => openScheduleFor(event.target.value)}>
-                      <option value="">Choose item...</option>
-                      {menuItems.map(item => <option key={item.id} value={item.id}>{item.name} · {item.category}</option>)}
-                    </SelectInput>
-                  </Field>
-                  {scheduleItem && scheduleDraft && (
-                    <>
-                      <Field label="Availability">
-                        <SelectInput value={scheduleDraft.availability_mode} onChange={event => setScheduleDraft(prev => ({ ...prev, availability_mode: event.target.value }))}>
-                          {AVAILABILITY_MODES.map(mode => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
-                        </SelectInput>
-                      </Field>
-                      {scheduleDraft.availability_mode === 'schedule' && (
-                        <>
-                          <div className="flex flex-wrap gap-2">
-                            {DAYS_SHORT.map((day, index) => (
-                              <SmallButton
-                                key={day}
-                                variant={scheduleDraft.availability_days.includes(index) ? 'primary' : 'secondary'}
-                                onClick={() => setScheduleDraft(prev => ({
-                                  ...prev,
-                                  availability_days: prev.availability_days.includes(index)
-                                    ? prev.availability_days.filter(value => value !== index)
-                                    : [...prev.availability_days, index].sort(),
-                                }))}
-                              >
-                                {day}
-                              </SmallButton>
-                            ))}
-                          </div>
-                          <div className="grid gap-3 sm:grid-cols-2">
-                            <Field label="From"><TextInput type="time" value={scheduleDraft.availability_start_time} onChange={event => setScheduleDraft(prev => ({ ...prev, availability_start_time: event.target.value }))} /></Field>
-                            <Field label="Until"><TextInput type="time" value={scheduleDraft.availability_end_time} onChange={event => setScheduleDraft(prev => ({ ...prev, availability_end_time: event.target.value }))} /></Field>
-                          </div>
-                        </>
-                      )}
-                      {scheduleDraft.availability_mode === 'seasonal' && (
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <Field label="Start date"><TextInput type="date" value={scheduleDraft.availability_start_date} onChange={event => setScheduleDraft(prev => ({ ...prev, availability_start_date: event.target.value }))} /></Field>
-                          <Field label="End date"><TextInput type="date" value={scheduleDraft.availability_end_date} onChange={event => setScheduleDraft(prev => ({ ...prev, availability_end_date: event.target.value }))} /></Field>
-                        </div>
-                      )}
-                      <Field label="Notes">
-                        <TextInput value={scheduleDraft.availability_notes} onChange={event => setScheduleDraft(prev => ({ ...prev, availability_notes: event.target.value }))} placeholder="Brunch only, seasonal, etc." />
-                      </Field>
-                      <SmallButton variant="primary" onClick={() => void saveSchedule()} disabled={busy}>Save schedule</SmallButton>
-                    </>
-                  )}
+                  <SelectInput value={scheduleItemId} onChange={event => setScheduleItemId(event.target.value)}>
+                    <option value="">Choose item...</option>
+                    {mergedItems.map(item => <option key={item.id} value={item.id}>{item.name} · {item.category}</option>)}
+                  </SelectInput>
+                  <SmallButton
+                    variant="primary"
+                    disabled={!scheduleItemId}
+                    onClick={() => {
+                      setActiveTab('items')
+                      setSelectedItemId(scheduleItemId)
+                    }}
+                  >
+                    Open availability editor
+                  </SmallButton>
                 </div>
               </div>
             </div>
@@ -1424,7 +1414,10 @@ export function MenuPanel({ restaurantId }) {
                 const category = categoriesByName[name]
                 return (
                   <div key={name} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 lg:grid-cols-[1fr_1fr] lg:items-center">
-                    <span className="text-sm font-medium text-dash-cream">{name}</span>
+                    <span className="flex items-center gap-2 text-sm font-medium text-dash-cream">
+                      {category?.color && <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: category.color }} />}
+                      {name}
+                    </span>
                     <SelectInput
                       value={category?.routing_station_id || ''}
                       onChange={event => event.target.value && void routeCategory(name, event.target.value)}
@@ -1487,13 +1480,44 @@ export function MenuPanel({ restaurantId }) {
 
 // ── Modifier list row ───────────────────────────────────────────────────────
 
-function ModifierRow({ modifier, menuItems, busy, onRename, onReprice, onReplaceItems, onDelete }) {
+function NewTaxRateInline({ busy, onCreate }) {
+  const [name, setName] = useState('')
+  const [rate, setRate] = useState('')
+  const rateNumber = rate === '' ? null : Number(rate)
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-3">
+      <span className="label-mono">New tax rate</span>
+      <div className="w-48">
+        <TextInput value={name} onChange={event => setName(event.target.value)} placeholder="Liquor tax" className="!py-2" />
+      </div>
+      <div className="w-24">
+        <TextInput inputMode="decimal" value={rate} onChange={event => setRate(cleanDecimal(event.target.value))} placeholder="15" className="!py-2" />
+      </div>
+      <span className="text-sm text-dash-secondary">%</span>
+      <SmallButton
+        variant="primary"
+        disabled={!name.trim() || rateNumber == null || rateNumber > 100 || busy}
+        onClick={() => {
+          onCreate(name.trim(), rateNumber)
+          setName('')
+          setRate('')
+        }}
+      >
+        Create rate
+      </SmallButton>
+      <span className="text-xs text-dash-tertiary">e.g. state liquor at 15% — then assign it to a category below.</span>
+    </div>
+  )
+}
+
+function ModifierRow({ modifier, menuItems, busy, onRename, onReprice, onRecategorize, onReplaceItems, onDelete }) {
   const [expanded, setExpanded] = useState(false)
   const selectedIds = useMemo(() => new Set(modifier.item_ids || []), [modifier])
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
-      <div className="grid gap-3 lg:grid-cols-[1.4fr_140px_auto_auto_auto] lg:items-center">
+      <div className="grid gap-3 lg:grid-cols-[1.3fr_120px_160px_auto_auto_auto] lg:items-center">
         <TextInput
           defaultValue={modifier.name}
           onBlur={event => {
@@ -1507,6 +1531,15 @@ function ModifierRow({ modifier, menuItems, busy, onRename, onReprice, onReplace
           onBlur={event => {
             const next = Number(cleanDecimal(event.target.value)) || 0
             if (next !== Number(modifier.price_delta)) onReprice(next)
+          }}
+        />
+        <TextInput
+          list="menu-modifier-categories"
+          title="Category — type a new name to create one"
+          defaultValue={modifierCategoryOf(modifier)}
+          onBlur={event => {
+            const next = event.target.value.trim() || 'Add-ons'
+            if (next !== modifierCategoryOf(modifier)) onRecategorize(next)
           }}
         />
         <span className="text-sm text-dash-tertiary">{(modifier.item_ids || []).length} item{(modifier.item_ids || []).length === 1 ? '' : 's'}</span>

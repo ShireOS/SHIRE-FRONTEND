@@ -17,6 +17,7 @@ import {
   DAYS_SHORT,
   Field,
   MenuEmptyState,
+  ModifierPicker,
   SelectInput,
   SmallButton,
   TextAreaInput,
@@ -60,63 +61,23 @@ function DetailCard({ title, hint, children, actions }) {
   )
 }
 
-// Inline creator for a brand-new modifier that lands straight into a group.
-function NewModifierInline({ restaurantId, itemId, onCreated, run }) {
-  const [open, setOpen] = useState(false)
-  const [name, setName] = useState('')
-  const [price, setPrice] = useState('')
-
-  if (!open) {
-    return <SmallButton onClick={() => setOpen(true)}>+ New modifier</SmallButton>
-  }
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="w-44"><TextInput value={name} onChange={event => setName(event.target.value)} placeholder="Ranch" /></div>
-      <div className="w-24"><TextInput inputMode="decimal" value={price} onChange={event => setPrice(cleanDecimal(event.target.value))} placeholder="+$" /></div>
-      <SmallButton
-        variant="primary"
-        disabled={!name.trim()}
-        onClick={() => run(async () => {
-          const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/modifiers`, {
-            method: 'POST',
-            body: JSON.stringify({ name: name.trim(), price_delta: price === '' ? 0 : Number(price), is_active: true }),
-          })
-          if (created?.id && itemId) {
-            await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/modifiers/${created.id}/items`, {
-              method: 'PUT',
-              body: JSON.stringify({ item_ids: [itemId] }),
-            }).catch(() => null)
-          }
-          setName('')
-          setPrice('')
-          setOpen(false)
-          await onCreated(created)
-        }, 'Modifier created.')}
-      >
-        Add
-      </SmallButton>
-      <SmallButton onClick={() => setOpen(false)}>Cancel</SmallButton>
-    </div>
-  )
-}
-
-// Recursive editor for one question (modifier group) in the context of an
-// item. Follow-up questions (child_group_id chains) render as nested editors.
+// Recursive editor for one question (modifier group). At depth 0 it's a
+// question asked on the item; nested, it renders as the modifiers OF a
+// modifier (the child_group_id chain) — the same surface at every level, so
+// "salad → dressing → add steak → temperature" is just drilling in three times.
 function QuestionEditor({
-  groupId, restaurantId, itemId, groups, modifiers, menuItems,
+  groupId, restaurantId, itemId, groups, modifiers,
   run, reloadGroups, reloadModifiers, depth = 0, seenIds = [],
+  parentModifierName = null, onUnlink = null,
 }) {
   const group = groups.find(candidate => candidate.id === groupId)
   const [expandedChild, setExpandedChild] = useState(null)
-  const [optionToAdd, setOptionToAdd] = useState('')
-  const [followUpFor, setFollowUpFor] = useState(null)
-  const [followUpName, setFollowUpName] = useState('')
+  const [showPicker, setShowPicker] = useState(false)
 
   if (!group || depth > 6 || seenIds.includes(groupId)) return null
   const nextSeen = [...seenIds, groupId]
 
   const modifiersById = Object.fromEntries(modifiers.map(m => [m.id, m]))
-  const availableModifiers = modifiers.filter(m => !group.options.some(option => option.modifier_id === m.id))
   const usedByCount = group.item_ids.length
   const sharedElsewhere = depth === 0 && usedByCount > 1
   const nestableGroups = groups.filter(candidate =>
@@ -132,8 +93,55 @@ function QuestionEditor({
     await reloadGroups()
   }, message)
 
+  const addModifiers = (modifierIds) => run(async () => {
+    let order = group.options.length
+    for (const modifierId of modifierIds) {
+      if (group.options.some(option => option.modifier_id === modifierId)) continue
+      await addGroupOption(group.id, modifierId, { display_order: order })
+      order += 1
+    }
+    await reloadGroups()
+  }, modifierIds.length > 1 ? 'Modifiers added.' : 'Modifier added.')
+
+  const createAndAddModifier = (draft) => run(async () => {
+    const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/modifiers`, {
+      method: 'POST',
+      body: JSON.stringify({ ...draft, is_active: true }),
+    })
+    if (created?.id) {
+      if (depth === 0 && itemId) {
+        await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/modifiers/${created.id}/items`, {
+          method: 'PUT',
+          body: JSON.stringify({ item_ids: [itemId] }),
+        }).catch(() => null)
+      }
+      await addGroupOption(group.id, created.id, { display_order: group.options.length })
+    }
+    await reloadModifiers()
+    await reloadGroups()
+  }, 'Modifier created and added.')
+
+  // First drill-in on an option: create its nested question on the spot and
+  // open it, so "add modifiers to this modifier" is one click.
+  const startDrillIn = (option, modifier) => run(async () => {
+    const created = await createModifierGroup(restaurantId, {
+      name: `${modifier?.name || 'Choice'} options`,
+      min_selections: 0,
+      max_selections: null,
+      is_required: false,
+      prompt_on_order: true,
+      display_order: groups.length,
+    })
+    await updateGroupOption(group.id, option.modifier_id, { child_group_id: created.id })
+    setExpandedChild(option.modifier_id)
+    await reloadGroups()
+  }, 'Nested — now add its modifiers.')
+
   return (
     <div className={depth > 0 ? 'mt-2 rounded-xl border border-dash-gold/20 bg-white/[0.02] p-3' : 'rounded-xl border border-white/10 bg-white/[0.025] p-4'}>
+      {parentModifierName && (
+        <p className="label-mono mb-2">Asked when “{parentModifierName}” is picked</p>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-64 flex-1 items-center gap-2">
           <TextInput
@@ -162,7 +170,7 @@ function QuestionEditor({
           </SmallButton>
           {sharedElsewhere && (
             <SmallButton
-              title="Make a private copy of this question (and its follow-ups) just for this item"
+              title="Make a private copy of this question (and everything nested inside it) just for this item"
               onClick={() => run(async () => {
                 await cloneGroupChainForItem(restaurantId, groups, group.id, itemId)
                 await reloadGroups()
@@ -177,6 +185,15 @@ function QuestionEditor({
               onClick={() => linkWork(() => detachGroupFromItem(group.id, itemId), 'Question removed from this item.')}
             >
               Remove from item
+            </SmallButton>
+          )}
+          {depth > 0 && onUnlink && (
+            <SmallButton
+              variant="danger"
+              title="Stop asking this when the option above is picked (the question itself is kept)"
+              onClick={onUnlink}
+            >
+              Unlink
             </SmallButton>
           )}
         </div>
@@ -237,6 +254,7 @@ function QuestionEditor({
           const modifier = modifiersById[option.modifier_id]
           const childGroup = option.child_group_id ? groups.find(candidate => candidate.id === option.child_group_id) : null
           const showingChild = expandedChild === option.modifier_id
+          const nestedCount = childGroup ? childGroup.options.length : 0
           return (
             <div key={option.modifier_id} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
               <div className="flex flex-wrap items-center gap-2">
@@ -253,65 +271,37 @@ function QuestionEditor({
                 </SmallButton>
                 <div className="ml-auto flex flex-wrap items-center gap-2">
                   {childGroup ? (
-                    <>
-                      <SmallButton onClick={() => setExpandedChild(showingChild ? null : option.modifier_id)}>
-                        {showingChild ? 'Hide' : 'Edit'} follow-up: {childGroup.name}
-                      </SmallButton>
-                      <SmallButton
-                        variant="danger"
-                        title="Detach the follow-up question from this option"
-                        onClick={() => linkWork(() => updateGroupOption(group.id, option.modifier_id, { child_group_id: null }), 'Follow-up unlinked.')}
-                      >
-                        Unlink
-                      </SmallButton>
-                    </>
-                  ) : followUpFor === option.modifier_id ? (
-                    <>
-                      <div className="w-52">
-                        <TextInput value={followUpName} onChange={event => setFollowUpName(event.target.value)} placeholder='e.g. "Choose a sauce"' />
-                      </div>
-                      <SelectInput
-                        className="!w-auto"
-                        value=""
-                        onChange={event => {
-                          if (!event.target.value) return
-                          void linkWork(() => updateGroupOption(group.id, option.modifier_id, { child_group_id: event.target.value }), 'Follow-up linked.')
-                          setFollowUpFor(null)
-                        }}
-                      >
-                        <option value="">...or reuse existing</option>
-                        {nestableGroups.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
-                      </SelectInput>
-                      <SmallButton
-                        variant="primary"
-                        disabled={!followUpName.trim()}
-                        onClick={() => run(async () => {
-                          const created = await createModifierGroup(restaurantId, {
-                            name: followUpName.trim(),
-                            min_selections: 0,
-                            max_selections: null,
-                            is_required: false,
-                            prompt_on_order: true,
-                            display_order: groups.length,
-                          })
-                          await updateGroupOption(group.id, option.modifier_id, { child_group_id: created.id })
-                          setFollowUpName('')
-                          setFollowUpFor(null)
-                          setExpandedChild(option.modifier_id)
-                          await reloadGroups()
-                        }, 'Follow-up question added.')}
-                      >
-                        Create
-                      </SmallButton>
-                      <SmallButton onClick={() => setFollowUpFor(null)}>Cancel</SmallButton>
-                    </>
-                  ) : (
                     <SmallButton
-                      title={`Ask another question when the guest picks ${modifier?.name || 'this option'} — modifiers of modifiers`}
-                      onClick={() => setFollowUpFor(option.modifier_id)}
+                      variant={nestedCount > 0 ? 'primary' : 'secondary'}
+                      title={`Modifiers guests can add when they pick ${modifier?.name || 'this'}`}
+                      onClick={() => setExpandedChild(showingChild ? null : option.modifier_id)}
                     >
-                      + Follow-up
+                      {showingChild ? '▾' : '▸'} Modifiers ({nestedCount})
                     </SmallButton>
+                  ) : (
+                    <>
+                      <SmallButton
+                        title={`Give ${modifier?.name || 'this option'} its own modifiers — sauces on the side salad, temperature on the steak...`}
+                        onClick={() => void startDrillIn(option, modifier)}
+                      >
+                        ＋ Modifiers
+                      </SmallButton>
+                      {nestableGroups.length > 0 && (
+                        <SelectInput
+                          className="!w-auto !py-1.5"
+                          value=""
+                          title="Reuse a question that already exists instead of building a new one"
+                          onChange={event => {
+                            if (!event.target.value) return
+                            void linkWork(() => updateGroupOption(group.id, option.modifier_id, { child_group_id: event.target.value }), 'Question linked.')
+                            setExpandedChild(option.modifier_id)
+                          }}
+                        >
+                          <option value="">reuse existing...</option>
+                          {nestableGroups.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+                        </SelectInput>
+                      )}
+                    </>
                   )}
                   <SmallButton variant="danger" onClick={() => linkWork(() => removeGroupOption(group.id, option.modifier_id))}>Remove</SmallButton>
                 </div>
@@ -323,52 +313,39 @@ function QuestionEditor({
                   itemId={itemId}
                   groups={groups}
                   modifiers={modifiers}
-                  menuItems={menuItems}
                   run={run}
                   reloadGroups={reloadGroups}
                   reloadModifiers={reloadModifiers}
                   depth={depth + 1}
                   seenIds={nextSeen}
+                  parentModifierName={modifier?.name || null}
+                  onUnlink={() => {
+                    setExpandedChild(null)
+                    void linkWork(() => updateGroupOption(group.id, option.modifier_id, { child_group_id: null }), 'Nested question unlinked.')
+                  }}
                 />
               )}
             </div>
           )
         })}
-        {group.options.length === 0 && <p className="text-sm text-dash-tertiary">No answers yet — add options below.</p>}
+        {group.options.length === 0 && <p className="text-sm text-dash-tertiary">No modifiers in this question yet — add some below.</p>}
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <div className="min-w-52">
-          <SelectInput value={optionToAdd} onChange={event => setOptionToAdd(event.target.value)}>
-            <option value="">Add existing modifier...</option>
-            {availableModifiers.map(modifier => (
-              <option key={modifier.id} value={modifier.id}>
-                {modifier.name}{Number(modifier.price_delta) > 0 ? ` (+${money(modifier.price_delta)})` : ''}
-              </option>
-            ))}
-          </SelectInput>
-        </div>
-        <SmallButton
-          variant="primary"
-          disabled={!optionToAdd}
-          onClick={() => {
-            const modifierId = optionToAdd
-            setOptionToAdd('')
-            void linkWork(() => addGroupOption(group.id, modifierId, { display_order: group.options.length }), 'Option added.')
-          }}
-        >
-          Add option
-        </SmallButton>
-        <NewModifierInline
-          restaurantId={restaurantId}
-          itemId={depth === 0 ? itemId : null}
-          run={run}
-          onCreated={async (created) => {
-            if (created?.id) await addGroupOption(group.id, created.id, { display_order: group.options.length })
-            await reloadModifiers()
-            await reloadGroups()
-          }}
-        />
+      <div className="mt-3">
+        {showPicker ? (
+          <div className="space-y-2">
+            <ModifierPicker
+              autoFocus
+              modifiers={modifiers}
+              excludeIds={new Set(group.options.map(option => option.modifier_id))}
+              onAddExisting={ids => void addModifiers(ids)}
+              onCreateNew={draft => void createAndAddModifier(draft)}
+            />
+            <SmallButton onClick={() => setShowPicker(false)}>Done</SmallButton>
+          </div>
+        ) : (
+          <SmallButton variant="primary" onClick={() => setShowPicker(true)}>+ Add modifiers</SmallButton>
+        )}
       </div>
     </div>
   )
@@ -382,6 +359,7 @@ export function MenuItemDetail({
   const fileInputRef = useRef(null)
   const [newQuestion, setNewQuestion] = useState('')
   const [attachExisting, setAttachExisting] = useState('')
+  const [showQuickPicker, setShowQuickPicker] = useState(false)
   const [specialForm, setSpecialForm] = useState({ display_name: '', special_price: '', note: '', expires_at: '' })
   const [schedule, setSchedule] = useState(() => ({
     availability_mode: item.availability_mode || 'always',
@@ -400,6 +378,51 @@ export function MenuItemDetail({
   const itemSpecials = specials.filter(special => special.menu_item_id === item.id)
   const category = categories.find(candidate => candidate.name === item.category)
   const stationName = (id) => stations.find(station => station.id === id)?.name
+
+  // Quick-add lands modifiers in this item's "Extras" question, creating and
+  // attaching it on first use — no question naming required.
+  const ensureExtrasGroup = async () => {
+    const existing = itemGroups.find(group => group.name.trim().toLowerCase() === 'extras')
+    if (existing) return existing
+    const created = await createModifierGroup(restaurantId, {
+      name: 'Extras',
+      min_selections: 0,
+      max_selections: null,
+      is_required: false,
+      prompt_on_order: true,
+      display_order: groups.length,
+    })
+    await attachGroupToItem(created.id, item.id, itemGroups.length)
+    return { ...created, options: [] }
+  }
+
+  const quickAddModifiers = (modifierIds) => run(async () => {
+    const extras = await ensureExtrasGroup()
+    let order = extras.options?.length || 0
+    for (const modifierId of modifierIds) {
+      if (extras.options?.some(option => option.modifier_id === modifierId)) continue
+      await addGroupOption(extras.id, modifierId, { display_order: order })
+      order += 1
+    }
+    await reloadGroups()
+  }, modifierIds.length > 1 ? 'Modifiers added to this item.' : 'Modifier added to this item.')
+
+  const quickCreateModifier = (draft) => run(async () => {
+    const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/modifiers`, {
+      method: 'POST',
+      body: JSON.stringify({ ...draft, is_active: true }),
+    })
+    if (created?.id) {
+      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/modifiers/${created.id}/items`, {
+        method: 'PUT',
+        body: JSON.stringify({ item_ids: [item.id] }),
+      }).catch(() => null)
+      const extras = await ensureExtrasGroup()
+      await addGroupOption(extras.id, created.id, { display_order: extras.options?.length || 0 })
+    }
+    await reloadModifiers()
+    await reloadGroups()
+  }, 'Modifier created and added.')
 
   const uploadPhoto = (file) => {
     if (!file) return
@@ -534,8 +557,8 @@ export function MenuItemDetail({
           </DetailCard>
 
           <DetailCard
-            title={`Modifier questions (${itemGroups.length})`}
-            hint='Asked in order when this item is ordered. Any answer can trigger a follow-up question — nest as deep as you need.'
+            title={`Modifiers & questions (${itemGroups.length})`}
+            hint='Asked in order when this item is ordered. Open "Modifiers" on any row to give that modifier its own modifiers — salad → dressing → add steak → temperature, as deep as you need.'
           >
             <div className="space-y-3">
               {itemGroups.map(group => (
@@ -546,64 +569,79 @@ export function MenuItemDetail({
                   itemId={item.id}
                   groups={groups}
                   modifiers={modifiers}
-                  menuItems={[]}
                   run={run}
                   reloadGroups={reloadGroups}
                   reloadModifiers={reloadModifiers}
                 />
               ))}
               {itemGroups.length === 0 && (
-                <MenuEmptyState title="No questions yet">
-                  Add one below — "Choose a side", "Pick a temperature" — then give it options.
+                <MenuEmptyState title="No modifiers yet">
+                  Quick-add modifiers below, or create a named question — "Choose a side", "Pick a temperature".
                 </MenuEmptyState>
               )}
             </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
-              <div className="min-w-64 flex-1">
-                <TextInput value={newQuestion} onChange={event => setNewQuestion(event.target.value)} placeholder='New question, e.g. "Choose a side"' />
-              </div>
-              <SmallButton
-                variant="primary"
-                disabled={!newQuestion.trim() || busy}
-                onClick={() => run(async () => {
-                  const created = await createModifierGroup(restaurantId, {
-                    name: newQuestion.trim(),
-                    min_selections: 0,
-                    max_selections: null,
-                    is_required: false,
-                    prompt_on_order: true,
-                    display_order: groups.length,
-                  })
-                  await attachGroupToItem(created.id, item.id, itemGroups.length)
-                  setNewQuestion('')
-                  await reloadGroups()
-                }, 'Question added.')}
-              >
-                Add question
-              </SmallButton>
-              {attachableGroups.length > 0 && (
-                <>
-                  <span className="text-sm text-dash-tertiary">or attach existing:</span>
-                  <div className="min-w-48">
-                    <SelectInput
-                      value={attachExisting}
-                      onChange={event => {
-                        const groupId = event.target.value
-                        setAttachExisting('')
-                        if (!groupId) return
-                        void run(async () => {
-                          await attachGroupToItem(groupId, item.id, itemGroups.length)
-                          await reloadGroups()
-                        }, 'Question attached.')
-                      }}
-                    >
-                      <option value="">Choose question...</option>
-                      {attachableGroups.map(group => (
-                        <option key={group.id} value={group.id}>{group.name} ({group.item_ids.length} items)</option>
-                      ))}
-                    </SelectInput>
+
+            <div className="mt-4 border-t border-white/10 pt-4">
+              {showQuickPicker ? (
+                <div className="space-y-2">
+                  <p className="label-mono">Quick add modifiers to this item</p>
+                  <ModifierPicker
+                    autoFocus
+                    modifiers={modifiers}
+                    excludeIds={new Set(itemGroups.flatMap(group => group.options.map(option => option.modifier_id)))}
+                    onAddExisting={ids => void quickAddModifiers(ids)}
+                    onCreateNew={draft => void quickCreateModifier(draft)}
+                  />
+                  <p className="text-xs text-dash-tertiary">These land in an "Extras" question on this item (created automatically) — move or rename it any time.</p>
+                  <SmallButton onClick={() => setShowQuickPicker(false)}>Done</SmallButton>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <SmallButton variant="primary" onClick={() => setShowQuickPicker(true)}>+ Add modifiers</SmallButton>
+                  <span className="text-sm text-dash-tertiary">or a named question:</span>
+                  <div className="min-w-56 flex-1">
+                    <TextInput value={newQuestion} onChange={event => setNewQuestion(event.target.value)} placeholder='e.g. "Choose a side"' />
                   </div>
-                </>
+                  <SmallButton
+                    disabled={!newQuestion.trim() || busy}
+                    onClick={() => run(async () => {
+                      const created = await createModifierGroup(restaurantId, {
+                        name: newQuestion.trim(),
+                        min_selections: 0,
+                        max_selections: null,
+                        is_required: false,
+                        prompt_on_order: true,
+                        display_order: groups.length,
+                      })
+                      await attachGroupToItem(created.id, item.id, itemGroups.length)
+                      setNewQuestion('')
+                      await reloadGroups()
+                    }, 'Question added.')}
+                  >
+                    Add question
+                  </SmallButton>
+                  {attachableGroups.length > 0 && (
+                    <div className="min-w-48">
+                      <SelectInput
+                        value={attachExisting}
+                        onChange={event => {
+                          const groupId = event.target.value
+                          setAttachExisting('')
+                          if (!groupId) return
+                          void run(async () => {
+                            await attachGroupToItem(groupId, item.id, itemGroups.length)
+                            await reloadGroups()
+                          }, 'Question attached.')
+                        }}
+                      >
+                        <option value="">Attach existing question...</option>
+                        {attachableGroups.map(group => (
+                          <option key={group.id} value={group.id}>{group.name} ({group.item_ids.length} items)</option>
+                        ))}
+                      </SelectInput>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </DetailCard>
