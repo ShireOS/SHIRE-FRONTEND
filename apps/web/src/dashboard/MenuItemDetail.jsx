@@ -1,0 +1,756 @@
+import { useRef, useState } from 'react'
+import { supabase } from '../shared/lib/supabase'
+import { fetchWithSupabaseAuth } from '../shared/query'
+import {
+  addGroupOption,
+  attachGroupToItem,
+  cloneGroupChainForItem,
+  createModifierGroup,
+  detachGroupFromItem,
+  removeGroupOption,
+  updateGroupOption,
+  updateModifierGroup,
+  wouldCreateCycle,
+} from './data/menuGroups'
+import { setItemImage, uploadMenuImage } from './data/menuExtras'
+import {
+  DAYS_SHORT,
+  Field,
+  MenuEmptyState,
+  SelectInput,
+  SmallButton,
+  TextAreaInput,
+  TextInput,
+  cleanDecimal,
+  cleanDigits,
+  groupRulesSummary,
+  money,
+} from './components/menuUi'
+
+const COURSE_OPTIONS = [
+  { value: '', label: 'Inherit from category' },
+  { value: 'appetizer', label: 'Appetizer' },
+  { value: 'entree', label: 'Entree' },
+  { value: 'dessert', label: 'Dessert' },
+  { value: 'drink', label: 'Drink' },
+  { value: 'side', label: 'Side' },
+  { value: 'other', label: 'Other' },
+  { value: 'none', label: 'None' },
+]
+
+const AVAILABILITY_MODES = [
+  { value: 'always', label: 'Always available' },
+  { value: 'schedule', label: 'Weekly schedule' },
+  { value: 'seasonal', label: 'Seasonal (date window)' },
+  { value: 'manual', label: 'Manual only' },
+]
+
+function DetailCard({ title, hint, children, actions }) {
+  return (
+    <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h4 className="text-lg font-semibold">{title}</h4>
+          {hint && <p className="mt-1 text-sm text-dash-tertiary">{hint}</p>}
+        </div>
+        {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  )
+}
+
+// Inline creator for a brand-new modifier that lands straight into a group.
+function NewModifierInline({ restaurantId, itemId, onCreated, run }) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [price, setPrice] = useState('')
+
+  if (!open) {
+    return <SmallButton onClick={() => setOpen(true)}>+ New modifier</SmallButton>
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="w-44"><TextInput value={name} onChange={event => setName(event.target.value)} placeholder="Ranch" /></div>
+      <div className="w-24"><TextInput inputMode="decimal" value={price} onChange={event => setPrice(cleanDecimal(event.target.value))} placeholder="+$" /></div>
+      <SmallButton
+        variant="primary"
+        disabled={!name.trim()}
+        onClick={() => run(async () => {
+          const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/modifiers`, {
+            method: 'POST',
+            body: JSON.stringify({ name: name.trim(), price_delta: price === '' ? 0 : Number(price), is_active: true }),
+          })
+          if (created?.id && itemId) {
+            await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/modifiers/${created.id}/items`, {
+              method: 'PUT',
+              body: JSON.stringify({ item_ids: [itemId] }),
+            }).catch(() => null)
+          }
+          setName('')
+          setPrice('')
+          setOpen(false)
+          await onCreated(created)
+        }, 'Modifier created.')}
+      >
+        Add
+      </SmallButton>
+      <SmallButton onClick={() => setOpen(false)}>Cancel</SmallButton>
+    </div>
+  )
+}
+
+// Recursive editor for one question (modifier group) in the context of an
+// item. Follow-up questions (child_group_id chains) render as nested editors.
+function QuestionEditor({
+  groupId, restaurantId, itemId, groups, modifiers, menuItems,
+  run, reloadGroups, reloadModifiers, depth = 0, seenIds = [],
+}) {
+  const group = groups.find(candidate => candidate.id === groupId)
+  const [expandedChild, setExpandedChild] = useState(null)
+  const [optionToAdd, setOptionToAdd] = useState('')
+  const [followUpFor, setFollowUpFor] = useState(null)
+  const [followUpName, setFollowUpName] = useState('')
+
+  if (!group || depth > 6 || seenIds.includes(groupId)) return null
+  const nextSeen = [...seenIds, groupId]
+
+  const modifiersById = Object.fromEntries(modifiers.map(m => [m.id, m]))
+  const availableModifiers = modifiers.filter(m => !group.options.some(option => option.modifier_id === m.id))
+  const usedByCount = group.item_ids.length
+  const sharedElsewhere = depth === 0 && usedByCount > 1
+  const nestableGroups = groups.filter(candidate =>
+    candidate.id !== group.id && !wouldCreateCycle(groups, group.id, candidate.id))
+
+  const patchGroup = (patch, message) => run(async () => {
+    await updateModifierGroup(group.id, patch)
+    await reloadGroups()
+  }, message)
+
+  const linkWork = (work, message) => run(async () => {
+    await work()
+    await reloadGroups()
+  }, message)
+
+  return (
+    <div className={depth > 0 ? 'mt-2 rounded-xl border border-dash-gold/20 bg-white/[0.02] p-3' : 'rounded-xl border border-white/10 bg-white/[0.025] p-4'}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-64 flex-1 items-center gap-2">
+          <TextInput
+            defaultValue={group.name}
+            onBlur={event => {
+              const next = event.target.value.trim()
+              if (next && next !== group.name) void patchGroup({ name: next })
+            }}
+          />
+          {sharedElsewhere && (
+            <span className="whitespace-nowrap rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-1 text-[11px] font-semibold text-amber-200" title="Edits here change this question everywhere it is used.">
+              Used by {usedByCount} items
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <SmallButton
+            variant={group.is_required ? 'primary' : 'secondary'}
+            onClick={() => void patchGroup({
+              is_required: !group.is_required,
+              min_selections: !group.is_required ? Math.max(1, group.min_selections || 0) : group.min_selections,
+              prompt_on_order: true,
+            })}
+          >
+            {group.is_required ? 'Required' : 'Optional'}
+          </SmallButton>
+          {sharedElsewhere && (
+            <SmallButton
+              title="Make a private copy of this question (and its follow-ups) just for this item"
+              onClick={() => run(async () => {
+                await cloneGroupChainForItem(restaurantId, groups, group.id, itemId)
+                await reloadGroups()
+              }, 'Question copied for this item only.')}
+            >
+              Customize for this item
+            </SmallButton>
+          )}
+          {depth === 0 && (
+            <SmallButton
+              variant="danger"
+              onClick={() => linkWork(() => detachGroupFromItem(group.id, itemId), 'Question removed from this item.')}
+            >
+              Remove from item
+            </SmallButton>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-2 text-sm text-dash-secondary">
+        <span>Guest picks at least</span>
+        <TextInput
+          inputMode="numeric"
+          className="!w-16 !px-2 !py-1.5 text-center"
+          defaultValue={String(group.min_selections ?? 0)}
+          onBlur={event => {
+            const next = Number(cleanDigits(event.target.value)) || 0
+            if (next !== group.min_selections) void patchGroup({ min_selections: group.is_required ? Math.max(1, next) : next })
+          }}
+        />
+        <span>and at most</span>
+        <TextInput
+          inputMode="numeric"
+          className="!w-16 !px-2 !py-1.5 text-center"
+          placeholder="∞"
+          defaultValue={group.max_selections == null ? '' : String(group.max_selections)}
+          onBlur={event => {
+            const raw = cleanDigits(event.target.value)
+            const next = raw === '' ? null : Math.max(Number(raw), group.min_selections || 0)
+            if (next !== group.max_selections) void patchGroup({ max_selections: next })
+          }}
+        />
+        <span className="text-dash-tertiary">·</span>
+        <span>first</span>
+        <TextInput
+          inputMode="numeric"
+          className="!w-16 !px-2 !py-1.5 text-center"
+          defaultValue={String(group.included_count ?? 0)}
+          onBlur={event => {
+            const next = Number(cleanDigits(event.target.value)) || 0
+            if (next !== (group.included_count ?? 0)) void patchGroup({ included_count: next })
+          }}
+        />
+        <span>are free, then $</span>
+        <TextInput
+          inputMode="decimal"
+          className="!w-20 !px-2 !py-1.5 text-center"
+          placeholder="0.00"
+          defaultValue={group.overage_price == null ? '' : String(group.overage_price)}
+          onBlur={event => {
+            const raw = cleanDecimal(event.target.value)
+            const next = raw === '' ? null : Number(raw)
+            if (next !== group.overage_price) void patchGroup({ overage_price: next })
+          }}
+        />
+        <span>each extra</span>
+      </div>
+      <p className="mt-2 text-xs font-semibold uppercase tracking-[0.08em] text-dash-gold/80">{groupRulesSummary(group)}</p>
+
+      <div className="mt-3 space-y-2">
+        {group.options.map(option => {
+          const modifier = modifiersById[option.modifier_id]
+          const childGroup = option.child_group_id ? groups.find(candidate => candidate.id === option.child_group_id) : null
+          const showingChild = expandedChild === option.modifier_id
+          return (
+            <div key={option.modifier_id} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="min-w-32 text-sm font-medium text-dash-cream">
+                  {modifier?.name || 'Modifier'}
+                  {Number(modifier?.price_delta) > 0 && <span className="ml-1 font-normal text-dash-tertiary">+{money(modifier.price_delta)}</span>}
+                </span>
+                <SmallButton
+                  variant={option.is_default ? 'primary' : 'secondary'}
+                  title="Pre-selected when the item is ordered"
+                  onClick={() => linkWork(() => updateGroupOption(group.id, option.modifier_id, { is_default: !option.is_default }))}
+                >
+                  {option.is_default ? '★ Default' : 'Default'}
+                </SmallButton>
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  {childGroup ? (
+                    <>
+                      <SmallButton onClick={() => setExpandedChild(showingChild ? null : option.modifier_id)}>
+                        {showingChild ? 'Hide' : 'Edit'} follow-up: {childGroup.name}
+                      </SmallButton>
+                      <SmallButton
+                        variant="danger"
+                        title="Detach the follow-up question from this option"
+                        onClick={() => linkWork(() => updateGroupOption(group.id, option.modifier_id, { child_group_id: null }), 'Follow-up unlinked.')}
+                      >
+                        Unlink
+                      </SmallButton>
+                    </>
+                  ) : followUpFor === option.modifier_id ? (
+                    <>
+                      <div className="w-52">
+                        <TextInput value={followUpName} onChange={event => setFollowUpName(event.target.value)} placeholder='e.g. "Choose a sauce"' />
+                      </div>
+                      <SelectInput
+                        className="!w-auto"
+                        value=""
+                        onChange={event => {
+                          if (!event.target.value) return
+                          void linkWork(() => updateGroupOption(group.id, option.modifier_id, { child_group_id: event.target.value }), 'Follow-up linked.')
+                          setFollowUpFor(null)
+                        }}
+                      >
+                        <option value="">...or reuse existing</option>
+                        {nestableGroups.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+                      </SelectInput>
+                      <SmallButton
+                        variant="primary"
+                        disabled={!followUpName.trim()}
+                        onClick={() => run(async () => {
+                          const created = await createModifierGroup(restaurantId, {
+                            name: followUpName.trim(),
+                            min_selections: 0,
+                            max_selections: null,
+                            is_required: false,
+                            prompt_on_order: true,
+                            display_order: groups.length,
+                          })
+                          await updateGroupOption(group.id, option.modifier_id, { child_group_id: created.id })
+                          setFollowUpName('')
+                          setFollowUpFor(null)
+                          setExpandedChild(option.modifier_id)
+                          await reloadGroups()
+                        }, 'Follow-up question added.')}
+                      >
+                        Create
+                      </SmallButton>
+                      <SmallButton onClick={() => setFollowUpFor(null)}>Cancel</SmallButton>
+                    </>
+                  ) : (
+                    <SmallButton
+                      title={`Ask another question when the guest picks ${modifier?.name || 'this option'} — modifiers of modifiers`}
+                      onClick={() => setFollowUpFor(option.modifier_id)}
+                    >
+                      + Follow-up
+                    </SmallButton>
+                  )}
+                  <SmallButton variant="danger" onClick={() => linkWork(() => removeGroupOption(group.id, option.modifier_id))}>Remove</SmallButton>
+                </div>
+              </div>
+              {childGroup && showingChild && (
+                <QuestionEditor
+                  groupId={childGroup.id}
+                  restaurantId={restaurantId}
+                  itemId={itemId}
+                  groups={groups}
+                  modifiers={modifiers}
+                  menuItems={menuItems}
+                  run={run}
+                  reloadGroups={reloadGroups}
+                  reloadModifiers={reloadModifiers}
+                  depth={depth + 1}
+                  seenIds={nextSeen}
+                />
+              )}
+            </div>
+          )
+        })}
+        {group.options.length === 0 && <p className="text-sm text-dash-tertiary">No answers yet — add options below.</p>}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="min-w-52">
+          <SelectInput value={optionToAdd} onChange={event => setOptionToAdd(event.target.value)}>
+            <option value="">Add existing modifier...</option>
+            {availableModifiers.map(modifier => (
+              <option key={modifier.id} value={modifier.id}>
+                {modifier.name}{Number(modifier.price_delta) > 0 ? ` (+${money(modifier.price_delta)})` : ''}
+              </option>
+            ))}
+          </SelectInput>
+        </div>
+        <SmallButton
+          variant="primary"
+          disabled={!optionToAdd}
+          onClick={() => {
+            const modifierId = optionToAdd
+            setOptionToAdd('')
+            void linkWork(() => addGroupOption(group.id, modifierId, { display_order: group.options.length }), 'Option added.')
+          }}
+        >
+          Add option
+        </SmallButton>
+        <NewModifierInline
+          restaurantId={restaurantId}
+          itemId={depth === 0 ? itemId : null}
+          run={run}
+          onCreated={async (created) => {
+            if (created?.id) await addGroupOption(group.id, created.id, { display_order: group.options.length })
+            await reloadModifiers()
+            await reloadGroups()
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
+export function MenuItemDetail({
+  restaurantId, item, categories, categoryNames, stations, groups, modifiers, specials,
+  busy, onBack, patchItem, deleteItem, run,
+  reloadGroups, reloadModifiers, reloadSpecials, reloadImages,
+}) {
+  const fileInputRef = useRef(null)
+  const [newQuestion, setNewQuestion] = useState('')
+  const [attachExisting, setAttachExisting] = useState('')
+  const [specialForm, setSpecialForm] = useState({ display_name: '', special_price: '', note: '', expires_at: '' })
+  const [schedule, setSchedule] = useState(() => ({
+    availability_mode: item.availability_mode || 'always',
+    availability_days: Array.isArray(item.availability_days) && item.availability_days.length > 0 ? item.availability_days : [0, 1, 2, 3, 4, 5, 6],
+    availability_start_time: item.availability_start_time ? String(item.availability_start_time).slice(0, 5) : '',
+    availability_end_time: item.availability_end_time ? String(item.availability_end_time).slice(0, 5) : '',
+    availability_start_date: item.availability_start_date || '',
+    availability_end_date: item.availability_end_date || '',
+    availability_notes: item.availability_notes || '',
+  }))
+
+  const itemGroups = groups
+    .filter(group => group.item_ids.includes(item.id))
+    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0) || a.name.localeCompare(b.name))
+  const attachableGroups = groups.filter(group => !group.item_ids.includes(item.id))
+  const itemSpecials = specials.filter(special => special.menu_item_id === item.id)
+  const category = categories.find(candidate => candidate.name === item.category)
+  const stationName = (id) => stations.find(station => station.id === id)?.name
+
+  const uploadPhoto = (file) => {
+    if (!file) return
+    return run(async () => {
+      const url = await uploadMenuImage(restaurantId, file)
+      await setItemImage(restaurantId, item.id, url)
+      await reloadImages()
+    }, 'Photo updated.')
+  }
+
+  const saveSchedule = () => patchItem(item.id, {
+    availability_mode: schedule.availability_mode,
+    availability_days: schedule.availability_days,
+    availability_start_time: schedule.availability_start_time || null,
+    availability_end_time: schedule.availability_end_time || null,
+    availability_start_date: schedule.availability_start_date || null,
+    availability_end_date: schedule.availability_end_date || null,
+    availability_notes: schedule.availability_notes.trim() || null,
+  }, 'Availability saved.')
+
+  const pinSpecial = () => run(async () => {
+    const { data, error } = await supabase
+      .from('pos_daily_specials')
+      .insert({
+        restaurant_id: restaurantId,
+        menu_item_id: item.id,
+        display_name: specialForm.display_name.trim() || item.name,
+        note: specialForm.note.trim() || null,
+        special_price: specialForm.special_price === '' ? null : Number(specialForm.special_price),
+        schedule_kind: 'manual',
+        days_of_week: [0, 1, 2, 3, 4, 5, 6],
+        expires_at: specialForm.expires_at ? new Date(specialForm.expires_at).toISOString() : null,
+        sort_order: 0,
+        is_active: true,
+      })
+      .select('*')
+      .single()
+    if (error) throw error
+    await supabase.from('pos_daily_special_events').insert({
+      restaurant_id: restaurantId,
+      daily_special_id: data.id,
+      event_type: 'created',
+      after_data: data,
+    }).then(() => null, () => null)
+    setSpecialForm({ display_name: '', special_price: '', note: '', expires_at: '' })
+    await reloadSpecials()
+  }, 'Special pinned.')
+
+  const toggleSpecial = (special) => run(async () => {
+    const { error } = await supabase
+      .from('pos_daily_specials')
+      .update({ is_active: !special.is_active, updated_at: new Date().toISOString() })
+      .eq('id', special.id)
+      .eq('restaurant_id', restaurantId)
+    if (error) throw error
+    await reloadSpecials()
+  })
+
+  const archiveSpecial = (special) => run(async () => {
+    const { error } = await supabase
+      .from('pos_daily_specials')
+      .update({ archived_at: new Date().toISOString(), is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', special.id)
+      .eq('restaurant_id', restaurantId)
+    if (error) throw error
+    await reloadSpecials()
+  }, 'Special archived.')
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <SmallButton onClick={onBack}>← All items</SmallButton>
+          <div>
+            <h3 className="text-2xl font-semibold tracking-tight">{item.name}</h3>
+            <p className="text-sm text-dash-tertiary">{item.category || 'Uncategorized'} · {money(item.price)}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <SmallButton
+            variant={item.is_available === false ? 'danger' : 'secondary'}
+            onClick={() => void patchItem(item.id, { is_available: item.is_available === false }, item.is_available === false ? 'Item restored.' : "Item 86'd.")}
+          >
+            {item.is_available === false ? "86'd — tap to restore" : 'Available'}
+          </SmallButton>
+          <SmallButton variant="danger" onClick={() => { void deleteItem(item.id); onBack() }} disabled={busy}>Remove item</SmallButton>
+        </div>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="space-y-5">
+          <DetailCard title="Basics" hint="Changes save when you click away.">
+            <div className="grid gap-3 md:grid-cols-[1.4fr_120px_1fr]">
+              <Field label="Name">
+                <TextInput
+                  defaultValue={item.name}
+                  onBlur={event => {
+                    const next = event.target.value.trim()
+                    if (next && next !== item.name) void patchItem(item.id, { name: next })
+                  }}
+                />
+              </Field>
+              <Field label="Price $">
+                <TextInput
+                  inputMode="decimal"
+                  defaultValue={item.price != null ? String(item.price) : ''}
+                  onBlur={event => {
+                    const next = Number(cleanDecimal(event.target.value))
+                    if (Number.isFinite(next) && next !== Number(item.price)) void patchItem(item.id, { price: next })
+                  }}
+                />
+              </Field>
+              <Field label="Category">
+                <SelectInput value={item.category || 'Other'} onChange={event => void patchItem(item.id, { category: event.target.value })}>
+                  {categoryNames.map(name => <option key={name} value={name}>{name}</option>)}
+                  {!categoryNames.includes(item.category || 'Other') && <option value={item.category || 'Other'}>{item.category || 'Other'}</option>}
+                </SelectInput>
+              </Field>
+            </div>
+            <div className="mt-3">
+              <Field label="Description">
+                <TextAreaInput
+                  defaultValue={item.description || ''}
+                  placeholder="What guests see under the item name..."
+                  onBlur={event => {
+                    const next = event.target.value.trim()
+                    if (next !== (item.description || '')) void patchItem(item.id, { description: next || null })
+                  }}
+                />
+              </Field>
+            </div>
+          </DetailCard>
+
+          <DetailCard
+            title={`Modifier questions (${itemGroups.length})`}
+            hint='Asked in order when this item is ordered. Any answer can trigger a follow-up question — nest as deep as you need.'
+          >
+            <div className="space-y-3">
+              {itemGroups.map(group => (
+                <QuestionEditor
+                  key={group.id}
+                  groupId={group.id}
+                  restaurantId={restaurantId}
+                  itemId={item.id}
+                  groups={groups}
+                  modifiers={modifiers}
+                  menuItems={[]}
+                  run={run}
+                  reloadGroups={reloadGroups}
+                  reloadModifiers={reloadModifiers}
+                />
+              ))}
+              {itemGroups.length === 0 && (
+                <MenuEmptyState title="No questions yet">
+                  Add one below — "Choose a side", "Pick a temperature" — then give it options.
+                </MenuEmptyState>
+              )}
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
+              <div className="min-w-64 flex-1">
+                <TextInput value={newQuestion} onChange={event => setNewQuestion(event.target.value)} placeholder='New question, e.g. "Choose a side"' />
+              </div>
+              <SmallButton
+                variant="primary"
+                disabled={!newQuestion.trim() || busy}
+                onClick={() => run(async () => {
+                  const created = await createModifierGroup(restaurantId, {
+                    name: newQuestion.trim(),
+                    min_selections: 0,
+                    max_selections: null,
+                    is_required: false,
+                    prompt_on_order: true,
+                    display_order: groups.length,
+                  })
+                  await attachGroupToItem(created.id, item.id, itemGroups.length)
+                  setNewQuestion('')
+                  await reloadGroups()
+                }, 'Question added.')}
+              >
+                Add question
+              </SmallButton>
+              {attachableGroups.length > 0 && (
+                <>
+                  <span className="text-sm text-dash-tertiary">or attach existing:</span>
+                  <div className="min-w-48">
+                    <SelectInput
+                      value={attachExisting}
+                      onChange={event => {
+                        const groupId = event.target.value
+                        setAttachExisting('')
+                        if (!groupId) return
+                        void run(async () => {
+                          await attachGroupToItem(groupId, item.id, itemGroups.length)
+                          await reloadGroups()
+                        }, 'Question attached.')
+                      }}
+                    >
+                      <option value="">Choose question...</option>
+                      {attachableGroups.map(group => (
+                        <option key={group.id} value={group.id}>{group.name} ({group.item_ids.length} items)</option>
+                      ))}
+                    </SelectInput>
+                  </div>
+                </>
+              )}
+            </div>
+          </DetailCard>
+
+          <DetailCard title="Specials" hint="Overlay a special name/price on this item. Full scheduling lives in the Specials & Schedule tab.">
+            <div className="space-y-2">
+              {itemSpecials.map(special => (
+                <div key={special.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-sm">
+                  <div>
+                    <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-900">Special</span>
+                    <span className="ml-2 font-medium text-dash-cream">{special.display_name || item.name}</span>
+                    <span className="ml-2 text-dash-tertiary">{special.special_price != null ? money(special.special_price) : money(item.price)} · {special.schedule_kind}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <SmallButton variant={special.is_active ? 'primary' : 'secondary'} onClick={() => void toggleSpecial(special)}>
+                      {special.is_active ? 'Active' : 'Paused'}
+                    </SmallButton>
+                    <SmallButton variant="danger" onClick={() => void archiveSpecial(special)}>Archive</SmallButton>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-[1.2fr_110px_1.4fr_1fr_auto]">
+              <TextInput value={specialForm.display_name} onChange={event => setSpecialForm(prev => ({ ...prev, display_name: event.target.value }))} placeholder={`Special name (${item.name})`} />
+              <TextInput inputMode="decimal" value={specialForm.special_price} onChange={event => setSpecialForm(prev => ({ ...prev, special_price: cleanDecimal(event.target.value) }))} placeholder="Price" />
+              <TextInput value={specialForm.note} onChange={event => setSpecialForm(prev => ({ ...prev, note: event.target.value }))} placeholder="Note (optional)" />
+              <TextInput type="datetime-local" value={specialForm.expires_at} onChange={event => setSpecialForm(prev => ({ ...prev, expires_at: event.target.value }))} />
+              <SmallButton variant="primary" onClick={() => void pinSpecial()} disabled={busy}>Pin special</SmallButton>
+            </div>
+          </DetailCard>
+        </div>
+
+        <div className="space-y-5">
+          <DetailCard title="Photo" hint="Shown on the POS tile and online ordering.">
+            <div className="space-y-3">
+              {item.image_url ? (
+                <img src={item.image_url} alt={item.name} className="h-44 w-full rounded-xl object-cover" />
+              ) : (
+                <div className="flex h-44 w-full items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/[0.02] text-sm text-dash-tertiary">
+                  No photo yet
+                </div>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg"
+                className="hidden"
+                onChange={event => {
+                  void uploadPhoto(event.target.files?.[0])
+                  event.target.value = ''
+                }}
+              />
+              <div className="flex gap-2">
+                <SmallButton variant="primary" onClick={() => fileInputRef.current?.click()} disabled={busy}>
+                  {item.image_url ? 'Replace photo' : 'Upload photo'}
+                </SmallButton>
+                {item.image_url && (
+                  <SmallButton
+                    variant="danger"
+                    onClick={() => run(async () => {
+                      await setItemImage(restaurantId, item.id, null)
+                      await reloadImages()
+                    }, 'Photo removed.')}
+                  >
+                    Remove
+                  </SmallButton>
+                )}
+              </div>
+            </div>
+          </DetailCard>
+
+          <DetailCard title="Availability schedule">
+            <div className="space-y-3">
+              <SelectInput value={schedule.availability_mode} onChange={event => setSchedule(prev => ({ ...prev, availability_mode: event.target.value }))}>
+                {AVAILABILITY_MODES.map(mode => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
+              </SelectInput>
+              {schedule.availability_mode === 'schedule' && (
+                <>
+                  <div className="flex flex-wrap gap-1.5">
+                    {DAYS_SHORT.map((day, index) => (
+                      <SmallButton
+                        key={day}
+                        variant={schedule.availability_days.includes(index) ? 'primary' : 'secondary'}
+                        onClick={() => setSchedule(prev => ({
+                          ...prev,
+                          availability_days: prev.availability_days.includes(index)
+                            ? prev.availability_days.filter(value => value !== index)
+                            : [...prev.availability_days, index].sort(),
+                        }))}
+                      >
+                        {day}
+                      </SmallButton>
+                    ))}
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="From"><TextInput type="time" value={schedule.availability_start_time} onChange={event => setSchedule(prev => ({ ...prev, availability_start_time: event.target.value }))} /></Field>
+                    <Field label="Until"><TextInput type="time" value={schedule.availability_end_time} onChange={event => setSchedule(prev => ({ ...prev, availability_end_time: event.target.value }))} /></Field>
+                  </div>
+                </>
+              )}
+              {schedule.availability_mode === 'seasonal' && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Start date"><TextInput type="date" value={schedule.availability_start_date} onChange={event => setSchedule(prev => ({ ...prev, availability_start_date: event.target.value }))} /></Field>
+                  <Field label="End date"><TextInput type="date" value={schedule.availability_end_date} onChange={event => setSchedule(prev => ({ ...prev, availability_end_date: event.target.value }))} /></Field>
+                </div>
+              )}
+              <TextInput value={schedule.availability_notes} onChange={event => setSchedule(prev => ({ ...prev, availability_notes: event.target.value }))} placeholder="Notes (brunch only, seasonal...)" />
+              <SmallButton variant="primary" onClick={() => void saveSchedule()} disabled={busy}>Save availability</SmallButton>
+            </div>
+          </DetailCard>
+
+          <DetailCard title="Kitchen" hint={category?.routing_station_id ? `Category default: ${stationName(category.routing_station_id) || 'station'}` : 'No category default station set.'}>
+            <div className="space-y-3">
+              <Field label="Printer station">
+                <SelectInput
+                  value={item.routing_station_id || ''}
+                  onChange={event => void patchItem(item.id, { routing_station_id: event.target.value || null }, event.target.value ? 'Station override saved.' : 'Now inherits category station.')}
+                >
+                  <option value="">Inherit from category</option>
+                  {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
+                </SelectInput>
+              </Field>
+              <Field label="Course">
+                <SelectInput
+                  value={item.course_type || ''}
+                  onChange={event => void patchItem(item.id, { course_type: event.target.value || null })}
+                >
+                  {COURSE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </SelectInput>
+              </Field>
+              <Field label="Prep minutes">
+                <TextInput
+                  inputMode="numeric"
+                  defaultValue={item.prep_time_minutes == null ? '' : String(item.prep_time_minutes)}
+                  onBlur={event => {
+                    const raw = cleanDigits(event.target.value)
+                    const next = raw === '' ? null : Number(raw)
+                    if (next !== item.prep_time_minutes) void patchItem(item.id, { prep_time_minutes: next })
+                  }}
+                />
+              </Field>
+            </div>
+          </DetailCard>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default MenuItemDetail

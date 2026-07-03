@@ -106,6 +106,77 @@ export async function replaceGroupItems(groupId, itemIds) {
   if (error) throw error
 }
 
+export async function attachGroupToItem(groupId, itemId, displayOrder = 0) {
+  const { error } = await supabase
+    .from('menu_modifier_group_items')
+    .insert({ group_id: groupId, item_id: itemId, display_order: displayOrder })
+  if (error && error.code !== '23505') throw error // ignore already-attached
+}
+
+export async function detachGroupFromItem(groupId, itemId) {
+  const { error } = await supabase
+    .from('menu_modifier_group_items')
+    .delete()
+    .eq('group_id', groupId)
+    .eq('item_id', itemId)
+  if (error) throw error
+}
+
+// "Customize for this item only": deep-clone a question and its entire
+// follow-up chain, then move this item's link from the shared original to the
+// private copy. Other items keep the original untouched.
+export async function cloneGroupChainForItem(restaurantId, groups, groupId, itemId) {
+  const byId = Object.fromEntries(groups.map(group => [group.id, group]))
+  const cloneIds = {}
+
+  const cloneGroup = async (sourceId, seen) => {
+    if (cloneIds[sourceId]) return cloneIds[sourceId]
+    if (seen.has(sourceId)) return null // cycle in existing data — cut it
+    seen.add(sourceId)
+    const source = byId[sourceId]
+    if (!source) return null
+    const { data, error } = await supabase
+      .from('menu_modifier_groups')
+      .insert({
+        restaurant_id: restaurantId,
+        name: sourceId === groupId ? `${source.name} (custom)` : source.name,
+        min_selections: source.min_selections,
+        max_selections: source.max_selections,
+        is_required: source.is_required,
+        prompt_on_order: source.prompt_on_order,
+        display_order: source.display_order,
+        is_available: source.is_available,
+        included_count: source.included_count ?? 0,
+        overage_price: source.overage_price ?? null,
+      })
+      .select('*')
+      .single()
+    if (error) throw error
+    cloneIds[sourceId] = data.id
+    for (const option of source.options || []) {
+      const childCloneId = option.child_group_id ? await cloneGroup(option.child_group_id, seen) : null
+      const { error: optionError } = await supabase
+        .from('menu_modifier_group_options')
+        .insert({
+          group_id: data.id,
+          modifier_id: option.modifier_id,
+          is_default: option.is_default,
+          display_order: option.display_order,
+          overage_price: option.overage_price,
+          child_group_id: childCloneId,
+        })
+      if (optionError) throw optionError
+    }
+    return data.id
+  }
+
+  const newRootId = await cloneGroup(groupId, new Set())
+  if (!newRootId) throw new Error('Could not copy this question.')
+  await attachGroupToItem(newRootId, itemId)
+  await detachGroupFromItem(groupId, itemId)
+  return newRootId
+}
+
 export async function addGroupOption(groupId, modifierId, extra = {}) {
   const { error } = await supabase
     .from('menu_modifier_group_options')
