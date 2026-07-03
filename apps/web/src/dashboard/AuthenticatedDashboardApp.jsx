@@ -111,6 +111,7 @@ const TABS = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'setup', label: 'Edit Setup' },
   { id: 'menu', label: 'Menu' },
+  { id: 'devices', label: 'Devices' },
   { id: 'team', label: 'Team' },
   { id: 'scheduling', label: 'Scheduling' },
   { id: 'messaging', label: 'Messaging' },
