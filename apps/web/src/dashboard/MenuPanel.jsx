@@ -1230,7 +1230,7 @@ export function MenuPanel({ restaurantId }) {
                   <p className="mt-1 text-xs text-dash-tertiary">{hint}</p>
                   {rows.slice(0, 3).map(edge => (
                     <p key={`${edge.group.id}:${edge.option.modifier_id}:${edge.option.child_group_id}`} className="mt-2 truncate text-xs text-dash-primary">
-                      {edge.group.name} -> {edge.child?.name || 'Missing question'}
+                      {edge.group.name} &rarr; {edge.child?.name || 'Missing question'}
                     </p>
                   ))}
                   {rows.length > 3 && <p className="mt-2 text-xs text-dash-tertiary">+{rows.length - 3} more</p>}

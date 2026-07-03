@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import { existsSync } from 'fs'
 import { resolve } from 'path'
 
 // SPA fallback for the owner console.
@@ -58,6 +59,7 @@ function apiConfigLogger() {
 
 export default defineConfig(({ mode }) => {
   const rootEnvDir = resolve(__dirname, '../..')
+  const bookEntry = resolve(__dirname, 'book/index.html')
   const env = loadEnv(mode, rootEnvDir, '')
   const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL || ''
   const supabasePublishableKey =
@@ -81,7 +83,7 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           main: resolve(__dirname, 'index.html'),
-          book: resolve(__dirname, 'book/index.html'),
+          ...(existsSync(bookEntry) ? { book: bookEntry } : {}),
         },
       },
     },
