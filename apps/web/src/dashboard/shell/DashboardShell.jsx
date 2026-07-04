@@ -11,6 +11,7 @@ import {
   LayoutGrid,
   MapPin,
   MessageSquare,
+  MessageSquareWarning,
   Monitor,
   Moon,
   PanelLeftClose,
@@ -93,6 +94,24 @@ export function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
     prefetch(queryKeys.menuItems(restaurantId), api(`/restaurants/${restaurantId}/menu/items`), STALE_TIMES.setup)
     prefetch(queryKeys.menuCategories(restaurantId), api(`/restaurants/${restaurantId}/menu/categories`), STALE_TIMES.setup)
     prefetch(queryKeys.kitchenRouting(restaurantId), api(`/restaurants/${restaurantId}/kitchen-routing`), STALE_TIMES.setup)
+  } else if (tabId === 'feedback') {
+    const reservationsBaseUrl = (
+      import.meta.env.VITE_RESERVATIONS_API_BASE_URL ||
+      import.meta.env.VITE_RESERVATIONS_API_BASE ||
+      'http://localhost:4100/api/v1'
+    ).replace(/\/+$/, '')
+    prefetch(
+      queryKeys.guestFeedback(restaurantId, 'all'),
+      async () => {
+        const { data: sessionData } = await supabase.auth.getSession()
+        const headers = new Headers({ 'Content-Type': 'application/json' })
+        if (sessionData?.session?.access_token) headers.set('Authorization', `Bearer ${sessionData.session.access_token}`)
+        const response = await fetch(`${reservationsBaseUrl}/locations/${restaurantId}/guest-feedback?status=all`, { headers })
+        if (!response.ok) throw new Error('Could not load guest feedback')
+        return response.json()
+      },
+      STALE_TIMES.messaging
+    )
   }
 }
 
@@ -115,6 +134,7 @@ const STORE_NAV = [
   { id: 'analytics', label: 'Home', icon: Home },
   { id: 'setup', label: 'Setup', icon: Wrench },
   { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
+  { id: 'feedback', label: 'Complaints', icon: MessageSquareWarning },
   { id: 'devices', label: 'Devices', icon: Monitor },
   { id: 'team', label: 'Team', icon: Users },
   { id: 'scheduling', label: 'Scheduling', icon: CalendarClock },
