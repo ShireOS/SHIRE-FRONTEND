@@ -9,6 +9,14 @@ export function getApiBaseUrl() {
   return value.replace(/\/+$/, '');
 }
 
+export function getReservationsApiBaseUrl() {
+  const value = Constants.expoConfig?.extra?.reservationsApiBaseUrl || Constants.expoConfig?.extra?.apiBaseUrl;
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error('RESERVATIONS_API_BASE_URL or API_BASE_URL is not configured for the mobile app.');
+  }
+  return value.replace(/\/+$/, '');
+}
+
 type ApiAuthMode = 'supabase' | 'none';
 
 type ApiRequestOptions = {
@@ -35,6 +43,14 @@ async function resolveAuthorization(auth: ApiAuthMode) {
 }
 
 export async function apiRequest<T>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
+  return apiRequestFromBase<T>(getApiBaseUrl(), endpoint, options);
+}
+
+export async function reservationsApiRequest<T>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
+  return apiRequestFromBase<T>(getReservationsApiBaseUrl(), endpoint, options);
+}
+
+async function apiRequestFromBase<T>(baseUrl: string, endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
   const authorization = await resolveAuthorization(options.auth ?? 'supabase');
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -45,7 +61,7 @@ export async function apiRequest<T>(endpoint: string, options: ApiRequestOptions
     headers['Content-Type'] = 'application/json';
   }
 
-  const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+  const response = await fetch(`${baseUrl}${endpoint}`, {
     method: options.method ?? 'GET',
     headers,
     body: options.body === undefined

@@ -101,6 +101,11 @@ export interface OnboardingData {
   reservation_staff_booking_horizon_days: string
   reservation_staff_lead_time_minutes: string
   reservation_staff_grace_period_minutes: string
+  reservation_slot_interval_minutes: string
+  reservation_min_party_size: string
+  reservation_max_party_size: string
+  reservation_default_duration_minutes: string
+  reservation_windows_follow_operating_hours: boolean
 
   // Step 14: Capacity
   seating_capacity: number | null
@@ -573,6 +578,11 @@ const INITIAL_DATA: OnboardingData = {
   reservation_staff_booking_horizon_days: '30',
   reservation_staff_lead_time_minutes: '120',
   reservation_staff_grace_period_minutes: '15',
+  reservation_slot_interval_minutes: '15',
+  reservation_min_party_size: '1',
+  reservation_max_party_size: '10',
+  reservation_default_duration_minutes: '90',
+  reservation_windows_follow_operating_hours: true,
 
   seating_capacity: null,
   table_count: null,
@@ -640,6 +650,12 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const asString = (value: unknown, fallback = ''): string =>
   typeof value === 'string' ? value : fallback
+
+const asConfigString = (value: unknown, fallback = ''): string => {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return fallback
+}
 
 const asNullableString = (value: unknown): string | null => {
   if (typeof value !== 'string') return null
@@ -1202,6 +1218,14 @@ const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): On
     reservation_staff_booking_horizon_days: asString(input.reservation_staff_booking_horizon_days, INITIAL_DATA.reservation_staff_booking_horizon_days),
     reservation_staff_lead_time_minutes: asString(input.reservation_staff_lead_time_minutes, INITIAL_DATA.reservation_staff_lead_time_minutes),
     reservation_staff_grace_period_minutes: asString(input.reservation_staff_grace_period_minutes, INITIAL_DATA.reservation_staff_grace_period_minutes),
+    reservation_slot_interval_minutes: asString(input.reservation_slot_interval_minutes, INITIAL_DATA.reservation_slot_interval_minutes),
+    reservation_min_party_size: asString(input.reservation_min_party_size, INITIAL_DATA.reservation_min_party_size),
+    reservation_max_party_size: asString(input.reservation_max_party_size, INITIAL_DATA.reservation_max_party_size),
+    reservation_default_duration_minutes: asString(input.reservation_default_duration_minutes, INITIAL_DATA.reservation_default_duration_minutes),
+    reservation_windows_follow_operating_hours:
+      typeof input.reservation_windows_follow_operating_hours === 'boolean'
+        ? input.reservation_windows_follow_operating_hours
+        : INITIAL_DATA.reservation_windows_follow_operating_hours,
     seating_capacity: asNullableNumber(input.seating_capacity),
     table_count: asNullableNumber(input.table_count),
     sections,
@@ -1299,6 +1323,14 @@ const parseConfig = (value: unknown): Partial<OnboardingData> => {
     reservation_staff_booking_horizon_days: asString(value.reservation_staff_booking_horizon_days, INITIAL_DATA.reservation_staff_booking_horizon_days),
     reservation_staff_lead_time_minutes: asString(value.reservation_staff_lead_time_minutes, INITIAL_DATA.reservation_staff_lead_time_minutes),
     reservation_staff_grace_period_minutes: asString(value.reservation_staff_grace_period_minutes, INITIAL_DATA.reservation_staff_grace_period_minutes),
+    reservation_slot_interval_minutes: asString(value.reservation_slot_interval_minutes, INITIAL_DATA.reservation_slot_interval_minutes),
+    reservation_min_party_size: asString(value.reservation_min_party_size, INITIAL_DATA.reservation_min_party_size),
+    reservation_max_party_size: asString(value.reservation_max_party_size, INITIAL_DATA.reservation_max_party_size),
+    reservation_default_duration_minutes: asString(value.reservation_default_duration_minutes, INITIAL_DATA.reservation_default_duration_minutes),
+    reservation_windows_follow_operating_hours:
+      typeof value.reservation_windows_follow_operating_hours === 'boolean'
+        ? value.reservation_windows_follow_operating_hours
+        : undefined,
     menu_import_method: asMenuImportMethod(value.menu_import_method),
     team_setup_method: asTeamSetupMethod(value.team_setup_method),
     invites: asInvites(value.invites),
@@ -1321,6 +1353,11 @@ const clampInteger = (value: string, fallback: number, min: number, max: number)
 }
 
 const reservationTimingPatch = (data: OnboardingData) => {
+  const slotIntervalMinutes = clampInteger(data.reservation_slot_interval_minutes, 15, 5, 180)
+  const minPartySize = clampInteger(data.reservation_min_party_size, 1, 1, 99)
+  const requestedMaxPartySize = clampInteger(data.reservation_max_party_size, 10, 1, 99)
+  const maxPartySize = Math.max(minPartySize, requestedMaxPartySize)
+  const defaultDurationMinutes = clampInteger(data.reservation_default_duration_minutes, 90, 15, 240)
   const online = {
     bookingHorizonDays: clampInteger(data.reservation_online_booking_horizon_days, 30, 0, 365),
     leadTimeMinutes: clampInteger(data.reservation_online_lead_time_minutes, 120, 0, 10080),
@@ -1342,8 +1379,72 @@ const reservationTimingPatch = (data: OnboardingData) => {
     reservation_staff_booking_horizon_days: String(staff.bookingHorizonDays),
     reservation_staff_lead_time_minutes: String(staff.leadTimeMinutes),
     reservation_staff_grace_period_minutes: String(staff.gracePeriodMinutes),
+    reservation_slot_interval_minutes: String(slotIntervalMinutes),
+    reservation_min_party_size: String(minPartySize),
+    reservation_max_party_size: String(maxPartySize),
+    reservation_default_duration_minutes: String(defaultDurationMinutes),
+    reservation_windows_follow_operating_hours: data.reservation_windows_follow_operating_hours,
     timingPolicies: { online, staff },
   }
+}
+
+const reservationDayOfWeek = (operatingDayOfWeek: number): number => (Number(operatingDayOfWeek) + 6) % 7
+
+const servicePeriodsFromOperatingHours = (
+  data: OnboardingData,
+  existingPeriods: Record<string, unknown>[] = []
+): Record<string, unknown>[] => {
+  const patch = reservationTimingPatch(data)
+  const existingByDay = new Map(
+    existingPeriods
+      .filter(period => typeof period.dayOfWeek === 'number')
+      .map(period => [Number(period.dayOfWeek), period])
+  )
+  return data.operating_hours.map(hours => {
+    const dayOfWeek = reservationDayOfWeek(hours.day_of_week)
+    const existing = existingByDay.get(dayOfWeek)
+    return {
+      id: typeof existing?.id === 'string' ? existing.id : undefined,
+      name: dayOfWeek >= 4 ? 'Weekend Reservations' : 'Reservations',
+      dayOfWeek,
+      startTime: `${hours.open_time}:00`,
+      endTime: `${hours.close_time}:00`,
+      slotIntervalMinutes: Number(patch.reservation_slot_interval_minutes),
+      leadTimeMinutes: Number(patch.reservation_staff_lead_time_minutes),
+      minPartySize: Number(patch.reservation_min_party_size),
+      maxPartySize: Number(patch.reservation_max_party_size),
+      defaultDurationMinutes: Number(patch.reservation_default_duration_minutes),
+      active: !hours.is_closed,
+    }
+  })
+}
+
+const applyReservationPeriodDefaults = (
+  periods: Record<string, unknown>[],
+  data: OnboardingData
+): Record<string, unknown>[] => {
+  const patch = reservationTimingPatch(data)
+  return periods.map(period => ({
+    ...period,
+    slotIntervalMinutes: Number(patch.reservation_slot_interval_minutes),
+    minPartySize: Number(patch.reservation_min_party_size),
+    maxPartySize: Number(patch.reservation_max_party_size),
+    defaultDurationMinutes: Number(patch.reservation_default_duration_minutes),
+  }))
+}
+
+const numericValues = (records: Record<string, unknown>[], field: string): number[] =>
+  records
+    .map(record => Number(record[field]))
+    .filter(Number.isFinite)
+
+const firstNumericValue = (
+  records: Record<string, unknown>[],
+  field: string,
+  fallback: string
+): string => {
+  const value = numericValues(records, field)[0]
+  return Number.isFinite(value) ? String(value) : fallback
 }
 
 const fetchReservationSettings = async (restaurantId: string): Promise<Record<string, unknown> | null> => {
@@ -1361,6 +1462,15 @@ const fetchReservationSettings = async (restaurantId: string): Promise<Record<st
 
 const saveReservationSettings = async (restaurantId: string, data: OnboardingData): Promise<void> => {
   const patch = reservationTimingPatch(data)
+  const currentSettings = await fetchReservationSettings(restaurantId)
+  const existingPeriods = Array.isArray(currentSettings?.servicePeriods)
+    ? currentSettings.servicePeriods.filter(isRecord)
+    : []
+  const servicePeriods = data.reservation_windows_follow_operating_hours
+    ? servicePeriodsFromOperatingHours(data, existingPeriods)
+    : existingPeriods.length > 0
+      ? applyReservationPeriodDefaults(existingPeriods, data)
+      : servicePeriodsFromOperatingHours(data, existingPeriods)
   const headers = await getApiHeaders()
   const response = await fetch(`${RESERVATIONS_API_BASE_URL}/locations/${restaurantId}/reservation-settings`, {
     method: 'PUT',
@@ -1368,6 +1478,8 @@ const saveReservationSettings = async (restaurantId: string, data: OnboardingDat
     body: JSON.stringify({
       bookingHorizonDays: Number(patch.reservation_online_booking_horizon_days),
       gracePeriodMinutes: Number(patch.reservation_online_grace_period_minutes),
+      defaultSlotIntervalMinutes: Number(patch.reservation_slot_interval_minutes),
+      servicePeriods,
       timingPolicies: patch.timingPolicies,
     }),
   })
@@ -1379,22 +1491,31 @@ const saveReservationSettings = async (restaurantId: string, data: OnboardingDat
 
 const reservationTimingFromSettings = (settings: Record<string, unknown> | null): Partial<OnboardingData> => {
   if (!settings) return {}
+  const servicePeriods = Array.isArray(settings.servicePeriods)
+    ? settings.servicePeriods.filter(isRecord)
+    : []
+  const minPartyValues = numericValues(servicePeriods, 'minPartySize')
+  const maxPartyValues = numericValues(servicePeriods, 'maxPartySize')
   const timingPolicies = isRecord(settings.timingPolicies) ? settings.timingPolicies : {}
   const online = isRecord(timingPolicies.online) ? timingPolicies.online : {}
   const staff = isRecord(timingPolicies.staff) ? timingPolicies.staff : {}
   const onlinePatch = {
-    reservation_online_booking_horizon_days: asString(online.bookingHorizonDays, asString(settings.bookingHorizonDays, INITIAL_DATA.reservation_online_booking_horizon_days)),
-    reservation_online_lead_time_minutes: asString(online.leadTimeMinutes, INITIAL_DATA.reservation_online_lead_time_minutes),
-    reservation_online_grace_period_minutes: asString(online.gracePeriodMinutes, asString(settings.gracePeriodMinutes, INITIAL_DATA.reservation_online_grace_period_minutes)),
+    reservation_online_booking_horizon_days: asConfigString(online.bookingHorizonDays, asConfigString(settings.bookingHorizonDays, INITIAL_DATA.reservation_online_booking_horizon_days)),
+    reservation_online_lead_time_minutes: asConfigString(online.leadTimeMinutes, INITIAL_DATA.reservation_online_lead_time_minutes),
+    reservation_online_grace_period_minutes: asConfigString(online.gracePeriodMinutes, asConfigString(settings.gracePeriodMinutes, INITIAL_DATA.reservation_online_grace_period_minutes)),
   }
   const staffPatch = {
-    reservation_staff_booking_horizon_days: asString(staff.bookingHorizonDays, onlinePatch.reservation_online_booking_horizon_days),
-    reservation_staff_lead_time_minutes: asString(staff.leadTimeMinutes, onlinePatch.reservation_online_lead_time_minutes),
-    reservation_staff_grace_period_minutes: asString(staff.gracePeriodMinutes, onlinePatch.reservation_online_grace_period_minutes),
+    reservation_staff_booking_horizon_days: asConfigString(staff.bookingHorizonDays, onlinePatch.reservation_online_booking_horizon_days),
+    reservation_staff_lead_time_minutes: asConfigString(staff.leadTimeMinutes, onlinePatch.reservation_online_lead_time_minutes),
+    reservation_staff_grace_period_minutes: asConfigString(staff.gracePeriodMinutes, onlinePatch.reservation_online_grace_period_minutes),
   }
   return {
     ...onlinePatch,
     ...staffPatch,
+    reservation_slot_interval_minutes: asConfigString(settings.defaultSlotIntervalMinutes, INITIAL_DATA.reservation_slot_interval_minutes),
+    reservation_min_party_size: minPartyValues.length ? String(Math.min(...minPartyValues)) : INITIAL_DATA.reservation_min_party_size,
+    reservation_max_party_size: maxPartyValues.length ? String(Math.max(...maxPartyValues)) : INITIAL_DATA.reservation_max_party_size,
+    reservation_default_duration_minutes: firstNumericValue(servicePeriods, 'defaultDurationMinutes', INITIAL_DATA.reservation_default_duration_minutes),
     reservation_timing_same_for_channels:
       onlinePatch.reservation_online_booking_horizon_days === staffPatch.reservation_staff_booking_horizon_days &&
       onlinePatch.reservation_online_lead_time_minutes === staffPatch.reservation_staff_lead_time_minutes &&
@@ -2657,6 +2778,11 @@ export function useOnboarding() {
                 reservation_staff_booking_horizon_days: timing.reservation_staff_booking_horizon_days,
                 reservation_staff_lead_time_minutes: timing.reservation_staff_lead_time_minutes,
                 reservation_staff_grace_period_minutes: timing.reservation_staff_grace_period_minutes,
+                reservation_slot_interval_minutes: timing.reservation_slot_interval_minutes,
+                reservation_min_party_size: timing.reservation_min_party_size,
+                reservation_max_party_size: timing.reservation_max_party_size,
+                reservation_default_duration_minutes: timing.reservation_default_duration_minutes,
+                reservation_windows_follow_operating_hours: timing.reservation_windows_follow_operating_hours,
               },
               ...onboardingProgressPatch(15),
             })
@@ -2674,6 +2800,11 @@ export function useOnboarding() {
         reservation_staff_booking_horizon_days: timing.reservation_staff_booking_horizon_days,
         reservation_staff_lead_time_minutes: timing.reservation_staff_lead_time_minutes,
         reservation_staff_grace_period_minutes: timing.reservation_staff_grace_period_minutes,
+        reservation_slot_interval_minutes: timing.reservation_slot_interval_minutes,
+        reservation_min_party_size: timing.reservation_min_party_size,
+        reservation_max_party_size: timing.reservation_max_party_size,
+        reservation_default_duration_minutes: timing.reservation_default_duration_minutes,
+        reservation_windows_follow_operating_hours: timing.reservation_windows_follow_operating_hours,
       }))
       setRestaurantId(activeRestaurantId)
     } catch (err) {
@@ -2868,6 +2999,11 @@ export function useOnboarding() {
                 reservation_staff_booking_horizon_days: timing.reservation_staff_booking_horizon_days,
                 reservation_staff_lead_time_minutes: timing.reservation_staff_lead_time_minutes,
                 reservation_staff_grace_period_minutes: timing.reservation_staff_grace_period_minutes,
+                reservation_slot_interval_minutes: timing.reservation_slot_interval_minutes,
+                reservation_min_party_size: timing.reservation_min_party_size,
+                reservation_max_party_size: timing.reservation_max_party_size,
+                reservation_default_duration_minutes: timing.reservation_default_duration_minutes,
+                reservation_windows_follow_operating_hours: timing.reservation_windows_follow_operating_hours,
               },
               ...(isSetupEditor
                 ? {}

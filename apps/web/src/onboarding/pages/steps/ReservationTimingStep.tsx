@@ -11,6 +11,10 @@ type TimingField =
   | 'reservation_staff_booking_horizon_days'
   | 'reservation_staff_lead_time_minutes'
   | 'reservation_staff_grace_period_minutes'
+  | 'reservation_slot_interval_minutes'
+  | 'reservation_min_party_size'
+  | 'reservation_max_party_size'
+  | 'reservation_default_duration_minutes'
 
 function TimingInput({
   label,
@@ -118,6 +122,63 @@ export function ReservationTimingStep({ onboarding }: ReservationTimingStepProps
           </div>
         </div>
       </div>
+
+      <section className="p-6 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] space-y-5">
+        <div>
+          <p className="label-mono text-[rgb(var(--gold))] tracking-[0.12em]">SLOTS & PARTIES</p>
+          <p className="mt-1 text-sm text-[rgb(var(--text-secondary))]">
+            These shape the bookable reservation windows hosts and guests can choose.
+          </p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-4">
+          <TimingInput
+            label="Slot spacing"
+            value={data.reservation_slot_interval_minutes}
+            suffix="minutes"
+            min={5}
+            max={180}
+            onChange={(value) => setTiming('reservation_slot_interval_minutes', value)}
+          />
+          <TimingInput
+            label="Min party"
+            value={data.reservation_min_party_size}
+            suffix="guests"
+            min={1}
+            max={99}
+            onChange={(value) => setTiming('reservation_min_party_size', value)}
+          />
+          <TimingInput
+            label="Max party"
+            value={data.reservation_max_party_size}
+            suffix="guests"
+            min={1}
+            max={99}
+            onChange={(value) => setTiming('reservation_max_party_size', value)}
+          />
+          <TimingInput
+            label="Turn time"
+            value={data.reservation_default_duration_minutes}
+            suffix="minutes"
+            min={15}
+            max={240}
+            onChange={(value) => setTiming('reservation_default_duration_minutes', value)}
+          />
+        </div>
+        <label className="flex items-start gap-3 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-4">
+          <input
+            type="checkbox"
+            checked={data.reservation_windows_follow_operating_hours}
+            onChange={(event) => updateData({ reservation_windows_follow_operating_hours: event.target.checked })}
+            className="mt-1 h-4 w-4 rounded border-[rgba(255,255,255,0.2)] bg-[rgba(255,255,255,0.05)] text-[rgb(var(--gold))] focus:ring-[rgba(212,168,84,0.5)] focus:ring-offset-0"
+          />
+          <span>
+            <span className="block text-sm font-medium text-[rgb(var(--text-primary))]">Use operating hours as reservation windows</span>
+            <span className="mt-1 block text-sm leading-6 text-[rgb(var(--text-secondary))]">
+              Closed days stay closed, and open/close times from the hours step become the reservation service periods.
+            </span>
+          </span>
+        </label>
+      </section>
 
       <section className="p-6 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] space-y-5">
         <div>

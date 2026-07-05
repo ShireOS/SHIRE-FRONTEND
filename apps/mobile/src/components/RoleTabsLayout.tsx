@@ -31,6 +31,12 @@ const OWNER_TABS: RoleTab[] = [
     sfSymbol: 'fork.knife',
   },
   {
+    name: 'feedback',
+    title: 'Complaints',
+    androidIcon: 'alert-circle',
+    sfSymbol: { default: 'exclamationmark.bubble', selected: 'exclamationmark.bubble.fill' },
+  },
+  {
     name: 'schedule',
     title: 'Schedule',
     androidIcon: 'calendar',

@@ -116,6 +116,7 @@ const TABS = [
   { id: 'devices', label: 'Devices' },
   { id: 'pos-settings', label: 'POS Settings' },
   { id: 'tip-pooling', label: 'Tip Pooling' },
+  { id: 'feedback', label: 'Complaints' },
   { id: 'team', label: 'Team' },
   { id: 'scheduling', label: 'Scheduling' },
   { id: 'messaging', label: 'Messaging' },
@@ -168,6 +169,164 @@ function PlaceholderPanel({ title, eyebrow, children }) {
       <p className="label-mono">{eyebrow}</p>
       <h2 className="text-3xl font-semibold tracking-tight">{title}</h2>
       <div className="mt-4 max-w-3xl text-dash-secondary">{children}</div>
+    </section>
+  )
+}
+
+const RESERVATIONS_API_BASE_URL = (
+  import.meta.env.VITE_RESERVATIONS_API_BASE_URL ||
+  import.meta.env.VITE_RESERVATIONS_API_BASE ||
+  'http://localhost:4100/api/v1'
+).replace(/\/+$/, '')
+
+async function fetchReservationsApi(endpoint, options = {}) {
+  const { data: sessionData } = await supabase.auth.getSession()
+  const headers = new Headers(options.headers || {})
+  if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
+  if (sessionData?.session?.access_token) headers.set('Authorization', `Bearer ${sessionData.session.access_token}`)
+  const response = await fetch(`${RESERVATIONS_API_BASE_URL}${endpoint}`, {
+    ...options,
+    headers,
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(body.message || body.detail || `Request failed (${response.status})`)
+  }
+  return response.json()
+}
+
+const feedbackStatusOptions = [
+  { id: 'all', label: 'All' },
+  { id: 'open', label: 'Open' },
+  { id: 'reviewed', label: 'Reviewed' },
+  { id: 'resolved', label: 'Resolved' },
+]
+
+const feedbackTone = {
+  high: 'border-red-400/30 bg-red-500/10 text-red-200',
+  medium: 'border-amber-300/30 bg-amber-400/10 text-amber-100',
+  low: 'border-emerald-300/30 bg-emerald-400/10 text-emerald-100',
+}
+
+function formatFeedbackCategory(value) {
+  return String(value || 'other').replace(/_/g, ' ')
+}
+
+function GuestFeedbackPanel({ restaurantId }) {
+  const [status, setStatus] = useState('open')
+  const [updatingId, setUpdatingId] = useState(null)
+  const feedbackQuery = useQuery({
+    queryKey: queryKeys.guestFeedback(restaurantId, status),
+    queryFn: () => fetchReservationsApi(`/locations/${restaurantId}/guest-feedback?status=${encodeURIComponent(status)}`),
+    placeholderData: keepPreviousData,
+    staleTime: STALE_TIMES.messaging,
+  })
+  const feedback = feedbackQuery.data?.feedback || []
+
+  const setFeedbackStatus = async (feedbackId, nextStatus) => {
+    setUpdatingId(feedbackId)
+    try {
+      await fetchReservationsApi(`/locations/${restaurantId}/guest-feedback/${feedbackId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: nextStatus }),
+      })
+      await queryClient.invalidateQueries({ queryKey: ['restaurant', restaurantId, 'guest-feedback'] })
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  return (
+    <section className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-white/10 pb-4">
+        <div>
+          <p className="label-mono">Guest feedback</p>
+          <h1 className="text-3xl font-semibold tracking-tight">Complaints</h1>
+        </div>
+        <div className="flex rounded-xl border border-white/10 bg-white/[0.03] p-1">
+          {feedbackStatusOptions.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => setStatus(option.id)}
+              className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                status === option.id
+                  ? 'bg-white text-black'
+                  : 'text-dash-secondary hover:bg-white/10 hover:text-dash-cream'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {feedbackQuery.isLoading && (
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 text-dash-secondary">
+          Loading feedback...
+        </div>
+      )}
+      {feedbackQuery.error && (
+        <div className="rounded-xl border border-red-400/20 bg-red-500/10 p-5 text-red-200">
+          {feedbackQuery.error.message || 'Could not load feedback.'}
+        </div>
+      )}
+      {!feedbackQuery.isLoading && !feedbackQuery.error && feedback.length === 0 && (
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5 text-dash-secondary">
+          No guest feedback in this view.
+        </div>
+      )}
+
+      <div className="grid gap-3">
+        {feedback.map((item) => (
+          <article key={item.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${feedbackTone[item.severity] || feedbackTone.medium}`}>
+                    {item.severity}
+                  </span>
+                  <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-semibold capitalize text-dash-secondary">
+                    {formatFeedbackCategory(item.category)}
+                  </span>
+                  <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-semibold capitalize text-dash-secondary">
+                    {item.status}
+                  </span>
+                </div>
+                <h2 className="mt-3 text-xl font-semibold text-dash-cream">{item.summary}</h2>
+                {item.details && <p className="mt-2 max-w-3xl text-sm leading-6 text-dash-secondary">{item.details}</p>}
+                <p className="mt-3 text-xs text-dash-tertiary">
+                  {[item.guestName, item.guestPhone, item.source, item.createdAt ? new Date(item.createdAt).toLocaleString() : null]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                {item.status === 'open' && (
+                  <button
+                    type="button"
+                    disabled={updatingId === item.id}
+                    onClick={() => setFeedbackStatus(item.id, 'reviewed')}
+                    className="rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-dash-secondary transition hover:border-shell-accent/40 hover:text-dash-cream disabled:opacity-50"
+                  >
+                    Review
+                  </button>
+                )}
+                {item.status !== 'resolved' && (
+                  <button
+                    type="button"
+                    disabled={updatingId === item.id}
+                    onClick={() => setFeedbackStatus(item.id, 'resolved')}
+                    className="rounded-xl bg-white px-3 py-2 text-sm font-semibold text-black transition hover:bg-shell-accent disabled:opacity-50"
+                  >
+                    Resolve
+                  </button>
+                )}
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
     </section>
   )
 }
@@ -4350,6 +4509,7 @@ function RestaurantWorkspace() {
           </>
         )}
         {activeTab === 'menu' && <MenuPanel restaurantId={restaurantId} />}
+        {activeTab === 'feedback' && <GuestFeedbackPanel restaurantId={restaurantId} />}
         {activeTab === 'team' && <TeamPage restaurantId={restaurantId} />}
         {activeTab === 'devices' && <StoreDevicesPanel restaurantId={restaurantId} />}
         {activeTab === 'pos-settings' && <PosSettingsPage restaurantId={restaurantId} />}
@@ -4370,6 +4530,7 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   analytics: 'Overview',
   setup: 'Setup',
   menu: 'Menu',
+  feedback: 'Complaints',
   team: 'Team',
   devices: 'Devices',
   'pos-settings': 'POS Settings',
