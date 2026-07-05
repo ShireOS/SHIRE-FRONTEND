@@ -27,6 +27,7 @@ import RateApprovalBanner from './pages/RateApprovalBanner'
 import ResellerAccessCard from './pages/ResellerAccessCard'
 import OverviewPage from './pages/OverviewPage'
 import SettingsPage from './pages/SettingsPage'
+import PosSettingsPage from './pages/PosSettingsPage'
 import TeamPage from './pages/TeamPage'
 import ClaimStorePage from './pages/ClaimStorePage'
 import DevicesPage from './pages/DevicesPage'
@@ -4348,6 +4349,7 @@ function RestaurantWorkspace() {
         {activeTab === 'menu' && <MenuPanel restaurantId={restaurantId} />}
         {activeTab === 'team' && <TeamPage restaurantId={restaurantId} />}
         {activeTab === 'devices' && <StoreDevicesPanel restaurantId={restaurantId} />}
+        {activeTab === 'pos-settings' && <PosSettingsPage restaurantId={restaurantId} />}
         {activeTab === 'scheduling' && <SchedulingPanel restaurantId={restaurantId} />}
         {activeTab === 'messaging' && <ManagerMessagingPanel restaurantId={restaurantId} />}
         {activeTab === 'payments' && (
@@ -4366,6 +4368,7 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   menu: 'Menu',
   team: 'Team',
   devices: 'Devices',
+  'pos-settings': 'POS Settings',
   scheduling: 'Scheduling',
   messaging: 'Messaging',
   payments: 'Payments / Plan',
