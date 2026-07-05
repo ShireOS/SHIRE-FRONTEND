@@ -117,6 +117,7 @@ const STORE_NAV = [
   { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
   { id: 'devices', label: 'Devices', icon: Monitor },
   { id: 'pos-settings', label: 'POS Settings', icon: Settings },
+  { id: 'tip-pooling', label: 'Tip Pooling', icon: Percent },
   { id: 'team', label: 'Team', icon: Users },
   { id: 'scheduling', label: 'Scheduling', icon: CalendarClock },
   { id: 'messaging', label: 'Messaging', icon: MessageSquare },

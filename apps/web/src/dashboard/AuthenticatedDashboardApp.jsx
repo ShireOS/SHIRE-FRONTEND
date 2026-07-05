@@ -28,6 +28,7 @@ import ResellerAccessCard from './pages/ResellerAccessCard'
 import OverviewPage from './pages/OverviewPage'
 import SettingsPage from './pages/SettingsPage'
 import PosSettingsPage from './pages/PosSettingsPage'
+import TipPoolingPage from './pages/TipPoolingPage'
 import TeamPage from './pages/TeamPage'
 import ClaimStorePage from './pages/ClaimStorePage'
 import DevicesPage from './pages/DevicesPage'
@@ -113,6 +114,7 @@ const TABS = [
   { id: 'setup', label: 'Edit Setup' },
   { id: 'menu', label: 'Menu' },
   { id: 'devices', label: 'Devices' },
+  { id: 'pos-settings', label: 'POS Settings' },
   { id: 'team', label: 'Team' },
   { id: 'scheduling', label: 'Scheduling' },
   { id: 'messaging', label: 'Messaging' },
@@ -4350,6 +4352,7 @@ function RestaurantWorkspace() {
         {activeTab === 'team' && <TeamPage restaurantId={restaurantId} />}
         {activeTab === 'devices' && <StoreDevicesPanel restaurantId={restaurantId} />}
         {activeTab === 'pos-settings' && <PosSettingsPage restaurantId={restaurantId} />}
+        {activeTab === 'tip-pooling' && <TipPoolingPage restaurantId={restaurantId} />}
         {activeTab === 'scheduling' && <SchedulingPanel restaurantId={restaurantId} />}
         {activeTab === 'messaging' && <ManagerMessagingPanel restaurantId={restaurantId} />}
         {activeTab === 'payments' && (
@@ -4369,6 +4372,7 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   team: 'Team',
   devices: 'Devices',
   'pos-settings': 'POS Settings',
+  'tip-pooling': 'Tip Pooling',
   scheduling: 'Scheduling',
   messaging: 'Messaging',
   payments: 'Payments / Plan',
