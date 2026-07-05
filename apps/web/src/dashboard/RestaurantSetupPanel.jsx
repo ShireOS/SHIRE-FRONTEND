@@ -1109,6 +1109,7 @@ function defaultTipPayrollSettings(jobCodes = []) {
       contributes_to_pool: Boolean(role.is_tipped),
       receives_from_pool: Boolean(role.is_tipped),
       pool_points: role.is_tipped ? '1' : '',
+      tipouts: [],
       tipout_percent: '',
       tipout_target_role: '',
       notes: '',
@@ -1138,14 +1139,32 @@ function normalizeTipRoleRules(rows, jobCodes) {
   const byRole = new Map()
   ;(Array.isArray(rows) ? rows : []).forEach(row => {
     const roleKey = slugRoleCode(row?.role_key)
+    // Granular tipouts: percent of a basis (tips or sales), always paid out of
+    // the role's tips. A legacy single tipout_percent/target pair migrates
+    // into the list so the editor only has to render one shape.
+    let tipouts = (Array.isArray(row?.tipouts) ? row.tipouts : [])
+      .filter(item => item && item.target_role)
+      .map(item => ({
+        target_role: slugRoleCode(item.target_role),
+        percent: item.percent == null ? '' : sanitizeNumber(item.percent),
+        basis: item.basis === 'sales' ? 'sales' : 'tips',
+      }))
+    if (!tipouts.length && row?.tipout_percent != null && row?.tipout_target_role) {
+      tipouts = [{
+        target_role: slugRoleCode(row.tipout_target_role),
+        percent: sanitizeNumber(row.tipout_percent),
+        basis: 'tips',
+      }]
+    }
     byRole.set(roleKey, {
       role_key: roleKey,
       tip_eligible: row?.tip_eligible !== false,
       contributes_to_pool: row?.contributes_to_pool !== false,
       receives_from_pool: row?.receives_from_pool !== false,
       pool_points: row?.pool_points == null ? '' : sanitizeNumber(row.pool_points),
-      tipout_percent: row?.tipout_percent == null ? '' : sanitizeNumber(row.tipout_percent),
-      tipout_target_role: row?.tipout_target_role || '',
+      tipouts,
+      tipout_percent: '',
+      tipout_target_role: '',
       notes: row?.notes || '',
     })
   })
@@ -1409,6 +1428,13 @@ function tipPayrollPayload(settings, jobCodes) {
     role_tip_rules: normalized.role_tip_rules.map(rule => ({
       ...rule,
       pool_points: rule.pool_points === '' ? null : Number(rule.pool_points),
+      tipouts: (rule.tipouts || [])
+        .filter(item => item.target_role && item.percent !== '' && Number(item.percent) > 0)
+        .map(item => ({
+          target_role: item.target_role,
+          percent: Number(item.percent),
+          basis: item.basis === 'sales' ? 'sales' : 'tips',
+        })),
       tipout_percent: rule.tipout_percent === '' ? null : Number(rule.tipout_percent),
       tipout_target_role: rule.tipout_target_role || null,
       notes: rule.notes || null,
@@ -3301,11 +3327,60 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                     </div>
                     <div className="grid gap-3 md:grid-cols-3">
                       <TextInput value={rule.pool_points} inputMode="decimal" onChange={event => updateTipRoleRule(index, { pool_points: sanitizeNumber(event.target.value).slice(0, 6) })} placeholder="Pool points" />
-                      <TextInput value={rule.tipout_percent} inputMode="decimal" onChange={event => updateTipRoleRule(index, { tipout_percent: sanitizeNumber(event.target.value).slice(0, 6) })} placeholder="Tipout %" />
-                      <SelectInput value={rule.tipout_target_role} onChange={event => updateTipRoleRule(index, { tipout_target_role: event.target.value })}>
-                        <option value="">No target role</option>
-                        {jobCodes.map(code => <option key={code.code} value={code.code}>{code.label}</option>)}
-                      </SelectInput>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs uppercase tracking-[0.1em] text-dash-tertiary">Tipouts (paid from this role's tips)</p>
+                        <SmallButton
+                          variant="secondary"
+                          onClick={() => updateTipRoleRule(index, {
+                            tipouts: [...(rule.tipouts || []), { target_role: '', percent: '', basis: 'tips' }],
+                          })}
+                        >
+                          Add tipout
+                        </SmallButton>
+                      </div>
+                      {(rule.tipouts || []).length === 0 ? (
+                        <p className="text-xs text-dash-tertiary">No tipouts — this role keeps (or pools) all of its tips.</p>
+                      ) : null}
+                      {(rule.tipouts || []).map((tipout, tipoutIndex) => (
+                        <div key={tipoutIndex} className="grid gap-2 md:grid-cols-[1fr_110px_150px_auto]">
+                          <SelectInput
+                            value={tipout.target_role}
+                            onChange={event => updateTipRoleRule(index, {
+                              tipouts: rule.tipouts.map((item, i) => i === tipoutIndex ? { ...item, target_role: event.target.value } : item),
+                            })}
+                          >
+                            <option value="">Choose role...</option>
+                            {jobCodes.filter(code => code.code !== rule.role_key).map(code => <option key={code.code} value={code.code}>{code.label}</option>)}
+                          </SelectInput>
+                          <TextInput
+                            value={tipout.percent}
+                            inputMode="decimal"
+                            onChange={event => updateTipRoleRule(index, {
+                              tipouts: rule.tipouts.map((item, i) => i === tipoutIndex ? { ...item, percent: sanitizeNumber(event.target.value).slice(0, 6) } : item),
+                            })}
+                            placeholder="%"
+                          />
+                          <SelectInput
+                            value={tipout.basis}
+                            onChange={event => updateTipRoleRule(index, {
+                              tipouts: rule.tipouts.map((item, i) => i === tipoutIndex ? { ...item, basis: event.target.value } : item),
+                            })}
+                          >
+                            <option value="tips">of tips</option>
+                            <option value="sales">of net sales</option>
+                          </SelectInput>
+                          <SmallButton
+                            variant="secondary"
+                            onClick={() => updateTipRoleRule(index, {
+                              tipouts: rule.tipouts.filter((_, i) => i !== tipoutIndex),
+                            })}
+                          >
+                            Remove
+                          </SmallButton>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )
