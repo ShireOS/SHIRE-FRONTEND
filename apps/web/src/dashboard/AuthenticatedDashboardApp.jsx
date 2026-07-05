@@ -115,6 +115,7 @@ const TABS = [
   { id: 'menu', label: 'Menu' },
   { id: 'devices', label: 'Devices' },
   { id: 'pos-settings', label: 'POS Settings' },
+  { id: 'tip-pooling', label: 'Tip Pooling' },
   { id: 'team', label: 'Team' },
   { id: 'scheduling', label: 'Scheduling' },
   { id: 'messaging', label: 'Messaging' },
