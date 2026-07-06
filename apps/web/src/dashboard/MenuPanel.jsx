@@ -14,6 +14,15 @@ import {
   wouldCreateCycle,
 } from './data/menuGroups'
 import { fetchCategoryColors, fetchItemImages, setCategoryColor } from './data/menuExtras'
+import {
+  addAllergyPill,
+  ensureAllergyGroup,
+  fetchAllergyExclusions,
+  fetchAllergyGroup,
+  fetchAllergyPills,
+  renameAllergyPill,
+  setAllergyPillActive,
+} from './data/menuAllergies'
 import { MenuItemDetail } from './MenuItemDetail'
 import {
   ColorSwatchPicker,
@@ -42,6 +51,7 @@ const MENU_TABS = [
   { id: 'categories', label: 'Categories' },
   { id: 'modifiers', label: 'Modifiers' },
   { id: 'groups', label: 'Modifier Groups' },
+  { id: 'allergies', label: 'Allergies' },
   { id: 'specials', label: 'Specials & Schedule' },
   { id: 'printing', label: 'Printing & Routing' },
 ]
@@ -325,6 +335,11 @@ export function MenuPanel({ restaurantId }) {
   const [expandedCategoryNames, setExpandedCategoryNames] = useState(() => new Set())
   const [categoryScrollTarget, setCategoryScrollTarget] = useState(null)
 
+  const [allergyGroup, setAllergyGroup] = useState(null)
+  const [allergyPills, setAllergyPills] = useState([])
+  const [allergyExclusions, setAllergyExclusions] = useState([])
+  const [pillDraft, setPillDraft] = useState('')
+
   const [modifierDraft, setModifierDraft] = useState({ name: '', price_delta: '', category: '', item_ids: new Set() })
   const [groupDraft, setGroupDraft] = useState(() => defaultGroupDraft())
   const [specialDraft, setSpecialDraft] = useState(() => defaultSpecialDraft())
@@ -382,6 +397,17 @@ export function MenuPanel({ restaurantId }) {
     setGroups(await fetchModifierGroups(restaurantId))
   }
 
+  const loadAllergies = async () => {
+    const group = await fetchAllergyGroup(restaurantId)
+    setAllergyGroup(group)
+    setAllergyPills(group ? await fetchAllergyPills(group.id) : [])
+    try {
+      setAllergyExclusions(await fetchAllergyExclusions(restaurantId))
+    } catch {
+      setAllergyExclusions([]) // exclusions table not migrated yet — fail soft
+    }
+  }
+
   const loadSpecials = async () => {
     const { data, error: specialsError } = await supabase
       .from('pos_daily_specials')
@@ -414,6 +440,7 @@ export function MenuPanel({ restaurantId }) {
       loadCategories(),
       loadModifiers(),
       loadGroups(),
+      loadAllergies(),
       loadSpecials(),
       loadRouting(),
     ]).then(results => {
