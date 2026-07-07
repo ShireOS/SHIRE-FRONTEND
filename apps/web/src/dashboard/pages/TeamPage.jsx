@@ -4,6 +4,7 @@ import { useAuth } from '../../auth'
 import { supabase } from '../../shared/lib/supabase'
 import { fetchWithSupabaseAuth } from '../../shared/query'
 import { assignedStaffRoles, buildStaffRoleUpdate, primaryStaffRole, roleCodeFromJobCode } from '../utils/staffRoles'
+import RolePermissionsPanel from '../components/team/RolePermissionsPanel'
 
 const money = (value) =>
   value === null || value === undefined || value === ''
@@ -504,6 +505,8 @@ export default function TeamPage({ restaurantId }) {
           )}
         </div>
       </Pane>
+
+      <RolePermissionsPanel restaurantId={restaurantId} />
     </div>
   )
 }

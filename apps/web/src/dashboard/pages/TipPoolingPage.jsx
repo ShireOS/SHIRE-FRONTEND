@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react'
 import { fetchWithSupabaseAuth } from '../../shared/query'
+import {
+  TipPayrollSettingsFields,
+  defaultTipPayrollSettings,
+  normalizeJobCodes,
+  normalizeTipPayrollSettings,
+  tipPayrollPayload,
+} from '../RestaurantSetupPanel'
 
 const MODE_LABELS = {
   individual: 'Individual',
@@ -104,10 +111,16 @@ export default function TipPoolingPage({ restaurantId }) {
   const [selectedRun, setSelectedRun] = useState(null)
   const [preview, setPreview] = useState(null)
   const [businessDate, setBusinessDate] = useState(yesterdayISO())
+  const [jobCodes, setJobCodes] = useState([])
+  const [tipPayrollSettings, setTipPayrollSettings] = useState(defaultTipPayrollSettings())
   const [loading, setLoading] = useState(true)
+  const [configLoading, setConfigLoading] = useState(true)
   const [working, setWorking] = useState(false)
+  const [configSaving, setConfigSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [configMessage, setConfigMessage] = useState('')
+  const [configError, setConfigError] = useState('')
 
   const loadRuns = async () => {
     setError('')
@@ -115,18 +128,70 @@ export default function TipPoolingPage({ restaurantId }) {
       const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tip-pools/runs`)
       setRuns(Array.isArray(data) ? data : [])
     } catch (err) {
-      setError(err?.message || 'Could not load tip pool runs')
+      setError(err?.message || 'Could not load tipout runs')
     } finally {
       setLoading(false)
     }
   }
 
+  const loadTipConfig = async () => {
+    setConfigError('')
+    setConfigMessage('')
+    try {
+      const [jobCodeRows, tipPayrollData] = await Promise.all([
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`).catch(() => []),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`).catch(() => null),
+      ])
+      const normalizedJobCodes = normalizeJobCodes(jobCodeRows)
+      setJobCodes(normalizedJobCodes)
+      setTipPayrollSettings(normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes))
+    } catch (err) {
+      setConfigError(err?.message || 'Could not load tipout configuration')
+    } finally {
+      setConfigLoading(false)
+    }
+  }
+
   useEffect(() => {
     setLoading(true)
+    setConfigLoading(true)
     setSelectedRun(null)
     setPreview(null)
     void loadRuns()
+    void loadTipConfig()
   }, [restaurantId])
+
+  const updateTipPayrollSettings = (patch) => {
+    setTipPayrollSettings(prev => ({ ...prev, ...patch }))
+    setConfigMessage('')
+  }
+
+  const updateTipRoleRule = (index, patch) => {
+    setTipPayrollSettings(prev => ({
+      ...prev,
+      role_tip_rules: prev.role_tip_rules.map((rule, currentIndex) => currentIndex === index ? { ...rule, ...patch } : rule),
+    }))
+    setConfigMessage('')
+  }
+
+  const saveTipConfig = async () => {
+    setConfigSaving(true)
+    setConfigMessage('')
+    setConfigError('')
+    try {
+      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`, {
+        method: 'PUT',
+        body: JSON.stringify(tipPayrollPayload(tipPayrollSettings, jobCodes)),
+      })
+      setTipPayrollSettings(normalizeTipPayrollSettings(saved, jobCodes))
+      setConfigMessage('Saved tipout configuration')
+      await loadRuns()
+    } catch (err) {
+      setConfigError(err?.message || 'Could not save tipout configuration')
+    } finally {
+      setConfigSaving(false)
+    }
+  }
 
   const openRun = async (runId) => {
     setError('')
@@ -233,9 +298,9 @@ export default function TipPoolingPage({ restaurantId }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="label-mono text-dash-tertiary">Tips</p>
-            <h1 className="mt-1 text-2xl font-semibold text-dash-cream">Tip Pooling</h1>
+            <h1 className="mt-1 text-2xl font-semibold text-dash-cream">Tipout</h1>
             <p className="mt-2 max-w-2xl text-sm text-dash-secondary">
-              Calculated tip distributions from your Pool &amp; Tipout rules in Setup. Windows with pooling enabled are
+              Calculated tip distributions from your Pool &amp; Tipout rules below. Windows with pooling enabled are
               computed automatically each day; review drafts, adjust if needed, and finalize.
             </p>
           </div>
@@ -266,14 +331,46 @@ export default function TipPoolingPage({ restaurantId }) {
         </div>
       </section>
 
+      <section className="rounded-2xl border border-dash-border bg-dash-panel p-5 shadow-sm">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="label-mono text-dash-tertiary">Configuration</p>
+            <h2 className="mt-1 text-xl font-semibold text-dash-cream">Pool & Tipout Rules</h2>
+            <p className="mt-2 max-w-2xl text-sm text-dash-secondary">
+              Set tip ownership, pooling windows, tipout rules, role eligibility, and payroll defaults for future tipout runs.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void saveTipConfig()}
+            disabled={configSaving || configLoading}
+            className="rounded-lg border border-dash-gold bg-dash-gold/10 px-3 py-1.5 text-sm font-medium text-dash-gold hover:bg-dash-gold/20 disabled:opacity-50"
+          >
+            {configSaving ? 'Saving...' : 'Save configuration'}
+          </button>
+        </div>
+        {configLoading ? (
+          <div className="rounded-xl border border-dash-border bg-white/[0.025] p-4 text-sm text-dash-secondary">Loading configuration...</div>
+        ) : (
+          <TipPayrollSettingsFields
+            settings={tipPayrollSettings}
+            jobCodes={jobCodes}
+            onUpdateSettings={updateTipPayrollSettings}
+            onUpdateRoleRule={updateTipRoleRule}
+          />
+        )}
+        {configError ? <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{configError}</div> : null}
+        {configMessage ? <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{configMessage}</div> : null}
+      </section>
+
       {loading ? <div className="rounded-xl border border-dash-border bg-dash-panel p-4 text-sm text-dash-secondary">Loading runs...</div> : null}
       {error ? <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{error}</div> : null}
       {message ? <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{message}</div> : null}
 
       {!loading && !runs.length && !preview ? (
         <div className="rounded-xl border border-dash-border bg-dash-panel p-4 text-sm text-dash-secondary">
-          No tip pool runs yet. Enable tip pooling in Setup → Tips &amp; Payroll, and runs will appear here automatically,
-          or use “Run for date” above.
+          No tipout runs yet. Enable pooling in the configuration above, and runs will appear here automatically, or use
+          “Run for date” above.
         </div>
       ) : null}
 
