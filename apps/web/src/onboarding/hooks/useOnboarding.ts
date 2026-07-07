@@ -5,6 +5,8 @@ import { API_CONFIG } from '../../shared/api/config'
 import { useAuth } from '../../auth'
 import type { Restaurant } from '@shire/db'
 
+const MAX_SPLIT_COUNT = 8
+
 export type RestaurantType =
   | 'fine_dining'
   | 'casual'
@@ -940,6 +942,7 @@ const normalizeCloseoutSettings = (value: unknown): CloseoutSettingsData => {
 const normalizeCheckWorkflowSettings = (value: unknown): CheckWorkflowSettingsData => {
   const fallback = defaultCheckWorkflowSettings()
   if (!isRecord(value)) return fallback
+  const maxSplitCount = Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(asStringNumber(value.max_split_count) || fallback.max_split_count)))
   const holdPresetValues = Array.isArray(value.hold_preset_minutes)
     ? Array.from(new Set(value.hold_preset_minutes.map(Number).filter(minutes => Number.isFinite(minutes) && minutes > 0))).slice(0, 8)
     : fallback.hold_preset_minutes
@@ -951,7 +954,7 @@ const normalizeCheckWorkflowSettings = (value: unknown): CheckWorkflowSettingsDa
     split_by_seat_enabled: typeof value.split_by_seat_enabled === 'boolean' ? value.split_by_seat_enabled : fallback.split_by_seat_enabled,
     split_by_item_enabled: typeof value.split_by_item_enabled === 'boolean' ? value.split_by_item_enabled : fallback.split_by_item_enabled,
     split_evenly_enabled: typeof value.split_evenly_enabled === 'boolean' ? value.split_evenly_enabled : fallback.split_evenly_enabled,
-    max_split_count: asStringNumber(value.max_split_count) || fallback.max_split_count,
+    max_split_count: String(maxSplitCount),
     allow_partial_payments: typeof value.allow_partial_payments === 'boolean' ? value.allow_partial_payments : fallback.allow_partial_payments,
     require_manager_for_split_after_payment: typeof value.require_manager_for_split_after_payment === 'boolean' ? value.require_manager_for_split_after_payment : fallback.require_manager_for_split_after_payment,
     allow_check_merge: typeof value.allow_check_merge === 'boolean' ? value.allow_check_merge : fallback.allow_check_merge,
@@ -1126,7 +1129,7 @@ const checkWorkflowSettingsToPayload = (data: OnboardingData) => {
   const holdPresetMinutes = Array.from(new Set(settings.hold_preset_minutes.map(Number).filter(minutes => Number.isFinite(minutes) && minutes > 0))).slice(0, 8)
   return {
     ...settings,
-    max_split_count: Math.max(1, Math.min(99, Number(settings.max_split_count || 8))),
+    max_split_count: Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(settings.max_split_count || MAX_SPLIT_COUNT))),
     default_preauth_amount: settings.default_preauth_amount === '' ? null : Number(settings.default_preauth_amount),
     default_hold_minutes: Math.max(1, Math.min(360, Number(settings.default_hold_minutes || 10))),
     hold_preset_minutes: holdPresetMinutes.length > 0 ? holdPresetMinutes : defaultCheckWorkflowSettings().hold_preset_minutes,
