@@ -57,6 +57,7 @@ const CAPACITY_OPTIONS = [
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MAX_SPLIT_COUNT = 8
 const DEFAULT_DAILY_SPECIAL_SETTINGS = {
   enabled: true,
   show_specials_lane: true,
@@ -1307,13 +1308,14 @@ function normalizeCloseoutSettings(row) {
 function normalizeCheckWorkflowSettings(row) {
   const fallback = defaultCheckWorkflowSettings()
   const source = row && typeof row === 'object' ? row : {}
+  const maxSplitCount = Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(String(source.max_split_count ?? '').replace(/[^\d]/g, '') || fallback.max_split_count)))
   const holdPresetMinutes = Array.isArray(source.hold_preset_minutes)
     ? Array.from(new Set(source.hold_preset_minutes.map(Number).filter(minutes => Number.isFinite(minutes) && minutes > 0))).slice(0, 8)
     : fallback.hold_preset_minutes
   return {
     ...fallback,
     ...source,
-    max_split_count: source.max_split_count == null ? fallback.max_split_count : String(source.max_split_count).replace(/[^\d]/g, '').slice(0, 2) || fallback.max_split_count,
+    max_split_count: String(maxSplitCount),
     default_preauth_amount: source.default_preauth_amount == null ? '' : sanitizeNumber(source.default_preauth_amount),
     default_order_fire_mode: ORDER_FIRE_MODE_OPTIONS.some(option => option.value === source.default_order_fire_mode) ? source.default_order_fire_mode : fallback.default_order_fire_mode,
     default_hold_minutes: source.default_hold_minutes == null ? fallback.default_hold_minutes : String(source.default_hold_minutes).replace(/[^\d]/g, '').slice(0, 3) || fallback.default_hold_minutes,
@@ -1412,7 +1414,7 @@ function checkWorkflowSettingsPayload(checkWorkflowSettings) {
   const holdPresetMinutes = Array.from(new Set(settings.hold_preset_minutes.map(Number).filter(minutes => Number.isFinite(minutes) && minutes > 0))).slice(0, 8)
   return {
     ...settings,
-    max_split_count: Math.max(1, Math.min(99, Number(settings.max_split_count || 8))),
+    max_split_count: Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(settings.max_split_count || MAX_SPLIT_COUNT))),
     default_preauth_amount: settings.default_preauth_amount === '' ? null : Number(settings.default_preauth_amount),
     default_hold_minutes: Math.max(1, Math.min(360, Number(settings.default_hold_minutes || 10))),
     hold_preset_minutes: holdPresetMinutes.length > 0 ? holdPresetMinutes : defaultCheckWorkflowSettings().hold_preset_minutes,
@@ -3321,7 +3323,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               <p className="label-mono mb-3">Split Checks & Payments</p>
               <div className="grid gap-3 lg:grid-cols-3">
                 <Field label="Max Split Count">
-                  <TextInput value={checkWorkflowSettings.max_split_count} inputMode="numeric" onChange={event => updateCheckWorkflowSettings({ max_split_count: event.target.value.replace(/[^\d]/g, '').slice(0, 2) || '1' })} placeholder="8" />
+                  <TextInput value={checkWorkflowSettings.max_split_count} inputMode="numeric" onChange={event => updateCheckWorkflowSettings({ max_split_count: String(Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(event.target.value.replace(/[^\d]/g, '') || 1)))) })} placeholder="8" />
                 </Field>
                 <Field label="Partial Payments">
                   <SelectInput value={checkWorkflowSettings.allow_partial_payments ? 'yes' : 'no'} onChange={event => updateCheckWorkflowSettings({ allow_partial_payments: event.target.value === 'yes' })}>
