@@ -32,6 +32,24 @@ const SETUP_TABS = [
   { id: 'integrations', label: 'Integrations' },
 ]
 
+const SETUP_PROPAGATION = {
+  basics: 'specified',
+  legal: 'specified',
+  payments: 'specified',
+  pricing_policy: 'general',
+  service_model: 'general',
+  taxes_charges: 'general',
+  discounts: 'general',
+  manager_controls: 'general',
+  closeout: 'general',
+  check_workflow: 'general',
+  tips_payroll: 'general',
+  sections: 'specified',
+  hours: 'specified',
+  capacity: 'specified',
+  menu_categories: 'general',
+}
+
 const RESTAURANT_TYPES = [
   { value: 'fine_dining', label: 'Fine Dining' },
   { value: 'casual', label: 'Casual Dining' },
@@ -1547,7 +1565,7 @@ export function warningCount(warnings) {
   return Object.values(warnings || {}).reduce((sum, items) => sum + items.length, 0)
 }
 
-export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings = {}, onSetupChanged }) {
+export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings = {}, onSetupChanged, propagationContext = null }) {
   const [activeSetupTab, setActiveSetupTab] = useState('basics')
   const [profile, setProfile] = useState(() => ({
     name: restaurant.name || '',
@@ -1596,6 +1614,112 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [setupError, setSetupError] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+
+  const isPropagationEnabled = Boolean(propagationContext?.requestTargets)
+
+  const updateRestaurantRow = async (targetRestaurantId, patch) => {
+    const { data, error } = await supabase
+      .from('restaurants')
+      .update(patch)
+      .eq('id', targetRestaurantId)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  }
+
+  const mergeRestaurantConfig = async (targetRestaurantId, patch) => {
+    const { data, error } = await supabase
+      .from('restaurants')
+      .select('config')
+      .eq('id', targetRestaurantId)
+      .single()
+    if (error) throw error
+    const currentConfig = data?.config && typeof data.config === 'object' ? data.config : {}
+    return updateRestaurantRow(targetRestaurantId, { config: { ...currentConfig, ...patch } })
+  }
+
+  const putRestaurantEndpoint = (targetRestaurantId, path, body) =>
+    fetchWithSupabaseAuth(`/restaurants/${targetRestaurantId}${path}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    })
+
+  const saveHoursForRestaurant = async (targetRestaurantId, nextHours) => {
+    const { error: deleteError } = await supabase
+      .from('operating_hours')
+      .delete()
+      .eq('restaurant_id', targetRestaurantId)
+    if (deleteError) throw deleteError
+    const { error: insertError } = await supabase
+      .from('operating_hours')
+      .insert(nextHours.map(day => ({
+        restaurant_id: targetRestaurantId,
+        day_of_week: day.day_of_week,
+        open_time: day.open_time,
+        close_time: day.close_time,
+        is_closed: day.is_closed,
+      })))
+    if (insertError) throw insertError
+  }
+
+  const saveWithPropagation = async ({
+    sectionId,
+    label,
+    propagation = SETUP_PROPAGATION[sectionId] || 'specified',
+    successMessage,
+    saveSource,
+    saveTarget,
+    onSourceSaved,
+    afterSave,
+  }) => {
+    const requestedTargets = isPropagationEnabled
+      ? await propagationContext.requestTargets({
+          sectionId,
+          label,
+          propagation,
+          sourceRestaurantId: restaurantId,
+        })
+      : [restaurantId]
+
+    if (requestedTargets === null) return null
+
+    const targetIds = [...new Set((requestedTargets || []).filter(Boolean))]
+      .sort((a, b) => (a === restaurantId ? -1 : b === restaurantId ? 1 : 0))
+
+    if (targetIds.length === 0) {
+      setSetupError('Select at least one restaurant.')
+      return null
+    }
+
+    setIsSaving(true)
+    setSaveMessage('')
+    setSetupError('')
+    let sourceResult = null
+    let sourceWasSaved = false
+    try {
+      for (const targetId of targetIds) {
+        if (targetId === restaurantId) {
+          sourceResult = await saveSource(targetId)
+          sourceWasSaved = true
+        } else {
+          await saveTarget(targetId)
+        }
+      }
+      if (sourceWasSaved && onSourceSaved) onSourceSaved(sourceResult)
+      if (sourceResult) auth.seedCurrentRestaurant?.(sourceResult)
+      await auth.refreshRestaurants?.(restaurantId)
+      afterSave?.(sourceResult, targetIds)
+      onSetupChanged?.()
+      setSaveMessage(targetIds.length > 1 ? `${successMessage} Applied to ${targetIds.length} restaurants.` : successMessage)
+      return sourceResult
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save setup.')
+      return null
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   useEffect(() => {
     setProfile({
@@ -1866,62 +1990,35 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   }
 
   const saveBasics = async () => {
-    setIsSaving(true)
-    setSaveMessage('')
-    setSetupError('')
-    const { data: updatedRestaurant, error } = await supabase
-      .from('restaurants')
-      .update({
-        name: profile.name.trim(),
-        address: profile.address.trim() || null,
-        city: profile.city.trim() || null,
-        state: profile.state.trim() || null,
-        postal_code: profile.postal_code.trim() || null,
-        phone: profile.phone.trim() || null,
-        type: profile.type || 'casual',
-        cuisine_types: profile.cuisine_types,
-      })
-      .eq('id', restaurantId)
-      .select()
-      .single()
-    setIsSaving(false)
-    if (error) {
-      setSetupError(error.message || 'Could not save basics.')
-      return
+    const payload = {
+      name: profile.name.trim(),
+      address: profile.address.trim() || null,
+      city: profile.city.trim() || null,
+      state: profile.state.trim() || null,
+      postal_code: profile.postal_code.trim() || null,
+      phone: profile.phone.trim() || null,
+      type: profile.type || 'casual',
+      cuisine_types: profile.cuisine_types,
     }
-    auth.seedCurrentRestaurant(updatedRestaurant)
-    await auth.refreshRestaurants?.(restaurantId)
-    onSetupChanged?.()
-    setSaveMessage('Saved basics.')
+    await saveWithPropagation({
+      sectionId: 'basics',
+      label: 'Basics',
+      propagation: SETUP_PROPAGATION.basics,
+      successMessage: 'Saved basics.',
+      saveSource: (targetId) => updateRestaurantRow(targetId, payload),
+      saveTarget: (targetId) => updateRestaurantRow(targetId, payload),
+    })
   }
 
   const updateRestaurantConfig = async (patch, successMessage) => {
-    setIsSaving(true)
-    setSaveMessage('')
-    setSetupError('')
-    const baseRestaurant = auth.restaurant.currentRestaurant?.id === restaurantId
-      ? auth.restaurant.currentRestaurant
-      : restaurant
-    const nextConfig = {
-      ...(baseRestaurant.config && typeof baseRestaurant.config === 'object' ? baseRestaurant.config : {}),
-      ...patch,
-    }
-    const { data: updatedRestaurant, error } = await supabase
-      .from('restaurants')
-      .update({ config: nextConfig })
-      .eq('id', restaurantId)
-      .select()
-      .single()
-    setIsSaving(false)
-    if (error) {
-      setSetupError(error.message || 'Could not save setup.')
-      return null
-    }
-    auth.seedCurrentRestaurant(updatedRestaurant)
-    await auth.refreshRestaurants?.(restaurantId)
-    onSetupChanged?.()
-    setSaveMessage(successMessage)
-    return updatedRestaurant
+    return saveWithPropagation({
+      sectionId: 'config',
+      label: 'Setup config',
+      propagation: 'specified',
+      successMessage,
+      saveSource: (targetId) => mergeRestaurantConfig(targetId, patch),
+      saveTarget: (targetId) => mergeRestaurantConfig(targetId, patch),
+    })
   }
 
   const saveLegal = async () => {
@@ -1937,14 +2034,31 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setSetupError('Signature is required.')
       return
     }
-    await updateRestaurantConfig({
-      ...legal,
-      tos_version: 'shire-placeholder-tos-v1',
-    }, 'Saved legal setup.')
+    await saveWithPropagation({
+      sectionId: 'legal',
+      label: 'Business & Legal',
+      propagation: SETUP_PROPAGATION.legal,
+      successMessage: 'Saved legal setup.',
+      saveSource: (targetId) => mergeRestaurantConfig(targetId, {
+        ...legal,
+        tos_version: 'shire-placeholder-tos-v1',
+      }),
+      saveTarget: (targetId) => mergeRestaurantConfig(targetId, {
+        ...legal,
+        tos_version: 'shire-placeholder-tos-v1',
+      }),
+    })
   }
 
   const savePayments = async () => {
-    await updateRestaurantConfig(payments, 'Saved payment setup.')
+    await saveWithPropagation({
+      sectionId: 'payments',
+      label: 'Payments & Payouts',
+      propagation: SETUP_PROPAGATION.payments,
+      successMessage: 'Saved payment setup.',
+      saveSource: (targetId) => mergeRestaurantConfig(targetId, payments),
+      saveTarget: (targetId) => mergeRestaurantConfig(targetId, payments),
+    })
   }
 
   const updatePricingPolicy = (patch) => {
@@ -1971,27 +2085,33 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   }
 
   const savePricingPolicy = async () => {
-    setIsSaving(true)
-    setSetupError('')
-    try {
-      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pricing-policy`, {
-        method: 'PUT',
-        body: JSON.stringify(pricingPolicyPayload(pricingPolicy)),
-      })
-      setPricingPolicy(normalizePricingPolicy(saved))
-      queryClient.setQueryData(queryKeys.pricingPolicy(restaurantId), saved)
-      void syncRatePlanFromPricingPolicy(restaurantId, saved, auth?.user?.id)
-      setSaveMessage('Saved pricing policy.')
-      onSetupChanged?.()
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : 'Could not save pricing policy.')
-    } finally {
-      setIsSaving(false)
-    }
+    const payload = pricingPolicyPayload(pricingPolicy)
+    await saveWithPropagation({
+      sectionId: 'pricing_policy',
+      label: 'Pricing Policy',
+      propagation: SETUP_PROPAGATION.pricing_policy,
+      successMessage: 'Saved pricing policy.',
+      saveSource: (targetId) => putRestaurantEndpoint(targetId, '/pricing-policy', payload),
+      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/pricing-policy', payload),
+      onSourceSaved: (saved) => {
+        setPricingPolicy(normalizePricingPolicy(saved))
+        queryClient.setQueryData(queryKeys.pricingPolicy(restaurantId), saved)
+      },
+      afterSave: (_saved, targetIds) => {
+        targetIds.forEach((targetId) => void syncRatePlanFromPricingPolicy(targetId, payload, auth?.user?.id))
+      },
+    })
   }
 
   const saveServiceModel = async () => {
-    await updateRestaurantConfig(serviceModel, 'Saved service model.')
+    await saveWithPropagation({
+      sectionId: 'service_model',
+      label: 'Service Model',
+      propagation: SETUP_PROPAGATION.service_model,
+      successMessage: 'Saved service model.',
+      saveSource: (targetId) => mergeRestaurantConfig(targetId, serviceModel),
+      saveTarget: (targetId) => mergeRestaurantConfig(targetId, serviceModel),
+    })
   }
 
   const updateTaxRate = (index, patch) => {
@@ -2016,25 +2136,20 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   }
 
   const saveTaxesCharges = async () => {
-    setIsSaving(true)
-    setSaveMessage('')
-    setSetupError('')
-    try {
-      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/taxes-charges`, {
-        method: 'PUT',
-        body: JSON.stringify(taxesChargesPayload(taxRates, serviceCharges)),
-      })
-      setTaxRates(normalizeTaxRates(saved?.tax_rates))
-      setServiceCharges(normalizeServiceCharges(saved?.service_charges))
-      queryClient.setQueryData(queryKeys.taxesCharges(restaurantId), saved)
-      setSaveMessage('Saved taxes and charges.')
-      await auth.refreshRestaurants?.(restaurantId)
-      onSetupChanged?.()
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : 'Could not save taxes and charges.')
-    } finally {
-      setIsSaving(false)
-    }
+    const payload = taxesChargesPayload(taxRates, serviceCharges)
+    await saveWithPropagation({
+      sectionId: 'taxes_charges',
+      label: 'Taxes & Charges',
+      propagation: SETUP_PROPAGATION.taxes_charges,
+      successMessage: 'Saved taxes and charges.',
+      saveSource: (targetId) => putRestaurantEndpoint(targetId, '/taxes-charges', payload),
+      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/taxes-charges', payload),
+      onSourceSaved: (saved) => {
+        setTaxRates(normalizeTaxRates(saved?.tax_rates))
+        setServiceCharges(normalizeServiceCharges(saved?.service_charges))
+        queryClient.setQueryData(queryKeys.taxesCharges(restaurantId), saved)
+      },
+    })
   }
 
   const updateMenuCategory = (index, patch) => {
@@ -2042,24 +2157,19 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   }
 
   const saveMenuCategories = async () => {
-    setIsSaving(true)
-    setSaveMessage('')
-    setSetupError('')
-    try {
-      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/categories`, {
-        method: 'PUT',
-        body: JSON.stringify(menuCategoriesPayload(menuCategories)),
-      })
-      setMenuCategories(normalizeMenuCategories(saved?.categories))
-      queryClient.setQueryData(queryKeys.menuCategories(restaurantId), saved)
-      setSaveMessage('Saved menu categories.')
-      await auth.refreshRestaurants?.(restaurantId)
-      onSetupChanged?.()
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : 'Could not save menu categories.')
-    } finally {
-      setIsSaving(false)
-    }
+    const payload = menuCategoriesPayload(menuCategories)
+    await saveWithPropagation({
+      sectionId: 'menu_categories',
+      label: 'Menu Categories',
+      propagation: SETUP_PROPAGATION.menu_categories,
+      successMessage: 'Saved menu categories.',
+      saveSource: (targetId) => putRestaurantEndpoint(targetId, '/menu/categories', payload),
+      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/menu/categories', payload),
+      onSourceSaved: (saved) => {
+        setMenuCategories(normalizeMenuCategories(saved?.categories))
+        queryClient.setQueryData(queryKeys.menuCategories(restaurantId), saved)
+      },
+    })
   }
 
   const updateDiscountRule = (index, patch) => {
@@ -2070,24 +2180,19 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     values.includes(value) ? values.filter(item => item !== value) : [...values, value]
 
   const saveDiscountRules = async () => {
-    setIsSaving(true)
-    setSaveMessage('')
-    setSetupError('')
-    try {
-      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/discount-rules`, {
-        method: 'PUT',
-        body: JSON.stringify(discountRulesPayload(discountRules)),
-      })
-      setDiscountRules(normalizeDiscountRules(saved?.discount_rules))
-      queryClient.setQueryData(queryKeys.discountRules(restaurantId), saved)
-      setSaveMessage('Saved discounts.')
-      await auth.refreshRestaurants?.(restaurantId)
-      onSetupChanged?.()
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : 'Could not save discounts.')
-    } finally {
-      setIsSaving(false)
-    }
+    const payload = discountRulesPayload(discountRules)
+    await saveWithPropagation({
+      sectionId: 'discounts',
+      label: 'Discounts, Comps & Promos',
+      propagation: SETUP_PROPAGATION.discounts,
+      successMessage: 'Saved discounts.',
+      saveSource: (targetId) => putRestaurantEndpoint(targetId, '/discount-rules', payload),
+      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/discount-rules', payload),
+      onSourceSaved: (saved) => {
+        setDiscountRules(normalizeDiscountRules(saved?.discount_rules))
+        queryClient.setQueryData(queryKeys.discountRules(restaurantId), saved)
+      },
+    })
   }
 
   const updateRolePermission = (index, patch) => {
@@ -2095,24 +2200,19 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   }
 
   const saveManagerControls = async () => {
-    setIsSaving(true)
-    setSaveMessage('')
-    setSetupError('')
-    try {
-      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-controls`, {
-        method: 'PUT',
-        body: JSON.stringify(managerControlsPayload(rolePermissions, jobCodes)),
-      })
-      setRolePermissions(normalizeRolePermissions(saved?.role_permissions, jobCodes))
-      queryClient.setQueryData(queryKeys.managerControls(restaurantId), saved)
-      setSaveMessage('Saved manager controls.')
-      await auth.refreshRestaurants?.(restaurantId)
-      onSetupChanged?.()
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : 'Could not save manager controls.')
-    } finally {
-      setIsSaving(false)
-    }
+    const payload = managerControlsPayload(rolePermissions, jobCodes)
+    await saveWithPropagation({
+      sectionId: 'manager_controls',
+      label: 'Manager Controls',
+      propagation: SETUP_PROPAGATION.manager_controls,
+      successMessage: 'Saved manager controls.',
+      saveSource: (targetId) => putRestaurantEndpoint(targetId, '/manager-controls', payload),
+      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/manager-controls', payload),
+      onSourceSaved: (saved) => {
+        setRolePermissions(normalizeRolePermissions(saved?.role_permissions, jobCodes))
+        queryClient.setQueryData(queryKeys.managerControls(restaurantId), saved)
+      },
+    })
   }
 
   const updateCloseoutSettings = (patch) => {
@@ -2124,45 +2224,35 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   }
 
   const saveCloseoutSettings = async () => {
-    setIsSaving(true)
-    setSaveMessage('')
-    setSetupError('')
-    try {
-      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`, {
-        method: 'PUT',
-        body: JSON.stringify(closeoutSettingsPayload(closeoutSettings)),
-      })
-      setCloseoutSettings(normalizeCloseoutSettings(saved))
-      queryClient.setQueryData(queryKeys.closeoutSettings(restaurantId), saved)
-      setSaveMessage('Saved closeout settings.')
-      await auth.refreshRestaurants?.(restaurantId)
-      onSetupChanged?.()
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : 'Could not save closeout settings.')
-    } finally {
-      setIsSaving(false)
-    }
+    const payload = closeoutSettingsPayload(closeoutSettings)
+    await saveWithPropagation({
+      sectionId: 'closeout',
+      label: 'Cash & Closeout',
+      propagation: SETUP_PROPAGATION.closeout,
+      successMessage: 'Saved closeout settings.',
+      saveSource: (targetId) => putRestaurantEndpoint(targetId, '/closeout-settings', payload),
+      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/closeout-settings', payload),
+      onSourceSaved: (saved) => {
+        setCloseoutSettings(normalizeCloseoutSettings(saved))
+        queryClient.setQueryData(queryKeys.closeoutSettings(restaurantId), saved)
+      },
+    })
   }
 
   const saveCheckWorkflowSettings = async () => {
-    setIsSaving(true)
-    setSaveMessage('')
-    setSetupError('')
-    try {
-      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/check-workflow-settings`, {
-        method: 'PUT',
-        body: JSON.stringify(checkWorkflowSettingsPayload(checkWorkflowSettings)),
-      })
-      setCheckWorkflowSettings(normalizeCheckWorkflowSettings(saved))
-      queryClient.setQueryData(queryKeys.checkWorkflowSettings(restaurantId), saved)
-      setSaveMessage('Saved check workflow settings.')
-      await auth.refreshRestaurants?.(restaurantId)
-      onSetupChanged?.()
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : 'Could not save check workflow settings.')
-    } finally {
-      setIsSaving(false)
-    }
+    const payload = checkWorkflowSettingsPayload(checkWorkflowSettings)
+    await saveWithPropagation({
+      sectionId: 'check_workflow',
+      label: 'Check Workflow',
+      propagation: SETUP_PROPAGATION.check_workflow,
+      successMessage: 'Saved check workflow settings.',
+      saveSource: (targetId) => putRestaurantEndpoint(targetId, '/check-workflow-settings', payload),
+      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/check-workflow-settings', payload),
+      onSourceSaved: (saved) => {
+        setCheckWorkflowSettings(normalizeCheckWorkflowSettings(saved))
+        queryClient.setQueryData(queryKeys.checkWorkflowSettings(restaurantId), saved)
+      },
+    })
   }
 
   const updateTipPayrollSettings = (patch) => {
@@ -2177,24 +2267,19 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   }
 
   const saveTipPayrollSettings = async () => {
-    setIsSaving(true)
-    setSaveMessage('')
-    setSetupError('')
-    try {
-      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`, {
-        method: 'PUT',
-        body: JSON.stringify(tipPayrollPayload(tipPayrollSettings, jobCodes)),
-      })
-      setTipPayrollSettings(normalizeTipPayrollSettings(saved, jobCodes))
-      queryClient.setQueryData(queryKeys.tipsPayrollSettings(restaurantId), saved)
-      setSaveMessage('Saved tips and payroll.')
-      await auth.refreshRestaurants?.(restaurantId)
-      onSetupChanged?.()
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : 'Could not save tips and payroll.')
-    } finally {
-      setIsSaving(false)
-    }
+    const payload = tipPayrollPayload(tipPayrollSettings, jobCodes)
+    await saveWithPropagation({
+      sectionId: 'tips_payroll',
+      label: 'Tips & Payroll',
+      propagation: SETUP_PROPAGATION.tips_payroll,
+      successMessage: 'Saved tips and payroll.',
+      saveSource: (targetId) => putRestaurantEndpoint(targetId, '/tips-payroll-settings', payload),
+      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/tips-payroll-settings', payload),
+      onSourceSaved: (saved) => {
+        setTipPayrollSettings(normalizeTipPayrollSettings(saved, jobCodes))
+        queryClient.setQueryData(queryKeys.tipsPayrollSettings(restaurantId), saved)
+      },
+    })
   }
 
   const saveJobCode = async (jobCode) => {
@@ -2228,86 +2313,57 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   }
 
   const saveSections = async () => {
-    setIsSaving(true)
-    setSaveMessage('')
-    setSetupError('')
-    try {
-      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`, {
-        method: 'PUT',
-        body: JSON.stringify({ sections: normalizeSectionNames(sections) }),
-      })
-      setSections(normalizeSectionNames((Array.isArray(saved) ? saved : []).map(section => section.name)))
-      queryClient.setQueryData(queryKeys.sections(restaurantId), saved)
-      setFloorTables(prev => prev.map(table => {
-        if (table.section_id) return table
-        return { ...table, section_name: table.section_name || 'Table' }
-      }))
-      setSaveMessage('Saved sections.')
-      await auth.refreshRestaurants?.(restaurantId)
-      onSetupChanged?.()
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : 'Could not save sections.')
-    } finally {
-      setIsSaving(false)
-    }
+    const payload = { sections: normalizeSectionNames(sections) }
+    await saveWithPropagation({
+      sectionId: 'sections',
+      label: 'Sections',
+      propagation: SETUP_PROPAGATION.sections,
+      successMessage: 'Saved sections.',
+      saveSource: (targetId) => putRestaurantEndpoint(targetId, '/sections', payload),
+      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/sections', payload),
+      onSourceSaved: (saved) => {
+        setSections(normalizeSectionNames((Array.isArray(saved) ? saved : []).map(section => section.name)))
+        queryClient.setQueryData(queryKeys.sections(restaurantId), saved)
+        setFloorTables(prev => prev.map(table => {
+          if (table.section_id) return table
+          return { ...table, section_name: table.section_name || 'Table' }
+        }))
+      },
+    })
   }
 
   const saveHours = async () => {
-    setIsSaving(true)
-    setSaveMessage('')
-    setSetupError('')
-    const { error: deleteError } = await supabase
-      .from('operating_hours')
-      .delete()
-      .eq('restaurant_id', restaurantId)
-    if (deleteError) {
-      setIsSaving(false)
-      setSetupError(deleteError.message || 'Could not save hours.')
-      return
-    }
-    const { error: insertError } = await supabase
-      .from('operating_hours')
-      .insert(hours.map(day => ({
-        restaurant_id: restaurantId,
-        day_of_week: day.day_of_week,
-        open_time: day.open_time,
-        close_time: day.close_time,
-        is_closed: day.is_closed,
-      })))
-    setIsSaving(false)
-    if (insertError) {
-      setSetupError(insertError.message || 'Could not save hours.')
-      return
-    }
-    void queryClient.invalidateQueries({ queryKey: queryKeys.operatingHours(restaurantId) })
-    setSaveMessage('Saved hours.')
+    await saveWithPropagation({
+      sectionId: 'hours',
+      label: 'Hours',
+      propagation: SETUP_PROPAGATION.hours,
+      successMessage: 'Saved hours.',
+      saveSource: (targetId) => saveHoursForRestaurant(targetId, hours),
+      saveTarget: (targetId) => saveHoursForRestaurant(targetId, hours),
+      onSourceSaved: () => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.operatingHours(restaurantId) })
+      },
+    })
   }
 
   const saveCapacity = async (patch = {}) => {
-    setIsSaving(true)
-    setSaveMessage('')
-    setSetupError('')
     const nextCapacity = patch.seating_capacity ?? profile.seating_capacity
     const nextCount = patch.table_count ?? profile.table_count
-    const { data: updatedRestaurant, error } = await supabase
-      .from('restaurants')
-      .update({
-        seating_capacity: nextCapacity === '' ? null : Number(nextCapacity),
-        table_count: nextCount === '' ? null : Number(nextCount),
-      })
-      .eq('id', restaurantId)
-      .select()
-      .single()
-    setIsSaving(false)
-    if (error) {
-      setSetupError(error.message || 'Could not save capacity.')
-      return
+    const payload = {
+      seating_capacity: nextCapacity === '' ? null : Number(nextCapacity),
+      table_count: nextCount === '' ? null : Number(nextCount),
     }
-    setProfile(prev => ({ ...prev, seating_capacity: nextCapacity, table_count: nextCount }))
-    auth.seedCurrentRestaurant(updatedRestaurant)
-    await auth.refreshRestaurants?.(restaurantId)
-    onSetupChanged?.()
-    setSaveMessage('Saved capacity.')
+    await saveWithPropagation({
+      sectionId: 'capacity',
+      label: 'Capacity / Floor Plan',
+      propagation: SETUP_PROPAGATION.capacity,
+      successMessage: 'Saved capacity.',
+      saveSource: (targetId) => updateRestaurantRow(targetId, payload),
+      saveTarget: (targetId) => updateRestaurantRow(targetId, payload),
+      onSourceSaved: () => {
+        setProfile(prev => ({ ...prev, seating_capacity: nextCapacity, table_count: nextCount }))
+      },
+    })
   }
 
   const toggleCuisine = (cuisine) => {
