@@ -1684,7 +1684,7 @@ export function useOnboarding() {
   const isRestaurantLoading = auth.restaurant.isLoading
   const navigate = useNavigate()
   const location = useLocation()
-  const isSetupEditor = /^\/restaurants\/[^/]+\/setup\/?$/.test(location.pathname)
+  const isSetupEditor = /^\/(?:reseller\/)?restaurants\/[^/]+\/setup\/?$/.test(location.pathname)
   const isNewRestaurantFlow =
     location.pathname === '/onboarding' &&
     new URLSearchParams(location.search).get('new') === '1'
@@ -1905,18 +1905,34 @@ export function useOnboarding() {
       let resolvedRestaurantId: string | null = null
       let resolvedStep = 0
 
-      const localDraft = isNewRestaurantFlow || isSetupEditor ? null : readDraft(user.id)
-      if (localDraft) {
+      const localDraft = isSetupEditor ? null : readDraft(user.id)
+      const shouldApplyLocalDraft = Boolean(
+        localDraft &&
+        (
+          !isNewRestaurantFlow ||
+          (restaurantId && localDraft.restaurantId === restaurantId)
+        )
+      )
+      if (localDraft && shouldApplyLocalDraft) {
         mergedData = mergeOnboardingData(mergedData, localDraft.data)
         resolvedRestaurantId = localDraft.restaurantId
         resolvedStep = localDraft.currentStep
       }
 
-      const onboardingRestaurant =
-        shouldUseCurrentRestaurant &&
-        currentRestaurant &&
-        (isSetupEditor || !currentRestaurant.onboarding_completed_at)
+      const newFlowCreatedRestaurant =
+        isNewRestaurantFlow &&
+        restaurantId &&
+        currentRestaurant?.id === restaurantId
           ? currentRestaurant
+          : null
+
+      const candidateRestaurant = shouldUseCurrentRestaurant
+        ? currentRestaurant
+        : newFlowCreatedRestaurant
+      const onboardingRestaurant =
+        candidateRestaurant &&
+        (isSetupEditor || !candidateRestaurant.onboarding_completed_at)
+          ? candidateRestaurant
           : null
 
       if (onboardingRestaurant) {
@@ -1952,6 +1968,7 @@ export function useOnboarding() {
     currentRestaurantStep,
     currentRestaurantUpdatedAt,
     currentRestaurant?.onboarding_completed_at,
+    restaurantId,
     shouldUseCurrentRestaurant,
     isSetupEditor,
     isNewRestaurantFlow,

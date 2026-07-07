@@ -38,6 +38,7 @@ import { useAllowedStoreTabs } from './data/resellerAccess'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
 import SalesTiles from './components/SalesTiles'
 import { usePersistedPeriod } from './data/analyticsSummary'
+import ResellerApp from '../reseller/ResellerApp'
 
 function LoadingScreen() {
   return (
@@ -72,6 +73,9 @@ function OwnerGate() {
 
   const prefs = auth.profile?.dashboard_prefs
   const landing = prefs && typeof prefs === 'object' ? prefs.default_landing : null
+  if (auth.accountType === 'reseller' || landing === 'reseller') {
+    return <Navigate to="/reseller" replace />
+  }
   return <Navigate to={landing === 'overview' ? '/enterprise/overview' : '/enterprise/stores'} replace />
 }
 
@@ -4551,6 +4555,7 @@ export default function AuthenticatedDashboardApp() {
         <Route path="auth/callback" element={<AuthCallbackPage />} />
         <Route path="employee" element={<EmployeePortal />} />
         <Route path="onboarding" element={<OnboardingPage />} />
+        <Route path="reseller/*" element={<ResellerApp />} />
         <Route path="claim/:token" element={<ClaimStorePage />} />
         <Route path="enterprise" element={<Navigate to="/enterprise/stores" replace />} />
         <Route

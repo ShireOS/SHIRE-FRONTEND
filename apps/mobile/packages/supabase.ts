@@ -5,12 +5,34 @@ import Constants from 'expo-constants';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Restaurant } from '@shire/db';
 
-export type userRole = 'owner' | 'employee' | 'developer' | null;
+export type userRole = 'owner' | 'employee' | 'developer' | 'reseller' | null;
 
 export type OwnerRestaurant = {
   id: string;
   name: string;
   role: string;
+};
+
+export const RESELLER_UNGROUPED_ID = 'ungrouped';
+
+export type ResellerGroup = {
+  id: string;
+  reseller_id: string;
+  name: string;
+  color: string;
+};
+
+export type ResellerGroupMember = {
+  id: string;
+  reseller_id: string;
+  group_id: string;
+  restaurant_id: string;
+};
+
+export type ResellerRestaurant = Restaurant & {
+  reseller_group_id: string;
+  reseller_group_name: string;
+  reseller_group_color: string;
 };
 
 const AUTH_TIMEOUT_MS = 12_000;
@@ -395,6 +417,107 @@ export async function getOwnerRestaurant(): Promise<OwnerRestaurant | null> {
     name: restaurants[0]?.name || 'Restaurant',
     role: membership.role ?? 'owner',
   };
+}
+
+export async function fetchResellerPortfolio(): Promise<{
+  restaurants: ResellerRestaurant[];
+  groups: ResellerGroup[];
+  memberships: ResellerGroupMember[];
+}> {
+  const session = await getSessionSnapshot('Loading reseller portfolio');
+  if (!session) return { restaurants: [], groups: [], memberships: [] };
+
+  const client = getSBClient();
+
+  const [assignmentResult, groupResult, membershipResult] = await withTimeout(
+    Promise.all([
+      client
+        .from('reseller_restaurants')
+        .select('restaurant:restaurants(*)')
+        .eq('reseller_id', session.userId)
+        .eq('status', 'active'),
+      client
+        .from('reseller_restaurant_groups')
+        .select('*')
+        .eq('reseller_id', session.userId)
+        .order('name'),
+      client
+        .from('reseller_restaurant_group_members')
+        .select('*')
+        .eq('reseller_id', session.userId),
+    ]),
+    'Loading reseller portfolio',
+    ROLE_TIMEOUT_MS,
+  );
+
+  if (assignmentResult.error) throw assignmentResult.error;
+  if (groupResult.error) throw groupResult.error;
+  if (membershipResult.error) throw membershipResult.error;
+
+  const groups = (groupResult.data || []) as ResellerGroup[];
+  const memberships = (membershipResult.data || []) as ResellerGroupMember[];
+  const membershipByRestaurant = new Map(memberships.map((member) => [member.restaurant_id, member.group_id]));
+
+  const restaurants = ((assignmentResult.data || []) as unknown as { restaurant?: Restaurant | Restaurant[] | null }[])
+    .map((row) => Array.isArray(row.restaurant) ? row.restaurant[0] : row.restaurant)
+    .filter((restaurant): restaurant is Restaurant => Boolean(restaurant))
+    .map((restaurant) => {
+      const groupId = membershipByRestaurant.get(restaurant.id) || RESELLER_UNGROUPED_ID;
+      const group = groups.find((item) => item.id === groupId);
+      return {
+        ...restaurant,
+        reseller_group_id: groupId,
+        reseller_group_name: group?.name || 'Ungrouped',
+        reseller_group_color: group?.color || '#9CA3AF',
+      };
+    });
+
+  return { restaurants, groups, memberships };
+}
+
+export async function createResellerGroup(input: { name: string; color: string }): Promise<ResellerGroup> {
+  const session = await getSessionSnapshot('Creating reseller group');
+  if (!session) throw new Error('Not signed in.');
+
+  const client = getSBClient();
+  const { data, error } = await client
+    .from('reseller_restaurant_groups')
+    .insert({ reseller_id: session.userId, name: input.name.trim(), color: input.color })
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data as ResellerGroup;
+}
+
+export async function moveRestaurantsToResellerGroup(restaurantIds: string[], groupId: string): Promise<void> {
+  const session = await getSessionSnapshot('Moving restaurants');
+  if (!session) throw new Error('Not signed in.');
+
+  const ids = Array.from(new Set(restaurantIds)).filter(Boolean);
+  if (ids.length === 0) return;
+
+  const client = getSBClient();
+  if (groupId === RESELLER_UNGROUPED_ID) {
+    const { error } = await client
+      .from('reseller_restaurant_group_members')
+      .delete()
+      .eq('reseller_id', session.userId)
+      .in('restaurant_id', ids);
+    if (error) throw error;
+    return;
+  }
+
+  const rows = ids.map((restaurantId) => ({
+    reseller_id: session.userId,
+    restaurant_id: restaurantId,
+    group_id: groupId,
+  }));
+
+  const { error } = await client
+    .from('reseller_restaurant_group_members')
+    .upsert(rows, { onConflict: 'reseller_id,restaurant_id' });
+  if (error) throw error;
 }
 
 export async function getUserRestaraunts(): Promise<Restaurant[] | undefined> {
