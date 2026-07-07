@@ -140,7 +140,7 @@ export function useRequireOnboarding() {
   const auth = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const isSetupEditor = /^\/restaurants\/[^/]+\/setup\/?$/.test(location.pathname)
+  const isSetupEditor = /^\/(?:reseller\/)?restaurants\/[^/]+\/setup\/?$/.test(location.pathname)
   const isNewRestaurantFlow =
     location.pathname === '/onboarding' &&
     new URLSearchParams(location.search).get('new') === '1'
