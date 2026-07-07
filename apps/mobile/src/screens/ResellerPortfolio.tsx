@@ -64,6 +64,7 @@ export default function ResellerPortfolio() {
   const [groups, setGroups] = useState<ResellerGroup[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [detailRestaurant, setDetailRestaurant] = useState<ResellerRestaurant | null>(null);
+  const [inspectedGroupId, setInspectedGroupId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +89,10 @@ export default function ResellerPortfolio() {
   }, []);
 
   const groupCards = useMemo(() => buildGroupCards(restaurants, groups), [restaurants, groups]);
+  const inspectedGroup = useMemo(
+    () => groupCards.find((group) => group.id === inspectedGroupId) || null,
+    [groupCards, inspectedGroupId],
+  );
   const filteredRestaurants = useMemo(() => {
     if (groupFilter === 'all') return restaurants;
     return restaurants.filter((restaurant) => restaurant.reseller_group_id === groupFilter);
@@ -165,7 +170,14 @@ export default function ResellerPortfolio() {
               { id: 'restaurants', label: 'Restaurants' },
               { id: 'groups', label: 'Groups' },
             ]}
-            onChange={(value) => setViewMode(value as ViewMode)}
+            onChange={(value) => {
+              const nextView = value as ViewMode;
+              setViewMode(nextView);
+              if (nextView === 'restaurants') {
+                setGroupFilter('all');
+                setInspectedGroupId(null);
+              }
+            }}
           />
           <View style={styles.actionRow}>
             <ActionButton label="Add group" icon="folder-plus" onPress={() => startSelection('new-group')} />
@@ -209,16 +221,57 @@ export default function ResellerPortfolio() {
           <View style={styles.loadingBox}>
             <ActivityIndicator color={semanticColors.primary} />
           </View>
+        ) : viewMode === 'groups' && inspectedGroup ? (
+          <View style={styles.list}>
+            <View style={styles.groupInspectHeader}>
+              <View style={styles.nameRow}>
+                <View style={[styles.groupDot, { backgroundColor: inspectedGroup.color }]} />
+                <View>
+                  <Text style={styles.cardTitle}>{inspectedGroup.name}</Text>
+                  <Text style={styles.cardMeta}>{inspectedGroup.restaurant_count} restaurants</Text>
+                </View>
+              </View>
+              <Pressable onPress={() => setInspectedGroupId(null)} style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>All groups</Text>
+              </Pressable>
+            </View>
+            {inspectedGroup.restaurants.map((restaurant) => {
+              const selected = selectedIds.includes(restaurant.id);
+              return (
+                <Pressable
+                  key={restaurant.id}
+                  style={[styles.card, selected && styles.selectedCard]}
+                  onPress={() => selectable ? toggleSelected(restaurant.id) : setDetailRestaurant(restaurant)}
+                >
+                  <View style={styles.cardHeader}>
+                    <View style={styles.restaurantText}>
+                      <Text style={styles.cardTitle}>{restaurant.name || 'Unnamed restaurant'}</Text>
+                      <Text style={styles.cardMeta}>{formatLocation(restaurant)}</Text>
+                    </View>
+                    {selectable && (
+                      <Feather
+                        name={selected ? 'check-square' : 'square'}
+                        size={22}
+                        color={selected ? color_pallet.amber[600] : color_pallet.ink[400]}
+                      />
+                    )}
+                  </View>
+                </Pressable>
+              );
+            })}
+            {inspectedGroup.restaurants.length === 0 && (
+              <View style={styles.emptyBox}>
+                <Text style={styles.cardMeta}>No restaurants are in this group yet.</Text>
+              </View>
+            )}
+          </View>
         ) : viewMode === 'groups' ? (
           <View style={styles.list}>
             {groupCards.map((group) => (
               <Pressable
                 key={group.id}
                 style={styles.card}
-                onPress={() => {
-                  setGroupFilter(group.id);
-                  setViewMode('restaurants');
-                }}
+                onPress={() => setInspectedGroupId(group.id)}
               >
                 <View style={styles.cardHeader}>
                   <View style={styles.nameRow}>
@@ -732,6 +785,17 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: semanticColors.border,
+  },
+  groupInspectHeader: {
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: color_pallet.elevated.DEFAULT,
+    borderWidth: 1,
+    borderColor: semanticColors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
   },
   modalBackdrop: {
     flex: 1,

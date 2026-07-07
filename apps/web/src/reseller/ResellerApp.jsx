@@ -17,9 +17,12 @@ import {
   Users,
 } from 'lucide-react'
 import { useAuth } from '../auth'
-import { OnboardingPage } from '../onboarding'
 import { fetchWithSupabaseAuth } from '../shared/query'
 import { supabase } from '../shared/lib/supabase'
+import ModernRestaurantSetupPanel, {
+  buildSetupWarnings,
+  warningCount,
+} from '../dashboard/RestaurantSetupPanel'
 import {
   buildGroupCards,
   createResellerGroup,
@@ -148,6 +151,7 @@ function PortfolioPage() {
   const [mode, setMode] = useState('browse')
   const [modal, setModal] = useState(null)
   const [actionError, setActionError] = useState('')
+  const [inspectedGroupId, setInspectedGroupId] = useState(null)
 
   const filteredRestaurants = useMemo(() => {
     if (groupFilter === 'all') return restaurants
@@ -252,7 +256,13 @@ function PortfolioPage() {
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setView(item.id)}
+                onClick={() => {
+                  setView(item.id)
+                  if (item.id === 'restaurants') {
+                    setGroupFilter('all')
+                    setInspectedGroupId(null)
+                  }
+                }}
                 className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition ${
                   view === item.id ? 'bg-white text-black' : 'text-dash-secondary hover:bg-white/10 hover:text-dash-cream'
                 }`}
@@ -312,32 +322,15 @@ function PortfolioPage() {
       {isLoading ? (
         <div className="mt-10 flex justify-center"><div className="h-9 w-9 animate-spin rounded-full border-b-2 border-t-2 border-dash-gold" /></div>
       ) : view === 'groups' ? (
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {groupCards.map((group) => (
-            <button
-              key={group.id}
-              type="button"
-              onClick={() => {
-                setGroupFilter(group.id)
-                setView('restaurants')
-              }}
-              className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 text-left transition hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/[0.06]"
-            >
-              <span className="flex items-center justify-between gap-3">
-                <span className="flex items-center gap-3">
-                  <span className="h-4 w-4 rounded-full" style={{ backgroundColor: group.color }} />
-                  <span className="text-lg font-semibold">{group.name}</span>
-                </span>
-                <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-semibold text-dash-secondary">
-                  {group.restaurant_count}
-                </span>
-              </span>
-              <span className="mt-4 block text-sm text-dash-secondary">
-                {group.restaurants.map((restaurant) => restaurant.name).join(', ') || 'No restaurants'}
-              </span>
-            </button>
-          ))}
-        </div>
+        <GroupBrowser
+          groups={groupCards}
+          inspectedGroupId={inspectedGroupId}
+          selectable={selectable}
+          selectedIds={selectedIds}
+          onInspectGroup={setInspectedGroupId}
+          onBackToGroups={() => setInspectedGroupId(null)}
+          onRestaurantClick={(restaurantId) => selectable ? toggleSelected(restaurantId) : navigate(`/reseller/restaurants/${restaurantId}/analytics`)}
+        />
       ) : (
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filteredRestaurants.map((restaurant) => {
@@ -395,6 +388,101 @@ function PortfolioPage() {
         />
       )}
     </ResellerShell>
+  )
+}
+
+function GroupBrowser({
+  groups,
+  inspectedGroupId,
+  selectable,
+  selectedIds,
+  onInspectGroup,
+  onBackToGroups,
+  onRestaurantClick,
+}) {
+  const inspectedGroup = groups.find((group) => group.id === inspectedGroupId) || null
+
+  if (inspectedGroup) {
+    return (
+      <div className="mt-6 space-y-4">
+        <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <span className="h-4 w-4 rounded-full" style={{ backgroundColor: inspectedGroup.color }} />
+            <div>
+              <p className="label-mono">Group</p>
+              <h2 className="text-2xl font-semibold tracking-tight">{inspectedGroup.name}</h2>
+              <p className="mt-1 text-sm text-dash-secondary">{inspectedGroup.restaurant_count} restaurants</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onBackToGroups}
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-white/10 px-3 text-sm font-semibold text-dash-secondary hover:bg-white/10 hover:text-dash-cream"
+          >
+            All groups
+          </button>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {inspectedGroup.restaurants.map((restaurant) => {
+            const isSelected = selectedIds.includes(restaurant.id)
+            return (
+              <button
+                key={restaurant.id}
+                type="button"
+                onClick={() => onRestaurantClick(restaurant.id)}
+                className={`rounded-2xl border p-5 text-left transition hover:-translate-y-0.5 ${
+                  isSelected
+                    ? 'border-dash-gold/70 bg-dash-gold/10'
+                    : 'border-white/10 bg-white/[0.035] hover:border-white/20 hover:bg-white/[0.06]'
+                }`}
+              >
+                <span className="flex items-start justify-between gap-3">
+                  <span>
+                    <span className="text-lg font-semibold">{restaurant.name || 'Unnamed restaurant'}</span>
+                    <span className="mt-1 block text-sm text-dash-secondary">{formatLocation(restaurant)}</span>
+                  </span>
+                  {selectable ? (
+                    isSelected ? <CheckSquare className="h-5 w-5 text-dash-gold" /> : <Square className="h-5 w-5 text-dash-tertiary" />
+                  ) : null}
+                </span>
+              </button>
+            )
+          })}
+          {inspectedGroup.restaurants.length === 0 && (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-6 text-sm text-dash-secondary">
+              No restaurants are in this group yet.
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {groups.map((group) => (
+        <button
+          key={group.id}
+          type="button"
+          onClick={() => onInspectGroup(group.id)}
+          className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 text-left transition hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/[0.06]"
+        >
+          <span className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-3">
+              <span className="h-4 w-4 rounded-full" style={{ backgroundColor: group.color }} />
+              <span className="text-lg font-semibold">{group.name}</span>
+            </span>
+            <span className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-semibold text-dash-secondary">
+              {group.restaurant_count}
+            </span>
+          </span>
+          <span className="mt-4 block text-sm text-dash-secondary">
+            {group.restaurants.map((restaurant) => restaurant.name).join(', ') || 'No restaurants'}
+          </span>
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -584,9 +672,18 @@ function RestaurantDetailPage() {
 
 function ResellerSetupEditor() {
   const auth = useAuth()
+  const navigate = useNavigate()
   const { restaurantId } = useParams()
   const restaurant = auth.restaurant.restaurants.find((item) => item.id === restaurantId) || null
   const [isSwitching, setIsSwitching] = useState(true)
+  const [waiterCount, setWaiterCount] = useState(null)
+  const [floorPlanStatus, setFloorPlanStatus] = useState(null)
+  const [setupRefreshKey, setSetupRefreshKey] = useState(0)
+
+  const setupWarnings = useMemo(
+    () => buildSetupWarnings(restaurant || {}, waiterCount, floorPlanStatus),
+    [restaurant, waiterCount, floorPlanStatus]
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -606,6 +703,29 @@ function ResellerSetupEditor() {
     }
   }, [auth, restaurant, restaurantId])
 
+  useEffect(() => {
+    if (!restaurantId || !restaurant) return
+    let cancelled = false
+    Promise.all([
+      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`),
+      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`).catch(() => null),
+    ])
+      .then(([waiterData, floorPlan]) => {
+        if (cancelled) return
+        setWaiterCount(Array.isArray(waiterData) ? waiterData.length : 0)
+        setFloorPlanStatus(floorPlan)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWaiterCount(null)
+          setFloorPlanStatus(null)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [restaurant, restaurantId, setupRefreshKey])
+
   if (!restaurant) {
     return <Navigate to="/reseller" replace />
   }
@@ -614,7 +734,51 @@ function ResellerSetupEditor() {
     return <LoadingScreen />
   }
 
-  return <OnboardingPage />
+  return (
+    <ResellerShell>
+      <div className="mb-5 flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <button
+            type="button"
+            onClick={() => navigate(`/reseller/restaurants/${restaurantId}/analytics`)}
+            className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-dash-secondary hover:text-dash-cream"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Restaurant
+          </button>
+          <p className="label-mono">Setup</p>
+          <h1 className="text-3xl font-semibold tracking-tight">{restaurant.name}</h1>
+          <p className="mt-1 text-sm text-dash-secondary">
+            Owner-style setup editor · {warningCount(setupWarnings)} open setup items
+          </p>
+        </div>
+        <div className="flex overflow-x-auto rounded-xl border border-white/10 bg-white/[0.03] p-1">
+          {DETAIL_TABS.map((item) => {
+            const Icon = item.icon
+            return (
+              <Link
+                key={item.id}
+                to={`/reseller/restaurants/${restaurantId}/${item.id}`}
+                className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
+                  item.id === 'setup' ? 'bg-white text-black' : 'text-dash-secondary hover:bg-white/10 hover:text-dash-cream'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+            )
+          })}
+        </div>
+      </div>
+      <ModernRestaurantSetupPanel
+        restaurant={restaurant}
+        restaurantId={restaurantId}
+        auth={auth}
+        setupWarnings={setupWarnings}
+        onSetupChanged={() => setSetupRefreshKey(key => key + 1)}
+      />
+    </ResellerShell>
+  )
 }
 
 function ResellerAnalytics({ restaurantId }) {
@@ -697,7 +861,7 @@ function ResellerMenu({ restaurantId }) {
     let cancelled = false
     supabase
       .from('menu_items')
-      .select('id, name, price, is_active, menu_categories(name)')
+      .select('id, name, price, is_available, menu_categories(name)')
       .eq('restaurant_id', restaurantId)
       .order('name')
       .then(({ data, error: queryError }) => {
