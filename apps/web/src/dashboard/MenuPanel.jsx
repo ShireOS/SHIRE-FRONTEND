@@ -56,6 +56,12 @@ const MENU_TABS = [
   { id: 'printing', label: 'Printing & Routing' },
 ]
 
+const ROUTE_INHERIT_VALUE = ''
+const ROUTE_NO_PRODUCTION_VALUE = '__no_production_route__'
+const ROUTE_MULTI_VALUE = '__multiple_production_routes__'
+
+const routeCategoryKey = (value) => String(value || '').trim().toLowerCase()
+
 const COURSE_OPTIONS = [
   { value: '', label: 'Course default' },
   { value: 'appetizer', label: 'Appetizer' },
@@ -490,6 +496,14 @@ export function MenuPanel({ restaurantId }) {
 
   const stations = routing?.stations || []
   const stationsById = useMemo(() => Object.fromEntries(stations.map(station => [station.id, station])), [stations])
+  const activeRoutingRules = useMemo(
+    () => (routing?.routing_rules || []).filter(rule => rule?.is_active !== false && !rule?.archived_at),
+    [routing],
+  )
+  const activeRoutingExclusions = useMemo(
+    () => (routing?.routing_exclusions || []).filter(rule => rule?.is_active !== false && !rule?.archived_at),
+    [routing],
+  )
 
   const mergedItems = useMemo(
     () => menuItems.map(item => ({ ...item, image_url: itemImages[item.id] ?? null })),
@@ -520,6 +534,51 @@ export function MenuPanel({ restaurantId }) {
     () => new Set(activeSpecials.map(special => special.menu_item_id)),
     [activeSpecials],
   )
+  const stationLabel = (stationId) => stationsById[stationId]?.name || 'Station'
+  const routeRuleLabel = (rule) => rule.station_name || stationLabel(rule.station_id)
+  const categoryRouteRules = (categoryName) => activeRoutingRules.filter(rule => rule.source_type === 'category' && routeCategoryKey(rule.category) === routeCategoryKey(categoryName))
+  const categoryNoRouteRules = (categoryName) => activeRoutingExclusions.filter(rule => rule.source_type === 'category' && routeCategoryKey(rule.category) === routeCategoryKey(categoryName))
+  const itemRouteRules = (item) => activeRoutingRules.filter(rule => rule.source_type === 'menu_item' && String(rule.source_id || '') === String(item.id || item.menu_item_id || ''))
+  const itemNoRouteRules = (item) => activeRoutingExclusions.filter(rule => rule.source_type === 'menu_item' && String(rule.source_id || '') === String(item.id || item.menu_item_id || ''))
+  const routingValueFor = (rules, exclusions) => {
+    if (exclusions.length > 0) return ROUTE_NO_PRODUCTION_VALUE
+    if (rules.length > 1) return ROUTE_MULTI_VALUE
+    if (rules.length === 1) return rules[0].station_id || ''
+    return ROUTE_INHERIT_VALUE
+  }
+  const routingDescriptionFor = (rules, exclusions, emptyLabel) => {
+    if (exclusions.length > 0) return 'No production route'
+    if (rules.length > 1) return `Routes to ${rules.map(routeRuleLabel).join(' + ')}`
+    if (rules.length === 1) return `Routes to ${routeRuleLabel(rules[0])}`
+    return emptyLabel
+  }
+  const categoryProductionRouting = (categoryName) => {
+    const rules = categoryRouteRules(categoryName)
+    const exclusions = categoryNoRouteRules(categoryName)
+    return {
+      rules,
+      exclusions,
+      value: routingValueFor(rules, exclusions),
+      description: routingDescriptionFor(rules, exclusions, 'Uses fallback/no explicit route'),
+    }
+  }
+  const itemProductionRouting = (item) => {
+    const rules = itemRouteRules(item)
+    const exclusions = itemNoRouteRules(item)
+    const categoryRouting = categoryProductionRouting(item.category || '')
+    const inherited = categoryRouting.value === ROUTE_NO_PRODUCTION_VALUE
+      ? 'Inherits no production route'
+      : categoryRouting.rules.length > 0
+        ? `Inherits ${categoryRouting.description.replace(/^Routes to /, '')}`
+        : 'Inherits category/fallback'
+    return {
+      rules,
+      exclusions,
+      categoryRouting,
+      value: routingValueFor(rules, exclusions),
+      description: routingDescriptionFor(rules, exclusions, inherited),
+    }
+  }
 
   // ── Items ────────────────────────────────────────────────────────────────
 
@@ -984,14 +1043,49 @@ export function MenuPanel({ restaurantId }) {
 
   // ── Printing / routing ───────────────────────────────────────────────────
 
-  const routeCategory = (categoryName, stationId) => run(async () => {
-    await api(`/restaurants/${restaurantId}/kitchen-routing/rules`, {
-      method: 'POST',
-      body: JSON.stringify({ source_type: 'category', category: categoryName, station_id: stationId, target_types: ['printer', 'display'] }),
-    })
+  const archiveRoutingRule = (ruleId) => api(`/restaurants/${restaurantId}/kitchen-routing/rules/${ruleId}`, { method: 'DELETE' })
+  const archiveRoutingExclusion = (exclusionId) => api(`/restaurants/${restaurantId}/kitchen-routing/exclusions/${exclusionId}`, { method: 'DELETE' })
+
+  const routeCategory = (categoryName, routeValue) => run(async () => {
+    const routingState = categoryProductionRouting(categoryName)
+    await Promise.all(routingState.rules.map(rule => archiveRoutingRule(rule.id)))
+    if (routeValue === ROUTE_NO_PRODUCTION_VALUE) {
+      await api(`/restaurants/${restaurantId}/kitchen-routing/exclusions`, {
+        method: 'POST',
+        body: JSON.stringify({ source_type: 'category', category: categoryName, reason: 'No production route' }),
+      })
+    } else {
+      await Promise.all(routingState.exclusions.map(rule => archiveRoutingExclusion(rule.id)))
+      if (routeValue) {
+        await api(`/restaurants/${restaurantId}/kitchen-routing/rules`, {
+          method: 'POST',
+          body: JSON.stringify({ source_type: 'category', category: categoryName, station_id: routeValue, target_types: ['printer', 'display'] }),
+        })
+      }
+    }
     invalidateCategories()
     await Promise.all([loadRouting(true), loadCategories(true)])
-  }, 'Category routed.', 'Couldn’t route the category')
+  }, routeValue === ROUTE_NO_PRODUCTION_VALUE ? 'Category set to no production route.' : routeValue ? 'Category routed.' : 'Category now uses fallback/no explicit route.', 'Couldn’t route the category')
+
+  const routeItemProduction = (item, routeValue) => run(async () => {
+    const routingState = itemProductionRouting(item)
+    await Promise.all(routingState.rules.map(rule => archiveRoutingRule(rule.id)))
+    if (routeValue === ROUTE_NO_PRODUCTION_VALUE) {
+      await api(`/restaurants/${restaurantId}/kitchen-routing/exclusions`, {
+        method: 'POST',
+        body: JSON.stringify({ source_type: 'menu_item', source_id: item.id, reason: 'No production route' }),
+      })
+    } else {
+      await Promise.all(routingState.exclusions.map(rule => archiveRoutingExclusion(rule.id)))
+      if (routeValue) {
+        await api(`/restaurants/${restaurantId}/kitchen-routing/rules`, {
+          method: 'POST',
+          body: JSON.stringify({ source_type: 'menu_item', source_id: item.id, station_id: routeValue, target_types: ['printer', 'display'] }),
+        })
+      }
+    }
+    await Promise.all([loadRouting(true), loadItems(true)])
+  }, routeValue === ROUTE_NO_PRODUCTION_VALUE ? 'Item set to no production route.' : routeValue ? 'Item route saved.' : 'Item now inherits category/fallback.', 'Couldn’t route the item')
 
   const createStation = (name) => run(async () => {
     await api(`/restaurants/${restaurantId}/kitchen-routing/stations`, {
@@ -1079,6 +1173,8 @@ export function MenuPanel({ restaurantId }) {
           groups={groups}
           modifiers={modifiers}
           specials={specials}
+          productionRouting={itemProductionRouting(selectedItem)}
+          onRouteItemProduction={routeItemProduction}
           busy={busy}
           onBack={() => setSelectedItemId(null)}
           patchItem={patchItem}
@@ -1780,17 +1876,26 @@ export function MenuPanel({ restaurantId }) {
             <div className="space-y-2">
               {categoryNames.map(name => {
                 const category = categoriesByName[name]
+                const productionRouting = categoryProductionRouting(name)
                 return (
                   <div key={name} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 lg:grid-cols-[1fr_1fr] lg:items-center">
-                    <span className="flex items-center gap-2 text-sm font-medium text-dash-cream">
-                      {category?.color && <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: category.color }} />}
-                      {name}
-                    </span>
+                    <div>
+                      <span className="flex items-center gap-2 text-sm font-medium text-dash-cream">
+                        {category?.color && <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: category.color }} />}
+                        {name}
+                      </span>
+                      <p className="mt-1 text-xs text-dash-tertiary">{productionRouting.description}</p>
+                    </div>
                     <SelectInput
-                      value={category?.routing_station_id || ''}
-                      onChange={event => event.target.value && void routeCategory(name, event.target.value)}
+                      value={productionRouting.value}
+                      onChange={event => {
+                        if (event.target.value === ROUTE_MULTI_VALUE) return
+                        void routeCategory(name, event.target.value)
+                      }}
                     >
-                      <option value="">No station assigned</option>
+                      <option value={ROUTE_INHERIT_VALUE}>Use fallback/no explicit route</option>
+                      <option value={ROUTE_NO_PRODUCTION_VALUE}>No production route</option>
+                      {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
                       {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                     </SelectInput>
                   </div>
@@ -1813,8 +1918,7 @@ export function MenuPanel({ restaurantId }) {
             </div>
             <div className="max-h-[480px] space-y-2 overflow-y-auto pr-1">
               {routingItems.map(item => {
-                const categoryDefault = categoriesByName[item.category || '']?.routing_station_id || ''
-                const effective = item.routing_station_id || categoryDefault
+                const productionRouting = itemProductionRouting(item)
                 return (
                   <div key={item.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 lg:grid-cols-[1.4fr_1fr_1fr] lg:items-center">
                     <div className="text-sm">
@@ -1822,17 +1926,18 @@ export function MenuPanel({ restaurantId }) {
                       <span className="ml-2 text-xs text-dash-tertiary">{item.category}</span>
                     </div>
                     <span className="text-sm text-dash-tertiary">
-                      {item.routing_station_id
-                        ? `Override → ${stationsById[item.routing_station_id]?.name || 'Station'}`
-                        : effective
-                          ? `Inherits ${stationsById[effective]?.name || 'category station'}`
-                          : 'No station'}
+                      {productionRouting.description}
                     </span>
                     <SelectInput
-                      value={item.routing_station_id || ''}
-                      onChange={event => void patchItem(item.id, { routing_station_id: event.target.value || null }, event.target.value ? 'Item override saved.' : 'Item now inherits its category station.')}
+                      value={productionRouting.value}
+                      onChange={event => {
+                        if (event.target.value === ROUTE_MULTI_VALUE) return
+                        void routeItemProduction(item, event.target.value)
+                      }}
                     >
-                      <option value="">Inherit from category</option>
+                      <option value={ROUTE_INHERIT_VALUE}>Inherit category/fallback</option>
+                      <option value={ROUTE_NO_PRODUCTION_VALUE}>No production route</option>
+                      {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
                       {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                     </SelectInput>
                   </div>
