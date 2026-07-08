@@ -1,9 +1,17 @@
 import {
   RESELLER_UNGROUPED_ID,
+  DEFAULT_RESELLER_PERMISSIONS,
+  createResellerEmployee,
   createResellerGroup,
+  fetchResellerEmployees,
   fetchResellerPortfolio,
+  fetchResellerProfile,
+  isResellerProfileComplete,
   moveRestaurantsToResellerGroup,
+  saveResellerProfile,
+  type ResellerEmployee,
   type ResellerGroup,
+  type ResellerProfile,
   type ResellerRestaurant,
 } from '../../packages/supabase';
 import { color_pallet, semanticColors, statusColors } from '@/styles/colors';
@@ -12,6 +20,7 @@ import { Feather } from '@expo/vector-icons';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -23,8 +32,30 @@ import {
 
 const GROUP_COLORS = ['#2EA6A1', '#D4A854', '#7C8CF8', '#E06B4F', '#6DAF5C', '#B66DD8'];
 
-type ViewMode = 'restaurants' | 'groups';
+const EMPTY_PROFILE: ResellerProfile = {
+  reseller_id: '',
+  organization_name: '',
+  legal_business_name: null,
+  business_email: null,
+  phone: null,
+  website: null,
+  logo_url: null,
+  default_general_propagation: 'current_group',
+  default_specified_propagation: 'current_restaurant',
+  onboarding_completed_at: null,
+};
+
+type ViewMode = 'restaurants' | 'groups' | 'profile';
 type SelectMode = 'browse' | 'new-group' | 'move';
+type ResellerEmployeeDraft = {
+  name: string;
+  email: string;
+  username: string;
+  password: string;
+  restaurant_ids: string[];
+  group_ids: string[];
+  permissions: Record<string, boolean>;
+};
 
 type GroupCard = ResellerGroup & {
   restaurant_count: number;
@@ -60,6 +91,19 @@ export default function ResellerPortfolio() {
   const [viewMode, setViewMode] = useState<ViewMode>('restaurants');
   const [selectMode, setSelectMode] = useState<SelectMode>('browse');
   const [groupFilter, setGroupFilter] = useState('all');
+  const [resellerId, setResellerId] = useState<string | null>(null);
+  const [employee, setEmployee] = useState<ResellerEmployee | null>(null);
+  const [profile, setProfile] = useState<ResellerProfile>(EMPTY_PROFILE);
+  const [employees, setEmployees] = useState<ResellerEmployee[]>([]);
+  const [employeeDraft, setEmployeeDraft] = useState<ResellerEmployeeDraft>({
+    name: '',
+    email: '',
+    username: '',
+    password: '11111111',
+    restaurant_ids: [] as string[],
+    group_ids: [] as string[],
+    permissions: { ...DEFAULT_RESELLER_PERMISSIONS },
+  });
   const [restaurants, setRestaurants] = useState<ResellerRestaurant[]>([]);
   const [groups, setGroups] = useState<ResellerGroup[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -69,14 +113,24 @@ export default function ResellerPortfolio() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<SelectMode>('browse');
+  const canManageProfile = !employee;
+  const canManageGroups = !employee || Boolean(employee.permissions.manage_groups);
+  const profileComplete = isResellerProfileComplete(profile);
 
   const load = async () => {
     setError(null);
     setIsLoading(true);
     try {
       const data = await fetchResellerPortfolio();
+      setResellerId(data.resellerId);
+      setEmployee(data.employee);
       setRestaurants(data.restaurants);
       setGroups(data.groups);
+      if (data.resellerId) {
+        const profileRow = await fetchResellerProfile(data.resellerId);
+        setProfile(profileRow);
+        setEmployees(data.employee ? [] : await fetchResellerEmployees(data.resellerId));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load reseller portfolio.');
     } finally {
@@ -169,6 +223,7 @@ export default function ResellerPortfolio() {
             options={[
               { id: 'restaurants', label: 'Restaurants' },
               { id: 'groups', label: 'Groups' },
+              { id: 'profile', label: profileComplete ? 'Profile' : 'Profile !' },
             ]}
             onChange={(value) => {
               const nextView = value as ViewMode;
@@ -179,10 +234,12 @@ export default function ResellerPortfolio() {
               }
             }}
           />
-          <View style={styles.actionRow}>
-            <ActionButton label="Add group" icon="folder-plus" onPress={() => startSelection('new-group')} />
-            <ActionButton label="Move group" icon="move" onPress={() => startSelection('move')} />
-          </View>
+          {canManageGroups && (
+            <View style={styles.actionRow}>
+              <ActionButton label="Add group" icon="folder-plus" onPress={() => startSelection('new-group')} />
+              <ActionButton label="Move group" icon="move" onPress={() => startSelection('move')} />
+            </View>
+          )}
         </View>
 
         {viewMode === 'restaurants' && (
@@ -221,6 +278,22 @@ export default function ResellerPortfolio() {
           <View style={styles.loadingBox}>
             <ActivityIndicator color={semanticColors.primary} />
           </View>
+        ) : viewMode === 'profile' ? (
+          <ResellerProfilePanel
+            resellerId={resellerId}
+            profile={profile}
+            groups={groups}
+            restaurants={restaurants}
+            employees={employees}
+            employeeDraft={employeeDraft}
+            canManage={canManageProfile}
+            isSaving={isSaving}
+            onProfileChange={setProfile}
+            onDraftChange={setEmployeeDraft}
+            onSavingChange={setIsSaving}
+            onError={setError}
+            onReload={load}
+          />
         ) : viewMode === 'groups' && inspectedGroup ? (
           <View style={styles.list}>
             <View style={styles.groupInspectHeader}>
@@ -368,6 +441,303 @@ function SegmentedControl({
           <Text style={[styles.segmentText, value === option.id && styles.segmentTextActive]}>{option.label}</Text>
         </Pressable>
       ))}
+    </View>
+  );
+}
+
+function ResellerProfilePanel({
+  resellerId,
+  profile,
+  groups,
+  restaurants,
+  employees,
+  employeeDraft,
+  canManage,
+  isSaving,
+  onProfileChange,
+  onDraftChange,
+  onSavingChange,
+  onError,
+  onReload,
+}: {
+  resellerId: string | null;
+  profile: ResellerProfile;
+  groups: ResellerGroup[];
+  restaurants: ResellerRestaurant[];
+  employees: ResellerEmployee[];
+  employeeDraft: ResellerEmployeeDraft;
+  canManage: boolean;
+  isSaving: boolean;
+  onProfileChange: (profile: ResellerProfile) => void;
+  onDraftChange: (draft: ResellerEmployeeDraft) => void;
+  onSavingChange: (saving: boolean) => void;
+  onError: (message: string | null) => void;
+  onReload: () => Promise<void>;
+}) {
+  const updateProfile = (patch: Partial<ResellerProfile>) => onProfileChange({ ...profile, ...patch });
+  const updateDraft = (patch: Partial<typeof employeeDraft>) => onDraftChange({ ...employeeDraft, ...patch });
+  const updatePermission = (key: string) => updateDraft({
+    permissions: { ...employeeDraft.permissions, [key]: !employeeDraft.permissions[key] },
+  });
+  const toggleRestaurant = (restaurantId: string) => {
+    const has = employeeDraft.restaurant_ids.includes(restaurantId);
+    updateDraft({
+      restaurant_ids: has
+        ? employeeDraft.restaurant_ids.filter((id) => id !== restaurantId)
+        : [...employeeDraft.restaurant_ids, restaurantId],
+    });
+  };
+  const toggleAllRestaurants = () => {
+    updateDraft({
+      restaurant_ids: employeeDraft.restaurant_ids.length === restaurants.length
+        ? []
+        : restaurants.map((restaurant) => restaurant.id),
+    });
+  };
+  const toggleGroup = (groupId: string) => {
+    const has = employeeDraft.group_ids.includes(groupId);
+    updateDraft({
+      group_ids: has
+        ? employeeDraft.group_ids.filter((id) => id !== groupId)
+        : [...employeeDraft.group_ids, groupId],
+    });
+  };
+  const toggleAllGroups = () => {
+    updateDraft({
+      group_ids: employeeDraft.group_ids.length === groups.length
+        ? []
+        : groups.map((group) => group.id),
+    });
+  };
+  const pickLogo = async () => {
+    if (!canManage) return;
+    onError(null);
+    try {
+      const ImagePicker = await import('expo-image-picker');
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        onError('Photo library permission is required to add a logo.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.35,
+        base64: true,
+      });
+      if (result.canceled || !result.assets?.[0]?.base64) return;
+      updateProfile({ logo_url: `data:image/jpeg;base64,${result.assets[0].base64}` });
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not choose logo.');
+    }
+  };
+  const saveProfile = async (complete = false) => {
+    if (!resellerId) return;
+    onSavingChange(true);
+    onError(null);
+    try {
+      const saved = await saveResellerProfile(resellerId, profile, { complete });
+      onProfileChange(saved);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not save reseller profile.');
+    } finally {
+      onSavingChange(false);
+    }
+  };
+  const addEmployee = async () => {
+    if (!employeeDraft.name.trim()) {
+      onError('Employee name is required.');
+      return;
+    }
+    if (employeeDraft.password.length < 8) {
+      onError('Employee password must be at least 8 characters.');
+      return;
+    }
+    onSavingChange(true);
+    onError(null);
+    try {
+      await createResellerEmployee(employeeDraft);
+      onDraftChange({
+        name: '',
+        email: '',
+        username: '',
+        password: '11111111',
+        restaurant_ids: [],
+        group_ids: [],
+        permissions: { ...DEFAULT_RESELLER_PERMISSIONS },
+      });
+      await onReload();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not add reseller employee.');
+    } finally {
+      onSavingChange(false);
+    }
+  };
+
+  return (
+    <View style={styles.list}>
+      <View style={styles.profileCard}>
+        <View style={styles.profileHeader}>
+          <View>
+            <Text style={styles.cardTitle}>Organization profile</Text>
+            <Text style={styles.cardMeta}>Reseller-only details and branding.</Text>
+          </View>
+          {!isResellerProfileComplete(profile) && <Text style={styles.warningPill}>!</Text>}
+        </View>
+        <Pressable onPress={pickLogo} disabled={!canManage} style={styles.logoRow}>
+          {profile.logo_url ? (
+            <Image source={{ uri: profile.logo_url }} style={styles.logoPreview} />
+          ) : (
+            <View style={styles.logoPlaceholder}><Feather name="image" size={20} color={semanticColors.textMuted} /></View>
+          )}
+          <Text style={styles.secondaryButtonText}>{canManage ? 'Choose logo' : 'Logo'}</Text>
+        </Pressable>
+        <ProfileInput label="Organization name" value={profile.organization_name} editable={canManage} onChangeText={(value) => updateProfile({ organization_name: value })} />
+        <ProfileInput label="Legal business name" value={profile.legal_business_name || ''} editable={canManage} onChangeText={(value) => updateProfile({ legal_business_name: value })} />
+        <ProfileInput label="Business email" value={profile.business_email || ''} editable={canManage} onChangeText={(value) => updateProfile({ business_email: value })} />
+        <ProfileInput label="Phone" value={profile.phone || ''} editable={canManage} onChangeText={(value) => updateProfile({ phone: value })} />
+        <ProfileInput label="Website" value={profile.website || ''} editable={canManage} onChangeText={(value) => updateProfile({ website: value })} />
+      </View>
+
+      <View style={styles.profileCard}>
+        <Text style={styles.cardTitle}>Default propagation</Text>
+        <Text style={styles.cardMeta}>These defaults preselect restaurants when setup changes are applied.</Text>
+        <ChoiceRow
+          label="General changes"
+          value={profile.default_general_propagation}
+          options={[
+            ['current_group', 'Current group'],
+            ['current_restaurant', 'Current restaurant'],
+            ['ask_every_time', 'Ask every time'],
+          ]}
+          disabled={!canManage}
+          onChange={(value) => updateProfile({ default_general_propagation: value as ResellerProfile['default_general_propagation'] })}
+        />
+        <ChoiceRow
+          label="Specified changes"
+          value={profile.default_specified_propagation}
+          options={[
+            ['current_restaurant', 'Current restaurant'],
+            ['ask_every_time', 'Ask every time'],
+          ]}
+          disabled={!canManage}
+          onChange={(value) => updateProfile({ default_specified_propagation: value as ResellerProfile['default_specified_propagation'] })}
+        />
+        {canManage && (
+          <Pressable disabled={isSaving} onPress={() => saveProfile(true)} style={[styles.primaryButton, isSaving && styles.disabledButton]}>
+            <Text style={styles.primaryButtonText}>{isSaving ? 'Saving...' : 'Save profile'}</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {canManage && (
+        <View style={styles.profileCard}>
+          <Text style={styles.cardTitle}>Reseller employees</Text>
+          <Text style={styles.cardMeta}>Create a username/password and choose which restaurants they can oversee.</Text>
+          <ProfileInput label="Name" value={employeeDraft.name} onChangeText={(value) => updateDraft({ name: value })} />
+          <ProfileInput label="Email optional" value={employeeDraft.email} onChangeText={(value) => updateDraft({ email: value })} />
+          <ProfileInput label="Username optional" value={employeeDraft.username} onChangeText={(value) => updateDraft({ username: value })} />
+          <ProfileInput label="Temporary password" value={employeeDraft.password} onChangeText={(value) => updateDraft({ password: value })} />
+          <View style={styles.chipRow}>
+            {[
+              ['edit_setup', 'Edit setup'],
+              ['propagate_changes', 'Propagate'],
+              ['manage_groups', 'Manage groups'],
+            ].map(([key, label]) => (
+              <FilterChip key={key} label={label} selected={Boolean(employeeDraft.permissions[key])} onPress={() => updatePermission(key)} />
+            ))}
+          </View>
+          <Text style={styles.detailLabel}>Group access</Text>
+          <Pressable onPress={toggleAllGroups} style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>{employeeDraft.group_ids.length === groups.length ? 'Clear groups' : 'Choose all groups'}</Text>
+          </Pressable>
+          <View style={styles.restaurantChecklist}>
+            {groups.map((group) => (
+              <Pressable key={group.id} onPress={() => toggleGroup(group.id)} style={styles.checkRow}>
+                <Feather name={employeeDraft.group_ids.includes(group.id) ? 'check-square' : 'square'} size={20} color={semanticColors.text} />
+                <View style={[styles.groupDot, { backgroundColor: group.color }]} />
+                <Text style={styles.checkText}>{group.name}</Text>
+              </Pressable>
+            ))}
+            {groups.length === 0 && <Text style={styles.cardMeta}>Create a group first to assign group access.</Text>}
+          </View>
+          <Text style={styles.detailLabel}>Restaurant access</Text>
+          <Pressable onPress={toggleAllRestaurants} style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>{employeeDraft.restaurant_ids.length === restaurants.length ? 'Clear restaurants' : 'Choose all restaurants'}</Text>
+          </Pressable>
+          <View style={styles.restaurantChecklist}>
+            {restaurants.map((restaurant) => (
+              <Pressable key={restaurant.id} onPress={() => toggleRestaurant(restaurant.id)} style={styles.checkRow}>
+                <Feather name={employeeDraft.restaurant_ids.includes(restaurant.id) ? 'check-square' : 'square'} size={20} color={semanticColors.text} />
+                <Text style={styles.checkText}>{restaurant.name}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Pressable disabled={isSaving} onPress={addEmployee} style={[styles.primaryButton, isSaving && styles.disabledButton]}>
+            <Text style={styles.primaryButtonText}>{isSaving ? 'Saving...' : 'Add employee'}</Text>
+          </Pressable>
+          {employees.map((item) => (
+            <View key={item.id} style={styles.employeeRow}>
+              <View>
+                <Text style={styles.cardTitle}>{item.name}</Text>
+                <Text style={styles.cardMeta}>{item.username} · {item.restaurant_ids.length} restaurants · {item.group_ids.length} groups</Text>
+              </View>
+              <Text style={styles.countPill}>{item.status}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function ProfileInput({
+  label,
+  value,
+  editable = true,
+  onChangeText,
+}: {
+  label: string;
+  value: string;
+  editable?: boolean;
+  onChangeText: (value: string) => void;
+}) {
+  return (
+    <View style={{ gap: 6 }}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <TextInput
+        value={value}
+        editable={editable}
+        onChangeText={onChangeText}
+        placeholderTextColor={color_pallet.ink[400]}
+        style={[styles.input, !editable && styles.disabledButton]}
+      />
+    </View>
+  );
+}
+
+function ChoiceRow({
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: [string, string][];
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <View style={{ gap: 8 }}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <View style={styles.chipRow}>
+        {options.map(([id, text]) => (
+          <FilterChip key={id} label={text} selected={value === id} onPress={() => !disabled && onChange(id)} />
+        ))}
+      </View>
     </View>
   );
 }
@@ -732,6 +1102,85 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: semanticColors.border,
     gap: 14,
+  },
+  profileCard: {
+    padding: 16,
+    borderRadius: 14,
+    backgroundColor: color_pallet.elevated.DEFAULT,
+    borderWidth: 1,
+    borderColor: semanticColors.border,
+    gap: 14,
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  warningPill: {
+    ...typography.caption,
+    color: color_pallet.amber[700],
+    fontWeight: '900',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: color_pallet.amber[50],
+  },
+  logoRow: {
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: semanticColors.border,
+  },
+  logoPreview: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+  },
+  logoPlaceholder: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: color_pallet.stone[100],
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  restaurantChecklist: {
+    gap: 8,
+  },
+  checkRow: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: semanticColors.border,
+  },
+  checkText: {
+    ...typography.bodySmall,
+    color: semanticColors.text,
+    fontWeight: '700',
+    flex: 1,
+  },
+  employeeRow: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: semanticColors.border,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
   },
   selectedCard: {
     borderColor: color_pallet.amber[600],

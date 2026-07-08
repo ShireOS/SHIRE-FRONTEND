@@ -5,7 +5,7 @@ import Constants from 'expo-constants';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { Restaurant } from '@shire/db';
 
-export type userRole = 'owner' | 'employee' | 'developer' | 'reseller' | null;
+export type userRole = 'owner' | 'employee' | 'developer' | 'reseller' | 'reseller_employee' | 'admin' | null;
 
 export type OwnerRestaurant = {
   id: string;
@@ -33,6 +33,39 @@ export type ResellerRestaurant = Restaurant & {
   reseller_group_id: string;
   reseller_group_name: string;
   reseller_group_color: string;
+};
+
+export type ResellerProfile = {
+  reseller_id: string;
+  organization_name: string;
+  legal_business_name: string | null;
+  business_email: string | null;
+  phone: string | null;
+  website: string | null;
+  logo_url: string | null;
+  default_general_propagation: 'current_group' | 'current_restaurant' | 'ask_every_time';
+  default_specified_propagation: 'current_restaurant' | 'ask_every_time';
+  onboarding_completed_at: string | null;
+};
+
+export type ResellerEmployee = {
+  id: string;
+  reseller_id: string;
+  user_id: string | null;
+  name: string;
+  email: string | null;
+  username: string;
+  status: string;
+  permissions: Record<string, boolean>;
+  restaurant_ids: string[];
+  group_ids: string[];
+};
+
+export const DEFAULT_RESELLER_PERMISSIONS = {
+  view_analytics: true,
+  edit_setup: false,
+  propagate_changes: false,
+  manage_groups: false,
 };
 
 const AUTH_TIMEOUT_MS = 12_000;
@@ -77,6 +110,40 @@ function getSupabaseConfig() {
   }
 
   return { supabaseUrl: supabaseUrl.replace(/\/+$/, ''), supabasePublishableKey };
+}
+
+function getMobileApiBaseUrl() {
+  const value = Constants.expoConfig?.extra?.apiBaseUrl;
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error('API_BASE_URL is not configured for the mobile app.');
+  }
+  return value.replace(/\/+$/, '');
+}
+
+function normalizeResellerProfile(profile: Partial<ResellerProfile> | null | undefined): ResellerProfile {
+  return {
+    reseller_id: profile?.reseller_id || '',
+    organization_name: profile?.organization_name || '',
+    legal_business_name: profile?.legal_business_name ?? null,
+    business_email: profile?.business_email ?? null,
+    phone: profile?.phone ?? null,
+    website: profile?.website ?? null,
+    logo_url: profile?.logo_url ?? null,
+    default_general_propagation: profile?.default_general_propagation || 'current_group',
+    default_specified_propagation: profile?.default_specified_propagation || 'current_restaurant',
+    onboarding_completed_at: profile?.onboarding_completed_at ?? null,
+  };
+}
+
+export function isResellerProfileComplete(profile: Partial<ResellerProfile> | null | undefined) {
+  return Boolean(
+    profile?.organization_name?.trim()
+      && profile?.legal_business_name?.trim()
+      && profile?.business_email?.trim()
+      && profile?.phone?.trim()
+      && profile?.default_general_propagation
+      && profile?.default_specified_propagation,
+  );
 }
 
 async function fetchJsonWithTimeout<T>(
@@ -167,6 +234,13 @@ export async function login(email: string, password: string): Promise<LoginResul
   try {
     const { supabaseUrl, supabasePublishableKey } = getSupabaseConfig();
     const client = getSBClient();
+    let credentialEmail = email.trim();
+    const { data: resolvedLogin } = await client.rpc('resolve_reseller_employee_login', {
+      login_identifier: credentialEmail,
+    });
+    if (typeof resolvedLogin === 'string' && resolvedLogin.length > 0) {
+      credentialEmail = resolvedLogin;
+    }
 
     const data = await fetchJsonWithTimeout<{
       access_token?: string;
@@ -180,7 +254,7 @@ export async function login(email: string, password: string): Promise<LoginResul
           apikey: supabasePublishableKey,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: credentialEmail, password }),
       },
       'Sign in',
     );
@@ -216,25 +290,25 @@ export type SignUpResult =
   | { ok: true; needsConfirmation: boolean }
   | { ok: false; error: string };
 
-export async function signUp(email: string, password: string): Promise<SignUpResult> {
+export async function signUp(
+  email: string,
+  password: string,
+  accountType: 'owner' | 'reseller' = 'owner',
+): Promise<SignUpResult> {
   try {
     const client = getSBClient();
     const { data, error } = await withTimeout(
-      client.auth.signUp({ email, password }),
+      client.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { account_type: accountType },
+        },
+      }),
       'Sign up',
     );
     if (error) return { ok: false, error: humanizeAuthError(error.message ?? '') };
     if (!data.user?.id) return { ok: false, error: 'Error retrieving your information.' };
-
-    const { error: roleError } = await withTimeout(
-      client.from('user_roles').insert({
-        user: data.user.id,
-        sole_annotation_access: false,
-        restaraunt_role: 'employee',
-      }),
-      'Saving account role',
-    );
-    if (roleError) return { ok: false, error: roleError.message };
 
     return { ok: true, needsConfirmation: data.session == null };
   } catch (e) {
@@ -349,8 +423,14 @@ export async function getUserRole(userId?: string): Promise<userRole> {
     Authorization: `Bearer ${accessToken}`,
   };
 
-  const [roleRows, memberships] = await withTimeout(
+  const [profileRows, roleRows, memberships] = await withTimeout(
     Promise.all([
+      fetchJsonWithTimeout<{ account_type?: string }[]>(
+        `${supabaseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(resolvedUserId)}&select=account_type&limit=1`,
+        { headers },
+        'Loading account profile',
+        ROLE_TIMEOUT_MS,
+      ),
       fetchJsonWithTimeout<{ restaraunt_role?: string }[]>(
         `${supabaseUrl}/rest/v1/user_roles?user=eq.${encodeURIComponent(resolvedUserId)}&select=restaraunt_role&limit=1`,
         { headers },
@@ -367,6 +447,11 @@ export async function getUserRole(userId?: string): Promise<userRole> {
     'Loading account role',
     ROLE_TIMEOUT_MS,
   );
+
+  const accountType = profileRows[0]?.account_type;
+  if (accountType === 'owner' || accountType === 'reseller' || accountType === 'reseller_employee' || accountType === 'admin') {
+    return accountType;
+  }
 
   if (roleRows[0]?.restaraunt_role) {
     return roleRows[0].restaraunt_role as userRole;
@@ -423,28 +508,63 @@ export async function fetchResellerPortfolio(): Promise<{
   restaurants: ResellerRestaurant[];
   groups: ResellerGroup[];
   memberships: ResellerGroupMember[];
+  resellerId: string | null;
+  employee: ResellerEmployee | null;
 }> {
   const session = await getSessionSnapshot('Loading reseller portfolio');
-  if (!session) return { restaurants: [], groups: [], memberships: [] };
+  if (!session) return { restaurants: [], groups: [], memberships: [], resellerId: null, employee: null };
 
   const client = getSBClient();
+  const role = await getUserRole(session.userId);
+  let resellerId = session.userId;
+  let employee: ResellerEmployee | null = null;
+  let employeeRestaurantIds: Set<string> | null = null;
+  let employeeGroupIds: Set<string> | null = null;
+
+  if (role === 'reseller_employee') {
+    const { data: employeeRow, error: employeeError } = await client
+      .from('reseller_employees')
+      .select('*, assignments:reseller_employee_restaurants(restaurant_id), group_assignments:reseller_employee_groups(group_id)')
+      .eq('user_id', session.userId)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (employeeError) throw employeeError;
+    if (!employeeRow?.id) return { restaurants: [], groups: [], memberships: [], resellerId: null, employee: null };
+
+    employeeRestaurantIds = new Set(((employeeRow.assignments || []) as { restaurant_id: string }[]).map((item) => item.restaurant_id));
+    employeeGroupIds = new Set(((employeeRow.group_assignments || []) as { group_id: string }[]).map((item) => item.group_id));
+    resellerId = employeeRow.reseller_id;
+    employee = {
+      id: employeeRow.id,
+      reseller_id: employeeRow.reseller_id,
+      user_id: employeeRow.user_id,
+      name: employeeRow.name,
+      email: employeeRow.email,
+      username: employeeRow.username,
+      status: employeeRow.status,
+      permissions: { ...DEFAULT_RESELLER_PERMISSIONS, ...(employeeRow.permissions || {}) },
+      restaurant_ids: [...employeeRestaurantIds],
+      group_ids: [...employeeGroupIds],
+    };
+  }
 
   const [assignmentResult, groupResult, membershipResult] = await withTimeout(
     Promise.all([
       client
         .from('reseller_restaurants')
         .select('restaurant:restaurants(*)')
-        .eq('reseller_id', session.userId)
+        .eq('reseller_id', resellerId)
         .eq('status', 'active'),
       client
         .from('reseller_restaurant_groups')
         .select('*')
-        .eq('reseller_id', session.userId)
+        .eq('reseller_id', resellerId)
         .order('name'),
       client
         .from('reseller_restaurant_group_members')
         .select('*')
-        .eq('reseller_id', session.userId),
+        .eq('reseller_id', resellerId),
     ]),
     'Loading reseller portfolio',
     ROLE_TIMEOUT_MS,
@@ -457,6 +577,13 @@ export async function fetchResellerPortfolio(): Promise<{
   const groups = (groupResult.data || []) as ResellerGroup[];
   const memberships = (membershipResult.data || []) as ResellerGroupMember[];
   const membershipByRestaurant = new Map(memberships.map((member) => [member.restaurant_id, member.group_id]));
+  if (employeeRestaurantIds && employeeGroupIds) {
+    memberships.forEach((membership) => {
+      if (employeeGroupIds?.has(membership.group_id)) {
+        employeeRestaurantIds?.add(membership.restaurant_id);
+      }
+    });
+  }
 
   const restaurants = ((assignmentResult.data || []) as unknown as { restaurant?: Restaurant | Restaurant[] | null }[])
     .map((row) => Array.isArray(row.restaurant) ? row.restaurant[0] : row.restaurant)
@@ -470,19 +597,123 @@ export async function fetchResellerPortfolio(): Promise<{
         reseller_group_name: group?.name || 'Ungrouped',
         reseller_group_color: group?.color || '#9CA3AF',
       };
-    });
+    })
+    .filter((restaurant) => !employeeRestaurantIds || employeeRestaurantIds.has(restaurant.id));
 
-  return { restaurants, groups, memberships };
+  return { restaurants, groups, memberships, resellerId, employee };
+}
+
+export async function fetchResellerProfile(resellerId: string): Promise<ResellerProfile> {
+  const client = getSBClient();
+  const { data, error } = await client
+    .from('reseller_profiles')
+    .select('*')
+    .eq('reseller_id', resellerId)
+    .maybeSingle();
+  if (error) throw error;
+  return normalizeResellerProfile(data as Partial<ResellerProfile> | null);
+}
+
+async function getCurrentResellerIdForMutation(label: string): Promise<string> {
+  const session = await getSessionSnapshot(label);
+  if (!session) throw new Error('Not signed in.');
+  const client = getSBClient();
+  const { data, error } = await client.rpc('current_reseller_id');
+  if (error) throw error;
+  return typeof data === 'string' && data.length > 0 ? data : session.userId;
+}
+
+export async function saveResellerProfile(
+  resellerId: string,
+  profile: Partial<ResellerProfile>,
+  options: { complete?: boolean } = {},
+): Promise<ResellerProfile> {
+  const client = getSBClient();
+  const now = new Date().toISOString();
+  const payload = {
+    reseller_id: resellerId,
+    organization_name: profile.organization_name?.trim() || '',
+    legal_business_name: profile.legal_business_name?.trim() || null,
+    business_email: profile.business_email?.trim() || null,
+    phone: profile.phone?.trim() || null,
+    website: profile.website?.trim() || null,
+    logo_url: profile.logo_url || null,
+    default_general_propagation: profile.default_general_propagation || 'current_group',
+    default_specified_propagation: profile.default_specified_propagation || 'current_restaurant',
+    onboarding_completed_at: options.complete ? now : profile.onboarding_completed_at || null,
+    updated_at: now,
+  };
+  const { data, error } = await client
+    .from('reseller_profiles')
+    .upsert(payload, { onConflict: 'reseller_id' })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return normalizeResellerProfile(data as Partial<ResellerProfile>);
+}
+
+export async function fetchResellerEmployees(resellerId: string): Promise<ResellerEmployee[]> {
+  const client = getSBClient();
+  const { data, error } = await client
+    .from('reseller_employees')
+    .select('*, assignments:reseller_employee_restaurants(restaurant_id), group_assignments:reseller_employee_groups(group_id)')
+    .eq('reseller_id', resellerId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return ((data || []) as any[]).map((employee) => ({
+    id: employee.id,
+    reseller_id: employee.reseller_id,
+    user_id: employee.user_id,
+    name: employee.name,
+    email: employee.email,
+    username: employee.username,
+    status: employee.status,
+    permissions: { ...DEFAULT_RESELLER_PERMISSIONS, ...(employee.permissions || {}) },
+    restaurant_ids: ((employee.assignments || []) as { restaurant_id: string }[]).map((item) => item.restaurant_id),
+    group_ids: ((employee.group_assignments || []) as { group_id: string }[]).map((item) => item.group_id),
+  }));
+}
+
+export async function createResellerEmployee(input: {
+  name: string;
+  email?: string;
+  username?: string;
+  password: string;
+  restaurant_ids: string[];
+  group_ids: string[];
+  permissions: Record<string, boolean>;
+}): Promise<ResellerEmployee> {
+  const session = await getSessionSnapshot('Creating reseller employee');
+  if (!session) throw new Error('Not signed in.');
+
+  const response = await fetch(`${getMobileApiBaseUrl()}/reseller/employees`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.accessToken}`,
+    },
+    body: JSON.stringify(input),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(typeof body.detail === 'string' ? body.detail : `Could not create reseller employee (${response.status})`);
+  }
+  return {
+    ...body,
+    permissions: { ...DEFAULT_RESELLER_PERMISSIONS, ...(body.permissions || {}) },
+    restaurant_ids: body.restaurant_ids || input.restaurant_ids || [],
+    group_ids: body.group_ids || input.group_ids || [],
+  } as ResellerEmployee;
 }
 
 export async function createResellerGroup(input: { name: string; color: string }): Promise<ResellerGroup> {
-  const session = await getSessionSnapshot('Creating reseller group');
-  if (!session) throw new Error('Not signed in.');
+  const resellerId = await getCurrentResellerIdForMutation('Creating reseller group');
 
   const client = getSBClient();
   const { data, error } = await client
     .from('reseller_restaurant_groups')
-    .insert({ reseller_id: session.userId, name: input.name.trim(), color: input.color })
+    .insert({ reseller_id: resellerId, name: input.name.trim(), color: input.color })
     .select('*')
     .single();
 
@@ -491,8 +722,7 @@ export async function createResellerGroup(input: { name: string; color: string }
 }
 
 export async function moveRestaurantsToResellerGroup(restaurantIds: string[], groupId: string): Promise<void> {
-  const session = await getSessionSnapshot('Moving restaurants');
-  if (!session) throw new Error('Not signed in.');
+  const resellerId = await getCurrentResellerIdForMutation('Moving restaurants');
 
   const ids = Array.from(new Set(restaurantIds)).filter(Boolean);
   if (ids.length === 0) return;
@@ -502,14 +732,14 @@ export async function moveRestaurantsToResellerGroup(restaurantIds: string[], gr
     const { error } = await client
       .from('reseller_restaurant_group_members')
       .delete()
-      .eq('reseller_id', session.userId)
+      .eq('reseller_id', resellerId)
       .in('restaurant_id', ids);
     if (error) throw error;
     return;
   }
 
   const rows = ids.map((restaurantId) => ({
-    reseller_id: session.userId,
+    reseller_id: resellerId,
     restaurant_id: restaurantId,
     group_id: groupId,
   }));

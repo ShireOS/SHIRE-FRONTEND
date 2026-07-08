@@ -98,6 +98,7 @@ export function useRequireAuth(options: UseRequireAuthOptions = {}) {
   }, [
     auth.isLoading,
     auth.isAuthenticated,
+    auth.accountType,
     auth.restaurant.isLoading,
     auth.restaurant.currentRestaurant,
     auth.restaurant.restaurants,
@@ -163,6 +164,16 @@ export function useRequireOnboarding() {
       return
     }
 
+    if (auth.accountType === 'reseller') {
+      navigate('/reseller/onboarding', { replace: true })
+      return
+    }
+
+    if (auth.accountType === 'reseller_employee') {
+      navigate('/reseller', { replace: true })
+      return
+    }
+
     if (completedRestaurant && !isSetupEditor && !isNewRestaurantFlow) {
       if (auth.restaurant.currentRestaurant?.id !== completedRestaurant.id) {
         void auth.switchRestaurant(completedRestaurant.id)
@@ -180,6 +191,7 @@ export function useRequireOnboarding() {
   }, [
     auth.isLoading,
     auth.isAuthenticated,
+    auth.accountType,
     auth.restaurant.isLoading,
     auth.restaurant.currentRestaurant,
     auth.restaurant.restaurants,
@@ -213,6 +225,16 @@ export function useRedirectIfAuthenticated(redirectTo = '/') {
     if (auth.isLoading || auth.restaurant.isLoading) return
 
     if (auth.isAuthenticated) {
+      if (auth.accountType === 'reseller') {
+        navigate('/reseller/onboarding', { replace: true })
+        return
+      }
+
+      if (auth.accountType === 'reseller_employee') {
+        navigate('/reseller', { replace: true })
+        return
+      }
+
       const completedRestaurant = getCompletedRestaurant(
         auth.restaurant.currentRestaurant,
         auth.restaurant.restaurants

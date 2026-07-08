@@ -26,11 +26,20 @@ import ModernRestaurantSetupPanel, {
 import {
   buildGroupCards,
   createResellerGroup,
-  fetchResellerGroups,
-  groupRestaurants,
+  fetchResellerPortfolioForUser,
   moveRestaurantsToGroup,
   UNGROUPED_ID,
 } from './data/resellerPortfolio'
+import {
+  DEFAULT_RESELLER_PERMISSIONS,
+  createResellerEmployee,
+  fetchResellerEmployees,
+  fetchResellerProfile,
+  isResellerProfileComplete,
+  normalizeResellerProfile,
+  saveResellerProfile,
+  uploadResellerLogo,
+} from './data/resellerProfile'
 
 const GROUP_COLORS = ['#2EA6A1', '#D4A854', '#7C8CF8', '#E06B4F', '#6DAF5C', '#B66DD8']
 const DETAIL_TABS = [
@@ -38,6 +47,10 @@ const DETAIL_TABS = [
   { id: 'setup', label: 'Setup', icon: Settings },
   { id: 'menu', label: 'Menu', icon: Utensils },
   { id: 'team', label: 'Team', icon: Users },
+]
+const PROFILE_TABS = [
+  { id: 'portfolio', label: 'Portfolio', icon: LayoutGrid },
+  { id: 'profile', label: 'Profile', icon: Settings },
 ]
 
 function ResellerGate({ children }) {
@@ -51,7 +64,7 @@ function ResellerGate({ children }) {
     return <Navigate to="/auth/login" replace />
   }
 
-  if (auth.accountType !== 'reseller' && auth.accountType !== 'admin') {
+  if (!['reseller', 'reseller_employee', 'admin'].includes(auth.accountType)) {
     return <Navigate to="/" replace />
   }
 
@@ -110,6 +123,9 @@ function useResellerPortfolio() {
   const auth = useAuth()
   const [groups, setGroups] = useState([])
   const [memberships, setMemberships] = useState([])
+  const [portfolioRestaurants, setPortfolioRestaurants] = useState([])
+  const [resellerId, setResellerId] = useState(null)
+  const [employee, setEmployee] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -118,33 +134,38 @@ function useResellerPortfolio() {
     setIsLoading(true)
     setError('')
     try {
-      const data = await fetchResellerGroups(auth.user.id)
+      const data = await fetchResellerPortfolioForUser({
+        userId: auth.user.id,
+        accountType: auth.accountType,
+        restaurants: auth.restaurant.restaurants || [],
+      })
+      setResellerId(data.resellerId)
+      setEmployee(data.employee)
       setGroups(data.groups)
       setMemberships(data.memberships)
+      setPortfolioRestaurants(data.restaurants)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load reseller groups.')
     } finally {
       setIsLoading(false)
     }
-  }, [auth.user?.id])
+  }, [auth.accountType, auth.restaurant.restaurants, auth.user?.id])
 
   useEffect(() => {
     void reload()
   }, [reload])
 
-  const restaurants = useMemo(
-    () => groupRestaurants(auth.restaurant.restaurants || [], groups, memberships),
-    [auth.restaurant.restaurants, groups, memberships]
-  )
+  const restaurants = portfolioRestaurants
   const groupCards = useMemo(() => buildGroupCards(restaurants, groups), [restaurants, groups])
 
-  return { groups, memberships, restaurants, groupCards, isLoading, error, reload }
+  return { resellerId, employee, groups, memberships, restaurants, groupCards, isLoading, error, reload }
 }
 
 function PortfolioPage() {
   const auth = useAuth()
   const navigate = useNavigate()
-  const { groups, restaurants, groupCards, isLoading, error, reload } = useResellerPortfolio()
+  const { resellerId, employee, groups, restaurants, groupCards, isLoading, error, reload } = useResellerPortfolio()
+  const [profileComplete, setProfileComplete] = useState(true)
   const [view, setView] = useState('restaurants')
   const [groupFilter, setGroupFilter] = useState('all')
   const [selectedIds, setSelectedIds] = useState([])
@@ -159,6 +180,7 @@ function PortfolioPage() {
   }, [groupFilter, restaurants])
 
   const selectedCount = selectedIds.length
+  const canManageGroups = ['reseller', 'admin'].includes(auth.accountType) || Boolean(employee?.permissions?.manage_groups)
 
   const toggleSelected = (restaurantId) => {
     setSelectedIds((current) =>
@@ -177,9 +199,9 @@ function PortfolioPage() {
   const handleCreateGroup = async ({ name, color }) => {
     setActionError('')
     try {
-      const group = await createResellerGroup(auth.user.id, { name, color })
+      const group = await createResellerGroup(resellerId || auth.user.id, { name, color })
       if (selectedIds.length > 0) {
-        await moveRestaurantsToGroup(auth.user.id, selectedIds, group.id)
+        await moveRestaurantsToGroup(resellerId || auth.user.id, selectedIds, group.id)
       }
       await reload()
       setGroupFilter(group.id)
@@ -194,7 +216,7 @@ function PortfolioPage() {
   const handleMove = async (groupId) => {
     setActionError('')
     try {
-      await moveRestaurantsToGroup(auth.user.id, selectedIds, groupId)
+      await moveRestaurantsToGroup(resellerId || auth.user.id, selectedIds, groupId)
       await reload()
       setGroupFilter(groupId)
       setView('restaurants')
@@ -215,6 +237,21 @@ function PortfolioPage() {
 
   const selectable = mode !== 'browse'
 
+  useEffect(() => {
+    if (!auth.user?.id || !['reseller', 'admin'].includes(auth.accountType)) return
+    let cancelled = false
+    fetchResellerProfile(auth.user.id)
+      .then((profile) => {
+        if (!cancelled) setProfileComplete(isResellerProfileComplete(profile))
+      })
+      .catch(() => {
+        if (!cancelled) setProfileComplete(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [auth.accountType, auth.user?.id])
+
   return (
     <ResellerShell>
       <section className="flex flex-col gap-5 border-b border-white/10 pb-6 lg:flex-row lg:items-end lg:justify-between">
@@ -226,22 +263,33 @@ function PortfolioPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => startSelection('new-group')}
-            className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-3 text-sm font-semibold text-black hover:bg-dash-gold"
-          >
-            <FolderPlus className="h-4 w-4" />
-            Add group
-          </button>
-          <button
-            type="button"
-            onClick={() => startSelection('move')}
+          <Link
+            to="/reseller/profile"
             className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 px-3 text-sm font-semibold text-dash-cream hover:bg-white/10"
           >
-            <MoveRight className="h-4 w-4" />
-            Move group
-          </button>
+            <Settings className="h-4 w-4" />
+            Profile {!profileComplete && <span className="text-dash-gold">!</span>}
+          </Link>
+          {canManageGroups && (
+            <>
+              <button
+                type="button"
+                onClick={() => startSelection('new-group')}
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-3 text-sm font-semibold text-black hover:bg-dash-gold"
+              >
+                <FolderPlus className="h-4 w-4" />
+                Add group
+              </button>
+              <button
+                type="button"
+                onClick={() => startSelection('move')}
+                className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/10 px-3 text-sm font-semibold text-dash-cream hover:bg-white/10"
+              >
+                <MoveRight className="h-4 w-4" />
+                Move group
+              </button>
+            </>
+          )}
         </div>
       </section>
 
@@ -391,6 +439,364 @@ function PortfolioPage() {
   )
 }
 
+function ResellerOnboardingPage() {
+  return (
+    <ResellerShell>
+      <ResellerProfileEditor onboarding />
+    </ResellerShell>
+  )
+}
+
+function ResellerProfilePage() {
+  return (
+    <ResellerShell>
+      <div className="mb-5 flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="label-mono">Profile</p>
+          <h1 className="text-3xl font-semibold tracking-tight">Reseller Organization</h1>
+          <p className="mt-2 max-w-2xl text-sm text-dash-secondary">
+            Manage reseller-only profile, branding, team access, and propagation defaults.
+          </p>
+        </div>
+        <div className="flex rounded-xl border border-white/10 bg-white/[0.03] p-1">
+          {PROFILE_TABS.map((item) => {
+            const Icon = item.icon
+            return (
+              <Link
+                key={item.id}
+                to={item.id === 'portfolio' ? '/reseller' : '/reseller/profile'}
+                className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
+                  item.id === 'profile' ? 'bg-white text-black' : 'text-dash-secondary hover:bg-white/10 hover:text-dash-cream'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+            )
+          })}
+        </div>
+      </div>
+      <ResellerProfileEditor />
+    </ResellerShell>
+  )
+}
+
+function ResellerProfileEditor({ onboarding = false }) {
+  const auth = useAuth()
+  const navigate = useNavigate()
+  const { resellerId, groups, restaurants, isLoading: portfolioLoading } = useResellerPortfolio()
+  const [profile, setProfile] = useState(() => normalizeResellerProfile(null))
+  const [employees, setEmployees] = useState([])
+  const [employeeDraft, setEmployeeDraft] = useState(() => ({
+    name: '',
+    email: '',
+    username: '',
+    password: '11111111',
+    restaurant_ids: [],
+    group_ids: [],
+    permissions: { ...DEFAULT_RESELLER_PERMISSIONS },
+  }))
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+
+  const canManage = ['reseller', 'admin'].includes(auth.accountType)
+  const profileComplete = isResellerProfileComplete(profile)
+
+  const load = useCallback(async () => {
+    if (!resellerId) return
+    setLoading(true)
+    setError('')
+    try {
+      const [profileRow, employeeRows] = await Promise.all([
+        fetchResellerProfile(resellerId),
+        canManage ? fetchResellerEmployees(resellerId) : Promise.resolve([]),
+      ])
+      setProfile(profileRow)
+      setEmployees(employeeRows)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load reseller profile.')
+    } finally {
+      setLoading(false)
+    }
+  }, [canManage, resellerId])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  useEffect(() => {
+    if (onboarding && !loading && profileComplete) {
+      navigate('/reseller', { replace: true })
+    }
+  }, [loading, navigate, onboarding, profileComplete])
+
+  const updateProfile = (patch) => setProfile((current) => ({ ...current, ...patch }))
+  const toggleDraftRestaurant = (restaurantId) => {
+    setEmployeeDraft((current) => {
+      const has = current.restaurant_ids.includes(restaurantId)
+      return {
+        ...current,
+        restaurant_ids: has
+          ? current.restaurant_ids.filter((id) => id !== restaurantId)
+          : [...current.restaurant_ids, restaurantId],
+      }
+    })
+  }
+  const toggleAllDraftRestaurants = () => {
+    setEmployeeDraft((current) => ({
+      ...current,
+      restaurant_ids: current.restaurant_ids.length === restaurants.length ? [] : restaurants.map((restaurant) => restaurant.id),
+    }))
+  }
+  const toggleDraftGroup = (groupId) => {
+    setEmployeeDraft((current) => {
+      const has = current.group_ids.includes(groupId)
+      return {
+        ...current,
+        group_ids: has
+          ? current.group_ids.filter((id) => id !== groupId)
+          : [...current.group_ids, groupId],
+      }
+    })
+  }
+  const toggleAllDraftGroups = () => {
+    setEmployeeDraft((current) => ({
+      ...current,
+      group_ids: current.group_ids.length === groups.length ? [] : groups.map((group) => group.id),
+    }))
+  }
+
+  const saveProfile = async ({ complete = false } = {}) => {
+    if (!resellerId) return
+    setSaving(true)
+    setError('')
+    setMessage('')
+    try {
+      const saved = await saveResellerProfile(resellerId, profile, { complete })
+      setProfile(saved)
+      setMessage(complete ? 'Reseller onboarding complete.' : 'Saved reseller profile.')
+      if (complete) navigate('/reseller', { replace: true })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save reseller profile.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const uploadLogo = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file || !resellerId) return
+    setSaving(true)
+    setError('')
+    try {
+      const logoUrl = await uploadResellerLogo(resellerId, file)
+      const saved = await saveResellerProfile(resellerId, { ...profile, logo_url: logoUrl })
+      setProfile(saved)
+      setMessage('Logo uploaded.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not upload logo.')
+    } finally {
+      setSaving(false)
+      event.target.value = ''
+    }
+  }
+
+  const addEmployee = async () => {
+    if (!employeeDraft.name.trim()) {
+      setError('Employee name is required.')
+      return
+    }
+    if (employeeDraft.password.length < 8) {
+      setError('Employee password must be at least 8 characters.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      await createResellerEmployee(employeeDraft)
+      setEmployeeDraft({
+        name: '',
+        email: '',
+        username: '',
+        password: '11111111',
+        restaurant_ids: [],
+        group_ids: [],
+        permissions: { ...DEFAULT_RESELLER_PERMISSIONS },
+      })
+      await load()
+      setMessage('Reseller employee added.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add reseller employee.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (portfolioLoading || loading) return <LoadingScreen />
+
+  return (
+    <div className="space-y-5">
+      {onboarding && (
+        <section className="rounded-xl border border-dash-gold/30 bg-dash-gold/10 p-5">
+          <p className="label-mono text-dash-gold">Enterprise Onboarding</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Set up your reseller organization</h1>
+          <p className="mt-2 max-w-2xl text-sm text-dash-secondary">
+            This setup belongs to your reseller organization only. Restaurant setup stays separate.
+          </p>
+        </section>
+      )}
+      {error && <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">{error}</div>}
+      {message && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-200">{message}</div>}
+
+      <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <p className="label-mono">Organization Profile</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight">Company details</h2>
+          </div>
+          {!profileComplete && <span className="rounded-full border border-dash-gold/40 px-3 py-1 text-xs font-semibold text-dash-gold">!</span>}
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Organization Name">
+            <TextInput value={profile.organization_name} onChange={event => updateProfile({ organization_name: event.target.value })} placeholder="Shire Enterprise Partners" disabled={!canManage} />
+          </Field>
+          <Field label="Legal Business Name">
+            <TextInput value={profile.legal_business_name || ''} onChange={event => updateProfile({ legal_business_name: event.target.value })} placeholder="Legal entity" disabled={!canManage} />
+          </Field>
+          <Field label="Business Email">
+            <TextInput value={profile.business_email || ''} onChange={event => updateProfile({ business_email: event.target.value })} placeholder="ops@example.com" disabled={!canManage} />
+          </Field>
+          <Field label="Phone">
+            <TextInput value={profile.phone || ''} onChange={event => updateProfile({ phone: event.target.value })} placeholder="(555) 000-0000" disabled={!canManage} />
+          </Field>
+          <Field label="Website">
+            <TextInput value={profile.website || ''} onChange={event => updateProfile({ website: event.target.value })} placeholder="https://example.com" disabled={!canManage} />
+          </Field>
+          <Field label="Logo">
+            <div className="flex items-center gap-3">
+              {profile.logo_url && <img src={profile.logo_url} alt="" className="h-12 w-12 rounded-lg object-cover" />}
+              <input type="file" accept="image/*" onChange={uploadLogo} disabled={!canManage || saving} className="text-sm text-dash-secondary" />
+            </div>
+          </Field>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+        <p className="label-mono">Default Propagation</p>
+        <h2 className="mt-1 text-xl font-semibold tracking-tight">Save behavior defaults</h2>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <Field label="General Changes">
+            <SelectInput value={profile.default_general_propagation} onChange={event => updateProfile({ default_general_propagation: event.target.value })} disabled={!canManage}>
+              <option value="current_group">Default to current group</option>
+              <option value="current_restaurant">Default to current restaurant</option>
+              <option value="ask_every_time">Ask every time</option>
+            </SelectInput>
+          </Field>
+          <Field label="Specified Changes">
+            <SelectInput value={profile.default_specified_propagation} onChange={event => updateProfile({ default_specified_propagation: event.target.value })} disabled={!canManage}>
+              <option value="current_restaurant">Default to current restaurant</option>
+              <option value="ask_every_time">Ask every time</option>
+            </SelectInput>
+          </Field>
+        </div>
+      </section>
+
+      {canManage && (
+        <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+          <p className="label-mono">Team Access</p>
+          <h2 className="mt-1 text-xl font-semibold tracking-tight">Reseller employees</h2>
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1.2fr]">
+            <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-4">
+              <Field label="Name"><TextInput value={employeeDraft.name} onChange={event => setEmployeeDraft(current => ({ ...current, name: event.target.value }))} placeholder="Jordan Lee" /></Field>
+              <Field label="Email (optional)"><TextInput value={employeeDraft.email} onChange={event => setEmployeeDraft(current => ({ ...current, email: event.target.value }))} placeholder="jordan@example.com" /></Field>
+              <Field label="Username (optional)"><TextInput value={employeeDraft.username} onChange={event => setEmployeeDraft(current => ({ ...current, username: event.target.value }))} placeholder="jordan_shire" /></Field>
+              <Field label="Temporary Password"><TextInput value={employeeDraft.password} onChange={event => setEmployeeDraft(current => ({ ...current, password: event.target.value }))} placeholder="At least 8 characters" /></Field>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  ['edit_setup', 'Edit setup'],
+                  ['propagate_changes', 'Propagate'],
+                  ['manage_groups', 'Manage groups'],
+                ].map(([key, label]) => (
+                  <SmallButton
+                    key={key}
+                    variant={employeeDraft.permissions[key] ? 'primary' : 'secondary'}
+                    onClick={() => setEmployeeDraft(current => ({
+                      ...current,
+                      permissions: { ...current.permissions, [key]: !current.permissions[key] },
+                    }))}
+                  >
+                    {label}
+                  </SmallButton>
+                ))}
+              </div>
+              <SmallButton variant="primary" onClick={() => void addEmployee()} disabled={saving}>{saving ? 'Saving...' : 'Add employee'}</SmallButton>
+            </div>
+            <div className="space-y-3">
+              <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold">Group access</p>
+                  <SmallButton onClick={toggleAllDraftGroups}>{employeeDraft.group_ids.length === groups.length ? 'Clear all' : 'Choose all'}</SmallButton>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {groups.map((group) => (
+                    <label key={group.id} className="flex cursor-pointer items-start gap-2 rounded-lg border border-white/10 p-3 text-sm">
+                      <input type="checkbox" checked={employeeDraft.group_ids.includes(group.id)} onChange={() => toggleDraftGroup(group.id)} />
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: group.color }} />
+                        <span className="truncate">{group.name}</span>
+                      </span>
+                    </label>
+                  ))}
+                  {groups.length === 0 && <p className="text-sm text-dash-secondary">Create a group first to assign group access.</p>}
+                </div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold">Restaurant access</p>
+                  <SmallButton onClick={toggleAllDraftRestaurants}>{employeeDraft.restaurant_ids.length === restaurants.length ? 'Clear all' : 'Choose all'}</SmallButton>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {restaurants.map((restaurant) => (
+                    <label key={restaurant.id} className="flex cursor-pointer items-start gap-2 rounded-lg border border-white/10 p-3 text-sm">
+                      <input type="checkbox" checked={employeeDraft.restaurant_ids.includes(restaurant.id)} onChange={() => toggleDraftRestaurant(restaurant.id)} />
+                      <span>{restaurant.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="grid gap-2">
+                {employees.map((employee) => (
+                  <div key={employee.id} className="rounded-xl border border-white/10 bg-black/20 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{employee.name}</p>
+                        <p className="mt-1 text-xs text-dash-secondary">
+                          {employee.username} · {employee.restaurant_ids.length} restaurants · {(employee.group_ids || []).length} groups
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-white/10 px-2 py-1 text-xs text-dash-secondary">{employee.status}</span>
+                    </div>
+                  </div>
+                ))}
+                {employees.length === 0 && <p className="text-sm text-dash-secondary">No reseller employees yet.</p>}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <div className="flex flex-wrap justify-end gap-2">
+        {!onboarding && <SmallButton onClick={() => navigate('/reseller')}>Back to portfolio</SmallButton>}
+        <SmallButton variant="primary" onClick={() => void saveProfile({ complete: onboarding })} disabled={saving || (onboarding && !profileComplete)}>
+          {saving ? 'Saving...' : onboarding ? 'Complete reseller onboarding' : 'Save profile'}
+        </SmallButton>
+      </div>
+    </div>
+  )
+}
+
 function GroupBrowser({
   groups,
   inspectedGroupId,
@@ -491,6 +897,50 @@ function StatusMessage({ tone = 'info', children }) {
     ? 'border-red-400/25 bg-red-500/10 text-red-100'
     : 'border-dash-gold/25 bg-dash-gold/10 text-dash-gold'
   return <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${cls}`}>{children}</div>
+}
+
+function Field({ label, children }) {
+  return (
+    <label className="block">
+      <span className="label-mono">{label}</span>
+      <div className="mt-2">{children}</div>
+    </label>
+  )
+}
+
+function TextInput({ className = '', ...props }) {
+  return (
+    <input
+      {...props}
+      className={`h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary focus:border-dash-gold disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
+    />
+  )
+}
+
+function SelectInput({ className = '', children, ...props }) {
+  return (
+    <select
+      {...props}
+      className={`h-11 w-full rounded-xl border border-white/10 bg-black/30 px-3 text-sm text-dash-cream outline-none focus:border-dash-gold disabled:cursor-not-allowed disabled:opacity-60 ${className}`}
+    >
+      {children}
+    </select>
+  )
+}
+
+function SmallButton({ variant = 'secondary', className = '', children, ...props }) {
+  const cls = variant === 'primary'
+    ? 'bg-white text-black hover:bg-dash-gold disabled:bg-white/50'
+    : 'border border-white/10 text-dash-secondary hover:bg-white/10 hover:text-dash-cream disabled:opacity-50'
+  return (
+    <button
+      type="button"
+      {...props}
+      className={`inline-flex min-h-10 items-center justify-center rounded-xl px-3 text-sm font-semibold transition disabled:cursor-not-allowed ${cls} ${className}`}
+    >
+      {children}
+    </button>
+  )
 }
 
 function GroupModal({ title, actionLabel, selectedCount, onCancel, onSubmit }) {
@@ -1200,6 +1650,8 @@ export default function ResellerApp() {
   return (
     <Routes>
       <Route index element={<PortfolioPage />} />
+      <Route path="onboarding" element={<ResellerOnboardingPage />} />
+      <Route path="profile" element={<ResellerProfilePage />} />
       <Route path="restaurants/:restaurantId/setup" element={<ResellerGate><ResellerSetupEditor /></ResellerGate>} />
       <Route path="restaurants/:restaurantId" element={<Navigate to="analytics" replace />} />
       <Route path="restaurants/:restaurantId/:tab" element={<RestaurantDetailPage />} />
