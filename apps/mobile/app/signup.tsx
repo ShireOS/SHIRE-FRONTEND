@@ -131,6 +131,7 @@ function CyclingGreeting() {
 
 export default function SignUpPage() {
   const router = useRouter()
+  const [accountType, setAccountType] = useState<'owner' | 'reseller'>('owner')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -189,7 +190,7 @@ export default function SignUpPage() {
     setSubmitting(true)
     setError(null)
     setInfo(null)
-    const result = await signUp(email.trim(), password)
+    const result = await signUp(email.trim(), password, accountType)
     setSubmitting(false)
     if (!result.ok) {
       setError(result.error)
@@ -267,6 +268,36 @@ export default function SignUpPage() {
                 <Ionicons name="camera-outline" size={28} color={color_pallet.ink[500]} />
               )}
             </Pressable>
+          </View>
+
+          <View className="mb-5" style={{ flexDirection: 'row', gap: 10 }}>
+            {[
+              { id: 'owner', label: 'Owner', copy: 'Restaurant account' },
+              { id: 'reseller', label: 'Enterprise', copy: 'Portfolio account' },
+            ].map((option) => {
+              const selected = accountType === option.id
+              return (
+                <Pressable
+                  key={option.id}
+                  onPress={() => setAccountType(option.id as 'owner' | 'reseller')}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  style={{
+                    flex: 1,
+                    minHeight: 72,
+                    borderRadius: 12,
+                    borderWidth: selected ? 1.5 : 1,
+                    borderColor: selected ? color_pallet.sky[700] : color_pallet.stone[200],
+                    backgroundColor: selected ? color_pallet.sky[50] : color_pallet.cream[100],
+                    padding: 12,
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{ color: color_pallet.ink[900], fontSize: 14, fontWeight: '800' }}>{option.label}</Text>
+                  <Text style={{ color: color_pallet.ink[500], fontSize: 11, fontWeight: '600', marginTop: 3 }}>{option.copy}</Text>
+                </Pressable>
+              )
+            })}
           </View>
 
           <View className="mb-5">
