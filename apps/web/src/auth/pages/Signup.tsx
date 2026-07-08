@@ -11,6 +11,7 @@ export function SignupPage() {
 
   const [firstName, setFirstName] = useState('')
   const lastName = ''
+  const [accountType, setAccountType] = useState<'owner' | 'reseller'>('owner')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -31,6 +32,7 @@ export function SignupPage() {
     const result = await signUp(email, password, {
       first_name: firstName,
       last_name: lastName,
+      account_type: accountType,
     })
 
     if (!result.success) {
@@ -125,6 +127,27 @@ export function SignupPage() {
               {error}
             </div>
           )}
+
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { id: 'owner', label: 'Owner', copy: 'One restaurant or company account' },
+              { id: 'reseller', label: 'Enterprise', copy: 'Agency, chain, or reseller portfolio' },
+            ].map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setAccountType(option.id as 'owner' | 'reseller')}
+                className={`rounded-xl border p-3 text-left transition ${
+                  accountType === option.id
+                    ? 'border-[#36454F] bg-[#36454F]/10 dark:border-white dark:bg-white/10'
+                    : 'border-black/10 bg-white/70 hover:bg-white dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10'
+                }`}
+              >
+                <span className="block text-sm font-semibold text-primary">{option.label}</span>
+                <span className="mt-1 block text-xs text-tertiary">{option.copy}</span>
+              </button>
+            ))}
+          </div>
 
           <div className="space-y-1.5">
             <label htmlFor="firstName" className="block text-sm font-semibold text-primary">

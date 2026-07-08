@@ -91,7 +91,7 @@ interface RestaurantState {
   isLoading: boolean
 }
 
-type AccountType = 'owner' | 'reseller' | 'admin'
+type AccountType = 'owner' | 'reseller' | 'reseller_employee' | 'admin'
 
 interface AuthContextValue extends AuthState {
   /** Platform-level role from profiles.account_type; defaults to 'owner'. */
@@ -116,6 +116,7 @@ interface SignUpMetadata {
   first_name?: string
   last_name?: string
   phone?: string
+  account_type?: 'owner' | 'reseller'
 }
 
 interface AuthResult {
@@ -287,6 +288,73 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRestaurantLoading(true)
 
     try {
+      if (accountType === 'reseller_employee') {
+        const { data: employee, error: employeeError } = await withTimeout(
+          supabase
+            .from('reseller_employees')
+            .select('id, reseller_id, status, group_assignments:reseller_employee_groups(group_id)')
+            .eq('user_id', userId)
+            .eq('status', 'active')
+            .maybeSingle(),
+          'Reseller employee lookup timed out.'
+        )
+        if (employeeError) {
+          console.warn('[Auth] Could not fetch reseller employee:', employeeError.message)
+          setRestaurants([])
+          return []
+        }
+        if (!employee?.id) {
+          setRestaurants([])
+          return []
+        }
+
+        const { data: assignments, error: assignmentError } = await withTimeout(
+          supabase
+            .from('reseller_employee_restaurants')
+            .select('restaurant:restaurants(*)')
+            .eq('employee_id', employee.id),
+          'Reseller employee restaurant lookup timed out.'
+        )
+        if (assignmentError) {
+          console.warn('[Auth] Could not fetch reseller employee restaurants:', assignmentError.message)
+          setRestaurants([])
+          return []
+        }
+
+        const directRestaurants = assignments
+          ?.map((assignment: any) => assignment.restaurant)
+          .filter(Boolean) || []
+        const groupIds = new Set(
+          ((employee as any).group_assignments || []).map((assignment: any) => assignment.group_id)
+        )
+        let groupRestaurants: Restaurant[] = []
+        if (groupIds.size > 0) {
+          const { data: groupAssignments, error: groupAssignmentError } = await withTimeout(
+            supabase
+              .from('reseller_restaurant_group_members')
+              .select('restaurant:restaurants(*)')
+              .in('group_id', [...groupIds]),
+            'Reseller employee group restaurant lookup timed out.'
+          )
+          if (groupAssignmentError) {
+            console.warn('[Auth] Could not fetch reseller employee group restaurants:', groupAssignmentError.message)
+          } else {
+            groupRestaurants = groupAssignments
+              ?.map((assignment: any) => assignment.restaurant)
+              .filter(Boolean) || []
+          }
+        }
+
+        const scopedRestaurants: Restaurant[] = []
+        for (const restaurant of [...directRestaurants, ...groupRestaurants]) {
+          if (!scopedRestaurants.some((item) => item.id === restaurant.id)) {
+            scopedRestaurants.push(restaurant)
+          }
+        }
+        setRestaurants(scopedRestaurants)
+        return scopedRestaurants
+      }
+
       // Admins see every restaurant (RLS permits); no further scoping needed.
       if (accountType === 'admin') {
         const { data: allRestaurants, error: allError } = await withTimeout(
@@ -634,6 +702,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               first_name: metadata?.first_name,
               last_name: metadata?.last_name,
               phone: metadata?.phone,
+              account_type: metadata?.account_type || 'owner',
             },
             emailRedirectTo: createAppAuthUrl('callback'),
           },
@@ -670,9 +739,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      let credentialEmail = email.trim()
+      const { data: resolvedLogin } = await supabase.rpc('resolve_reseller_employee_login', {
+        login_identifier: credentialEmail,
+      })
+      if (typeof resolvedLogin === 'string' && resolvedLogin.length > 0) {
+        credentialEmail = resolvedLogin
+      }
+
       const { data, error } = await withTimeout(
         supabase.auth.signInWithPassword({
-          email,
+          email: credentialEmail,
           password,
         }),
         'Sign in timed out. Please check your connection and try again.'

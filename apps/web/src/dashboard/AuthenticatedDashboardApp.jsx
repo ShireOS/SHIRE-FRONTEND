@@ -73,7 +73,11 @@ function OwnerGate() {
 
   const prefs = auth.profile?.dashboard_prefs
   const landing = prefs && typeof prefs === 'object' ? prefs.default_landing : null
-  if (auth.accountType === 'reseller' || landing === 'reseller') {
+  if (auth.accountType === 'reseller') {
+    return <Navigate to="/reseller/onboarding" replace />
+  }
+
+  if (auth.accountType === 'reseller_employee' || landing === 'reseller') {
     return <Navigate to="/reseller" replace />
   }
   return <Navigate to={landing === 'overview' ? '/enterprise/overview' : '/enterprise/stores'} replace />

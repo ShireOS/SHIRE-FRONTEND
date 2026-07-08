@@ -57,6 +57,47 @@ export async function fetchResellerGroups(resellerId) {
   return { groups: groups || [], memberships: memberships || [] }
 }
 
+export async function fetchResellerPortfolioForUser({ userId, accountType, restaurants }) {
+  if (accountType !== 'reseller_employee') {
+    const data = await fetchResellerGroups(userId)
+    return {
+      resellerId: userId,
+      employee: null,
+      groups: data.groups,
+      memberships: data.memberships,
+      restaurants: groupRestaurants(restaurants || [], data.groups, data.memberships),
+    }
+  }
+
+  const { data: employee, error: employeeError } = await supabase
+    .from('reseller_employees')
+    .select('*, assignments:reseller_employee_restaurants(restaurant_id), group_assignments:reseller_employee_groups(group_id)')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .maybeSingle()
+  if (employeeError) throw employeeError
+  if (!employee) {
+    return { resellerId: null, employee: null, groups: [], memberships: [], restaurants: [] }
+  }
+
+  const data = await fetchResellerGroups(employee.reseller_id)
+  const allowedIds = new Set((employee.assignments || []).map((row) => row.restaurant_id))
+  const allowedGroupIds = new Set((employee.group_assignments || []).map((row) => row.group_id))
+  data.memberships.forEach((membership) => {
+    if (allowedGroupIds.has(membership.group_id)) {
+      allowedIds.add(membership.restaurant_id)
+    }
+  })
+  const allowedRestaurants = (restaurants || []).filter((restaurant) => allowedIds.has(restaurant.id))
+  return {
+    resellerId: employee.reseller_id,
+    employee: { ...employee, group_ids: [...allowedGroupIds] },
+    groups: data.groups,
+    memberships: data.memberships,
+    restaurants: groupRestaurants(allowedRestaurants, data.groups, data.memberships),
+  }
+}
+
 export async function createResellerGroup(resellerId, { name, color }) {
   const { data, error } = await supabase
     .from('reseller_restaurant_groups')
