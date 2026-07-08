@@ -6,8 +6,10 @@ interface CheckWorkflowStepProps {
 
 const inputClass = 'w-full min-w-0 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-4 py-3 text-sm text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]'
 const labelClass = 'mb-1.5 block text-xs font-medium text-[rgb(var(--text-secondary))]'
+const MAX_SPLIT_COUNT = 8
 const sanitizeNumber = (value: string) => value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1').slice(0, 10)
 const sanitizeInteger = (value: string) => value.replace(/[^\d]/g, '').slice(0, 2)
+const sanitizeSplitCount = (value: string) => String(Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(sanitizeInteger(value) || 1))))
 
 const FIRE_MODES: Array<{ value: CheckWorkflowSettingsData['default_order_fire_mode']; label: string }> = [
   { value: 'manual', label: 'Manual fire' },
@@ -115,7 +117,7 @@ export function CheckWorkflowStep({ onboarding }: CheckWorkflowStepProps) {
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Max split count">
-            <input value={settings.max_split_count} onChange={(event) => update({ max_split_count: sanitizeInteger(event.target.value) || '1' })} className={inputClass} inputMode="numeric" placeholder="8" />
+            <input value={settings.max_split_count} onChange={(event) => update({ max_split_count: sanitizeSplitCount(event.target.value) })} className={inputClass} inputMode="numeric" placeholder="8" />
           </Field>
           <Field label="Partial payments">
             <select value={settings.allow_partial_payments ? 'yes' : 'no'} onChange={(event) => update({ allow_partial_payments: event.target.value === 'yes' })} className={inputClass}>

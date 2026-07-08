@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { BadgeDollarSign, Plus, ShieldCheck, Users } from 'lucide-react'
+import { BadgeDollarSign, Eye, EyeOff, KeyRound, Plus, RefreshCw, ShieldCheck, Users } from 'lucide-react'
 import { useAuth } from '../../auth'
 import { supabase } from '../../shared/lib/supabase'
 import { fetchWithSupabaseAuth } from '../../shared/query'
 import { assignedStaffRoles, buildStaffRoleUpdate, primaryStaffRole, roleCodeFromJobCode } from '../utils/staffRoles'
+import RolePermissionsPanel from '../components/team/RolePermissionsPanel'
 
 const money = (value) =>
   value === null || value === undefined || value === ''
@@ -45,6 +46,76 @@ function RateInput({ value, onCommit, placeholder }) {
       }}
       className="w-24 rounded-xl border border-dash-border bg-[var(--glass-bg)] px-2.5 py-1.5 font-mono text-xs tabular-nums text-dash-cream outline-none focus:border-shell-accent/60"
     />
+  )
+}
+
+const randomPin = () => {
+  const digits = new Uint32Array(1)
+  crypto.getRandomValues(digits)
+  return String(digits[0] % 10000).padStart(4, '0')
+}
+
+// Per-employee 4-digit POS clock-in PIN. Commits set the backend `pin`, which writes
+// both `pos_passcode` (plaintext, read by the POS) and the hashed `pin_hash`.
+function PinInput({ value, onCommit }) {
+  const [draft, setDraft] = useState(value ?? '')
+  const [reveal, setReveal] = useState(false)
+  useEffect(() => setDraft(value ?? ''), [value])
+
+  const valid = /^\d{4}$/.test(draft)
+  const commit = (next = draft) => {
+    if (next === (value ?? '')) return
+    if (!/^\d{4}$/.test(next)) {
+      setDraft(value ?? '')
+      return
+    }
+    onCommit(next)
+  }
+
+  return (
+    <span className="flex items-center gap-1">
+      <input
+        type={reveal ? 'text' : 'password'}
+        inputMode="numeric"
+        autoComplete="off"
+        value={draft}
+        maxLength={4}
+        placeholder="1111"
+        aria-label="POS clock-in PIN (4 digits)"
+        onChange={(event) => setDraft(event.target.value.replace(/\D/g, '').slice(0, 4))}
+        onBlur={() => commit()}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') event.currentTarget.blur()
+        }}
+        className={[
+          'w-[4.5rem] rounded-xl border bg-[var(--glass-bg)] px-2 py-1.5 text-center font-mono text-xs tabular-nums tracking-[0.35em] text-dash-cream outline-none focus:border-shell-accent/60',
+          draft.length > 0 && !valid ? 'border-dash-danger/60' : 'border-dash-border',
+        ].join(' ')}
+      />
+      <button
+        type="button"
+        onClick={() => setReveal((prev) => !prev)}
+        title={reveal ? 'Hide PIN' : 'Show PIN'}
+        aria-label={reveal ? 'Hide PIN' : 'Show PIN'}
+        className="text-dash-tertiary transition hover:text-dash-secondary"
+      >
+        {reveal ? <EyeOff size={14} strokeWidth={1.75} /> : <Eye size={14} strokeWidth={1.75} />}
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          const next = randomPin()
+          setReveal(true)
+          setDraft(next)
+          commit(next)
+        }}
+        title="Generate a random PIN"
+        aria-label="Generate a random PIN"
+        className="text-dash-tertiary transition hover:text-dash-secondary"
+      >
+        <RefreshCw size={14} strokeWidth={1.75} />
+      </button>
+    </span>
   )
 }
 
@@ -119,7 +190,7 @@ export default function TeamPage({ restaurantId }) {
   const [members, setMembers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [newEmployee, setNewEmployee] = useState({ name: '', role: '', hourly_rate: '' })
+  const [newEmployee, setNewEmployee] = useState({ name: '', role: '', hourly_rate: '', pin: '' })
   const [newGroup, setNewGroup] = useState({ label: '', rate: '' })
 
   useEffect(() => {
@@ -161,6 +232,8 @@ export default function TeamPage({ restaurantId }) {
   const addEmployee = () =>
     act(async () => {
       if (!newEmployee.name.trim()) throw new Error('Employee name is required.')
+      const pin = newEmployee.pin.trim()
+      if (pin && !/^\d{4}$/.test(pin)) throw new Error('POS PIN must be exactly 4 digits.')
       const role = newEmployee.role || jobCodes[0]?.code || 'server'
       const roleUpdate = buildStaffRoleUpdate(role, [role], jobCodes)
       const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters`, {
@@ -169,11 +242,11 @@ export default function TeamPage({ restaurantId }) {
           name: newEmployee.name.trim(),
           ...roleUpdate,
           hourly_rate: newEmployee.hourly_rate === '' ? null : Number(newEmployee.hourly_rate),
-          pin: '1111',
+          pin: pin || '1111',
         }),
       })
       setWaiters((prev) => [...prev, created])
-      setNewEmployee({ name: '', role: '', hourly_rate: '' })
+      setNewEmployee({ name: '', role: '', hourly_rate: '', pin: '' })
     })
 
   const patchWaiter = (waiterId, updates) =>
@@ -295,7 +368,7 @@ export default function TeamPage({ restaurantId }) {
         </div>
       </Pane>
 
-      <Pane icon={Users} eyebrow="Employees" title="Roles & individual pay">
+      <Pane icon={Users} eyebrow="Employees" title="Roles, pay & POS PIN">
         <div className="space-y-2">
           {waiters.map((waiter) => {
             const override = waiter.hourly_rate
@@ -311,6 +384,13 @@ export default function TeamPage({ restaurantId }) {
                   onChange={(updates) => void patchWaiter(waiter.id, updates)}
                 />
                 <span className="ml-auto flex items-center gap-2">
+                  <span className="flex items-center gap-1.5" title="POS clock-in PIN">
+                    <KeyRound size={13} strokeWidth={1.75} className="text-dash-tertiary" aria-hidden="true" />
+                    <PinInput
+                      value={waiter.pos_passcode ?? ''}
+                      onCommit={(pin) => void patchWaiter(waiter.id, { pin })}
+                    />
+                  </span>
                   <RateInput
                     value={override ?? ''}
                     onCommit={(rate) =>
@@ -350,6 +430,18 @@ export default function TeamPage({ restaurantId }) {
               ))}
               {jobCodes.length === 0 && <option value="server">Server</option>}
             </select>
+            <input
+              inputMode="numeric"
+              autoComplete="off"
+              value={newEmployee.pin}
+              maxLength={4}
+              onChange={(event) =>
+                setNewEmployee((prev) => ({ ...prev, pin: event.target.value.replace(/\D/g, '').slice(0, 4) }))
+              }
+              placeholder="PIN 1111"
+              title="POS clock-in PIN — 4 digits (defaults to 1111)"
+              className="w-24 rounded-xl border border-dash-border bg-[var(--glass-bg)] px-3 py-2 text-center font-mono text-sm tabular-nums tracking-[0.2em] text-dash-cream outline-none placeholder:tracking-normal placeholder:text-dash-tertiary focus:border-shell-accent/60"
+            />
             <button
               type="button"
               onClick={() => void addEmployee()}
@@ -413,6 +505,8 @@ export default function TeamPage({ restaurantId }) {
           )}
         </div>
       </Pane>
+
+      <RolePermissionsPanel restaurantId={restaurantId} />
     </div>
   )
 }

@@ -53,10 +53,10 @@ export async function fetchPortfolioDevices(restaurantIds) {
 // assignments, the printer registry, print groups (kitchen_stations) with
 // their subscribed targets, and menu categories with their group assignment.
 export async function fetchStoreDeviceConfig(restaurantId) {
-  const [devices, targets, stations, categories] = await Promise.all([
+  const [devices, targets, stations, categories, typePolicies] = await Promise.all([
     supabase
       .from('pos_devices')
-      .select('id, restaurant_id, name, device_type, status, last_seen_at, created_at, printers:pos_device_printers(role, target_id)')
+      .select('id, restaurant_id, name, device_type, status, last_seen_at, created_at, idle_lock_seconds, absolute_ttl_seconds, persist_manager_session, printers:pos_device_printers(role, target_id)')
       .eq('restaurant_id', restaurantId)
       .order('name'),
     supabase
@@ -75,15 +75,32 @@ export async function fetchStoreDeviceConfig(restaurantId) {
       .select('id, name, routing_station_id')
       .eq('restaurant_id', restaurantId)
       .order('name'),
+    supabase
+      .from('pos_device_type_policies')
+      .select('id, device_type, idle_lock_seconds, absolute_ttl_seconds, persist_manager_session')
+      .eq('restaurant_id', restaurantId)
+      .order('device_type'),
   ])
-  const firstError = devices.error || targets.error || stations.error || categories.error
+  const firstError = devices.error || targets.error || stations.error || categories.error || typePolicies.error
   if (firstError) throw firstError
   return {
     devices: devices.data || [],
     targets: targets.data || [],
     stations: stations.data || [],
     categories: categories.data || [],
+    typePolicies: typePolicies.data || [],
   }
+}
+
+// Per-device-type session policy default. Upsert on (restaurant_id, device_type).
+export async function upsertDeviceTypePolicy(restaurantId, deviceType, patch) {
+  const { error } = await supabase
+    .from('pos_device_type_policies')
+    .upsert(
+      { restaurant_id: restaurantId, device_type: deviceType, ...patch, updated_at: new Date().toISOString() },
+      { onConflict: 'restaurant_id,device_type' }
+    )
+  if (error) throw error
 }
 
 export async function updateDevice(deviceId, patch) {

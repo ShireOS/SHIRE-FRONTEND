@@ -65,6 +65,7 @@ import { getOwnerRestaurant, type OwnerRestaurant } from '../../packages/supabas
 
 const POLICY_CACHE_TTL_MS = 60_000;
 const POLICY_MAX_STALE_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_SPLIT_COUNT = 8;
 const FALLBACK_ROLE_OPTIONS = ['manager', 'server', 'bartender', 'host', 'busser', 'runner', 'chef'];
 const SERVICE_MODE_OPTIONS = [
   { id: 'dine_in', label: 'Dine-in' },
@@ -725,13 +726,14 @@ function closeoutPayload(row: CloseoutSettings): CloseoutSettings {
 
 function normalizeCheckWorkflowSettings(row: CheckWorkflowSettings | undefined): CheckWorkflowSettings {
   const source = row || DEFAULT_CHECK_WORKFLOW_SETTINGS;
+  const maxSplitCount = Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(numberText(source.max_split_count) || DEFAULT_CHECK_WORKFLOW_SETTINGS.max_split_count)));
   const presets = Array.isArray(source.hold_preset_minutes)
     ? Array.from(new Set(source.hold_preset_minutes.map(Number).filter((value) => Number.isFinite(value) && value > 0))).slice(0, 8)
     : DEFAULT_CHECK_WORKFLOW_SETTINGS.hold_preset_minutes;
   return {
     ...DEFAULT_CHECK_WORKFLOW_SETTINGS,
     ...source,
-    max_split_count: numberText(source.max_split_count) || '8',
+    max_split_count: String(maxSplitCount),
     default_preauth_amount: numberText(source.default_preauth_amount),
     default_order_fire_mode: ORDER_FIRE_MODE_OPTIONS.some(([value]) => value === source.default_order_fire_mode) ? source.default_order_fire_mode : 'immediate',
     default_hold_minutes: numberText(source.default_hold_minutes) || '10',
@@ -744,7 +746,7 @@ function checkWorkflowPayload(row: CheckWorkflowSettings): CheckWorkflowSettings
   const settings = normalizeCheckWorkflowSettings(row);
   return {
     ...settings,
-    max_split_count: Math.max(1, Math.min(99, Number(settings.max_split_count || 8))),
+    max_split_count: Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(settings.max_split_count || MAX_SPLIT_COUNT))),
     default_preauth_amount: settings.default_preauth_amount === '' ? null : Number(settings.default_preauth_amount),
     default_hold_minutes: Math.max(1, Math.min(360, Number(settings.default_hold_minutes || 10))),
     hold_preset_minutes: (Array.from(new Set(settings.hold_preset_minutes.map(Number).filter((value) => Number.isFinite(value) && value > 0))).slice(0, 8).length > 0
@@ -1971,7 +1973,7 @@ export default function OwnerSettings() {
           />
           <TextInput
             value={String(checkWorkflowEdits.max_split_count ?? '')}
-            onChangeText={(value) => updateCheckWorkflow({ max_split_count: value.replace(/[^\d]/g, '').slice(0, 2) || '1' })}
+            onChangeText={(value) => updateCheckWorkflow({ max_split_count: String(Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(value.replace(/[^\d]/g, '') || 1)))) })}
             placeholder="Max splits"
             keyboardType="number-pad"
             placeholderTextColor={palette.ink[400]}

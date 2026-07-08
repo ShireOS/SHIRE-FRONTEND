@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader } from '../shared/Card'
 import { Button } from '../shared/Button'
 import { Badge } from '../shared/Badge'
 import { Modal } from '../shared/Modal'
+import DeviceSessionPolicySection from './DeviceSessionPolicySection'
 import {
   CONNECTION_TYPES,
   DEVICE_PRINTER_ROLES,
@@ -428,6 +429,8 @@ export default function StoreDevicesPanel({ restaurantId }) {
           ))}
         </CardContent>
       </Card>
+
+      <DeviceSessionPolicySection restaurantId={restaurantId} config={config} mutate={mutate} busy={busy} />
 
       <Card>
         <CardHeader>
