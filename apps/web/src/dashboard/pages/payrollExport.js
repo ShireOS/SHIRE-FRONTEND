@@ -19,11 +19,11 @@ function windowLabel(run) {
   return start === end || !end ? start : `${start} – ${end}`
 }
 
-// Build a flat, export-ready row per payout. rateFor(roleKey) -> hourly rate.
+// Build a flat, export-ready row per payout. rateFor(payout) -> hourly rate.
 export function buildPayrollRows(payouts, rateFor) {
   return (payouts || []).map(p => {
     const hours = Number(p.hours_worked ?? 0)
-    const rate = Number(rateFor?.(p.role_key) ?? 0)
+    const rate = Number(rateFor?.(p) ?? 0)
     const baseWage = hours * rate
     const tipsNet = Number(p.final_amount ?? 0) // tips take-home after pool/tipout/adjustment
     return {

@@ -281,6 +281,13 @@ export interface TipRoleRuleData {
   contributes_to_pool: boolean
   receives_from_pool: boolean
   pool_points: string
+  pool_contribution_percent: string
+  tipout_split_basis: 'hours' | 'even'
+  tipouts: Array<{
+    target_role: string
+    percent: string
+    basis: 'tips' | 'sales'
+  }>
   tipout_percent: string
   tipout_target_role: string
   notes: string
@@ -361,6 +368,9 @@ const defaultTipRoleRules = (jobCodes: JobCodeData[] = defaultJobCodes()): TipRo
     contributes_to_pool: code.is_tipped,
     receives_from_pool: code.is_tipped,
     pool_points: code.is_tipped ? '1' : '',
+    pool_contribution_percent: '100',
+    tipout_split_basis: 'hours',
+    tipouts: [],
     tipout_percent: '',
     tipout_target_role: '',
     notes: '',
@@ -1014,6 +1024,19 @@ const normalizeTipRoleRules = (value: unknown, jobCodes: JobCodeData[] = default
       contributes_to_pool: typeof row.contributes_to_pool === 'boolean' ? row.contributes_to_pool : true,
       receives_from_pool: typeof row.receives_from_pool === 'boolean' ? row.receives_from_pool : true,
       pool_points: asStringNumber(row.pool_points),
+      pool_contribution_percent: row.pool_contribution_percent == null ? '100' : asStringNumber(row.pool_contribution_percent),
+      tipout_split_basis: row.tipout_split_basis === 'even' ? 'even' : 'hours',
+      tipouts: Array.isArray(row.tipouts)
+        ? row.tipouts.filter(isRecord).flatMap(item => {
+            const target = asString(item.target_role)
+            if (!target) return []
+            return [{
+              target_role: slugRoleCode(target),
+              percent: asStringNumber(item.percent),
+              basis: item.basis === 'sales' ? 'sales' : 'tips',
+            }]
+          })
+        : [],
       tipout_percent: asStringNumber(row.tipout_percent),
       tipout_target_role: asString(row.tipout_target_role),
       notes: asString(row.notes),
@@ -1145,6 +1168,15 @@ const tipPayrollToPayload = (data: OnboardingData) => {
     role_tip_rules: settings.role_tip_rules.map(rule => ({
       ...rule,
       pool_points: rule.pool_points === '' ? null : Number(rule.pool_points),
+      pool_contribution_percent: rule.pool_contribution_percent === '' ? null : Number(rule.pool_contribution_percent),
+      tipout_split_basis: rule.tipout_split_basis === 'even' ? 'even' : 'hours',
+      tipouts: (rule.tipouts || [])
+        .filter(item => item.target_role && item.percent !== '' && Number(item.percent) > 0)
+        .map(item => ({
+          target_role: item.target_role,
+          percent: Number(item.percent),
+          basis: item.basis === 'sales' ? 'sales' : 'tips',
+        })),
       tipout_percent: rule.tipout_percent === '' ? null : Number(rule.tipout_percent),
       tipout_target_role: rule.tipout_target_role || null,
       notes: rule.notes || null,

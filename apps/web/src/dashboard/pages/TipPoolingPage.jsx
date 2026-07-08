@@ -74,6 +74,12 @@ const CATEGORY_COLORS = {
   'Tips to staff': '#5f7f6b',
 }
 
+function numericRate(value) {
+  if (value == null || value === '') return null
+  const num = Number(value)
+  return Number.isFinite(num) ? num : null
+}
+
 function StatusChip({ status }) {
   return (
     <span className={`rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] ${STATUS_STYLES[status] || STATUS_STYLES.voided}`}>
@@ -225,6 +231,7 @@ export default function TipPoolingPage({ restaurantId }) {
   const [preview, setPreview] = useState(null)
   const [businessDate, setBusinessDate] = useState(yesterdayISO())
   const [jobCodes, setJobCodes] = useState([])
+  const [waiters, setWaiters] = useState([])
   const [tipPayrollSettings, setTipPayrollSettings] = useState(defaultTipPayrollSettings())
   const [overview, setOverview] = useState(null)
   const [overviewLoading, setOverviewLoading] = useState(false)
@@ -243,9 +250,24 @@ export default function TipPoolingPage({ restaurantId }) {
 
   const restaurantName = 'Payroll'
   const rateFor = useMemo(() => {
-    const map = new Map(jobCodes.map(code => [code.code, Number(code.default_hourly_rate) || 0]))
-    return (roleKey) => map.get(roleKey) || 0
-  }, [jobCodes])
+    const roleRates = new Map(jobCodes.map(code => [code.code, numericRate(code.default_hourly_rate) ?? 0]))
+    const jobCodeRates = new Map(jobCodes.filter(code => code.id).map(code => [code.id, numericRate(code.default_hourly_rate) ?? 0]))
+    const waitersById = new Map((waiters || []).filter(waiter => waiter?.id).map(waiter => [waiter.id, waiter]))
+    return (payoutOrRole) => {
+      if (payoutOrRole && typeof payoutOrRole === 'object') {
+        const directRate = [payoutOrRole.hourly_rate, payoutOrRole.pay_rate, payoutOrRole.base_hourly_rate]
+          .map(numericRate)
+          .find(rate => rate != null)
+        if (directRate != null) return directRate
+        const waiter = waitersById.get(payoutOrRole.staff_id)
+        const waiterRate = numericRate(waiter?.hourly_rate)
+        if (waiterRate != null) return waiterRate
+        if (waiter?.job_code_id && jobCodeRates.has(waiter.job_code_id)) return jobCodeRates.get(waiter.job_code_id) || 0
+        return roleRates.get(payoutOrRole.role_key) || 0
+      }
+      return roleRates.get(payoutOrRole) || 0
+    }
+  }, [jobCodes, waiters])
 
   const loadRuns = async () => {
     setError('')
@@ -273,12 +295,14 @@ export default function TipPoolingPage({ restaurantId }) {
     setConfigError('')
     setConfigMessage('')
     try {
-      const [jobCodeRows, tipPayrollData] = await Promise.all([
+      const [jobCodeRows, tipPayrollData, waiterRows] = await Promise.all([
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`).catch(() => []),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`).catch(() => null),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=true`).catch(() => []),
       ])
       const normalizedJobCodes = normalizeJobCodes(jobCodeRows)
       setJobCodes(normalizedJobCodes)
+      setWaiters(Array.isArray(waiterRows) ? waiterRows : [])
       setTipPayrollSettings(normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes))
     } catch (err) {
       setConfigError(err?.message || 'Could not load tipout configuration')
@@ -293,6 +317,7 @@ export default function TipPoolingPage({ restaurantId }) {
     setSelectedRun(null)
     setPreview(null)
     setOverview(null)
+    setWaiters([])
     void loadRuns()
     void loadTipConfig()
   }, [restaurantId])
@@ -306,14 +331,13 @@ export default function TipPoolingPage({ restaurantId }) {
       const details = await Promise.all(
         recent.map(r => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tip-pools/runs/${r.id}`).catch(() => null)),
       )
-      const rateMap = new Map(codes.map(c => [c.code, Number(c.default_hourly_rate) || 0]))
       const byCategory = {}
       const staff = new Set()
       let wages = 0, tips = 0, hours = 0
       details.filter(Boolean).forEach(run => {
         (run.payouts || []).forEach(p => {
           const h = Number(p.hours_worked ?? 0)
-          const wage = h * (rateMap.get(p.role_key) || 0)
+          const wage = h * rateFor(p)
           const tipNet = Number(p.final_amount ?? 0)
           const cat = categoryForRole(p.role_key, codes)
           byCategory[cat] = (byCategory[cat] || 0) + wage
@@ -340,7 +364,7 @@ export default function TipPoolingPage({ restaurantId }) {
     if (activeSubTab === 'overview' && !overview && !overviewLoading && !loading && !configLoading) {
       void loadOverview(runs, jobCodes)
     }
-  }, [activeSubTab, overview, overviewLoading, loading, configLoading, runs, jobCodes])
+  }, [activeSubTab, overview, overviewLoading, loading, configLoading, runs, jobCodes, rateFor])
 
   const updateTipPayrollSettings = (patch) => {
     setTipPayrollSettings(prev => ({ ...prev, ...patch }))
