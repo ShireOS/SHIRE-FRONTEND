@@ -137,7 +137,7 @@ const STORE_NAV = [
   { id: 'feedback', label: 'Complaints', icon: MessageSquareWarning },
   { id: 'devices', label: 'Devices', icon: Monitor },
   { id: 'pos-settings', label: 'POS Settings', icon: Settings },
-  { id: 'tip-pooling', label: 'Tipout', icon: Percent },
+  { id: 'tip-pooling', label: 'Payroll & Tips', icon: Percent },
   { id: 'team', label: 'Team', icon: Users },
   { id: 'scheduling', label: 'Scheduling', icon: CalendarClock },
   { id: 'messaging', label: 'Messaging', icon: MessageSquare },

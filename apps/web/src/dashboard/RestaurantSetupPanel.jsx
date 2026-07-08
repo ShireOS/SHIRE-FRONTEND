@@ -19,7 +19,9 @@ const SETUP_TABS = [
   { id: 'manager_controls', label: 'Manager Controls' },
   { id: 'closeout', label: 'Cash & Closeout' },
   { id: 'check_workflow', label: 'Check Workflow' },
-  { id: 'tips_payroll', label: 'Tips & Payroll' },
+  // Tips & Payroll now lives in the dedicated "Payroll & Tips" hub (single source
+  // of truth). The render block + propagation handler below remain for reuse but
+  // the tab is intentionally not surfaced here to avoid duplicate config.
   { id: 'sections', label: 'Sections' },
   { id: 'hours', label: 'Hours' },
   { id: 'capacity', label: 'Capacity / Floor Plan' },
@@ -1128,6 +1130,12 @@ export function defaultTipPayrollSettings(jobCodes = []) {
       contributes_to_pool: Boolean(role.is_tipped),
       receives_from_pool: Boolean(role.is_tipped),
       pool_points: role.is_tipped ? '1' : '',
+      // Percent of this role's post-tipout tips put into the pool (rest kept).
+      pool_contribution_percent: '100',
+      // How a receiving role divides tipout dollars among its own people:
+      // 'hours' = proportional to hours worked (a double out-earns a single),
+      // 'even' = equal split. Matches the backend engine default of 'hours'.
+      tipout_split_basis: 'hours',
       tipouts: [],
       tipout_percent: '',
       tipout_target_role: '',
@@ -1181,6 +1189,8 @@ function normalizeTipRoleRules(rows, jobCodes) {
       contributes_to_pool: row?.contributes_to_pool !== false,
       receives_from_pool: row?.receives_from_pool !== false,
       pool_points: row?.pool_points == null ? '' : sanitizeNumber(row.pool_points),
+      pool_contribution_percent: row?.pool_contribution_percent == null ? '100' : sanitizeNumber(row.pool_contribution_percent),
+      tipout_split_basis: row?.tipout_split_basis === 'even' ? 'even' : 'hours',
       tipouts,
       tipout_percent: '',
       tipout_target_role: '',
@@ -1448,6 +1458,8 @@ export function tipPayrollPayload(settings, jobCodes) {
     role_tip_rules: normalized.role_tip_rules.map(rule => ({
       ...rule,
       pool_points: rule.pool_points === '' ? null : Number(rule.pool_points),
+      pool_contribution_percent: rule.pool_contribution_percent === '' ? null : Number(rule.pool_contribution_percent),
+      tipout_split_basis: rule.tipout_split_basis === 'even' ? 'even' : 'hours',
       tipouts: (rule.tipouts || [])
         .filter(item => item.target_role && item.percent !== '' && Number(item.percent) > 0)
         .map(item => ({
@@ -1462,70 +1474,111 @@ export function tipPayrollPayload(settings, jobCodes) {
   }
 }
 
-export function TipPayrollSettingsFields({
+// Pool methods, presented as cards. Each one sets BOTH tip_distribution_mode
+// and tip_pooling_enabled so the two never disagree (the backend only pools when
+// pooling_enabled AND mode is a pooled mode).
+const POOL_METHODS = [
+  { key: 'individual', mode: 'individual', pooled: false, title: 'Keep own', desc: 'Everyone keeps the tips on their own checks. No pool.' },
+  { key: 'pooled', mode: 'pooled', pooled: true, title: 'Pool equally', desc: 'All tips pooled, divided evenly across everyone clocked in.' },
+  { key: 'hours_based', mode: 'hours_based', pooled: true, title: 'Pool by hours', desc: 'Pooled, split in proportion to hours worked — more hours, bigger share.' },
+  { key: 'points_based', mode: 'points_based', pooled: true, title: 'Pool by points', desc: 'Weighted split — set points per role below (server 10, busser 5…).' },
+  { key: 'sales_based', mode: 'sales_based', pooled: true, title: 'Pool by sales', desc: 'Pooled, split in proportion to each person’s net sales.' },
+]
+
+function activePoolMethod(settings) {
+  if (!settings.tip_pooling_enabled || settings.tip_distribution_mode === 'individual') return 'individual'
+  const mode = settings.tip_distribution_mode
+  if (mode === 'role_based') return 'points_based'
+  return POOL_METHODS.some(method => method.key === mode) ? mode : 'pooled'
+}
+
+function TipInvariantNote() {
+  return (
+    <div className="flex items-start gap-2 rounded-xl border border-dash-gold/30 bg-dash-gold/[0.06] px-4 py-3 text-xs text-dash-secondary">
+      <span className="text-dash-gold">◱</span>
+      <p>
+        <span className="font-semibold text-dash-gold">Tipouts always come out of tips.</span>{' '}
+        Whether tips are pooled or kept individually, a tipout is pulled from the paying role’s tips before pay is
+        totaled. The <span className="font-semibold">%</span> sets how much leaves; <span className="font-semibold">Split received</span> on
+        the getting role sets how it’s divided among them.
+      </p>
+    </div>
+  )
+}
+
+// Section 1 + 2 + 3: how tips are split, role-to-role tipouts, per-role rules.
+export function TipRulesFields({
   settings,
   jobCodes,
   onUpdateSettings,
   onUpdateRoleRule,
 }) {
+  const methodKey = activePoolMethod(settings)
+  const isPointsMode = methodKey === 'points_based'
+  const isHoursMode = methodKey === 'hours_based'
+  // pool_points is a weight in both points mode (flat per person) and hours mode
+  // (a per-hour multiplier, so a host can out-earn a chef at equal hours).
+  const usesWeight = isPointsMode || isHoursMode
+  const isPooled = methodKey !== 'individual'
+
   return (
-    <div className="space-y-5">
-      <div className="grid gap-3 lg:grid-cols-3">
-        <Field label="Tip Distribution">
-          <SelectInput value={settings.tip_distribution_mode} onChange={event => onUpdateSettings({ tip_distribution_mode: event.target.value })}>
-            {TIP_DISTRIBUTION_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </SelectInput>
-        </Field>
-        <Field label="Cash Tips">
-          <SelectInput value={settings.cash_tip_declaration_mode} onChange={event => onUpdateSettings({ cash_tip_declaration_mode: event.target.value })}>
-            {CASH_TIP_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </SelectInput>
-        </Field>
-        <Field label="Credit Tips Paid">
-          <SelectInput value={settings.credit_tip_payout_timing} onChange={event => onUpdateSettings({ credit_tip_payout_timing: event.target.value })}>
-            <option value="nightly">Nightly</option>
-            <option value="payroll">Payroll</option>
-          </SelectInput>
-        </Field>
-        <Field label="Payroll Provider">
-          <TextInput value={settings.payroll_provider} onChange={event => onUpdateSettings({ payroll_provider: event.target.value })} placeholder="Gusto, ADP, manual..." />
-        </Field>
-        <Field label="Payroll Export">
-          <SelectInput value={settings.payroll_export_frequency} onChange={event => onUpdateSettings({ payroll_export_frequency: event.target.value })}>
-            {PAYROLL_EXPORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </SelectInput>
-        </Field>
-        <Field label="Card Fee %">
-          <TextInput value={settings.credit_card_fee_percent} inputMode="decimal" onChange={event => onUpdateSettings({ credit_card_fee_percent: sanitizeNumber(event.target.value).slice(0, 6) })} placeholder="Optional" />
-        </Field>
-      </div>
-
-      <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-        <p className="label-mono mb-3">Pool & Tipout</p>
-        <div className="grid gap-3 md:grid-cols-2">
-          <SelectInput value={settings.tip_pool_reset} onChange={event => onUpdateSettings({ tip_pool_reset: event.target.value })}>
-            {TIP_POOL_RESET_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </SelectInput>
-          <SelectInput value={settings.tipout_basis} onChange={event => onUpdateSettings({ tipout_basis: event.target.value })}>
-            {TIPOUT_BASIS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </SelectInput>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {[
-            ['tip_pooling_enabled', 'Pool tips'],
-            ['require_tipout_at_checkout', 'Tipout at checkout'],
-            ['allow_manager_tip_adjustments', 'Manager tip edits'],
-            ['tipout_sales_includes_tax', 'Sales include tax'],
-            ['tipout_include_managers', 'Managers included'],
-            ['auto_withhold_credit_card_fees', 'Withhold card fees'],
-          ].map(([field, label]) => (
-            <SmallButton key={field} variant={settings[field] ? 'primary' : 'secondary'} onClick={() => onUpdateSettings({ [field]: !settings[field] })}>{label}</SmallButton>
-          ))}
-        </div>
-      </div>
-
+    <div className="space-y-6">
+      {/* 1 — How tips are split */}
       <div className="space-y-3">
-        <p className="label-mono">Role Tip Rules</p>
+        <div>
+          <p className="label-mono">How tips are split</p>
+          <p className="mt-1 text-xs text-dash-secondary">Pick one. This decides how the pot (or each person’s own tips) is divided before any tipout.</p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {POOL_METHODS.map(method => {
+            const selected = methodKey === method.key
+            return (
+              <button
+                key={method.key}
+                type="button"
+                onClick={() => onUpdateSettings({ tip_distribution_mode: method.mode, tip_pooling_enabled: method.pooled })}
+                className={[
+                  'rounded-xl border p-3 text-left transition',
+                  selected ? 'border-dash-gold/60 bg-dash-gold/[0.08]' : 'border-white/10 bg-white/[0.025] hover:border-dash-gold/40',
+                ].join(' ')}
+              >
+                <span className="flex items-center gap-2 text-sm font-semibold text-dash-cream">
+                  <span className={['h-3.5 w-3.5 flex-none rounded-full border', selected ? 'border-dash-gold bg-dash-gold shadow-[inset_0_0_0_3px_rgba(0,0,0,0.55)]' : 'border-dash-tertiary'].join(' ')} />
+                  {method.title}
+                </span>
+                <span className="mt-1.5 block text-xs leading-relaxed text-dash-secondary">{method.desc}</span>
+              </button>
+            )
+          })}
+        </div>
+        {isHoursMode ? (
+          <p className="text-xs text-dash-secondary">
+            Set a <span className="text-dash-cream">weight per hour</span> on any role below to pay it more per hour (e.g. host ×1.5 vs kitchen ×1). Leave every role at 1 for straight hours.
+          </p>
+        ) : null}
+        {isPooled ? (
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <span className="text-xs text-dash-tertiary">Pool resets every</span>
+            <SelectInput
+              value={settings.tip_pool_reset}
+              onChange={event => onUpdateSettings({ tip_pool_reset: event.target.value })}
+              className="w-auto py-2"
+            >
+              {TIP_POOL_RESET_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </SelectInput>
+            <SmallButton variant={settings.tipout_include_managers ? 'primary' : 'secondary'} onClick={() => onUpdateSettings({ tipout_include_managers: !settings.tipout_include_managers })}>Managers share</SmallButton>
+          </div>
+        ) : null}
+      </div>
+
+      <TipInvariantNote />
+
+      {/* 2 + 3 — Per-role rules (eligibility, points, split, tipouts) */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="label-mono">Role tip rules</p>
+          <SmallButton variant={settings.require_tipout_at_checkout ? 'primary' : 'secondary'} onClick={() => onUpdateSettings({ require_tipout_at_checkout: !settings.require_tipout_at_checkout })}>Require tipout at checkout</SmallButton>
+        </div>
         {settings.role_tip_rules.map((rule, index) => {
           const role = jobCodes.find(code => code.code === rule.role_key)
           return (
@@ -1541,12 +1594,41 @@ export function TipPayrollSettingsFields({
                   <SmallButton variant={rule.receives_from_pool ? 'primary' : 'secondary'} onClick={() => onUpdateRoleRule(index, { receives_from_pool: !rule.receives_from_pool })}>Receives</SmallButton>
                 </div>
               </div>
+
               <div className="grid gap-3 md:grid-cols-3">
-                <TextInput value={rule.pool_points} inputMode="decimal" onChange={event => onUpdateRoleRule(index, { pool_points: sanitizeNumber(event.target.value).slice(0, 6) })} placeholder="Pool points" />
+                {isPooled && rule.contributes_to_pool ? (
+                  <Field label="% of tips into pool (keeps the rest)">
+                    <TextInput
+                      value={rule.pool_contribution_percent}
+                      inputMode="decimal"
+                      onChange={event => onUpdateRoleRule(index, { pool_contribution_percent: sanitizeNumber(event.target.value).slice(0, 6) })}
+                      placeholder="100"
+                    />
+                  </Field>
+                ) : null}
+                <Field label={isHoursMode ? 'Weight per hour (×)' : isPointsMode ? 'Pool points' : 'Pool weight (points / hours modes)'}>
+                  <TextInput
+                    value={rule.pool_points}
+                    inputMode="decimal"
+                    disabled={!usesWeight}
+                    onChange={event => onUpdateRoleRule(index, { pool_points: sanitizeNumber(event.target.value).slice(0, 6) })}
+                    placeholder={isHoursMode ? '1.0' : 'e.g. 10'}
+                    className={usesWeight ? '' : 'opacity-40'}
+                  />
+                </Field>
+                {rule.receives_from_pool ? (
+                  <Field label="Split received tipout among this role">
+                    <div className="flex gap-2">
+                      <SmallButton variant={rule.tipout_split_basis === 'hours' ? 'primary' : 'secondary'} onClick={() => onUpdateRoleRule(index, { tipout_split_basis: 'hours' })}>By hours</SmallButton>
+                      <SmallButton variant={rule.tipout_split_basis === 'even' ? 'primary' : 'secondary'} onClick={() => onUpdateRoleRule(index, { tipout_split_basis: 'even' })}>Even</SmallButton>
+                    </div>
+                  </Field>
+                ) : null}
               </div>
+
               <div className="mt-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.1em] text-dash-tertiary">Tipouts (paid from this role's tips)</p>
+                  <p className="text-xs uppercase tracking-[0.1em] text-dash-tertiary">Tipouts — % reserved from this role's tips (they keep the rest)</p>
                   <SmallButton
                     variant="secondary"
                     onClick={() => onUpdateRoleRule(index, {
@@ -1557,7 +1639,7 @@ export function TipPayrollSettingsFields({
                   </SmallButton>
                 </div>
                 {(rule.tipouts || []).length === 0 ? (
-                  <p className="text-xs text-dash-tertiary">No tipouts - this role keeps (or pools) all of its tips.</p>
+                  <p className="text-xs text-dash-tertiary">No tipouts — this role keeps 100% of its tips (unless it contributes to a pool).</p>
                 ) : null}
                 {(rule.tipouts || []).map((tipout, tipoutIndex) => (
                   <div key={tipoutIndex} className="grid gap-2 md:grid-cols-[1fr_110px_150px_auto]">
@@ -1597,13 +1679,84 @@ export function TipPayrollSettingsFields({
                     </SmallButton>
                   </div>
                 ))}
+                {(() => {
+                  const valid = (rule.tipouts || []).filter(t => t.target_role && Number(t.percent) > 0)
+                  if (!valid.length) return null
+                  const tipsPct = valid.filter(t => t.basis !== 'sales').reduce((s, t) => s + Number(t.percent), 0)
+                  const salesPct = valid.filter(t => t.basis === 'sales').reduce((s, t) => s + Number(t.percent), 0)
+                  const roleLabel = role?.label || rule.role_key
+                  const contributesToPool = isPooled && rule.contributes_to_pool
+                  return (
+                    <div className="rounded-lg border border-dash-gold/25 bg-dash-gold/[0.05] px-3 py-2 text-xs text-dash-secondary">
+                      {tipsPct > 0 ? (
+                        <>Reserves <span className="font-semibold text-dash-gold">{+tipsPct.toFixed(2)}%</span> of tips
+                          {salesPct > 0 ? <> plus <span className="font-semibold text-dash-gold">{+salesPct.toFixed(2)}% of net sales</span> (pulled from tips)</> : null}
+                          {' · '}{roleLabel} keeps {salesPct > 0 ? <span className="font-semibold text-dash-cream">the remaining tips</span> : <span className="font-semibold text-dash-cream">{+(100 - tipsPct).toFixed(2)}%</span>}
+                        </>
+                      ) : (
+                        <><span className="font-semibold text-dash-gold">{+salesPct.toFixed(2)}% of net sales</span> is pulled from {roleLabel}’s tips · they keep the rest of their tips</>
+                      )}
+                      {contributesToPool ? <> — then the remainder goes into the pool</> : null}
+                    </div>
+                  )
+                })()}
               </div>
             </div>
           )
         })}
       </div>
+    </div>
+  )
+}
 
-      <TextInput value={settings.notes} onChange={event => onUpdateSettings({ notes: event.target.value })} placeholder="Payroll or tipout notes..." />
+// Payroll defaults: provider, export cadence, cash/credit handling, card fees.
+export function PayrollSetupFields({ settings, onUpdateSettings }) {
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 lg:grid-cols-3">
+        <Field label="Payroll Provider">
+          <TextInput value={settings.payroll_provider} onChange={event => onUpdateSettings({ payroll_provider: event.target.value })} placeholder="Gusto, ADP, manual..." />
+        </Field>
+        <Field label="Payroll Export">
+          <SelectInput value={settings.payroll_export_frequency} onChange={event => onUpdateSettings({ payroll_export_frequency: event.target.value })}>
+            {PAYROLL_EXPORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </SelectInput>
+        </Field>
+        <Field label="Card Fee %">
+          <TextInput value={settings.credit_card_fee_percent} inputMode="decimal" onChange={event => onUpdateSettings({ credit_card_fee_percent: sanitizeNumber(event.target.value).slice(0, 6) })} placeholder="Optional" />
+        </Field>
+        <Field label="Cash Tips">
+          <SelectInput value={settings.cash_tip_declaration_mode} onChange={event => onUpdateSettings({ cash_tip_declaration_mode: event.target.value })}>
+            {CASH_TIP_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </SelectInput>
+        </Field>
+        <Field label="Credit Tips Paid">
+          <SelectInput value={settings.credit_tip_payout_timing} onChange={event => onUpdateSettings({ credit_tip_payout_timing: event.target.value })}>
+            <option value="nightly">Nightly</option>
+            <option value="payroll">Payroll</option>
+          </SelectInput>
+        </Field>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <SmallButton variant={settings.auto_withhold_credit_card_fees ? 'primary' : 'secondary'} onClick={() => onUpdateSettings({ auto_withhold_credit_card_fees: !settings.auto_withhold_credit_card_fees })}>Withhold card fees from tips</SmallButton>
+        <SmallButton variant={settings.allow_manager_tip_adjustments ? 'primary' : 'secondary'} onClick={() => onUpdateSettings({ allow_manager_tip_adjustments: !settings.allow_manager_tip_adjustments })}>Allow manager tip edits</SmallButton>
+        <SmallButton variant={settings.tipout_sales_includes_tax ? 'primary' : 'secondary'} onClick={() => onUpdateSettings({ tipout_sales_includes_tax: !settings.tipout_sales_includes_tax })}>Sales include tax</SmallButton>
+      </div>
+      <Field label="Notes">
+        <TextInput value={settings.notes} onChange={event => onUpdateSettings({ notes: event.target.value })} placeholder="Payroll or tipout notes..." />
+      </Field>
+    </div>
+  )
+}
+
+// Backwards-compatible wrapper: renders both halves stacked. Used where the full
+// tips/payroll config appears on one screen (Setup panel legacy usage).
+export function TipPayrollSettingsFields(props) {
+  return (
+    <div className="space-y-6">
+      <TipRulesFields {...props} />
+      <div className="h-px bg-white/10" />
+      <PayrollSetupFields settings={props.settings} onUpdateSettings={props.onUpdateSettings} />
     </div>
   )
 }

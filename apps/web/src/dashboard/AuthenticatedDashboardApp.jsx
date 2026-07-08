@@ -119,7 +119,7 @@ const TABS = [
   { id: 'menu', label: 'Menu' },
   { id: 'devices', label: 'Devices' },
   { id: 'pos-settings', label: 'POS Settings' },
-  { id: 'tip-pooling', label: 'Tipout' },
+  { id: 'tip-pooling', label: 'Payroll & Tips' },
   { id: 'feedback', label: 'Complaints' },
   { id: 'team', label: 'Team' },
   { id: 'scheduling', label: 'Scheduling' },
@@ -979,6 +979,7 @@ function SchedulingPanel({ restaurantId }) {
   const [optimizationWeights, setOptimizationWeights] = useState(DEFAULT_OPTIMIZATION_WEIGHTS)
   const [scheduleRoleFilter, setScheduleRoleFilter] = useState('all')
   const [scheduleEmployeeFilter, setScheduleEmployeeFilter] = useState('all')
+  const [jobCodeRates, setJobCodeRates] = useState({})
   const [coverageForm, setCoverageForm] = useState(emptyCoverageBlockForm)
   const [selectedShift, setSelectedShift] = useState(null)
   const [selectedDiagnostic, setSelectedDiagnostic] = useState(null)
@@ -1327,6 +1328,41 @@ function SchedulingPanel({ restaurantId }) {
       }
     })
   }, [scheduleItems, staff])
+
+  // Role hourly rates for the read-only labor-cost projection (Payroll & Tips
+  // owns pay; this only forecasts what the current schedule will cost).
+  useEffect(() => {
+    if (!restaurantId) return undefined
+    let cancelled = false
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`)
+      .then(rows => {
+        if (cancelled) return
+        const map = {}
+        ;(Array.isArray(rows) ? rows : []).forEach(row => {
+          const code = String(row?.code || '').trim().toLowerCase()
+          if (code) map[code] = Number(row?.default_hourly_rate) || 0
+        })
+        setJobCodeRates(map)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [restaurantId])
+
+  const scheduledLabor = useMemo(() => {
+    let minutes = 0
+    let cost = 0
+    let missingRate = false
+    scheduleItems.forEach(item => {
+      const start = timeToMinutes(item.shift_start, 0)
+      const end = timeToMinutes(item.shift_end, start)
+      const mins = Math.max(0, end - start)
+      minutes += mins
+      const roleKey = String(item.role || '').toLowerCase()
+      if (!(roleKey in jobCodeRates)) missingRate = true
+      cost += (mins / 60) * (jobCodeRates[roleKey] || 0)
+    })
+    return { hours: minutes / 60, cost, missingRate, shifts: scheduleItems.length }
+  }, [scheduleItems, jobCodeRates])
 
   const createManualRun = async () => {
     setStatus('Generating draft schedule...')
@@ -1824,6 +1860,16 @@ function SchedulingPanel({ restaurantId }) {
                 <p className="mt-1 text-xs text-dash-tertiary">
                   {filteredScheduleItems.length} visible shift{filteredScheduleItems.length === 1 ? '' : 's'} of {scheduleItems.length}.
                 </p>
+                {scheduleItems.length ? (
+                  <p className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs">
+                    <span className="text-dash-tertiary">Projected labor</span>
+                    <span className="font-semibold text-dash-cream">{formatCurrency(scheduledLabor.cost)}</span>
+                    <span className="text-dash-tertiary">· {scheduledLabor.hours.toFixed(1)} hrs (wages only)</span>
+                    {scheduledLabor.missingRate ? (
+                      <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.06em] text-amber-200">Some roles missing a rate</span>
+                    ) : null}
+                  </p>
+                ) : null}
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <label className="space-y-1">
@@ -4538,7 +4584,7 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   team: 'Team',
   devices: 'Devices',
   'pos-settings': 'POS Settings',
-  'tip-pooling': 'Tipout',
+  'tip-pooling': 'Payroll & Tips',
   scheduling: 'Scheduling',
   messaging: 'Messaging',
   payments: 'Payments / Plan',
