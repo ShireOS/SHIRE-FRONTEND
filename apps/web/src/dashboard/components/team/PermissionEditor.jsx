@@ -39,6 +39,7 @@ const NAV_PREVIEW = [
   { id: 'pos-settings', label: 'POS Settings' },
   { id: 'team', label: 'Members' },
   { id: 'time-clock', label: 'Time Clock' },
+  { id: 'labor-cost', label: 'Labor Cost' },
   { id: 'tip-pooling', label: 'Payroll & Tips' },
   { id: 'scheduling', label: 'Scheduling' },
   { id: 'messaging', label: 'Messaging' },

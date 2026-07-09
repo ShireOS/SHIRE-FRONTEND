@@ -47,14 +47,18 @@ function decodeBasis(value) {
   return {
     basis: basis === 'sales' ? 'sales' : 'tips',
     basis_scope: scope === 'restaurant' ? 'restaurant' : 'own',
-    sales_category: basis === 'sales' ? decodeURIComponent(category || '') : '',
+    sales_category: decodeURIComponent(category || ''),
   }
 }
 
 function basisPhrase(tipout) {
   const house = tipout.basis_scope === 'restaurant'
-  if (tipout.basis !== 'sales') return house ? "the restaurant's total tips" : 'their tips'
-  if (tipout.sales_category) return house ? `the restaurant's ${tipout.sales_category} sales` : `their ${tipout.sales_category} sales`
+  const cat = tipout.sales_category
+  if (tipout.basis !== 'sales') {
+    if (cat) return house ? `the restaurant's tips on ${cat} items` : `their tips on ${cat} items`
+    return house ? "the restaurant's total tips" : 'their tips'
+  }
+  if (cat) return house ? `the restaurant's ${cat} sales` : `their ${cat} sales`
   return house ? "the restaurant's total sales" : 'their total sales'
 }
 
@@ -73,7 +77,7 @@ function summarySentences(settings, jobCodes) {
     if (payers.length) {
       const parts = payers.map(r => {
         const p = r.pool_contribution_percent === '' ? 100 : num(r.pool_contribution_percent)
-        return `${labelFor(jobCodes, r.role_key)} put ${pct(p)} of their tips into the pool${p < 100 ? ' and keep the rest' : ''}`
+        return `${labelFor(jobCodes, r.role_key)} puts ${pct(p)} of tips into the pool${p < 100 ? ' and keeps the rest' : ''}`
       })
       sentences.push(parts.join('; ') + '.')
     }
@@ -81,16 +85,19 @@ function summarySentences(settings, jobCodes) {
     if (mode === 'role_shares') {
       const shared = rules.filter(r => num(r.pool_share_percent) > 0)
       if (shared.length) {
-        sentences.push(`The pool pays out ${shared.map(r => `${pct(r.pool_share_percent)} to ${labelFor(jobCodes, r.role_key)}`).join(' · ')}.`)
+        sentences.push(`The pool pays ${shared.map(r => `${pct(r.pool_share_percent)} to ${labelFor(jobCodes, r.role_key)}`).join(' · ')}.`)
       } else {
         sentences.push('The pool pays out by role shares — set each role’s % below.')
       }
     } else if (mode === 'hours_based') {
-      sentences.push('The pool is split by hours worked.')
+      const weighted = rules.filter(r => r.tip_eligible && r.receives_from_pool && r.pool_points !== '' && num(r.pool_points) !== 1)
+      sentences.push(weighted.length
+        ? `The pool is split by hours worked (${weighted.map(r => `${labelFor(jobCodes, r.role_key)} ×${+num(r.pool_points).toFixed(2)}/hr`).join(', ')}).`
+        : 'The pool is split by hours worked.')
     } else if (mode === 'sales_based') {
       sentences.push('The pool is split in proportion to each person’s sales.')
     } else if (mode === 'points_based' || mode === 'role_based') {
-      sentences.push('The pool is split by custom role weights.')
+      sentences.push('The pool is split by role weights.')
     } else {
       sentences.push('The pool is split equally.')
     }
@@ -102,7 +109,7 @@ function summarySentences(settings, jobCodes) {
   rules.forEach(rule => {
     ;(rule.tipouts || []).forEach(t => {
       if (!t.target_role || !(num(t.percent) > 0)) return
-      tipoutParts.push(`${labelFor(jobCodes, rule.role_key)} tip out ${pct(t.percent)} of ${basisPhrase(t)} to ${labelFor(jobCodes, t.target_role)}`)
+      tipoutParts.push(`${labelFor(jobCodes, rule.role_key)} tips out ${pct(t.percent)} of ${basisPhrase(t)} to ${labelFor(jobCodes, t.target_role)}`)
     })
   })
   if (tipoutParts.length) sentences.push(tipoutParts.join('; ') + '.')
@@ -166,10 +173,10 @@ function buildPreset(kind, settings, jobCodes) {
 }
 
 const PRESETS = [
-  { kind: 'keep_own_tipout', title: 'Keep own + tip out support', desc: 'Most common. Everyone keeps tips; servers tip out bussers & bar on sales.' },
-  { kind: 'pool_role_shares', title: 'Classic pool, role shares', desc: 'Servers put 20% of tips in; pool pays 40/30/20/10 to support roles.' },
-  { kind: 'pool_hours', title: 'Full pool, split by hours', desc: 'All tips into one pool, paid out by hours worked.' },
-  { kind: 'scratch', title: 'Start from scratch', desc: 'No pooling, no tipouts. Build it rule by rule.' },
+  { kind: 'keep_own_tipout', title: 'Keep own + tipouts', desc: 'Everyone keeps tips; servers tip out bussers & bar on sales.' },
+  { kind: 'pool_role_shares', title: 'Pool, paid by role %', desc: 'Servers put 20% of tips in; pool pays 40/30/20/10 to support roles.' },
+  { kind: 'pool_hours', title: 'Pool, paid by hours', desc: 'All tips into one pool, paid out by hours worked.' },
+  { kind: 'scratch', title: 'Start from scratch', desc: 'No pooling, no tipouts.' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -213,7 +220,16 @@ function buildSampleCast(settings, jobCodes) {
     if (copies === 2) doubledRole = rule.role_key
     for (let i = 0; i < copies; i += 1) {
       const salesByCategory = {}
-      if (earner) cats.forEach(cat => { salesByCategory[cat] = 400 })
+      const tipsByCategory = {}
+      if (earner) {
+        // Sample night: $400 of sales per referenced category on a $200-tip
+        // night; tips attribute pro-rata to the sales mix, like the backend.
+        const salesTotal = 600 + cats.length * 400
+        cats.forEach(cat => {
+          salesByCategory[cat] = 400
+          tipsByCategory[cat] = 200 * (400 / salesTotal)
+        })
+      }
       cast.push({
         name: SAMPLE_NAMES[nameIndex++ % SAMPLE_NAMES.length],
         role_key: rule.role_key,
@@ -222,6 +238,7 @@ function buildSampleCast(settings, jobCodes) {
         tips: earner ? 200 : 0,
         sales: earner ? 600 + cats.length * 400 : 0,
         salesByCategory,
+        tipsByCategory,
         tipoutPaid: 0,
         tipoutReceived: 0,
         contributed: 0,
@@ -249,9 +266,15 @@ export function simulateSampleNight(settings, jobCodes) {
   const houseSales = cast.reduce((s, p) => s + p.sales, 0)
   const houseTips = cast.reduce((s, p) => s + p.tips, 0)
   const houseByCategory = {}
-  cast.forEach(p => Object.entries(p.salesByCategory).forEach(([cat, v]) => {
-    houseByCategory[cat] = (houseByCategory[cat] || 0) + v
-  }))
+  const houseTipsByCategory = {}
+  cast.forEach(p => {
+    Object.entries(p.salesByCategory).forEach(([cat, v]) => {
+      houseByCategory[cat] = (houseByCategory[cat] || 0) + v
+    })
+    Object.entries(p.tipsByCategory).forEach(([cat, v]) => {
+      houseTipsByCategory[cat] = (houseTipsByCategory[cat] || 0) + v
+    })
+  })
   const notes = []
 
   const splitWeights = members => {
@@ -262,21 +285,21 @@ export function simulateSampleNight(settings, jobCodes) {
 
   // --- tipouts (own + restaurant scope), capped at each payer's tips ---
   const catKey = value => String(value || '').trim().toLowerCase()
+  const lookup = (map, category) => {
+    const hit = Object.entries(map).find(([cat]) => catKey(cat) === catKey(category))
+    return hit ? hit[1] : 0
+  }
   const ownBasis = (person, t) => {
-    if (t.basis !== 'sales') return person.tips
-    if (t.sales_category) {
-      const hit = Object.entries(person.salesByCategory).find(([cat]) => catKey(cat) === catKey(t.sales_category))
-      return hit ? hit[1] : 0
+    if (t.basis !== 'sales') {
+      return t.sales_category ? lookup(person.tipsByCategory, t.sales_category) : person.tips
     }
-    return person.sales
+    return t.sales_category ? lookup(person.salesByCategory, t.sales_category) : person.sales
   }
   const houseBasis = t => {
-    if (t.basis !== 'sales') return houseTips
-    if (t.sales_category) {
-      const hit = Object.entries(houseByCategory).find(([cat]) => catKey(cat) === catKey(t.sales_category))
-      return hit ? hit[1] : 0
+    if (t.basis !== 'sales') {
+      return t.sales_category ? lookup(houseTipsByCategory, t.sales_category) : houseTips
     }
-    return houseSales
+    return t.sales_category ? lookup(houseByCategory, t.sales_category) : houseSales
   }
 
   const plannedByPerson = new Map()
@@ -402,11 +425,10 @@ function InlineSelect({ value, onChange, children, className = '' }) {
   )
 }
 
-function StepHeading({ step, title, hint }) {
+function StepHeading({ title, hint }) {
   return (
     <div>
-      <p className="label-mono text-dash-tertiary">Step {step}</p>
-      <p className="mt-0.5 text-base font-semibold text-dash-cream">{title}</p>
+      <p className="text-base font-semibold text-dash-cream">{title}</p>
       {hint ? <p className="mt-1 text-xs text-dash-secondary">{hint}</p> : null}
     </div>
   )
@@ -549,7 +571,7 @@ export default function TipRulesEditor({
     <div className="space-y-5">
       {/* ---- Plain-English summary ---- */}
       <div className="rounded-2xl border border-dash-gold/40 bg-dash-gold/[0.07] px-5 py-4">
-        <p className="label-mono text-dash-gold">Your policy, in plain English</p>
+        <p className="label-mono text-dash-gold">Current policy</p>
         <p className="mt-1.5 text-sm leading-relaxed text-dash-cream">
           {summary.map((sentence, i) => <span key={i}>{sentence}{' '}</span>)}
         </p>
@@ -557,7 +579,7 @@ export default function TipRulesEditor({
 
       {/* ---- Presets ---- */}
       <SectionCard>
-        <StepHeading step="0" title="Quick start" hint="Pick a common setup, then tweak the numbers. Nothing saves until you hit Save rules." />
+        <StepHeading title="Templates" hint="Apply a starting point, then adjust the numbers." />
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {PRESETS.map(preset => (
             <button
@@ -573,9 +595,9 @@ export default function TipRulesEditor({
         </div>
       </SectionCard>
 
-      {/* ---- Step 1 · Pooling ---- */}
+      {/* ---- Pooling ---- */}
       <SectionCard>
-        <StepHeading step="1" title="Tip pooling" hint="What happens to tips at the end of a shift?" />
+        <StepHeading title="Tip pooling" hint="What happens to tips at the end of a shift?" />
         <div className="flex gap-2">
           <Chip active={!pooling} onClick={() => setPooling(false)}>Everyone keeps their own</Chip>
           <Chip active={pooling} onClick={() => setPooling(true)}>Tips go into a pool</Chip>
@@ -584,7 +606,7 @@ export default function TipRulesEditor({
         {pooling ? (
           <>
             <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-[0.08em] text-dash-tertiary">Who pays in, and how much?</p>
+              <p className="text-xs font-medium uppercase tracking-[0.08em] text-dash-tertiary">Pays in</p>
               <div className="flex flex-wrap gap-2">
                 {rules.map((rule, index) => (
                   <Chip key={rule.role_key} active={rule.tip_eligible && rule.contributes_to_pool} onClick={() => togglePayer(index, rule)}>
@@ -595,24 +617,24 @@ export default function TipRulesEditor({
               {payers.map(({ rule, index }) => (
                 <div key={rule.role_key} className="flex flex-wrap items-center gap-2 rounded-xl border border-dash-border bg-white/[0.03] px-3 py-2.5 text-sm text-dash-secondary">
                   <span className="font-semibold text-dash-cream">{labelFor(jobCodes, rule.role_key)}</span>
-                  <span>put</span>
+                  <span>puts</span>
                   <InlinePct
                     value={rule.pool_contribution_percent}
                     onChange={value => onUpdateRoleRule(index, { pool_contribution_percent: value })}
                     placeholder="100"
                   />
-                  <span>of their tips into the pool{num(rule.pool_contribution_percent || 100) < 100 ? ' — they keep the rest' : ''}</span>
+                  <span>of tips into the pool{num(rule.pool_contribution_percent || 100) < 100 ? ' and keeps the rest' : ''}</span>
                 </div>
               ))}
             </div>
 
             <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-[0.08em] text-dash-tertiary">How is the pool paid out?</p>
+              <p className="text-xs font-medium uppercase tracking-[0.08em] text-dash-tertiary">Pool payout</p>
               <div className="grid gap-2 sm:grid-cols-3">
                 {[
-                  { key: 'role_shares', title: 'By role shares', desc: 'Each role gets a set % of the pool — the way most houses quote it.' },
-                  { key: 'hours_based', title: 'By hours worked', desc: 'One pot; everyone’s share follows their hours.' },
-                  { key: 'pooled', title: 'Split equally', desc: 'Everyone in the pool gets the same amount.' },
+                  { key: 'role_shares', title: 'By role %', desc: 'Each role gets a set % of the pool.' },
+                  { key: 'hours_based', title: 'By hours worked', desc: 'Shares follow hours. Roles can be weighted per hour.' },
+                  { key: 'pooled', title: 'Split equally', desc: 'Same amount for everyone in the pool.' },
                 ].map(method => {
                   const selected = mode === method.key
                   return (
@@ -639,7 +661,7 @@ export default function TipRulesEditor({
             </div>
 
             <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-[0.08em] text-dash-tertiary">Who receives?</p>
+              <p className="text-xs font-medium uppercase tracking-[0.08em] text-dash-tertiary">Receives</p>
               <div className="flex flex-wrap gap-2">
                 {rules.map((rule, index) => (
                   <Chip key={rule.role_key} active={rule.tip_eligible && rule.receives_from_pool} onClick={() => toggleReceiver(index, rule)}>
@@ -647,6 +669,27 @@ export default function TipRulesEditor({
                   </Chip>
                 ))}
               </div>
+              {mode === 'hours_based' && receivers.length ? (
+                <div className="flex flex-wrap items-center gap-3 rounded-xl border border-dash-border bg-white/[0.03] px-3 py-2.5 text-sm">
+                  <span className="text-dash-secondary">Weight per hour:</span>
+                  {receivers.map(({ rule, index }) => (
+                    <span key={rule.role_key} className="inline-flex items-center gap-1.5">
+                      <span className="text-dash-cream">{labelFor(jobCodes, rule.role_key)}</span>
+                      <span className="inline-flex items-center gap-1 rounded-lg border border-dash-border bg-black/25 px-2 py-1">
+                        <span className="text-xs text-dash-tertiary">×</span>
+                        <input
+                          value={rule.pool_points}
+                          inputMode="decimal"
+                          onChange={event => onUpdateRoleRule(index, { pool_points: event.target.value.replace(/[^0-9.]/g, '').slice(0, 6) })}
+                          placeholder="1"
+                          className="w-10 bg-transparent text-right text-sm text-dash-cream outline-none placeholder:text-dash-tertiary"
+                        />
+                      </span>
+                    </span>
+                  ))}
+                  <span className="text-xs text-dash-tertiary">1 = straight hours. Higher = a bigger share per hour.</span>
+                </div>
+              ) : null}
               {mode === 'role_shares' && receivers.length ? (
                 <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dash-border bg-white/[0.03] px-3 py-2.5 text-sm">
                   <span className="text-dash-secondary">Pool splits:</span>
@@ -657,7 +700,7 @@ export default function TipRulesEditor({
                     </span>
                   ))}
                   <span className={`ml-1 text-xs font-semibold tabular-nums ${Math.abs(shareTotal - 100) < 0.01 ? 'text-emerald-300' : 'text-amber-300'}`}>
-                    ={NBSP}{+shareTotal.toFixed(2)}%{Math.abs(shareTotal - 100) < 0.01 ? ' ✓' : ` — ${shareTotal < 100 ? `${+(100 - shareTotal).toFixed(2)}% unassigned` : `${+(shareTotal - 100).toFixed(2)}% over`} (shares are re-balanced in proportion)`}
+                    ={NBSP}{+shareTotal.toFixed(2)}%{Math.abs(shareTotal - 100) < 0.01 ? ' ✓' : ' — rebalanced in proportion'}
                   </span>
                 </div>
               ) : null}
@@ -675,9 +718,9 @@ export default function TipRulesEditor({
         ) : null}
       </SectionCard>
 
-      {/* ---- Step 2 · Tipouts ---- */}
+      {/* ---- Tipouts ---- */}
       <SectionCard>
-        <StepHeading step="2" title="Tipouts" hint="Who tips out whom? The basis only sets how the amount is calculated — the money always comes out of the paying role's tips, never their sales." />
+        <StepHeading title="Tipouts" hint="The basis only sets how the amount is calculated — the money always comes out of the paying role's tips." />
         {tipoutRows.length === 0 ? (
           <p className="text-sm text-dash-tertiary">No tipouts yet — every role keeps its tips (minus any pool contribution above).</p>
         ) : null}
@@ -693,9 +736,12 @@ export default function TipRulesEditor({
               <InlineSelect value={encodeBasis(tipout)} onChange={event => updateTipout(ruleIndex, tipoutIndex, decodeBasis(event.target.value))} className="max-w-[240px]">
                 <optgroup label="Each person's own numbers">
                   <option value="tips|own|">their tips</option>
+                  {categories.map(cat => (
+                    <option key={`own-t-${cat}`} value={`tips|own|${encodeURIComponent(cat)}`}>their tips on {cat} items</option>
+                  ))}
                   <option value="sales|own|">their total sales</option>
                   {categories.map(cat => (
-                    <option key={`own-${cat}`} value={`sales|own|${encodeURIComponent(cat)}`}>their {cat} sales</option>
+                    <option key={`own-s-${cat}`} value={`sales|own|${encodeURIComponent(cat)}`}>their {cat} sales</option>
                   ))}
                 </optgroup>
                 <optgroup label="Whole restaurant">
@@ -726,6 +772,29 @@ export default function TipRulesEditor({
             </div>
           ))}
         </div>
+        {(() => {
+          // Same role, same category, both bases (X% of bar sales AND Y% of
+          // bar-item tips) is almost always a misconfiguration — flag it.
+          const doubled = []
+          rules.forEach(rule => {
+            const basesByCategory = {}
+            ;(rule.tipouts || []).forEach(t => {
+              if (!t.sales_category || !t.target_role || !(num(t.percent) > 0)) return
+              const key = t.sales_category.toLowerCase()
+              basesByCategory[key] = basesByCategory[key] || new Set()
+              basesByCategory[key].add(t.basis)
+            })
+            Object.entries(basesByCategory).forEach(([cat, bases]) => {
+              if (bases.size > 1) doubled.push(`${labelFor(jobCodes, rule.role_key)} on ${cat}`)
+            })
+          })
+          if (!doubled.length) return null
+          return (
+            <p className="rounded-lg border border-amber-400/40 bg-amber-400/[0.06] px-3 py-2 text-xs text-amber-200">
+              {doubled.join(', ')} has both a sales-based rule and a tip-share rule on the same category — usually you want one or the other.
+            </p>
+          )
+        })()}
         <button type="button" onClick={addTipout} className="rounded-lg border border-dashed border-dash-gold/50 px-3.5 py-1.5 text-sm text-dash-gold hover:bg-dash-gold/10">
           + Add a tipout
         </button>
@@ -752,7 +821,7 @@ export default function TipRulesEditor({
       {/* ---- Check the math ---- */}
       <SectionCard>
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <StepHeading step="3" title="Check the math" hint={realState === 'ok' ? 'Yesterday’s real numbers through these rules (as last saved).' : 'A sample night through the rules above — updates as you edit.'} />
+          <StepHeading title="Preview" hint={realState === 'ok' ? 'Yesterday’s real numbers through the saved rules.' : 'A sample night through the rules above. Updates as you edit.'} />
           <button
             type="button"
             onClick={loadRealNumbers}
@@ -826,7 +895,7 @@ export default function TipRulesEditor({
 
       {/* ---- Exceptions ---- */}
       <SectionCard>
-        <StepHeading step="4" title="Exceptions" hint="The rules above apply to everyone in a role. Individual overrides live here — saved instantly per person." />
+        <StepHeading title="Exceptions" hint="Per-person overrides to the role rules. Saved immediately." />
         {overrides.length === 0 && !addingException ? (
           <p className="text-sm text-dash-tertiary">No exceptions — every person follows their role’s rules.</p>
         ) : null}
@@ -907,13 +976,13 @@ export default function TipRulesEditor({
               <Chip active={mode === 'points_based' || mode === 'role_based'} onClick={() => onUpdateSettings({ tip_distribution_mode: 'points_based', tip_pooling_enabled: true })}>Custom weights (points)</Chip>
               <Chip active={mode === 'sales_based'} onClick={() => onUpdateSettings({ tip_distribution_mode: 'sales_based', tip_pooling_enabled: true })}>By each person’s sales</Chip>
             </div>
-            {(mode === 'points_based' || mode === 'role_based' || mode === 'hours_based') ? (
+            {(mode === 'points_based' || mode === 'role_based') ? (
               <div className="flex flex-wrap gap-3 pt-1">
                 {rules.filter(rule => rule.tip_eligible && rule.receives_from_pool).map(rule => {
                   const index = rules.indexOf(rule)
                   return (
                     <span key={rule.role_key} className="inline-flex items-center gap-1.5 text-xs text-dash-secondary">
-                      {labelFor(jobCodes, rule.role_key)} {mode === 'hours_based' ? '× / hour' : 'points'}
+                      {labelFor(jobCodes, rule.role_key)} points
                       <input
                         value={rule.pool_points}
                         inputMode="decimal"
@@ -933,7 +1002,7 @@ export default function TipRulesEditor({
             <Chip active={settings.require_tipout_at_checkout} onClick={() => onUpdateSettings({ require_tipout_at_checkout: !settings.require_tipout_at_checkout })}>Require tipout at checkout</Chip>
           </div>
           <p className="text-xs leading-relaxed text-dash-tertiary">
-            Per-role eligibility, legacy single tipouts, and anything saved by an older version of this page keep working — this editor reads and writes the same rules.
+            Rules saved by older versions of this page keep working — this editor reads and writes the same settings.
           </p>
         </div>
       </details>

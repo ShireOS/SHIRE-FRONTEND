@@ -1179,8 +1179,9 @@ function normalizeTipRoleRules(rows, jobCodes) {
         target_role: slugRoleCode(item.target_role),
         percent: item.percent == null ? '' : sanitizeNumber(item.percent),
         basis: item.basis === 'sales' ? 'sales' : 'tips',
-        // Narrow a sales basis to one menu category ('' = all sales).
-        sales_category: item.basis === 'sales' && item.sales_category ? String(item.sales_category).trim() : '',
+        // Narrow the basis to one menu category ('' = all). Applies to both
+        // bases: category sales, or tips attributed to the category.
+        sales_category: item.sales_category ? String(item.sales_category).trim() : '',
         // 'own' = this waiter's numbers, 'restaurant' = house-wide totals.
         basis_scope: item.basis_scope === 'restaurant' ? 'restaurant' : 'own',
       }))
@@ -1478,7 +1479,7 @@ export function tipPayrollPayload(settings, jobCodes) {
           target_role: item.target_role,
           percent: Number(item.percent),
           basis: item.basis === 'sales' ? 'sales' : 'tips',
-          sales_category: item.basis === 'sales' && item.sales_category ? item.sales_category : null,
+          sales_category: item.sales_category || null,
           basis_scope: item.basis_scope === 'restaurant' ? 'restaurant' : 'own',
         })),
       tipout_percent: rule.tipout_percent === '' ? null : Number(rule.tipout_percent),

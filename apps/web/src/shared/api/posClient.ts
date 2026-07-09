@@ -3,13 +3,18 @@ import { supabase } from '../lib/supabase'
 // Second backend: the POS API (Shire_POS_backend). The dashboard talks to it
 // for time clock management; auth is the dashboard's Supabase JWT plus an
 // X-Restaurant-Id header (the POS backend resolves owner/member access itself).
+// The manager routes live under the unconditional /api/v1 mount — the POS
+// app's /api/v1/dev-v2 mount is absent when ENVIRONMENT=production, so a
+// trailing /dev-v2 from env config is stripped.
 const POS_API_BASE = (
   import.meta.env.VITE_POS_API_BASE_URL ||
   import.meta.env.VITE_POS_API_BASE ||
   (import.meta.env.DEV
-    ? 'http://localhost:8005/api/v1/dev-v2'
-    : 'https://shire-pos-api-production.up.railway.app/api/v1/dev-v2')
-).replace(/\/+$/, '')
+    ? 'http://localhost:8005/api/v1'
+    : 'https://shire-pos-api-production.up.railway.app/api/v1')
+)
+  .replace(/\/+$/, '')
+  .replace(/\/dev-v2$/, '')
 
 export async function fetchPosApi<T = any>(
   restaurantId: string,

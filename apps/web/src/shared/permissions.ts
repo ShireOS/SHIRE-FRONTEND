@@ -42,7 +42,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     id: 'payroll',
     label: 'Payroll & Tips',
     keys: [
-      { key: 'payroll.view', label: 'View pay runs', description: 'See pay runs, tips and labor cost' },
+      { key: 'payroll.view', label: 'View payroll & labor cost', description: 'See pay runs, tips and labor cost' },
       { key: 'payroll.run', label: 'Run / finalize payroll', description: 'Preview and finalize pay runs' },
       { key: 'payroll.adjust_tips', label: 'Adjust tips', description: 'Apply per-person tip adjustments' },
       { key: 'payroll.export', label: 'Export (CSV / PDF)', description: 'Download payroll exports' },
@@ -118,6 +118,7 @@ export const TAB_PERMISSIONS: Record<string, string> = {
   devices: 'settings.edit',
   'pos-settings': 'settings.edit',
   'tip-pooling': 'payroll.view',
+  'labor-cost': 'payroll.view',
   team: 'team.view',
   'time-clock': 'team.view',
   scheduling: 'team.view',

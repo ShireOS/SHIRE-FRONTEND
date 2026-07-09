@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
+  Banknote,
+  BadgeDollarSign,
   Bell,
   Building2,
   Gauge,
@@ -148,7 +150,14 @@ const STORE_NAV = [
     children: [
       { id: 'team', label: 'Members', icon: Users },
       { id: 'time-clock', label: 'Time Clock', icon: Clock },
-      { id: 'tip-pooling', label: 'Payroll & Tips', icon: Percent },
+      { id: 'labor-cost', label: 'Labor Cost', icon: BadgeDollarSign },
+      // Payroll & Tips sections, flat within the Team group (not nested under
+      // a single Payroll item). All render TipPoolingPage ('tip-pooling' tab);
+      // the section travels in the URL hash, which the page reads.
+      { id: 'tip-pooling', section: 'overview', label: 'Payroll & Tips', icon: Percent },
+      { id: 'tip-pooling', section: 'run', label: 'Pay Run', icon: Banknote },
+      { id: 'tip-pooling', section: 'rules', label: 'Tip & Tipout Rules', icon: SlidersHorizontal },
+      { id: 'tip-pooling', section: 'payroll', label: 'Payroll Setup', icon: Settings },
       { id: 'scheduling', label: 'Scheduling', icon: CalendarClock },
     ],
   },
@@ -203,8 +212,9 @@ function SidebarItem({ icon: Icon, label, isActive, onClick, onHover, soon = fal
 }
 
 // Expandable sidebar group (e.g. Team): renders its children indented, stays
-// open while any child is active, and remembers manual toggling.
-function SidebarGroup({ group, activeItem, onNavigate, onHoverItem }) {
+// open while any child is active, and remembers manual toggling. Children may
+// carry a `section` (URL hash) so several entries can point at one tab.
+function SidebarGroup({ group, activeItem, activeSection, onNavigate, onHoverItem }) {
   const childActive = group.children.some((child) => child.id === activeItem)
   const [manuallyOpen, setManuallyOpen] = useState(false)
   const open = childActive || manuallyOpen
@@ -235,12 +245,12 @@ function SidebarGroup({ group, activeItem, onNavigate, onHoverItem }) {
         <div className="ml-4 border-l border-dash-border pl-1">
           {group.children.map((child) => (
             <SidebarItem
-              key={child.id}
+              key={child.section ? `${child.id}-${child.section}` : child.id}
               icon={child.icon}
               label={child.label}
-              isActive={activeItem === child.id}
+              isActive={activeItem === child.id && (!child.section || activeSection === child.section)}
               onHover={() => onHoverItem(child.id)}
-              onClick={() => onNavigate(child.id)}
+              onClick={() => onNavigate(child.id, child.section)}
             />
           ))}
         </div>
@@ -340,8 +350,12 @@ export default function DashboardShell({
 }) {
   const auth = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [theme, setTheme] = useShellTheme()
+  // Section-scoped nav items (e.g. the Payroll & Tips entries) match on the
+  // URL hash; no hash means the first section ('overview').
+  const activeSection = (location.hash || '').replace('#', '') || 'overview'
 
   const accountType = auth.accountType
   const showRates = accountType === 'reseller' || accountType === 'admin'
@@ -439,18 +453,19 @@ export default function DashboardShell({
                       key={item.id}
                       group={item}
                       activeItem={activeItem}
+                      activeSection={activeSection}
                       onHoverItem={(childId) => prefetchWorkspaceTab(restaurantId, childId, activeItem)}
-                      onNavigate={(childId) => navigate(`/restaurants/${restaurantId}/${childId}`)}
+                      onNavigate={(childId, sectionId) => navigate(`/restaurants/${restaurantId}/${childId}${sectionId ? `#${sectionId}` : ''}`)}
                     />
                   ) : (
                     <SidebarItem
-                      key={item.id}
+                      key={item.section ? `${item.id}-${item.section}` : item.id}
                       icon={item.icon}
                       label={item.label}
                       warning={item.id === 'setup' && setupWarningCount > 0}
-                      isActive={activeItem === item.id}
+                      isActive={activeItem === item.id && (!item.section || activeSection === item.section)}
                       onHover={() => prefetchWorkspaceTab(restaurantId, item.id, activeItem)}
-                      onClick={() => navigate(`/restaurants/${restaurantId}/${item.id}`)}
+                      onClick={() => navigate(`/restaurants/${restaurantId}/${item.id}${item.section ? `#${item.section}` : ''}`)}
                     />
                   )
                 ))}
