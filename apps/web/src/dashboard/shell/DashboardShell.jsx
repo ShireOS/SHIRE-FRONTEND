@@ -434,15 +434,25 @@ export default function DashboardShell({
               <>
                 <SectionEyebrow>{restaurant?.name || 'Current store'}</SectionEyebrow>
                 {storeNav.map((item) => (
-                  <SidebarItem
-                    key={item.id}
-                    icon={item.icon}
-                    label={item.label}
-                    warning={item.id === 'setup' && setupWarningCount > 0}
-                    isActive={activeItem === item.id}
-                    onHover={() => prefetchWorkspaceTab(restaurantId, item.id, activeItem)}
-                    onClick={() => navigate(`/restaurants/${restaurantId}/${item.id}`)}
-                  />
+                  item.children ? (
+                    <SidebarGroup
+                      key={item.id}
+                      group={item}
+                      activeItem={activeItem}
+                      onHoverItem={(childId) => prefetchWorkspaceTab(restaurantId, childId, activeItem)}
+                      onNavigate={(childId) => navigate(`/restaurants/${restaurantId}/${childId}`)}
+                    />
+                  ) : (
+                    <SidebarItem
+                      key={item.id}
+                      icon={item.icon}
+                      label={item.label}
+                      warning={item.id === 'setup' && setupWarningCount > 0}
+                      isActive={activeItem === item.id}
+                      onHover={() => prefetchWorkspaceTab(restaurantId, item.id, activeItem)}
+                      onClick={() => navigate(`/restaurants/${restaurantId}/${item.id}`)}
+                    />
+                  )
                 ))}
                 {STORE_NAV_SOON.map((item) => (
                   <SidebarItem key={item.id} icon={item.icon} label={item.label} soon />

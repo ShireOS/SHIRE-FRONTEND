@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ShieldCheck } from 'lucide-react'
+import { ChevronDown, ShieldCheck } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '../shared/Card'
 import { PERMISSION_TOGGLES, fetchRolePermissions, updateRolePermission } from '../../data/permissions'
+import { PERMISSION_KEYS, mergePermissions } from '../../../shared/permissions'
+import PermissionEditor from './PermissionEditor'
 
 const roleLabel = (key) =>
   String(key || '')
@@ -29,6 +31,10 @@ function Toggle({ active, disabled, onClick, children }) {
 }
 
 function RoleCard({ role, busy, onPatch }) {
+  const [backOfficeOpen, setBackOfficeOpen] = useState(false)
+  const backOffice = role.back_office_permissions || {}
+  const grantedCount = PERMISSION_KEYS.filter((key) => backOffice[key]).length
+
   return (
     <div className="rounded-xl border border-dash-border bg-[var(--glass-bg)] p-4">
       <div className="mb-3 flex items-center gap-2">
@@ -90,6 +96,41 @@ function RoleCard({ role, busy, onPatch }) {
           Requires manager PIN
         </Toggle>
       </div>
+
+      {/* Default back-office (dashboard) permissions for members clocked in under
+          this role. Saved verbatim as pos_role_permissions.back_office_permissions;
+          per-member overrides layer on top (see TeamPage → Back-office access). */}
+      <div className="mt-4 border-t border-dash-border pt-3">
+        <button
+          type="button"
+          onClick={() => setBackOfficeOpen((open) => !open)}
+          aria-expanded={backOfficeOpen}
+          className="flex items-center gap-1.5 text-xs font-semibold text-dash-tertiary transition hover:text-dash-secondary"
+        >
+          <ChevronDown
+            size={13}
+            strokeWidth={1.75}
+            className={`transition-transform ${backOfficeOpen ? 'rotate-180' : ''}`}
+            aria-hidden="true"
+          />
+          Back office (dashboard)
+          <span className="font-mono text-[10px] text-dash-tertiary">
+            {grantedCount}/{PERMISSION_KEYS.length} granted
+          </span>
+        </button>
+        {backOfficeOpen && (
+          <div className="mt-3">
+            <PermissionEditor
+              value={mergePermissions(backOffice, null)}
+              roleDefaults={null}
+              grantCap={null}
+              showPreview={false}
+              disabled={busy}
+              onChange={(next) => onPatch(role, { back_office_permissions: next })}
+            />
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -143,6 +184,7 @@ export default function RolePermissionsPanel({ restaurantId }) {
         <p className="mt-1 text-xs text-dash-tertiary">
           What each role can do on the POS, and their discount / refund caps. Staff inherit these from the
           role they clock in under; a manager PIN is still required to approve anything a role can&rsquo;t do itself.
+          Each role also carries default back-office (dashboard) permissions that invited members inherit.
         </p>
       </CardHeader>
       <CardContent className="space-y-2">
