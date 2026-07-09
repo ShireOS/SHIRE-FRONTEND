@@ -17,6 +17,7 @@ import {
 import { color_pallet, semanticColors, statusColors } from '@/styles/colors';
 import { typography } from '@/styles/typography';
 import { Feather } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -88,6 +89,7 @@ function formatLocation(restaurant: ResellerRestaurant) {
 }
 
 export default function ResellerPortfolio() {
+  const router = useRouter();
   const [viewMode, setViewMode] = useState<ViewMode>('restaurants');
   const [selectMode, setSelectMode] = useState<SelectMode>('browse');
   const [groupFilter, setGroupFilter] = useState('all');
@@ -416,6 +418,10 @@ export default function ResellerPortfolio() {
       <RestaurantDetailModal
         restaurant={detailRestaurant}
         onClose={() => setDetailRestaurant(null)}
+        onOpenReports={(restaurant) => {
+          setDetailRestaurant(null);
+          router.push(`/(reseller)/reports?restaurantId=${encodeURIComponent(restaurant.id)}&restaurantName=${encodeURIComponent(restaurant.name || 'Restaurant')}`);
+        }}
       />
     </View>
   );
@@ -884,9 +890,11 @@ function MoveGroupModal({
 function RestaurantDetailModal({
   restaurant,
   onClose,
+  onOpenReports,
 }: {
   restaurant: ResellerRestaurant | null;
   onClose: () => void;
+  onOpenReports: (restaurant: ResellerRestaurant) => void;
 }) {
   return (
     <Modal visible={Boolean(restaurant)} transparent animationType="fade" onRequestClose={onClose}>
@@ -901,6 +909,11 @@ function RestaurantDetailModal({
             <DetailRow label="Type" value={restaurant?.type || 'Not set'} />
           </View>
           <View style={styles.modalActions}>
+            {restaurant && (
+              <Pressable onPress={() => onOpenReports(restaurant)} style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>Reports</Text>
+              </Pressable>
+            )}
             <Pressable onPress={onClose} style={styles.primaryButton}>
               <Text style={styles.primaryButtonText}>Done</Text>
             </Pressable>
