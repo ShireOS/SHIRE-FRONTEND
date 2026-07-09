@@ -250,6 +250,8 @@ const TIP_DISTRIBUTION_OPTIONS = [
   { value: 'sales_based', label: 'Sales-based' },
   { value: 'hours_based', label: 'Hours-based' },
   { value: 'points_based', label: 'Point-based' },
+  // Pool paid out by declared per-role percentages ("40% bussers / 30% bar").
+  { value: 'role_shares', label: 'Role shares' },
 ]
 const CASH_TIP_OPTIONS = [
   { value: 'not_tracked', label: 'Not tracked' },
@@ -1136,6 +1138,8 @@ export function defaultTipPayrollSettings(jobCodes = []) {
       // 'hours' = proportional to hours worked (a double out-earns a single),
       // 'even' = equal split. Matches the backend engine default of 'hours'.
       tipout_split_basis: 'hours',
+      // This role's declared cut of the pool in role_shares mode.
+      pool_share_percent: '',
       tipouts: [],
       tipout_percent: '',
       tipout_target_role: '',
@@ -1175,12 +1179,18 @@ function normalizeTipRoleRules(rows, jobCodes) {
         target_role: slugRoleCode(item.target_role),
         percent: item.percent == null ? '' : sanitizeNumber(item.percent),
         basis: item.basis === 'sales' ? 'sales' : 'tips',
+        // Narrow a sales basis to one menu category ('' = all sales).
+        sales_category: item.basis === 'sales' && item.sales_category ? String(item.sales_category).trim() : '',
+        // 'own' = this waiter's numbers, 'restaurant' = house-wide totals.
+        basis_scope: item.basis_scope === 'restaurant' ? 'restaurant' : 'own',
       }))
     if (!tipouts.length && row?.tipout_percent != null && row?.tipout_target_role) {
       tipouts = [{
         target_role: slugRoleCode(row.tipout_target_role),
         percent: sanitizeNumber(row.tipout_percent),
         basis: 'tips',
+        sales_category: '',
+        basis_scope: 'own',
       }]
     }
     byRole.set(roleKey, {
@@ -1191,6 +1201,7 @@ function normalizeTipRoleRules(rows, jobCodes) {
       pool_points: row?.pool_points == null ? '' : sanitizeNumber(row.pool_points),
       pool_contribution_percent: row?.pool_contribution_percent == null ? '100' : sanitizeNumber(row.pool_contribution_percent),
       tipout_split_basis: row?.tipout_split_basis === 'even' ? 'even' : 'hours',
+      pool_share_percent: row?.pool_share_percent == null ? '' : sanitizeNumber(row.pool_share_percent),
       tipouts,
       tipout_percent: '',
       tipout_target_role: '',
@@ -1460,12 +1471,15 @@ export function tipPayrollPayload(settings, jobCodes) {
       pool_points: rule.pool_points === '' ? null : Number(rule.pool_points),
       pool_contribution_percent: rule.pool_contribution_percent === '' ? null : Number(rule.pool_contribution_percent),
       tipout_split_basis: rule.tipout_split_basis === 'even' ? 'even' : 'hours',
+      pool_share_percent: rule.pool_share_percent === '' || rule.pool_share_percent == null ? null : Number(rule.pool_share_percent),
       tipouts: (rule.tipouts || [])
         .filter(item => item.target_role && item.percent !== '' && Number(item.percent) > 0)
         .map(item => ({
           target_role: item.target_role,
           percent: Number(item.percent),
           basis: item.basis === 'sales' ? 'sales' : 'tips',
+          sales_category: item.basis === 'sales' && item.sales_category ? item.sales_category : null,
+          basis_scope: item.basis_scope === 'restaurant' ? 'restaurant' : 'own',
         })),
       tipout_percent: rule.tipout_percent === '' ? null : Number(rule.tipout_percent),
       tipout_target_role: rule.tipout_target_role || null,

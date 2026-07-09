@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchWithSupabaseAuth } from '../../shared/query'
 import {
-  TipRulesFields,
   PayrollSetupFields,
   defaultTipPayrollSettings,
   normalizeJobCodes,
   normalizeTipPayrollSettings,
   tipPayrollPayload,
 } from '../RestaurantSetupPanel'
+import TipRulesEditor from '../components/payroll/TipRulesEditor'
 import { buildPayrollRows, payrollTotals, exportPayrollCsv, exportPayrollPdf } from './payrollExport'
 
 const MODE_LABELS = {
@@ -17,6 +17,7 @@ const MODE_LABELS = {
   points_based: 'Points',
   hours_based: 'By hours',
   sales_based: 'By sales',
+  role_shares: 'Role shares',
 }
 
 const STATUS_STYLES = {
@@ -232,6 +233,7 @@ export default function TipPoolingPage({ restaurantId }) {
   const [businessDate, setBusinessDate] = useState(yesterdayISO())
   const [jobCodes, setJobCodes] = useState([])
   const [waiters, setWaiters] = useState([])
+  const [menuCategories, setMenuCategories] = useState([])
   const [tipPayrollSettings, setTipPayrollSettings] = useState(defaultTipPayrollSettings())
   const [overview, setOverview] = useState(null)
   const [overviewLoading, setOverviewLoading] = useState(false)
@@ -295,14 +297,16 @@ export default function TipPoolingPage({ restaurantId }) {
     setConfigError('')
     setConfigMessage('')
     try {
-      const [jobCodeRows, tipPayrollData, waiterRows] = await Promise.all([
+      const [jobCodeRows, tipPayrollData, waiterRows, menuCategoryData] = await Promise.all([
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`).catch(() => []),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`).catch(() => null),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=true`).catch(() => []),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/categories`).catch(() => null),
       ])
       const normalizedJobCodes = normalizeJobCodes(jobCodeRows)
       setJobCodes(normalizedJobCodes)
       setWaiters(Array.isArray(waiterRows) ? waiterRows : [])
+      setMenuCategories(Array.isArray(menuCategoryData?.categories) ? menuCategoryData.categories.filter(c => c?.is_active !== false) : [])
       setTipPayrollSettings(normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes))
     } catch (err) {
       setConfigError(err?.message || 'Could not load tipout configuration')
@@ -378,6 +382,25 @@ export default function TipPoolingPage({ restaurantId }) {
     }))
     setConfigMessage('')
   }
+
+  // Per-person overrides (Exceptions): PATCH the waiter row, then refresh the
+  // list so the editor reflects the saved values. Saved immediately — these
+  // live on `waiters`, not in the rules payload.
+  const saveWaiterOverride = async (waiterId, patch) => {
+    try {
+      await fetchWithSupabaseAuth(`/waiters/${waiterId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      })
+      const waiterRows = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=true`).catch(() => null)
+      if (Array.isArray(waiterRows)) setWaiters(waiterRows)
+    } catch (err) {
+      setConfigError(err?.message || 'Could not save the exception')
+    }
+  }
+
+  const fetchRealPreview = () =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tip-pools/preview?business_date=${yesterdayISO()}`)
 
   const saveTipConfig = async () => {
     setConfigSaving(true)
@@ -705,7 +728,16 @@ export default function TipPoolingPage({ restaurantId }) {
           {configLoading ? (
             <div className="rounded-xl border border-dash-border bg-white/[0.025] p-4 text-sm text-dash-secondary">Loading configuration…</div>
           ) : (
-            <TipRulesFields settings={tipPayrollSettings} jobCodes={jobCodes} onUpdateSettings={updateTipPayrollSettings} onUpdateRoleRule={updateTipRoleRule} />
+            <TipRulesEditor
+              settings={tipPayrollSettings}
+              jobCodes={jobCodes}
+              waiters={waiters}
+              menuCategories={menuCategories}
+              onUpdateSettings={updateTipPayrollSettings}
+              onUpdateRoleRule={updateTipRoleRule}
+              onSaveWaiterOverride={saveWaiterOverride}
+              onFetchRealPreview={fetchRealPreview}
+            />
           )}
           {configError ? <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{configError}</div> : null}
           {configMessage ? <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{configMessage}</div> : null}
