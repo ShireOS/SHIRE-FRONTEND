@@ -150,7 +150,7 @@ export default function RestaurantReportsScreen() {
   const [dateRange, setDateRange] = useState<ReportRange>(initialRange);
   const [dateDraft, setDateDraft] = useState(() => ({ start: initialRange().start, end: initialRange().end }));
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>('previous_period');
-  const [compareDraft, setCompareDraft] = useState(() => ({ ...initialRange(), mode: 'previous_period' as ComparisonMode }));
+  const [compareDraft, setCompareDraft] = useState(() => ({ ...initialRange(), mode: 'previous_period' as ComparisonMode, enabled: false }));
   const [basis, setBasis] = useState<'units' | 'revenue' | 'margin'>('revenue');
   const [daypart, setDaypart] = useState('');
   const [report, setReport] = useState<RestaurantReport | null>(null);
@@ -275,12 +275,12 @@ export default function RestaurantReportsScreen() {
               <Text style={styles.title} numberOfLines={1}>{restaurantName}</Text>
               <Text style={styles.dateCopy}>{dateRange.start} — {dateRange.end}</Text>
             </View>
-            <View style={[styles.iconActions, width < 700 && styles.headerActionsCompact]}>
-              <IconAction icon="calendar" label="Compare" onPress={() => { setCompareDraft({ ...dateRange, mode: comparisonMode }); setModal('compare'); }} />
-              <IconAction icon="settings" label="Configure" onPress={() => setModal('config')} />
-              <IconAction icon="mail" label="Email" onPress={() => setModal('email')} />
-              <IconAction icon="refresh-cw" label="Refresh" onPress={() => load()} />
-            </View>
+          </View>
+          <View style={styles.headerActionRow}>
+            <IconAction icon="calendar" label="Compare" onPress={() => { setCompareDraft({ ...dateRange, mode: comparisonMode, enabled: comparisonEnabled }); setModal('compare'); }} />
+            <IconAction icon="settings" label="Configure" onPress={() => setModal('config')} />
+            <IconAction icon="mail" label="Email" onPress={() => setModal('email')} />
+            <IconAction icon="refresh-cw" label="Refresh" onPress={() => load()} />
           </View>
           <View style={styles.periodBar}>
             <Pressable accessibilityLabel="Reporting period" onPress={() => setModal('period')} style={styles.periodButton}>
@@ -294,7 +294,6 @@ export default function RestaurantReportsScreen() {
               <Text style={styles.periodLabel}>Through</Text><Text numberOfLines={1} style={styles.dateValue}>{dateRange.end}</Text>
             </Pressable>
           </View>
-          <View style={styles.comparisonControl}><Text style={styles.comparisonControlLabel}>Comparison</Text><Switch accessibilityLabel="Toggle comparison" value={comparisonEnabled} onValueChange={setComparisonEnabled} trackColor={{ false: semanticColors.borderStrong, true: color_pallet.sky[300] }} thumbColor={comparisonEnabled ? semanticColors.primary : color_pallet.stone[100]} /></View>
           {comparisonEnabled && <View style={styles.comparisonBanner}><Feather name="bar-chart-2" size={15} color={semanticColors.primary} /><Text style={styles.comparisonText}><Text style={styles.comparisonStrong}>Comparison active: </Text>{dateRange.comparisonStart} — {dateRange.comparisonEnd}</Text></View>}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
             <Chip label="All dayparts" active={!daypart} onPress={() => setDaypart('')} />
@@ -321,7 +320,7 @@ export default function RestaurantReportsScreen() {
 
       <PeriodModal visible={modal === 'period'} selected={periodPreset} onClose={() => setModal(null)} onSelect={selectPeriod} />
       <DateRangeModal visible={modal === 'dates'} draft={dateDraft} onChange={setDateDraft} onClose={() => setModal(null)} onApply={() => { applyPrimaryRange(dateDraft); setModal(null); }} />
-      <ComparisonModal visible={modal === 'compare'} draft={compareDraft} onChange={setCompareDraft} onMode={updateCompareMode} onClose={() => setModal(null)} onApply={() => { setComparisonMode(compareDraft.mode); setComparisonEnabled(true); setDateRange((current) => ({ ...current, comparisonStart: compareDraft.comparisonStart, comparisonEnd: compareDraft.comparisonEnd })); setModal(null); }} />
+      <ComparisonModal visible={modal === 'compare'} draft={compareDraft} onChange={setCompareDraft} onMode={updateCompareMode} onClose={() => setModal(null)} onApply={() => { setComparisonMode(compareDraft.mode); setComparisonEnabled(compareDraft.enabled); setDateRange((current) => ({ ...current, comparisonStart: compareDraft.comparisonStart, comparisonEnd: compareDraft.comparisonEnd })); setModal(null); }} />
       <ConfigModal visible={modal === 'config'} preference={preference} onClose={() => setModal(null)} onSave={savePreference} />
       <EmailModal visible={modal === 'email'} recipients={recipients} canManage={canManageRecipients} onClose={() => setModal(null)} onSave={saveRecipient} onDelete={removeRecipient} />
     </View>
@@ -407,14 +406,15 @@ function DateRangeModal({ visible, draft, onChange, onClose, onApply }: { visibl
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.modalCard}><ModalHeader title="Custom date range" onClose={onClose} /><View style={styles.form}><LabeledInput label="From (YYYY-MM-DD)" value={draft.start} onChangeText={(start) => onChange({ ...draft, start })} keyboardType="numbers-and-punctuation" /><LabeledInput label="Through (YYYY-MM-DD)" value={draft.end} onChangeText={(end) => onChange({ ...draft, end })} keyboardType="numbers-and-punctuation" />{!valid && <Text style={styles.validationText}>Enter valid dates with From on or before Through.</Text>}<Pressable disabled={!valid} onPress={onApply} style={[styles.primaryButton, !valid && styles.buttonDisabled]}><Text style={styles.primaryButtonText}>Apply dates</Text></Pressable></View></View></View></Modal>;
 }
 
-function ComparisonModal({ visible, draft, onChange, onMode, onClose, onApply }: { visible: boolean; draft: ReportRange & { mode: ComparisonMode }; onChange: (value: ReportRange & { mode: ComparisonMode }) => void; onMode: (value: ComparisonMode) => void; onClose: () => void; onApply: () => void }) {
+function ComparisonModal({ visible, draft, onChange, onMode, onClose, onApply }: { visible: boolean; draft: ReportRange & { mode: ComparisonMode; enabled: boolean }; onChange: (value: ReportRange & { mode: ComparisonMode; enabled: boolean }) => void; onMode: (value: ComparisonMode) => void; onClose: () => void; onApply: () => void }) {
   const valid = validDateRange(draft.comparisonStart, draft.comparisonEnd);
   const modes: { id: ComparisonMode; label: string }[] = [
     { id: 'previous_period', label: 'Previous equal period' },
     { id: 'previous_year', label: 'Same period last year' },
     { id: 'custom', label: 'Custom period' },
   ];
-  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.modalCard}><ModalHeader title="Comparison period" onClose={onClose} /><View style={styles.form}>{modes.map((mode) => <Pressable key={mode.id} onPress={() => onMode(mode.id)} style={styles.optionRow}><Text style={styles.optionText}>{mode.label}</Text><Feather name={draft.mode === mode.id ? 'check-circle' : 'circle'} size={18} color={draft.mode === mode.id ? semanticColors.primary : semanticColors.textMuted} /></Pressable>)}<LabeledInput label="Comparison from" value={draft.comparisonStart} onChangeText={(comparisonStart) => onChange({ ...draft, comparisonStart, mode: 'custom' })} keyboardType="numbers-and-punctuation" /><LabeledInput label="Comparison through" value={draft.comparisonEnd} onChangeText={(comparisonEnd) => onChange({ ...draft, comparisonEnd, mode: 'custom' })} keyboardType="numbers-and-punctuation" />{!valid && <Text style={styles.validationText}>Enter a valid comparison range.</Text>}<Pressable disabled={!valid} onPress={onApply} style={[styles.primaryButton, !valid && styles.buttonDisabled]}><Text style={styles.primaryButtonText}>Apply comparison</Text></Pressable></View></View></View></Modal>;
+  const invalid = draft.enabled && !valid;
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.modalCard}><ModalHeader title="Comparison period" onClose={onClose} /><View style={styles.form}><View style={styles.comparisonControl}><Text style={styles.comparisonControlLabel}>Comparison</Text><Switch accessibilityLabel="Toggle comparison" value={draft.enabled} onValueChange={(enabled) => onChange({ ...draft, enabled })} trackColor={{ false: semanticColors.borderStrong, true: color_pallet.sky[300] }} thumbColor={draft.enabled ? semanticColors.primary : color_pallet.stone[100]} /></View><View pointerEvents={draft.enabled ? 'auto' : 'none'} style={!draft.enabled && styles.disabledSection}>{modes.map((mode) => <Pressable key={mode.id} onPress={() => onMode(mode.id)} style={styles.optionRow}><Text style={styles.optionText}>{mode.label}</Text><Feather name={draft.mode === mode.id ? 'check-circle' : 'circle'} size={18} color={draft.mode === mode.id ? semanticColors.primary : semanticColors.textMuted} /></Pressable>)}<View style={styles.comparisonDateFields}><LabeledInput label="Comparison from" value={draft.comparisonStart} onChangeText={(comparisonStart) => onChange({ ...draft, comparisonStart, mode: 'custom' })} keyboardType="numbers-and-punctuation" /><LabeledInput label="Comparison through" value={draft.comparisonEnd} onChangeText={(comparisonEnd) => onChange({ ...draft, comparisonEnd, mode: 'custom' })} keyboardType="numbers-and-punctuation" /></View></View>{invalid && <Text style={styles.validationText}>Enter a valid comparison range.</Text>}<Pressable disabled={invalid} onPress={onApply} style={[styles.primaryButton, invalid && styles.buttonDisabled]}><Text style={styles.primaryButtonText}>Save comparison</Text></Pressable></View></View></View></Modal>;
 }
 
 function ConfigModal({ visible, preference, onClose, onSave }: { visible: boolean; preference: ReportPreference; onClose: () => void; onSave: (value: ReportPreference) => Promise<void> }) {
@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
   backButton: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
   backText: { ...typography.caption, color: semanticColors.textMuted, fontWeight: '700' },
   iconActions: { flexDirection: 'row', gap: 7, alignItems: 'center' },
-  headerActionsCompact: { width: 83, flexWrap: 'wrap', justifyContent: 'flex-end' },
+  headerActionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 7, marginTop: 9 },
   iconButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 7, borderWidth: 1, borderColor: semanticColors.border, backgroundColor: color_pallet.elevated.DEFAULT },
   periodBar: { flexDirection: 'row', gap: 8, marginTop: 10 },
   periodButton: { flex: 1.15, minWidth: 104, minHeight: 52, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, borderWidth: 1, borderColor: semanticColors.border, backgroundColor: color_pallet.elevated.DEFAULT },
@@ -461,8 +461,10 @@ const styles = StyleSheet.create({
   periodValueRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 4, marginTop: 4 },
   periodValue: { ...typography.caption, flex: 1, color: semanticColors.text, fontWeight: '700' },
   dateValue: { ...typography.caption, color: semanticColors.text, fontWeight: '700', marginTop: 4 },
-  comparisonControl: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, paddingHorizontal: 10, borderRadius: 7, borderWidth: 1, borderColor: semanticColors.border, backgroundColor: color_pallet.elevated.DEFAULT },
+  comparisonControl: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10, borderRadius: 7, borderWidth: 1, borderColor: semanticColors.border, backgroundColor: color_pallet.elevated.DEFAULT },
   comparisonControlLabel: { ...typography.bodySmall, color: semanticColors.text, fontWeight: '700' },
+  comparisonDateFields: { gap: 12, marginTop: 12 },
+  disabledSection: { opacity: 0.4 },
   comparisonBanner: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 7, borderWidth: 1, borderColor: color_pallet.amber[600], backgroundColor: color_pallet.amber[100] },
   comparisonText: { ...typography.caption, flex: 1, color: color_pallet.ink[700] },
   comparisonStrong: { fontWeight: '700', color: color_pallet.ink[900] },

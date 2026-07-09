@@ -146,7 +146,7 @@ function ComparisonToggle({ enabled, onChange }) {
       <span className={`relative h-5 w-9 rounded-full transition ${enabled ? 'bg-dash-gold' : 'bg-white/15'}`}>
         <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition ${enabled ? 'left-[18px]' : 'left-0.5'}`} />
       </span>
-      <span className="hidden sm:inline">Comparison</span>
+      <span>{enabled ? 'On' : 'Off'}</span>
     </button>
   )
 }
@@ -368,7 +368,7 @@ export default function RestaurantReportsPage({ restaurantId, restaurantName }) 
   const [periodPreset, setPeriodPreset] = useState('week')
   const [comparisonEnabled, setComparisonEnabled] = useState(false)
   const [comparisonMode, setComparisonMode] = useState('previous_period')
-  const [compareDraft, setCompareDraft] = useState(() => ({ ...initialDates(), mode: 'previous_period' }))
+  const [compareDraft, setCompareDraft] = useState(() => ({ ...initialDates(), mode: 'previous_period', enabled: false }))
   const [filters, setFilters] = useState({ category: '', daypart: '', dayOfWeek: '', hour: '', topN: 10, basis: 'revenue' })
   const [report, setReport] = useState(null)
   const [preference, setPreference] = useState({ visible_sections: SECTION_META.map(([id]) => id), section_order: SECTION_META.map(([id]) => id), section_settings: {} })
@@ -489,23 +489,26 @@ export default function RestaurantReportsPage({ restaurantId, restaurantName }) 
   return (
     <div className="mx-auto w-full max-w-7xl overflow-x-hidden">
       <header className="sticky top-0 z-30 -mx-3 border-b border-white/10 bg-dash-base/95 px-3 py-4 backdrop-blur-xl sm:-mx-5 sm:px-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className="min-w-0">
-            <p className="label-mono">Restaurant reports</p>
-            <h1 className="mt-1 truncate text-2xl font-semibold">{restaurantName || report?.restaurant?.name || 'Restaurant'}</h1>
-            <p className="mt-1 text-xs text-dash-tertiary">{dates.start} through {dates.end}</p>
+        <div className="flex flex-col gap-3">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 flex-1">
+              <p className="label-mono">Restaurant reports</p>
+              <h1 className="mt-1 truncate text-2xl font-semibold">{restaurantName || report?.restaurant?.name || 'Restaurant'}</h1>
+              <p className="mt-1 text-xs text-dash-tertiary">{dates.start} through {dates.end}</p>
+            </div>
+            <div className="flex shrink-0 flex-wrap justify-end gap-2 sm:ml-auto">
+              <IconButton label="Set comparison" icon={CalendarRange} onClick={() => { setCompareDraft({ ...dates, mode: comparisonMode, enabled: comparisonEnabled }); setModal('compare') }} />
+              <IconButton label="Configure" icon={Settings2} onClick={() => setModal('config')} />
+              <IconButton label="Email" icon={Mail} onClick={() => setModal('email')} />
+              <IconButton label="Refresh" icon={RefreshCw} onClick={load} disabled={loading} />
+            </div>
           </div>
-          <div className="flex flex-wrap items-end gap-2">
+          <div className="flex justify-end">
             <div className="flex max-w-full flex-wrap items-end gap-2 rounded-md border border-white/10 bg-white/[0.025] p-2">
               <Field label="Period"><select aria-label="Reporting period" value={periodPreset} onChange={(event) => selectPeriod(event.target.value)}>{PERIOD_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></Field>
               <Field label="From"><input type="date" value={dates.start} onChange={(event) => setCustomDate('start', event.target.value)} /></Field>
               <Field label="Through"><input type="date" value={dates.end} onChange={(event) => setCustomDate('end', event.target.value)} /></Field>
             </div>
-            <ComparisonToggle enabled={comparisonEnabled} onChange={setComparisonEnabled} />
-            <IconButton label="Set comparison" icon={CalendarRange} onClick={() => { setCompareDraft({ ...dates, mode: comparisonMode }); setModal('compare') }} />
-            <IconButton label="Configure" icon={Settings2} onClick={() => setModal('config')} />
-            <IconButton label="Email" icon={Mail} onClick={() => setModal('email')} />
-            <IconButton label="Refresh" icon={RefreshCw} onClick={load} disabled={loading} />
           </div>
         </div>
         {comparisonEnabled && <div className="mt-3 flex items-center gap-2 rounded-md border border-dash-gold/20 bg-dash-gold/5 px-3 py-2 text-xs text-dash-secondary">
@@ -518,7 +521,7 @@ export default function RestaurantReportsPage({ restaurantId, restaurantName }) 
       {loading && !report && <div className="flex min-h-64 items-center justify-center"><RefreshCw className="h-6 w-6 animate-spin text-dash-gold" /></div>}
       {report && orderedSections.map((id) => <div key={id}>{sectionRenderers[id]?.()}</div>)}
 
-      {modal === 'compare' && <Modal title="Comparison period" onClose={() => setModal(null)}><div className="space-y-4"><Field label="Compare against"><select value={compareDraft.mode} onChange={(event) => updateComparisonDraftMode(event.target.value)}><option value="previous_period">Previous equal period</option><option value="previous_year">Same period last year</option><option value="custom">Custom period</option></select></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Comparison from"><input type="date" value={compareDraft.comparisonStart} onChange={(event) => setCompareDraft({ ...compareDraft, mode: 'custom', comparisonStart: event.target.value })} /></Field><Field label="Comparison through"><input type="date" value={compareDraft.comparisonEnd} onChange={(event) => setCompareDraft({ ...compareDraft, mode: 'custom', comparisonEnd: event.target.value })} /></Field></div></div><div className="mt-5 flex justify-end"><IconButton label="Apply comparison" icon={CalendarRange} primary disabled={!compareDraft.comparisonStart || !compareDraft.comparisonEnd || compareDraft.comparisonStart > compareDraft.comparisonEnd} onClick={() => { setComparisonMode(compareDraft.mode); setComparisonEnabled(true); setDates((current) => ({ ...current, comparisonStart: compareDraft.comparisonStart, comparisonEnd: compareDraft.comparisonEnd })); setModal(null) }} /></div></Modal>}
+      {modal === 'compare' && <Modal title="Comparison period" onClose={() => setModal(null)}><div className="space-y-4"><div className="flex items-center justify-between gap-4 rounded-md border border-white/10 bg-white/[0.025] p-3"><div><p className="text-sm font-semibold">Comparison</p><p className="mt-1 text-xs text-dash-tertiary">Show changes against another period.</p></div><ComparisonToggle enabled={compareDraft.enabled} onChange={(enabled) => setCompareDraft({ ...compareDraft, enabled })} /></div><div className={compareDraft.enabled ? '' : 'pointer-events-none opacity-40'}><div className="space-y-4"><Field label="Compare against"><select value={compareDraft.mode} onChange={(event) => updateComparisonDraftMode(event.target.value)}><option value="previous_period">Previous equal period</option><option value="previous_year">Same period last year</option><option value="custom">Custom period</option></select></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Comparison from"><input type="date" value={compareDraft.comparisonStart} onChange={(event) => setCompareDraft({ ...compareDraft, mode: 'custom', comparisonStart: event.target.value })} /></Field><Field label="Comparison through"><input type="date" value={compareDraft.comparisonEnd} onChange={(event) => setCompareDraft({ ...compareDraft, mode: 'custom', comparisonEnd: event.target.value })} /></Field></div></div></div></div><div className="mt-5 flex justify-end"><IconButton label="Save comparison" icon={CalendarRange} primary disabled={compareDraft.enabled && (!compareDraft.comparisonStart || !compareDraft.comparisonEnd || compareDraft.comparisonStart > compareDraft.comparisonEnd)} onClick={() => { setComparisonMode(compareDraft.mode); setComparisonEnabled(compareDraft.enabled); setDates((current) => ({ ...current, comparisonStart: compareDraft.comparisonStart, comparisonEnd: compareDraft.comparisonEnd })); setModal(null) }} /></div></Modal>}
       {modal === 'config' && <ConfigModal preference={preference} onClose={() => setModal(null)} onSave={savePreference} />}
       {modal === 'email' && <EmailModal recipients={recipients} canManage={canManageRecipients} onClose={() => setModal(null)} onSave={saveRecipient} onDelete={deleteRecipient} />}
     </div>
