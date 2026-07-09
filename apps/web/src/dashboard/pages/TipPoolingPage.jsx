@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { fetchWithSupabaseAuth } from '../../shared/query'
+import { useAuth } from '../../auth'
+import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import {
-  TipRulesFields,
   PayrollSetupFields,
   defaultTipPayrollSettings,
   normalizeJobCodes,
   normalizeTipPayrollSettings,
   tipPayrollPayload,
 } from '../RestaurantSetupPanel'
+import EmailPayrollModal from '../components/payroll/EmailPayrollModal'
+import IntervalControls from '../components/payroll/IntervalControls'
+import TipRulesEditor from '../components/payroll/TipRulesEditor'
 import { buildPayrollRows, payrollTotals, exportPayrollCsv, exportPayrollPdf } from './payrollExport'
+import { closedPayrollInterval, intervalDays, intervalLabel, isSingleDay, isoWindow } from '../utils/payrollIntervals'
 
 const MODE_LABELS = {
   individual: 'Keep own',
@@ -17,6 +23,7 @@ const MODE_LABELS = {
   points_based: 'Points',
   hours_based: 'By hours',
   sales_based: 'By sales',
+  role_shares: 'Role shares',
 }
 
 const STATUS_STYLES = {
@@ -51,6 +58,10 @@ function yesterdayISO() {
   return d.toISOString().slice(0, 10)
 }
 
+function isRangeUnsupported(err) {
+  return err?.status === 400 || err?.status === 422 || /window_start|window_end|business_date|validation/i.test(err?.message || '')
+}
+
 // A 404 from the tip-pool routes means the backend serving this app doesn't
 // expose them yet (older process / migration 0054 not applied).
 function isRunsUnprovisioned(err) {
@@ -78,6 +89,62 @@ function numericRate(value) {
   if (value == null || value === '') return null
   const num = Number(value)
   return Number.isFinite(num) ? num : null
+}
+
+function mergePreviewPayouts(previews, interval) {
+  const byPerson = new Map()
+  const totals = {}
+  previews.filter(Boolean).forEach((preview) => {
+    Object.entries(preview.totals || {}).forEach(([key, value]) => {
+      totals[key] = (totals[key] || 0) + Number(value || 0)
+    })
+    ;(preview.payouts || []).forEach((payout) => {
+      const key = `${payout.staff_id || payout.staff_name || 'staff'}:${payout.role_key || ''}`
+      const row = byPerson.get(key) || {
+        ...payout,
+        id: null,
+        hours_worked: 0,
+        tips_collected: 0,
+        pool_share: 0,
+        tipout_paid: 0,
+        tipout_received: 0,
+        adjustment: 0,
+        final_amount: 0,
+        sales_total: 0,
+      }
+      ;['hours_worked', 'tips_collected', 'pool_share', 'tipout_paid', 'tipout_received', 'adjustment', 'final_amount', 'sales_total'].forEach((field) => {
+        row[field] = Number(row[field] || 0) + Number(payout[field] || 0)
+      })
+      byPerson.set(key, row)
+    })
+  })
+  return {
+    mode: previews.find(Boolean)?.mode || 'individual',
+    distribution_mode: previews.find(Boolean)?.distribution_mode || previews.find(Boolean)?.mode || 'individual',
+    totals,
+    payouts: [...byPerson.values()],
+    window_start: `${interval.start}T00:00:00`,
+    window_end: `${interval.end}T23:59:59`,
+    range_fallback: true,
+  }
+}
+
+async function fetchPreviewForInterval(restaurantId, interval) {
+  if (isSingleDay(interval)) {
+    return fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tip-pools/preview?business_date=${interval.start}`)
+  }
+  try {
+    return await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tip-pools/preview?window_start=${interval.start}&window_end=${interval.end}`)
+  } catch (err) {
+    if (!isRangeUnsupported(err)) throw err
+    const days = intervalDays(interval)
+    const previews = await Promise.all(
+      days.map((day) => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tip-pools/preview?business_date=${day}`).catch(() => null)),
+    )
+    const successful = previews.filter(Boolean)
+    if (!successful.length) throw err
+    return mergePreviewPayouts(successful, interval)
+  }
 }
 
 function StatusChip({ status }) {
@@ -225,14 +292,28 @@ function StatCard({ label, value, sub, muted }) {
 }
 
 export default function TipPoolingPage({ restaurantId }) {
-  const [activeSubTab, setActiveSubTab] = useState('overview')
+  const auth = useAuth()
+  const access = useBackOfficeAccess(auth, restaurantId)
+  const canRunPayroll = access.can('payroll.run')
+  const canExportPayroll = access.can('payroll.export')
+  const canAdjustTips = access.can('payroll.adjust_tips')
+  // The active section travels in the URL hash (#overview/#run/#rules/#payroll)
+  // so the sidebar's Payroll & Tips sub-nav and this page stay in sync.
+  const location = useLocation()
+  const navigate = useNavigate()
+  const hashId = (location.hash || '').replace('#', '')
+  const activeSubTab = SUB_TABS.some(tab => tab.id === hashId) ? hashId : 'overview'
+  const setActiveSubTab = (id) => navigate(`#${id}`)
   const [runs, setRuns] = useState([])
   const [selectedRun, setSelectedRun] = useState(null)
   const [preview, setPreview] = useState(null)
-  const [businessDate, setBusinessDate] = useState(yesterdayISO())
+  const [runPreset, setRunPreset] = useState('pay_period')
+  const [runInterval, setRunInterval] = useState(() => closedPayrollInterval('biweekly'))
   const [jobCodes, setJobCodes] = useState([])
   const [waiters, setWaiters] = useState([])
+  const [menuCategories, setMenuCategories] = useState([])
   const [tipPayrollSettings, setTipPayrollSettings] = useState(defaultTipPayrollSettings())
+  const [closeoutRecipients, setCloseoutRecipients] = useState([])
   const [overview, setOverview] = useState(null)
   const [overviewLoading, setOverviewLoading] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -243,12 +324,16 @@ export default function TipPoolingPage({ restaurantId }) {
   const [error, setError] = useState('')
   const [configMessage, setConfigMessage] = useState('')
   const [configError, setConfigError] = useState('')
+  const [emailOpen, setEmailOpen] = useState(false)
   // True when the tip-pool run endpoints 404 — the backend serving this app
   // predates the pay-run routes (needs a restart + migration 0054). Config still
   // works, so we show a clear notice instead of a scary error.
   const [runsUnavailable, setRunsUnavailable] = useState(false)
 
   const restaurantName = 'Payroll'
+  const defaultEmailRecipients = useMemo(() => (
+    [...new Set([auth.user?.email, ...closeoutRecipients].filter(Boolean))]
+  ), [auth.user?.email, closeoutRecipients])
   const rateFor = useMemo(() => {
     const roleRates = new Map(jobCodes.map(code => [code.code, numericRate(code.default_hourly_rate) ?? 0]))
     const jobCodeRates = new Map(jobCodes.filter(code => code.id).map(code => [code.id, numericRate(code.default_hourly_rate) ?? 0]))
@@ -295,15 +380,22 @@ export default function TipPoolingPage({ restaurantId }) {
     setConfigError('')
     setConfigMessage('')
     try {
-      const [jobCodeRows, tipPayrollData, waiterRows] = await Promise.all([
+      const [jobCodeRows, tipPayrollData, waiterRows, menuCategoryData, closeoutSettings] = await Promise.all([
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`).catch(() => []),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`).catch(() => null),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=true`).catch(() => []),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/categories`).catch(() => null),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`).catch(() => null),
       ])
       const normalizedJobCodes = normalizeJobCodes(jobCodeRows)
+      const normalizedTipPayroll = normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes)
       setJobCodes(normalizedJobCodes)
       setWaiters(Array.isArray(waiterRows) ? waiterRows : [])
-      setTipPayrollSettings(normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes))
+      setMenuCategories(Array.isArray(menuCategoryData?.categories) ? menuCategoryData.categories.filter(c => c?.is_active !== false) : [])
+      setTipPayrollSettings(normalizedTipPayroll)
+      setRunPreset('pay_period')
+      setRunInterval(closedPayrollInterval(normalizedTipPayroll.payroll_export_frequency))
+      setCloseoutRecipients(Array.isArray(closeoutSettings?.eod_report_recipients) ? closeoutSettings.eod_report_recipients.map(String).filter(Boolean) : [])
     } catch (err) {
       setConfigError(err?.message || 'Could not load tipout configuration')
     } finally {
@@ -379,6 +471,25 @@ export default function TipPoolingPage({ restaurantId }) {
     setConfigMessage('')
   }
 
+  // Per-person overrides (Exceptions): PATCH the waiter row, then refresh the
+  // list so the editor reflects the saved values. Saved immediately — these
+  // live on `waiters`, not in the rules payload.
+  const saveWaiterOverride = async (waiterId, patch) => {
+    try {
+      await fetchWithSupabaseAuth(`/waiters/${waiterId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      })
+      const waiterRows = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=true`).catch(() => null)
+      if (Array.isArray(waiterRows)) setWaiters(waiterRows)
+    } catch (err) {
+      setConfigError(err?.message || 'Could not save the exception')
+    }
+  }
+
+  const fetchRealPreview = () =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tip-pools/preview?business_date=${yesterdayISO()}`)
+
   const saveTipConfig = async () => {
     setConfigSaving(true)
     setConfigMessage('')
@@ -417,8 +528,9 @@ export default function TipPoolingPage({ restaurantId }) {
     setError('')
     setSelectedRun(null)
     try {
-      const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tip-pools/preview?business_date=${businessDate}`)
+      const data = await fetchPreviewForInterval(restaurantId, runInterval)
       setPreview(data)
+      if (data.range_fallback) setMessage('Preview combined daily tip runs for this interval. Draft creation still needs range support on the API.')
       setRunsUnavailable(false)
     } catch (err) {
       if (isRunsUnprovisioned(err)) setRunsUnavailable(true)
@@ -429,13 +541,20 @@ export default function TipPoolingPage({ restaurantId }) {
   }
 
   const createRun = async () => {
+    if (!canRunPayroll) {
+      setError('You need payroll.run permission to create a draft run.')
+      return
+    }
     setWorking(true)
     setMessage('')
     setError('')
     try {
+      const body = isSingleDay(runInterval)
+        ? { business_date: runInterval.start }
+        : isoWindow(runInterval)
       const run = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tip-pools/runs`, {
         method: 'POST',
-        body: JSON.stringify({ business_date: businessDate }),
+        body: JSON.stringify(body),
       })
       setPreview(null)
       setSelectedRun(run)
@@ -445,6 +564,7 @@ export default function TipPoolingPage({ restaurantId }) {
       setOverview(null)
     } catch (err) {
       if (isRunsUnprovisioned(err)) setRunsUnavailable(true)
+      else if (!isSingleDay(runInterval) && isRangeUnsupported(err)) setError('This API can preview the interval, but range draft creation is not deployed yet. Use a one-day run or deploy the window_start/window_end endpoint.')
       else setError(err?.message || 'Could not create run')
     } finally {
       setWorking(false)
@@ -452,6 +572,10 @@ export default function TipPoolingPage({ restaurantId }) {
   }
 
   const adjustPayout = async (payout) => {
+    if (!canAdjustTips) {
+      setError('You need payroll.adjust_tips permission to edit payouts.')
+      return
+    }
     const raw = window.prompt(`Adjustment for ${payout.staff_name || 'staff'} (positive or negative dollars):`, String(payout.adjustment ?? '0'))
     if (raw == null) return
     const amount = Number(raw)
@@ -475,6 +599,10 @@ export default function TipPoolingPage({ restaurantId }) {
   }
 
   const setRunStatus = async (runId, action) => {
+    if (!canRunPayroll) {
+      setError('You need payroll.run permission to change a run status.')
+      return
+    }
     if (action === 'finalize' && !window.confirm('Finalize this run? Payouts lock after finalizing.')) return
     if (action === 'void' && !window.confirm('Void this run? The scheduler or a manual run can recreate the window.')) return
     setWorking(true)
@@ -494,9 +622,13 @@ export default function TipPoolingPage({ restaurantId }) {
   }
 
   const activePayouts = selectedRun?.payouts || preview?.payouts || null
-  const activeRun = selectedRun || (preview ? { window_start: `${businessDate}T00:00:00`, window_end: `${businessDate}T23:59:59`, status: 'preview' } : null)
+  const activeRun = selectedRun || (preview ? { ...isoWindow(runInterval), status: 'preview' } : null)
 
   const handleExport = (variant) => {
+    if (!canExportPayroll) {
+      setError('You need payroll.export permission to export payroll.')
+      return
+    }
     if (!activePayouts?.length) {
       setActiveSubTab('run')
       setError('Open or preview a run first, then export.')
@@ -505,6 +637,28 @@ export default function TipPoolingPage({ restaurantId }) {
     const rows = buildPayrollRows(activePayouts, rateFor)
     if (variant === 'csv') exportPayrollCsv(activeRun, rows, restaurantName)
     else exportPayrollPdf(activeRun, rows, restaurantName, variant)
+  }
+
+  const handleEmail = () => {
+    if (!canExportPayroll) {
+      setError('You need payroll.export permission to email payroll.')
+      return
+    }
+    if (!activePayouts?.length) {
+      setActiveSubTab('run')
+      setError('Open or preview a run first, then email payroll.')
+      return
+    }
+    setEmailOpen(true)
+  }
+
+  const updateRunInterval = ({ preset, interval }) => {
+    setRunPreset(preset)
+    setRunInterval(interval)
+    setPreview(null)
+    setSelectedRun(null)
+    setMessage('')
+    setError('')
   }
 
   const saveDisabled = configSaving || configLoading
@@ -516,30 +670,16 @@ export default function TipPoolingPage({ restaurantId }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="label-mono text-dash-tertiary">Payroll &amp; Tips</p>
-            <h1 className="mt-1 text-2xl font-semibold text-dash-cream">Payroll &amp; Tips</h1>
-            <p className="mt-2 max-w-2xl text-sm text-dash-secondary">
-              Everything that decides what a person gets paid — labor cost, the pay run you export, and the tip rules that drive it.
-            </p>
+            <h1 className="mt-1 text-2xl font-semibold text-dash-cream">{SUB_TABS.find(tab => tab.id === activeSubTab)?.label || 'Payroll & Tips'}</h1>
           </div>
-          <ExportMenu disabled={false} onExport={handleExport} />
-        </div>
-
-        {/* Subtabs */}
-        <div className="mt-5 flex flex-wrap gap-1 border-b border-dash-border">
-          {SUB_TABS.map(tab => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveSubTab(tab.id)}
-              className={`-mb-px border-b-2 px-3.5 py-2 text-sm transition ${
-                activeSubTab === tab.id ? 'border-dash-gold text-dash-gold' : 'border-transparent text-dash-secondary hover:text-dash-cream'
-              }`}
-            >
-              {tab.label}
-              {tab.id === 'run' && runs.length ? <span className="ml-2 rounded-full border border-dash-border px-1.5 text-[10px] text-dash-tertiary">{runs.length}</span> : null}
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={handleEmail} disabled={!canExportPayroll || !activePayouts?.length} className="rounded-lg border border-dash-border px-3 py-1.5 text-sm font-medium text-dash-cream hover:border-dash-gold disabled:opacity-40">
+              Email payroll
             </button>
-          ))}
+            <ExportMenu disabled={!canExportPayroll || !activePayouts?.length} onExport={handleExport} />
+          </div>
         </div>
+        {/* Section navigation lives in the left sidebar (Payroll & Tips sub-items). */}
       </section>
 
       {/* ---------- OVERVIEW ---------- */}
@@ -607,21 +747,21 @@ export default function TipPoolingPage({ restaurantId }) {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="label-mono text-dash-tertiary">Compute a run</p>
-                <p className="mt-1 text-sm text-dash-secondary">Preview a day’s distribution, then save it as a draft to review and export.</p>
+                <p className="mt-1 text-sm text-dash-secondary">Preview a pay period, then save it as a draft to review, finalize, export, or email.</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <input type="date" value={businessDate} onChange={(e) => setBusinessDate(e.target.value)} className="rounded-lg border border-dash-border bg-transparent px-3 py-1.5 text-sm text-dash-cream" />
-                <button type="button" onClick={previewWindow} disabled={working || !businessDate} className="rounded-lg border border-dash-border px-3 py-1.5 text-sm text-dash-cream hover:border-dash-gold disabled:opacity-50">Preview</button>
-                <button type="button" onClick={createRun} disabled={working || !businessDate} className="rounded-lg border border-dash-gold bg-dash-gold/10 px-3 py-1.5 text-sm font-medium text-dash-gold hover:bg-dash-gold/20 disabled:opacity-50">Run for date</button>
+                <button type="button" onClick={previewWindow} disabled={working || !runInterval.start || !runInterval.end} className="rounded-lg border border-dash-border px-3 py-1.5 text-sm text-dash-cream hover:border-dash-gold disabled:opacity-50">Preview period</button>
+                <button type="button" onClick={createRun} disabled={!canRunPayroll || working || !runInterval.start || !runInterval.end} className="rounded-lg border border-dash-gold bg-dash-gold/10 px-3 py-1.5 text-sm font-medium text-dash-gold hover:bg-dash-gold/20 disabled:opacity-50">Create draft</button>
               </div>
             </div>
+            <IntervalControls interval={runInterval} preset={runPreset} payrollFrequency={tipPayrollSettings.payroll_export_frequency} onChange={updateRunInterval} className="mt-4" />
           </section>
 
           {loading ? <div className="rounded-xl border border-dash-border bg-dash-panel p-4 text-sm text-dash-secondary">Loading runs…</div> : null}
 
           {!loading && !runsUnavailable && !runs.length && !preview ? (
             <div className="rounded-xl border border-dash-border bg-dash-panel p-4 text-sm text-dash-secondary">
-              No runs yet. Enable pooling in <button type="button" className="text-dash-gold underline" onClick={() => setActiveSubTab('rules')}>Tip &amp; Tipout Rules</button>, and runs appear automatically each day — or use “Run for date”.
+              No runs yet. Enable pooling in <button type="button" className="text-dash-gold underline" onClick={() => setActiveSubTab('rules')}>Tip &amp; Tipout Rules</button>, then preview a pay period and create a draft.
             </div>
           ) : null}
 
@@ -658,10 +798,10 @@ export default function TipPoolingPage({ restaurantId }) {
             <section className="rounded-2xl border border-dash-border bg-dash-panel p-5 shadow-sm">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <p className="label-mono text-dash-tertiary">
-                  Preview · {MODE_LABELS[preview.mode] || preview.mode} · {money(preview.totals?.total_tips)} tips
+                  Preview · {intervalLabel(runInterval)} · {MODE_LABELS[preview.mode] || preview.mode} · {money(preview.totals?.total_tips)} tips
                   {Number(preview.totals?.total_card_fees_withheld) > 0 ? ` · ${money(preview.totals.total_card_fees_withheld)} card fees withheld` : ''}
                 </p>
-                <span className="text-xs text-dash-tertiary">Not saved — use “Run for date” to create a draft.</span>
+                <span className="text-xs text-dash-tertiary">Not saved — create a draft to finalize and export.</span>
               </div>
               <PayRunTable payouts={preview.payouts} rateFor={rateFor} editable={false} />
             </section>
@@ -676,16 +816,17 @@ export default function TipPoolingPage({ restaurantId }) {
                   <span className="text-sm text-dash-secondary">{MODE_LABELS[selectedRun.distribution_mode] || selectedRun.distribution_mode} · pooled {money(selectedRun.total_pooled)}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <ExportMenu disabled={!selectedRun.payouts?.length} onExport={handleExport} />
+                  <button type="button" onClick={handleEmail} disabled={!canExportPayroll || !selectedRun.payouts?.length} className="rounded-lg border border-dash-border px-3 py-1.5 text-sm text-dash-cream hover:border-dash-gold disabled:opacity-50">Email</button>
+                  <ExportMenu disabled={!canExportPayroll || !selectedRun.payouts?.length} onExport={handleExport} />
                   {selectedRun.status === 'draft' ? (
                     <>
-                      <button type="button" onClick={() => setRunStatus(selectedRun.id, 'void')} disabled={working} className="rounded-lg border border-dash-border px-3 py-1.5 text-sm text-dash-secondary hover:text-red-300 disabled:opacity-50">Void</button>
-                      <button type="button" onClick={() => setRunStatus(selectedRun.id, 'finalize')} disabled={working} className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50">Finalize</button>
+                      <button type="button" onClick={() => setRunStatus(selectedRun.id, 'void')} disabled={!canRunPayroll || working} className="rounded-lg border border-dash-border px-3 py-1.5 text-sm text-dash-secondary hover:text-red-300 disabled:opacity-50">Void</button>
+                      <button type="button" onClick={() => setRunStatus(selectedRun.id, 'finalize')} disabled={!canRunPayroll || working} className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-sm font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-50">Finalize</button>
                     </>
                   ) : null}
                 </div>
               </div>
-              <PayRunTable payouts={selectedRun.payouts} rateFor={rateFor} editable={selectedRun.status === 'draft'} onAdjust={adjustPayout} />
+              <PayRunTable payouts={selectedRun.payouts} rateFor={rateFor} editable={selectedRun.status === 'draft' && canAdjustTips} onAdjust={adjustPayout} />
             </section>
           ) : null}
         </div>
@@ -694,18 +835,23 @@ export default function TipPoolingPage({ restaurantId }) {
       {/* ---------- RULES ---------- */}
       {activeSubTab === 'rules' ? (
         <section className="rounded-2xl border border-dash-border bg-dash-panel p-5 shadow-sm">
-          <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="label-mono text-dash-tertiary">Configuration</p>
-              <h2 className="mt-1 text-xl font-semibold text-dash-cream">Tip &amp; Tipout Rules</h2>
-              <p className="mt-2 max-w-2xl text-sm text-dash-secondary">How tips are split, role-to-role tipouts, and per-role eligibility. Applies to future runs.</p>
-            </div>
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <p className="max-w-2xl text-sm text-dash-secondary">Changes apply to future runs. Nothing saves until you hit Save.</p>
             <button type="button" onClick={() => void saveTipConfig()} disabled={saveDisabled} className="rounded-lg border border-dash-gold bg-dash-gold/10 px-3 py-1.5 text-sm font-medium text-dash-gold hover:bg-dash-gold/20 disabled:opacity-50">{configSaving ? 'Saving…' : 'Save rules'}</button>
           </div>
           {configLoading ? (
             <div className="rounded-xl border border-dash-border bg-white/[0.025] p-4 text-sm text-dash-secondary">Loading configuration…</div>
           ) : (
-            <TipRulesFields settings={tipPayrollSettings} jobCodes={jobCodes} onUpdateSettings={updateTipPayrollSettings} onUpdateRoleRule={updateTipRoleRule} />
+            <TipRulesEditor
+              settings={tipPayrollSettings}
+              jobCodes={jobCodes}
+              waiters={waiters}
+              menuCategories={menuCategories}
+              onUpdateSettings={updateTipPayrollSettings}
+              onUpdateRoleRule={updateTipRoleRule}
+              onSaveWaiterOverride={saveWaiterOverride}
+              onFetchRealPreview={fetchRealPreview}
+            />
           )}
           {configError ? <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{configError}</div> : null}
           {configMessage ? <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{configMessage}</div> : null}
@@ -715,12 +861,8 @@ export default function TipPoolingPage({ restaurantId }) {
       {/* ---------- PAYROLL SETUP ---------- */}
       {activeSubTab === 'payroll' ? (
         <section className="rounded-2xl border border-dash-border bg-dash-panel p-5 shadow-sm">
-          <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="label-mono text-dash-tertiary">Configuration</p>
-              <h2 className="mt-1 text-xl font-semibold text-dash-cream">Payroll Setup</h2>
-              <p className="mt-2 max-w-2xl text-sm text-dash-secondary">Provider, export cadence, cash &amp; credit tip handling, and card-fee defaults.</p>
-            </div>
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <p className="max-w-2xl text-sm text-dash-secondary">Provider, export cadence, cash &amp; credit tip handling, and card fees.</p>
             <button type="button" onClick={() => void saveTipConfig()} disabled={saveDisabled} className="rounded-lg border border-dash-gold bg-dash-gold/10 px-3 py-1.5 text-sm font-medium text-dash-gold hover:bg-dash-gold/20 disabled:opacity-50">{configSaving ? 'Saving…' : 'Save payroll setup'}</button>
           </div>
           {configLoading ? (
@@ -731,6 +873,17 @@ export default function TipPoolingPage({ restaurantId }) {
           {configError ? <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{configError}</div> : null}
           {configMessage ? <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{configMessage}</div> : null}
         </section>
+      ) : null}
+      {emailOpen ? (
+        <EmailPayrollModal
+          restaurantId={restaurantId}
+          run={activeRun}
+          rows={buildPayrollRows(activePayouts || [], rateFor)}
+          restaurantName={restaurantName}
+          defaultRecipients={defaultEmailRecipients}
+          onClose={() => setEmailOpen(false)}
+          onFallbackExport={handleExport}
+        />
       ) : null}
     </div>
   )

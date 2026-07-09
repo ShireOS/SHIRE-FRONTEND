@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
+  Banknote,
+  BadgeDollarSign,
   Bell,
   Building2,
   Gauge,
   CalendarClock,
   ChevronDown,
+  ChevronRight,
+  Clock,
   CreditCard,
   Home,
   LayoutGrid,
@@ -29,6 +33,8 @@ import {
 import { useAuth } from '../../auth'
 import { supabase } from '../../shared/lib/supabase'
 import { queryClient, queryKeys, fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
+import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
+import { TAB_PERMISSIONS } from '../../shared/permissions'
 
 const THEME_STORAGE_KEY = 'shire_dashboard_theme'
 
@@ -137,9 +143,24 @@ const STORE_NAV = [
   { id: 'feedback', label: 'Complaints', icon: MessageSquareWarning },
   { id: 'devices', label: 'Devices', icon: Monitor },
   { id: 'pos-settings', label: 'POS Settings', icon: Settings },
-  { id: 'tip-pooling', label: 'Payroll & Tips', icon: Percent },
-  { id: 'team', label: 'Team', icon: Users },
-  { id: 'scheduling', label: 'Scheduling', icon: CalendarClock },
+  {
+    id: 'team-group',
+    label: 'Team',
+    icon: Users,
+    children: [
+      { id: 'team', label: 'Members', icon: Users },
+      { id: 'time-clock', label: 'Time Clock', icon: Clock },
+      { id: 'labor-cost', label: 'Labor Cost', icon: BadgeDollarSign },
+      // Payroll & Tips sections, flat within the Team group (not nested under
+      // a single Payroll item). All render TipPoolingPage ('tip-pooling' tab);
+      // the section travels in the URL hash, which the page reads.
+      { id: 'tip-pooling', section: 'overview', label: 'Payroll & Tips', icon: Percent },
+      { id: 'tip-pooling', section: 'run', label: 'Pay Run', icon: Banknote },
+      { id: 'tip-pooling', section: 'rules', label: 'Tip & Tipout Rules', icon: SlidersHorizontal },
+      { id: 'tip-pooling', section: 'payroll', label: 'Payroll Setup', icon: Settings },
+      { id: 'scheduling', label: 'Scheduling', icon: CalendarClock },
+    ],
+  },
   { id: 'messaging', label: 'Messaging', icon: MessageSquare },
   { id: 'payments', label: 'Payments / Plan', icon: CreditCard },
 ]
@@ -187,6 +208,54 @@ function SidebarItem({ icon: Icon, label, isActive, onClick, onHover, soon = fal
       )}
       {soon && <SoonChip />}
     </button>
+  )
+}
+
+// Expandable sidebar group (e.g. Team): renders its children indented, stays
+// open while any child is active, and remembers manual toggling. Children may
+// carry a `section` (URL hash) so several entries can point at one tab.
+function SidebarGroup({ group, activeItem, activeSection, onNavigate, onHoverItem }) {
+  const childActive = group.children.some((child) => child.id === activeItem)
+  const [manuallyOpen, setManuallyOpen] = useState(false)
+  const open = childActive || manuallyOpen
+  const Icon = group.icon
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setManuallyOpen((value) => !value)}
+        title={group.label}
+        className={[
+          'flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold transition',
+          childActive
+            ? 'text-shell-accent'
+            : 'text-dash-secondary hover:bg-[var(--glass-bg-hover)] hover:text-dash-cream',
+        ].join(' ')}
+      >
+        <Icon size={17} strokeWidth={1.75} aria-hidden="true" />
+        <span className="truncate">{group.label}</span>
+        <span className="ml-auto text-dash-tertiary">
+          {open
+            ? <ChevronDown size={14} strokeWidth={1.75} aria-hidden="true" />
+            : <ChevronRight size={14} strokeWidth={1.75} aria-hidden="true" />}
+        </span>
+      </button>
+      {open && (
+        <div className="ml-4 border-l border-dash-border pl-1">
+          {group.children.map((child) => (
+            <SidebarItem
+              key={child.section ? `${child.id}-${child.section}` : child.id}
+              icon={child.icon}
+              label={child.label}
+              isActive={activeItem === child.id && (!child.section || activeSection === child.section)}
+              onHover={() => onHoverItem(child.id)}
+              onClick={() => onNavigate(child.id, child.section)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -281,8 +350,12 @@ export default function DashboardShell({
 }) {
   const auth = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [theme, setTheme] = useShellTheme()
+  // Section-scoped nav items (e.g. the Payroll & Tips entries) match on the
+  // URL hash; no hash means the first section ('overview').
+  const activeSection = (location.hash || '').replace('#', '') || 'overview'
 
   const accountType = auth.accountType
   const showRates = accountType === 'reseller' || accountType === 'admin'
@@ -290,9 +363,22 @@ export default function DashboardShell({
   const inStore = context === 'store' && Boolean(restaurant)
   const roleLabel = deriveRoleLabel(auth)
   const hidden = hiddenSurfaces(auth)
-  const storeNav = STORE_NAV.filter(
-    (item) => (!allowedStoreTabs || allowedStoreTabs.includes(item.id)) && !hidden.has(item.id)
-  )
+  const access = useBackOfficeAccess(auth, inStore ? restaurantId : null)
+  const tabVisible = (id) => {
+    if (allowedStoreTabs && !allowedStoreTabs.includes(id)) return false
+    if (hidden.has(id)) return false
+    // While a member's access is loading, keep nav visible (server enforces).
+    if (access.loading) return true
+    const required = TAB_PERMISSIONS[id]
+    return !required || access.can(required)
+  }
+  const storeNav = STORE_NAV
+    .map((item) => (
+      item.children
+        ? { ...item, children: item.children.filter((child) => tabVisible(child.id)) }
+        : item
+    ))
+    .filter((item) => (item.children ? item.children.length > 0 : tabVisible(item.id)))
 
   const initials = useMemo(() => {
     const first = auth.profile?.first_name?.[0] || auth.user?.email?.[0] || '?'
@@ -362,15 +448,26 @@ export default function DashboardShell({
               <>
                 <SectionEyebrow>{restaurant?.name || 'Current store'}</SectionEyebrow>
                 {storeNav.map((item) => (
-                  <SidebarItem
-                    key={item.id}
-                    icon={item.icon}
-                    label={item.label}
-                    warning={item.id === 'setup' && setupWarningCount > 0}
-                    isActive={activeItem === item.id}
-                    onHover={() => prefetchWorkspaceTab(restaurantId, item.id, activeItem)}
-                    onClick={() => navigate(`/restaurants/${restaurantId}/${item.id}`)}
-                  />
+                  item.children ? (
+                    <SidebarGroup
+                      key={item.id}
+                      group={item}
+                      activeItem={activeItem}
+                      activeSection={activeSection}
+                      onHoverItem={(childId) => prefetchWorkspaceTab(restaurantId, childId, activeItem)}
+                      onNavigate={(childId, sectionId) => navigate(`/restaurants/${restaurantId}/${childId}${sectionId ? `#${sectionId}` : ''}`)}
+                    />
+                  ) : (
+                    <SidebarItem
+                      key={item.section ? `${item.id}-${item.section}` : item.id}
+                      icon={item.icon}
+                      label={item.label}
+                      warning={item.id === 'setup' && setupWarningCount > 0}
+                      isActive={activeItem === item.id && (!item.section || activeSection === item.section)}
+                      onHover={() => prefetchWorkspaceTab(restaurantId, item.id, activeItem)}
+                      onClick={() => navigate(`/restaurants/${restaurantId}/${item.id}${item.section ? `#${item.section}` : ''}`)}
+                    />
+                  )
                 ))}
                 {STORE_NAV_SOON.map((item) => (
                   <SidebarItem key={item.id} icon={item.icon} label={item.label} soon />

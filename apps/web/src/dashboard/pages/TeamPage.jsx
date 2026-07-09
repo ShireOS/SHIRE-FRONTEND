@@ -1,15 +1,55 @@
-import { useEffect, useState } from 'react'
-import { BadgeDollarSign, Eye, EyeOff, KeyRound, Plus, RefreshCw, ShieldCheck, Users } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { BadgeDollarSign, Check, Copy, Eye, EyeOff, KeyRound, Plus, RefreshCw, ShieldCheck, UserPlus, Users } from 'lucide-react'
 import { useAuth } from '../../auth'
-import { supabase } from '../../shared/lib/supabase'
-import { fetchWithSupabaseAuth } from '../../shared/query'
-import { assignedStaffRoles, buildStaffRoleUpdate, primaryStaffRole, roleCodeFromJobCode } from '../utils/staffRoles'
+import { fetchWithSupabaseAuth, queryClient, queryKeys } from '../../shared/query'
+import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
+import { backOfficeApi } from '../../shared/api/backOfficeApi'
+import { mergePermissions } from '../../shared/permissions'
+import { fetchRolePermissions } from '../data/permissions'
+import {
+  assignedStaffRoles,
+  buildStaffRoleUpdate,
+  normalizeRoleCode,
+  normalizeStaffRoles,
+  primaryStaffRole,
+  roleCodeFromJobCode,
+} from '../utils/staffRoles'
+import { Badge } from '../components/shared/Badge'
+import { Modal, ModalFooter } from '../components/shared/Modal'
 import RolePermissionsPanel from '../components/team/RolePermissionsPanel'
+import PermissionEditor, { diffOverrides } from '../components/team/PermissionEditor'
 
 const money = (value) =>
   value === null || value === undefined || value === ''
     ? '—'
     : `$${Number(value).toFixed(2)}/hr`
+
+const roleLabel = (key) =>
+  String(key || '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+
+function CopyButton({ text, label = 'Copy link' }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1600)
+        } catch {
+          window.prompt('Copy this link:', text)
+        }
+      }}
+      className="flex items-center gap-1 rounded-lg border border-dash-border px-2 py-1 text-[11px] font-semibold text-dash-tertiary transition hover:border-shell-accent/50 hover:text-dash-secondary"
+    >
+      {copied ? <Check size={12} strokeWidth={2} aria-hidden="true" /> : <Copy size={12} strokeWidth={1.75} aria-hidden="true" />}
+      {copied ? 'Copied' : label}
+    </button>
+  )
+}
 
 function Pane({ icon: Icon, eyebrow, title, children, aside }) {
   return (
@@ -120,7 +160,14 @@ function PinInput({ value, onCommit }) {
 }
 
 function StaffRoleEditor({ waiter, jobCodes, onChange }) {
-  const availableRoles = jobCodes.length > 0 ? jobCodes : [{ id: 'server', code: 'server', label: 'Server' }]
+  const baseRoles = jobCodes.length > 0 ? jobCodes : [{ id: 'server', code: 'server', label: 'Server' }]
+  // Keep the waiter's currently-assigned roles selectable even when they don't
+  // match a job code / POS role row (id: null keeps job_code_id untouched-safe).
+  const rawAssigned = normalizeStaffRoles(waiter?.roles, waiter?.pos_role || waiter?.role, [])
+  const extraRoles = rawAssigned
+    .filter((code) => baseRoles.every((item) => roleCodeFromJobCode(item) !== code))
+    .map((code) => ({ id: null, code, label: roleLabel(code) }))
+  const availableRoles = [...baseRoles, ...extraRoles]
   const assignedRoles = assignedStaffRoles(waiter, availableRoles)
   const primaryRole = primaryStaffRole(waiter, availableRoles)
 
@@ -183,15 +230,221 @@ function StaffRoleEditor({ waiter, jobCodes, onChange }) {
   )
 }
 
+// Invite drawer: email + optional staff link + full permission editor. The
+// invite payload always carries the FULL effective permission map.
+function InviteModal({ restaurantId, waiters, roleDefaultsFor, grantCap, initialWaiterId, onClose, onInvited }) {
+  const [email, setEmail] = useState('')
+  const [waiterId, setWaiterId] = useState(initialWaiterId || '')
+  const [perms, setPerms] = useState(() => mergePermissions(roleDefaultsFor(initialWaiterId || ''), null))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const [result, setResult] = useState(null)
+
+  const roleDefaults = roleDefaultsFor(waiterId)
+  const linkedWaiter = waiters.find((waiter) => waiter.id === waiterId) || null
+
+  const pickWaiter = (id) => {
+    setWaiterId(id)
+    setPerms(mergePermissions(roleDefaultsFor(id), null))
+  }
+
+  const send = async () => {
+    const trimmed = email.trim().toLowerCase()
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
+      setError('Enter a valid email address.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const response = await backOfficeApi.invite(restaurantId, {
+        email: trimmed,
+        name: linkedWaiter?.name || undefined,
+        waiter_id: waiterId || null,
+        permissions: perms,
+      })
+      setResult({ ...response, email: trimmed })
+      onInvited(response)
+    } catch (inviteError) {
+      setError(inviteError?.message || 'Could not send the invite.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal isOpen onClose={onClose} title="Grant back-office access" size="lg">
+      {result ? (
+        <div className="space-y-4">
+          <p className="rounded-xl border border-dash-success/30 bg-dash-success/10 px-3 py-2 text-sm text-dash-success">
+            Invite sent to {result.email}
+          </p>
+          {!result.email_sent && (
+            <p className="rounded-xl border border-dash-warning/30 bg-dash-warning/10 px-3 py-2 text-sm text-dash-warning">
+              The email could not be sent — share this link with them instead.
+            </p>
+          )}
+          {result.accept_url && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dash-border bg-[var(--glass-bg)] px-3 py-2">
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-dash-secondary" title={result.accept_url}>
+                {result.accept_url}
+              </span>
+              <CopyButton text={result.accept_url} />
+            </div>
+          )}
+          <ModalFooter>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl bg-shell-cta px-4 py-2 text-sm font-semibold text-shell-cta-text transition hover:opacity-90"
+            >
+              Done
+            </button>
+          </ModalFooter>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-3">
+            <label className="min-w-[220px] flex-1">
+              <span className="label-mono !text-[9px]">Email</span>
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="them@example.com"
+                autoFocus
+                className="mt-1 w-full rounded-xl border border-dash-border bg-[var(--glass-bg)] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary focus:border-shell-accent/60"
+              />
+            </label>
+            <label className="min-w-[200px]">
+              <span className="label-mono !text-[9px]">Link to staff (optional)</span>
+              <select
+                value={waiterId}
+                onChange={(event) => pickWaiter(event.target.value)}
+                className="mt-1 w-full rounded-xl border border-dash-border bg-[var(--glass-bg)] px-2.5 py-2 text-sm font-semibold text-dash-secondary outline-none focus:border-shell-accent/60"
+              >
+                <option value="">No linked employee</option>
+                {waiters.map((waiter) => (
+                  <option key={waiter.id} value={waiter.id}>{waiter.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="text-xs leading-5 text-dash-tertiary">
+            {waiterId
+              ? 'Permissions start from the linked employee’s role defaults — tweak anything below before sending.'
+              : 'Pick a preset or toggle exactly what they should be able to do.'}
+          </p>
+          <PermissionEditor
+            value={perms}
+            roleDefaults={roleDefaults}
+            onChange={setPerms}
+            grantCap={grantCap}
+            showPreview
+            disabled={busy}
+          />
+          {error && <p className="text-xs text-dash-danger">{error}</p>}
+          <ModalFooter>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-dash-border px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:text-dash-cream"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void send()}
+              className="rounded-xl bg-shell-cta px-4 py-2 text-sm font-semibold text-shell-cta-text transition hover:opacity-90 disabled:opacity-50"
+            >
+              {busy ? 'Sending…' : 'Save & send invite'}
+            </button>
+          </ModalFooter>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+// Per-member permission drawer. Edits the FULL effective map; only the keys
+// that differ from the role defaults are persisted as permission_overrides.
+function MemberPermissionsModal({ restaurantId, member, roleDefaults, grantCap, onClose, onSaved }) {
+  const [perms, setPerms] = useState(() => mergePermissions(roleDefaults, member.permission_overrides))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  const save = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const updated = await backOfficeApi.updateMember(restaurantId, member.id, {
+        permission_overrides: diffOverrides(perms, roleDefaults),
+      })
+      onSaved(updated)
+      onClose()
+    } catch (saveError) {
+      setError(saveError?.message || 'Could not save permissions.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal isOpen onClose={onClose} title={`Permissions — ${member.display_name || member.email}`} size="lg">
+      <div className="space-y-4">
+        <PermissionEditor
+          value={perms}
+          roleDefaults={roleDefaults}
+          onChange={setPerms}
+          grantCap={grantCap}
+          showPreview
+          disabled={busy}
+        />
+        {error && <p className="text-xs text-dash-danger">{error}</p>}
+        <ModalFooter>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-dash-border px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:text-dash-cream"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void save()}
+            className="rounded-xl bg-shell-cta px-4 py-2 text-sm font-semibold text-shell-cta-text transition hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? 'Saving…' : 'Save permissions'}
+          </button>
+        </ModalFooter>
+      </div>
+    </Modal>
+  )
+}
+
 export default function TeamPage({ restaurantId }) {
   const auth = useAuth()
+  const access = useBackOfficeAccess(auth, restaurantId)
   const [waiters, setWaiters] = useState([])
   const [jobCodes, setJobCodes] = useState([])
-  const [members, setMembers] = useState([])
+  const [rolePerms, setRolePerms] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [newEmployee, setNewEmployee] = useState({ name: '', role: '', hourly_rate: '', pin: '' })
   const [newGroup, setNewGroup] = useState({ label: '', rate: '' })
+
+  // Back-office members & invites (ML backend). `unavailable` carries a soft
+  // note when the endpoints aren't deployed yet — never a crash.
+  const [boMembers, setBoMembers] = useState([])
+  const [boInvites, setBoInvites] = useState([])
+  const [boLoading, setBoLoading] = useState(true)
+  const [boUnavailable, setBoUnavailable] = useState(false)
+  const [inviteState, setInviteState] = useState(null) // { waiterId: string|null } | null
+  const [editingMember, setEditingMember] = useState(null)
+
+  const canViewMembers = access.can('team.view')
+  const canManageMembers = access.can('team.edit_employees')
 
   useEffect(() => {
     if (!restaurantId) return
@@ -200,17 +453,13 @@ export default function TeamPage({ restaurantId }) {
     Promise.all([
       fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=true`).catch(() => []),
       fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`).catch(() => []),
-      supabase
-        .from('restaurant_members')
-        .select('*')
-        .eq('restaurant_id', restaurantId)
-        .then(({ data }) => data || [], () => []),
+      fetchRolePermissions(restaurantId).catch(() => []),
     ])
-      .then(([waiterRows, codeRows, memberRows]) => {
+      .then(([waiterRows, codeRows, roleRows]) => {
         if (cancelled) return
         setWaiters(Array.isArray(waiterRows) ? waiterRows : [])
         setJobCodes(Array.isArray(codeRows) ? codeRows : [])
-        setMembers(memberRows.filter((member) => member.role !== 'owner'))
+        setRolePerms(Array.isArray(roleRows) ? roleRows : [])
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -219,6 +468,55 @@ export default function TeamPage({ restaurantId }) {
       cancelled = true
     }
   }, [restaurantId])
+
+  const loadBackOffice = async () => {
+    try {
+      const data = await backOfficeApi.listMembers(restaurantId)
+      setBoMembers(Array.isArray(data?.members) ? data.members : [])
+      setBoInvites(Array.isArray(data?.invitations) ? data.invitations : [])
+      setBoUnavailable(false)
+    } catch {
+      setBoUnavailable(true)
+    } finally {
+      setBoLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!restaurantId || access.loading || !canViewMembers) return
+    setBoLoading(true)
+    void loadBackOffice()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restaurantId, access.loading, canViewMembers])
+
+  const refreshBackOffice = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.backOfficeMembers(restaurantId) })
+    return loadBackOffice()
+  }
+
+  // Job codes + any POS role rows that don't have a matching job code, so the
+  // "Allowed roles" chips cover every configured POS role. Pseudo entries carry
+  // id: null so buildStaffRoleUpdate never writes a bogus job_code_id.
+  const roleOptions = useMemo(() => {
+    const known = new Set(jobCodes.map(roleCodeFromJobCode).filter(Boolean))
+    const extras = rolePerms
+      .map((row) => normalizeRoleCode(row.role_key))
+      .filter((code) => code && !known.has(code))
+      .map((code) => ({ id: null, code, label: roleLabel(code) }))
+    return [...jobCodes, ...extras]
+  }, [jobCodes, rolePerms])
+
+  // Role-default back-office permissions for a waiter (by id) via their
+  // primary POS role's pos_role_permissions.back_office_permissions.
+  const roleDefaultsForWaiter = (waiterId) => {
+    const waiter = waiters.find((item) => item.id === waiterId)
+    if (!waiter) return null
+    const primary = primaryStaffRole(waiter, roleOptions)
+    const row = rolePerms.find((item) => normalizeRoleCode(item.role_key) === primary)
+    return row?.back_office_permissions || null
+  }
+
+  const grantCap = access.isOwner ? null : access.permissions
 
   const act = async (fn) => {
     setError(null)
@@ -289,14 +587,26 @@ export default function TeamPage({ restaurantId }) {
       setJobCodes((prev) => prev.map((code) => (code.id === saved.id ? saved : code)))
     })
 
-  const patchMember = (member, updates) =>
+  const patchBoMember = (member, patch) =>
     act(async () => {
-      const { error: updateError } = await supabase
-        .from('restaurant_members')
-        .update(updates)
-        .eq('id', member.id)
-      if (updateError) throw updateError
-      setMembers((prev) => prev.map((item) => (item.id === member.id ? { ...item, ...updates } : item)))
+      const updated = await backOfficeApi.updateMember(restaurantId, member.id, patch)
+      setBoMembers((prev) => prev.map((item) => (item.id === member.id ? { ...item, ...updated } : item)))
+      queryClient.invalidateQueries({ queryKey: queryKeys.backOfficeMembers(restaurantId) })
+    })
+
+  const removeBoMember = (member) =>
+    act(async () => {
+      if (!window.confirm(`Remove dashboard access for ${member.display_name || member.email}?`)) return
+      await backOfficeApi.removeMember(restaurantId, member.id)
+      setBoMembers((prev) => prev.filter((item) => item.id !== member.id))
+      queryClient.invalidateQueries({ queryKey: queryKeys.backOfficeMembers(restaurantId) })
+    })
+
+  const revokeBoInvite = (invitation) =>
+    act(async () => {
+      await backOfficeApi.revokeInvite(restaurantId, invitation.id)
+      setBoInvites((prev) => prev.filter((item) => item.id !== invitation.id))
+      queryClient.invalidateQueries({ queryKey: queryKeys.backOfficeMembers(restaurantId) })
     })
 
   const groupRate = (waiter) => {
@@ -373,6 +683,7 @@ export default function TeamPage({ restaurantId }) {
           {waiters.map((waiter) => {
             const override = waiter.hourly_rate
             const inherited = groupRate(waiter)
+            const linkedMember = boMembers.find((member) => member.waiter_id === waiter.id)
             return (
               <div key={waiter.id} className="flex flex-wrap items-center gap-3">
                 <span className={`min-w-[130px] text-sm font-semibold ${waiter.is_active === false ? 'text-dash-tertiary line-through' : 'text-dash-cream'}`}>
@@ -380,7 +691,7 @@ export default function TeamPage({ restaurantId }) {
                 </span>
                 <StaffRoleEditor
                   waiter={waiter}
-                  jobCodes={jobCodes}
+                  jobCodes={roleOptions}
                   onChange={(updates) => void patchWaiter(waiter.id, updates)}
                 />
                 <span className="ml-auto flex items-center gap-2">
@@ -401,6 +712,26 @@ export default function TeamPage({ restaurantId }) {
                   <span className="w-24 text-xs text-dash-tertiary">
                     {override != null && override !== '' ? 'override' : inherited != null ? `group ${money(inherited)}` : 'no rate'}
                   </span>
+                  {canManageMembers && !boUnavailable && (
+                    linkedMember ? (
+                      <span
+                        title={`Has back-office access (${linkedMember.email})`}
+                        className="flex items-center gap-1 rounded-full border border-dash-border px-2 py-0.5 font-mono text-[9px] uppercase tracking-eyebrow text-dash-tertiary"
+                      >
+                        <ShieldCheck size={11} strokeWidth={1.75} aria-hidden="true" />
+                        portal
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setInviteState({ waiterId: waiter.id })}
+                        title="Invite this employee to the back-office dashboard"
+                        className="text-xs font-semibold text-dash-tertiary transition hover:text-dash-secondary"
+                      >
+                        Grant access
+                      </button>
+                    )
+                  )}
                   <button
                     type="button"
                     onClick={() => void patchWaiter(waiter.id, { is_active: waiter.is_active === false })}
@@ -456,57 +787,148 @@ export default function TeamPage({ restaurantId }) {
 
       <Pane
         icon={ShieldCheck}
-        eyebrow="Authorized members"
+        eyebrow="Back-office access"
         title="Who can open this dashboard"
         aside={
-          <span
-            title="Member invites — coming soon"
-            className="rounded-full border border-dash-border px-2 py-0.5 font-mono text-[9px] uppercase tracking-eyebrow text-dash-tertiary"
-          >
-            Invite · soon
-          </span>
+          canManageMembers && !boUnavailable ? (
+            <button
+              type="button"
+              onClick={() => setInviteState({ waiterId: null })}
+              className="flex min-h-[32px] items-center gap-1 rounded-xl bg-shell-cta px-3 text-xs font-semibold text-shell-cta-text transition hover:opacity-90"
+            >
+              <UserPlus size={13} strokeWidth={2} aria-hidden="true" />
+              Invite member
+            </button>
+          ) : null
         }
       >
-        <div className="space-y-2">
-          {members.map((member) => (
-            <div key={member.id} className="flex flex-wrap items-center gap-3">
-              <span className="min-w-[130px] font-mono text-xs text-dash-cream">
-                {member.user_id === auth.user?.id ? 'You' : member.user_id.slice(0, 8)}
-              </span>
-              <select
-                value={member.role}
-                onChange={(event) => void patchMember(member, { role: event.target.value })}
-                className="rounded-xl border border-dash-border bg-[var(--glass-bg)] px-2.5 py-1.5 text-xs font-semibold text-dash-secondary outline-none"
-              >
-                {['manager', 'server', 'host', 'kitchen'].map((role) => (
-                  <option key={role} value={role}>{role}</option>
-                ))}
-              </select>
-              <span className="ml-auto flex items-center gap-3">
-                <span className={`label-mono !text-[9px] ${member.status === 'active' ? '!text-dash-success' : ''}`}>
-                  {member.status || 'pending'}
+        {!canViewMembers ? (
+          <p className="text-sm text-dash-tertiary">
+            You don&rsquo;t have permission to view members. Ask the owner for &ldquo;View members &amp; schedule&rdquo; access.
+          </p>
+        ) : boUnavailable ? (
+          <p className="rounded-xl border border-dash-warning/30 bg-dash-warning/10 px-3 py-2 text-sm text-dash-warning">
+            Member invites aren&rsquo;t available yet — the back-office access backend hasn&rsquo;t shipped for this
+            environment. Everything else on this page still works.
+          </p>
+        ) : boLoading ? (
+          <p className="text-sm text-dash-tertiary">Loading members…</p>
+        ) : (
+          <div className="space-y-2">
+            {boMembers.map((member) => {
+              const linkedWaiter = waiters.find((waiter) => waiter.id === member.waiter_id)
+              const suspended = member.status === 'suspended'
+              return (
+                <div key={member.id} className="flex flex-wrap items-center gap-3">
+                  <span className="min-w-[160px]">
+                    <span className={`block text-sm font-semibold ${suspended ? 'text-dash-tertiary' : 'text-dash-cream'}`}>
+                      {member.display_name || member.email}
+                      {member.user_id === auth.user?.id && (
+                        <span className="ml-1.5 font-mono text-[9px] uppercase tracking-eyebrow text-dash-tertiary">you</span>
+                      )}
+                    </span>
+                    <span className="block text-xs text-dash-tertiary">
+                      {[
+                        member.display_name ? member.email : null,
+                        linkedWaiter ? `Linked to ${linkedWaiter.name}` : 'Not linked to staff',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                  </span>
+                  <span className="ml-auto flex flex-wrap items-center gap-2">
+                    <Badge variant={suspended ? 'warning' : 'success'} dot>
+                      {suspended ? 'suspended' : 'active'}
+                    </Badge>
+                    {canManageMembers && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setEditingMember(member)}
+                          className="rounded-lg border border-dash-border px-2 py-1 text-[11px] font-semibold text-dash-secondary transition hover:border-shell-accent/50 hover:text-dash-cream"
+                        >
+                          Permissions
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void patchBoMember(member, { status: suspended ? 'active' : 'suspended' })}
+                          className="text-xs font-semibold text-dash-tertiary transition hover:text-dash-secondary"
+                        >
+                          {suspended ? 'Reactivate' : 'Suspend'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void removeBoMember(member)}
+                          className="text-xs font-semibold text-dash-danger/80 transition hover:text-dash-danger"
+                        >
+                          Remove
+                        </button>
+                      </>
+                    )}
+                  </span>
+                </div>
+              )
+            })}
+
+            {boInvites.map((invitation) => (
+              <div key={invitation.id} className="flex flex-wrap items-center gap-3">
+                <span className="min-w-[160px]">
+                  <span className="block text-sm font-semibold text-dash-cream">{invitation.name || invitation.email}</span>
+                  {invitation.name && <span className="block text-xs text-dash-tertiary">{invitation.email}</span>}
                 </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    void patchMember(member, { status: member.status === 'active' ? 'deactivated' : 'active' })
-                  }
-                  className="text-xs font-semibold text-dash-tertiary transition hover:text-dash-secondary"
-                >
-                  {member.status === 'active' ? 'Deactivate' : 'Activate'}
-                </button>
-              </span>
-            </div>
-          ))}
-          {members.length === 0 && (
-            <p className="text-sm text-dash-tertiary">
-              No additional members — only the owner can open this dashboard today. Member invites land with the invite flow.
-            </p>
-          )}
-        </div>
+                <span className="ml-auto flex flex-wrap items-center gap-2">
+                  <Badge variant="gold" dot>invited (pending)</Badge>
+                  {invitation.accept_url && <CopyButton text={invitation.accept_url} label="Copy invite link" />}
+                  {canManageMembers && (
+                    <button
+                      type="button"
+                      onClick={() => void revokeBoInvite(invitation)}
+                      className="text-xs font-semibold text-dash-danger/80 transition hover:text-dash-danger"
+                    >
+                      Revoke
+                    </button>
+                  )}
+                </span>
+              </div>
+            ))}
+
+            {boMembers.length === 0 && boInvites.length === 0 && (
+              <p className="text-sm text-dash-tertiary">
+                No additional members — only the owner can open this dashboard today.
+                {canManageMembers ? ' Use “Invite member” (or “Grant access” next to an employee) to add someone.' : ''}
+              </p>
+            )}
+          </div>
+        )}
       </Pane>
 
       <RolePermissionsPanel restaurantId={restaurantId} />
+
+      {inviteState && (
+        <InviteModal
+          restaurantId={restaurantId}
+          waiters={waiters.filter((waiter) => waiter.is_active !== false)}
+          roleDefaultsFor={roleDefaultsForWaiter}
+          grantCap={grantCap}
+          initialWaiterId={inviteState.waiterId}
+          onClose={() => setInviteState(null)}
+          onInvited={() => void refreshBackOffice()}
+        />
+      )}
+
+      {editingMember && (
+        <MemberPermissionsModal
+          restaurantId={restaurantId}
+          member={editingMember}
+          roleDefaults={editingMember.waiter_id ? roleDefaultsForWaiter(editingMember.waiter_id) : null}
+          grantCap={grantCap}
+          onClose={() => setEditingMember(null)}
+          onSaved={(updated) => {
+            setBoMembers((prev) => prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)))
+            queryClient.invalidateQueries({ queryKey: queryKeys.backOfficeMembers(restaurantId) })
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -39,6 +39,11 @@ export const queryKeys = {
   shiftTradeRequests: (restaurantId: string, status = '') =>
     ['restaurant', restaurantId, 'shift-trade-requests', status] as const,
 
+  backOfficeAccess: (restaurantId: string) => ['restaurant', restaurantId, 'back-office-access'] as const,
+  backOfficeMembers: (restaurantId: string) => ['restaurant', restaurantId, 'back-office-members'] as const,
+  timeClockRange: (restaurantId: string, startDate: string, endDate: string) =>
+    ['restaurant', restaurantId, 'time-clock', startDate, endDate] as const,
+
   conversations: (restaurantId: string) => ['restaurant', restaurantId, 'conversations'] as const,
   conversationMessages: (restaurantId: string, conversationId: string) =>
     ['restaurant', restaurantId, 'conversations', conversationId, 'messages'] as const,

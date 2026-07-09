@@ -29,12 +29,17 @@ import OverviewPage from './pages/OverviewPage'
 import SettingsPage from './pages/SettingsPage'
 import PosSettingsPage from './pages/PosSettingsPage'
 import TipPoolingPage from './pages/TipPoolingPage'
+import LaborCostPage from './pages/LaborCostPage'
 import TeamPage from './pages/TeamPage'
+import TimeClockPage from './pages/TimeClockPage'
+import AcceptInvitePage from './pages/AcceptInvitePage'
 import ClaimStorePage from './pages/ClaimStorePage'
 import DevicesPage from './pages/DevicesPage'
 import StoreDevicesPanel from './components/devices/StoreDevicesPanel'
 import MenuPanel from './MenuPanel'
 import { useAllowedStoreTabs } from './data/resellerAccess'
+import { useBackOfficeAccess } from '../shared/hooks/useBackOfficeAccess'
+import { TAB_PERMISSIONS } from '../shared/permissions'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
 import SalesTiles from './components/SalesTiles'
 import { usePersistedPeriod } from './data/analyticsSummary'
@@ -125,8 +130,10 @@ const TABS = [
   { id: 'devices', label: 'Devices' },
   { id: 'pos-settings', label: 'POS Settings' },
   { id: 'tip-pooling', label: 'Payroll & Tips' },
+  { id: 'labor-cost', label: 'Labor Cost' },
   { id: 'feedback', label: 'Complaints' },
   { id: 'team', label: 'Team' },
+  { id: 'time-clock', label: 'Time Clock' },
   { id: 'scheduling', label: 'Scheduling' },
   { id: 'messaging', label: 'Messaging' },
   { id: 'payments', label: 'Payments / Plan' },
@@ -4441,6 +4448,7 @@ function RestaurantWorkspace() {
   const [floorPlanStatus, setFloorPlanStatus] = useState(null)
   const [setupRefreshKey, setSetupRefreshKey] = useState(0)
   const allowedStoreTabs = useAllowedStoreTabs(restaurant)
+  const backOfficeAccess = useBackOfficeAccess(auth, restaurantId)
 
   const setupWarnings = useMemo(
     () => buildModernSetupWarnings(restaurant || {}, waiterCount, floorPlanStatus),
@@ -4512,6 +4520,13 @@ function RestaurantWorkspace() {
     return <Navigate to={`/restaurants/${restaurantId}/analytics`} replace />
   }
 
+  // Back-office members only reach permitted tabs (owners bypass; server
+  // guards remain the real enforcement).
+  const requiredPermission = TAB_PERMISSIONS[activeTab]
+  if (!backOfficeAccess.loading && requiredPermission && !backOfficeAccess.can(requiredPermission)) {
+    return <Navigate to={`/restaurants/${restaurantId}/analytics`} replace />
+  }
+
   const breadcrumb = [
     { label: 'Home', to: `/restaurants/${restaurantId}/analytics` },
     { label: WORKSPACE_BREADCRUMB_LABELS[activeTab] || 'Overview' },
@@ -4570,6 +4585,8 @@ function RestaurantWorkspace() {
         {activeTab === 'menu' && <MenuPanel restaurantId={restaurantId} />}
         {activeTab === 'feedback' && <GuestFeedbackPanel restaurantId={restaurantId} />}
         {activeTab === 'team' && <TeamPage restaurantId={restaurantId} />}
+        {activeTab === 'time-clock' && <TimeClockPage restaurantId={restaurantId} />}
+        {activeTab === 'labor-cost' && <LaborCostPage restaurantId={restaurantId} />}
         {activeTab === 'devices' && <StoreDevicesPanel restaurantId={restaurantId} />}
         {activeTab === 'pos-settings' && <PosSettingsPage restaurantId={restaurantId} />}
         {activeTab === 'tip-pooling' && <TipPoolingPage restaurantId={restaurantId} />}
@@ -4591,6 +4608,8 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   menu: 'Menu',
   feedback: 'Complaints',
   team: 'Team',
+  'time-clock': 'Time Clock',
+  'labor-cost': 'Labor Cost',
   devices: 'Devices',
   'pos-settings': 'POS Settings',
   'tip-pooling': 'Payroll & Tips',
@@ -4612,6 +4631,7 @@ export default function AuthenticatedDashboardApp() {
         <Route path="onboarding" element={<OnboardingPage />} />
         <Route path="reseller/*" element={<ResellerApp />} />
         <Route path="claim/:token" element={<ClaimStorePage />} />
+        <Route path="invite" element={<AcceptInvitePage />} />
         <Route path="enterprise" element={<Navigate to="/enterprise/stores" replace />} />
         <Route
           path="enterprise/overview"
