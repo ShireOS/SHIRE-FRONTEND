@@ -160,7 +160,7 @@ export default function RestaurantReportsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<'period' | 'dates' | 'compare' | 'config' | 'email' | null>(null);
-  const [insights, setInsights] = useState<Record<string, string>>({});
+  const [insights, setInsights] = useState<Record<string, { loading?: boolean; data?: any; error?: string }>>({});
 
   useEffect(() => {
     if (passedRestaurantId) return;
@@ -251,12 +251,12 @@ export default function RestaurantReportsScreen() {
   };
   const generateInsight = async (staffId: string) => {
     if (!restaurantId) return;
-    setInsights((current) => ({ ...current, [staffId]: 'Generating...' }));
+    setInsights((current) => ({ ...current, [staffId]: { loading: true } }));
     try {
       const data = await generateStaffReportInsight(restaurantId, staffId, dateRange.start, dateRange.end);
-      setInsights((current) => ({ ...current, [staffId]: data.insight_text || data.recommendations?.summary || 'Insight generated.' }));
+      setInsights((current) => ({ ...current, [staffId]: { data } }));
     } catch (nextError) {
-      setInsights((current) => ({ ...current, [staffId]: nextError instanceof Error ? nextError.message : 'Could not generate insight.' }));
+      setInsights((current) => ({ ...current, [staffId]: { error: nextError instanceof Error ? nextError.message : 'Could not generate insight.' } }));
     }
   };
 
@@ -358,8 +358,20 @@ function AverageSection({ section, statWidth, comparisonEnabled }: { section: an
   return <ReportSection title="Average check"><View style={styles.statGrid}><Stat width={statWidth} label="Average check" value={formatMoney(summary.average_check)} comparison={comparison.average_check} comparisonFormat={formatMoney} /><Stat width={statWidth} label="Items / ticket" value={formatNumber(summary.average_items_per_ticket, 2)} comparison={comparison.average_items_per_ticket} comparisonFormat={(value) => formatNumber(value, 2)} /><Stat width={statWidth} label="Tickets" value={formatNumber(summary.ticket_count)} comparison={comparison.ticket_count} /></View><DataTable columns={[['server_name', 'Server'], ['tickets', 'Tickets'], ['average_check', 'Avg check'], ['average_items_per_ticket', 'Items']]} rows={section.by_server || []} formatters={{ average_check: formatMoney }} /></ReportSection>;
 }
 
-function EmployeeSection({ section, insights, onInsight }: { section: any; insights: Record<string, string>; onInsight: (id: string) => void }) {
-  return <ReportSection title="Employee reports">{(section.staff || []).map((staff: any) => <View key={staff.staff_id} style={styles.employeeRow}><View style={styles.employeeHeader}><View><Text style={styles.rowTitle}>{staff.staff_name}</Text><Text style={styles.rowMeta}>{staff.role || 'Staff'} · {formatMoney(staff.revenue)} · {formatNumber(staff.ticket_count)} tickets</Text></View><Pressable onPress={() => onInsight(staff.staff_id)} style={styles.smallButton}><Feather name="zap" size={13} color={semanticColors.text} /><Text style={styles.smallButtonText}>AI</Text></Pressable></View><View style={styles.metricLine}><Text style={styles.rowMeta}>Avg {formatMoney(staff.average_check)}</Text><Text style={styles.rowMeta}>Tip {formatPercent(staff.average_tip_percentage)}</Text><Text style={styles.rowMeta}>Add-on {formatPercent(staff.upsell_attachment_rate)}</Text><Text style={styles.rowMeta}>Index {formatNumber(staff.quick_index, 1)}</Text></View>{insights[staff.staff_id] && <Text style={styles.insight}>{insights[staff.staff_id]}</Text>}</View>)}</ReportSection>;
+function MobileInsight({ insight }: { insight?: { loading?: boolean; data?: any; error?: string } }) {
+  if (insight?.loading) return <View style={styles.insight}><ActivityIndicator size="small" color={semanticColors.primary} /><Text style={styles.insightSummary}>Generating contextual analysis...</Text></View>;
+  if (insight?.error) return <View style={[styles.insight, styles.insightError]}><Text style={styles.insightErrorText}>{insight.error}</Text></View>;
+  if (!insight?.data) return null;
+  const analysis = insight.data.analysis || insight.data.recommendations || {};
+  const peer = analysis.peer_context || insight.data.metrics_snapshot?.peer_context || {};
+  const history = analysis.history_context || insight.data.metrics_snapshot?.history_context || {};
+  const workload = analysis.workload_context || insight.data.metrics_snapshot?.workload_context || {};
+  const standing = String(peer.overall_standing || 'not ranked').replaceAll('_', ' ');
+  return <View style={styles.insight}><Text style={styles.insightSummary}>{analysis.summary || insight.data.insight_text}</Text><View style={styles.insightBadges}>{peer.overall_rank && <Text style={styles.insightBadge}>Rank {peer.overall_rank} of {peer.cohort_size}</Text>}<Text style={styles.insightBadge}>{standing}</Text>{history.available && <Text style={styles.insightBadge}>{history.trend}</Text>}</View><Text style={styles.insightHeading}>Peer context</Text><Text style={styles.insightCopy}>{analysis.peer_assessment || `${formatNumber(peer.overall_percentile, 1)} percentile among ${peer.cohort_label || 'staff'}.`}</Text><Text style={styles.insightHeading}>Personal history</Text><Text style={styles.insightCopy}>{analysis.history_assessment || 'No prior-period comparison is available.'}</Text><Text style={styles.insightHeading}>Workload estimate</Text><Text style={styles.insightCopy}>{formatNumber(workload.tables_or_checks_handled)} tables/checks across {formatNumber(workload.hours_worked, 1)} hours · {workload.workload_estimated_turn_minutes == null ? '—' : `${formatNumber(workload.workload_estimated_turn_minutes, 1)} min`} rough interval</Text>{analysis.strengths?.length > 0 && <Text style={styles.insightCopy}><Text style={styles.insightStrong}>Strengths: </Text>{analysis.strengths.join(' · ')}</Text>}{analysis.areas_to_watch?.length > 0 && <Text style={styles.insightCopy}><Text style={styles.insightStrong}>Watch: </Text>{analysis.areas_to_watch.join(' · ')}</Text>}{analysis.recommendations?.length > 0 && <Text style={styles.insightCopy}><Text style={styles.insightStrong}>Next: </Text>{analysis.recommendations.join(' · ')}</Text>}{analysis.caveats?.length > 0 && <Text style={styles.insightCaveat}>{analysis.caveats.join(' ')}</Text>}</View>;
+}
+
+function EmployeeSection({ section, insights, onInsight }: { section: any; insights: Record<string, { loading?: boolean; data?: any; error?: string }>; onInsight: (id: string) => void }) {
+  return <ReportSection title="Employee reports">{(section.staff || []).map((staff: any) => <View key={staff.staff_id} style={styles.employeeRow}><View style={styles.employeeHeader}><View><Text style={styles.rowTitle}>{staff.staff_name}</Text><Text style={styles.rowMeta}>{staff.role || 'Staff'} · {formatMoney(staff.revenue)} · {formatNumber(staff.ticket_count)} tickets</Text></View><Pressable disabled={insights[staff.staff_id]?.loading} onPress={() => onInsight(staff.staff_id)} style={styles.smallButton}><Feather name="zap" size={13} color={semanticColors.text} /><Text style={styles.smallButtonText}>{insights[staff.staff_id]?.loading ? 'Working' : 'AI'}</Text></Pressable></View><View style={styles.metricLine}><Text style={styles.rowMeta}>Avg {formatMoney(staff.average_check)}</Text><Text style={styles.rowMeta}>Tip {formatPercent(staff.average_tip_percentage)}</Text><Text style={styles.rowMeta}>Add-on {formatPercent(staff.upsell_attachment_rate)}</Text><Text style={styles.rowMeta}>Index {formatNumber(staff.quick_index, 1)}</Text></View><MobileInsight insight={insights[staff.staff_id]} /></View>)}</ReportSection>;
 }
 
 function PayrollSection({ section, statWidth, comparisonEnabled }: { section: any; statWidth: any; comparisonEnabled: boolean }) {
@@ -506,7 +518,16 @@ const styles = StyleSheet.create({
   metricLine: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   smallButton: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, height: 32, borderRadius: 6, borderWidth: 1, borderColor: semanticColors.border },
   smallButtonText: { ...typography.caption, color: semanticColors.text, fontWeight: '700' },
-  insight: { ...typography.bodySmall, color: semanticColors.text, padding: 10, borderRadius: 6, backgroundColor: color_pallet.amber[100] },
+  insight: { marginTop: 8, gap: 7, padding: 11, borderRadius: 6, borderWidth: 1, borderColor: color_pallet.amber[600], backgroundColor: color_pallet.amber[100] },
+  insightSummary: { ...typography.bodySmall, color: color_pallet.ink[900] },
+  insightBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 },
+  insightBadge: { ...typography.caption, overflow: 'hidden', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 5, color: color_pallet.ink[800], backgroundColor: color_pallet.cream[50], textTransform: 'capitalize' },
+  insightHeading: { ...typography.eyebrow, color: color_pallet.ink[700], textTransform: 'uppercase', marginTop: 3 },
+  insightCopy: { ...typography.caption, color: color_pallet.ink[700] },
+  insightStrong: { fontWeight: '700', color: color_pallet.ink[900] },
+  insightCaveat: { ...typography.caption, color: color_pallet.ink[500], marginTop: 3, paddingTop: 7, borderTopWidth: 1, borderTopColor: color_pallet.amber[600] },
+  insightError: { borderColor: color_pallet.danger[600], backgroundColor: color_pallet.danger[50] },
+  insightErrorText: { ...typography.bodySmall, color: color_pallet.danger[700] },
   flag: { padding: 10, borderRadius: 6, backgroundColor: color_pallet.amber[100] },
   flagText: { ...typography.bodySmall, color: color_pallet.ink[800] },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', padding: 16 },

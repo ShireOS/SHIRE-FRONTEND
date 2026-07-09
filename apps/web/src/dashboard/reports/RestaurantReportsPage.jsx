@@ -552,10 +552,52 @@ function AverageCheck({ section = {}, comparisonEnabled }) {
   return <Section id="average-check" title="Average check" exportRows={section.trend || []}><div className="grid gap-3 sm:grid-cols-3"><Stat label="Average check" value={money(summary.average_check)} comparison={comparison.average_check} comparisonFormat={money} /><Stat label="Items / ticket" value={number(summary.average_items_per_ticket, 2)} comparison={comparison.average_items_per_ticket} comparisonFormat={(value) => number(value, 2)} /><Stat label="Tickets" value={number(summary.ticket_count)} comparison={comparison.ticket_count} /></div><div className="mt-5 grid gap-6 xl:grid-cols-2"><div><h3 className="mb-2 text-sm font-semibold">By server</h3><Table columns={[{ key: 'server_name', label: 'Server' }, { key: 'tickets', label: 'Tickets', render: number }, { key: 'average_check', label: 'Avg check', render: money }, { key: 'average_items_per_ticket', label: 'Items', render: (v) => number(v, 2) }]} rows={section.by_server || []} /></div><div><h3 className="mb-2 text-sm font-semibold">By daypart</h3><Table columns={[{ key: 'daypart', label: 'Daypart' }, { key: 'tickets', label: 'Tickets', render: number }, { key: 'average_check', label: 'Avg check', render: money }, { key: 'average_items_per_ticket', label: 'Items', render: (v) => number(v, 2) }]} rows={section.by_daypart || []} /></div></div></Section>
 }
 
+function insightList(title, values = []) {
+  if (!values.length) return null
+  return <div><p className="label-mono">{title}</p><ul className="mt-2 space-y-1 text-sm text-dash-secondary">{values.map((value) => <li key={value}>• {value}</li>)}</ul></div>
+}
+
+function StaffInsight({ employee, insight }) {
+  if (insight?.loading) return <div className="mt-3 rounded-md border border-white/10 p-4 text-sm text-dash-secondary">Generating contextual analysis...</div>
+  if (insight?.error) return <div className="mt-3 rounded-md border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">{insight.error}</div>
+  if (!insight?.data) return null
+  const analysis = insight.data.analysis || insight.data.recommendations || {}
+  const peer = analysis.peer_context || insight.data.metrics_snapshot?.peer_context || {}
+  const history = analysis.history_context || insight.data.metrics_snapshot?.history_context || {}
+  const workload = analysis.workload_context || insight.data.metrics_snapshot?.workload_context || {}
+  const standing = String(peer.overall_standing || 'not ranked').replaceAll('_', ' ')
+  return (
+    <article className="mt-3 rounded-md border border-dash-gold/20 bg-dash-gold/5 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="font-semibold">{employee?.staff_name || 'Employee analysis'}</p>
+          <p className="mt-1 text-sm text-dash-secondary">{analysis.summary || insight.data.insight_text}</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2 text-xs font-semibold">
+          {peer.overall_rank && <span className="rounded border border-white/10 bg-white/[0.05] px-2 py-1">Rank {peer.overall_rank} of {peer.cohort_size}</span>}
+          <span className="rounded border border-white/10 bg-white/[0.05] px-2 py-1 capitalize">{standing}</span>
+          {history.available && <span className="rounded border border-white/10 bg-white/[0.05] px-2 py-1 capitalize">{history.trend}</span>}
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div><p className="label-mono">Peer context</p><p className="mt-1 text-sm text-dash-secondary">{analysis.peer_assessment || `${peer.overall_percentile || 0}th percentile among ${peer.cohort_label || 'staff'}.`}</p></div>
+        <div><p className="label-mono">Personal history</p><p className="mt-1 text-sm text-dash-secondary">{analysis.history_assessment || 'No prior-period comparison is available.'}</p></div>
+        <div><p className="label-mono">Workload estimate</p><p className="mt-1 text-sm text-dash-secondary">{number(workload.tables_or_checks_handled)} tables/checks across {number(workload.hours_worked, 1)} hours · {workload.workload_estimated_turn_minutes == null ? '—' : `${number(workload.workload_estimated_turn_minutes, 1)} min`} rough interval</p></div>
+      </div>
+      <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        {insightList('Strengths', analysis.strengths)}
+        {insightList('Areas to watch', analysis.areas_to_watch)}
+        {insightList('Next actions', analysis.recommendations)}
+      </div>
+      {analysis.caveats?.length > 0 && <p className="mt-4 border-t border-white/10 pt-3 text-xs text-dash-tertiary">{analysis.caveats.join(' ')}</p>}
+    </article>
+  )
+}
+
 function EmployeeReports({ section = {}, insights, onInsight }) {
   const [sort, setSort] = useState('revenue')
   const rows = useMemo(() => [...(section.staff || [])].sort((a, b) => Number(b[sort] || 0) - Number(a[sort] || 0)), [section.staff, sort])
-  return <Section id="employee-reports" title="Employee reports" subtitle={section.quality?.upsell_metric} exportRows={rows}><div className="mb-4"><label className="text-sm text-dash-secondary">Sort by <select value={sort} onChange={(event) => setSort(event.target.value)} className="ml-2 h-9 rounded-md border border-white/10 bg-dash-surface px-2"><option value="revenue">Revenue</option><option value="ticket_count">Tickets</option><option value="average_check">Average check</option><option value="average_tip_percentage">Tip %</option><option value="quick_index">Quick index</option></select></label></div><Table columns={[{ key: 'staff_name', label: 'Employee' }, { key: 'role', label: 'Role' }, { key: 'revenue', label: 'Revenue', render: money }, { key: 'ticket_count', label: 'Tickets', render: number }, { key: 'average_check', label: 'Avg check', render: money }, { key: 'average_turn_minutes', label: 'Turn', render: duration }, { key: 'upsell_attachment_rate', label: 'Add-on %', render: percent }, { key: 'average_tip_percentage', label: 'Tip %', render: percent }, { key: 'quick_index', label: 'Quick index', render: (v) => number(v, 1) }, { key: 'staff_id', label: 'AI summary', render: (id) => <button type="button" onClick={() => onInsight(id)} disabled={insights[id]?.loading} className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2 py-1 text-xs font-semibold"><Sparkles className="h-3 w-3" />{insights[id]?.loading ? 'Working' : 'Generate'}</button> }]} rows={rows} />{Object.entries(insights).map(([id, insight]) => insight.data && <div key={id} className="mt-3 rounded-md border border-dash-gold/20 bg-dash-gold/5 p-4 text-sm"><p className="font-semibold">{rows.find((row) => row.staff_id === id)?.staff_name}</p><p className="mt-1 text-dash-secondary">{insight.data.insight_text}</p></div>)}</Section>
+  return <Section id="employee-reports" title="Employee reports" subtitle={section.quality?.upsell_metric} exportRows={rows}><div className="mb-4"><label className="text-sm text-dash-secondary">Sort by <select value={sort} onChange={(event) => setSort(event.target.value)} className="ml-2 h-9 rounded-md border border-white/10 bg-dash-surface px-2"><option value="revenue">Revenue</option><option value="ticket_count">Tickets</option><option value="average_check">Average check</option><option value="average_tip_percentage">Tip %</option><option value="quick_index">Quick index</option></select></label></div><Table columns={[{ key: 'staff_name', label: 'Employee' }, { key: 'role', label: 'Role' }, { key: 'revenue', label: 'Revenue', render: money }, { key: 'ticket_count', label: 'Tickets', render: number }, { key: 'average_check', label: 'Avg check', render: money }, { key: 'average_turn_minutes', label: 'Turn', render: duration }, { key: 'upsell_attachment_rate', label: 'Add-on %', render: percent }, { key: 'average_tip_percentage', label: 'Tip %', render: percent }, { key: 'quick_index', label: 'Quick index', render: (v) => number(v, 1) }, { key: 'staff_id', label: 'AI summary', render: (id) => <button type="button" onClick={() => onInsight(id)} disabled={insights[id]?.loading} className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2 py-1 text-xs font-semibold"><Sparkles className="h-3 w-3" />{insights[id]?.loading ? 'Working' : 'Generate'}</button> }]} rows={rows} />{Object.entries(insights).map(([id, insight]) => <StaffInsight key={id} employee={rows.find((row) => String(row.staff_id) === String(id))} insight={insight} />)}</Section>
 }
 
 function Payroll({ section = {}, comparisonEnabled }) {
