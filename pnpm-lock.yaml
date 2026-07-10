@@ -188,6 +188,12 @@ importers:
       '@shire/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@supabase/auth-js':
+        specifier: 2.108.2
+        version: 2.108.2
+      '@supabase/postgrest-js':
+        specifier: 2.108.2
+        version: 2.108.2
       '@supabase/supabase-js':
         specifier: ^2.97.0
         version: 2.108.2
