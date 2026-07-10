@@ -8,6 +8,7 @@ import {
   createModifierGroup,
   detachGroupFromItem,
   removeGroupOption,
+  setItemGroupPromptMode,
   updateGroupOption,
   updateModifierGroup,
   wouldCreateCycle,
@@ -164,6 +165,22 @@ function QuestionEditor({
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          {itemId && (
+            <SelectInput
+              className="!w-auto !py-1.5"
+              value={group.item_prompt_modes?.[itemId] || ''}
+              title="Override only this item's behavior; the shared question remains unchanged elsewhere"
+              onChange={event => void linkWork(
+                () => setItemGroupPromptMode(group.id, itemId, event.target.value || null),
+                event.target.value ? 'Item-specific behavior saved.' : 'Using question default.',
+              )}
+            >
+              <option value="">This item: use question default</option>
+              <option value="ask">This item: ask every time</option>
+              <option value="skip_defaults">This item: apply defaults and skip</option>
+              <option value="hidden">This item: hidden</option>
+            </SelectInput>
+          )}
           <SmallButton
             variant={group.is_required ? 'primary' : 'secondary'}
             onClick={() => void patchGroup({

@@ -17,19 +17,24 @@ export async function fetchModifierGroups(restaurantId) {
   const groupIds = (groups || []).map(group => group.id)
   if (groupIds.length === 0) return []
 
-  const [itemLinks, optionLinks] = await Promise.all([
+  const [itemLinks, optionLinks, itemOverrides] = await Promise.all([
     supabase
       .from('menu_modifier_group_items')
       .select('group_id, item_id, display_order')
       .in('group_id', groupIds),
     supabase
       .from('menu_modifier_group_options')
-      .select('group_id, modifier_id, is_default, display_order, overage_price, child_group_id')
+      .select('group_id, modifier_id, is_default, display_order, overage_price, child_group_id, default_pre_modifier, pre_modifier_price_overrides')
       .in('group_id', groupIds)
       .order('display_order', { ascending: true }),
+    supabase
+      .from('menu_item_modifier_group_overrides')
+      .select('group_id, item_id, prompt_mode')
+      .in('group_id', groupIds),
   ])
   if (itemLinks.error) throw itemLinks.error
   if (optionLinks.error) throw optionLinks.error
+  if (itemOverrides.error) throw itemOverrides.error
 
   const itemsByGroup = {}
   for (const row of itemLinks.data || []) {
@@ -43,12 +48,19 @@ export async function fetchModifierGroups(restaurantId) {
       display_order: Number(row.display_order || 0),
       overage_price: row.overage_price == null ? null : Number(row.overage_price),
       child_group_id: row.child_group_id || null,
+      default_pre_modifier: row.default_pre_modifier || null,
+      pre_modifier_price_overrides: row.pre_modifier_price_overrides || {},
     })
+  }
+  const promptsByGroup = {}
+  for (const row of itemOverrides.data || []) {
+    ;(promptsByGroup[row.group_id] ||= {})[row.item_id] = row.prompt_mode
   }
 
   return (groups || []).map(group => ({
     ...group,
     item_ids: itemsByGroup[group.id] || [],
+    item_prompt_modes: promptsByGroup[group.id] || {},
     options: optionsByGroup[group.id] || [],
   }))
 }
@@ -67,6 +79,9 @@ export async function createModifierGroup(restaurantId, draft) {
       is_available: true,
       included_count: draft.included_count ?? 0,
       overage_price: draft.overage_price ?? null,
+      prompt_mode: draft.prompt_mode || 'ask',
+      pre_modifiers: draft.pre_modifiers || [],
+      pre_modifier_prices: draft.pre_modifier_prices || {},
     })
     .select('*')
     .single()
@@ -122,6 +137,22 @@ export async function detachGroupFromItem(groupId, itemId) {
   if (error) throw error
 }
 
+export async function setItemGroupPromptMode(groupId, itemId, promptMode) {
+  if (!promptMode) {
+    const { error } = await supabase
+      .from('menu_item_modifier_group_overrides')
+      .delete()
+      .eq('group_id', groupId)
+      .eq('item_id', itemId)
+    if (error) throw error
+    return
+  }
+  const { error } = await supabase
+    .from('menu_item_modifier_group_overrides')
+    .upsert({ group_id: groupId, item_id: itemId, prompt_mode: promptMode, updated_at: new Date().toISOString() })
+  if (error) throw error
+}
+
 // "Customize for this item only": deep-clone a question and its entire
 // follow-up chain, then move this item's link from the shared original to the
 // private copy. Other items keep the original untouched.
@@ -148,6 +179,9 @@ export async function cloneGroupChainForItem(restaurantId, groups, groupId, item
         is_available: source.is_available,
         included_count: source.included_count ?? 0,
         overage_price: source.overage_price ?? null,
+        prompt_mode: source.prompt_mode || 'ask',
+        pre_modifiers: source.pre_modifiers || [],
+        pre_modifier_prices: source.pre_modifier_prices || {},
       })
       .select('*')
       .single()
@@ -164,6 +198,8 @@ export async function cloneGroupChainForItem(restaurantId, groups, groupId, item
           display_order: option.display_order,
           overage_price: option.overage_price,
           child_group_id: childCloneId,
+          default_pre_modifier: option.default_pre_modifier || null,
+          pre_modifier_price_overrides: option.pre_modifier_price_overrides || {},
         })
       if (optionError) throw optionError
     }
@@ -187,6 +223,8 @@ export async function addGroupOption(groupId, modifierId, extra = {}) {
       display_order: extra.display_order ?? 0,
       overage_price: extra.overage_price ?? null,
       child_group_id: extra.child_group_id ?? null,
+      default_pre_modifier: extra.default_pre_modifier ?? null,
+      pre_modifier_price_overrides: extra.pre_modifier_price_overrides ?? {},
     })
   if (error) throw error
 }

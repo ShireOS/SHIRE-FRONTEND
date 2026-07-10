@@ -20,6 +20,10 @@ const PERMISSIONS: Array<{ key: keyof RolePermissionData; label: string }> = [
   { key: 'can_close_drawer', label: 'Close drawer' },
   { key: 'can_close_day', label: 'Close day' },
   { key: 'can_change_payment_settings', label: 'Payment settings' },
+  { key: 'can_edit_sent_items_within_window', label: 'Sent corrections in window' },
+  { key: 'can_edit_sent_items_after_window', label: 'Sent corrections after window' },
+  { key: 'can_unsend_sent_items', label: 'Unsend kitchen items' },
+  { key: 'can_edit_paid_check_items', label: 'Edit paid-check items' },
 ]
 
 const inputClass = 'w-full min-w-0 px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]'

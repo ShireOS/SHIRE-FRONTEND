@@ -198,6 +198,10 @@ export interface RolePermissionData {
   can_close_drawer: boolean
   can_close_day: boolean
   can_change_payment_settings: boolean
+  can_edit_sent_items_within_window: boolean
+  can_edit_sent_items_after_window: boolean
+  can_unsend_sent_items: boolean
+  can_edit_paid_check_items: boolean
   require_manager_pin_for_approval: boolean
 }
 
@@ -260,6 +264,7 @@ export interface CheckWorkflowSettingsData {
   allow_multi_item_seat_move: boolean
   require_manager_for_item_move_after_send: boolean
   print_guest_check_by_default: boolean
+  sent_item_correction_window_minutes: string
   notes: string
 }
 
@@ -437,6 +442,10 @@ const defaultRolePermission = (roleKey: string): RolePermissionData => {
     can_close_drawer: elevated || cashier,
     can_close_day: elevated,
     can_change_payment_settings: normalizedRoleKey === 'owner',
+    can_edit_sent_items_within_window: elevated || service,
+    can_edit_sent_items_after_window: elevated,
+    can_unsend_sent_items: elevated || service,
+    can_edit_paid_check_items: elevated,
     require_manager_pin_for_approval: !elevated,
   }
 }
@@ -515,6 +524,7 @@ const defaultCheckWorkflowSettings = (): CheckWorkflowSettingsData => ({
   allow_multi_item_seat_move: true,
   require_manager_for_item_move_after_send: false,
   print_guest_check_by_default: true,
+  sent_item_correction_window_minutes: '4',
   notes: '',
 })
 
@@ -877,6 +887,7 @@ const normalizeRolePermissions = (value: unknown, jobCodes: JobCodeData[] = defa
   const byRole = new Map<string, RolePermissionData>()
   for (const row of rows) {
     const role = slugRoleCode(row.role_key)
+    const defaults = defaultRolePermission(role)
     byRole.set(role, {
       id: asNullableString(row.id),
       role_key: role,
@@ -897,6 +908,10 @@ const normalizeRolePermissions = (value: unknown, jobCodes: JobCodeData[] = defa
       can_close_drawer: typeof row.can_close_drawer === 'boolean' ? row.can_close_drawer : false,
       can_close_day: typeof row.can_close_day === 'boolean' ? row.can_close_day : false,
       can_change_payment_settings: typeof row.can_change_payment_settings === 'boolean' ? row.can_change_payment_settings : false,
+      can_edit_sent_items_within_window: typeof row.can_edit_sent_items_within_window === 'boolean' ? row.can_edit_sent_items_within_window : defaults.can_edit_sent_items_within_window,
+      can_edit_sent_items_after_window: typeof row.can_edit_sent_items_after_window === 'boolean' ? row.can_edit_sent_items_after_window : defaults.can_edit_sent_items_after_window,
+      can_unsend_sent_items: typeof row.can_unsend_sent_items === 'boolean' ? row.can_unsend_sent_items : defaults.can_unsend_sent_items,
+      can_edit_paid_check_items: typeof row.can_edit_paid_check_items === 'boolean' ? row.can_edit_paid_check_items : defaults.can_edit_paid_check_items,
       require_manager_pin_for_approval: typeof row.require_manager_pin_for_approval === 'boolean'
         ? row.require_manager_pin_for_approval
         : true,
@@ -989,6 +1004,7 @@ const normalizeCheckWorkflowSettings = (value: unknown): CheckWorkflowSettingsDa
     allow_multi_item_seat_move: typeof value.allow_multi_item_seat_move === 'boolean' ? value.allow_multi_item_seat_move : fallback.allow_multi_item_seat_move,
     require_manager_for_item_move_after_send: typeof value.require_manager_for_item_move_after_send === 'boolean' ? value.require_manager_for_item_move_after_send : fallback.require_manager_for_item_move_after_send,
     print_guest_check_by_default: typeof value.print_guest_check_by_default === 'boolean' ? value.print_guest_check_by_default : fallback.print_guest_check_by_default,
+    sent_item_correction_window_minutes: String(Math.max(0, Math.min(15, Number(asStringNumber(value.sent_item_correction_window_minutes) || fallback.sent_item_correction_window_minutes)))),
     notes: asString(value.notes),
   }
 }
@@ -1155,6 +1171,7 @@ const checkWorkflowSettingsToPayload = (data: OnboardingData) => {
     max_split_count: Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(settings.max_split_count || MAX_SPLIT_COUNT))),
     default_preauth_amount: settings.default_preauth_amount === '' ? null : Number(settings.default_preauth_amount),
     default_hold_minutes: Math.max(1, Math.min(360, Number(settings.default_hold_minutes || 10))),
+    sent_item_correction_window_minutes: Math.max(0, Math.min(15, Number(settings.sent_item_correction_window_minutes || 0))),
     hold_preset_minutes: holdPresetMinutes.length > 0 ? holdPresetMinutes : defaultCheckWorkflowSettings().hold_preset_minutes,
     notes: settings.notes.trim() || null,
   }

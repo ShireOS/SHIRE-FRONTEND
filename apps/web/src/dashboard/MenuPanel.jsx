@@ -98,7 +98,18 @@ const defaultGroupDraft = () => ({
   prompt_on_order: true,
   included_count: '0',
   overage_price: '',
+  prompt_mode: 'ask',
+  pre_modifiers: [],
+  pre_modifier_prices: {},
 })
+
+const STANDARD_SIDE_BUTTONS = ['No', 'Extra', 'Light', 'On side']
+const normalizedPromptMode = mode => (mode === 'skip_defaults' || mode === 'hidden' ? mode : 'ask')
+const sideButtonMode = values => {
+  const configured = Array.isArray(values) ? values : []
+  if (configured.length === 0) return 'off'
+  return configured.join('|') === STANDARD_SIDE_BUTTONS.join('|') ? 'standard' : 'custom'
+}
 
 // Read-only recursive preview of how a group prompts on the POS, following
 // child_group_id edges. `seen` guards against cycles in existing data.
@@ -153,6 +164,9 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
     prompt_on_order: group.prompt_on_order !== false,
     included_count: String(group.included_count ?? 0),
     overage_price: group.overage_price == null ? '' : String(group.overage_price),
+    prompt_mode: normalizedPromptMode(group.prompt_mode),
+    pre_modifiers: Array.isArray(group.pre_modifiers) ? group.pre_modifiers : [],
+    pre_modifier_prices: group.pre_modifier_prices || {},
   }))
   const modifiersById = useMemo(() => Object.fromEntries(modifiers.map(m => [m.id, m])), [modifiers])
   const groupsById = useMemo(() => Object.fromEntries(groups.map(g => [g.id, g])), [groups])
@@ -171,6 +185,9 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
       prompt_on_order: draft.is_required ? true : draft.prompt_on_order,
       included_count: Number(draft.included_count) || 0,
       overage_price: draft.overage_price === '' ? null : Number(draft.overage_price),
+      prompt_mode: draft.prompt_mode,
+      pre_modifiers: draft.pre_modifiers,
+      pre_modifier_prices: draft.pre_modifier_prices,
     })
   }
 
@@ -218,6 +235,46 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
               </SmallButton>
               <SmallButton variant="primary" onClick={saveFields} disabled={busy}>Save</SmallButton>
             </div>
+            <div className="grid gap-3 rounded-xl border border-white/10 bg-black/10 p-3 md:grid-cols-2">
+              <Field label="When this question appears">
+                <SelectInput value={draft.prompt_mode} onChange={event => setDraft(prev => ({ ...prev, prompt_mode: event.target.value }))}>
+                  <option value="ask">Ask every time</option>
+                  <option value="skip_defaults">Apply defaults and skip</option>
+                  <option value="hidden">Hidden (never ask)</option>
+                </SelectInput>
+              </Field>
+              <Field label="Side buttons">
+                <SelectInput
+                  value={sideButtonMode(draft.pre_modifiers)}
+                  onChange={event => setDraft(prev => ({
+                    ...prev,
+                    pre_modifiers: event.target.value === 'off' ? [] : (event.target.value === 'standard' ? STANDARD_SIDE_BUTTONS : (prev.pre_modifiers.length ? prev.pre_modifiers : STANDARD_SIDE_BUTTONS)),
+                  }))}
+                >
+                  <option value="off">Off</option>
+                  <option value="standard">Standard: No, Extra, Light, On side</option>
+                  <option value="custom">Custom</option>
+                </SelectInput>
+              </Field>
+              {sideButtonMode(draft.pre_modifiers) === 'custom' && (
+                <Field label="Custom buttons (comma separated)">
+                  <TextInput value={draft.pre_modifiers.join(', ')} onChange={event => setDraft(prev => ({ ...prev, pre_modifiers: event.target.value.split(',').map(value => value.trim()).filter(Boolean) }))} placeholder="No, Extra, Light, On side" />
+                </Field>
+              )}
+              {draft.pre_modifiers.length > 0 && (
+                <div>
+                  <p className="label-mono mb-2">Default surcharge by button</p>
+                  <div className="flex flex-wrap gap-2">
+                    {draft.pre_modifiers.map(value => (
+                      <label key={value} className="flex items-center gap-1 text-xs text-dash-secondary">
+                        {value} $
+                        <TextInput className="!w-20 !px-2 !py-1.5" inputMode="decimal" value={draft.pre_modifier_prices[value] == null ? '' : String(draft.pre_modifier_prices[value])} onChange={event => setDraft(prev => ({ ...prev, pre_modifier_prices: { ...prev.pre_modifier_prices, [value]: Number(cleanDecimal(event.target.value) || 0) } }))} />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div>
@@ -226,7 +283,7 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
               {group.options.map(option => {
                 const modifier = modifiersById[option.modifier_id]
                 return (
-                  <div key={option.modifier_id} className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 lg:grid-cols-[1.3fr_auto_1fr_1.3fr_auto] lg:items-center">
+                  <div key={option.modifier_id} className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 lg:grid-cols-[1.2fr_auto_1fr_1fr_1.3fr_auto] lg:items-center">
                     <div className="text-sm">
                       <span className="font-medium text-dash-cream">{modifier?.name || 'Modifier'}</span>
                       {Number(modifier?.price_delta) > 0 && <span className="ml-2 text-dash-tertiary">+{money(modifier.price_delta)}</span>}
@@ -249,6 +306,32 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
                         }
                       }}
                     />
+                    <div className="flex gap-2">
+                      <SelectInput
+                        className="!min-w-28"
+                        value={option.default_pre_modifier || ''}
+                        title="Production instruction automatically applied with this default option"
+                        onChange={event => onLink(() => updateGroupOption(group.id, option.modifier_id, { default_pre_modifier: event.target.value || null }))}
+                      >
+                        <option value="">No side default</option>
+                        {draft.pre_modifiers.map(value => <option key={value} value={value}>{value}</option>)}
+                      </SelectInput>
+                      {option.default_pre_modifier && (
+                        <TextInput
+                          className="!w-20"
+                          inputMode="decimal"
+                          defaultValue={option.pre_modifier_price_overrides?.[option.default_pre_modifier] ?? ''}
+                          placeholder="+$"
+                          title="Override this side instruction's surcharge for this modifier"
+                          onBlur={event => onLink(() => updateGroupOption(group.id, option.modifier_id, {
+                            pre_modifier_price_overrides: {
+                              ...(option.pre_modifier_price_overrides || {}),
+                              [option.default_pre_modifier]: Number(cleanDecimal(event.target.value) || 0),
+                            },
+                          }))}
+                        />
+                      )}
+                    </div>
                     <SelectInput
                       value={option.child_group_id || ''}
                       onChange={event => onLink(() => updateGroupOption(group.id, option.modifier_id, { child_group_id: event.target.value || null }))}
@@ -346,7 +429,7 @@ export function MenuPanel({ restaurantId }) {
   const [allergyExclusions, setAllergyExclusions] = useState([])
   const [pillDraft, setPillDraft] = useState('')
 
-  const [modifierDraft, setModifierDraft] = useState({ name: '', price_delta: '', category: '', item_ids: new Set() })
+  const [modifierDraft, setModifierDraft] = useState({ name: '', price_delta: '', category: '', tax_rate_id: '', reporting_category_id: '', item_ids: new Set() })
   const [groupDraft, setGroupDraft] = useState(() => defaultGroupDraft())
   const [specialDraft, setSpecialDraft] = useState(() => defaultSpecialDraft())
   const [scheduleItemId, setScheduleItemId] = useState('')
@@ -843,6 +926,8 @@ export function MenuPanel({ restaurantId }) {
           price_delta: modifierDraft.price_delta === '' ? 0 : Number(modifierDraft.price_delta),
           group_name: modifierDraft.category.trim() || 'Add-ons',
           is_active: true,
+          tax_rate_id: modifierDraft.tax_rate_id || null,
+          reporting_category_id: modifierDraft.reporting_category_id || null,
         }),
       })
       if (created?.id && modifierDraft.item_ids.size > 0) {
@@ -860,7 +945,7 @@ export function MenuPanel({ restaurantId }) {
         await addGroupOption(matchingGroup.id, created.id, { display_order: matchingGroup.options.length })
         await loadGroups()
       }
-      setModifierDraft(prev => ({ name: '', price_delta: '', category: prev.category, item_ids: new Set() }))
+      setModifierDraft(prev => ({ name: '', price_delta: '', category: prev.category, tax_rate_id: '', reporting_category_id: '', item_ids: new Set() }))
       await loadModifiers()
     }, matchingGroup ? `Modifier added to the "${matchingGroup.name}" question.` : 'Modifier added.', 'Couldn’t add the modifier')
   }
@@ -920,6 +1005,9 @@ export function MenuPanel({ restaurantId }) {
         prompt_on_order: groupDraft.prompt_on_order,
         included_count: Number(groupDraft.included_count) || 0,
         overage_price: groupDraft.overage_price === '' ? null : Number(groupDraft.overage_price),
+        prompt_mode: groupDraft.prompt_mode,
+        pre_modifiers: groupDraft.pre_modifiers,
+        pre_modifier_prices: groupDraft.pre_modifier_prices,
         display_order: groups.length,
       })
       setGroupDraft(defaultGroupDraft())
@@ -1496,7 +1584,7 @@ export function MenuPanel({ restaurantId }) {
               ...groups.map(group => group.name.trim()).filter(Boolean),
             ])).sort().map(name => <option key={name} value={name} />)}
           </datalist>
-          <div className="mb-5 grid gap-4 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 lg:grid-cols-[1fr_120px_160px_1.3fr_auto]">
+          <div className="mb-5 grid gap-4 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 lg:grid-cols-[1fr_110px_150px_150px_150px_1.2fr_auto]">
             <Field label="Modifier name">
               <TextInput value={modifierDraft.name} onChange={event => setModifierDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="Extra cheese" />
             </Field>
@@ -1505,6 +1593,30 @@ export function MenuPanel({ restaurantId }) {
             </Field>
             <Field label="Category">
               <TextInput list="menu-modifier-categories" value={modifierDraft.category} onChange={event => setModifierDraft(prev => ({ ...prev, category: event.target.value }))} placeholder="Add-ons" />
+            </Field>
+            <Field label="Tax rate">
+              <SelectInput
+                title="Tax this modifier's charge at its own rate — e.g. liquor in a Jack & Coke"
+                value={modifierDraft.tax_rate_id}
+                onChange={event => setModifierDraft(prev => ({ ...prev, tax_rate_id: event.target.value }))}
+              >
+                <option value="">Follows item</option>
+                {taxRates.map(rate => (
+                  <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
+                ))}
+              </SelectInput>
+            </Field>
+            <Field label="Reports under">
+              <SelectInput
+                title="Report this modifier's sales under its own department — e.g. Liquor"
+                value={modifierDraft.reporting_category_id}
+                onChange={event => setModifierDraft(prev => ({ ...prev, reporting_category_id: event.target.value }))}
+              >
+                <option value="">Item's category</option>
+                {mergedCategories.filter(category => category.id).map(category => (
+                  <option key={category.id} value={category.id}>{category.name}</option>
+                ))}
+              </SelectInput>
             </Field>
             <div>
               <p className="label-mono mb-2">Applies to ({modifierDraft.item_ids.size} items)</p>
@@ -1545,10 +1657,14 @@ export function MenuPanel({ restaurantId }) {
                       key={modifier.id}
                       modifier={modifier}
                       menuItems={mergedItems}
+                      taxRates={taxRates}
+                      reportingCategories={mergedCategories.filter(category => category.id)}
                       busy={busy}
                       onRename={next => void updateModifier(modifier.id, { name: next })}
                       onReprice={next => void updateModifier(modifier.id, { price_delta: next })}
                       onRecategorize={next => void recategorizeModifier(modifier, next)}
+                      onSetTaxRate={next => void updateModifier(modifier.id, { tax_rate_id: next })}
+                      onSetReportingCategory={next => void updateModifier(modifier.id, { reporting_category_id: next })}
                       onReplaceItems={itemIds => void replaceModifierItems(modifier.id, itemIds)}
                       onDelete={() => void deleteModifier(modifier.id)}
                     />
@@ -1984,13 +2100,13 @@ function NewTaxRateInline({ busy, onCreate }) {
   )
 }
 
-function ModifierRow({ modifier, menuItems, busy, onRename, onReprice, onRecategorize, onReplaceItems, onDelete }) {
+function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, busy, onRename, onReprice, onRecategorize, onSetTaxRate, onSetReportingCategory, onReplaceItems, onDelete }) {
   const [expanded, setExpanded] = useState(false)
   const selectedIds = useMemo(() => new Set(modifier.item_ids || []), [modifier])
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
-      <div className="grid gap-3 lg:grid-cols-[1.3fr_120px_160px_auto_auto_auto] lg:items-center">
+      <div className="grid gap-3 lg:grid-cols-[1.2fr_110px_150px_150px_150px_auto_auto_auto] lg:items-center">
         <TextInput
           defaultValue={modifier.name}
           onBlur={event => {
@@ -2015,6 +2131,26 @@ function ModifierRow({ modifier, menuItems, busy, onRename, onReprice, onRecateg
             if (next !== modifierCategoryOf(modifier)) onRecategorize(next)
           }}
         />
+        <SelectInput
+          title="Tax this modifier's charge at its own rate instead of the item's"
+          value={modifier.tax_rate_id || ''}
+          onChange={event => onSetTaxRate(event.target.value || null)}
+        >
+          <option value="">Follows item</option>
+          {taxRates.map(rate => (
+            <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
+          ))}
+        </SelectInput>
+        <SelectInput
+          title="Report this modifier's sales under its own department instead of the item's"
+          value={modifier.reporting_category_id || ''}
+          onChange={event => onSetReportingCategory(event.target.value || null)}
+        >
+          <option value="">Item's category</option>
+          {reportingCategories.map(category => (
+            <option key={category.id} value={category.id}>{category.name}</option>
+          ))}
+        </SelectInput>
         <span className="text-sm text-dash-tertiary">{(modifier.item_ids || []).length} item{(modifier.item_ids || []).length === 1 ? '' : 's'}</span>
         <SmallButton onClick={() => setExpanded(current => !current)}>{expanded ? 'Close' : 'Items'}</SmallButton>
         <SmallButton variant="danger" onClick={onDelete} disabled={busy}>Remove</SmallButton>

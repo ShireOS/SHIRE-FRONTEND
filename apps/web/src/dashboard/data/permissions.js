@@ -20,6 +20,10 @@ export const PERMISSION_TOGGLES = [
   { key: 'can_edit_employees', label: 'Edit employees' },
   { key: 'can_edit_schedules', label: 'Edit schedules' },
   { key: 'can_view_reports', label: 'View reports' },
+  { key: 'can_edit_sent_items_within_window', label: 'Correct own sent items in window' },
+  { key: 'can_edit_sent_items_after_window', label: 'Correct sent items after window' },
+  { key: 'can_unsend_sent_items', label: 'Unsend sent items' },
+  { key: 'can_edit_paid_check_items', label: 'Edit items on paid checks' },
 ]
 
 export async function fetchRolePermissions(restaurantId) {

@@ -212,6 +212,10 @@ const MANAGER_PERMISSION_OPTIONS = [
   { key: 'can_close_drawer', label: 'Close drawer' },
   { key: 'can_close_day', label: 'Close day' },
   { key: 'can_change_payment_settings', label: 'Payment settings' },
+  { key: 'can_edit_sent_items_within_window', label: 'Sent corrections in window' },
+  { key: 'can_edit_sent_items_after_window', label: 'Sent corrections after window' },
+  { key: 'can_unsend_sent_items', label: 'Unsend kitchen items' },
+  { key: 'can_edit_paid_check_items', label: 'Edit paid-check items' },
 ]
 const CASH_TRACKING_OPTIONS = [
   { value: 'shared_drawer', label: 'Shared drawer' },
@@ -998,6 +1002,10 @@ function defaultRolePermission(roleKey) {
     can_close_drawer: elevated || cashier,
     can_close_day: elevated,
     can_change_payment_settings: key === 'owner',
+    can_edit_sent_items_within_window: elevated || service,
+    can_edit_sent_items_after_window: elevated,
+    can_unsend_sent_items: elevated || service,
+    can_edit_paid_check_items: elevated,
     require_manager_pin_for_approval: !elevated,
   }
 }
@@ -1094,6 +1102,7 @@ function defaultCheckWorkflowSettings() {
     allow_multi_item_seat_move: true,
     require_manager_for_item_move_after_send: false,
     print_guest_check_by_default: true,
+    sent_item_correction_window_minutes: '4',
     notes: '',
   }
 }
@@ -1312,6 +1321,7 @@ function normalizeRolePermissions(rows, jobCodes = []) {
   ;(Array.isArray(rows) ? rows : []).forEach(row => {
     const role = slugRoleCode(row?.role_key)
     byRole.set(role, {
+      ...defaultRolePermission(role),
       ...row,
       id: row?.id || null,
       role_key: role,
@@ -1360,6 +1370,7 @@ function normalizeCheckWorkflowSettings(row) {
     default_order_fire_mode: ORDER_FIRE_MODE_OPTIONS.some(option => option.value === source.default_order_fire_mode) ? source.default_order_fire_mode : fallback.default_order_fire_mode,
     default_hold_minutes: source.default_hold_minutes == null ? fallback.default_hold_minutes : String(source.default_hold_minutes).replace(/[^\d]/g, '').slice(0, 3) || fallback.default_hold_minutes,
     hold_preset_minutes: holdPresetMinutes.length > 0 ? holdPresetMinutes : fallback.hold_preset_minutes,
+    sent_item_correction_window_minutes: String(Math.max(0, Math.min(15, Number(source.sent_item_correction_window_minutes ?? fallback.sent_item_correction_window_minutes) || 0))),
     notes: source.notes || '',
   }
 }
@@ -1457,6 +1468,7 @@ function checkWorkflowSettingsPayload(checkWorkflowSettings) {
     max_split_count: Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(settings.max_split_count || MAX_SPLIT_COUNT))),
     default_preauth_amount: settings.default_preauth_amount === '' ? null : Number(settings.default_preauth_amount),
     default_hold_minutes: Math.max(1, Math.min(360, Number(settings.default_hold_minutes || 10))),
+    sent_item_correction_window_minutes: Math.max(0, Math.min(15, Number(settings.sent_item_correction_window_minutes || 0))),
     hold_preset_minutes: holdPresetMinutes.length > 0 ? holdPresetMinutes : defaultCheckWorkflowSettings().hold_preset_minutes,
     notes: settings.notes.trim() || null,
   }
@@ -3524,6 +3536,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                     })}
                     placeholder="5, 10, 15"
                   />
+                </Field>
+                <Field label="Sent-item correction window (minutes)">
+                  <TextInput value={checkWorkflowSettings.sent_item_correction_window_minutes} inputMode="numeric" onChange={event => updateCheckWorkflowSettings({ sent_item_correction_window_minutes: String(Math.max(0, Math.min(15, Number(event.target.value.replace(/[^\d]/g, '') || 0)))) })} placeholder="4" />
                 </Field>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">

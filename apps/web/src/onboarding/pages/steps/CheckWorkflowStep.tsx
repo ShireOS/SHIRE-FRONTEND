@@ -100,6 +100,15 @@ export function CheckWorkflowStep({ onboarding }: CheckWorkflowStepProps) {
               <option value="no" className="bg-[#1a1a1a]">Print only when requested</option>
             </select>
           </Field>
+          <Field label="Sent-item correction window (minutes)">
+            <input
+              value={settings.sent_item_correction_window_minutes}
+              onChange={(event) => update({ sent_item_correction_window_minutes: String(Math.max(0, Math.min(15, Number(event.target.value.replace(/[^\d]/g, '') || 0)))) })}
+              className={inputClass}
+              inputMode="numeric"
+              placeholder="4"
+            />
+          </Field>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <Toggle active={settings.seat_numbers_enabled} onClick={() => update({ seat_numbers_enabled: !settings.seat_numbers_enabled })}>Seat numbers</Toggle>
