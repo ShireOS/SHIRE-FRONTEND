@@ -299,25 +299,37 @@ const EMPTY_RECIPIENT = {
   send_time: '07:00', timezone: 'America/Chicago', weekday: 1, month_day: 1, is_active: true,
 }
 
-function EmailModal({ recipients, canManage, onClose, onSave, onDelete }) {
+function EmailModal({ recipients, canManage, deliveryEnabled, defaultTimezone, onClose, onSave, onDelete }) {
   const [editing, setEditing] = useState(null)
   const [draft, setDraft] = useState(EMPTY_RECIPIENT)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const edit = (recipient = null) => {
+    setSaveError('')
     setEditing(recipient?.id || 'new')
-    setDraft(recipient ? { ...recipient, send_time: String(recipient.send_time || '07:00').slice(0, 5) } : EMPTY_RECIPIENT)
+    setDraft(recipient
+      ? { ...recipient, send_time: String(recipient.send_time || '07:00').slice(0, 5) }
+      : { ...EMPTY_RECIPIENT, timezone: defaultTimezone || EMPTY_RECIPIENT.timezone })
   }
   const save = async () => {
     setSaving(true)
+    setSaveError('')
     try {
       await onSave(editing === 'new' ? null : editing, draft)
       setEditing(null)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not save this recipient.')
     } finally {
       setSaving(false)
     }
   }
   return (
     <Modal title="Scheduled report recipients" onClose={onClose} maxWidth="max-w-3xl">
+      <div className={`mb-5 rounded-md border px-4 py-3 text-sm ${deliveryEnabled ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200' : 'border-amber-300/20 bg-amber-300/10 text-amber-100'}`}>
+        {deliveryEnabled
+          ? 'Scheduled email delivery is active. Reports are sent after the selected period is complete.'
+          : 'Recipients can be saved, but delivery is paused until the email provider and verified sender are configured.'}
+      </div>
       {!editing ? (
         <>
           <div className="divide-y divide-white/10 border-y border-white/10">
@@ -327,6 +339,8 @@ function EmailModal({ recipients, canManage, onClose, onSave, onDelete }) {
                   <p className="font-semibold">{recipient.name || recipient.email}</p>
                   <p className="text-sm text-dash-secondary">{recipient.email} · {recipient.frequency} · {String(recipient.send_time).slice(0, 5)}</p>
                   <p className="mt-1 text-xs text-dash-tertiary">{recipient.sections.map((section) => SECTION_LABELS[section]).join(', ')}</p>
+                  {recipient.last_sent_at && <p className="mt-1 text-xs text-emerald-300">Last sent {new Date(recipient.last_sent_at).toLocaleString()}</p>}
+                  {recipient.last_delivery_status === 'failed' && <p className="mt-1 text-xs text-red-300">Last delivery failed and will retry automatically.</p>}
                 </div>
                 {canManage && <div className="flex gap-2"><button type="button" onClick={() => edit(recipient)} className="rounded-md border border-white/10 px-3 py-2 text-sm">Edit</button><button type="button" title="Delete recipient" onClick={() => onDelete(recipient.id)} className="rounded-md border border-red-400/20 p-2 text-red-300"><Trash2 className="h-4 w-4" /></button></div>}
               </div>
@@ -352,6 +366,7 @@ function EmailModal({ recipients, canManage, onClose, onSave, onDelete }) {
             </div>
           </div>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.is_active} onChange={(event) => setDraft({ ...draft, is_active: event.target.checked })} />Active schedule</label>
+          {saveError && <p role="alert" className="rounded-md border border-red-400/20 bg-red-400/10 px-3 py-2 text-sm text-red-200">{saveError}</p>}
           <div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="rounded-md border border-white/10 px-4 py-2 text-sm">Cancel</button><button type="button" onClick={save} disabled={saving || !draft.email || !draft.sections.length} className="rounded-md bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-40">{saving ? 'Saving...' : 'Save recipient'}</button></div>
         </div>
       )}
@@ -374,6 +389,7 @@ export default function RestaurantReportsPage({ restaurantId, restaurantName }) 
   const [preference, setPreference] = useState({ visible_sections: SECTION_META.map(([id]) => id), section_order: SECTION_META.map(([id]) => id), section_settings: {} })
   const [recipients, setRecipients] = useState([])
   const [canManageRecipients, setCanManageRecipients] = useState(false)
+  const [reportDeliveryEnabled, setReportDeliveryEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [modal, setModal] = useState(null)
@@ -436,6 +452,7 @@ export default function RestaurantReportsPage({ restaurantId, restaurantName }) 
       setPreference(nextPreference)
       setRecipients(emailConfig.recipients || [])
       setCanManageRecipients(Boolean(emailConfig.can_manage))
+      setReportDeliveryEnabled(Boolean(emailConfig.delivery_enabled))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load reports.')
     } finally {
@@ -460,6 +477,7 @@ export default function RestaurantReportsPage({ restaurantId, restaurantName }) 
     await fetchWithSupabaseAuth(endpoint, { method: id ? 'PUT' : 'POST', body: JSON.stringify(draft) })
     const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/recipients`)
     setRecipients(data.recipients || [])
+    setReportDeliveryEnabled(Boolean(data.delivery_enabled))
   }
   const deleteRecipient = async (id) => {
     await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/recipients/${id}`, { method: 'DELETE' })
@@ -523,7 +541,7 @@ export default function RestaurantReportsPage({ restaurantId, restaurantName }) 
 
       {modal === 'compare' && <Modal title="Comparison period" onClose={() => setModal(null)}><div className="space-y-4"><div className="flex items-center justify-between gap-4 rounded-md border border-white/10 bg-white/[0.025] p-3"><div><p className="text-sm font-semibold">Comparison</p><p className="mt-1 text-xs text-dash-tertiary">Show changes against another period.</p></div><ComparisonToggle enabled={compareDraft.enabled} onChange={(enabled) => setCompareDraft({ ...compareDraft, enabled })} /></div><div className={compareDraft.enabled ? '' : 'pointer-events-none opacity-40'}><div className="space-y-4"><Field label="Compare against"><select value={compareDraft.mode} onChange={(event) => updateComparisonDraftMode(event.target.value)}><option value="previous_period">Previous equal period</option><option value="previous_year">Same period last year</option><option value="custom">Custom period</option></select></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Comparison from"><input type="date" value={compareDraft.comparisonStart} onChange={(event) => setCompareDraft({ ...compareDraft, mode: 'custom', comparisonStart: event.target.value })} /></Field><Field label="Comparison through"><input type="date" value={compareDraft.comparisonEnd} onChange={(event) => setCompareDraft({ ...compareDraft, mode: 'custom', comparisonEnd: event.target.value })} /></Field></div></div></div></div><div className="mt-5 flex justify-end"><IconButton label="Save comparison" icon={CalendarRange} primary disabled={compareDraft.enabled && (!compareDraft.comparisonStart || !compareDraft.comparisonEnd || compareDraft.comparisonStart > compareDraft.comparisonEnd)} onClick={() => { setComparisonMode(compareDraft.mode); setComparisonEnabled(compareDraft.enabled); setDates((current) => ({ ...current, comparisonStart: compareDraft.comparisonStart, comparisonEnd: compareDraft.comparisonEnd })); setModal(null) }} /></div></Modal>}
       {modal === 'config' && <ConfigModal preference={preference} onClose={() => setModal(null)} onSave={savePreference} />}
-      {modal === 'email' && <EmailModal recipients={recipients} canManage={canManageRecipients} onClose={() => setModal(null)} onSave={saveRecipient} onDelete={deleteRecipient} />}
+      {modal === 'email' && <EmailModal recipients={recipients} canManage={canManageRecipients} deliveryEnabled={reportDeliveryEnabled} defaultTimezone={report?.restaurant?.timezone} onClose={() => setModal(null)} onSave={saveRecipient} onDelete={deleteRecipient} />}
     </div>
   )
 }

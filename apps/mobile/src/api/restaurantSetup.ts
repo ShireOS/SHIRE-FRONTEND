@@ -297,9 +297,32 @@ export type TipRoleRule = {
   contributes_to_pool: boolean;
   receives_from_pool: boolean;
   pool_points: string | number | null;
+  pool_contribution_percent?: string | number | null;
+  tipout_split_basis?: 'hours' | 'even';
+  pool_share_percent?: string | number | null;
+  tipouts?: Array<{
+    target_role: string;
+    percent: string | number;
+    basis: 'tips' | 'sales';
+    sales_category?: string | null;
+    basis_scope?: 'own' | 'restaurant';
+  }>;
   tipout_percent: string | number | null;
   tipout_target_role: string | null;
   notes?: string | null;
+};
+
+export type CategoryTipProfile = {
+  id: string;
+  name: string;
+  category_ids: string[];
+  category_names: string[];
+  role_tip_rules: TipRoleRule[];
+  item_overrides: Array<{
+    menu_item_id: string;
+    menu_item_name: string;
+    role_tip_rules: TipRoleRule[];
+  }>;
 };
 
 export type TipPayrollSettings = {
@@ -318,6 +341,7 @@ export type TipPayrollSettings = {
   auto_withhold_credit_card_fees: boolean;
   credit_card_fee_percent: string | number | null;
   role_tip_rules: TipRoleRule[];
+  category_tip_profiles?: CategoryTipProfile[];
   notes?: string | null;
 };
 

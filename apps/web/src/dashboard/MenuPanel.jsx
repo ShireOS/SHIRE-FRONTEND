@@ -1576,7 +1576,7 @@ export function MenuPanel({ restaurantId }) {
       {!loading && activeTab === 'modifiers' && (
         <SectionShell
           title="Modifiers"
-          description="Individual add-ons and choices — Extra cheese, Ranch, Medium rare — organized into categories like Sauces or Temperatures. Type a new category name anywhere to create it. Use a question's name (from Modifier Groups) as the category and the modifier drops straight into that question."
+          description="Individual add-ons and choices — Extra cheese, Ranch, Medium rare — organized into categories like Sauces or Temperatures. A modifier tax or sales-category override applies to that modifier's charged amount only. To reclassify part of a fixed-price combo without changing its total, price the base item and modifier portion separately."
         >
           <datalist id="menu-modifier-categories">
             {Array.from(new Set([
@@ -1606,9 +1606,9 @@ export function MenuPanel({ restaurantId }) {
                 ))}
               </SelectInput>
             </Field>
-            <Field label="Reports under">
+            <Field label="Sales category">
               <SelectInput
-                title="Report this modifier's sales under its own department — e.g. Liquor"
+                title="Report this modifier's charged amount under its own sales category"
                 value={modifierDraft.reporting_category_id}
                 onChange={event => setModifierDraft(prev => ({ ...prev, reporting_category_id: event.target.value }))}
               >

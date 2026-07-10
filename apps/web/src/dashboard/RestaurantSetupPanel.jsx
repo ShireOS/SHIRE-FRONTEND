@@ -1154,6 +1154,9 @@ export function defaultTipPayrollSettings(jobCodes = []) {
       tipout_target_role: '',
       notes: '',
     })),
+    // Optional menu-scoped policies. Category rules replace the default
+    // tipouts for matching items; item overrides replace their category rule.
+    category_tip_profiles: [],
     notes: '',
   }
 }
@@ -1221,6 +1224,42 @@ function normalizeTipRoleRules(rows, jobCodes) {
   return fallback.map(rule => byRole.get(rule.role_key) || rule)
 }
 
+function normalizeScopedTipProfiles(rows, jobCodes) {
+  const seenCategoryIds = new Set()
+  return (Array.isArray(rows) ? rows : []).flatMap((row, profileIndex) => {
+    if (!row || typeof row !== 'object') return []
+    const categoryIds = [...new Set((Array.isArray(row.category_ids) ? row.category_ids : [])
+      .map(value => String(value || '').trim()).filter(Boolean))]
+      .filter((id) => {
+        if (seenCategoryIds.has(id)) return false
+        seenCategoryIds.add(id)
+        return true
+      })
+    if (!categoryIds.length) return []
+    const overrides = []
+    const seenItems = new Set()
+    ;(Array.isArray(row.item_overrides) ? row.item_overrides : []).forEach((override) => {
+      const menuItemId = String(override?.menu_item_id || '').trim()
+      if (!menuItemId || seenItems.has(menuItemId)) return
+      seenItems.add(menuItemId)
+      overrides.push({
+        menu_item_id: menuItemId,
+        menu_item_name: String(override?.menu_item_name || '').trim(),
+        role_tip_rules: normalizeTipRoleRules(override?.role_tip_rules, jobCodes),
+      })
+    })
+    return [{
+      id: String(row.id || `category_profile_${profileIndex + 1}`),
+      name: String(row.name || '').trim(),
+      category_ids: categoryIds,
+      category_names: [...new Set((Array.isArray(row.category_names) ? row.category_names : [])
+        .map(value => String(value || '').trim()).filter(Boolean))],
+      role_tip_rules: normalizeTipRoleRules(row.role_tip_rules, jobCodes),
+      item_overrides: overrides,
+    }]
+  })
+}
+
 export function normalizeTipPayrollSettings(row, jobCodes = []) {
   const fallback = defaultTipPayrollSettings(jobCodes)
   const source = row && typeof row === 'object' ? row : {}
@@ -1236,6 +1275,7 @@ export function normalizeTipPayrollSettings(row, jobCodes = []) {
     tipout_basis: TIPOUT_BASIS_OPTIONS.some(option => option.value === source.tipout_basis) ? source.tipout_basis : fallback.tipout_basis,
     credit_card_fee_percent: source.credit_card_fee_percent == null ? '' : sanitizeNumber(source.credit_card_fee_percent),
     role_tip_rules: normalizeTipRoleRules(source.role_tip_rules, jobCodes),
+    category_tip_profiles: normalizeScopedTipProfiles(source.category_tip_profiles, jobCodes),
     notes: source.notes || '',
   }
 }
@@ -1476,27 +1516,36 @@ function checkWorkflowSettingsPayload(checkWorkflowSettings) {
 
 export function tipPayrollPayload(settings, jobCodes) {
   const normalized = normalizeTipPayrollSettings(settings, jobCodes)
+  const roleRulesPayload = (rules) => rules.map(rule => ({
+    ...rule,
+    pool_points: rule.pool_points === '' ? null : Number(rule.pool_points),
+    pool_contribution_percent: rule.pool_contribution_percent === '' ? null : Number(rule.pool_contribution_percent),
+    tipout_split_basis: rule.tipout_split_basis === 'even' ? 'even' : 'hours',
+    pool_share_percent: rule.pool_share_percent === '' || rule.pool_share_percent == null ? null : Number(rule.pool_share_percent),
+    tipouts: (rule.tipouts || [])
+      .filter(item => item.target_role && item.percent !== '' && Number(item.percent) > 0)
+      .map(item => ({
+        target_role: item.target_role,
+        percent: Number(item.percent),
+        basis: item.basis === 'sales' ? 'sales' : 'tips',
+        sales_category: item.sales_category || null,
+        basis_scope: item.basis_scope === 'restaurant' ? 'restaurant' : 'own',
+      })),
+    tipout_percent: rule.tipout_percent === '' ? null : Number(rule.tipout_percent),
+    tipout_target_role: rule.tipout_target_role || null,
+    notes: rule.notes || null,
+  }))
   return {
     ...normalized,
     credit_card_fee_percent: normalized.credit_card_fee_percent === '' ? null : Number(normalized.credit_card_fee_percent),
-    role_tip_rules: normalized.role_tip_rules.map(rule => ({
-      ...rule,
-      pool_points: rule.pool_points === '' ? null : Number(rule.pool_points),
-      pool_contribution_percent: rule.pool_contribution_percent === '' ? null : Number(rule.pool_contribution_percent),
-      tipout_split_basis: rule.tipout_split_basis === 'even' ? 'even' : 'hours',
-      pool_share_percent: rule.pool_share_percent === '' || rule.pool_share_percent == null ? null : Number(rule.pool_share_percent),
-      tipouts: (rule.tipouts || [])
-        .filter(item => item.target_role && item.percent !== '' && Number(item.percent) > 0)
-        .map(item => ({
-          target_role: item.target_role,
-          percent: Number(item.percent),
-          basis: item.basis === 'sales' ? 'sales' : 'tips',
-          sales_category: item.sales_category || null,
-          basis_scope: item.basis_scope === 'restaurant' ? 'restaurant' : 'own',
-        })),
-      tipout_percent: rule.tipout_percent === '' ? null : Number(rule.tipout_percent),
-      tipout_target_role: rule.tipout_target_role || null,
-      notes: rule.notes || null,
+    role_tip_rules: roleRulesPayload(normalized.role_tip_rules),
+    category_tip_profiles: normalized.category_tip_profiles.map(profile => ({
+      ...profile,
+      role_tip_rules: roleRulesPayload(profile.role_tip_rules),
+      item_overrides: profile.item_overrides.map(override => ({
+        ...override,
+        role_tip_rules: roleRulesPayload(override.role_tip_rules),
+      })),
     })),
   }
 }

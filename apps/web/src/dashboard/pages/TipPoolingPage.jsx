@@ -196,6 +196,16 @@ function PayRunTable({ payouts, rateFor, editable, onAdjust }) {
                   {r.tipout_paid > 0 ? `−${money(r.tipout_paid)} ` : ''}
                   {r.tipout_received > 0 ? `+${money(r.tipout_received)}` : ''}
                   {r.tipout_paid <= 0 && r.tipout_received <= 0 ? '—' : ''}
+                  {Array.isArray(p.tipout_breakdown) && p.tipout_breakdown.length ? (
+                    <details className="mt-1 text-left text-[10px] font-normal text-dash-tertiary">
+                      <summary className="cursor-pointer text-dash-gold">breakdown</summary>
+                      {p.tipout_breakdown.map((entry, breakdownIndex) => (
+                        <div key={`${entry.scope_type}-${entry.scope_id}-${entry.target_role}-${breakdownIndex}`} className="mt-0.5 whitespace-nowrap">
+                          {entry.scope_name || 'Restaurant default'} → {entry.target_role}: −{money(entry.amount)}
+                        </div>
+                      ))}
+                    </details>
+                  ) : null}
                 </td>
                 <td className="py-2 pr-3 text-right">
                   {editable && p.id ? (
@@ -312,6 +322,7 @@ export default function TipPoolingPage({ restaurantId }) {
   const [jobCodes, setJobCodes] = useState([])
   const [waiters, setWaiters] = useState([])
   const [menuCategories, setMenuCategories] = useState([])
+  const [menuItems, setMenuItems] = useState([])
   const [tipPayrollSettings, setTipPayrollSettings] = useState(defaultTipPayrollSettings())
   const [closeoutRecipients, setCloseoutRecipients] = useState([])
   const [overview, setOverview] = useState(null)
@@ -380,11 +391,12 @@ export default function TipPoolingPage({ restaurantId }) {
     setConfigError('')
     setConfigMessage('')
     try {
-      const [jobCodeRows, tipPayrollData, waiterRows, menuCategoryData, closeoutSettings] = await Promise.all([
+      const [jobCodeRows, tipPayrollData, waiterRows, menuCategoryData, menuItemData, closeoutSettings] = await Promise.all([
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`).catch(() => []),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`).catch(() => null),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=true`).catch(() => []),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/categories`).catch(() => null),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`).catch(() => null),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`).catch(() => null),
       ])
       const normalizedJobCodes = normalizeJobCodes(jobCodeRows)
@@ -392,6 +404,7 @@ export default function TipPoolingPage({ restaurantId }) {
       setJobCodes(normalizedJobCodes)
       setWaiters(Array.isArray(waiterRows) ? waiterRows : [])
       setMenuCategories(Array.isArray(menuCategoryData?.categories) ? menuCategoryData.categories.filter(c => c?.is_active !== false) : [])
+      setMenuItems(Array.isArray(menuItemData?.items) ? menuItemData.items.filter(item => item?.is_active !== false) : Array.isArray(menuItemData) ? menuItemData.filter(item => item?.is_active !== false) : [])
       setTipPayrollSettings(normalizedTipPayroll)
       setRunPreset('pay_period')
       setRunInterval(closedPayrollInterval(normalizedTipPayroll.payroll_export_frequency))
@@ -410,6 +423,7 @@ export default function TipPoolingPage({ restaurantId }) {
     setPreview(null)
     setOverview(null)
     setWaiters([])
+    setMenuItems([])
     void loadRuns()
     void loadTipConfig()
   }, [restaurantId])
@@ -661,7 +675,7 @@ export default function TipPoolingPage({ restaurantId }) {
     setError('')
   }
 
-  const saveDisabled = configSaving || configLoading
+  const saveDisabled = configSaving || configLoading || !canAdjustTips
 
   return (
     <div className="space-y-6">
@@ -837,7 +851,7 @@ export default function TipPoolingPage({ restaurantId }) {
         <section className="rounded-2xl border border-dash-border bg-dash-panel p-5 shadow-sm">
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-2xl text-sm text-dash-secondary">Changes apply to future runs. Nothing saves until you hit Save.</p>
-            <button type="button" onClick={() => void saveTipConfig()} disabled={saveDisabled} className="rounded-lg border border-dash-gold bg-dash-gold/10 px-3 py-1.5 text-sm font-medium text-dash-gold hover:bg-dash-gold/20 disabled:opacity-50">{configSaving ? 'Saving…' : 'Save rules'}</button>
+            <button type="button" onClick={() => void saveTipConfig()} disabled={saveDisabled} title={!canAdjustTips ? 'Requires payroll.adjust_tips permission' : undefined} className="rounded-lg border border-dash-gold bg-dash-gold/10 px-3 py-1.5 text-sm font-medium text-dash-gold hover:bg-dash-gold/20 disabled:opacity-50">{configSaving ? 'Saving…' : 'Save rules'}</button>
           </div>
           {configLoading ? (
             <div className="rounded-xl border border-dash-border bg-white/[0.025] p-4 text-sm text-dash-secondary">Loading configuration…</div>
@@ -847,6 +861,8 @@ export default function TipPoolingPage({ restaurantId }) {
               jobCodes={jobCodes}
               waiters={waiters}
               menuCategories={menuCategories}
+              menuItems={menuItems}
+              readOnly={!canAdjustTips}
               onUpdateSettings={updateTipPayrollSettings}
               onUpdateRoleRule={updateTipRoleRule}
               onSaveWaiterOverride={saveWaiterOverride}

@@ -53,6 +53,9 @@ const AVAILABILITY_MODES = [
   { value: 'manual', label: 'Manual only' },
 ]
 
+const WEEKDAY_PRICE_RULE_DAYS = [1, 2, 3, 4, 5]
+const ALL_PRICE_RULE_DAYS = [0, 1, 2, 3, 4, 5, 6]
+
 function DetailCard({ title, hint, children, actions }) {
   return (
     <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
@@ -561,6 +564,7 @@ export function MenuItemDetail({
   const [itemPriceRules, setItemPriceRules] = useState([])
   const [priceRuleForm, setPriceRuleForm] = useState({
     name: '', adjustment_type: 'percent_off', adjustment_value: '', start_time: '', end_time: '',
+    days_of_week: WEEKDAY_PRICE_RULE_DAYS,
   })
   const reloadPriceRules = async () => {
     const { data } = await supabase
@@ -580,12 +584,25 @@ export function MenuItemDetail({
       ? `${money(rule.adjustment_value)} off`
       : `${money(rule.adjustment_value)} flat`
   const fmtRuleTime = (t) => (t ? String(t).slice(0, 5) : '')
+  const priceRuleDaysSummary = (rule) => {
+    const days = [...(rule.days_of_week || [])].sort((a, b) => a - b)
+    if (days.length === 7) return 'Every day'
+    if (days.length === 5 && WEEKDAY_PRICE_RULE_DAYS.every(day => days.includes(day))) return 'Mon-Fri'
+    return days.map(day => DAYS_SHORT[day]).filter(Boolean).join(', ') || 'No days'
+  }
+  const priceRuleScheduleSummary = (rule) => {
+    if (!rule.start_time && !rule.end_time) return 'always on'
+    const timeWindow = (fmtRuleTime(rule.start_time) || 'open') + '-' + (fmtRuleTime(rule.end_time) || 'close')
+    return priceRuleDaysSummary(rule) + ' · ' + timeWindow
+  }
 
   const addPriceRule = () => run(async () => {
     const value = priceRuleForm.adjustment_value === '' ? 0 : Number(priceRuleForm.adjustment_value)
     if (!Number.isFinite(value) || value < 0) throw new Error('Enter a valid amount')
     if (priceRuleForm.adjustment_type === 'percent_off' && value > 100) throw new Error('% off cannot exceed 100')
     const scheduled = Boolean(priceRuleForm.start_time || priceRuleForm.end_time)
+    if (scheduled && (!priceRuleForm.start_time || !priceRuleForm.end_time)) throw new Error('Choose both a start and end time')
+    if (scheduled && priceRuleForm.days_of_week.length === 0) throw new Error('Choose at least one day')
     const { data, error } = await supabase
       .from('pos_menu_price_rules')
       .insert({
@@ -597,7 +614,7 @@ export function MenuItemDetail({
         adjustment_value: value,
         is_active: true,
         schedule_kind: scheduled ? 'weekly' : 'manual',
-        days_of_week: [0, 1, 2, 3, 4, 5, 6],
+        days_of_week: scheduled ? [...priceRuleForm.days_of_week].sort((a, b) => a - b) : ALL_PRICE_RULE_DAYS,
         start_time: priceRuleForm.start_time || null,
         end_time: priceRuleForm.end_time || null,
       })
@@ -610,7 +627,10 @@ export function MenuItemDetail({
       event_type: 'created',
       after_data: data,
     }).then(() => null, () => null)
-    setPriceRuleForm({ name: '', adjustment_type: 'percent_off', adjustment_value: '', start_time: '', end_time: '' })
+    setPriceRuleForm({
+      name: '', adjustment_type: 'percent_off', adjustment_value: '', start_time: '', end_time: '',
+      days_of_week: WEEKDAY_PRICE_RULE_DAYS,
+    })
     await reloadPriceRules()
   }, 'Price rule added.')
 
@@ -842,7 +862,7 @@ export function MenuItemDetail({
                     <span className="rounded-full bg-emerald-200 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-900">Happy hour</span>
                     <span className="ml-2 font-medium text-dash-cream">{rule.name}</span>
                     <span className="ml-2 text-dash-tertiary">
-                      {priceRuleSummary(rule)}{rule.start_time ? ` · ${fmtRuleTime(rule.start_time)}–${fmtRuleTime(rule.end_time)}` : ' · all day'}
+                      {priceRuleSummary(rule)} · {priceRuleScheduleSummary(rule)}
                     </span>
                   </div>
                   <div className="flex gap-2">
@@ -867,6 +887,31 @@ export function MenuItemDetail({
               <TextInput type="time" value={priceRuleForm.end_time} onChange={event => setPriceRuleForm(prev => ({ ...prev, end_time: event.target.value }))} />
               <SmallButton variant="primary" onClick={() => void addPriceRule()} disabled={busy}>Add rule</SmallButton>
             </div>
+            {(priceRuleForm.start_time || priceRuleForm.end_time) && (
+              <div className="mt-3">
+                <span className="label-mono">Days</span>
+                <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Price rule days">
+                  {DAYS_SHORT.map((day, index) => {
+                    const selected = priceRuleForm.days_of_week.includes(index)
+                    return (
+                      <SmallButton
+                        key={day}
+                        variant={selected ? 'primary' : 'secondary'}
+                        title={(selected ? 'Remove ' : 'Add ') + day}
+                        onClick={() => setPriceRuleForm(prev => ({
+                          ...prev,
+                          days_of_week: selected
+                            ? prev.days_of_week.filter(value => value !== index)
+                            : [...prev.days_of_week, index].sort((a, b) => a - b),
+                        }))}
+                      >
+                        {day}
+                      </SmallButton>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </DetailCard>
         </div>
 

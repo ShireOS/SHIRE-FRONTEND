@@ -292,10 +292,25 @@ export interface TipRoleRuleData {
     target_role: string
     percent: string
     basis: 'tips' | 'sales'
+    sales_category: string
+    basis_scope: 'own' | 'restaurant'
   }>
   tipout_percent: string
   tipout_target_role: string
   notes: string
+}
+
+export interface CategoryTipProfileData {
+  id: string
+  name: string
+  category_ids: string[]
+  category_names: string[]
+  role_tip_rules: TipRoleRuleData[]
+  item_overrides: Array<{
+    menu_item_id: string
+    menu_item_name: string
+    role_tip_rules: TipRoleRuleData[]
+  }>
 }
 
 export interface TipPayrollSettingsData {
@@ -314,6 +329,7 @@ export interface TipPayrollSettingsData {
   auto_withhold_credit_card_fees: boolean
   credit_card_fee_percent: string
   role_tip_rules: TipRoleRuleData[]
+  category_tip_profiles: CategoryTipProfileData[]
   notes: string
 }
 
@@ -396,7 +412,8 @@ const defaultTipPayrollSettings = (): TipPayrollSettingsData => ({
   allow_manager_tip_adjustments: true,
   auto_withhold_credit_card_fees: false,
   credit_card_fee_percent: '',
-  role_tip_rules: defaultTipRoleRules(),
+    role_tip_rules: defaultTipRoleRules(),
+    category_tip_profiles: [],
   notes: '',
 })
 
@@ -1050,6 +1067,8 @@ const normalizeTipRoleRules = (value: unknown, jobCodes: JobCodeData[] = default
               target_role: slugRoleCode(target),
               percent: asStringNumber(item.percent),
               basis: item.basis === 'sales' ? 'sales' : 'tips',
+              sales_category: asString(item.sales_category),
+              basis_scope: item.basis_scope === 'restaurant' ? 'restaurant' : 'own',
             }]
           })
         : [],
@@ -1059,6 +1078,38 @@ const normalizeTipRoleRules = (value: unknown, jobCodes: JobCodeData[] = default
     })
   }
   return fallback.map(rule => byRole.get(rule.role_key) || rule)
+}
+
+const normalizeCategoryTipProfiles = (value: unknown, jobCodes: JobCodeData[]): CategoryTipProfileData[] => {
+  const rows = Array.isArray(value) ? value.filter(isRecord) : []
+  const seenCategories = new Set<string>()
+  return rows.flatMap((row, index) => {
+    const categoryIds = [...new Set(asStringArray(row.category_ids).map(String).filter(Boolean))].filter(id => {
+      if (seenCategories.has(id)) return false
+      seenCategories.add(id)
+      return true
+    })
+    if (!categoryIds.length) return []
+    const seenItems = new Set<string>()
+    const itemOverrides = (Array.isArray(row.item_overrides) ? row.item_overrides.filter(isRecord) : []).flatMap(override => {
+      const menuItemId = asString(override.menu_item_id)
+      if (!menuItemId || seenItems.has(menuItemId)) return []
+      seenItems.add(menuItemId)
+      return [{
+        menu_item_id: menuItemId,
+        menu_item_name: asString(override.menu_item_name),
+        role_tip_rules: normalizeTipRoleRules(override.role_tip_rules, jobCodes),
+      }]
+    })
+    return [{
+      id: asString(row.id) || `category_profile_${index + 1}`,
+      name: asString(row.name),
+      category_ids: categoryIds,
+      category_names: asStringArray(row.category_names),
+      role_tip_rules: normalizeTipRoleRules(row.role_tip_rules, jobCodes),
+      item_overrides: itemOverrides,
+    }]
+  })
 }
 
 const normalizeTipPayrollSettings = (value: unknown, jobCodes: JobCodeData[] = defaultJobCodes()): TipPayrollSettingsData => {
@@ -1082,6 +1133,7 @@ const normalizeTipPayrollSettings = (value: unknown, jobCodes: JobCodeData[] = d
     auto_withhold_credit_card_fees: typeof value.auto_withhold_credit_card_fees === 'boolean' ? value.auto_withhold_credit_card_fees : fallback.auto_withhold_credit_card_fees,
     credit_card_fee_percent: asStringNumber(value.credit_card_fee_percent),
     role_tip_rules: normalizeTipRoleRules(value.role_tip_rules, jobCodes),
+    category_tip_profiles: normalizeCategoryTipProfiles(value.category_tip_profiles, jobCodes),
     notes: asString(value.notes),
   }
 }
@@ -1179,24 +1231,32 @@ const checkWorkflowSettingsToPayload = (data: OnboardingData) => {
 
 const tipPayrollToPayload = (data: OnboardingData) => {
   const settings = normalizeTipPayrollSettings(data.tip_payroll_settings, data.job_codes)
+  const roleRulesPayload = (rules: TipRoleRuleData[]) => rules.map(rule => ({
+    ...rule,
+    pool_points: rule.pool_points === '' ? null : Number(rule.pool_points),
+    pool_contribution_percent: rule.pool_contribution_percent === '' ? null : Number(rule.pool_contribution_percent),
+    tipout_split_basis: rule.tipout_split_basis === 'even' ? 'even' : 'hours',
+    tipouts: (rule.tipouts || [])
+      .filter(item => item.target_role && item.percent !== '' && Number(item.percent) > 0)
+      .map(item => ({
+        target_role: item.target_role,
+        percent: Number(item.percent),
+        basis: item.basis === 'sales' ? 'sales' : 'tips',
+        sales_category: item.sales_category || null,
+        basis_scope: item.basis_scope === 'restaurant' ? 'restaurant' : 'own',
+      })),
+    tipout_percent: rule.tipout_percent === '' ? null : Number(rule.tipout_percent),
+    tipout_target_role: rule.tipout_target_role || null,
+    notes: rule.notes || null,
+  }))
   return {
     ...settings,
     credit_card_fee_percent: settings.credit_card_fee_percent === '' ? null : Number(settings.credit_card_fee_percent),
-    role_tip_rules: settings.role_tip_rules.map(rule => ({
-      ...rule,
-      pool_points: rule.pool_points === '' ? null : Number(rule.pool_points),
-      pool_contribution_percent: rule.pool_contribution_percent === '' ? null : Number(rule.pool_contribution_percent),
-      tipout_split_basis: rule.tipout_split_basis === 'even' ? 'even' : 'hours',
-      tipouts: (rule.tipouts || [])
-        .filter(item => item.target_role && item.percent !== '' && Number(item.percent) > 0)
-        .map(item => ({
-          target_role: item.target_role,
-          percent: Number(item.percent),
-          basis: item.basis === 'sales' ? 'sales' : 'tips',
-        })),
-      tipout_percent: rule.tipout_percent === '' ? null : Number(rule.tipout_percent),
-      tipout_target_role: rule.tipout_target_role || null,
-      notes: rule.notes || null,
+    role_tip_rules: roleRulesPayload(settings.role_tip_rules),
+    category_tip_profiles: settings.category_tip_profiles.map(profile => ({
+      ...profile,
+      role_tip_rules: roleRulesPayload(profile.role_tip_rules),
+      item_overrides: profile.item_overrides.map(override => ({ ...override, role_tip_rules: roleRulesPayload(override.role_tip_rules) })),
     })),
   }
 }

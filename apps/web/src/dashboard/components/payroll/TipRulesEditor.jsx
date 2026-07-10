@@ -438,6 +438,186 @@ function SectionCard({ children }) {
   return <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.02] p-5">{children}</div>
 }
 
+function copyScopedRules(rules) {
+  return (rules || []).map(rule => ({
+    ...rule,
+    tipouts: (rule.tipouts || []).map(tipout => ({
+      ...tipout,
+      sales_category: '',
+      basis_scope: 'own',
+    })),
+  }))
+}
+
+function ScopedTipoutEditor({ rules, jobCodes, onChange }) {
+  const rows = []
+  ;(rules || []).forEach((rule, ruleIndex) => {
+    ;(rule.tipouts || []).forEach((tipout, tipoutIndex) => rows.push({ rule, ruleIndex, tipout, tipoutIndex }))
+  })
+  const update = (ruleIndex, tipoutIndex, patch) => {
+    onChange(rules.map((rule, index) => index === ruleIndex ? {
+      ...rule,
+      tipouts: rule.tipouts.map((tipout, current) => current === tipoutIndex ? { ...tipout, ...patch } : tipout),
+    } : rule))
+  }
+  const move = (ruleIndex, tipoutIndex, nextRole) => {
+    const targetIndex = rules.findIndex(rule => rule.role_key === nextRole)
+    if (targetIndex < 0 || targetIndex === ruleIndex) return
+    const moving = rules[ruleIndex].tipouts[tipoutIndex]
+    onChange(rules.map((rule, index) => {
+      if (index === ruleIndex) return { ...rule, tipouts: rule.tipouts.filter((_, current) => current !== tipoutIndex) }
+      if (index === targetIndex) return { ...rule, tipouts: [...(rule.tipouts || []), moving] }
+      return rule
+    }))
+  }
+  const remove = (ruleIndex, tipoutIndex) => onChange(rules.map((rule, index) => index === ruleIndex
+    ? { ...rule, tipouts: rule.tipouts.filter((_, current) => current !== tipoutIndex) }
+    : rule))
+  const add = () => {
+    const sourceIndex = rules.findIndex(rule => rule.tip_eligible)
+    const index = sourceIndex >= 0 ? sourceIndex : 0
+    if (index < 0) return
+    onChange(rules.map((rule, current) => current === index ? {
+      ...rule,
+      tipouts: [...(rule.tipouts || []), { target_role: '', percent: '', basis: 'sales', sales_category: '', basis_scope: 'own' }],
+    } : rule))
+  }
+  const receiverKeys = [...new Set(rows.map(row => row.tipout.target_role).filter(Boolean))]
+  return (
+    <div className="space-y-3">
+      {rows.length ? rows.map(({ rule, ruleIndex, tipout, tipoutIndex }) => (
+        <div key={`${rule.role_key}-${tipoutIndex}`} className="flex flex-wrap items-center gap-2 rounded-xl border border-dash-border bg-black/20 px-3 py-2.5 text-sm text-dash-secondary">
+          <InlineSelect value={rule.role_key} onChange={event => move(ruleIndex, tipoutIndex, event.target.value)}>
+            {jobCodes.map(code => <option key={code.code} value={code.code}>{code.label}</option>)}
+          </InlineSelect>
+          <span>tips out</span>
+          <InlinePct value={tipout.percent} onChange={value => update(ruleIndex, tipoutIndex, { percent: value })} />
+          <span>of this group’s</span>
+          <InlineSelect value={tipout.basis} onChange={event => update(ruleIndex, tipoutIndex, { basis: event.target.value })}>
+            <option value="sales">sales</option>
+            <option value="tips">attributed tips</option>
+          </InlineSelect>
+          <span className="text-dash-gold">→</span>
+          <InlineSelect value={tipout.target_role} onChange={event => update(ruleIndex, tipoutIndex, { target_role: event.target.value })}>
+            <option value="">choose recipient…</option>
+            {jobCodes.filter(code => code.code !== rule.role_key).map(code => <option key={code.code} value={code.code}>{code.label}</option>)}
+          </InlineSelect>
+          <button type="button" onClick={() => remove(ruleIndex, tipoutIndex)} className="ml-auto px-1.5 text-dash-tertiary hover:text-red-300" aria-label="Remove scoped tipout">✕</button>
+        </div>
+      )) : <p className="text-sm text-dash-tertiary">No tipout from this menu group.</p>}
+      <button type="button" onClick={add} className="rounded-lg border border-dashed border-dash-gold/50 px-3 py-1.5 text-sm text-dash-gold hover:bg-dash-gold/10">+ Add tipout rule</button>
+      {receiverKeys.length ? (
+        <div className="flex flex-wrap gap-2 text-xs text-dash-secondary">
+          <span>Recipients split their share:</span>
+          {receiverKeys.map(roleKey => {
+            const index = rules.findIndex(rule => rule.role_key === roleKey)
+            const rule = rules[index]
+            if (!rule) return null
+            return <button key={roleKey} type="button" onClick={() => onChange(rules.map((row, current) => current === index ? { ...row, tipout_split_basis: row.tipout_split_basis === 'even' ? 'hours' : 'even' } : row))} className="text-dash-gold underline decoration-dotted">{labelFor(jobCodes, roleKey)}: {rule.tipout_split_basis === 'even' ? 'evenly' : 'by hours'}</button>
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function CategoryTipProfiles({ profiles, menuCategories, menuItems, defaultRules, jobCodes, onChange }) {
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState([])
+  const [openId, setOpenId] = useState(null)
+  const [activeOverrideId, setActiveOverrideId] = useState(null)
+  const categories = (menuCategories || []).filter(category => category?.id && category?.is_active !== false)
+  const categoryById = new Map(categories.map(category => [String(category.id), category]))
+  const usedIds = new Set((profiles || []).flatMap(profile => profile.category_ids || []))
+  const openProfile = (profiles || []).find(profile => profile.id === openId) || null
+  const updateProfile = (patch) => onChange(profiles.map(profile => profile.id === openId ? { ...profile, ...patch } : profile))
+  const matchingItems = openProfile ? (menuItems || []).filter(item => {
+    const itemCategoryId = String(item.menu_category_id || item.category_id || '')
+    if (openProfile.category_ids.includes(itemCategoryId)) return true
+    const categoryNames = openProfile.category_ids.map(id => categoryById.get(String(id))?.name).filter(Boolean)
+    return categoryNames.some(name => String(item.category || '').toLowerCase() === String(name).toLowerCase())
+  }) : []
+  const beginProfile = () => {
+    if (!selectedCategoryIds.length) return
+    const id = globalThis.crypto?.randomUUID?.() || `category_profile_${Date.now()}`
+    const names = selectedCategoryIds.map(categoryId => categoryById.get(String(categoryId))?.name).filter(Boolean)
+    const profile = {
+      id,
+      name: names.join(' + '),
+      category_ids: selectedCategoryIds,
+      category_names: names,
+      role_tip_rules: copyScopedRules(defaultRules),
+      item_overrides: [],
+    }
+    onChange([...(profiles || []), profile])
+    setSelectedCategoryIds([])
+    setOpenId(id)
+  }
+  const toggleOpenCategory = (categoryId) => {
+    if (!openProfile) return
+    const id = String(categoryId)
+    if (usedIds.has(id) && !openProfile.category_ids.includes(id)) return
+    const nextIds = openProfile.category_ids.includes(id) ? openProfile.category_ids.filter(value => value !== id) : [...openProfile.category_ids, id]
+    if (!nextIds.length) return
+    updateProfile({
+      category_ids: nextIds,
+      category_names: nextIds.map(value => categoryById.get(String(value))?.name).filter(Boolean),
+      name: nextIds.map(value => categoryById.get(String(value))?.name).filter(Boolean).join(' + '),
+    })
+  }
+  const editOverride = (item) => {
+    const existing = openProfile.item_overrides.find(override => override.menu_item_id === item.id)
+    if (!existing) updateProfile({ item_overrides: [...openProfile.item_overrides, { menu_item_id: item.id, menu_item_name: item.name || '', role_tip_rules: copyScopedRules(openProfile.role_tip_rules) }] })
+    setActiveOverrideId(item.id)
+  }
+  const activeOverride = openProfile?.item_overrides.find(override => override.menu_item_id === activeOverrideId) || null
+  return (
+    <SectionCard>
+      <StepHeading title="Menu category rules" hint="Choose real POS categories. Items inherit their category rules; an item override wins over its category." />
+      {!categories.length ? <p className="text-sm text-dash-tertiary">Add menu categories before creating category-specific tipouts.</p> : (
+        <>
+          <div className="flex flex-wrap gap-2">
+            {categories.map(category => {
+              const id = String(category.id)
+              const used = usedIds.has(id)
+              return <Chip key={id} active={selectedCategoryIds.includes(id) || used} disabled={used} onClick={() => setSelectedCategoryIds(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id])}>{category.name}{used ? ' · configured' : ''}</Chip>
+            })}
+          </div>
+          <button type="button" disabled={!selectedCategoryIds.length} onClick={beginProfile} className="rounded-lg border border-dash-gold/60 bg-dash-gold/10 px-3.5 py-2 text-sm font-medium text-dash-gold disabled:opacity-40">Configure selected categories</button>
+        </>
+      )}
+      {(profiles || []).length ? <div className="grid gap-2 md:grid-cols-2">{profiles.map(profile => {
+        const names = profile.category_ids.map(id => categoryById.get(String(id))?.name).filter(Boolean)
+        const ruleCount = profile.role_tip_rules.reduce((sum, rule) => sum + (rule.tipouts || []).length, 0)
+        return <button key={profile.id} type="button" onClick={() => { setOpenId(profile.id); setActiveOverrideId(null) }} className="rounded-xl border border-dash-border bg-white/[0.03] p-4 text-left hover:border-dash-gold/50">
+          <span className="block font-semibold text-dash-cream">{profile.name || names.join(' + ')}</span>
+          <span className="mt-1 block text-xs text-dash-secondary">{names.join(', ')} · {ruleCount} rule{ruleCount === 1 ? '' : 's'} · {profile.item_overrides.length} item override{profile.item_overrides.length === 1 ? '' : 's'}</span>
+        </button>
+      })}</div> : null}
+      {openProfile ? (
+        <div className="fixed inset-0 z-[80] overflow-y-auto bg-black/80 p-4 backdrop-blur-sm sm:p-8">
+          <div className="mx-auto max-w-5xl space-y-5 rounded-2xl border border-dash-border bg-dash-panel p-5 shadow-2xl sm:p-7">
+            <div className="flex items-start justify-between gap-4">
+              <div><p className="label-mono text-dash-gold">Category tipout configuration</p><h2 className="mt-1 text-xl font-semibold text-dash-cream">{openProfile.name}</h2><p className="mt-1 text-sm text-dash-secondary">Category rules replace the restaurant default. Item overrides replace these category rules.</p></div>
+              <button type="button" onClick={() => { setOpenId(null); setActiveOverrideId(null) }} className="rounded-lg border border-dash-border px-3 py-1.5 text-sm text-dash-cream">Done</button>
+            </div>
+            <div className="space-y-2"><p className="text-xs font-medium uppercase tracking-[0.08em] text-dash-tertiary">Categories in this configuration</p><div className="flex flex-wrap gap-2">{categories.map(category => <Chip key={category.id} active={openProfile.category_ids.includes(String(category.id))} disabled={usedIds.has(String(category.id)) && !openProfile.category_ids.includes(String(category.id))} onClick={() => toggleOpenCategory(category.id)}>{category.name}</Chip>)}</div></div>
+            <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4"><StepHeading title="Category rules" hint="These rules apply to every item below unless that item has an override." /><ScopedTipoutEditor rules={openProfile.role_tip_rules} jobCodes={jobCodes} onChange={role_tip_rules => updateProfile({ role_tip_rules })} /></div>
+            <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+              <StepHeading title="Items" hint="Override only the items that should calculate differently from their category." />
+              {!matchingItems.length ? <p className="text-sm text-dash-tertiary">No active menu items are assigned to these categories.</p> : <div className="grid gap-2 sm:grid-cols-2">{matchingItems.map(item => {
+                const overridden = openProfile.item_overrides.some(override => override.menu_item_id === item.id)
+                return <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-dash-border bg-black/20 px-3 py-2"><span className="text-sm text-dash-cream">{item.name}</span><button type="button" onClick={() => editOverride(item)} className={`text-xs font-medium ${overridden ? 'text-dash-gold' : 'text-dash-secondary hover:text-dash-gold'}`}>{overridden ? 'Edit override' : 'Override'}</button></div>
+              })}</div>}
+            </div>
+            {activeOverride ? <div className="space-y-3 rounded-xl border border-dash-gold/35 bg-dash-gold/[0.05] p-4"><div className="flex items-start justify-between gap-3"><StepHeading title={`${activeOverride.menu_item_name} override`} hint="This completely replaces the category rules for this item." /><button type="button" onClick={() => { updateProfile({ item_overrides: openProfile.item_overrides.filter(override => override.menu_item_id !== activeOverride.menu_item_id) }); setActiveOverrideId(null) }} className="text-xs text-red-300">Remove override</button></div><ScopedTipoutEditor rules={activeOverride.role_tip_rules} jobCodes={jobCodes} onChange={role_tip_rules => updateProfile({ item_overrides: openProfile.item_overrides.map(override => override.menu_item_id === activeOverride.menu_item_id ? { ...override, role_tip_rules } : override) })} /></div> : null}
+            <div className="flex justify-between border-t border-dash-border pt-4"><button type="button" onClick={() => { onChange(profiles.filter(profile => profile.id !== openProfile.id)); setOpenId(null); setActiveOverrideId(null) }} className="text-sm text-red-300">Delete category configuration</button><button type="button" onClick={() => { setOpenId(null); setActiveOverrideId(null) }} className="rounded-lg border border-dash-gold bg-dash-gold/10 px-4 py-2 text-sm font-medium text-dash-gold">Done</button></div>
+          </div>
+        </div>
+      ) : null}
+    </SectionCard>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Main editor
 // ---------------------------------------------------------------------------
@@ -447,6 +627,8 @@ export default function TipRulesEditor({
   jobCodes,
   waiters,
   menuCategories,
+  menuItems,
+  readOnly = false,
   onUpdateSettings,
   onUpdateRoleRule,
   onSaveWaiterOverride,
@@ -568,7 +750,7 @@ export default function TipRulesEditor({
   const roleOptions = jobCodes.map(code => <option key={code.code} value={code.code}>{code.label}</option>)
 
   return (
-    <div className="space-y-5">
+    <fieldset disabled={readOnly} className="space-y-5">
       {/* ---- Plain-English summary ---- */}
       <div className="rounded-2xl border border-dash-gold/40 bg-dash-gold/[0.07] px-5 py-4">
         <p className="label-mono text-dash-gold">Current policy</p>
@@ -818,6 +1000,15 @@ export default function TipRulesEditor({
         ) : null}
       </SectionCard>
 
+      <CategoryTipProfiles
+        profiles={settings.category_tip_profiles || []}
+        menuCategories={menuCategories}
+        menuItems={menuItems}
+        defaultRules={rules}
+        jobCodes={jobCodes}
+        onChange={category_tip_profiles => onUpdateSettings({ category_tip_profiles })}
+      />
+
       {/* ---- Check the math ---- */}
       <SectionCard>
         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1006,6 +1197,6 @@ export default function TipRulesEditor({
           </p>
         </div>
       </details>
-    </div>
+    </fieldset>
   )
 }
