@@ -44,6 +44,7 @@ import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
 import SalesTiles from './components/SalesTiles'
 import { usePersistedPeriod } from './data/analyticsSummary'
 import ResellerApp from '../reseller/ResellerApp'
+import RestaurantReportsPage from './reports/RestaurantReportsPage'
 
 function LoadingScreen() {
   return (
@@ -441,6 +442,10 @@ function MiniTable({ columns, rows }) {
 }
 
 function AnalyticsDashboard({ restaurant }) {
+  return <RestaurantReportsPage restaurantId={restaurant?.id} restaurantName={restaurant?.name} />
+}
+
+function LegacyAnalyticsDashboard({ restaurant }) {
   const [period, setPeriod] = usePersistedPeriod('shire_home_period')
   const restaurantId = restaurant?.id
 

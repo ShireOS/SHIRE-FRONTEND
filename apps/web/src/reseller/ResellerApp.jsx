@@ -40,6 +40,7 @@ import {
   saveResellerProfile,
   uploadResellerLogo,
 } from './data/resellerProfile'
+import RestaurantReportsPage from '../dashboard/reports/RestaurantReportsPage'
 
 const GROUP_COLORS = ['#2EA6A1', '#D4A854', '#7C8CF8', '#E06B4F', '#6DAF5C', '#B66DD8']
 const DETAIL_TABS = [
@@ -1113,7 +1114,7 @@ function RestaurantDetailPage() {
           })}
         </div>
       </div>
-      {activeTab === 'analytics' && <ResellerAnalytics restaurantId={restaurantId} />}
+      {activeTab === 'analytics' && <ResellerAnalytics restaurantId={restaurantId} restaurantName={restaurant.name} />}
       {activeTab === 'menu' && <ResellerMenu restaurantId={restaurantId} />}
       {activeTab === 'team' && <ResellerTeam restaurantId={restaurantId} />}
     </ResellerShell>
@@ -1463,7 +1464,11 @@ function PropagationModal({ request, restaurants, groups, sourceRestaurantId, on
   )
 }
 
-function ResellerAnalytics({ restaurantId }) {
+function ResellerAnalytics({ restaurantId, restaurantName }) {
+  return <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurantName} />
+}
+
+function LegacyResellerAnalytics({ restaurantId }) {
   const [payload, setPayload] = useState(null)
   const [error, setError] = useState('')
 

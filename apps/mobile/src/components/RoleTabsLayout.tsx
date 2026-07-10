@@ -25,6 +25,12 @@ const OWNER_TABS: RoleTab[] = [
     sfSymbol: { default: 'chart.bar', selected: 'chart.bar.fill' },
   },
   {
+    name: 'analytics',
+    title: 'Reports',
+    androidIcon: 'bar-chart',
+    sfSymbol: { default: 'chart.xyaxis.line', selected: 'chart.xyaxis.line' },
+  },
+  {
     name: 'menu',
     title: 'Menu',
     androidIcon: 'restaurant',
@@ -88,7 +94,7 @@ type RoleTabsLayoutProps = {
 };
 
 const HIDDEN_TABS_BY_VARIANT: Record<RoleTabsLayoutProps['variant'], string[]> = {
-  owner: ['analytics', 'scans'],
+  owner: ['scans'],
   employee: ['analytics', 'menu', 'scans'],
 };
 

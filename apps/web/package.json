@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@shire/db": "workspace:*",
+    "@supabase/auth-js": "2.108.2",
+    "@supabase/postgrest-js": "2.108.2",
     "@supabase/supabase-js": "^2.97.0",
     "@tanstack/react-query": "^5.101.2",
     "clsx": "^2.1.1",

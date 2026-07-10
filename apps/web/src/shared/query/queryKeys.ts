@@ -27,6 +27,8 @@ export const queryKeys = {
 
   ownerAnalytics: (restaurantId: string, period: string) =>
     ['restaurant', restaurantId, 'owner-analytics', period] as const,
+  restaurantReports: (restaurantId: string, query: string) =>
+    ['restaurant', restaurantId, 'reports', query] as const,
 
   staffingBlocks: (restaurantId: string) => ['restaurant', restaurantId, 'staffing-blocks'] as const,
   staffingSuggestions: (restaurantId: string) => ['restaurant', restaurantId, 'staffing-suggestions'] as const,
