@@ -7,6 +7,7 @@ import {
   generateStaffReportInsight,
   saveReportPreference,
   saveReportRecipient,
+  sendTestReportRecipient,
   type ReportPreference,
   type ReportRecipient,
   type ReportSectionId,
@@ -42,6 +43,7 @@ const SECTION_LABELS: Record<ReportSectionId, string> = {
   z_report: 'End-of-day Z report',
   daily_summary: 'Daily summary',
 };
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const PERIODS = [
   { id: 'week', label: 'This week' },
   { id: 'month', label: 'This month' },
@@ -157,6 +159,7 @@ export default function RestaurantReportsScreen() {
   const [preference, setPreference] = useState<ReportPreference>(DEFAULT_PREFERENCE);
   const [recipients, setRecipients] = useState<ReportRecipient[]>([]);
   const [canManageRecipients, setCanManageRecipients] = useState(false);
+  const [emailDelivery, setEmailDelivery] = useState({ enabled: false, reason: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<'period' | 'dates' | 'compare' | 'config' | 'email' | null>(null);
@@ -224,6 +227,10 @@ export default function RestaurantReportsScreen() {
       setPreference(nextPreference);
       setRecipients(recipientData.recipients || []);
       setCanManageRecipients(Boolean(recipientData.can_manage));
+      setEmailDelivery({
+        enabled: Boolean(recipientData.delivery_enabled),
+        reason: recipientData.delivery_disabled_reason || '',
+      });
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Could not load reports.');
     } finally {
@@ -248,6 +255,13 @@ export default function RestaurantReportsScreen() {
     if (!restaurantId) return;
     await deleteReportRecipient(restaurantId, id);
     setRecipients((current) => current.filter((recipient) => recipient.id !== id));
+  };
+  const testRecipient = async (id: string) => {
+    if (!restaurantId) throw new Error('Restaurant is unavailable.');
+    const result = await sendTestReportRecipient(restaurantId, id);
+    const next = await fetchReportRecipients(restaurantId);
+    setRecipients(next.recipients || []);
+    return result;
   };
   const generateInsight = async (staffId: string) => {
     if (!restaurantId) return;
@@ -322,7 +336,7 @@ export default function RestaurantReportsScreen() {
       <DateRangeModal visible={modal === 'dates'} draft={dateDraft} onChange={setDateDraft} onClose={() => setModal(null)} onApply={() => { applyPrimaryRange(dateDraft); setModal(null); }} />
       <ComparisonModal visible={modal === 'compare'} draft={compareDraft} onChange={setCompareDraft} onMode={updateCompareMode} onClose={() => setModal(null)} onApply={() => { setComparisonMode(compareDraft.mode); setComparisonEnabled(compareDraft.enabled); setDateRange((current) => ({ ...current, comparisonStart: compareDraft.comparisonStart, comparisonEnd: compareDraft.comparisonEnd })); setModal(null); }} />
       <ConfigModal visible={modal === 'config'} preference={preference} onClose={() => setModal(null)} onSave={savePreference} />
-      <EmailModal visible={modal === 'email'} recipients={recipients} canManage={canManageRecipients} defaultTimezone={report?.restaurant?.timezone} onClose={() => setModal(null)} onSave={saveRecipient} onDelete={removeRecipient} />
+      <EmailModal visible={modal === 'email'} recipients={recipients} canManage={canManageRecipients} deliveryEnabled={emailDelivery.enabled} disabledReason={emailDelivery.reason} defaultTimezone={report?.restaurant?.timezone} onClose={() => setModal(null)} onSave={saveRecipient} onDelete={removeRecipient} onTest={testRecipient} />
     </View>
   );
 }
@@ -405,8 +419,8 @@ function Chip({ label, active, onPress }: { label: string; active: boolean; onPr
   return <Pressable onPress={onPress} style={[styles.chip, active && styles.chipActive]}><Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text></Pressable>;
 }
 
-function IconAction({ icon, label, onPress }: { icon: keyof typeof Feather.glyphMap; label: string; onPress: () => void }) {
-  return <Pressable accessibilityLabel={label} onPress={onPress} style={styles.iconButton}><Feather name={icon} size={18} color={semanticColors.text} /></Pressable>;
+function IconAction({ icon, label, onPress, disabled = false }: { icon: keyof typeof Feather.glyphMap; label: string; onPress: () => void; disabled?: boolean }) {
+  return <Pressable accessibilityLabel={label} disabled={disabled} onPress={onPress} style={[styles.iconButton, disabled && styles.buttonDisabled]}><Feather name={icon} size={18} color={semanticColors.text} /></Pressable>;
 }
 
 function PeriodModal({ visible, selected, onClose, onSelect }: { visible: boolean; selected: PeriodPreset; onClose: () => void; onSelect: (value: PeriodPreset) => void }) {
@@ -436,12 +450,91 @@ function ConfigModal({ visible, preference, onClose, onSave }: { visible: boolea
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.modalCard}><ModalHeader title="Visible report sections" onClose={onClose} /><ScrollView style={styles.modalScroll}>{REPORT_SECTIONS.map((id) => <Pressable key={id} onPress={() => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} style={styles.toggleRow}><Feather name={selected.includes(id) ? 'check-square' : 'square'} size={20} color={selected.includes(id) ? semanticColors.primary : semanticColors.textMuted} /><Text style={styles.toggleText}>{SECTION_LABELS[id]}</Text></Pressable>)}</ScrollView><Pressable disabled={saving || !selected.length} onPress={async () => { setSaving(true); await onSave({ ...preference, visible_sections: selected }); setSaving(false); onClose(); }} style={styles.primaryButton}><Text style={styles.primaryButtonText}>{saving ? 'Saving...' : 'Save layout'}</Text></Pressable></View></View></Modal>;
 }
 
-function EmailModal({ visible, recipients, canManage, defaultTimezone, onClose, onSave, onDelete }: { visible: boolean; recipients: ReportRecipient[]; canManage: boolean; defaultTimezone?: string; onClose: () => void; onSave: (value: Omit<ReportRecipient, 'id'>, id?: string) => Promise<void>; onDelete: (id: string) => Promise<void> }) {
+function EmailModal({
+  visible, recipients, canManage, deliveryEnabled, disabledReason, defaultTimezone,
+  onClose, onSave, onDelete, onTest,
+}: {
+  visible: boolean;
+  recipients: ReportRecipient[];
+  canManage: boolean;
+  deliveryEnabled: boolean;
+  disabledReason: string;
+  defaultTimezone?: string;
+  onClose: () => void;
+  onSave: (value: Omit<ReportRecipient, 'id'>, id?: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onTest: (id: string) => Promise<{ message: string }>;
+}) {
   const [draft, setDraft] = useState<Omit<ReportRecipient, 'id'> | null>(null);
   const [editingId, setEditingId] = useState<string | undefined>();
   const [saving, setSaving] = useState(false);
-  const edit = (recipient?: ReportRecipient) => { setEditingId(recipient?.id); setDraft(recipient ? { ...recipient } : { ...EMPTY_RECIPIENT, timezone: defaultTimezone || EMPTY_RECIPIENT.timezone }); };
-  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.modalCard}><ModalHeader title="Scheduled report recipients" onClose={onClose} /><ScrollView style={styles.modalScroll}>{draft ? <View style={styles.form}><LabeledInput label="Name" value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} /><LabeledInput label="Email" value={draft.email} onChangeText={(email) => setDraft({ ...draft, email })} keyboardType="email-address" /><Text style={styles.inputLabel}>Frequency</Text><View style={styles.chipRow}>{(['daily', 'weekly', 'monthly'] as const).map((frequency) => <Chip key={frequency} label={frequency} active={draft.frequency === frequency} onPress={() => setDraft({ ...draft, frequency })} />)}</View><Text style={styles.inputLabel}>Sections</Text>{REPORT_SECTIONS.map((id) => <Pressable key={id} onPress={() => setDraft({ ...draft, sections: draft.sections.includes(id) ? draft.sections.filter((item) => item !== id) : [...draft.sections, id] })} style={styles.toggleRow}><Feather name={draft.sections.includes(id) ? 'check-square' : 'square'} size={19} color={semanticColors.primary} /><Text style={styles.toggleText}>{SECTION_LABELS[id]}</Text></Pressable>)}<View style={styles.modalActions}><Pressable onPress={() => setDraft(null)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Cancel</Text></Pressable><Pressable disabled={saving || !draft.email || !draft.sections.length} onPress={async () => { setSaving(true); await onSave(draft, editingId); setSaving(false); setDraft(null); }} style={styles.primaryButton}><Text style={styles.primaryButtonText}>{saving ? 'Saving...' : 'Save'}</Text></Pressable></View></View> : <>{recipients.map((recipient) => <View key={recipient.id} style={styles.recipientRow}><View style={styles.recipientCopy}><Text style={styles.rowTitle}>{recipient.name || recipient.email}</Text><Text style={styles.rowMeta}>{recipient.email} · {recipient.frequency}</Text><Text style={styles.rowMeta} numberOfLines={2}>{recipient.sections.map((id) => SECTION_LABELS[id]).join(', ')}</Text></View>{canManage && <View style={styles.iconActions}><IconAction icon="edit-2" label="Edit" onPress={() => edit(recipient)} /><IconAction icon="trash-2" label="Delete" onPress={() => onDelete(recipient.id)} /></View>}</View>)}{!recipients.length && <Text style={styles.emptyText}>No scheduled recipients.</Text>}{canManage && <Pressable onPress={() => edit()} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Add recipient</Text></Pressable>}</>}</ScrollView></View></View></Modal>;
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
+  const edit = (recipient?: ReportRecipient) => {
+    setEditingId(recipient?.id);
+    setDraft(recipient ? {
+      name: recipient.name || '', email: recipient.email, frequency: recipient.frequency,
+      sections: recipient.sections, send_time: String(recipient.send_time || '07:00').slice(0, 5),
+      timezone: recipient.timezone, weekday: recipient.weekday, month_day: recipient.month_day,
+      is_active: recipient.is_active,
+    } : { ...EMPTY_RECIPIENT, timezone: defaultTimezone || EMPTY_RECIPIENT.timezone });
+  };
+  const sendTest = async (recipient: ReportRecipient) => {
+    setTestingId(recipient.id);
+    setMessage('');
+    try {
+      const result = await onTest(recipient.id);
+      setMessage(result.message || `Test report accepted for ${recipient.email}`);
+    } catch (nextError) {
+      setMessage(nextError instanceof Error ? nextError.message : 'Could not send test report.');
+    } finally {
+      setTestingId(null);
+    }
+  };
+  const save = async () => {
+    if (!draft) return;
+    setSaving(true);
+    setMessage('');
+    try {
+      await onSave(draft, editingId);
+      setDraft(null);
+    } catch (nextError) {
+      setMessage(nextError instanceof Error ? nextError.message : 'Could not save recipient.');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}><View style={styles.modalCard}>
+        <ModalHeader title="Scheduled report recipients" onClose={onClose} />
+        {!deliveryEnabled && <View style={styles.warningBox}><Text style={styles.warningText}>{disabledReason || 'Email delivery is not configured.'}</Text></View>}
+        {message ? <Text style={styles.statusMessage}>{message}</Text> : null}
+        <ScrollView style={styles.modalScroll}>
+          {draft ? (
+            <View style={styles.form}>
+              <LabeledInput label="Name" value={draft.name} onChangeText={(name) => setDraft({ ...draft, name })} />
+              <LabeledInput label="Email" value={draft.email} onChangeText={(email) => setDraft({ ...draft, email })} keyboardType="email-address" />
+              <LabeledInput label="Send time (24-hour)" value={String(draft.send_time).slice(0, 5)} onChangeText={(send_time) => setDraft({ ...draft, send_time })} placeholder="07:00" />
+              <LabeledInput label="Timezone" value={draft.timezone} onChangeText={(timezone) => setDraft({ ...draft, timezone })} placeholder="America/Chicago" />
+              <Text style={styles.inputLabel}>Frequency</Text>
+              <View style={styles.chipRow}>{(['daily', 'weekly', 'monthly'] as const).map((frequency) => <Chip key={frequency} label={frequency} active={draft.frequency === frequency} onPress={() => setDraft({ ...draft, frequency })} />)}</View>
+              {draft.frequency === 'weekly' && <><Text style={styles.inputLabel}>Send day</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>{DAY_LABELS.map((label, weekday) => <Chip key={label} label={label} active={(draft.weekday ?? 1) === weekday} onPress={() => setDraft({ ...draft, weekday })} />)}</ScrollView></>}
+              {draft.frequency === 'monthly' && <LabeledInput label="Day of month (1-28)" value={String(draft.month_day ?? 1)} onChangeText={(value) => setDraft({ ...draft, month_day: Math.max(1, Math.min(28, Number(value) || 1)) })} keyboardType="number-pad" />}
+              <View style={styles.optionRow}><Text style={styles.optionText}>Active schedule</Text><Switch value={draft.is_active} onValueChange={(is_active) => setDraft({ ...draft, is_active })} /></View>
+              <Text style={styles.inputLabel}>Sections</Text>
+              {REPORT_SECTIONS.map((id) => <Pressable key={id} onPress={() => setDraft({ ...draft, sections: draft.sections.includes(id) ? draft.sections.filter((item) => item !== id) : [...draft.sections, id] })} style={styles.toggleRow}><Feather name={draft.sections.includes(id) ? 'check-square' : 'square'} size={19} color={semanticColors.primary} /><Text style={styles.toggleText}>{SECTION_LABELS[id]}</Text></Pressable>)}
+              <View style={styles.modalActions}><Pressable onPress={() => setDraft(null)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>Cancel</Text></Pressable><Pressable disabled={saving || !draft.email || !draft.sections.length} onPress={save} style={[styles.primaryButton, (saving || !draft.email || !draft.sections.length) && styles.buttonDisabled]}><Text style={styles.primaryButtonText}>{saving ? 'Saving...' : 'Save'}</Text></Pressable></View>
+            </View>
+          ) : <>
+            {recipients.map((recipient) => <View key={recipient.id} style={styles.recipientRow}><View style={styles.recipientCopy}><Text style={styles.rowTitle}>{recipient.name || recipient.email}</Text><Text style={styles.rowMeta}>{recipient.email} · {recipient.frequency} · {String(recipient.send_time).slice(0, 5)}</Text><Text style={styles.rowMeta} numberOfLines={2}>{recipient.sections.map((id) => SECTION_LABELS[id]).join(', ')}</Text><Text style={styles.rowMeta}>{recipient.last_delivery_status ? `Last delivery: ${recipient.last_delivery_status}` : 'No deliveries yet'}</Text></View>{canManage && <View style={styles.iconActions}><IconAction icon="send" label="Send test" disabled={!deliveryEnabled || testingId === recipient.id} onPress={() => sendTest(recipient)} /><IconAction icon="edit-2" label="Edit" onPress={() => edit(recipient)} /><IconAction icon="trash-2" label="Delete" onPress={() => onDelete(recipient.id)} /></View>}</View>)}
+            {!recipients.length && <Text style={styles.emptyText}>No scheduled recipients.</Text>}
+            {canManage && <Pressable onPress={() => edit()} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Add recipient</Text></Pressable>}
+          </>}
+        </ScrollView>
+      </View></View>
+    </Modal>
+  );
 }
 
 function ModalHeader({ title, onClose }: { title: string; onClose: () => void }) {
@@ -549,6 +642,9 @@ const styles = StyleSheet.create({
   inputLabel: { ...typography.eyebrow, color: semanticColors.textMuted, textTransform: 'uppercase', marginBottom: 5 },
   input: { minHeight: 43, paddingHorizontal: 12, borderWidth: 1, borderColor: semanticColors.border, borderRadius: 7, color: semanticColors.text, backgroundColor: color_pallet.elevated.DEFAULT },
   validationText: { ...typography.caption, color: '#B91C1C' },
+  warningBox: { padding: 10, marginBottom: 10, borderRadius: 6, backgroundColor: color_pallet.amber[100] },
+  warningText: { ...typography.bodySmall, color: color_pallet.ink[800] },
+  statusMessage: { ...typography.bodySmall, color: semanticColors.textMuted, marginBottom: 10 },
   recipientRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 13, borderBottomWidth: 1, borderColor: semanticColors.border },
   recipientCopy: { flex: 1 },
 });

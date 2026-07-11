@@ -263,7 +263,7 @@ function SectionEyebrow({ children }) {
   return <p className="label-mono truncate px-3 pb-1.5 pt-5">{children}</p>
 }
 
-function LocationSwitcher({ context, restaurantId, activeTab }) {
+function LocationSwitcher({ context, restaurantId, activeTab, restaurantBase }) {
   const auth = useAuth()
   const navigate = useNavigate()
   const restaurants = auth.restaurant.restaurants || []
@@ -279,7 +279,7 @@ function LocationSwitcher({ context, restaurantId, activeTab }) {
     setSwitching(true)
     try {
       await auth.switchRestaurant(nextId)
-      navigate(`/restaurants/${nextId}/${context === 'store' ? activeTab || 'analytics' : 'analytics'}`)
+      navigate(`${restaurantBase}/${nextId}/${context === 'store' ? activeTab || 'analytics' : 'analytics'}`)
     } finally {
       setSwitching(false)
     }
@@ -346,6 +346,7 @@ export default function DashboardShell({
   restaurantId = null,
   setupWarningCount = 0,
   allowedStoreTabs = null, // null = all; array = owner-configured reseller visibility
+  routes = {},
   children,
 }) {
   const auth = useAuth()
@@ -356,6 +357,17 @@ export default function DashboardShell({
   // Section-scoped nav items (e.g. the Payroll & Tips entries) match on the
   // URL hash; no hash means the first section ('overview').
   const activeSection = (location.hash || '').replace('#', '') || 'overview'
+  const navigation = {
+    brand: '/',
+    overview: '/enterprise/overview',
+    stores: '/enterprise/stores',
+    rates: '/enterprise/rates',
+    devices: '/enterprise/devices',
+    users: '/enterprise/users',
+    settings: '/enterprise/settings',
+    restaurants: '/restaurants',
+    ...routes,
+  }
 
   const accountType = auth.accountType
   const showRates = accountType === 'reseller' || accountType === 'admin'
@@ -398,7 +410,7 @@ export default function DashboardShell({
           style={{ background: 'var(--dash-chrome-sidebar-bg)', boxShadow: 'var(--dash-chrome-sidebar-shadow)' }}
         >
           <div className="px-5 pb-1 pt-6">
-            <Link to="/" className="font-display text-2xl tracking-tight text-dash-cream">
+            <Link to={navigation.brand} className="font-display text-2xl tracking-tight text-dash-cream">
               SHIRE
             </Link>
             <p className="label-mono mt-0.5">
@@ -412,34 +424,34 @@ export default function DashboardShell({
               icon={Gauge}
               label="Overview"
               isActive={activeItem === 'overview'}
-              onClick={() => navigate('/enterprise/overview')}
+              onClick={() => navigate(navigation.overview)}
             />
             <SidebarItem
               icon={Building2}
               label="Stores"
               isActive={activeItem === 'stores'}
-              onClick={() => navigate('/enterprise/stores')}
+              onClick={() => navigate(navigation.stores)}
             />
             {showRates && (
               <SidebarItem
                 icon={Percent}
                 label="Rates & Pricing"
                 isActive={activeItem === 'rates'}
-                onClick={() => navigate('/enterprise/rates')}
+                onClick={() => navigate(navigation.rates)}
               />
             )}
             <SidebarItem
               icon={Monitor}
               label="Devices"
               isActive={activeItem === 'devices'}
-              onClick={() => navigate('/enterprise/devices')}
+              onClick={() => navigate(navigation.devices)}
             />
             {showUsers && (
               <SidebarItem
                 icon={Users}
                 label="Users"
                 isActive={activeItem === 'users'}
-                onClick={() => navigate('/enterprise/users')}
+                onClick={() => navigate(navigation.users)}
               />
             )}
             <SidebarItem icon={LayoutGrid} label="Enterprise Reports" soon />
@@ -455,7 +467,7 @@ export default function DashboardShell({
                       activeItem={activeItem}
                       activeSection={activeSection}
                       onHoverItem={(childId) => prefetchWorkspaceTab(restaurantId, childId, activeItem)}
-                      onNavigate={(childId, sectionId) => navigate(`/restaurants/${restaurantId}/${childId}${sectionId ? `#${sectionId}` : ''}`)}
+                      onNavigate={(childId, sectionId) => navigate(`${navigation.restaurants}/${restaurantId}/${childId}${sectionId ? `#${sectionId}` : ''}`)}
                     />
                   ) : (
                     <SidebarItem
@@ -465,7 +477,7 @@ export default function DashboardShell({
                       warning={item.id === 'setup' && setupWarningCount > 0}
                       isActive={activeItem === item.id && (!item.section || activeSection === item.section)}
                       onHover={() => prefetchWorkspaceTab(restaurantId, item.id, activeItem)}
-                      onClick={() => navigate(`/restaurants/${restaurantId}/${item.id}${item.section ? `#${item.section}` : ''}`)}
+                      onClick={() => navigate(`${navigation.restaurants}/${restaurantId}/${item.id}${item.section ? `#${item.section}` : ''}`)}
                     />
                   )
                 ))}
@@ -481,7 +493,7 @@ export default function DashboardShell({
               icon={Settings}
               label="Settings"
               isActive={activeItem === 'settings'}
-              onClick={() => navigate('/enterprise/settings')}
+              onClick={() => navigate(navigation.settings)}
             />
           </div>
         </aside>
@@ -507,6 +519,7 @@ export default function DashboardShell({
             context={context}
             restaurantId={restaurantId}
             activeTab={context === 'store' ? activeItem : null}
+            restaurantBase={navigation.restaurants}
           />
 
           <div className="ml-auto flex items-center gap-2">

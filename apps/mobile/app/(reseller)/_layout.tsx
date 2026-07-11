@@ -1,5 +1,5 @@
-import { Stack } from 'expo-router';
+import { RoleTabsLayout } from '@/components/RoleTabsLayout';
 
 export default function ResellerLayout() {
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return <RoleTabsLayout variant="reseller" />;
 }

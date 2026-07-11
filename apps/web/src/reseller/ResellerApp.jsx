@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import {
-  ArrowLeft,
-  BarChart3,
   CheckSquare,
   Filter,
   FolderPlus,
@@ -13,7 +11,6 @@ import {
   Settings,
   Square,
   Store,
-  Utensils,
   Users,
 } from 'lucide-react'
 import { useAuth } from '../auth'
@@ -40,15 +37,24 @@ import {
   saveResellerProfile,
   uploadResellerLogo,
 } from './data/resellerProfile'
-import RestaurantReportsPage from '../dashboard/reports/RestaurantReportsPage'
+import DashboardShell from '../dashboard/shell/DashboardShell'
+import { RestaurantWorkspace as ResellerRestaurantWorkspace } from '../dashboard/AuthenticatedDashboardApp'
+import OverviewPage from '../dashboard/pages/OverviewPage'
+import RatesPage from '../dashboard/pages/RatesPage'
+import DevicesPage from '../dashboard/pages/DevicesPage'
+import UsersPage from '../dashboard/pages/UsersPage'
 
 const GROUP_COLORS = ['#2EA6A1', '#D4A854', '#7C8CF8', '#E06B4F', '#6DAF5C', '#B66DD8']
-const DETAIL_TABS = [
-  { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-  { id: 'setup', label: 'Setup', icon: Settings },
-  { id: 'menu', label: 'Menu', icon: Utensils },
-  { id: 'team', label: 'Team', icon: Users },
-]
+const RESELLER_SHELL_ROUTES = {
+  brand: '/reseller',
+  overview: '/reseller/overview',
+  stores: '/reseller',
+  rates: '/reseller/rates',
+  devices: '/reseller/devices',
+  users: '/reseller/users',
+  settings: '/reseller/profile',
+  restaurants: '/reseller/restaurants',
+}
 const PROFILE_TABS = [
   { id: 'portfolio', label: 'Portfolio', icon: LayoutGrid },
   { id: 'profile', label: 'Profile', icon: Settings },
@@ -80,7 +86,7 @@ function LoadingScreen() {
   )
 }
 
-function ResellerShell({ children }) {
+function ResellerOnboardingShell({ children }) {
   const auth = useAuth()
 
   return (
@@ -112,6 +118,25 @@ function ResellerShell({ children }) {
         </header>
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">{children}</div>
       </main>
+    </ResellerGate>
+  )
+}
+
+function ResellerShell({ children, activeItem = 'stores', breadcrumb = null }) {
+  return (
+    <ResellerGate>
+      <DashboardShell
+        context="enterprise"
+        activeItem={activeItem}
+        routes={RESELLER_SHELL_ROUTES}
+        breadcrumb={breadcrumb || [
+          { label: 'Home', to: '/reseller' },
+          { label: 'Enterprise' },
+          { label: activeItem === 'settings' ? 'Profile' : 'Stores' },
+        ]}
+      >
+        {children}
+      </DashboardShell>
     </ResellerGate>
   )
 }
@@ -440,17 +465,44 @@ function PortfolioPage() {
   )
 }
 
+function ResellerLandingPage() {
+  const auth = useAuth()
+  const [profileState, setProfileState] = useState('loading')
+
+  useEffect(() => {
+    if (auth.accountType !== 'reseller' || !auth.user?.id) {
+      setProfileState('complete')
+      return
+    }
+    let cancelled = false
+    fetchResellerProfile(auth.user.id)
+      .then((profile) => {
+        if (!cancelled) setProfileState(isResellerProfileComplete(profile) ? 'complete' : 'incomplete')
+      })
+      .catch(() => {
+        if (!cancelled) setProfileState('incomplete')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [auth.accountType, auth.user?.id])
+
+  if (profileState === 'loading') return <LoadingScreen />
+  if (profileState === 'incomplete') return <Navigate to="/reseller/onboarding" replace />
+  return <PortfolioPage />
+}
+
 function ResellerOnboardingPage() {
   return (
-    <ResellerShell>
+    <ResellerOnboardingShell>
       <ResellerProfileEditor onboarding />
-    </ResellerShell>
+    </ResellerOnboardingShell>
   )
 }
 
 function ResellerProfilePage() {
   return (
-    <ResellerShell>
+    <ResellerShell activeItem="settings">
       <div className="mb-5 flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="label-mono">Profile</p>
@@ -1046,84 +1098,8 @@ function ModalFrame({ title, onCancel, children }) {
   )
 }
 
-function RestaurantDetailPage() {
-  const auth = useAuth()
-  const navigate = useNavigate()
-  const { restaurantId, tab = 'analytics' } = useParams()
-  const activeTab = DETAIL_TABS.some((item) => item.id === tab) ? tab : 'analytics'
-  const restaurant = auth.restaurant.restaurants.find((item) => item.id === restaurantId) || null
-
-  useEffect(() => {
-    if (!restaurantId || !restaurant) return
-    if (auth.restaurant.currentRestaurant?.id !== restaurantId) {
-      void auth.switchRestaurant(restaurantId)
-    }
-  }, [auth, restaurant, restaurantId])
-
-  if (!restaurantId) return <Navigate to="/reseller" replace />
-
-  if (!restaurant) {
-    return (
-      <ResellerShell>
-        <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-8">
-          <h1 className="text-2xl font-semibold">Restaurant not found</h1>
-          <p className="mt-2 text-dash-secondary">This reseller account is not assigned to that restaurant.</p>
-          <Link to="/reseller" className="mt-6 inline-flex rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black">
-            Back to portfolio
-          </Link>
-        </div>
-      </ResellerShell>
-    )
-  }
-
-  if (activeTab === 'setup') {
-    return <Navigate to={`/reseller/restaurants/${restaurantId}/setup`} replace />
-  }
-
-  return (
-    <ResellerShell>
-      <div className="mb-5 flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <button
-            type="button"
-            onClick={() => navigate('/reseller')}
-            className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-dash-secondary hover:text-dash-cream"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Portfolio
-          </button>
-          <p className="label-mono">Restaurant</p>
-          <h1 className="text-3xl font-semibold tracking-tight">{restaurant.name}</h1>
-          <p className="mt-1 text-sm text-dash-secondary">{formatLocation(restaurant)}</p>
-        </div>
-        <div className="flex overflow-x-auto rounded-xl border border-white/10 bg-white/[0.03] p-1">
-          {DETAIL_TABS.map((item) => {
-            const Icon = item.icon
-            return (
-              <Link
-                key={item.id}
-                to={`/reseller/restaurants/${restaurantId}/${item.id}`}
-                className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
-                  activeTab === item.id ? 'bg-white text-black' : 'text-dash-secondary hover:bg-white/10 hover:text-dash-cream'
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            )
-          })}
-        </div>
-      </div>
-      {activeTab === 'analytics' && <ResellerAnalytics restaurantId={restaurantId} restaurantName={restaurant.name} />}
-      {activeTab === 'menu' && <ResellerMenu restaurantId={restaurantId} />}
-      {activeTab === 'team' && <ResellerTeam restaurantId={restaurantId} />}
-    </ResellerShell>
-  )
-}
-
 function ResellerSetupEditor() {
   const auth = useAuth()
-  const navigate = useNavigate()
   const { restaurantId } = useParams()
   const restaurant = auth.restaurant.restaurants.find((item) => item.id === restaurantId) || null
   const { groups, restaurants, isLoading: isPortfolioLoading, error: portfolioError } = useResellerPortfolio()
@@ -1201,44 +1177,19 @@ function ResellerSetupEditor() {
   }
 
   return (
-    <ResellerShell>
-      <div className="mb-5 flex flex-col gap-4 border-b border-white/10 pb-5 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <button
-            type="button"
-            onClick={() => navigate(`/reseller/restaurants/${restaurantId}/analytics`)}
-            className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-dash-secondary hover:text-dash-cream"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Restaurant
-          </button>
-          <p className="label-mono">Setup</p>
-          <h1 className="text-3xl font-semibold tracking-tight">{restaurant.name}</h1>
-          <p className="mt-1 text-sm text-dash-secondary">
-            Owner-style setup editor · {warningCount(setupWarnings)} open setup items
-          </p>
-          {portfolioError && (
-            <p className="mt-2 text-sm text-red-300">{portfolioError}</p>
-          )}
-        </div>
-        <div className="flex overflow-x-auto rounded-xl border border-white/10 bg-white/[0.03] p-1">
-          {DETAIL_TABS.map((item) => {
-            const Icon = item.icon
-            return (
-              <Link
-                key={item.id}
-                to={`/reseller/restaurants/${restaurantId}/${item.id}`}
-                className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
-                  item.id === 'setup' ? 'bg-white text-black' : 'text-dash-secondary hover:bg-white/10 hover:text-dash-cream'
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            )
-          })}
-        </div>
-      </div>
+    <DashboardShell
+      context="store"
+      activeItem="setup"
+      breadcrumb={[
+        { label: 'Home', to: `/reseller/restaurants/${restaurantId}/analytics` },
+        { label: 'Setup' },
+      ]}
+      restaurant={restaurant}
+      restaurantId={restaurantId}
+      setupWarningCount={warningCount(setupWarnings)}
+      routes={RESELLER_SHELL_ROUTES}
+    >
+      {portfolioError && <StatusMessage tone="error">{portfolioError}</StatusMessage>}
       <ModernRestaurantSetupPanel
         restaurant={restaurant}
         restaurantId={restaurantId}
@@ -1262,7 +1213,7 @@ function ResellerSetupEditor() {
           onApply={closePropagationModal}
         />
       )}
-    </ResellerShell>
+    </DashboardShell>
   )
 }
 
@@ -1464,202 +1415,27 @@ function PropagationModal({ request, restaurants, groups, sourceRestaurantId, on
   )
 }
 
-function ResellerAnalytics({ restaurantId, restaurantName }) {
-  return <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurantName} />
-}
-
-function LegacyResellerAnalytics({ restaurantId }) {
-  const [payload, setPayload] = useState(null)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    let cancelled = false
-    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/owner-analytics?period=week`)
-      .then((data) => {
-        if (!cancelled) setPayload(data)
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load analytics.')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [restaurantId])
-
-  const sections = payload?.sections || {}
-  const revenue = sections.revenue?.data || {}
-  const visits = sections.visits?.data || {}
-  const staff = sections.staff?.data || sections.labor?.data || {}
-  const menuItems = sections.menu?.items || []
-
-  return (
-    <div className="grid gap-4 xl:grid-cols-3">
-      {error && <div className="xl:col-span-3"><StatusMessage tone="error">{error}</StatusMessage></div>}
-      <MetricCard label="Revenue" value={formatCurrency(revenue.revenue)} />
-      <MetricCard label="Orders" value={formatNumber(revenue.orders)} />
-      <MetricCard label="Covers" value={formatNumber(visits.covers)} />
-      <MetricCard label="Staff worked" value={formatNumber(staff.staff_worked)} />
-      <MetricCard label="Labor minutes" value={formatNumber(staff.labor_minutes)} />
-      <MetricCard label="Avg order" value={formatCurrency(revenue.avg_order_value)} />
-      <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 xl:col-span-3">
-        <h2 className="text-lg font-semibold">Menu sales</h2>
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="text-dash-tertiary">
-              <tr>
-                <th className="py-2 pr-4 font-medium">Item</th>
-                <th className="py-2 pr-4 font-medium">Qty</th>
-                <th className="py-2 pr-4 font-medium">Revenue</th>
-              </tr>
-            </thead>
-            <tbody>
-              {menuItems.slice(0, 8).map((item) => (
-                <tr key={item.name} className="border-t border-white/10">
-                  <td className="py-2 pr-4">{item.name}</td>
-                  <td className="py-2 pr-4 text-dash-secondary">{formatNumber(item.quantity)}</td>
-                  <td className="py-2 pr-4 text-dash-secondary">{formatCurrency(item.revenue)}</td>
-                </tr>
-              ))}
-              {menuItems.length === 0 && (
-                <tr><td className="py-4 text-dash-secondary" colSpan="3">No menu sales data yet.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    </div>
-  )
-}
-
-function MetricCard({ label, value }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
-      <p className="label-mono">{label}</p>
-      <p className="mt-2 text-2xl font-semibold">{value}</p>
-    </div>
-  )
-}
-
-function ResellerMenu({ restaurantId }) {
-  const [items, setItems] = useState([])
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    let cancelled = false
-    supabase
-      .from('menu_items')
-      .select('id, name, price, is_available, menu_categories(name)')
-      .eq('restaurant_id', restaurantId)
-      .order('name')
-      .then(({ data, error: queryError }) => {
-        if (cancelled) return
-        if (queryError) {
-          setError(queryError.message)
-        } else {
-          setItems(data || [])
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [restaurantId])
-
-  return (
-    <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
-      <h2 className="text-lg font-semibold">Menu</h2>
-      {error && <StatusMessage tone="error">{error}</StatusMessage>}
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {items.map((item) => (
-          <div key={item.id} className="rounded-xl border border-white/10 bg-black/20 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-semibold">{item.name}</p>
-                <p className="text-sm text-dash-secondary">{item.menu_categories?.name || 'Uncategorized'}</p>
-              </div>
-              <p className="font-semibold">{formatCurrency(item.price)}</p>
-            </div>
-          </div>
-        ))}
-        {items.length === 0 && <p className="text-sm text-dash-secondary">No menu items found.</p>}
-      </div>
-    </section>
-  )
-}
-
-function ResellerTeam({ restaurantId }) {
-  const [team, setTeam] = useState([])
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    let cancelled = false
-    supabase
-      .from('waiters')
-      .select('id, name, role, email, phone, is_active')
-      .eq('restaurant_id', restaurantId)
-      .order('name')
-      .then(({ data, error: queryError }) => {
-        if (cancelled) return
-        if (queryError) {
-          setError(queryError.message)
-        } else {
-          setTeam(data || [])
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [restaurantId])
-
-  return (
-    <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
-      <h2 className="text-lg font-semibold">Team</h2>
-      {error && <StatusMessage tone="error">{error}</StatusMessage>}
-      <div className="mt-4 overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead className="text-dash-tertiary">
-            <tr>
-              <th className="py-2 pr-4 font-medium">Name</th>
-              <th className="py-2 pr-4 font-medium">Role</th>
-              <th className="py-2 pr-4 font-medium">Contact</th>
-            </tr>
-          </thead>
-          <tbody>
-            {team.map((member) => (
-              <tr key={member.id} className="border-t border-white/10">
-                <td className="py-2 pr-4">{member.name}</td>
-                <td className="py-2 pr-4 text-dash-secondary">{member.role || 'Staff'}</td>
-                <td className="py-2 pr-4 text-dash-secondary">{member.email || member.phone || 'No contact'}</td>
-              </tr>
-            ))}
-            {team.length === 0 && (
-              <tr><td className="py-4 text-dash-secondary" colSpan="3">No team members found.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  )
-}
-
-function formatCurrency(value) {
-  const number = Number(value || 0)
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number.isFinite(number) ? number : 0)
-}
-
-function formatNumber(value) {
-  const number = Number(value || 0)
-  return new Intl.NumberFormat('en-US').format(Number.isFinite(number) ? number : 0)
-}
-
 export default function ResellerApp() {
   return (
     <Routes>
-      <Route index element={<PortfolioPage />} />
+      <Route index element={<ResellerLandingPage />} />
       <Route path="onboarding" element={<ResellerOnboardingPage />} />
       <Route path="profile" element={<ResellerProfilePage />} />
+      <Route path="overview" element={<ResellerShell activeItem="overview"><OverviewPage restaurantBase="/reseller/restaurants" /></ResellerShell>} />
+      <Route path="rates" element={<ResellerShell activeItem="rates"><RatesPage restaurantBase="/reseller/restaurants" fallbackPath="/reseller" /></ResellerShell>} />
+      <Route path="devices" element={<ResellerShell activeItem="devices"><DevicesPage /></ResellerShell>} />
+      <Route path="users" element={<ResellerShell activeItem="users"><UsersPage fallbackPath="/reseller" /></ResellerShell>} />
       <Route path="restaurants/:restaurantId/setup" element={<ResellerGate><ResellerSetupEditor /></ResellerGate>} />
       <Route path="restaurants/:restaurantId" element={<Navigate to="analytics" replace />} />
-      <Route path="restaurants/:restaurantId/:tab" element={<RestaurantDetailPage />} />
+      <Route path="restaurants/:restaurantId/:tab" element={(
+        <ResellerGate>
+          <ResellerRestaurantWorkspace
+            restaurantBase="/reseller/restaurants"
+            restaurantListPath="/reseller"
+            shellRoutes={RESELLER_SHELL_ROUTES}
+          />
+        </ResellerGate>
+      )} />
       <Route path="*" element={<Navigate to="/reseller" replace />} />
     </Routes>
   )

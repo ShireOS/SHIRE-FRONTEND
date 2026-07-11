@@ -75,7 +75,7 @@ function TogglePill({ checked, onChange, label }) {
   )
 }
 
-function RatePlanCard({ restaurant, plan, pendingRequest, userId, onSaved, onRequestChange }) {
+function RatePlanCard({ restaurant, plan, pendingRequest, userId, onSaved, onRequestChange, restaurantBase }) {
   const navigate = useNavigate()
   const [expanded, setExpanded] = useState(false)
   const [form, setForm] = useState(() => planToForm(plan))
@@ -276,7 +276,7 @@ function RatePlanCard({ restaurant, plan, pendingRequest, userId, onSaved, onReq
               {!payout.ready && (
                 <button
                   type="button"
-                  onClick={() => navigate(`/restaurants/${restaurant.id}/setup`)}
+                  onClick={() => navigate(`${restaurantBase}/${restaurant.id}/setup`)}
                   className="mt-3 h-8 w-full rounded-full border border-dash-warning/40 bg-dash-warning/10 text-xs font-semibold text-dash-warning transition hover:bg-dash-warning/20"
                 >
                   Complete payout setup
@@ -333,7 +333,7 @@ function RatePlanCard({ restaurant, plan, pendingRequest, userId, onSaved, onReq
   )
 }
 
-export default function RatesPage() {
+export default function RatesPage({ restaurantBase = '/restaurants', fallbackPath = '/enterprise/stores' }) {
   const auth = useAuth()
   const restaurants = auth.restaurant.restaurants || []
   const [plans, setPlans] = useState({})
@@ -369,7 +369,7 @@ export default function RatesPage() {
   }, [restaurantIds.join(',')])
 
   if (auth.accountType !== 'reseller' && auth.accountType !== 'admin') {
-    return <Navigate to="/enterprise/stores" replace />
+    return <Navigate to={fallbackPath} replace />
   }
 
   return (
@@ -416,6 +416,7 @@ export default function RatesPage() {
                   return request ? [request, ...withoutStore] : withoutStore
                 })
               }
+              restaurantBase={restaurantBase}
             />
           ))}
         </div>
