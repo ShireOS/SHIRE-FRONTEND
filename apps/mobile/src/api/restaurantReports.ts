@@ -34,6 +34,11 @@ export type ReportRecipient = {
   weekday: number | null;
   month_day: number | null;
   is_active: boolean;
+  last_delivery_status?: string | null;
+  last_delivery_at?: string | null;
+  last_sent_at?: string | null;
+  last_delivered_at?: string | null;
+  last_delivery_error?: string | null;
 };
 
 export function fetchRestaurantReport(restaurantId: string, query: URLSearchParams) {
@@ -52,8 +57,15 @@ export function saveReportPreference(restaurantId: string, preference: ReportPre
 }
 
 export function fetchReportRecipients(restaurantId: string) {
-  return apiRequest<{ recipients: ReportRecipient[]; can_manage: boolean }>(
+  return apiRequest<{ recipients: ReportRecipient[]; can_manage: boolean; delivery_enabled: boolean; delivery_disabled_reason?: string | null }>(
     `/restaurants/${restaurantId}/reports/recipients`,
+  );
+}
+
+export function sendTestReportRecipient(restaurantId: string, recipientId: string) {
+  return apiRequest<{ message: string; delivery: Record<string, unknown> }>(
+    `/restaurants/${restaurantId}/reports/recipients/${recipientId}/test`,
+    { method: 'POST' },
   );
 }
 
