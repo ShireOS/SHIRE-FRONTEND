@@ -43,7 +43,6 @@ import { TAB_PERMISSIONS } from '../shared/permissions'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
 import SalesTiles from './components/SalesTiles'
 import { usePersistedPeriod } from './data/analyticsSummary'
-import ResellerApp from '../reseller/ResellerApp'
 import RestaurantReportsPage from './reports/RestaurantReportsPage'
 
 function LoadingScreen() {
@@ -4438,7 +4437,7 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
   )
 }
 
-function RestaurantWorkspace() {
+export function RestaurantWorkspace() {
   const auth = useAuth()
   const navigate = useNavigate()
   const { restaurantId, tab = 'analytics' } = useParams()
@@ -4496,7 +4495,7 @@ function RestaurantWorkspace() {
   }, [restaurant, restaurantId, setupRefreshKey])
 
   if (!restaurantId) {
-    return <Navigate to="/restaurants" replace />
+    return <Navigate to="/reseller" replace />
   }
 
   if (!restaurant) {
@@ -4506,7 +4505,7 @@ function RestaurantWorkspace() {
           <div className="mx-auto max-w-4xl rounded-2xl border border-white/10 bg-white/[0.035] p-8">
             <h1 className="text-2xl font-semibold">Restaurant not found</h1>
             <p className="mt-2 text-dash-secondary">This account is not tied to that restaurant.</p>
-            <Link to="/restaurants" className="mt-6 inline-flex rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black">
+            <Link to="/reseller" className="mt-6 inline-flex rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black">
               Back to restaurants
             </Link>
           </div>
@@ -4517,18 +4516,18 @@ function RestaurantWorkspace() {
 
   // Resellers only reach owner-permitted tabs; deep links bounce to Home.
   if (allowedStoreTabs && !allowedStoreTabs.includes(activeTab)) {
-    return <Navigate to={`/restaurants/${restaurantId}/analytics`} replace />
+    return <Navigate to={`/reseller/restaurants/${restaurantId}/analytics`} replace />
   }
 
   // Back-office members only reach permitted tabs (owners bypass; server
   // guards remain the real enforcement).
   const requiredPermission = TAB_PERMISSIONS[activeTab]
   if (!backOfficeAccess.loading && requiredPermission && !backOfficeAccess.can(requiredPermission)) {
-    return <Navigate to={`/restaurants/${restaurantId}/analytics`} replace />
+    return <Navigate to={`/reseller/restaurants/${restaurantId}/analytics`} replace />
   }
 
   const breadcrumb = [
-    { label: 'Home', to: `/restaurants/${restaurantId}/analytics` },
+    { label: 'Home', to: `/reseller/restaurants/${restaurantId}/analytics` },
     { label: WORKSPACE_BREADCRUMB_LABELS[activeTab] || 'Overview' },
   ]
 
@@ -4629,7 +4628,6 @@ export default function AuthenticatedDashboardApp() {
         <Route path="auth/callback" element={<AuthCallbackPage />} />
         <Route path="employee" element={<EmployeePortal />} />
         <Route path="onboarding" element={<OnboardingPage />} />
-        <Route path="reseller/*" element={<ResellerApp />} />
         <Route path="claim/:token" element={<ClaimStorePage />} />
         <Route path="invite" element={<AcceptInvitePage />} />
         <Route path="enterprise" element={<Navigate to="/enterprise/stores" replace />} />
