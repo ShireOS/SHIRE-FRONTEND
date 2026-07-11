@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { CheckCircle2, Printer, ReceiptText, Route, Search } from 'lucide-react'
 import { supabase } from '../../shared/lib/supabase'
-import { fetchWithSupabaseAuth } from '../../shared/query'
+import { fetchPosApi } from '../../shared/api/posClient'
 import MenuPanel from '../MenuPanel'
 
 const DEFAULT_CONFIG = {
@@ -62,8 +62,8 @@ export default function PrintingRoutingPage({ restaurantId }) {
       setLoading(true)
       try {
         const [printing, routes, itemsResult, modifiersResult] = await Promise.all([
-          fetchWithSupabaseAuth(`/restaurants/${restaurantId}/printing-config`),
-          fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing`),
+          fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`),
+          fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing`),
           supabase.from('menu_items').select('id,name,category').eq('restaurant_id', restaurantId).is('archived_at', null).order('name'),
           supabase.from('menu_modifiers').select('id,name,group_name').eq('restaurant_id', restaurantId).is('archived_at', null).order('name'),
         ])
@@ -90,7 +90,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
     if (loading || section === 'routing') return undefined
     const timer = setTimeout(async () => {
       try {
-        const result = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/printing-config/preview`, {
+        const result = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config/preview`, {
           method: 'POST',
           body: JSON.stringify({ output, station_id: scope === 'whole' ? null : scope, config }),
         })
@@ -145,7 +145,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const save = async () => {
     setSaving(true); setError(''); setMessage('')
     try {
-      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/printing-config`, { method: 'PUT', body: JSON.stringify(config) })
+      const saved = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`, { method: 'PUT', body: JSON.stringify(config) })
       setConfig(saved)
       setMessage('Printing configuration saved and active on POS print jobs.')
     } catch (err) {

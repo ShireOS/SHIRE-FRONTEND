@@ -14,6 +14,7 @@ import {
   wouldCreateCycle,
 } from './data/menuGroups'
 import { fetchCategoryColors, fetchItemImages, setCategoryColor } from './data/menuExtras'
+import { fetchPosApi } from '../shared/api/posClient'
 import {
   addAllergyPill,
   ensureAllergyGroup,
@@ -519,7 +520,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null }
   }
 
   const loadPrintingConfig = async () => {
-    const data = await api(`/restaurants/${restaurantId}/printing-config`)
+    const data = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`)
     setPrintingConfig(data || { aliases: { items: {}, modifiers: {} } })
   }
 
