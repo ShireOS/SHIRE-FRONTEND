@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { CheckCircle2, Printer, ReceiptText, Route, Search } from 'lucide-react'
 import { supabase } from '../../shared/lib/supabase'
 import { fetchPosApi } from '../../shared/api/posClient'
+import { fetchWithSupabaseAuth } from '../../shared/query'
 import MenuPanel from '../MenuPanel'
 
 const DEFAULT_CONFIG = {
@@ -63,7 +64,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
       try {
         const [printing, routes, itemsResult, modifiersResult] = await Promise.all([
           fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`),
-          fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing`),
+          fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing`),
           supabase.from('menu_items').select('id,name,category').eq('restaurant_id', restaurantId).is('archived_at', null).order('name'),
           supabase.from('menu_modifiers').select('id,name,group_name').eq('restaurant_id', restaurantId).is('archived_at', null).order('name'),
         ])
