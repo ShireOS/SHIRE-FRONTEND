@@ -4438,7 +4438,11 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
   )
 }
 
-function RestaurantWorkspace() {
+export function RestaurantWorkspace({
+  restaurantBase = '/restaurants',
+  restaurantListPath = '/restaurants',
+  shellRoutes = {},
+}) {
   const auth = useAuth()
   const navigate = useNavigate()
   const { restaurantId, tab = 'analytics' } = useParams()
@@ -4496,7 +4500,7 @@ function RestaurantWorkspace() {
   }, [restaurant, restaurantId, setupRefreshKey])
 
   if (!restaurantId) {
-    return <Navigate to="/restaurants" replace />
+    return <Navigate to={restaurantListPath} replace />
   }
 
   if (!restaurant) {
@@ -4506,7 +4510,7 @@ function RestaurantWorkspace() {
           <div className="mx-auto max-w-4xl rounded-2xl border border-white/10 bg-white/[0.035] p-8">
             <h1 className="text-2xl font-semibold">Restaurant not found</h1>
             <p className="mt-2 text-dash-secondary">This account is not tied to that restaurant.</p>
-            <Link to="/restaurants" className="mt-6 inline-flex rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black">
+            <Link to={restaurantListPath} className="mt-6 inline-flex rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black">
               Back to restaurants
             </Link>
           </div>
@@ -4517,18 +4521,18 @@ function RestaurantWorkspace() {
 
   // Resellers only reach owner-permitted tabs; deep links bounce to Home.
   if (allowedStoreTabs && !allowedStoreTabs.includes(activeTab)) {
-    return <Navigate to={`/restaurants/${restaurantId}/analytics`} replace />
+    return <Navigate to={`${restaurantBase}/${restaurantId}/analytics`} replace />
   }
 
   // Back-office members only reach permitted tabs (owners bypass; server
   // guards remain the real enforcement).
   const requiredPermission = TAB_PERMISSIONS[activeTab]
   if (!backOfficeAccess.loading && requiredPermission && !backOfficeAccess.can(requiredPermission)) {
-    return <Navigate to={`/restaurants/${restaurantId}/analytics`} replace />
+    return <Navigate to={`${restaurantBase}/${restaurantId}/analytics`} replace />
   }
 
   const breadcrumb = [
-    { label: 'Home', to: `/restaurants/${restaurantId}/analytics` },
+    { label: 'Home', to: `${restaurantBase}/${restaurantId}/analytics` },
     { label: WORKSPACE_BREADCRUMB_LABELS[activeTab] || 'Overview' },
   ]
 
@@ -4551,6 +4555,7 @@ function RestaurantWorkspace() {
           restaurantId={restaurantId}
           setupWarningCount={modernWarningCount(setupWarnings || {})}
           allowedStoreTabs={allowedStoreTabs}
+          routes={shellRoutes}
         >
           <ModernRestaurantSetupPanel
             restaurant={restaurant}
@@ -4574,6 +4579,7 @@ function RestaurantWorkspace() {
         restaurantId={restaurantId}
         setupWarningCount={modernWarningCount(setupWarnings || {})}
         allowedStoreTabs={allowedStoreTabs}
+        routes={shellRoutes}
       >
         {activeTab === 'analytics' && (
           <>

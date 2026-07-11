@@ -38,7 +38,7 @@ function MetricCard({ label, value, detail }) {
  * Enterprise rollup: aggregate profit/sales/labor across every store the
  * viewer touches (optionally one group), by period, with per-store drill-down.
  */
-export default function OverviewPage() {
+export default function OverviewPage({ restaurantBase = '/restaurants' }) {
   const auth = useAuth()
   const navigate = useNavigate()
   const [period, setPeriod] = usePersistedPeriod('shire_overview_period')
@@ -132,7 +132,7 @@ export default function OverviewPage() {
 
   const openStore = async (restaurant) => {
     await auth.switchRestaurant(restaurant.id)
-    navigate(`/restaurants/${restaurant.id}/analytics`)
+    navigate(`${restaurantBase}/${restaurant.id}/analytics`)
   }
 
   return (

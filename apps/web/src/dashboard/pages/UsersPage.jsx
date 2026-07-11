@@ -52,7 +52,7 @@ function AssignmentEditor({ profile, restaurants, assignments, onToggle, busyRes
   )
 }
 
-export default function UsersPage() {
+export default function UsersPage({ fallbackPath = '/enterprise/stores' }) {
   const auth = useAuth()
   const restaurants = auth.restaurant.restaurants || []
 
@@ -107,7 +107,7 @@ export default function UsersPage() {
   }, [profiles, search])
 
   if (auth.accountType !== 'admin') {
-    return <Navigate to="/enterprise/stores" replace />
+    return <Navigate to={fallbackPath} replace />
   }
 
   const changeAccountType = async (profile, accountType) => {

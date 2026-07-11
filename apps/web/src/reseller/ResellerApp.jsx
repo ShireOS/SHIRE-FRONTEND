@@ -19,7 +19,7 @@ import { supabase } from '../shared/lib/supabase'
 import ModernRestaurantSetupPanel, {
   buildSetupWarnings,
   warningCount,
-} from '../reseller-dashboard/RestaurantSetupPanel'
+} from '../dashboard/RestaurantSetupPanel'
 import {
   buildGroupCards,
   createResellerGroup,
@@ -37,14 +37,24 @@ import {
   saveResellerProfile,
   uploadResellerLogo,
 } from './data/resellerProfile'
-import DashboardShell from '../reseller-dashboard/shell/DashboardShell'
-import { RestaurantWorkspace as ResellerRestaurantWorkspace } from '../reseller-dashboard/AuthenticatedDashboardApp'
-import OverviewPage from '../reseller-dashboard/pages/OverviewPage'
-import RatesPage from '../reseller-dashboard/pages/RatesPage'
-import DevicesPage from '../reseller-dashboard/pages/DevicesPage'
-import UsersPage from '../reseller-dashboard/pages/UsersPage'
+import DashboardShell from '../dashboard/shell/DashboardShell'
+import { RestaurantWorkspace as ResellerRestaurantWorkspace } from '../dashboard/AuthenticatedDashboardApp'
+import OverviewPage from '../dashboard/pages/OverviewPage'
+import RatesPage from '../dashboard/pages/RatesPage'
+import DevicesPage from '../dashboard/pages/DevicesPage'
+import UsersPage from '../dashboard/pages/UsersPage'
 
 const GROUP_COLORS = ['#2EA6A1', '#D4A854', '#7C8CF8', '#E06B4F', '#6DAF5C', '#B66DD8']
+const RESELLER_SHELL_ROUTES = {
+  brand: '/reseller',
+  overview: '/reseller/overview',
+  stores: '/reseller',
+  rates: '/reseller/rates',
+  devices: '/reseller/devices',
+  users: '/reseller/users',
+  settings: '/reseller/profile',
+  restaurants: '/reseller/restaurants',
+}
 const PROFILE_TABS = [
   { id: 'portfolio', label: 'Portfolio', icon: LayoutGrid },
   { id: 'profile', label: 'Profile', icon: Settings },
@@ -118,8 +128,9 @@ function ResellerShell({ children, activeItem = 'stores', breadcrumb = null }) {
       <DashboardShell
         context="enterprise"
         activeItem={activeItem}
+        routes={RESELLER_SHELL_ROUTES}
         breadcrumb={breadcrumb || [
-          { label: 'Home', to: '/' },
+          { label: 'Home', to: '/reseller' },
           { label: 'Enterprise' },
           { label: activeItem === 'settings' ? 'Profile' : 'Stores' },
         ]}
@@ -1176,6 +1187,7 @@ function ResellerSetupEditor() {
       restaurant={restaurant}
       restaurantId={restaurantId}
       setupWarningCount={warningCount(setupWarnings)}
+      routes={RESELLER_SHELL_ROUTES}
     >
       {portfolioError && <StatusMessage tone="error">{portfolioError}</StatusMessage>}
       <ModernRestaurantSetupPanel
@@ -1409,13 +1421,21 @@ export default function ResellerApp() {
       <Route index element={<ResellerLandingPage />} />
       <Route path="onboarding" element={<ResellerOnboardingPage />} />
       <Route path="profile" element={<ResellerProfilePage />} />
-      <Route path="overview" element={<ResellerShell activeItem="overview"><OverviewPage /></ResellerShell>} />
-      <Route path="rates" element={<ResellerShell activeItem="rates"><RatesPage /></ResellerShell>} />
+      <Route path="overview" element={<ResellerShell activeItem="overview"><OverviewPage restaurantBase="/reseller/restaurants" /></ResellerShell>} />
+      <Route path="rates" element={<ResellerShell activeItem="rates"><RatesPage restaurantBase="/reseller/restaurants" fallbackPath="/reseller" /></ResellerShell>} />
       <Route path="devices" element={<ResellerShell activeItem="devices"><DevicesPage /></ResellerShell>} />
-      <Route path="users" element={<ResellerShell activeItem="users"><UsersPage /></ResellerShell>} />
+      <Route path="users" element={<ResellerShell activeItem="users"><UsersPage fallbackPath="/reseller" /></ResellerShell>} />
       <Route path="restaurants/:restaurantId/setup" element={<ResellerGate><ResellerSetupEditor /></ResellerGate>} />
       <Route path="restaurants/:restaurantId" element={<Navigate to="analytics" replace />} />
-      <Route path="restaurants/:restaurantId/:tab" element={<ResellerGate><ResellerRestaurantWorkspace /></ResellerGate>} />
+      <Route path="restaurants/:restaurantId/:tab" element={(
+        <ResellerGate>
+          <ResellerRestaurantWorkspace
+            restaurantBase="/reseller/restaurants"
+            restaurantListPath="/reseller"
+            shellRoutes={RESELLER_SHELL_ROUTES}
+          />
+        </ResellerGate>
+      )} />
       <Route path="*" element={<Navigate to="/reseller" replace />} />
     </Routes>
   )
