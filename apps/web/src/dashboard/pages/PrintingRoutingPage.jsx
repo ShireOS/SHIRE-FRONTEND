@@ -55,6 +55,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const [catalog, setCatalog] = useState([])
   const [scope, setScope] = useState('whole')
   const [output, setOutput] = useState('kitchen_ticket')
+  const [customerVariant, setCustomerVariant] = useState('open_check')
   const [preview, setPreview] = useState('Loading preview…')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -107,7 +108,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
       try {
         const result = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config/preview`, {
           method: 'POST',
-          body: JSON.stringify({ output, station_id: scope === 'whole' ? null : scope, config }),
+          body: JSON.stringify({ output, customer_variant: customerVariant, station_id: scope === 'whole' ? null : scope, config }),
           signal: controller.signal,
         })
         if (requestId === previewRequestRef.current) setPreview(result.preview || 'No preview available')
@@ -121,7 +122,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [config, loading, output, restaurantId, scope, section])
+  }, [config, customerVariant, loading, output, restaurantId, scope, section])
 
   const effectiveKitchen = useMemo(() => ({
     ...config.kitchen,
@@ -226,6 +227,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
             <div className="grid gap-4 md:grid-cols-2">
               <Select label="Output" value={output} onChange={setOutput}><option value="kitchen_ticket">Kitchen ticket</option><option value="customer_receipt">Customer receipt</option></Select>
               {output === 'kitchen_ticket' && <Select label="Apply to" value={scope} onChange={setScope}><option value="whole">Whole Kitchen</option>{stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}</Select>}
+              {output === 'customer_receipt' && <Select label="Preview state" value={customerVariant} onChange={setCustomerVariant}><option value="open_check">Open check</option><option value="paid_cash">Paid with cash</option><option value="paid_card">Paid with card</option></Select>}
             </div>
           </div>
 
