@@ -8,6 +8,11 @@ import MenuPanel from '../MenuPanel'
 
 const DEFAULT_CONFIG = {
   receipt_detail: 'clean',
+  customer: {
+    header_message: '', footer_message: '', show_server: true, show_table: true,
+    show_check_number: true, show_guest_count: true,
+    suggested_tips: { enabled: false, percentages: [18, 20, 22], basis: 'subtotal', placement: 'bottom', show_amounts: true },
+  },
   kitchen: {
     size: 'standard', print_modifiers: true, print_prices: false,
     print_seats: true, combine_identical: true, item_name_mode: 'alias',
@@ -71,7 +76,13 @@ export default function PrintingRoutingPage({ restaurantId }) {
         if (!current) return
         if (itemsResult.error) throw itemsResult.error
         if (modifiersResult.error) throw modifiersResult.error
-        setConfig({ ...clone(DEFAULT_CONFIG), ...printing })
+        setConfig({
+          ...clone(DEFAULT_CONFIG), ...printing,
+          customer: {
+            ...clone(DEFAULT_CONFIG.customer), ...(printing.customer || {}),
+            suggested_tips: { ...clone(DEFAULT_CONFIG.customer.suggested_tips), ...(printing.customer?.suggested_tips || {}) },
+          },
+        })
         setRouting(routes || { stations: [], targets: [] })
         setCatalog([
           ...(itemsResult.data || []).map(row => ({ ...row, kind: 'items', type: 'Item' })),
@@ -123,6 +134,27 @@ export default function PrintingRoutingPage({ restaurantId }) {
     }
     return next
   })
+
+  const patchCustomer = (patch, tipPatch = null) => setConfig(current => ({
+    ...current,
+    customer: {
+      ...clone(DEFAULT_CONFIG.customer), ...(current.customer || {}), ...patch,
+      suggested_tips: {
+        ...clone(DEFAULT_CONFIG.customer.suggested_tips), ...(current.customer?.suggested_tips || {}), ...(tipPatch || {}),
+      },
+    },
+  }))
+
+  const setTipPercentage = (index, value) => {
+    const percentages = [...(config.customer?.suggested_tips?.percentages || [18, 20, 22])]
+    percentages[index] = value
+    patchCustomer({}, { percentages })
+  }
+
+  const removeTipPercentage = index => {
+    const percentages = (config.customer?.suggested_tips?.percentages || []).filter((_, position) => position !== index)
+    if (percentages.length) patchCustomer({}, { percentages })
+  }
 
   const setAlias = (kind, id, value) => setConfig(current => {
     const next = clone(current)
@@ -189,10 +221,43 @@ export default function PrintingRoutingPage({ restaurantId }) {
           </div>
 
           {output === 'customer_receipt' ? (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
-              <h2 className="text-lg font-semibold">Customer receipt detail</h2>
-              <p className="mt-1 text-sm text-dash-tertiary">Clean hides $0 items and ordinary free modifiers. Full prints every line.</p>
-              <div className="mt-4 grid grid-cols-2 gap-2">{['clean', 'full'].map(value => <button key={value} onClick={() => setConfig(current => ({ ...current, receipt_detail: value }))} className={`rounded-xl border px-4 py-3 text-sm font-medium capitalize ${config.receipt_detail === value ? 'border-dash-gold bg-dash-gold/15 text-dash-gold' : 'border-white/10 text-dash-secondary'}`}>{value}</button>)}</div>
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+                <h2 className="text-lg font-semibold">Customer receipt detail</h2>
+                <p className="mt-1 text-sm text-dash-tertiary">Clean hides $0 items and ordinary free modifiers. Full prints every line.</p>
+                <div className="mt-4 grid grid-cols-2 gap-2">{['clean', 'full'].map(value => <button key={value} onClick={() => setConfig(current => ({ ...current, receipt_detail: value }))} className={`rounded-xl border px-4 py-3 text-sm font-medium capitalize ${config.receipt_detail === value ? 'border-dash-gold bg-dash-gold/15 text-dash-gold' : 'border-white/10 text-dash-secondary'}`}>{value}</button>)}</div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+                <h2 className="text-lg font-semibold">Suggested tips</h2>
+                <p className="mt-1 text-sm text-dash-tertiary">Print percentage choices on the open check. Paid receipts never ask for another tip.</p>
+                <div className="mt-3"><Toggle label="Print suggested tips" checked={config.customer?.suggested_tips?.enabled ?? false} onChange={value => patchCustomer({}, { enabled: value })} /></div>
+                {config.customer?.suggested_tips?.enabled && <div className="mt-4 space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Select label="Calculate from" value={config.customer.suggested_tips.basis} onChange={value => patchCustomer({}, { basis: value })}><option value="subtotal">Pre-tax subtotal</option><option value="total">Check total</option></Select>
+                    <Select label="Print location" value={config.customer.suggested_tips.placement} onChange={value => patchCustomer({}, { placement: value })}><option value="bottom">Bottom of check</option><option value="below_total">Directly below total</option></Select>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between gap-3"><span className="label-mono">Tip options</span>{config.customer.suggested_tips.percentages.length < 4 && <button type="button" onClick={() => patchCustomer({}, { percentages: [...config.customer.suggested_tips.percentages, 25] })} className="text-xs font-semibold text-dash-gold">+ Add option</button>}</div>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      {config.customer.suggested_tips.percentages.map((percentage, index) => <div key={index} className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2"><input type="number" min="1" max="50" step="0.5" value={percentage} onChange={event => setTipPercentage(index, event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none" /><span className="text-sm text-dash-tertiary">%</span>{config.customer.suggested_tips.percentages.length > 1 && <button type="button" onClick={() => removeTipPercentage(index)} className="text-xs text-dash-tertiary hover:text-red-300">Remove</button>}</div>)}
+                    </div>
+                  </div>
+                  <Toggle label="Show calculated dollar amounts" checked={config.customer.suggested_tips.show_amounts} onChange={value => patchCustomer({}, { show_amounts: value })} />
+                </div>}
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+                <h2 className="text-lg font-semibold">Receipt messages</h2>
+                <p className="mt-1 text-sm text-dash-tertiary">Keep these short so the receipt stays readable.</p>
+                <label className="mt-4 block"><span className="label-mono">Header message</span><input maxLength={120} value={config.customer?.header_message || ''} onChange={event => patchCustomer({ header_message: event.target.value })} placeholder="Welcome, event name, or brief notice" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></label>
+                <label className="mt-4 block"><span className="label-mono">Footer message</span><textarea maxLength={240} rows={3} value={config.customer?.footer_message || ''} onChange={event => patchCustomer({ footer_message: event.target.value })} placeholder="Thank you, return policy, or social message" className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></label>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+                <h2 className="text-lg font-semibold">Check information</h2>
+                <div className="mt-3"><Toggle label="Show table or tab name" checked={config.customer?.show_table ?? true} onChange={value => patchCustomer({ show_table: value })} /><Toggle label="Show check number" checked={config.customer?.show_check_number ?? true} onChange={value => patchCustomer({ show_check_number: value })} /><Toggle label="Show server name" checked={config.customer?.show_server ?? true} onChange={value => patchCustomer({ show_server: value })} /><Toggle label="Show guest count" checked={config.customer?.show_guest_count ?? true} onChange={value => patchCustomer({ show_guest_count: value })} /></div>
+              </div>
             </div>
           ) : (
             <>
