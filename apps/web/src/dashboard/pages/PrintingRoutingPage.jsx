@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { CheckCircle2, Printer, ReceiptText, Route, Search } from 'lucide-react'
 import { supabase } from '../../shared/lib/supabase'
@@ -61,6 +61,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const previewRequestRef = useRef(0)
 
   useEffect(() => {
     let current = true
@@ -100,18 +101,26 @@ export default function PrintingRoutingPage({ restaurantId }) {
 
   useEffect(() => {
     if (loading || section === 'routing') return undefined
+    const requestId = ++previewRequestRef.current
+    const controller = new AbortController()
     const timer = setTimeout(async () => {
       try {
         const result = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config/preview`, {
           method: 'POST',
           body: JSON.stringify({ output, station_id: scope === 'whole' ? null : scope, config }),
+          signal: controller.signal,
         })
-        setPreview(result.preview || 'No preview available')
+        if (requestId === previewRequestRef.current) setPreview(result.preview || 'No preview available')
       } catch (err) {
-        setPreview(err?.message || 'Preview unavailable')
+        if (err?.name !== 'AbortError' && requestId === previewRequestRef.current) {
+          setPreview(err?.message || 'Preview unavailable')
+        }
       }
     }, 250)
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
   }, [config, loading, output, restaurantId, scope, section])
 
   const effectiveKitchen = useMemo(() => ({
