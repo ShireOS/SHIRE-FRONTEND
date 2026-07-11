@@ -23,13 +23,24 @@ export async function fetchPosApi<T = any>(
   options: RequestInit = {},
 ): Promise<T> {
   const { data: sessionData } = await supabase.auth.getSession()
-  const token = sessionData?.session?.access_token
-  const headers = new Headers(options.headers || {})
-  if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
-  if (token) headers.set('Authorization', `Bearer ${token}`)
-  headers.set('X-Restaurant-Id', restaurantId)
+  let token = sessionData?.session?.access_token
+  const request = (accessToken?: string) => {
+    const headers = new Headers(options.headers || {})
+    if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
+    if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+    headers.set('X-Restaurant-Id', restaurantId)
+    return fetch(`${POS_API_BASE}${endpoint}`, { ...options, headers })
+  }
 
-  const response = await fetch(`${POS_API_BASE}${endpoint}`, { ...options, headers })
+  let response = await request(token)
+  if (response.status === 401 && !options.signal?.aborted) {
+    const { data: refreshed } = await supabase.auth.refreshSession()
+    const refreshedToken = refreshed.session?.access_token
+    if (refreshedToken && refreshedToken !== token) {
+      token = refreshedToken
+      response = await request(token)
+    }
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
     const detail = body.detail || body.message
