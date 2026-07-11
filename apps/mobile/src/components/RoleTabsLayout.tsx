@@ -31,6 +31,12 @@ const OWNER_TABS: RoleTab[] = [
     sfSymbol: { default: 'chart.xyaxis.line', selected: 'chart.xyaxis.line' },
   },
   {
+    name: 'portfolio',
+    title: 'Portfolio',
+    androidIcon: 'business',
+    sfSymbol: { default: 'building.2', selected: 'building.2.fill' },
+  },
+  {
     name: 'menu',
     title: 'Menu',
     androidIcon: 'restaurant',
@@ -89,17 +95,33 @@ const EMPLOYEE_TABS: RoleTab[] = [
   },
 ];
 
+const RESELLER_TABS: RoleTab[] = [
+  {
+    name: 'overview',
+    title: 'Overview',
+    androidIcon: 'stats-chart',
+    sfSymbol: { default: 'chart.bar', selected: 'chart.bar.fill' },
+  },
+  {
+    name: 'portfolio',
+    title: 'Stores',
+    androidIcon: 'business',
+    sfSymbol: { default: 'building.2', selected: 'building.2.fill' },
+  },
+];
+
 type RoleTabsLayoutProps = {
-  variant: 'owner' | 'employee';
+  variant: 'owner' | 'employee' | 'reseller';
 };
 
 const HIDDEN_TABS_BY_VARIANT: Record<RoleTabsLayoutProps['variant'], string[]> = {
   owner: ['scans'],
   employee: ['analytics', 'menu', 'scans'],
+  reseller: ['reports'],
 };
 
 export function RoleTabsLayout({ variant }: RoleTabsLayoutProps) {
-  const tabs = variant === 'owner' ? OWNER_TABS : EMPLOYEE_TABS;
+  const tabs = variant === 'owner' ? OWNER_TABS : variant === 'reseller' ? RESELLER_TABS : EMPLOYEE_TABS;
   const hiddenTabs = HIDDEN_TABS_BY_VARIANT[variant];
   const safeAreaEdges = Platform.OS === 'ios' ? (['top', 'bottom'] as const) : (['top'] as const);
 

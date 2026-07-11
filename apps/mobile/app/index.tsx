@@ -18,7 +18,7 @@ const BRAND_EYEBROW_TRACKING = 0.06 * 12
 
 function routeForRole(role: userRole) {
   if (role === 'owner' || role === 'developer' || role === 'admin') return '/(admin)/overview'
-  if (role === 'reseller' || role === 'reseller_employee') return '/(reseller)/portfolio'
+  if (role === 'reseller' || role === 'reseller_employee') return '/(reseller)/overview'
   if (role === 'employee') return '/(employee)/home'
   return null
 }
