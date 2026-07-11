@@ -558,11 +558,21 @@ function CategoryTipProfiles({ profiles, menuCategories, menuItems, defaultRules
     if (usedIds.has(id) && !openProfile.category_ids.includes(id)) return
     const nextIds = openProfile.category_ids.includes(id) ? openProfile.category_ids.filter(value => value !== id) : [...openProfile.category_ids, id]
     if (!nextIds.length) return
+    const nextCategoryNames = nextIds.map(value => categoryById.get(String(value))?.name).filter(Boolean)
+    const nextCategoryNameKeys = new Set(nextCategoryNames.map(name => String(name).toLowerCase()))
+    const nextItemOverrides = openProfile.item_overrides.filter(override => {
+      const item = (menuItems || []).find(candidate => candidate.id === override.menu_item_id)
+      if (!item) return false
+      const itemCategoryId = String(item.menu_category_id || item.category_id || '')
+      return nextIds.includes(itemCategoryId) || nextCategoryNameKeys.has(String(item.category || '').toLowerCase())
+    })
     updateProfile({
       category_ids: nextIds,
-      category_names: nextIds.map(value => categoryById.get(String(value))?.name).filter(Boolean),
-      name: nextIds.map(value => categoryById.get(String(value))?.name).filter(Boolean).join(' + '),
+      category_names: nextCategoryNames,
+      name: nextCategoryNames.join(' + '),
+      item_overrides: nextItemOverrides,
     })
+    if (!nextItemOverrides.some(override => override.menu_item_id === activeOverrideId)) setActiveOverrideId(null)
   }
   const editOverride = (item) => {
     const existing = openProfile.item_overrides.find(override => override.menu_item_id === item.id)
