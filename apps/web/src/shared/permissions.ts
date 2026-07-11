@@ -117,6 +117,7 @@ export const TAB_PERMISSIONS: Record<string, string> = {
   feedback: 'reports.view',
   devices: 'settings.edit',
   'pos-settings': 'settings.edit',
+  'printing-routing': 'settings.edit',
   'tip-pooling': 'payroll.view',
   'labor-cost': 'payroll.view',
   team: 'team.view',

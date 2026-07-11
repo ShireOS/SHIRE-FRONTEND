@@ -21,6 +21,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Percent,
+  Printer,
   Search,
   Settings,
   ShoppingCart,
@@ -143,6 +144,16 @@ const STORE_NAV = [
   { id: 'feedback', label: 'Complaints', icon: MessageSquareWarning },
   { id: 'devices', label: 'Devices', icon: Monitor },
   { id: 'pos-settings', label: 'POS Settings', icon: Settings },
+  {
+    id: 'printing-group',
+    label: 'Printing & Routing',
+    icon: Printer,
+    children: [
+      { id: 'printing-routing', section: 'overview', label: 'Overview', icon: LayoutGrid },
+      { id: 'printing-routing', section: 'routing', label: 'Routing', icon: SlidersHorizontal },
+      { id: 'printing-routing', section: 'receipts', label: 'Receipts & Tickets', icon: Printer },
+    ],
+  },
   {
     id: 'team-group',
     label: 'Team',

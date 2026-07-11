@@ -400,8 +400,8 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
 
 // ── Main panel ──────────────────────────────────────────────────────────────
 
-export function MenuPanel({ restaurantId }) {
-  const [activeTab, setActiveTab] = useState('items')
+export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null }) {
+  const [activeTab, setActiveTab] = useState(initialTab)
   const [menuItems, setMenuItems] = useState([])
   const [itemImages, setItemImages] = useState({})
   const [categories, setCategories] = useState([])
@@ -411,6 +411,7 @@ export function MenuPanel({ restaurantId }) {
   const [groups, setGroups] = useState([])
   const [specials, setSpecials] = useState([])
   const [routing, setRouting] = useState(null)
+  const [printingConfig, setPrintingConfig] = useState({ aliases: { items: {}, modifiers: {} } })
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -517,6 +518,11 @@ export function MenuPanel({ restaurantId }) {
     setRouting(data)
   }
 
+  const loadPrintingConfig = async () => {
+    const data = await api(`/restaurants/${restaurantId}/printing-config`)
+    setPrintingConfig(data || { aliases: { items: {}, modifiers: {} } })
+  }
+
   useEffect(() => {
     if (!restaurantId) return
     let cancelled = false
@@ -532,6 +538,7 @@ export function MenuPanel({ restaurantId }) {
       loadAllergies(),
       loadSpecials(),
       loadRouting(),
+      loadPrintingConfig(),
     ]).then(results => {
       if (cancelled) return
       if (results.some(result => result.status === 'rejected')) {
@@ -1231,7 +1238,7 @@ export function MenuPanel({ restaurantId }) {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      {!onlyTab && <div className="flex flex-wrap gap-2">
         {MENU_TABS.map(tab => (
           <SmallButton
             key={tab.id}
@@ -1244,7 +1251,7 @@ export function MenuPanel({ restaurantId }) {
             {tab.label}
           </SmallButton>
         ))}
-      </div>
+      </div>}
 
       {error && <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">{error}</div>}
       {notice && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">{notice}</div>}
@@ -1346,6 +1353,14 @@ export function MenuPanel({ restaurantId }) {
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="font-medium text-dash-cream">{item.name}</span>
+                              <a
+                                href="./printing-routing#receipts"
+                                onClick={event => event.stopPropagation()}
+                                className="rounded-full border border-dash-gold/25 bg-dash-gold/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-dash-gold"
+                                title="Open Receipts & Tickets"
+                              >
+                                Kitchen: {printingConfig.aliases?.items?.[item.id] || 'Full name'}
+                              </a>
                               {activeSpecialItemIds.has(item.id) && (
                                 <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-900">Special</span>
                               )}
@@ -1659,6 +1674,7 @@ export function MenuPanel({ restaurantId }) {
                       menuItems={mergedItems}
                       taxRates={taxRates}
                       reportingCategories={mergedCategories.filter(category => category.id)}
+                      kitchenAlias={printingConfig.aliases?.modifiers?.[modifier.id] || ''}
                       busy={busy}
                       onRename={next => void updateModifier(modifier.id, { name: next })}
                       onReprice={next => void updateModifier(modifier.id, { price_delta: next })}
@@ -2100,13 +2116,13 @@ function NewTaxRateInline({ busy, onCreate }) {
   )
 }
 
-function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, busy, onRename, onReprice, onRecategorize, onSetTaxRate, onSetReportingCategory, onReplaceItems, onDelete }) {
+function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitchenAlias, busy, onRename, onReprice, onRecategorize, onSetTaxRate, onSetReportingCategory, onReplaceItems, onDelete }) {
   const [expanded, setExpanded] = useState(false)
   const selectedIds = useMemo(() => new Set(modifier.item_ids || []), [modifier])
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
-      <div className="grid gap-3 lg:grid-cols-[1.2fr_110px_150px_150px_150px_auto_auto_auto] lg:items-center">
+      <div className="grid gap-3 lg:grid-cols-[1.2fr_110px_150px_150px_150px_auto_auto_auto_auto] lg:items-center">
         <TextInput
           defaultValue={modifier.name}
           onBlur={event => {
@@ -2152,6 +2168,7 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, busy,
           ))}
         </SelectInput>
         <span className="text-sm text-dash-tertiary">{(modifier.item_ids || []).length} item{(modifier.item_ids || []).length === 1 ? '' : 's'}</span>
+        <a href="./printing-routing#receipts" className="rounded-lg border border-dash-gold/25 bg-dash-gold/10 px-2 py-2 text-center text-xs font-semibold text-dash-gold" title="Open Receipts & Tickets">Kitchen: {kitchenAlias || 'Full name'}</a>
         <SmallButton onClick={() => setExpanded(current => !current)}>{expanded ? 'Close' : 'Items'}</SmallButton>
         <SmallButton variant="danger" onClick={onDelete} disabled={busy}>Remove</SmallButton>
       </div>

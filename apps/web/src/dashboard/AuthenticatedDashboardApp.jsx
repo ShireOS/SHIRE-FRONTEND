@@ -28,6 +28,7 @@ import ResellerAccessCard from './pages/ResellerAccessCard'
 import OverviewPage from './pages/OverviewPage'
 import SettingsPage from './pages/SettingsPage'
 import PosSettingsPage from './pages/PosSettingsPage'
+import PrintingRoutingPage from './pages/PrintingRoutingPage'
 import TipPoolingPage from './pages/TipPoolingPage'
 import LaborCostPage from './pages/LaborCostPage'
 import TeamPage from './pages/TeamPage'
@@ -129,6 +130,7 @@ const TABS = [
   { id: 'menu', label: 'Menu' },
   { id: 'devices', label: 'Devices' },
   { id: 'pos-settings', label: 'POS Settings' },
+  { id: 'printing-routing', label: 'Printing & Routing' },
   { id: 'tip-pooling', label: 'Payroll & Tips' },
   { id: 'labor-cost', label: 'Labor Cost' },
   { id: 'feedback', label: 'Complaints' },
@@ -4595,6 +4597,7 @@ export function RestaurantWorkspace({
         {activeTab === 'labor-cost' && <LaborCostPage restaurantId={restaurantId} />}
         {activeTab === 'devices' && <StoreDevicesPanel restaurantId={restaurantId} />}
         {activeTab === 'pos-settings' && <PosSettingsPage restaurantId={restaurantId} />}
+        {activeTab === 'printing-routing' && <PrintingRoutingPage restaurantId={restaurantId} />}
         {activeTab === 'tip-pooling' && <TipPoolingPage restaurantId={restaurantId} />}
         {activeTab === 'scheduling' && <SchedulingPanel restaurantId={restaurantId} />}
         {activeTab === 'messaging' && <ManagerMessagingPanel restaurantId={restaurantId} />}
@@ -4618,6 +4621,7 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   'labor-cost': 'Labor Cost',
   devices: 'Devices',
   'pos-settings': 'POS Settings',
+  'printing-routing': 'Printing & Routing',
   'tip-pooling': 'Payroll & Tips',
   scheduling: 'Scheduling',
   messaging: 'Messaging',
