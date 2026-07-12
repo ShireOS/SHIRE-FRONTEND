@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../shared/lib/supabase'
-import { fetchWithSupabaseAuth } from '../shared/query'
+import { fetchCached, fetchWithSupabaseAuth, queryClient, queryKeys, STALE_TIMES } from '../shared/query'
 import {
   addGroupOption,
   attachGroupToItem,
@@ -68,6 +68,137 @@ function DetailCard({ title, hint, children, actions }) {
       </div>
       <div className="mt-4">{children}</div>
     </section>
+  )
+}
+
+// Roll-up pricing: carve part of this item's price into other sales categories
+// so each portion is taxed and reported under that category. The remainder
+// stays in the item's own category, so repricing never breaks the split.
+// Example: $12 Jack & Coke in Cocktails with $2.50 carved out to Food.
+function PriceAllocationCard({ restaurantId, item, categories, run, busy }) {
+  const [rows, setRows] = useState([])
+  const [rosterEntry, setRosterEntry] = useState(null)
+  const [loaded, setLoaded] = useState(false)
+  const [addForm, setAddForm] = useState({ category_id: '', amount: '' })
+  const [formError, setFormError] = useState('')
+
+  const ownCategory = categories.find(candidate => candidate.name === item.category)
+  const otherCategories = categories.filter(candidate => !ownCategory || candidate.id !== ownCategory.id)
+  const categoryName = (id) => categories.find(candidate => candidate.id === id)?.name || 'Unknown category'
+
+  const loadAllocations = async (force = false) => {
+    const data = await fetchCached(
+      queryKeys.priceAllocations(restaurantId),
+      () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/price-allocations`),
+      force ? 0 : STALE_TIMES.setup,
+    ).catch(() => ({ items: [] }))
+    const entry = (data?.items || []).find(candidate => candidate.item_id === item.id) || null
+    setRows(entry ? entry.allocations.map(a => ({ category_id: a.category_id, amount: String(a.amount) })) : [])
+    setRosterEntry(entry)
+    setLoaded(true)
+  }
+
+  useEffect(() => {
+    setLoaded(false)
+    void loadAllocations()
+  }, [item.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const price = Number(item.price) || 0
+  const carved = rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)
+  const remainder = price - carved
+  const taxFor = (categoryId) => rosterEntry?.allocations.find(a => a.category_id === categoryId)
+
+  const save = (nextRows, message) => run(async () => {
+    await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items/${item.id}/price-allocations`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        allocations: nextRows.map(row => ({ category_id: row.category_id, amount: Number(row.amount) })),
+      }),
+    })
+    queryClient.invalidateQueries({ queryKey: queryKeys.priceAllocations(restaurantId) })
+    await loadAllocations(true)
+  }, message)
+
+  const addRow = () => {
+    setFormError('')
+    const amount = Number(cleanDecimal(addForm.amount))
+    if (!addForm.category_id) { setFormError('Pick a category to allocate to.'); return }
+    if (!Number.isFinite(amount) || amount <= 0) { setFormError('Enter an amount above $0.'); return }
+    if (rows.some(row => row.category_id === addForm.category_id)) { setFormError('That category already has an allocation.'); return }
+    if (price <= 0) { setFormError('Set an item price first.'); return }
+    if (carved + amount >= price) { setFormError(`Allocations must leave a remainder — keep the total under ${money(price)}.`); return }
+    const next = [...rows, { category_id: addForm.category_id, amount: amount.toFixed(2) }]
+    setAddForm({ category_id: '', amount: '' })
+    void save(next, `${money(amount)} of "${item.name}" now reports as ${categoryName(next[next.length - 1].category_id)}.`)
+  }
+
+  const removeRow = (categoryId) => {
+    setFormError('')
+    const next = rows.filter(row => row.category_id !== categoryId)
+    void save(next, next.length ? 'Allocation removed.' : 'Price split removed — the whole price stays in the item’s category.')
+  }
+
+  return (
+    <DetailCard
+      title="Price allocation (roll-up pricing)"
+      hint="Carve part of this item's price into another sales category so that portion gets that category's tax — e.g. the Coke in a Jack & Coke reports as Food. The remainder stays in this item's own category, even if you reprice it."
+    >
+      {!loaded ? (
+        <p className="text-sm text-dash-tertiary">Loading…</p>
+      ) : (
+        <div className="space-y-3">
+          {rows.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dash-gold/25 bg-dash-gold/[0.06] p-3 text-sm">
+                <div>
+                  <span className="rounded-full bg-dash-gold/20 px-2 py-0.5 text-[10px] font-bold uppercase text-dash-gold">Stays here</span>
+                  <span className="ml-2 font-medium text-dash-cream">{money(remainder)} · {item.category || 'this item’s category'}</span>
+                  {rosterEntry?.item_tax_name ? (
+                    <span className="ml-2 text-dash-tertiary">{rosterEntry.item_tax_name}{rosterEntry.item_tax_rate != null ? ` (${Number(rosterEntry.item_tax_rate)}%)` : ''}</span>
+                  ) : null}
+                </div>
+              </div>
+              {rows.map(row => {
+                const tax = taxFor(row.category_id)
+                return (
+                  <div key={row.category_id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-sm">
+                    <div>
+                      <span className="rounded-full bg-sky-200 px-2 py-0.5 text-[10px] font-bold uppercase text-sky-900">Allocated</span>
+                      <span className="ml-2 font-medium text-dash-cream">{money(row.amount)} · {categoryName(row.category_id)}</span>
+                      {tax?.tax_name ? (
+                        <span className="ml-2 text-dash-tertiary">{tax.tax_name}{tax.tax_rate != null ? ` (${Number(tax.tax_rate)}%)` : ''}</span>
+                      ) : null}
+                    </div>
+                    <SmallButton variant="danger" disabled={busy} onClick={() => removeRow(row.category_id)}>Remove</SmallButton>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {rows.length === 0 && (
+            <p className="text-sm text-dash-tertiary">
+              No split yet — the full {price > 0 ? money(price) : 'price'} reports under {item.category || 'this item’s category'}.
+            </p>
+          )}
+          <div className="grid gap-3 md:grid-cols-[1.4fr_120px_auto]">
+            <SelectInput value={addForm.category_id} onChange={event => setAddForm(prev => ({ ...prev, category_id: event.target.value }))}>
+              <option value="">Allocate to category…</option>
+              {otherCategories.map(candidate => (
+                <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
+              ))}
+            </SelectInput>
+            <TextInput
+              inputMode="decimal"
+              value={addForm.amount}
+              onChange={event => setAddForm(prev => ({ ...prev, amount: cleanDecimal(event.target.value) }))}
+              placeholder="2.50"
+            />
+            <SmallButton variant="primary" disabled={busy} onClick={() => addRow()}>Add allocation</SmallButton>
+          </div>
+          {formError ? <p className="text-sm text-red-300">{formError}</p> : null}
+        </div>
+      )}
+    </DetailCard>
   )
 }
 
@@ -913,6 +1044,14 @@ export function MenuItemDetail({
               </div>
             )}
           </DetailCard>
+
+          <PriceAllocationCard
+            restaurantId={restaurantId}
+            item={item}
+            categories={categories}
+            run={run}
+            busy={busy}
+          />
         </div>
 
         <div className="space-y-5">

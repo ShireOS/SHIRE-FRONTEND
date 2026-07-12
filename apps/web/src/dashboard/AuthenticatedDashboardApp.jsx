@@ -33,6 +33,7 @@ import TipPoolingPage from './pages/TipPoolingPage'
 import LaborCostPage from './pages/LaborCostPage'
 import TeamPage from './pages/TeamPage'
 import TimeClockPage from './pages/TimeClockPage'
+import TaxesPage from './pages/TaxesPage'
 import AcceptInvitePage from './pages/AcceptInvitePage'
 import ClaimStorePage from './pages/ClaimStorePage'
 import DevicesPage from './pages/DevicesPage'
@@ -128,6 +129,7 @@ const TABS = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'setup', label: 'Edit Setup' },
   { id: 'menu', label: 'Menu' },
+  { id: 'taxes', label: 'Taxes' },
   { id: 'devices', label: 'Devices' },
   { id: 'pos-settings', label: 'POS Settings' },
   { id: 'printing-routing', label: 'Printing & Routing' },
@@ -4591,6 +4593,7 @@ export function RestaurantWorkspace({
           </>
         )}
         {activeTab === 'menu' && <MenuPanel restaurantId={restaurantId} />}
+        {activeTab === 'taxes' && <TaxesPage restaurantId={restaurantId} />}
         {activeTab === 'feedback' && <GuestFeedbackPanel restaurantId={restaurantId} />}
         {activeTab === 'team' && <TeamPage restaurantId={restaurantId} />}
         {activeTab === 'time-clock' && <TimeClockPage restaurantId={restaurantId} />}
@@ -4615,6 +4618,7 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   analytics: 'Overview',
   setup: 'Setup',
   menu: 'Menu',
+  taxes: 'Taxes',
   feedback: 'Complaints',
   team: 'Team',
   'time-clock': 'Time Clock',

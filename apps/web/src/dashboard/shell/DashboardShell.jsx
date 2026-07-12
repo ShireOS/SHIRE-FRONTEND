@@ -101,6 +101,10 @@ export function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
     prefetch(queryKeys.menuItems(restaurantId), api(`/restaurants/${restaurantId}/menu/items`), STALE_TIMES.setup)
     prefetch(queryKeys.menuCategories(restaurantId), api(`/restaurants/${restaurantId}/menu/categories`), STALE_TIMES.setup)
     prefetch(queryKeys.kitchenRouting(restaurantId), api(`/restaurants/${restaurantId}/kitchen-routing`), STALE_TIMES.setup)
+  } else if (tabId === 'taxes') {
+    prefetch(queryKeys.taxesCharges(restaurantId), api(`/restaurants/${restaurantId}/taxes-charges`), STALE_TIMES.setup)
+    prefetch(queryKeys.menuCategories(restaurantId), api(`/restaurants/${restaurantId}/menu/categories`), STALE_TIMES.setup)
+    prefetch(queryKeys.priceAllocations(restaurantId), api(`/restaurants/${restaurantId}/menu/price-allocations`), STALE_TIMES.setup)
   } else if (tabId === 'feedback') {
     const reservationsBaseUrl = (
       import.meta.env.VITE_RESERVATIONS_API_BASE_URL ||
@@ -141,6 +145,7 @@ const STORE_NAV = [
   { id: 'analytics', label: 'Home', icon: Home },
   { id: 'setup', label: 'Setup', icon: Wrench },
   { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
+  { id: 'taxes', label: 'Taxes', icon: Percent },
   { id: 'feedback', label: 'Complaints', icon: MessageSquareWarning },
   { id: 'devices', label: 'Devices', icon: Monitor },
   { id: 'pos-settings', label: 'POS Settings', icon: Settings },

@@ -13,6 +13,7 @@ export const queryKeys = {
   menuCategories: (restaurantId: string) => ['restaurant', restaurantId, 'menu-categories'] as const,
 
   taxesCharges: (restaurantId: string) => ['restaurant', restaurantId, 'taxes-charges'] as const,
+  priceAllocations: (restaurantId: string) => ['restaurant', restaurantId, 'price-allocations'] as const,
   discountRules: (restaurantId: string) => ['restaurant', restaurantId, 'discount-rules'] as const,
   managerControls: (restaurantId: string) => ['restaurant', restaurantId, 'manager-controls'] as const,
   closeoutSettings: (restaurantId: string) => ['restaurant', restaurantId, 'closeout-settings'] as const,
