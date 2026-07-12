@@ -228,7 +228,10 @@ export default function TaxesPage({ restaurantId }) {
       setServiceCharges(saved?.service_charges || [])
 
       // Resolve the id for a newly created tax so categories can point at it.
-      const taxId = draft.id || savedRates.find((row) => row.name.toLowerCase() === name.toLowerCase())?.id
+      const existingIds = new Set(taxRates.map((row) => row.id).filter(Boolean))
+      const taxId = draft.id || savedRates.find((row) => row.id && !existingIds.has(row.id))?.id
+      if (!taxId) throw new Error('The tax was saved, but its ID was missing from the response. Reload before assigning categories.')
+      if (!draft.id) setDraft((current) => (current ? { ...current, id: taxId } : current))
       if (taxId) await saveCategoryAssignments(taxId, draft.categoryIds)
       invalidate()
       await load(true)

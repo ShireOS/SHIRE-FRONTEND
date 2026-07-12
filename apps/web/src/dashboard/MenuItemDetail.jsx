@@ -75,7 +75,7 @@ function DetailCard({ title, hint, children, actions }) {
 // so each portion is taxed and reported under that category. The remainder
 // stays in the item's own category, so repricing never breaks the split.
 // Example: $12 Jack & Coke in Cocktails with $2.50 carved out to Food.
-function PriceAllocationCard({ restaurantId, item, categories, run, busy }) {
+function PriceAllocationCard({ restaurantId, item, categories, run, busy, canEditPrices }) {
   const [rows, setRows] = useState([])
   const [rosterEntry, setRosterEntry] = useState(null)
   const [loaded, setLoaded] = useState(false)
@@ -169,7 +169,9 @@ function PriceAllocationCard({ restaurantId, item, categories, run, busy }) {
                         <span className="ml-2 text-dash-tertiary">{tax.tax_name}{tax.tax_rate != null ? ` (${Number(tax.tax_rate)}%)` : ''}</span>
                       ) : null}
                     </div>
-                    <SmallButton variant="danger" disabled={busy} onClick={() => removeRow(row.category_id)}>Remove</SmallButton>
+                    {canEditPrices ? (
+                      <SmallButton variant="danger" disabled={busy} onClick={() => removeRow(row.category_id)}>Remove</SmallButton>
+                    ) : null}
                   </div>
                 )
               })}
@@ -180,22 +182,28 @@ function PriceAllocationCard({ restaurantId, item, categories, run, busy }) {
               No split yet — the full {price > 0 ? money(price) : 'price'} reports under {item.category || 'this item’s category'}.
             </p>
           )}
-          <div className="grid gap-3 md:grid-cols-[1.4fr_120px_auto]">
-            <SelectInput value={addForm.category_id} onChange={event => setAddForm(prev => ({ ...prev, category_id: event.target.value }))}>
-              <option value="">Allocate to category…</option>
-              {otherCategories.map(candidate => (
-                <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
-              ))}
-            </SelectInput>
-            <TextInput
-              inputMode="decimal"
-              value={addForm.amount}
-              onChange={event => setAddForm(prev => ({ ...prev, amount: cleanDecimal(event.target.value) }))}
-              placeholder="2.50"
-            />
-            <SmallButton variant="primary" disabled={busy} onClick={() => addRow()}>Add allocation</SmallButton>
-          </div>
-          {formError ? <p className="text-sm text-red-300">{formError}</p> : null}
+          {canEditPrices ? (
+            <>
+              <div className="grid gap-3 md:grid-cols-[1.4fr_120px_auto]">
+                <SelectInput value={addForm.category_id} onChange={event => setAddForm(prev => ({ ...prev, category_id: event.target.value }))}>
+                  <option value="">Allocate to category…</option>
+                  {otherCategories.map(candidate => (
+                    <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
+                  ))}
+                </SelectInput>
+                <TextInput
+                  inputMode="decimal"
+                  value={addForm.amount}
+                  onChange={event => setAddForm(prev => ({ ...prev, amount: cleanDecimal(event.target.value) }))}
+                  placeholder="2.50"
+                />
+                <SmallButton variant="primary" disabled={busy} onClick={() => addRow()}>Add allocation</SmallButton>
+              </div>
+              {formError ? <p className="text-sm text-red-300">{formError}</p> : null}
+            </>
+          ) : (
+            <p className="text-xs text-dash-tertiary">You need price-editing access to change this allocation.</p>
+          )}
         </div>
       )}
     </DetailCard>
@@ -515,6 +523,7 @@ export function MenuItemDetail({
   productionRouting, onRouteItemProduction,
   busy, onBack, patchItem, deleteItem, run,
   reloadGroups, reloadModifiers, reloadSpecials, reloadImages,
+  canEditPrices = false,
 }) {
   const fileInputRef = useRef(null)
   const [newQuestion, setNewQuestion] = useState('')
@@ -1051,6 +1060,7 @@ export function MenuItemDetail({
             categories={categories}
             run={run}
             busy={busy}
+            canEditPrices={canEditPrices}
           />
         </div>
 

@@ -4592,7 +4592,12 @@ export function RestaurantWorkspace({
             <AnalyticsDashboard restaurant={restaurant} />
           </>
         )}
-        {activeTab === 'menu' && <MenuPanel restaurantId={restaurantId} />}
+        {activeTab === 'menu' && (
+          <MenuPanel
+            restaurantId={restaurantId}
+            canEditPrices={backOfficeAccess.can('menu.edit_prices')}
+          />
+        )}
         {activeTab === 'taxes' && <TaxesPage restaurantId={restaurantId} />}
         {activeTab === 'feedback' && <GuestFeedbackPanel restaurantId={restaurantId} />}
         {activeTab === 'team' && <TeamPage restaurantId={restaurantId} />}

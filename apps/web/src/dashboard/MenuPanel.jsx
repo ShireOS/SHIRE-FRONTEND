@@ -401,7 +401,7 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
 
 // ── Main panel ──────────────────────────────────────────────────────────────
 
-export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null }) {
+export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, canEditPrices = false }) {
   const [activeTab, setActiveTab] = useState(initialTab)
   const [menuItems, setMenuItems] = useState([])
   const [itemImages, setItemImages] = useState({})
@@ -1280,6 +1280,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null }
           reloadModifiers={loadModifiers}
           reloadSpecials={loadSpecials}
           reloadImages={loadImages}
+          canEditPrices={canEditPrices}
         />
       )}
 
