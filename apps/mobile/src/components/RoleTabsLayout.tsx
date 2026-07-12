@@ -108,6 +108,12 @@ const RESELLER_TABS: RoleTab[] = [
     androidIcon: 'business',
     sfSymbol: { default: 'building.2', selected: 'building.2.fill' },
   },
+  {
+    name: 'ui',
+    title: 'UI',
+    androidIcon: 'color-palette',
+    sfSymbol: { default: 'paintpalette', selected: 'paintpalette.fill' },
+  },
 ];
 
 type RoleTabsLayoutProps = {
