@@ -28,6 +28,7 @@ import {
   fetchAllergyPills,
   renameAllergyPill,
   setAllergyPillActive,
+  setItemPillExcluded,
 } from './data/menuAllergies'
 import { MenuItemDetail } from './MenuItemDetail'
 import {
@@ -1157,6 +1158,55 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     await loadGroups()
   }, 'Modifier removed.', 'Couldn’t remove the modifier')
 
+  // ── Allergies ────────────────────────────────────────────────────────────
+
+  // Row present in menu_item_allergy_exclusions = pill HIDDEN on that item, so
+  // every pill applies to every item (incl. future ones) until narrowed.
+  const exclusionsByPill = useMemo(() => {
+    const map = {}
+    for (const row of allergyExclusions) {
+      ;(map[row.modifier_id] ||= new Set()).add(row.item_id)
+    }
+    return map
+  }, [allergyExclusions])
+
+  const setupAllergies = () => run(async () => {
+    await ensureAllergyGroup(restaurantId)
+    await loadAllergies()
+  }, 'Allergy question created — add your pills below.', 'Couldn’t set up allergies')
+
+  const addPill = () => {
+    if (!pillDraft.trim() || !allergyGroup) return
+    return run(async () => {
+      await addAllergyPill(restaurantId, allergyGroup.id, pillDraft.trim(), allergyPills.length)
+      setPillDraft('')
+      await loadAllergies()
+    }, 'Allergy pill added — live on every item.', 'Couldn’t add the pill')
+  }
+
+  const renamePill = (pill, name) => run(async () => {
+    await renameAllergyPill(pill.id, name)
+    await loadAllergies()
+  }, undefined, 'Couldn’t rename the pill')
+
+  const togglePill = (pill) => run(async () => {
+    await setAllergyPillActive(pill.id, pill.is_available === false)
+    await loadAllergies()
+  }, pill.is_available === false ? 'Pill restored.' : 'Pill hidden everywhere.', 'Couldn’t update the pill')
+
+  const togglePillOnItem = (pill, itemId, hide) => run(async () => {
+    await setItemPillExcluded(restaurantId, itemId, pill.id, hide)
+    await loadAllergies()
+  }, undefined, 'Couldn’t update the item')
+
+  const bulkPillOnItems = (pill, itemIds, hide) => run(async () => {
+    for (const itemId of itemIds) {
+      const currentlyHidden = exclusionsByPill[pill.id]?.has(itemId) || false
+      if (currentlyHidden !== hide) await setItemPillExcluded(restaurantId, itemId, pill.id, hide)
+    }
+    await loadAllergies()
+  }, undefined, 'Couldn’t update the items')
+
   // ── Modifier groups ──────────────────────────────────────────────────────
 
   const createGroup = () => {
@@ -1930,6 +1980,60 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         </SectionShell>
       )}
 
+      {!loading && activeTab === 'allergies' && (
+        <SectionShell
+          title="Allergies"
+          description="The allergy pills servers can flag on any order line — Peanut, Gluten, Dairy. Every pill applies to every item automatically (including new items and new pills); narrow a pill off specific items below. Allergy flags always print on kitchen tickets and never block quick-add."
+        >
+          {!allergyGroup ? (
+            <MenuEmptyState title="Allergies aren't set up yet">
+              One click creates the restaurant-wide allergy question the POS shows on every item.
+              <span className="mt-3 block">
+                <SmallButton variant="primary" disabled={busy} onClick={() => void setupAllergies()}>Set up allergies</SmallButton>
+              </span>
+            </MenuEmptyState>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-3">
+                <span className="label-mono">New pill</span>
+                <div className="w-56">
+                  <TextInput
+                    value={pillDraft}
+                    onChange={event => setPillDraft(event.target.value)}
+                    onKeyDown={event => { if (event.key === 'Enter') void addPill() }}
+                    placeholder="Peanut, Gluten, Shellfish..."
+                    className="!py-2"
+                  />
+                </div>
+                <SmallButton variant="primary" disabled={!pillDraft.trim() || busy} onClick={() => void addPill()}>Add pill</SmallButton>
+                <span className="text-xs text-dash-tertiary">New pills go live on every item immediately.</span>
+              </div>
+
+              <div className="space-y-2">
+                {allergyPills.map(pill => (
+                  <AllergyPillRow
+                    key={pill.id}
+                    pill={pill}
+                    menuItems={mergedItems}
+                    hiddenItemIds={exclusionsByPill[pill.id] || new Set()}
+                    busy={busy}
+                    onRename={name => void renamePill(pill, name)}
+                    onToggle={() => void togglePill(pill)}
+                    onToggleItem={(itemId, hide) => void togglePillOnItem(pill, itemId, hide)}
+                    onBulkItems={(itemIds, hide) => void bulkPillOnItems(pill, itemIds, hide)}
+                  />
+                ))}
+                {allergyPills.length === 0 && (
+                  <MenuEmptyState title="No pills yet">
+                    Add the allergies your servers need to flag — Peanut, Gluten, Dairy, Shellfish...
+                  </MenuEmptyState>
+                )}
+              </div>
+            </div>
+          )}
+        </SectionShell>
+      )}
+
       {!loading && activeTab === 'groups' && (
         <SectionShell
           title="Questions"
@@ -2468,6 +2572,58 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitch
               }
               onReplaceItems(Array.from(next))
             }}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// One allergy pill: rename, hide-everywhere toggle, and per-item narrowing
+// (checked = servers see the pill on that item; unchecked = hidden there).
+function AllergyPillRow({ pill, menuItems, hiddenItemIds, busy, onRename, onToggle, onToggleItem, onBulkItems }) {
+  const [expanded, setExpanded] = useState(false)
+  const shownIds = useMemo(
+    () => new Set(menuItems.filter(item => !hiddenItemIds.has(item.id)).map(item => item.id)),
+    [menuItems, hiddenItemIds],
+  )
+  const hiddenCount = hiddenItemIds.size
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="w-56">
+          <TextInput
+            defaultValue={pill.name}
+            onBlur={event => {
+              const next = event.target.value.trim()
+              if (next && next !== pill.name) onRename(next)
+            }}
+          />
+        </div>
+        <SmallButton
+          variant={pill.is_available === false ? 'danger' : 'secondary'}
+          title={pill.is_available === false ? 'Hidden on every item — tap to restore' : 'Hide this pill everywhere without deleting it'}
+          onClick={onToggle}
+        >
+          {pill.is_available === false ? 'Hidden — restore' : 'Active'}
+        </SmallButton>
+        <span className="text-sm text-dash-tertiary">
+          {hiddenCount === 0 ? 'On all items' : `Hidden on ${hiddenCount} item${hiddenCount === 1 ? '' : 's'}`}
+        </span>
+        <span className="flex-1" />
+        <SmallButton onClick={() => setExpanded(current => !current)} disabled={busy}>
+          {expanded ? 'Close' : 'Narrow by item'}
+        </SmallButton>
+      </div>
+      {expanded && (
+        <div className="mt-3 border-t border-white/10 pt-3">
+          <p className="mb-2 text-xs text-dash-tertiary">Checked = servers can flag {pill.name} on that item. Uncheck to hide it there.</p>
+          <ItemChecklist
+            menuItems={menuItems}
+            selectedIds={shownIds}
+            onToggle={itemId => onToggleItem(itemId, shownIds.has(itemId))}
+            onBulk={(itemIds, shouldSelect) => onBulkItems(itemIds, !shouldSelect)}
           />
         </div>
       )}
