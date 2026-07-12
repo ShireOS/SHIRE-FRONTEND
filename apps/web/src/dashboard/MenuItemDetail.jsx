@@ -7,8 +7,15 @@ import {
   cloneGroupChainForItem,
   createModifierGroup,
   detachGroupFromItem,
+  effectiveDefaultModifierIds,
+  effectiveItemQuestions,
+  effectivePromptMode,
+  itemOrderingBehavior,
+  optedOutItemQuestions,
   removeGroupOption,
-  setItemGroupPromptMode,
+  setItemGroupLinkOrder,
+  setItemGroupOverride,
+  setItemModifierOverride,
   updateGroupOption,
   updateModifierGroup,
   wouldCreateCycle,
@@ -107,6 +114,7 @@ function PriceAllocationCard({ restaurantId, item, categories, run, busy, canEdi
   const carved = rows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0)
   const remainder = price - carved
   const taxFor = (categoryId) => rosterEntry?.allocations.find(a => a.category_id === categoryId)
+  const taxDollars = (amount, rate) => (rate == null ? null : (Number(amount) * Number(rate)) / 100)
 
   const save = (nextRows, message) => run(async () => {
     await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items/${item.id}/price-allocations`, {
@@ -138,10 +146,17 @@ function PriceAllocationCard({ restaurantId, item, categories, run, busy, canEdi
     void save(next, next.length ? 'Allocation removed.' : 'Price split removed — the whole price stays in the item’s category.')
   }
 
+  const remainderTax = taxDollars(remainder, rosterEntry?.item_tax_rate)
+  const totalTax = rows.reduce((sum, row) => {
+    const tax = taxFor(row.category_id)
+    const dollars = taxDollars(row.amount, tax?.tax_rate)
+    return dollars == null ? sum : sum + dollars
+  }, remainderTax || 0)
+
   return (
     <DetailCard
-      title="Price allocation (roll-up pricing)"
-      hint="Carve part of this item's price into another sales category so that portion gets that category's tax — e.g. the Coke in a Jack & Coke reports as Food. The remainder stays in this item's own category, even if you reprice it."
+      title="Tax split (price allocation)"
+      hint="Carve part of this item's price into another sales category so that portion gets that category's tax — e.g. the Coke in a Jack & Coke reports as Food at the food rate. The remainder floats with this item's price, so repricing never breaks the split."
     >
       {!loaded ? (
         <p className="text-sm text-dash-tertiary">Loading…</p>
@@ -154,19 +169,27 @@ function PriceAllocationCard({ restaurantId, item, categories, run, busy, canEdi
                   <span className="rounded-full bg-dash-gold/20 px-2 py-0.5 text-[10px] font-bold uppercase text-dash-gold">Stays here</span>
                   <span className="ml-2 font-medium text-dash-cream">{money(remainder)} · {item.category || 'this item’s category'}</span>
                   {rosterEntry?.item_tax_name ? (
-                    <span className="ml-2 text-dash-tertiary">{rosterEntry.item_tax_name}{rosterEntry.item_tax_rate != null ? ` (${Number(rosterEntry.item_tax_rate)}%)` : ''}</span>
+                    <span className="ml-2 text-dash-tertiary">
+                      {rosterEntry.item_tax_name}{rosterEntry.item_tax_rate != null ? ` (${Number(rosterEntry.item_tax_rate)}%)` : ''}
+                      {remainderTax != null ? ` ≈ ${money(remainderTax)} tax` : ''}
+                    </span>
                   ) : null}
                 </div>
+                <span className="text-xs text-dash-tertiary">floats with the item price</span>
               </div>
               {rows.map(row => {
                 const tax = taxFor(row.category_id)
+                const dollars = taxDollars(row.amount, tax?.tax_rate)
                 return (
                   <div key={row.category_id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-sm">
                     <div>
                       <span className="rounded-full bg-sky-200 px-2 py-0.5 text-[10px] font-bold uppercase text-sky-900">Allocated</span>
                       <span className="ml-2 font-medium text-dash-cream">{money(row.amount)} · {categoryName(row.category_id)}</span>
                       {tax?.tax_name ? (
-                        <span className="ml-2 text-dash-tertiary">{tax.tax_name}{tax.tax_rate != null ? ` (${Number(tax.tax_rate)}%)` : ''}</span>
+                        <span className="ml-2 text-dash-tertiary">
+                          {tax.tax_name}{tax.tax_rate != null ? ` (${Number(tax.tax_rate)}%)` : ''}
+                          {dollars != null ? ` ≈ ${money(dollars)} tax` : ''}
+                        </span>
                       ) : null}
                     </div>
                     {canEditPrices ? (
@@ -175,6 +198,11 @@ function PriceAllocationCard({ restaurantId, item, categories, run, busy, canEdi
                   </div>
                 )
               })}
+              {Number.isFinite(totalTax) && rows.some(row => taxFor(row.category_id)?.tax_rate != null) && (
+                <p className="text-xs text-dash-tertiary">
+                  Effective tax on {money(price)}: ≈ {money(totalTax)}{price > 0 ? ` (${((totalTax / price) * 100).toFixed(2)}% blended)` : ''}
+                </p>
+              )}
             </div>
           )}
           {rows.length === 0 && (
@@ -211,13 +239,16 @@ function PriceAllocationCard({ restaurantId, item, categories, run, busy, canEdi
 }
 
 // Recursive editor for one question (modifier group). At depth 0 it's a
-// question asked on the item; nested, it renders as the modifiers OF a
-// modifier (the child_group_id chain) — the same surface at every level, so
+// question asked on the item; nested, it renders as the follow-up question of
+// a modifier (the child_group_id chain) — the same surface at every level, so
 // "salad → dressing → add steak → temperature" is just drilling in three times.
 function QuestionEditor({
   groupId, restaurantId, itemId, groups, modifiers,
   run, reloadGroups, reloadModifiers, depth = 0, seenIds = [],
   parentModifierName = null, onUnlink = null,
+  source = 'item', itemOverride = null, inheritedFromName = null,
+  positionLabel = null, onMoveUp = null, onMoveDown = null,
+  itemModOverrides = {}, saveItemModOverride = null,
 }) {
   const group = groups.find(candidate => candidate.id === groupId)
   const [expandedChild, setExpandedChild] = useState(null)
@@ -227,10 +258,18 @@ function QuestionEditor({
   const nextSeen = [...seenIds, groupId]
 
   const modifiersById = Object.fromEntries(modifiers.map(m => [m.id, m]))
-  const usedByCount = group.item_ids.length
-  const sharedElsewhere = depth === 0 && usedByCount > 1
+  const usedByCount = group.item_ids.length + (group.category_links || []).length
+  const sharedElsewhere = depth === 0 && (usedByCount > 1 || source === 'category')
   const nestableGroups = groups.filter(candidate =>
     candidate.id !== group.id && !wouldCreateCycle(groups, group.id, candidate.id))
+
+  // Per-item defaults: when the override carries default_modifier_ids, the ★
+  // toggles edit THIS item's pre-selections; otherwise they edit the shared
+  // question's defaults (everywhere it's used).
+  const overrideDefaults = depth === 0 && itemOverride && Array.isArray(itemOverride.default_modifier_ids)
+    ? itemOverride.default_modifier_ids
+    : null
+  const isDefaultHere = (option) => (overrideDefaults ? overrideDefaults.includes(option.modifier_id) : option.is_default)
 
   const patchGroup = (patch, message) => run(async () => {
     await updateModifierGroup(group.id, patch)
@@ -241,6 +280,26 @@ function QuestionEditor({
     await work()
     await reloadGroups()
   }, message)
+
+  const toggleDefault = (option) => {
+    if (overrideDefaults) {
+      const next = isDefaultHere(option)
+        ? overrideDefaults.filter(id => id !== option.modifier_id)
+        : [...overrideDefaults, option.modifier_id]
+      return linkWork(() => setItemGroupOverride(group.id, itemId, { default_modifier_ids: next }), 'Defaults for this item saved.')
+    }
+    return linkWork(() => updateGroupOption(group.id, option.modifier_id, { is_default: !option.is_default }))
+  }
+
+  const setDefaultsScope = (scope) => {
+    if (scope === 'item') {
+      const seed = (group.options || []).filter(option => option.is_default).map(option => option.modifier_id)
+      return linkWork(() => setItemGroupOverride(group.id, itemId, { default_modifier_ids: seed }),
+        'This item now keeps its own defaults — star options below.')
+    }
+    return linkWork(() => setItemGroupOverride(group.id, itemId, { default_modifier_ids: null }),
+      'Back to the question’s shared defaults.')
+  }
 
   const addModifiers = (modifierIds) => run(async () => {
     let order = group.options.length
@@ -270,9 +329,9 @@ function QuestionEditor({
     await reloadGroups()
   }, 'Modifier created and added.')
 
-  // First drill-in on an option: create its nested question on the spot and
-  // open it, so "add modifiers to this modifier" is one click.
-  const startDrillIn = (option, modifier) => run(async () => {
+  // First follow-up on an option: create its question on the spot and open it,
+  // so "give this modifier a follow-up question" is one click.
+  const startFollowUp = (option, modifier) => run(async () => {
     const created = await createModifierGroup(restaurantId, {
       name: `${modifier?.name || 'Choice'} options`,
       min_selections: 0,
@@ -284,7 +343,9 @@ function QuestionEditor({
     await updateGroupOption(group.id, option.modifier_id, { child_group_id: created.id })
     setExpandedChild(option.modifier_id)
     await reloadGroups()
-  }, 'Nested — now add its modifiers.')
+  }, 'Follow-up question created — name it and add its answers.')
+
+  const effectiveMode = depth === 0 ? effectivePromptMode(group, itemOverride) : null
 
   return (
     <div className={depth > 0 ? 'mt-2 rounded-xl border border-dash-gold/20 bg-white/[0.02] p-3' : 'rounded-xl border border-white/10 bg-white/[0.025] p-4'}>
@@ -293,6 +354,25 @@ function QuestionEditor({
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-64 flex-1 items-center gap-2">
+          {depth === 0 && positionLabel != null && (
+            <div className="flex flex-col items-center gap-0.5">
+              <button
+                type="button"
+                onClick={onMoveUp || undefined}
+                disabled={!onMoveUp}
+                title="Ask this question earlier"
+                className="rounded border border-white/10 px-1.5 text-xs text-dash-secondary transition hover:border-dash-gold/60 disabled:opacity-30"
+              >▲</button>
+              <span className="text-[11px] font-bold text-dash-gold">{positionLabel}</span>
+              <button
+                type="button"
+                onClick={onMoveDown || undefined}
+                disabled={!onMoveDown}
+                title="Ask this question later"
+                className="rounded border border-white/10 px-1.5 text-xs text-dash-secondary transition hover:border-dash-gold/60 disabled:opacity-30"
+              >▼</button>
+            </div>
+          )}
           <TextInput
             defaultValue={group.name}
             onBlur={event => {
@@ -300,24 +380,34 @@ function QuestionEditor({
               if (next && next !== group.name) void patchGroup({ name: next })
             }}
           />
-          {sharedElsewhere && (
+          {source === 'category' && inheritedFromName && (
+            <span className="whitespace-nowrap rounded-full border border-sky-300/30 bg-sky-300/10 px-2 py-1 text-[11px] font-semibold text-sky-200" title={`Every item in ${inheritedFromName} asks this — including items added later. Editing changes it category-wide.`}>
+              Inherited · {inheritedFromName}
+            </span>
+          )}
+          {sharedElsewhere && source !== 'category' && (
             <span className="whitespace-nowrap rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-1 text-[11px] font-semibold text-amber-200" title="Edits here change this question everywhere it is used.">
-              Used by {usedByCount} items
+              Used by {usedByCount} item{usedByCount === 1 ? '' : 's'}
+            </span>
+          )}
+          {group.no_print && (
+            <span className="whitespace-nowrap rounded-full border border-white/15 bg-white/[0.06] px-2 py-1 text-[11px] font-semibold text-dash-tertiary" title="Nothing in this question prints on kitchen tickets">
+              No print
             </span>
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          {itemId && (
+          {depth === 0 && itemId && (
             <SelectInput
               className="!w-auto !py-1.5"
-              value={group.item_prompt_modes?.[itemId] || ''}
+              value={itemOverride?.prompt_mode || ''}
               title="Override only this item's behavior; the shared question remains unchanged elsewhere"
               onChange={event => void linkWork(
-                () => setItemGroupPromptMode(group.id, itemId, event.target.value || null),
+                () => setItemGroupOverride(group.id, itemId, { prompt_mode: event.target.value || null }),
                 event.target.value ? 'Item-specific behavior saved.' : 'Using question default.',
               )}
             >
-              <option value="">This item: use question default</option>
+              <option value="">This item: question default ({effectiveMode === 'skip_defaults' ? 'skip w/ defaults' : effectiveMode === 'hidden' ? 'hidden' : 'ask'})</option>
               <option value="ask">This item: ask every time</option>
               <option value="skip_defaults">This item: apply defaults and skip</option>
               <option value="hidden">This item: hidden</option>
@@ -333,6 +423,13 @@ function QuestionEditor({
           >
             {group.is_required ? 'Required' : 'Optional'}
           </SmallButton>
+          <SmallButton
+            variant="secondary"
+            title={group.no_print ? 'Currently hidden from kitchen tickets — click to print again' : 'Hide this whole question from kitchen tickets (receipts still show it)'}
+            onClick={() => void patchGroup({ no_print: !group.no_print }, group.no_print ? 'Question prints again.' : 'Question hidden from kitchen tickets.')}
+          >
+            {group.no_print ? 'Print again' : 'No print'}
+          </SmallButton>
           {sharedElsewhere && (
             <SmallButton
               title="Make a private copy of this question (and everything nested inside it) just for this item"
@@ -344,12 +441,21 @@ function QuestionEditor({
               Customize for this item
             </SmallButton>
           )}
-          {depth === 0 && (
+          {depth === 0 && source === 'item' && (
             <SmallButton
               variant="danger"
               onClick={() => linkWork(() => detachGroupFromItem(group.id, itemId), 'Question removed from this item.')}
             >
               Remove from item
+            </SmallButton>
+          )}
+          {depth === 0 && source === 'category' && (
+            <SmallButton
+              variant="danger"
+              title="Stop asking this on THIS item only — the rest of the category keeps it"
+              onClick={() => linkWork(() => setItemGroupOverride(group.id, itemId, { opted_out: true }), 'Opted out — this item no longer asks it.')}
+            >
+              Opt out
             </SmallButton>
           )}
           {depth > 0 && onUnlink && (
@@ -414,42 +520,112 @@ function QuestionEditor({
       </div>
       <p className="mt-2 text-xs font-semibold uppercase tracking-[0.08em] text-dash-gold/80">{groupRulesSummary(group)}</p>
 
+      {depth === 0 && itemId && (group.options || []).length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-dash-secondary">
+          <span className="label-mono">★ pre-selected defaults apply</span>
+          <SelectInput
+            className="!w-auto !py-1.5"
+            value={overrideDefaults ? 'item' : 'shared'}
+            title="Choose whether starring an option changes defaults everywhere this question is used, or just on this item"
+            onChange={event => void setDefaultsScope(event.target.value)}
+          >
+            <option value="shared">everywhere this question is used</option>
+            <option value="item">on this item only</option>
+          </SelectInput>
+          {overrideDefaults && (
+            <span className="text-xs text-dash-tertiary">
+              Other items keep the question’s own stars.
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="mt-3 space-y-2">
         {group.options.map(option => {
           const modifier = modifiersById[option.modifier_id]
           const childGroup = option.child_group_id ? groups.find(candidate => candidate.id === option.child_group_id) : null
           const showingChild = expandedChild === option.modifier_id
           const nestedCount = childGroup ? childGroup.options.length : 0
+          const modOverride = itemModOverrides?.[option.modifier_id] || null
+          const basePrice = Number(modifier?.price_delta) || 0
+          const priceHere = modOverride?.price_delta != null ? Number(modOverride.price_delta) : null
+          const neverPrints = modifier?.print_on_kitchen_ticket === false
           return (
             <div key={option.modifier_id} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="min-w-32 text-sm font-medium text-dash-cream">
                   {modifier?.name || 'Modifier'}
-                  {Number(modifier?.price_delta) > 0 && <span className="ml-1 font-normal text-dash-tertiary">+{money(modifier.price_delta)}</span>}
+                  {priceHere != null ? (
+                    <span className="ml-1 font-normal text-dash-gold" title={`Base price ${money(basePrice)} — overridden on this item`}>+{money(priceHere)} here</span>
+                  ) : basePrice > 0 ? (
+                    <span className="ml-1 font-normal text-dash-tertiary">+{money(basePrice)}</span>
+                  ) : null}
+                  {neverPrints && (
+                    <span className="ml-1.5 rounded-full border border-white/15 bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-semibold uppercase text-dash-tertiary" title="This modifier never prints on kitchen tickets (set on the Modifiers tab)">
+                      never prints
+                    </span>
+                  )}
                 </span>
                 <SmallButton
-                  variant={option.is_default ? 'primary' : 'secondary'}
-                  title="Pre-selected when the item is ordered"
-                  onClick={() => linkWork(() => updateGroupOption(group.id, option.modifier_id, { is_default: !option.is_default }))}
+                  variant={isDefaultHere(option) ? 'primary' : 'secondary'}
+                  title={overrideDefaults ? 'Pre-selected when THIS item is ordered' : 'Pre-selected wherever this question is used'}
+                  onClick={() => void toggleDefault(option)}
                 >
-                  {option.is_default ? '★ Default' : 'Default'}
+                  {isDefaultHere(option) ? '★ Default' : 'Default'}
                 </SmallButton>
                 <div className="ml-auto flex flex-wrap items-center gap-2">
+                  {saveItemModOverride && (
+                    <>
+                      <TextInput
+                        inputMode="decimal"
+                        className="!w-24 !px-2 !py-1.5"
+                        placeholder={`$ here (${money(basePrice)})`}
+                        title="Charge a different price for this modifier on this item only — leave empty for the normal price"
+                        defaultValue={priceHere == null ? '' : String(priceHere)}
+                        onBlur={event => {
+                          const raw = cleanDecimal(event.target.value)
+                          const next = raw === '' ? null : Number(raw)
+                          if (next !== priceHere) {
+                            void linkWork(
+                              () => saveItemModOverride(option.modifier_id, { price_delta: next }),
+                              next == null ? 'Back to the normal price.' : `${modifier?.name || 'Modifier'} is ${money(next)} on this item.`,
+                            )
+                          }
+                        }}
+                      />
+                      <SelectInput
+                        className="!w-auto !py-1.5"
+                        value={modOverride?.no_print == null ? '' : modOverride.no_print ? 'no' : 'yes'}
+                        title="Kitchen ticket printing for this modifier on this item — 'auto' follows the modifier and question settings"
+                        onChange={event => {
+                          const value = event.target.value
+                          void linkWork(
+                            () => saveItemModOverride(option.modifier_id, { no_print: value === '' ? null : value === 'no' }),
+                            value === 'no' ? 'Won’t print on this item’s tickets.' : value === 'yes' ? 'Always prints on this item’s tickets.' : 'Printing follows the modifier/question settings.',
+                          )
+                        }}
+                      >
+                        <option value="">Print: auto</option>
+                        <option value="no">No print here</option>
+                        <option value="yes">Print here</option>
+                      </SelectInput>
+                    </>
+                  )}
                   {childGroup ? (
                     <SmallButton
                       variant={nestedCount > 0 ? 'primary' : 'secondary'}
-                      title={`Modifiers guests can add when they pick ${modifier?.name || 'this'}`}
+                      title={`Follow-up question asked after ${modifier?.name || 'this'} is picked`}
                       onClick={() => setExpandedChild(showingChild ? null : option.modifier_id)}
                     >
-                      {showingChild ? '▾' : '▸'} Modifiers ({nestedCount})
+                      {showingChild ? '▾' : '▸'} Follow-up ({nestedCount})
                     </SmallButton>
                   ) : (
                     <>
                       <SmallButton
-                        title={`Give ${modifier?.name || 'this option'} its own modifiers — sauces on the side salad, temperature on the steak...`}
-                        onClick={() => void startDrillIn(option, modifier)}
+                        title={`Ask something after ${modifier?.name || 'this option'} is picked — sauces on the side salad, temperature on the steak...`}
+                        onClick={() => void startFollowUp(option, modifier)}
                       >
-                        ＋ Modifiers
+                        ＋ Follow-up question
                       </SmallButton>
                       {nestableGroups.length > 0 && (
                         <SelectInput
@@ -458,11 +634,11 @@ function QuestionEditor({
                           title="Reuse a question that already exists instead of building a new one"
                           onChange={event => {
                             if (!event.target.value) return
-                            void linkWork(() => updateGroupOption(group.id, option.modifier_id, { child_group_id: event.target.value }), 'Question linked.')
+                            void linkWork(() => updateGroupOption(group.id, option.modifier_id, { child_group_id: event.target.value }), 'Follow-up question linked.')
                             setExpandedChild(option.modifier_id)
                           }}
                         >
-                          <option value="">reuse existing...</option>
+                          <option value="">attach existing...</option>
                           {nestableGroups.map(candidate => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
                         </SelectInput>
                       )}
@@ -484,16 +660,18 @@ function QuestionEditor({
                   depth={depth + 1}
                   seenIds={nextSeen}
                   parentModifierName={modifier?.name || null}
+                  itemModOverrides={itemModOverrides}
+                  saveItemModOverride={saveItemModOverride}
                   onUnlink={() => {
                     setExpandedChild(null)
-                    void linkWork(() => updateGroupOption(group.id, option.modifier_id, { child_group_id: null }), 'Nested question unlinked.')
+                    void linkWork(() => updateGroupOption(group.id, option.modifier_id, { child_group_id: null }), 'Follow-up question unlinked.')
                   }}
                 />
               )}
             </div>
           )
         })}
-        {group.options.length === 0 && <p className="text-sm text-dash-tertiary">No modifiers in this question yet — add some below.</p>}
+        {group.options.length === 0 && <p className="text-sm text-dash-tertiary">No answers in this question yet — add some below.</p>}
       </div>
 
       <div className="mt-3">
@@ -523,6 +701,7 @@ export function MenuItemDetail({
   productionRouting, onRouteItemProduction,
   busy, onBack, patchItem, deleteItem, run,
   reloadGroups, reloadModifiers, reloadSpecials, reloadImages,
+  itemModifierOverrides = {}, reloadItemModifierOverrides = null,
   canEditPrices = false,
 }) {
   const fileInputRef = useRef(null)
@@ -540,12 +719,19 @@ export function MenuItemDetail({
     availability_notes: item.availability_notes || '',
   }))
 
-  const itemGroups = groups
-    .filter(group => group.item_ids.includes(item.id))
-    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0) || a.name.localeCompare(b.name))
+  const modifiersById = Object.fromEntries(modifiers.map(m => [m.id, m]))
+  const categoriesByName = Object.fromEntries(categories.filter(c => c.name).map(c => [c.name, c]))
+
+  // Everything this item will ask, in POS order: direct questions + questions
+  // inherited from the category, minus opt-outs.
+  const questionRows = effectiveItemQuestions(item, groups, categoriesByName)
+  const optedOutGroups = optedOutItemQuestions(item, groups, categoriesByName)
+  const behavior = itemOrderingBehavior(item, groups, categoriesByName, modifiersById)
+  const effectiveGroupIds = new Set(questionRows.map(row => row.group.id))
+
   // Questions this item doesn't ask yet, most-reused first — one click attaches.
   const attachableGroups = groups
-    .filter(group => !group.item_ids.includes(item.id))
+    .filter(group => !effectiveGroupIds.has(group.id) && !optedOutGroups.some(candidate => candidate.id === group.id))
     .sort((a, b) => b.item_ids.length - a.item_ids.length || a.name.localeCompare(b.name))
   const filteredAttachableGroups = questionSearch.trim()
     ? attachableGroups.filter(group => group.name.toLowerCase().includes(questionSearch.trim().toLowerCase()))
@@ -554,10 +740,36 @@ export function MenuItemDetail({
   const category = categories.find(candidate => candidate.name === item.category)
   const stationName = (id) => stations.find(station => station.id === id)?.name
 
+  const saveItemModOverride = async (modifierId, patch) => {
+    await setItemModifierOverride(restaurantId, item.id, modifierId, patch)
+    if (reloadItemModifierOverrides) await reloadItemModifierOverrides()
+  }
+
+  // Reorder the questions the guest is asked. Direct links keep their order on
+  // the link row (clearing any stale per-item override); inherited questions
+  // keep theirs on the override row.
+  const moveQuestion = (index, delta) => run(async () => {
+    const rows = [...questionRows]
+    const [row] = rows.splice(index, 1)
+    rows.splice(index + delta, 0, row)
+    for (let position = 0; position < rows.length; position += 1) {
+      const entry = rows[position]
+      if (entry.source === 'item') {
+        await setItemGroupLinkOrder(entry.group.id, item.id, position)
+        if (entry.override?.display_order != null) {
+          await setItemGroupOverride(entry.group.id, item.id, { display_order: null })
+        }
+      } else {
+        await setItemGroupOverride(entry.group.id, item.id, { display_order: position })
+      }
+    }
+    await reloadGroups()
+  }, 'Question order saved.')
+
   // Quick-add lands modifiers in this item's "Extras" question, creating and
   // attaching it on first use — no question naming required.
   const ensureExtrasGroup = async () => {
-    const existing = itemGroups.find(group => group.name.trim().toLowerCase() === 'extras')
+    const existing = questionRows.map(row => row.group).find(group => group.name.trim().toLowerCase() === 'extras')
     if (existing) return existing
     const created = await createModifierGroup(restaurantId, {
       name: 'Extras',
@@ -567,7 +779,7 @@ export function MenuItemDetail({
       prompt_on_order: true,
       display_order: groups.length,
     })
-    await attachGroupToItem(created.id, item.id, itemGroups.length)
+    await attachGroupToItem(created.id, item.id, questionRows.length)
     return { ...created, options: [] }
   }
 
@@ -582,7 +794,7 @@ export function MenuItemDetail({
         prompt_on_order: true,
         display_order: groups.length,
       })
-      await attachGroupToItem(created.id, item.id, itemGroups.length)
+      await attachGroupToItem(created.id, item.id, questionRows.length)
       setNewQuestion('')
       await reloadGroups()
     }, 'Question added.')
@@ -618,8 +830,8 @@ export function MenuItemDetail({
           body: JSON.stringify({ item_ids: [item.id] }),
         }).catch(() => null)
         const target = matchingGroup || await ensureExtrasGroup()
-        if (matchingGroup && !matchingGroup.item_ids.includes(item.id)) {
-          await attachGroupToItem(matchingGroup.id, item.id, itemGroups.length)
+        if (matchingGroup && !effectiveGroupIds.has(matchingGroup.id) && !matchingGroup.item_ids.includes(item.id)) {
+          await attachGroupToItem(matchingGroup.id, item.id, questionRows.length)
         }
         if (!target.options?.some(option => option.modifier_id === created.id)) {
           await addGroupOption(target.id, created.id, { display_order: target.options?.length || 0 })
@@ -863,14 +1075,49 @@ export function MenuItemDetail({
           </DetailCard>
 
           <DetailCard
-            title={`Modifiers & questions (${itemGroups.length})`}
-            hint='Asked in order when this item is ordered. Open "Modifiers" on any row to give that modifier its own modifiers — salad → dressing → add steak → temperature, as deep as you need.'
+            title={`Questions & modifiers (${questionRows.length})`}
+            hint="Asked top to bottom when this item is ordered — use ▲▼ to change the order. Questions inherited from the category apply to every item in it; opt out to skip one here."
           >
+            {/* How this item behaves at the POS, in plain English. */}
+            {questionRows.length > 0 && (
+              <div className={[
+                'mb-4 rounded-xl border p-3 text-sm',
+                behavior.quickAdd
+                  ? 'border-dash-gold/40 bg-dash-gold/[0.08] text-dash-cream'
+                  : 'border-white/10 bg-white/[0.02] text-dash-secondary',
+              ].join(' ')}>
+                {behavior.quickAdd ? (
+                  <>
+                    <span className="font-semibold text-dash-gold">⚡ Quick add</span>
+                    {' — tapping this item puts it straight on the check'}
+                    {behavior.skipsWithDefaults.length > 0 && (
+                      <> with {behavior.skipsWithDefaults.flatMap(entry => entry.defaultNames).join(', ') || 'its defaults'}</>
+                    )}
+                    {'. The server can still edit it from the check line.'}
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold text-dash-cream">Asks {behavior.asks.length} question{behavior.asks.length === 1 ? '' : 's'}</span>
+                    {' when ordered: '}{behavior.asks.map(group => group.name).join(', ')}
+                    {behavior.skipsWithDefaults.length > 0 && (
+                      <>{' — plus '}{behavior.skipsWithDefaults.map(entry => `${entry.group.name} (auto: ${entry.defaultNames.join(', ') || 'defaults'})`).join(', ')} applied silently</>
+                    )}
+                    {'.'}
+                  </>
+                )}
+                {behavior.missingRequired && (
+                  <p className="mt-1.5 text-amber-200">
+                    A required question isn’t covered by defaults, so the POS will always stop and ask — star enough defaults to unlock quick add.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="space-y-3">
-              {itemGroups.map(group => (
+              {questionRows.map((row, index) => (
                 <QuestionEditor
-                  key={group.id}
-                  groupId={group.id}
+                  key={row.group.id}
+                  groupId={row.group.id}
                   restaurantId={restaurantId}
                   itemId={item.id}
                   groups={groups}
@@ -878,14 +1125,45 @@ export function MenuItemDetail({
                   run={run}
                   reloadGroups={reloadGroups}
                   reloadModifiers={reloadModifiers}
+                  source={row.source}
+                  itemOverride={row.override}
+                  inheritedFromName={row.source === 'category' ? (item.category || 'category') : null}
+                  positionLabel={index + 1}
+                  onMoveUp={index > 0 ? () => void moveQuestion(index, -1) : null}
+                  onMoveDown={index < questionRows.length - 1 ? () => void moveQuestion(index, 1) : null}
+                  itemModOverrides={itemModifierOverrides}
+                  saveItemModOverride={saveItemModOverride}
                 />
               ))}
-              {itemGroups.length === 0 && (
+              {questionRows.length === 0 && (
                 <MenuEmptyState title="No modifiers yet">
                   Quick-add modifiers below, or create a named question — "Choose a side", "Pick a temperature".
                 </MenuEmptyState>
               )}
             </div>
+
+            {optedOutGroups.length > 0 && (
+              <div className="mt-4 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-3">
+                <p className="label-mono mb-2">Opted out on this item</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {optedOutGroups.map(group => (
+                    <button
+                      key={group.id}
+                      type="button"
+                      disabled={busy}
+                      title="This question is attached (or inherited) but skipped on this item — click to ask it again"
+                      onClick={() => run(async () => {
+                        await setItemGroupOverride(group.id, item.id, { opted_out: false })
+                        await reloadGroups()
+                      }, `"${group.name}" is asked on this item again.`)}
+                      className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm text-dash-tertiary line-through transition hover:border-dash-gold/60 hover:text-dash-cream hover:no-underline"
+                    >
+                      {group.name} — restore
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="mt-4 border-t border-white/10 pt-4">
               {showQuickPicker ? (
@@ -894,7 +1172,7 @@ export function MenuItemDetail({
                   <ModifierPicker
                     autoFocus
                     modifiers={modifiers}
-                    excludeIds={new Set(itemGroups.flatMap(group => group.options.map(option => option.modifier_id)))}
+                    excludeIds={new Set(questionRows.flatMap(row => row.group.options.map(option => option.modifier_id)))}
                     extraCategoryNames={groups.map(group => group.name)}
                     onAddExisting={ids => void quickAddModifiers(ids)}
                     onCreateNew={draft => void quickCreateModifier(draft)}
@@ -944,7 +1222,7 @@ export function MenuItemDetail({
                             disabled={busy}
                             title={groupRulesSummary(group)}
                             onClick={() => run(async () => {
-                              await attachGroupToItem(group.id, item.id, itemGroups.length)
+                              await attachGroupToItem(group.id, item.id, questionRows.length)
                               await reloadGroups()
                             }, `"${group.name}" now asked on this item.`)}
                             className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream disabled:opacity-50"

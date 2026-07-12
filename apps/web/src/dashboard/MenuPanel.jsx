@@ -1289,14 +1289,21 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           title="Items"
           description="Click an item to open its full editor. Quick-add below, quick-86 on every row."
         >
-          <div className="mb-4 grid gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 md:grid-cols-[1.4fr_1fr_120px_auto]">
+          <div className="mb-4 grid gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 md:grid-cols-[minmax(0,1fr)_minmax(180px,240px)_120px_auto]">
             <TextInput value={itemDraft.name} onChange={event => setItemDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="New item name" />
-            <TextInput value={itemDraft.category} list="menu-panel-categories" onChange={event => setItemDraft(prev => ({ ...prev, category: event.target.value }))} placeholder="Category" />
+            <SelectInput
+              aria-label="Category for new item"
+              value={itemDraft.category}
+              onChange={event => setItemDraft(prev => ({ ...prev, category: event.target.value }))}
+            >
+              <option value="">Other / no category</option>
+              {categoryNames.filter(name => name !== 'Other').map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+              {categoryNames.includes('Other') && <option value="Other">Other</option>}
+            </SelectInput>
             <TextInput inputMode="decimal" value={itemDraft.price} onChange={event => setItemDraft(prev => ({ ...prev, price: cleanDecimal(event.target.value) }))} placeholder="12.00" />
             <SmallButton variant="primary" onClick={() => void createItem()} disabled={busy}>Add & edit</SmallButton>
-            <datalist id="menu-panel-categories">
-              {categoryNames.map(name => <option key={name} value={name} />)}
-            </datalist>
           </div>
 
           <div className="mb-4 grid gap-3 md:grid-cols-[1.6fr_1fr_1fr]">
