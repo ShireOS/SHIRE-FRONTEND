@@ -104,13 +104,16 @@ export default function PrintingRoutingPage({ restaurantId }) {
     if (loading || section === 'routing') return undefined
     const requestId = ++previewRequestRef.current
     const controller = new AbortController()
+    setPreview('Rendering preview…')
     const timer = setTimeout(async () => {
       try {
         const result = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config/preview`, {
           method: 'POST',
           body: JSON.stringify({ output, customer_variant: customerVariant, station_id: scope === 'whole' ? null : scope, config }),
           signal: controller.signal,
+          cache: 'no-store',
         })
+        if (result.renderer_version !== 'printing-v3') throw new Error('Receipt renderer is updating. Refresh this page in a moment.')
         if (requestId === previewRequestRef.current) setPreview(result.preview || 'No preview available')
       } catch (err) {
         if (err?.name !== 'AbortError' && requestId === previewRequestRef.current) {
