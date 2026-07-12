@@ -32,13 +32,25 @@ export async function fetchPosApi<T = any>(
     return fetch(`${POS_API_BASE}${endpoint}`, { ...options, headers })
   }
 
-  let response = await request(token)
+  const method = String(options.method || 'GET').toUpperCase()
+  const canRetryTransport = method === 'GET' || (method === 'POST' && endpoint.endsWith('/preview'))
+  const requestWithTransportRetry = async (accessToken?: string) => {
+    try {
+      return await request(accessToken)
+    } catch (error) {
+      if (!canRetryTransport || options.signal?.aborted) throw error
+      await new Promise(resolve => setTimeout(resolve, 400))
+      return request(accessToken)
+    }
+  }
+
+  let response = await requestWithTransportRetry(token)
   if (response.status === 401 && !options.signal?.aborted) {
     const { data: refreshed } = await supabase.auth.refreshSession()
     const refreshedToken = refreshed.session?.access_token
     if (refreshedToken && refreshedToken !== token) {
       token = refreshedToken
-      response = await request(token)
+      response = await requestWithTransportRetry(token)
     }
   }
   if (!response.ok) {
