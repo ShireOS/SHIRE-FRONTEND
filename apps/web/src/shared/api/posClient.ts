@@ -10,9 +10,7 @@ import { supabase } from '../lib/supabase'
 const POS_API_BASE = (
   import.meta.env.VITE_POS_API_BASE_URL ||
   import.meta.env.VITE_POS_API_BASE ||
-  (import.meta.env.DEV
-    ? 'http://localhost:8005/api/v1'
-    : '/pos-api')
+  '/pos-api'
 )
   .replace(/\/+$/, '')
   .replace(/\/dev-v2$/, '')

@@ -64,6 +64,8 @@ export default defineConfig(({ mode }) => {
   const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL || ''
   const supabasePublishableKey =
     env.VITE_SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_PUBLISHABLE_KEY || ''
+  const posApiProxyTarget =
+    env.VITE_POS_API_PROXY_TARGET || 'https://shire-pos-api-production.up.railway.app'
 
   return {
     envDir: rootEnvDir,
@@ -77,6 +79,16 @@ export default defineConfig(({ mode }) => {
         '@': resolve(__dirname, './src'),
         '@dashboard': resolve(__dirname, './src/dashboard'),
         '@shared': resolve(__dirname, './src/shared'),
+      },
+    },
+    server: {
+      proxy: {
+        '/pos-api': {
+          target: posApiProxyTarget,
+          changeOrigin: true,
+          secure: true,
+          rewrite: path => path.replace(/^\/pos-api/, '/api/v1'),
+        },
       },
     },
     build: {
