@@ -3,10 +3,15 @@ import { supabase } from '../shared/lib/supabase'
 import { queryClient, queryKeys, fetchCached, fetchWithSupabaseAuth, STALE_TIMES } from '../shared/query'
 import {
   addGroupOption,
+  attachGroupToCategory,
   attachGroupToItem,
   archiveModifierGroup,
   createModifierGroup,
+  detachGroupFromCategory,
+  fetchItemModifierOverrides,
   fetchModifierGroups,
+  followUpParents,
+  itemOrderingBehavior,
   removeGroupOption,
   replaceGroupItems,
   updateGroupOption,
@@ -51,7 +56,7 @@ const MENU_TABS = [
   { id: 'items', label: 'Items' },
   { id: 'categories', label: 'Categories' },
   { id: 'modifiers', label: 'Modifiers' },
-  { id: 'groups', label: 'Modifier Groups' },
+  { id: 'groups', label: 'Questions' },
   { id: 'allergies', label: 'Allergies' },
   { id: 'specials', label: 'Specials & Schedule' },
   { id: 'printing', label: 'Printing & Routing' },
@@ -155,7 +160,7 @@ function GroupTree({ groupId, groupsById, modifiersById, depth = 0, seen }) {
 
 // ── Modifier group editor card (Groups tab power view) ─────────────────────
 
-function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchive, onLink, onAddModifiers, onCreateModifier }) {
+function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy, onSave, onArchive, onLink, onAddModifiers, onCreateModifier, onToggleCategory = null }) {
   const [expanded, setExpanded] = useState(false)
   const [draft, setDraft] = useState(() => ({
     name: group.name,
@@ -168,12 +173,19 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
     prompt_mode: normalizedPromptMode(group.prompt_mode),
     pre_modifiers: Array.isArray(group.pre_modifiers) ? group.pre_modifiers : [],
     pre_modifier_prices: group.pre_modifier_prices || {},
+    no_print: Boolean(group.no_print),
   }))
   const modifiersById = useMemo(() => Object.fromEntries(modifiers.map(m => [m.id, m])), [modifiers])
   const groupsById = useMemo(() => Object.fromEntries(groups.map(g => [g.id, g])), [groups])
   const attachedIds = useMemo(() => new Set(group.item_ids), [group])
   const nestableGroups = groups.filter(candidate =>
     candidate.id !== group.id && !wouldCreateCycle(groups, group.id, candidate.id))
+  // Everywhere this question is used: direct items, inheriting categories, and
+  // modifiers whose selection triggers it as a follow-up.
+  const inheritingCategories = (group.category_links || [])
+    .map(link => categories.find(category => category.id === link.category_id))
+    .filter(Boolean)
+  const followUpHosts = useMemo(() => followUpParents(groups, group.id), [groups, group.id])
 
   const saveFields = () => {
     const minSelections = Math.max(draft.is_required ? 1 : 0, Number(draft.min_selections) || 0)
@@ -189,6 +201,7 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
       prompt_mode: draft.prompt_mode,
       pre_modifiers: draft.pre_modifiers,
       pre_modifier_prices: draft.pre_modifier_prices,
+      no_print: draft.no_print,
     })
   }
 
@@ -199,9 +212,16 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="font-semibold text-dash-cream">{group.name}</h4>
             {group.is_required && <span className="rounded-full bg-dash-gold/15 px-2 py-0.5 text-[11px] font-semibold text-dash-gold">Required</span>}
+            {group.no_print && <span className="rounded-full border border-white/15 bg-white/[0.06] px-2 py-0.5 text-[11px] font-semibold text-dash-tertiary" title="Never prints on kitchen tickets">No print</span>}
             <span className="rounded-full border border-white/10 px-2 py-0.5 text-[11px] text-dash-tertiary">
-              {group.options.length} option{group.options.length === 1 ? '' : 's'} · used by {group.item_ids.length} item{group.item_ids.length === 1 ? '' : 's'}
+              {group.options.length} option{group.options.length === 1 ? '' : 's'} · {group.item_ids.length} item{group.item_ids.length === 1 ? '' : 's'}
+              {inheritingCategories.length > 0 && ` · inherited by ${inheritingCategories.map(category => category.name).join(', ')}`}
             </span>
+            {followUpHosts.length > 0 && (
+              <span className="rounded-full border border-sky-300/25 bg-sky-300/10 px-2 py-0.5 text-[11px] font-semibold text-sky-200" title={followUpHosts.map(host => `${modifiersById[host.modifier_id]?.name || 'an option'} (in "${host.group.name}")`).join(', ')}>
+                Follow-up of {followUpHosts.map(host => modifiersById[host.modifier_id]?.name).filter(Boolean).join(', ') || `${followUpHosts.length} option${followUpHosts.length === 1 ? '' : 's'}`}
+              </span>
+            )}
           </div>
           <p className="mt-1 text-sm text-dash-tertiary">{groupRulesSummary(group)}</p>
         </button>
@@ -242,6 +262,16 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
                   <option value="ask">Ask every time</option>
                   <option value="skip_defaults">Apply defaults and skip</option>
                   <option value="hidden">Hidden (never ask)</option>
+                </SelectInput>
+              </Field>
+              <Field label="Kitchen tickets">
+                <SelectInput
+                  title="Whether this question's selections print on kitchen tickets (receipts always show them)"
+                  value={draft.no_print ? 'no' : 'yes'}
+                  onChange={event => setDraft(prev => ({ ...prev, no_print: event.target.value === 'no' }))}
+                >
+                  <option value="yes">Print selections</option>
+                  <option value="no">Never print (FOH-only)</option>
                 </SelectInput>
               </Field>
               <Field label="Side buttons">
@@ -364,9 +394,63 @@ function GroupCard({ group, groups, modifiers, menuItems, busy, onSave, onArchiv
             </div>
           </div>
 
+          {onToggleCategory && categories.filter(category => category.id).length > 0 && (
+            <div>
+              <p className="label-mono mb-2">Inherited by categories</p>
+              <p className="mb-2 text-xs text-dash-tertiary">
+                Every item in a selected category asks this question automatically — including items added later. Individual items can opt out from their own editor.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {categories.filter(category => category.id).map(category => {
+                  const inherited = (group.category_links || []).some(link => link.category_id === category.id)
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      disabled={busy}
+                      onClick={() => onToggleCategory(group, category, !inherited)}
+                      className={[
+                        'rounded-full border px-3 py-1.5 text-sm transition disabled:opacity-50',
+                        inherited
+                          ? 'border-dash-gold/60 bg-dash-gold/15 text-dash-cream'
+                          : 'border-white/10 bg-white/[0.03] text-dash-secondary hover:border-dash-gold/60 hover:text-dash-cream',
+                      ].join(' ')}
+                    >
+                      {inherited ? '✓' : '+'} {category.name}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {followUpHosts.length > 0 && (
+            <div>
+              <p className="label-mono mb-2">Asked as a follow-up</p>
+              <div className="space-y-1.5">
+                {followUpHosts.map(host => (
+                  <div key={`${host.group.id}:${host.modifier_id}`} className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-2.5 text-sm">
+                    <span className="text-dash-secondary">
+                      After <span className="font-medium text-dash-cream">{modifiersById[host.modifier_id]?.name || 'an option'}</span> is picked in <span className="font-medium text-dash-cream">“{host.group.name}”</span>
+                    </span>
+                    <span className="flex-1" />
+                    <SmallButton
+                      variant="danger"
+                      title="Stop asking this after that option (the question itself is kept)"
+                      onClick={() => onLink(() => updateGroupOption(host.group.id, host.modifier_id, { child_group_id: null }))}
+                    >
+                      Detach
+                    </SmallButton>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="grid gap-4 lg:grid-cols-2">
             <div>
-              <p className="label-mono mb-2">Applies to items</p>
+              <p className="label-mono mb-2">Applies to items directly</p>
+              <p className="mb-2 text-xs text-dash-tertiary">Items covered by an inheriting category aren’t listed as checked here — inheritance already reaches them.</p>
               <ItemChecklist
                 menuItems={menuItems}
                 selectedIds={attachedIds}
@@ -410,6 +494,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [taxRates, setTaxRates] = useState([])
   const [modifiers, setModifiers] = useState([])
   const [groups, setGroups] = useState([])
+  const [itemModifierOverrides, setItemModifierOverrides] = useState({})
   const [specials, setSpecials] = useState([])
   const [routing, setRouting] = useState(null)
   const [printingConfig, setPrintingConfig] = useState({ aliases: { items: {}, modifiers: {} } })
@@ -431,7 +516,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [allergyExclusions, setAllergyExclusions] = useState([])
   const [pillDraft, setPillDraft] = useState('')
 
-  const [modifierDraft, setModifierDraft] = useState({ name: '', price_delta: '', category: '', tax_rate_id: '', reporting_category_id: '', item_ids: new Set() })
+  const [modifierDraft, setModifierDraft] = useState({ name: '', price_delta: '', category: '', tax_rate_id: '', reporting_category_id: '', group_id: '', new_question_name: '', item_ids: new Set() })
   const [groupDraft, setGroupDraft] = useState(() => defaultGroupDraft())
   const [specialDraft, setSpecialDraft] = useState(() => defaultSpecialDraft())
   const [scheduleItemId, setScheduleItemId] = useState('')
@@ -488,6 +573,16 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     setGroups(await fetchModifierGroups(restaurantId))
   }
 
+  // { [itemId]: { [modifierId]: { price_delta, no_print } } } — per-item price
+  // and kitchen-print overrides for modifiers. Fails soft pre-migration.
+  const loadItemModifierOverrides = async () => {
+    try {
+      setItemModifierOverrides(await fetchItemModifierOverrides(restaurantId))
+    } catch {
+      setItemModifierOverrides({})
+    }
+  }
+
   const loadAllergies = async () => {
     const group = await fetchAllergyGroup(restaurantId)
     setAllergyGroup(group)
@@ -536,6 +631,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       loadCategories(),
       loadModifiers(),
       loadGroups(),
+      loadItemModifierOverrides(),
       loadAllergies(),
       loadSpecials(),
       loadRouting(),
@@ -786,6 +882,26 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   }, [activeTab, categoryScrollTarget])
 
   const selectedItem = selectedItemId ? mergedItems.find(item => item.id === selectedItemId) : null
+
+  // Per-item POS ordering behavior (quick-add vs asks-N), for list badges.
+  const modifiersById = useMemo(() => Object.fromEntries(modifiers.map(m => [m.id, m])), [modifiers])
+  // Which questions offer each modifier — a modifier in none is invisible to guests.
+  const groupsByModifierId = useMemo(() => {
+    const map = {}
+    for (const group of groups) {
+      for (const option of group.options || []) {
+        ;(map[option.modifier_id] ||= []).push(group)
+      }
+    }
+    return map
+  }, [groups])
+  const behaviorByItemId = useMemo(() => {
+    const map = {}
+    for (const item of mergedItems) {
+      map[item.id] = itemOrderingBehavior(item, groups, categoriesByName, modifiersById)
+    }
+    return map
+  }, [mergedItems, groups, categoriesByName, modifiersById])
   const nestedReadiness = useMemo(() => {
     const groupsById = Object.fromEntries(groups.map(group => [group.id, group]))
     const parentEdges = []
@@ -886,19 +1002,19 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     await loadCategories(true)
   }, `Tax rate "${name}" created — assign it to a category below and save.`, 'Couldn’t create the tax rate')
 
-  // Attach/detach a question (modifier group) to every item in a category in
-  // one click — from the Categories tab drill-in.
-  const toggleGroupOnCategory = (group, categoryItems, shouldAttach) => run(async () => {
-    const next = new Set(group.item_ids)
-    for (const row of categoryItems) {
-      if (shouldAttach) next.add(row.id)
-      else next.delete(row.id)
+  // True inheritance: link a question to the CATEGORY. Every item in it asks
+  // the question — including items created later. Items opt out individually
+  // from their own editor.
+  const toggleGroupInheritance = (group, category, shouldAttach) => run(async () => {
+    if (shouldAttach) {
+      await attachGroupToCategory(restaurantId, group.id, category.id, (group.category_links || []).length)
+    } else {
+      await detachGroupFromCategory(group.id, category.id)
     }
-    await replaceGroupItems(group.id, Array.from(next))
     await loadGroups()
   }, shouldAttach
-    ? `"${group.name}" is now asked on all ${categoryItems.length} item${categoryItems.length === 1 ? '' : 's'}.`
-    : `"${group.name}" removed from these items.`, 'Couldn’t update the question')
+    ? `Every item in ${category.name} now asks "${group.name}" — including items you add later.`
+    : `"${group.name}" is no longer inherited by ${category.name}.`, 'Couldn’t update the question')
 
   const pickCategoryColor = (category, color) => run(async () => {
     await setCategoryColor(restaurantId, category.id, color)
@@ -920,12 +1036,27 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     return groups.find(group => group.name.trim().toLowerCase() === needle) || null
   }
 
+  // The question the new modifier will be asked by: an explicit pick wins,
+  // "__new__" creates one, and with no pick a category that names an existing
+  // question keeps working as before.
+  const draftTargetGroup = modifierDraft.group_id && modifierDraft.group_id !== '__new__'
+    ? groups.find(group => group.id === modifierDraft.group_id) || null
+    : modifierDraft.group_id === '' ? groupMatchingCategory(modifierDraft.category) : null
+
   const createModifier = () => {
     if (!modifierDraft.name.trim()) {
       setError('Give the modifier a name first.')
       return
     }
-    const matchingGroup = groupMatchingCategory(modifierDraft.category)
+    if (modifierDraft.group_id === '__new__' && !modifierDraft.new_question_name.trim() && !modifierDraft.category.trim()) {
+      setError('Name the new question — e.g. "Choose a side".')
+      return
+    }
+    const explicitGroup = modifierDraft.group_id && modifierDraft.group_id !== '__new__'
+      ? groups.find(group => group.id === modifierDraft.group_id) || null
+      : null
+    const matchingGroup = explicitGroup || (modifierDraft.group_id === '' ? groupMatchingCategory(modifierDraft.category) : null)
+    const wantsNewQuestion = modifierDraft.group_id === '__new__'
     return run(async () => {
       const created = await api(`/restaurants/${restaurantId}/menu/modifiers`, {
         method: 'POST',
@@ -944,19 +1075,49 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           body: JSON.stringify({ item_ids: Array.from(modifierDraft.item_ids) }),
         })
       }
-      if (created?.id && matchingGroup) {
+      let targetGroup = matchingGroup
+      if (created?.id && wantsNewQuestion) {
+        targetGroup = await createModifierGroup(restaurantId, {
+          name: modifierDraft.new_question_name.trim() || modifierDraft.category.trim(),
+          min_selections: 0,
+          max_selections: null,
+          is_required: false,
+          prompt_on_order: true,
+          display_order: groups.length,
+        })
+        targetGroup = { ...targetGroup, item_ids: [], options: [] }
+      }
+      if (created?.id && targetGroup) {
         for (const itemId of modifierDraft.item_ids) {
-          if (!matchingGroup.item_ids.includes(itemId)) {
-            await attachGroupToItem(matchingGroup.id, itemId, matchingGroup.item_ids.length)
+          if (!targetGroup.item_ids.includes(itemId)) {
+            await attachGroupToItem(targetGroup.id, itemId, targetGroup.item_ids.length)
           }
         }
-        await addGroupOption(matchingGroup.id, created.id, { display_order: matchingGroup.options.length })
+        await addGroupOption(targetGroup.id, created.id, { display_order: targetGroup.options.length })
         await loadGroups()
       }
-      setModifierDraft(prev => ({ name: '', price_delta: '', category: prev.category, tax_rate_id: '', reporting_category_id: '', item_ids: new Set() }))
+      setModifierDraft(prev => ({ name: '', price_delta: '', category: prev.category, tax_rate_id: '', reporting_category_id: '', group_id: prev.group_id === '__new__' ? '' : prev.group_id, new_question_name: '', item_ids: new Set() }))
       await loadModifiers()
-    }, matchingGroup ? `Modifier added to the "${matchingGroup.name}" question.` : 'Modifier added.', 'Couldn’t add the modifier')
+    }, wantsNewQuestion
+      ? `Modifier added — new question "${modifierDraft.new_question_name.trim() || modifierDraft.category.trim()}" asks it${modifierDraft.item_ids.size ? ' on the selected items' : ''}.`
+      : matchingGroup
+        ? `Modifier added to the "${matchingGroup.name}" question.`
+        : 'Modifier added to the library — attach it to a question so the POS asks it.', 'Couldn’t add the modifier')
   }
+
+  // Attach an existing modifier to a question (and the question to the
+  // modifier's items) — the rescue path for library-only modifiers.
+  const addModifierToQuestion = (modifier, group) => run(async () => {
+    for (const itemId of modifier.item_ids || []) {
+      if (!group.item_ids.includes(itemId)) {
+        await attachGroupToItem(group.id, itemId, group.item_ids.length)
+      }
+    }
+    if (!group.options.some(option => option.modifier_id === modifier.id)) {
+      await addGroupOption(group.id, modifier.id, { display_order: group.options.length })
+    }
+    await loadGroups()
+  }, `"${modifier.name}" is now an answer in "${group.name}".`, 'Couldn’t attach the modifier')
 
   const updateModifier = (modifierId, patch) => run(async () => {
     await api(`/restaurants/${restaurantId}/menu/modifiers/${modifierId}`, {
@@ -1280,6 +1441,8 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           reloadModifiers={loadModifiers}
           reloadSpecials={loadSpecials}
           reloadImages={loadImages}
+          itemModifierOverrides={itemModifierOverrides[selectedItem.id] || {}}
+          reloadItemModifierOverrides={loadItemModifierOverrides}
           canEditPrices={canEditPrices}
         />
       )}
@@ -1370,6 +1533,23 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                               >
                                 Kitchen: {printingConfig.aliases?.items?.[item.id] || 'Full name'}
                               </a>
+                              {behaviorByItemId[item.id]?.questions.length > 0 && (
+                                behaviorByItemId[item.id].quickAdd ? (
+                                  <span
+                                    className="rounded-full border border-dash-gold/40 bg-dash-gold/15 px-2 py-0.5 text-[10px] font-bold uppercase text-dash-gold"
+                                    title={`Taps straight onto the check${behaviorByItemId[item.id].skipsWithDefaults.length ? ` with ${behaviorByItemId[item.id].skipsWithDefaults.flatMap(entry => entry.defaultNames).join(', ')}` : ''} — no popup`}
+                                  >
+                                    ⚡ Quick add
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-dash-tertiary"
+                                    title={`Asks: ${behaviorByItemId[item.id].asks.map(group => group.name).join(', ')}`}
+                                  >
+                                    Asks {behaviorByItemId[item.id].asks.length}
+                                  </span>
+                                )
+                              )}
                               {activeSpecialItemIds.has(item.id) && (
                                 <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-900">Special</span>
                               )}
@@ -1513,43 +1693,48 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                         </div>
                       )}
 
-                      {categoryItems.length > 0 && (
+                      {category.id && (
                         <div className="mt-4">
-                          <p className="label-mono mb-1">Questions asked in this category</p>
+                          <p className="label-mono mb-1">Base questions — inherited by every item here</p>
                           <p className="mb-2 text-xs text-dash-tertiary">
-                            Click a question to ask it on all {categoryItems.length} item{categoryItems.length === 1 ? '' : 's'} here; click again to remove it from them.
+                            Click a question so all of {category.name} asks it — steaks ask "Temperature", drinks ask "Ice?". Items added to this category later inherit it automatically; any single item can opt out or override defaults from its own editor.
                           </p>
                           <div className="flex flex-wrap gap-1.5">
                             {groups.map(group => {
-                              const attachedCount = categoryItems.filter(row => group.item_ids.includes(row.id)).length
-                              const allAttached = attachedCount === categoryItems.length
+                              const inherited = (group.category_links || []).some(link => link.category_id === category.id)
+                              const optedOutCount = categoryItems.filter(row => group.item_overrides?.[row.id]?.opted_out).length
+                              const directCount = categoryItems.filter(row => group.item_ids.includes(row.id)).length
                               return (
                                 <button
                                   key={group.id}
                                   type="button"
                                   disabled={busy}
                                   title={groupRulesSummary(group)}
-                                  onClick={() => void toggleGroupOnCategory(group, categoryItems, !allAttached)}
+                                  onClick={() => void toggleGroupInheritance(group, category, !inherited)}
                                   className={[
                                     'rounded-full border px-3 py-1.5 text-sm transition disabled:opacity-50',
-                                    allAttached
+                                    inherited
                                       ? 'border-dash-gold/60 bg-dash-gold/15 text-dash-cream'
                                       : 'border-white/10 bg-white/[0.03] text-dash-secondary hover:border-dash-gold/60 hover:text-dash-cream',
                                   ].join(' ')}
                                 >
-                                  {allAttached ? '✓' : '+'} {group.name}
+                                  {inherited ? '✓' : '+'} {group.name}
                                   <span className="ml-1.5 text-xs text-dash-tertiary">
-                                    {attachedCount > 0 && !allAttached ? `${attachedCount}/${categoryItems.length} items · ` : ''}
                                     {group.options.length} option{group.options.length === 1 ? '' : 's'}
+                                    {inherited && optedOutCount > 0 && ` · ${optedOutCount} opted out`}
+                                    {!inherited && directCount > 0 && ` · on ${directCount}/${categoryItems.length} directly`}
                                   </span>
                                 </button>
                               )
                             })}
                             {groups.length === 0 && (
-                              <p className="text-sm text-dash-tertiary">No questions yet — build one on the Modifier Groups tab or inside any item.</p>
+                              <p className="text-sm text-dash-tertiary">No questions yet — build one on the Questions tab or inside any item.</p>
                             )}
                           </div>
                         </div>
+                      )}
+                      {!category.id && (
+                        <p className="mt-4 text-xs text-dash-tertiary">Save categories first to set base questions.</p>
                       )}
                     </div>
                   )}
@@ -1608,7 +1793,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
               ...groups.map(group => group.name.trim()).filter(Boolean),
             ])).sort().map(name => <option key={name} value={name} />)}
           </datalist>
-          <div className="mb-5 grid gap-4 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 lg:grid-cols-[1fr_110px_150px_150px_150px_1.2fr_auto]">
+          <div className="mb-5 grid gap-4 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 lg:grid-cols-[1fr_110px_140px_140px_140px_180px_1.2fr_auto]">
             <Field label="Modifier name">
               <TextInput value={modifierDraft.name} onChange={event => setModifierDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="Extra cheese" />
             </Field>
@@ -1642,6 +1827,41 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                 ))}
               </SelectInput>
             </Field>
+            <div>
+              <Field label="Asked by question">
+                <SelectInput
+                  title="The question the POS asks that offers this modifier — without one, guests are never offered it"
+                  value={modifierDraft.group_id}
+                  onChange={event => setModifierDraft(prev => ({ ...prev, group_id: event.target.value }))}
+                >
+                  <option value="">{draftTargetGroup ? `Matches "${draftTargetGroup.name}"` : 'No question yet…'}</option>
+                  <option value="__new__">＋ New question…</option>
+                  {groups.map(group => (
+                    <option key={group.id} value={group.id}>{group.name}</option>
+                  ))}
+                </SelectInput>
+              </Field>
+              {modifierDraft.group_id === '__new__' && (
+                <div className="mt-2">
+                  <TextInput
+                    value={modifierDraft.new_question_name}
+                    onChange={event => setModifierDraft(prev => ({ ...prev, new_question_name: event.target.value }))}
+                    placeholder='e.g. "Choose a side"'
+                    className="!py-2"
+                  />
+                </div>
+              )}
+              {modifierDraft.group_id === '' && !draftTargetGroup && (
+                <p className="mt-1.5 text-xs text-amber-200">
+                  Without a question the POS never offers this modifier — pick one, or create it here.
+                </p>
+              )}
+              {(draftTargetGroup || modifierDraft.group_id === '__new__') && (
+                <p className="mt-1.5 text-xs text-dash-tertiary">
+                  The question is also attached to every item you select, so they start asking it.
+                </p>
+              )}
+            </div>
             <div>
               <p className="label-mono mb-2">Applies to ({modifierDraft.item_ids.size} items)</p>
               <ItemChecklist
@@ -1684,12 +1904,16 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       taxRates={taxRates}
                       reportingCategories={mergedCategories.filter(category => category.id)}
                       kitchenAlias={printingConfig.aliases?.modifiers?.[modifier.id] || ''}
+                      askedByGroups={groupsByModifierId[modifier.id] || []}
+                      allGroups={groups}
+                      onAddToQuestion={group => void addModifierToQuestion(modifier, group)}
                       busy={busy}
                       onRename={next => void updateModifier(modifier.id, { name: next })}
                       onReprice={next => void updateModifier(modifier.id, { price_delta: next })}
                       onRecategorize={next => void recategorizeModifier(modifier, next)}
                       onSetTaxRate={next => void updateModifier(modifier.id, { tax_rate_id: next })}
                       onSetReportingCategory={next => void updateModifier(modifier.id, { reporting_category_id: next })}
+                      onSetPrint={shouldPrint => void updateModifier(modifier.id, { print_on_kitchen_ticket: shouldPrint })}
                       onReplaceItems={itemIds => void replaceModifierItems(modifier.id, itemIds)}
                       onDelete={() => void deleteModifier(modifier.id)}
                     />
@@ -1708,8 +1932,8 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
       {!loading && activeTab === 'groups' && (
         <SectionShell
-          title="Modifier Groups"
-          description='Questions the POS asks when an item is ordered — "Choose a side", "Pick a dressing". A question can be shared by many items; edit it once, it updates everywhere. Any answer can trigger a follow-up question, nested as deep as you need.'
+          title="Questions"
+          description='Every question the POS can ask, with everything it touches: the items that ask it, the categories that inherit it, and the modifiers it follows up on. A question is shared — edit it once, it updates everywhere; items keep their own overrides (defaults, skip, order).'
         >
           <div className="mb-5 space-y-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4">
             <div className="grid gap-3 md:grid-cols-[1.6fr_auto_auto]">
@@ -1787,12 +2011,14 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                 groups={groups}
                 modifiers={modifiers}
                 menuItems={mergedItems}
+                categories={mergedCategories}
                 busy={busy}
                 onSave={saveGroup}
                 onArchive={archiveGroup}
                 onLink={runGroupLink}
                 onAddModifiers={ids => void addModifiersToGroup(group, ids)}
                 onCreateModifier={draft => void createModifierIntoGroup(group, draft)}
+                onToggleCategory={(targetGroup, category, shouldAttach) => void toggleGroupInheritance(targetGroup, category, shouldAttach)}
               />
             ))}
             {groups.length === 0 && (
@@ -2125,13 +2351,16 @@ function NewTaxRateInline({ busy, onCreate }) {
   )
 }
 
-function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitchenAlias, busy, onRename, onReprice, onRecategorize, onSetTaxRate, onSetReportingCategory, onReplaceItems, onDelete }) {
+function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitchenAlias, askedByGroups = [], allGroups = [], onAddToQuestion = null, busy, onRename, onReprice, onRecategorize, onSetTaxRate, onSetReportingCategory, onSetPrint, onReplaceItems, onDelete }) {
   const [expanded, setExpanded] = useState(false)
   const selectedIds = useMemo(() => new Set(modifier.item_ids || []), [modifier])
+  const neverPrints = modifier.print_on_kitchen_ticket === false
+  const askedByIds = useMemo(() => new Set(askedByGroups.map(group => group.id)), [askedByGroups])
+  const attachableQuestions = allGroups.filter(group => !askedByIds.has(group.id))
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
-      <div className="grid gap-3 lg:grid-cols-[1.2fr_110px_150px_150px_150px_auto_auto_auto_auto] lg:items-center">
+      <div className="grid gap-3 lg:grid-cols-[1.2fr_110px_150px_150px_150px_auto_auto_auto_auto_auto] lg:items-center">
         <TextInput
           defaultValue={modifier.name}
           onBlur={event => {
@@ -2176,10 +2405,49 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitch
             <option key={category.id} value={category.id}>{category.name}</option>
           ))}
         </SelectInput>
+        <SmallButton
+          variant={neverPrints ? 'primary' : 'secondary'}
+          title={neverPrints
+            ? 'Hidden from kitchen tickets everywhere it’s used — click to print again'
+            : 'Prints on kitchen tickets — click to never print it (e.g. FOH-only notes, upsells the kitchen doesn’t need)'}
+          onClick={() => onSetPrint(neverPrints)}
+        >
+          {neverPrints ? 'Never prints' : 'Prints'}
+        </SmallButton>
         <span className="text-sm text-dash-tertiary">{(modifier.item_ids || []).length} item{(modifier.item_ids || []).length === 1 ? '' : 's'}</span>
         <a href="./printing-routing#receipts" className="rounded-lg border border-dash-gold/25 bg-dash-gold/10 px-2 py-2 text-center text-xs font-semibold text-dash-gold" title="Open Receipts & Tickets">Kitchen: {kitchenAlias || 'Full name'}</a>
         <SmallButton onClick={() => setExpanded(current => !current)}>{expanded ? 'Close' : 'Items'}</SmallButton>
         <SmallButton variant="danger" onClick={onDelete} disabled={busy}>Remove</SmallButton>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+        {askedByGroups.length > 0 ? (
+          <>
+            <span className="text-dash-tertiary">Asked by:</span>
+            {askedByGroups.map(group => (
+              <span key={group.id} className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-dash-secondary">{group.name}</span>
+            ))}
+          </>
+        ) : (
+          <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 font-semibold text-amber-200" title="This modifier is in no question, so the POS never offers it to guests — attach it to one.">
+            ⚠ Not asked by any question
+          </span>
+        )}
+        {onAddToQuestion && attachableQuestions.length > 0 && (
+          <SelectInput
+            className="!w-auto !py-1 !text-xs"
+            value=""
+            title="Add this modifier as an answer in a question (and attach the question to this modifier's items)"
+            onChange={event => {
+              const group = attachableQuestions.find(candidate => candidate.id === event.target.value)
+              if (group) onAddToQuestion(group)
+            }}
+          >
+            <option value="">{askedByGroups.length > 0 ? 'also add to question…' : 'add to question…'}</option>
+            {attachableQuestions.map(group => (
+              <option key={group.id} value={group.id}>{group.name}</option>
+            ))}
+          </SelectInput>
+        )}
       </div>
       {expanded && (
         <div className="mt-3 border-t border-white/10 pt-3">

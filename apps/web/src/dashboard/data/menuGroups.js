@@ -48,8 +48,19 @@ export async function fetchModifierGroups(restaurantId) {
   ])
   if (itemLinks.error) throw itemLinks.error
   if (optionLinks.error) throw optionLinks.error
-  if (itemOverrides.error) throw itemOverrides.error
-  // Category links fail soft until the 20260712 migration is applied.
+  // Until the 20260712 migration is applied, the override table lacks the new
+  // columns (42703) and the category-links table doesn't exist (42P01) — fall
+  // back to the legacy shape instead of failing the whole menu.
+  let overrideRows = itemOverrides.data || []
+  if (itemOverrides.error) {
+    if (itemOverrides.error.code !== '42703') throw itemOverrides.error
+    const legacy = await supabase
+      .from('menu_item_modifier_group_overrides')
+      .select('group_id, item_id, prompt_mode')
+      .in('group_id', groupIds)
+    if (legacy.error) throw legacy.error
+    overrideRows = legacy.data || []
+  }
   const categoryLinkRows = categoryLinks.error ? [] : (categoryLinks.data || [])
 
   const itemsByGroup = {}
@@ -72,7 +83,7 @@ export async function fetchModifierGroups(restaurantId) {
   }
   const promptsByGroup = {}
   const overridesByGroup = {}
-  for (const row of itemOverrides.data || []) {
+  for (const row of overrideRows) {
     if (row.prompt_mode) (promptsByGroup[row.group_id] ||= {})[row.item_id] = row.prompt_mode
     ;(overridesByGroup[row.group_id] ||= {})[row.item_id] = {
       prompt_mode: row.prompt_mode || null,
@@ -117,7 +128,8 @@ export async function createModifierGroup(restaurantId, draft) {
       prompt_mode: draft.prompt_mode || 'ask',
       pre_modifiers: draft.pre_modifiers || [],
       pre_modifier_prices: draft.pre_modifier_prices || {},
-      no_print: draft.no_print ?? false,
+      // Omit pre-migration so inserts keep working before 20260712 is applied.
+      ...(draft.no_print != null ? { no_print: draft.no_print } : {}),
     })
     .select('*')
     .single()
@@ -126,12 +138,22 @@ export async function createModifierGroup(restaurantId, draft) {
 }
 
 export async function updateModifierGroup(groupId, patch) {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('menu_modifier_groups')
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq('id', groupId)
     .select('*')
     .single()
+  // Pre-migration fallback: retry without no_print if the column is missing.
+  if (error && error.code === '42703' && 'no_print' in patch) {
+    const { no_print: _noPrint, ...rest } = patch
+    ;({ data, error } = await supabase
+      .from('menu_modifier_groups')
+      .update({ ...rest, updated_at: new Date().toISOString() })
+      .eq('id', groupId)
+      .select('*')
+      .single())
+  }
   if (error) throw error
   return data
 }
@@ -423,7 +445,7 @@ export async function cloneGroupChainForItem(restaurantId, groups, groupId, item
         prompt_mode: source.prompt_mode || 'ask',
         pre_modifiers: source.pre_modifiers || [],
         pre_modifier_prices: source.pre_modifier_prices || {},
-        no_print: source.no_print ?? false,
+        ...(source.no_print != null ? { no_print: source.no_print } : {}),
       })
       .select('*')
       .single()

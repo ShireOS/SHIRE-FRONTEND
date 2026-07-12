@@ -7,7 +7,6 @@ import {
   cloneGroupChainForItem,
   createModifierGroup,
   detachGroupFromItem,
-  effectiveDefaultModifierIds,
   effectiveItemQuestions,
   effectivePromptMode,
   itemOrderingBehavior,
