@@ -12,6 +12,7 @@ import {
 } from '@expo-google-fonts/inter';
 import { FragmentMono_400Regular } from '@expo-google-fonts/fragment-mono';
 import { color_pallet } from '@/styles/colors';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -31,8 +32,10 @@ export default function RootLayout() {
   if (!loaded && !error) return null;
 
   return (
-    <View style={{ flex: 1, backgroundColor: color_pallet.bg.DEFAULT }}>
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color_pallet.bg.DEFAULT } }} />
-    </View>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={{ flex: 1, backgroundColor: color_pallet.bg.DEFAULT }}>
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color_pallet.bg.DEFAULT } }} />
+      </View>
+    </GestureHandlerRootView>
   );
 }
