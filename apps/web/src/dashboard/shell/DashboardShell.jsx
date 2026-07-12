@@ -20,6 +20,7 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  Palette,
   Percent,
   Printer,
   Search,
@@ -140,6 +141,7 @@ function hiddenSurfaces(auth) {
 const STORE_NAV = [
   { id: 'analytics', label: 'Home', icon: Home },
   { id: 'setup', label: 'Setup', icon: Wrench },
+  { id: 'ui', label: 'UI Editor', icon: Palette, resellerOnly: true },
   { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
   { id: 'feedback', label: 'Complaints', icon: MessageSquareWarning },
   { id: 'devices', label: 'Devices', icon: Monitor },
@@ -381,6 +383,7 @@ export default function DashboardShell({
   }
 
   const accountType = auth.accountType
+  const isResellerSurface = accountType === 'reseller' || accountType === 'reseller_employee'
   const showRates = accountType === 'reseller' || accountType === 'admin'
   const showUsers = accountType === 'admin'
   const inStore = context === 'store' && Boolean(restaurant)
@@ -388,6 +391,7 @@ export default function DashboardShell({
   const hidden = hiddenSurfaces(auth)
   const access = useBackOfficeAccess(auth, inStore ? restaurantId : null)
   const tabVisible = (id) => {
+    if (id === 'ui') return isResellerSurface
     if (allowedStoreTabs && !allowedStoreTabs.includes(id)) return false
     if (hidden.has(id)) return false
     // While a member's access is loading, keep nav visible (server enforces).
@@ -401,7 +405,10 @@ export default function DashboardShell({
         ? { ...item, children: item.children.filter((child) => tabVisible(child.id)) }
         : item
     ))
-    .filter((item) => (item.children ? item.children.length > 0 : tabVisible(item.id)))
+    .filter((item) => {
+      if (item.resellerOnly && !isResellerSurface) return false
+      return item.children ? item.children.length > 0 : tabVisible(item.id)
+    })
 
   const initials = useMemo(() => {
     const first = auth.profile?.first_name?.[0] || auth.user?.email?.[0] || '?'

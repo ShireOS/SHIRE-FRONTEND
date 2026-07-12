@@ -43,6 +43,7 @@ import OverviewPage from '../dashboard/pages/OverviewPage'
 import RatesPage from '../dashboard/pages/RatesPage'
 import DevicesPage from '../dashboard/pages/DevicesPage'
 import UsersPage from '../dashboard/pages/UsersPage'
+import ResellerUiEditor from './ResellerUiEditor'
 
 const GROUP_COLORS = ['#2EA6A1', '#D4A854', '#7C8CF8', '#E06B4F', '#6DAF5C', '#B66DD8']
 const RESELLER_SHELL_ROUTES = {
@@ -1217,6 +1218,33 @@ function ResellerSetupEditor() {
   )
 }
 
+function ResellerUiEditorRoute() {
+  const auth = useAuth()
+  const { restaurantId } = useParams()
+  const restaurant = auth.restaurant.restaurants.find((item) => item.id === restaurantId) || null
+  const { groups, restaurants, isLoading, error } = useResellerPortfolio()
+
+  if (!restaurant) return <Navigate to="/reseller" replace />
+  if (isLoading) return <LoadingScreen />
+
+  return (
+    <DashboardShell
+      context="store"
+      activeItem="ui"
+      breadcrumb={[
+        { label: 'Home', to: `/reseller/restaurants/${restaurantId}/analytics` },
+        { label: 'UI Editor' },
+      ]}
+      restaurant={restaurant}
+      restaurantId={restaurantId}
+      routes={RESELLER_SHELL_ROUTES}
+    >
+      {error && <StatusMessage tone="error">{error}</StatusMessage>}
+      <ResellerUiEditor restaurants={restaurants} groups={groups} initialRestaurantId={restaurantId} />
+    </DashboardShell>
+  )
+}
+
 function PropagationModal({ request, restaurants, groups, sourceRestaurantId, onCancel, onApply }) {
   const descriptor = request.descriptor || {}
   const [tab, setTab] = useState('restaurants')
@@ -1426,6 +1454,7 @@ export default function ResellerApp() {
       <Route path="devices" element={<ResellerShell activeItem="devices"><DevicesPage /></ResellerShell>} />
       <Route path="users" element={<ResellerShell activeItem="users"><UsersPage fallbackPath="/reseller" /></ResellerShell>} />
       <Route path="restaurants/:restaurantId/setup" element={<ResellerGate><ResellerSetupEditor /></ResellerGate>} />
+      <Route path="restaurants/:restaurantId/ui" element={<ResellerGate><ResellerUiEditorRoute /></ResellerGate>} />
       <Route path="restaurants/:restaurantId" element={<Navigate to="analytics" replace />} />
       <Route path="restaurants/:restaurantId/:tab" element={(
         <ResellerGate>
