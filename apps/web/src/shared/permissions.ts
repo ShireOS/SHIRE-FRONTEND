@@ -112,6 +112,7 @@ export function can(permissions: PermissionMap | null | undefined, key: string):
 // Which permission unlocks each store nav tab. Tabs absent from this map are
 // always visible (Home). Owners bypass this entirely.
 export const TAB_PERMISSIONS: Record<string, string> = {
+  reports: 'reports.view',
   setup: 'settings.edit',
   menu: 'menu.view',
   taxes: 'settings.edit',

@@ -4,15 +4,21 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
+  FileSpreadsheet,
+  FileText,
   Mail,
+  Printer,
   RefreshCw,
   Save,
+  Send,
   Settings2,
   Sparkles,
   Trash2,
+  Users,
   X,
 } from 'lucide-react'
 import { fetchWithSupabaseAuth } from '../../shared/query'
+import { fetchPosApi } from '../../shared/api/posClient'
 
 const SECTION_META = [
   ['sales_revenue', 'Sales & revenue'],
@@ -297,6 +303,7 @@ function ConfigModal({ preference, onClose, onSave }) {
 const EMPTY_RECIPIENT = {
   name: '', email: '', frequency: 'daily', sections: ['sales_revenue', 'daily_summary'],
   send_time: '07:00', timezone: 'America/Chicago', weekday: 1, month_day: 1, is_active: true,
+  include_server_summary: true, attachment_formats: ['pdf'],
 }
 
 function EmailModal({ recipients, canManage, deliveryEnabled, disabledReason, defaultTimezone, onClose, onSave, onDelete, onTest }) {
@@ -311,7 +318,8 @@ function EmailModal({ recipients, canManage, deliveryEnabled, disabledReason, de
       name: recipient.name || '', email: recipient.email, frequency: recipient.frequency,
       sections: recipient.sections, send_time: String(recipient.send_time || '07:00').slice(0, 5),
       timezone: recipient.timezone, weekday: recipient.weekday, month_day: recipient.month_day,
-      is_active: recipient.is_active,
+      is_active: recipient.is_active, include_server_summary: recipient.include_server_summary !== false,
+      attachment_formats: recipient.attachment_formats || ['pdf'],
     } : { ...EMPTY_RECIPIENT, timezone: defaultTimezone || EMPTY_RECIPIENT.timezone })
   }
   const save = async () => {
@@ -374,8 +382,13 @@ function EmailModal({ recipients, canManage, deliveryEnabled, disabledReason, de
               {SECTION_META.map(([id, label]) => <label key={id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.sections.includes(id)} onChange={() => setDraft({ ...draft, sections: draft.sections.includes(id) ? draft.sections.filter((section) => section !== id) : [...draft.sections, id] })} />{label}</label>)}
             </div>
           </div>
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase text-dash-tertiary">Attachments</p>
+            <div className="flex flex-wrap gap-4">{[['pdf', 'PDF'], ['xlsx', 'Excel workbook']].map(([id, label]) => <label key={id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.attachment_formats.includes(id)} onChange={() => setDraft({ ...draft, attachment_formats: draft.attachment_formats.includes(id) ? draft.attachment_formats.filter((format) => format !== id) : [...draft.attachment_formats, id] })} />{label}</label>)}</div>
+          </div>
+          {draft.frequency === 'daily' && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.include_server_summary} onChange={(event) => setDraft({ ...draft, include_server_summary: event.target.checked })} />Include the worked-server roster for the completed business day</label>}
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.is_active} onChange={(event) => setDraft({ ...draft, is_active: event.target.checked })} />Active schedule</label>
-          <div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="rounded-md border border-white/10 px-4 py-2 text-sm">Cancel</button><button type="button" onClick={save} disabled={saving || !draft.email || !draft.sections.length} className="rounded-md bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-40">{saving ? 'Saving...' : 'Save recipient'}</button></div>
+          <div className="flex justify-end gap-2"><button type="button" onClick={() => setEditing(null)} className="rounded-md border border-white/10 px-4 py-2 text-sm">Cancel</button><button type="button" onClick={save} disabled={saving || !draft.email || !draft.sections.length || !draft.attachment_formats.length} className="rounded-md bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-40">{saving ? 'Saving...' : 'Save recipient'}</button></div>
         </div>
       )}
     </Modal>
@@ -386,7 +399,109 @@ function Field({ label, children }) {
   return <label className="block text-sm text-dash-secondary"><span className="mb-2 block text-xs font-semibold uppercase text-dash-tertiary">{label}</span><span className="[&>input]:h-10 [&>input]:w-full [&>input]:rounded-md [&>input]:border [&>input]:border-white/10 [&>input]:bg-white/[0.04] [&>input]:px-3 [&>select]:h-10 [&>select]:w-full [&>select]:rounded-md [&>select]:border [&>select]:border-white/10 [&>select]:bg-dash-surface [&>select]:px-3">{children}</span></label>
 }
 
+function fileFromBase64(file) {
+  const bytes = Uint8Array.from(atob(file.base64), (character) => character.charCodeAt(0))
+  return new Blob([bytes], { type: file.mime_type })
+}
+
+function saveArtifact(file) {
+  const url = URL.createObjectURL(fileFromBase64(file))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = file.file_name
+  anchor.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function printPdfArtifact(file) {
+  const url = URL.createObjectURL(fileFromBase64(file))
+  const frame = document.createElement('iframe')
+  frame.style.position = 'fixed'
+  frame.style.width = '1px'
+  frame.style.height = '1px'
+  frame.style.opacity = '0'
+  frame.src = url
+  frame.onload = () => {
+    frame.contentWindow?.focus()
+    frame.contentWindow?.print()
+    setTimeout(() => { frame.remove(); URL.revokeObjectURL(url) }, 60_000)
+  }
+  document.body.appendChild(frame)
+}
+
+function ServerReportsPanel({ roster, detail, selectedServerId, onSelect, loading, onPrintReceipt }) {
+  const [search, setSearch] = useState('')
+  const checks = (detail?.checks || []).filter((check) => {
+    const needle = search.trim().toLowerCase()
+    return !needle || [check.order_number, check.table_number, check.payment_method, check.payment_status].some((value) => String(value || '').toLowerCase().includes(needle))
+  })
+  return (
+    <section className="mt-6 overflow-hidden rounded-md border border-white/10 bg-white/[0.025]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-4">
+        <div><h2 className="flex items-center gap-2 text-lg font-semibold"><Users className="h-5 w-5 text-dash-gold" />Server reports</h2><p className="mt-1 text-xs text-dash-tertiary">People who worked this business day, with full selected-server detail and searchable checks.</p></div>
+        <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-dash-secondary">{number(roster?.count)} worked</span>
+      </div>
+      <div className="grid min-h-72 lg:grid-cols-[300px_1fr]">
+        <div className="border-b border-white/10 p-2 lg:border-b-0 lg:border-r">
+          {(roster?.servers || []).map((server) => <button key={server.staff_id} type="button" onClick={() => onSelect(server.staff_id)} className={`mb-1 w-full rounded-md px-3 py-3 text-left ${selectedServerId === server.staff_id ? 'bg-dash-gold text-black' : 'hover:bg-white/[0.05]'}`}><p className="font-semibold">{server.staff_name}</p><p className={`mt-1 text-xs ${selectedServerId === server.staff_id ? 'text-black/65' : 'text-dash-tertiary'}`}>{money(server.sales)} sales · {number(server.check_count)} checks · top {server.top_item?.name || '—'}</p></button>)}
+          {!loading && !(roster?.servers || []).length && <p className="p-4 text-sm text-dash-tertiary">No worked servers were recorded for this day.</p>}
+        </div>
+        <div className="p-4">
+          {loading && <div className="flex min-h-52 items-center justify-center"><RefreshCw className="h-5 w-5 animate-spin text-dash-gold" /></div>}
+          {!loading && detail && <>
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-xl font-semibold">{detail.staff_name}</h3><p className="mt-1 text-sm capitalize text-dash-secondary">{detail.role} · {detail.business_date}</p></div><button type="button" onClick={onPrintReceipt} className="inline-flex items-center gap-2 rounded-md border border-white/10 px-3 py-2 text-sm font-semibold"><Printer className="h-4 w-4" />Receipt print</button></div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat label="Sales" value={money(detail.sales)} /><Stat label="Tips" value={money(detail.tips)} /><Stat label="Take-home" value={money(detail.take_home)} /><Stat label="Top sold item" value={detail.top_item?.name || '—'} /></div>
+            <div className="mt-5 flex items-end justify-between gap-3"><div><h4 className="font-semibold">Checks</h4><p className="text-xs text-dash-tertiary">{number(detail.check_count)} checks · {number(detail.open_check_count)} open</p></div><input aria-label="Search server checks" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search check or table" className="h-10 w-64 rounded-md border border-white/10 bg-white/[0.04] px-3 text-sm" /></div>
+            <div className="mt-2"><Table rows={checks} columns={[{ key: 'order_number', label: 'Check' }, { key: 'table_number', label: 'Table' }, { key: 'payment_status', label: 'Status' }, { key: 'payment_method', label: 'Tender' }, { key: 'total', label: 'Total', render: money }, { key: 'tip_amount', label: 'Tip', render: money }]} /></div>
+          </>}
+          {!loading && !detail && <div className="flex min-h-52 items-center justify-center text-sm text-dash-tertiary">Choose a server to see the full day report.</div>}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function PacketPanel({ restaurantId, dates, businessDate, selectedServerId, emailEnabled }) {
+  const [sections, setSections] = useState(SECTION_META.map(([id]) => id))
+  const [email, setEmail] = useState('')
+  const [message, setMessage] = useState('')
+  const [working, setWorking] = useState('')
+  const [status, setStatus] = useState('')
+  const payload = {
+    start_date: dates.start,
+    end_date: dates.end,
+    business_date: businessDate,
+    sections,
+    server_ids: selectedServerId ? [selectedServerId] : [],
+    packet_name: 'Manager report packet',
+  }
+  const artifact = async (format, print = false) => {
+    setWorking(print ? 'print' : format); setStatus('')
+    try {
+      const file = await fetchPosApi(restaurantId, '/manager/report-hub/artifact', { method: 'POST', body: JSON.stringify({ ...payload, format }) })
+      if (print) printPdfArtifact(file)
+      else saveArtifact(file)
+      setStatus(print ? 'System print dialog opened.' : `${file.file_name} is ready.`)
+    } catch (error) { setStatus(error instanceof Error ? error.message : 'Could not generate the report packet.') }
+    finally { setWorking('') }
+  }
+  const send = async () => {
+    setWorking('email'); setStatus('')
+    try {
+      const result = await fetchPosApi(restaurantId, '/manager/report-hub/email-now', { method: 'POST', body: JSON.stringify({ ...payload, recipients: email.split(',').map((value) => value.trim()).filter(Boolean), formats: ['pdf'], message }) })
+      setStatus(`${result.accepted || 0} report email${result.accepted === 1 ? '' : 's'} accepted.`)
+    } catch (error) { setStatus(error instanceof Error ? error.message : 'Could not email the report packet.') }
+    finally { setWorking('') }
+  }
+  return <div className="space-y-5 py-6"><section className="rounded-md border border-white/10 bg-white/[0.025] p-5"><h2 className="text-xl font-semibold">Build a packet</h2><p className="mt-1 text-sm text-dash-secondary">The complete packet includes the worked-server summary. The currently selected server is the only detailed server/check report included.</p><div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{SECTION_META.map(([id, label]) => <label key={id} className="flex items-center gap-2 rounded-md border border-white/10 px-3 py-3 text-sm"><input type="checkbox" checked={sections.includes(id)} onChange={() => setSections((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} />{label}</label>)}</div></section><section className="rounded-md border border-white/10 bg-white/[0.025] p-5"><h3 className="font-semibold">Output</h3><div className="mt-4 flex flex-wrap gap-2"><IconButton label="Full-page print" icon={Printer} disabled={Boolean(working) || !sections.length} onClick={() => artifact('pdf', true)} /><IconButton label="PDF" icon={FileText} disabled={Boolean(working) || !sections.length} onClick={() => artifact('pdf')} /><IconButton label="Excel" icon={FileSpreadsheet} disabled={Boolean(working) || !sections.length} onClick={() => artifact('xlsx')} /></div><div className="mt-5 grid gap-3 lg:grid-cols-[1fr_1fr_auto]"><Field label="Email now"><input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="owner@example.com, partner@example.com" /></Field><Field label="Message"><input value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Optional note" /></Field><button type="button" onClick={send} disabled={!emailEnabled || !email.trim() || Boolean(working)} className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-md bg-dash-gold px-4 text-sm font-semibold text-black disabled:opacity-40"><Send className="h-4 w-4" />Email now</button></div>{!emailEnabled && <p className="mt-3 text-xs text-amber-200">Email delivery is not enabled on the reporting service yet. PDF, Excel, and printing remain available.</p>}{status && <p className="mt-4 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-dash-secondary">{status}</p>}</section></div>
+}
+
+function AutomationPanel({ recipients, canManage, emailDelivery, onConfigure }) {
+  return <div className="py-6"><section className="rounded-md border border-white/10 bg-white/[0.025] p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">Report automation</h2><p className="mt-1 text-sm text-dash-secondary">Back-office-only schedules send generated attachments. Daily schedules may include the worked-server roster, never every server’s check detail.</p></div>{canManage && <IconButton label="Manage schedules" icon={Settings2} onClick={onConfigure} primary />}</div>{!emailDelivery.enabled && <p className="mt-4 rounded-md border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">{emailDelivery.reason || 'Email delivery is not configured.'}</p>}<div className="mt-5 divide-y divide-white/10 border-y border-white/10">{recipients.map((recipient) => <div key={recipient.id} className="flex flex-wrap items-center justify-between gap-3 py-4"><div><p className="font-semibold">{recipient.name || recipient.email}</p><p className="mt-1 text-sm text-dash-secondary">{recipient.email} · {recipient.frequency} at {String(recipient.send_time).slice(0, 5)}</p><p className="mt-1 text-xs text-dash-tertiary">Attachments: {(recipient.attachment_formats || ['pdf']).join(', ').toUpperCase()}{recipient.frequency === 'daily' && recipient.include_server_summary !== false ? ' · server roster included' : ''}</p></div><span className="rounded-full border border-white/10 px-3 py-1 text-xs capitalize text-dash-secondary">{recipient.last_delivery_status || 'not sent'}</span></div>)}{!recipients.length && <p className="py-8 text-center text-sm text-dash-tertiary">No automated report schedules yet.</p>}</div></section></div>
+}
+
 export default function RestaurantReportsPage({ restaurantId }) {
+  const [hubTab, setHubTab] = useState('reports')
   const [dates, setDates] = useState(initialDates)
   const [periodPreset, setPeriodPreset] = useState('week')
   const [comparisonEnabled, setComparisonEnabled] = useState(false)
@@ -402,6 +517,11 @@ export default function RestaurantReportsPage({ restaurantId }) {
   const [error, setError] = useState('')
   const [modal, setModal] = useState(null)
   const [insights, setInsights] = useState({})
+  const [serverRoster, setServerRoster] = useState(null)
+  const [serverDetail, setServerDetail] = useState(null)
+  const [selectedServerId, setSelectedServerId] = useState('')
+  const [serverLoading, setServerLoading] = useState(false)
+  const [serverMessage, setServerMessage] = useState('')
 
   const setPrimaryRange = (range, preset = 'custom') => {
     const comparison = comparisonMode === 'custom'
@@ -470,6 +590,42 @@ export default function RestaurantReportsPage({ restaurantId }) {
 
   useEffect(() => { void load() }, [restaurantId, dates, comparisonEnabled, filters.category, filters.daypart, filters.dayOfWeek, filters.hour, filters.topN, filters.basis])
 
+  useEffect(() => {
+    if (!restaurantId) return
+    let cancelled = false
+    setServerLoading(true)
+    fetchPosApi(restaurantId, `/manager/report-hub/servers?business_date=${dates.end}`)
+      .then((data) => {
+        if (cancelled) return
+        setServerRoster(data)
+        const first = data.servers?.[0]?.staff_id || ''
+        setSelectedServerId((current) => data.servers?.some((server) => server.staff_id === current) ? current : first)
+      })
+      .catch((err) => { if (!cancelled) setServerMessage(err instanceof Error ? err.message : 'Could not load server reports.') })
+      .finally(() => { if (!cancelled) setServerLoading(false) })
+    return () => { cancelled = true }
+  }, [restaurantId, dates.end])
+
+  useEffect(() => {
+    if (!restaurantId || !selectedServerId) { setServerDetail(null); return }
+    let cancelled = false
+    setServerLoading(true)
+    fetchPosApi(restaurantId, `/manager/report-hub/servers/${selectedServerId}?business_date=${dates.end}`)
+      .then((data) => { if (!cancelled) setServerDetail(data) })
+      .catch((err) => { if (!cancelled) setServerMessage(err instanceof Error ? err.message : 'Could not load the server report.') })
+      .finally(() => { if (!cancelled) setServerLoading(false) })
+    return () => { cancelled = true }
+  }, [restaurantId, selectedServerId, dates.end])
+
+  const printServerReceipt = async () => {
+    if (!selectedServerId) return
+    setServerMessage('')
+    try {
+      const result = await fetchPosApi(restaurantId, `/manager/report-hub/servers/${selectedServerId}/receipt?business_date=${dates.end}`, { method: 'POST', body: '{}' })
+      setServerMessage(result.queued ? 'Server receipt report queued.' : 'Server receipt report could not be queued.')
+    } catch (err) { setServerMessage(err instanceof Error ? err.message : 'Could not print the server receipt report.') }
+  }
+
   const sections = report?.sections || {}
   const visible = new Set(preference.visible_sections || SECTION_META.map(([id]) => id))
   const orderedSections = (preference.section_order || SECTION_META.map(([id]) => id)).filter((id) => visible.has(id))
@@ -534,6 +690,9 @@ export default function RestaurantReportsPage({ restaurantId }) {
               <IconButton label="Refresh" icon={RefreshCw} onClick={load} disabled={loading} />
             </div>
           </div>
+          <div className="flex max-w-full gap-1 overflow-x-auto rounded-md border border-white/10 bg-white/[0.025] p-1">
+            {[['reports', 'Reports'], ['packets', 'Packets'], ['automation', 'Automation']].map(([id, label]) => <button key={id} type="button" onClick={() => setHubTab(id)} className={`rounded px-4 py-2 text-sm font-semibold ${hubTab === id ? 'bg-dash-cream text-dash-base' : 'text-dash-secondary hover:text-dash-cream'}`}>{label}</button>)}
+          </div>
           <div className="flex justify-end">
             <div className="flex max-w-full flex-wrap items-end gap-2 rounded-md border border-white/10 bg-white/[0.025] p-2">
               <Field label="Period"><select aria-label="Reporting period" value={periodPreset} onChange={(event) => selectPeriod(event.target.value)}>{PERIOD_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></Field>
@@ -549,8 +708,14 @@ export default function RestaurantReportsPage({ restaurantId }) {
       </header>
 
       {error && <div className="my-5 rounded-md border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">{error}</div>}
-      {loading && !report && <div className="flex min-h-64 items-center justify-center"><RefreshCw className="h-6 w-6 animate-spin text-dash-gold" /></div>}
-      {report && orderedSections.map((id) => <div key={id}>{sectionRenderers[id]?.()}</div>)}
+      {serverMessage && <div className="my-4 rounded-md border border-white/10 bg-white/[0.035] p-3 text-sm text-dash-secondary">{serverMessage}</div>}
+      {hubTab === 'reports' && <>
+        {loading && !report && <div className="flex min-h-64 items-center justify-center"><RefreshCw className="h-6 w-6 animate-spin text-dash-gold" /></div>}
+        {report && orderedSections.map((id) => <div key={id}>{sectionRenderers[id]?.()}</div>)}
+        <ServerReportsPanel roster={serverRoster} detail={serverDetail} selectedServerId={selectedServerId} onSelect={setSelectedServerId} loading={serverLoading} onPrintReceipt={printServerReceipt} />
+      </>}
+      {hubTab === 'packets' && <PacketPanel restaurantId={restaurantId} dates={dates} businessDate={dates.end} selectedServerId={selectedServerId} emailEnabled={emailDelivery.enabled} />}
+      {hubTab === 'automation' && <AutomationPanel recipients={recipients} canManage={canManageRecipients} emailDelivery={emailDelivery} onConfigure={() => setModal('email')} />}
 
       {modal === 'compare' && <Modal title="Comparison period" onClose={() => setModal(null)}><div className="space-y-4"><div className="flex items-center justify-between gap-4 rounded-md border border-white/10 bg-white/[0.025] p-3"><div><p className="text-sm font-semibold">Comparison</p><p className="mt-1 text-xs text-dash-tertiary">Show changes against another period.</p></div><ComparisonToggle enabled={compareDraft.enabled} onChange={(enabled) => setCompareDraft({ ...compareDraft, enabled })} /></div><div className={compareDraft.enabled ? '' : 'pointer-events-none opacity-40'}><div className="space-y-4"><Field label="Compare against"><select value={compareDraft.mode} onChange={(event) => updateComparisonDraftMode(event.target.value)}><option value="previous_period">Previous equal period</option><option value="previous_year">Same period last year</option><option value="custom">Custom period</option></select></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Comparison from"><input type="date" value={compareDraft.comparisonStart} onChange={(event) => setCompareDraft({ ...compareDraft, mode: 'custom', comparisonStart: event.target.value })} /></Field><Field label="Comparison through"><input type="date" value={compareDraft.comparisonEnd} onChange={(event) => setCompareDraft({ ...compareDraft, mode: 'custom', comparisonEnd: event.target.value })} /></Field></div></div></div></div><div className="mt-5 flex justify-end"><IconButton label="Save comparison" icon={CalendarRange} primary disabled={compareDraft.enabled && (!compareDraft.comparisonStart || !compareDraft.comparisonEnd || compareDraft.comparisonStart > compareDraft.comparisonEnd)} onClick={() => { setComparisonMode(compareDraft.mode); setComparisonEnabled(compareDraft.enabled); setDates((current) => ({ ...current, comparisonStart: compareDraft.comparisonStart, comparisonEnd: compareDraft.comparisonEnd })); setModal(null) }} /></div></Modal>}
       {modal === 'config' && <ConfigModal preference={preference} onClose={() => setModal(null)} onSave={savePreference} />}

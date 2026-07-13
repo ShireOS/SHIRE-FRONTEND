@@ -144,6 +144,7 @@ function hiddenSurfaces(auth) {
 
 const STORE_NAV = [
   { id: 'analytics', label: 'Home', icon: Home },
+  { id: 'reports', label: 'Reports', icon: LayoutGrid },
   { id: 'setup', label: 'Setup', icon: Wrench },
   { id: 'ui', label: 'UI Editor', icon: Palette, resellerOnly: true },
   { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
@@ -187,7 +188,6 @@ const STORE_NAV = [
 const STORE_NAV_SOON = [
   { id: 'online-ordering', label: 'Online Ordering', icon: ShoppingCart },
   { id: 'integrations', label: 'Integration Hub', icon: SlidersHorizontal },
-  { id: 'reports', label: 'Reports', icon: LayoutGrid },
 ]
 
 function SoonChip() {

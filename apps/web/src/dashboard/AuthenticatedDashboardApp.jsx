@@ -127,6 +127,7 @@ function EnterprisePage({ item, title, children }) {
 
 const TABS = [
   { id: 'analytics', label: 'Analytics' },
+  { id: 'reports', label: 'Reports' },
   { id: 'setup', label: 'Edit Setup' },
   { id: 'menu', label: 'Menu' },
   { id: 'taxes', label: 'Taxes' },
@@ -446,7 +447,7 @@ function MiniTable({ columns, rows }) {
 }
 
 function AnalyticsDashboard({ restaurant }) {
-  return <RestaurantReportsPage restaurantId={restaurant?.id} restaurantName={restaurant?.name} />
+  return <LegacyAnalyticsDashboard restaurant={restaurant} />
 }
 
 function LegacyAnalyticsDashboard({ restaurant }) {
@@ -4592,6 +4593,7 @@ export function RestaurantWorkspace({
             <AnalyticsDashboard restaurant={restaurant} />
           </>
         )}
+        {activeTab === 'reports' && <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurant?.name} />}
         {activeTab === 'menu' && (
           <MenuPanel
             restaurantId={restaurantId}
@@ -4621,6 +4623,7 @@ export function RestaurantWorkspace({
 
 const WORKSPACE_BREADCRUMB_LABELS = {
   analytics: 'Overview',
+  reports: 'Reports',
   setup: 'Setup',
   menu: 'Menu',
   taxes: 'Taxes',
