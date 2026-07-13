@@ -67,8 +67,28 @@ grant select, insert, update, delete on table public.menu_category_modifier_grou
 drop policy if exists menu_category_modifier_groups_portal_all on public.menu_category_modifier_groups;
 create policy menu_category_modifier_groups_portal_all on public.menu_category_modifier_groups
   for all to authenticated
-  using (can_manage_store_menu(restaurant_id))
-  with check (can_manage_store_menu(restaurant_id));
+  using (
+    exists (
+      select 1
+      from public.menu_categories c
+      join public.menu_modifier_groups g on g.id = menu_category_modifier_groups.group_id
+      where c.id = menu_category_modifier_groups.category_id
+        and c.restaurant_id = menu_category_modifier_groups.restaurant_id
+        and g.restaurant_id = menu_category_modifier_groups.restaurant_id
+        and can_manage_store_menu(c.restaurant_id)
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.menu_categories c
+      join public.menu_modifier_groups g on g.id = menu_category_modifier_groups.group_id
+      where c.id = menu_category_modifier_groups.category_id
+        and c.restaurant_id = menu_category_modifier_groups.restaurant_id
+        and g.restaurant_id = menu_category_modifier_groups.restaurant_id
+        and can_manage_store_menu(c.restaurant_id)
+    )
+  );
 
 -- ---------------------------------------------------------------------------
 -- 4. Per-item modifier overrides (price on THIS item, print on THIS item)
@@ -97,5 +117,25 @@ grant select, insert, update, delete on table public.menu_item_modifier_override
 drop policy if exists menu_item_modifier_overrides_portal_all on public.menu_item_modifier_overrides;
 create policy menu_item_modifier_overrides_portal_all on public.menu_item_modifier_overrides
   for all to authenticated
-  using (can_manage_store_menu(restaurant_id))
-  with check (can_manage_store_menu(restaurant_id));
+  using (
+    exists (
+      select 1
+      from public.menu_items i
+      join public.menu_modifiers m on m.id = menu_item_modifier_overrides.modifier_id
+      where i.id = menu_item_modifier_overrides.item_id
+        and i.restaurant_id = menu_item_modifier_overrides.restaurant_id
+        and m.restaurant_id = menu_item_modifier_overrides.restaurant_id
+        and can_manage_store_menu(i.restaurant_id)
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.menu_items i
+      join public.menu_modifiers m on m.id = menu_item_modifier_overrides.modifier_id
+      where i.id = menu_item_modifier_overrides.item_id
+        and i.restaurant_id = menu_item_modifier_overrides.restaurant_id
+        and m.restaurant_id = menu_item_modifier_overrides.restaurant_id
+        and can_manage_store_menu(i.restaurant_id)
+    )
+  );

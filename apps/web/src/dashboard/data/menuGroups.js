@@ -61,7 +61,8 @@ export async function fetchModifierGroups(restaurantId) {
     if (legacy.error) throw legacy.error
     overrideRows = legacy.data || []
   }
-  const categoryLinkRows = categoryLinks.error ? [] : (categoryLinks.data || [])
+  if (categoryLinks.error && categoryLinks.error.code !== '42P01') throw categoryLinks.error
+  const categoryLinkRows = categoryLinks.data || []
 
   const itemsByGroup = {}
   const itemOrderByGroup = {}

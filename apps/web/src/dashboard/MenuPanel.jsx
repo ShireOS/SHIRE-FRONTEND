@@ -1009,7 +1009,12 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   // from their own editor.
   const toggleGroupInheritance = (group, category, shouldAttach) => run(async () => {
     if (shouldAttach) {
-      await attachGroupToCategory(restaurantId, group.id, category.id, (group.category_links || []).length)
+      const categoryOrders = groups.flatMap(candidate =>
+        (candidate.category_links || [])
+          .filter(link => link.category_id === category.id)
+          .map(link => Number(link.display_order) || 0))
+      const nextCategoryOrder = categoryOrders.length > 0 ? Math.max(...categoryOrders) + 1 : 0
+      await attachGroupToCategory(restaurantId, group.id, category.id, nextCategoryOrder)
     } else {
       await detachGroupFromCategory(group.id, category.id)
     }
