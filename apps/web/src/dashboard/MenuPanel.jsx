@@ -517,7 +517,8 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [allergyExclusions, setAllergyExclusions] = useState([])
   const [pillDraft, setPillDraft] = useState('')
 
-  const [modifierDraft, setModifierDraft] = useState({ name: '', price_delta: '', category: '', tax_rate_id: '', reporting_category_id: '', group_id: '', new_question_name: '', item_ids: new Set() })
+  const [modifierDraft, setModifierDraft] = useState({ name: '', price_delta: '', category: '', tax_rate_id: '', reporting_category_id: '', group_id: '', new_question_name: '', print_on_kitchen_ticket: true, item_ids: new Set() })
+  const [showModifierDrawer, setShowModifierDrawer] = useState(false)
   const [groupDraft, setGroupDraft] = useState(() => defaultGroupDraft())
   const [specialDraft, setSpecialDraft] = useState(() => defaultSpecialDraft())
   const [scheduleItemId, setScheduleItemId] = useState('')
@@ -1068,6 +1069,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           is_active: true,
           tax_rate_id: modifierDraft.tax_rate_id || null,
           reporting_category_id: modifierDraft.reporting_category_id || null,
+          print_on_kitchen_ticket: modifierDraft.print_on_kitchen_ticket !== false,
         }),
       })
       if (created?.id && modifierDraft.item_ids.size > 0) {
@@ -1097,7 +1099,8 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         await addGroupOption(targetGroup.id, created.id, { display_order: targetGroup.options.length })
         await loadGroups()
       }
-      setModifierDraft(prev => ({ name: '', price_delta: '', category: prev.category, tax_rate_id: '', reporting_category_id: '', group_id: prev.group_id === '__new__' ? '' : prev.group_id, new_question_name: '', item_ids: new Set() }))
+      setModifierDraft(prev => ({ name: '', price_delta: '', category: prev.category, tax_rate_id: '', reporting_category_id: '', group_id: prev.group_id === '__new__' ? '' : prev.group_id, new_question_name: '', print_on_kitchen_ticket: true, item_ids: new Set() }))
+      setShowModifierDrawer(false)
       await loadModifiers()
     }, wantsNewQuestion
       ? `Modifier added — new question "${modifierDraft.new_question_name.trim() || modifierDraft.category.trim()}" asks it${modifierDraft.item_ids.size ? ' on the selected items' : ''}.`
@@ -1843,17 +1846,46 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
               ...groups.map(group => group.name.trim()).filter(Boolean),
             ])).sort().map(name => <option key={name} value={name} />)}
           </datalist>
-          <div className="mb-5 grid gap-4 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 lg:grid-cols-[1fr_110px_140px_140px_140px_180px_1.2fr_auto]">
-            <Field label="Modifier name">
-              <TextInput value={modifierDraft.name} onChange={event => setModifierDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="Extra cheese" />
-            </Field>
-            <Field label="Price +$">
-              <TextInput inputMode="decimal" value={modifierDraft.price_delta} onChange={event => setModifierDraft(prev => ({ ...prev, price_delta: cleanDecimal(event.target.value) }))} placeholder="0.00" />
-            </Field>
-            <Field label="Category">
-              <TextInput list="menu-modifier-categories" value={modifierDraft.category} onChange={event => setModifierDraft(prev => ({ ...prev, category: event.target.value }))} placeholder="Add-ons" />
-            </Field>
-            <Field label="Tax rate">
+          <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4">
+            <SmallButton variant="primary" onClick={() => setShowModifierDrawer(true)}>＋ New modifier</SmallButton>
+            <span className="text-sm text-dash-tertiary">Price, tax, kitchen printing, the question that asks it, and the items it applies to — all in one panel.</span>
+          </div>
+
+          {showModifierDrawer && (
+            <>
+              <div className="fixed inset-0 z-40 bg-black/60" onClick={() => setShowModifierDrawer(false)} />
+              <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-white/10 bg-[#14120e] shadow-2xl">
+                <div className="flex items-start justify-between gap-3 border-b border-white/10 p-5">
+                  <div>
+                    <h3 className="text-xl font-semibold tracking-tight">New modifier</h3>
+                    <p className="mt-1 text-sm text-dash-tertiary">Guests only see it once a question asks it.</p>
+                  </div>
+                  <SmallButton onClick={() => setShowModifierDrawer(false)}>✕</SmallButton>
+                </div>
+                <div className="flex-1 space-y-4 overflow-y-auto p-5">
+                  <Field label="Modifier name">
+                    <TextInput autoFocus value={modifierDraft.name} onChange={event => setModifierDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="Extra cheese" />
+                  </Field>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Price +$">
+                      <TextInput inputMode="decimal" value={modifierDraft.price_delta} onChange={event => setModifierDraft(prev => ({ ...prev, price_delta: cleanDecimal(event.target.value) }))} placeholder="0.00" />
+                    </Field>
+                    <Field label="Category">
+                      <TextInput list="menu-modifier-categories" value={modifierDraft.category} onChange={event => setModifierDraft(prev => ({ ...prev, category: event.target.value }))} placeholder="Add-ons" />
+                    </Field>
+                  </div>
+                  <Field label="Kitchen ticket">
+                    <SelectInput
+                      title="Some choices only matter front-of-house — upsells, FOH notes. 'Never prints' keeps them off kitchen tickets everywhere; receipts still show them."
+                      value={modifierDraft.print_on_kitchen_ticket === false ? 'no' : 'yes'}
+                      onChange={event => setModifierDraft(prev => ({ ...prev, print_on_kitchen_ticket: event.target.value !== 'no' }))}
+                    >
+                      <option value="yes">Prints on kitchen tickets</option>
+                      <option value="no">Never prints (FOH-only)</option>
+                    </SelectInput>
+                  </Field>
+                  <div className="grid grid-cols-2 gap-3">
+                  <Field label="Tax rate">
               <SelectInput
                 title="Tax this modifier's charge at its own rate — e.g. liquor in a Jack & Coke"
                 value={modifierDraft.tax_rate_id}
@@ -1877,6 +1909,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                 ))}
               </SelectInput>
             </Field>
+            </div>
             <div>
               <Field label="Asked by question">
                 <SelectInput
@@ -1933,10 +1966,14 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                 })}
               />
             </div>
-            <div className="flex items-end">
-              <SmallButton variant="primary" onClick={() => void createModifier()} disabled={busy}>Add modifier</SmallButton>
-            </div>
-          </div>
+                </div>
+                <div className="flex gap-2 border-t border-white/10 p-5">
+                  <SmallButton variant="primary" onClick={() => void createModifier()} disabled={busy || !modifierDraft.name.trim()}>Add modifier</SmallButton>
+                  <SmallButton onClick={() => setShowModifierDrawer(false)}>Cancel</SmallButton>
+                </div>
+              </aside>
+            </>
+          )}
 
           <div className="space-y-5">
             {bucketModifiersByCategory(modifiers).map(([bucketName, bucketModifiers]) => (
