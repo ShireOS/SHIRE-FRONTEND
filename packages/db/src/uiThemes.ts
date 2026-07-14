@@ -1,4 +1,24 @@
 export type UiService = 'pos' | 'host'
+export type UiPreviewMode = 'view' | 'edit'
+export type UiComponentColorProperty = 'backgroundColor' | 'color' | 'borderColor'
+export type UiComponentOverrides = Record<
+  string,
+  Partial<Record<UiComponentColorProperty, string>>
+>
+
+export type UiPreviewEditableProperty = {
+  property: UiComponentColorProperty
+  label: string
+  value: string
+  tokenKey: string | null
+}
+
+export type UiPreviewComponentSelection = {
+  componentId: string
+  label: string
+  registered: boolean
+  properties: UiPreviewEditableProperty[]
+}
 
 export type UiThemeToken = {
   key: string

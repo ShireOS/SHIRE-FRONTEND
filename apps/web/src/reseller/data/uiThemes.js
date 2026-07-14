@@ -10,10 +10,15 @@ export async function fetchUiThemes(restaurantIds) {
   return fetchWithSupabaseAuth(themeQuery(restaurantIds))
 }
 
-export async function applyUiTheme(service, restaurantIds, tokens) {
+export async function applyUiTheme(service, restaurantIds, tokens, componentOverrides) {
   return fetchWithSupabaseAuth('/reseller/ui-themes', {
     method: 'PUT',
-    body: JSON.stringify({ service, restaurant_ids: restaurantIds, tokens }),
+    body: JSON.stringify({
+      service,
+      restaurant_ids: restaurantIds,
+      tokens,
+      component_overrides: componentOverrides,
+    }),
   })
 }
 

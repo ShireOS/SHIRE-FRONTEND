@@ -8,4 +8,12 @@ export {
   effectiveUiTheme,
   groupUiThemeTokens,
 } from './uiThemes'
-export type { UiService, UiThemeToken } from './uiThemes'
+export type {
+  UiComponentColorProperty,
+  UiComponentOverrides,
+  UiPreviewComponentSelection,
+  UiPreviewEditableProperty,
+  UiPreviewMode,
+  UiService,
+  UiThemeToken,
+} from './uiThemes'

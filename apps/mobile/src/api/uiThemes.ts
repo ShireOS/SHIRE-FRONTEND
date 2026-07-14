@@ -1,9 +1,11 @@
 import { apiRequest } from './mobileApi';
+import type { UiComponentOverrides } from '@shire/db';
 
 export type UiThemeRow = {
   restaurant_id: string;
   service: 'pos' | 'host';
   tokens: Record<string, string>;
+  component_overrides: UiComponentOverrides;
   version: number;
 };
 
@@ -22,10 +24,16 @@ export function applyUiTheme(
   service: 'pos' | 'host',
   restaurantIds: string[],
   tokens: Record<string, string>,
+  componentOverrides: UiComponentOverrides,
 ) {
   return apiRequest<{ updated_restaurant_count: number }>('/reseller/ui-themes', {
     method: 'PUT',
-    body: { service, restaurant_ids: restaurantIds, tokens },
+    body: {
+      service,
+      restaurant_ids: restaurantIds,
+      tokens,
+      component_overrides: componentOverrides,
+    },
   });
 }
 
