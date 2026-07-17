@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, ChevronDown, Eye, Palette, Pencil, RefreshCw, Send, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, Eye, Palette, Pencil, RefreshCw, Trash2, X } from 'lucide-react'
 import { defaultUiTheme, effectiveUiTheme, groupUiThemeTokens } from '@shire/db'
 import { applyUiTheme, deleteUiThemeHistoryColor, fetchUiThemes } from './data/uiThemes'
 import { buildGroupCards, UNGROUPED_ID } from './data/resellerPortfolio'
 import UiAppPreview from './UiAppPreview'
+import { PublishControls } from '../shared/components/PublishControls'
+import { scheduleChange } from '../shared/api/scheduledChanges'
 
 const SERVICE_LABELS = { pos: 'POS', host: 'Host' }
 
@@ -194,10 +196,26 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
     setStatus({ tone: 'success', text: `${componentSelection.label} now inherits its theme color in the sandbox.` })
   }
 
-  const pushToIpads = async () => {
+  const pushToIpads = async (publication) => {
     setLoading(true)
     setStatus({ tone: '', text: '' })
     try {
+      if (publication?.scheduledFor) {
+        const scheduled = await scheduleChange({
+          label: `${SERVICE_LABELS[service]} UI theme`,
+          scheduledFor: publication.scheduledFor,
+          timezone: publication.timezone,
+          commands: [{
+            method: 'PUT',
+            path: '/reseller/ui-themes',
+            body: { service, restaurant_ids: selectedIds, tokens: drafts[service], component_overrides: componentDrafts[service] },
+            target_type: 'reseller',
+          }],
+        })
+        setStatus({ tone: 'success', text: `${SERVICE_LABELS[service]} UI scheduled for ${new Date(scheduled.scheduled_for).toLocaleString()}.` })
+        setLoading(false)
+        return
+      }
       await applyUiTheme(service, selectedIds, drafts[service], componentDrafts[service])
       await load(selectedIds)
       setStatus({ tone: 'success', text: `${SERVICE_LABELS[service]} UI pushed to ${selectedIds.length} restaurant${selectedIds.length === 1 ? '' : 's'}.` })
@@ -237,7 +255,7 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
         <div><p className="label-mono">Reseller UI editor</p><h1 className="mt-1 text-2xl font-semibold">Application colors</h1><p className="mt-2 max-w-2xl text-sm text-dash-secondary">Edit the runtime theme delivered to each selected restaurant's POS and Host applications.</p></div>
         <div className="flex flex-wrap justify-end gap-2">
           <button type="button" onClick={openPicker} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-dash-border px-4 text-sm font-semibold"><RefreshCw size={15} />Change selection</button>
-          {dirty[service] && <button type="button" disabled={loading} onClick={() => void pushToIpads()} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-shell-cta px-4 text-sm font-semibold text-shell-cta-text disabled:opacity-40"><Send size={15} />{loading ? 'Pushing...' : 'Push to iPads'}</button>}
+          {dirty[service] && <PublishControls label="Push to iPads" busy={loading} onPublishNow={() => pushToIpads()} onSchedule={(scheduledFor, timezone) => pushToIpads({ scheduledFor, timezone })} />}
         </div>
       </header>
       <div className="rounded-lg border border-dash-border bg-[var(--glass-bg)] p-4"><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold">Viewing</span>{selectedNames.slice(0, 4).map((name) => <span key={name} className="rounded-full border border-dash-border px-3 py-1 text-xs text-dash-secondary">{name}</span>)}{selectedNames.length > 4 && <span className="text-xs text-dash-tertiary">+{selectedNames.length - 4} more</span>}</div></div>

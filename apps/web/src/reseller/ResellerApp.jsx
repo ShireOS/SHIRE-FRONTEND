@@ -44,6 +44,9 @@ import RatesPage from '../dashboard/pages/RatesPage'
 import DevicesPage from '../dashboard/pages/DevicesPage'
 import UsersPage from '../dashboard/pages/UsersPage'
 import ResellerUiEditor from './ResellerUiEditor'
+import { scheduleChange } from '../shared/api/scheduledChanges'
+import { PublishControls } from '../shared/components/PublishControls'
+import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
 
 const GROUP_COLORS = ['#2EA6A1', '#D4A854', '#7C8CF8', '#E06B4F', '#6DAF5C', '#B66DD8']
 const RESELLER_SHELL_ROUTES = {
@@ -622,12 +625,31 @@ function ResellerProfileEditor({ onboarding = false }) {
     }))
   }
 
-  const saveProfile = async ({ complete = false } = {}) => {
+  const saveProfile = async ({ complete = false, publication = null } = {}) => {
     if (!resellerId) return
     setSaving(true)
     setError('')
     setMessage('')
     try {
+      if (publication && !complete) {
+        const patch = {
+          organization_name: profile.organization_name?.trim() || '',
+          legal_business_name: profile.legal_business_name?.trim() || null,
+          business_email: profile.business_email?.trim() || null,
+          phone: profile.phone?.trim() || null,
+          website: profile.website?.trim() || null,
+          default_general_propagation: profile.default_general_propagation || 'current_group',
+          default_specified_propagation: profile.default_specified_propagation || 'current_restaurant',
+        }
+        const scheduled = await scheduleChange({
+          label: 'Reseller organization profile',
+          scheduledFor: publication.scheduledFor,
+          timezone: publication.timezone,
+          commands: [{ method: 'PATCH', path: '/reseller/profile', body: { patch, complete: false }, target_type: 'reseller', target_id: resellerId }],
+        })
+        setMessage(`Reseller profile scheduled for ${new Date(scheduled.scheduled_for).toLocaleString()}.`)
+        return
+      }
       const saved = await saveResellerProfile(resellerId, profile, { complete })
       setProfile(saved)
       setMessage(complete ? 'Reseller onboarding complete.' : 'Saved reseller profile.')
@@ -703,6 +725,7 @@ function ResellerProfileEditor({ onboarding = false }) {
       )}
       {error && <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">{error}</div>}
       {message && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-200">{message}</div>}
+      {!onboarding && <ScheduledChangesPanel />}
 
       <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
         <div className="mb-4 flex items-start justify-between gap-4">
@@ -843,9 +866,18 @@ function ResellerProfileEditor({ onboarding = false }) {
 
       <div className="flex flex-wrap justify-end gap-2">
         {!onboarding && <SmallButton onClick={() => navigate('/reseller')}>Back to portfolio</SmallButton>}
-        <SmallButton variant="primary" onClick={() => void saveProfile({ complete: onboarding })} disabled={saving || (onboarding && !profileComplete)}>
-          {saving ? 'Saving...' : onboarding ? 'Complete reseller onboarding' : 'Save profile'}
-        </SmallButton>
+        {onboarding ? (
+          <SmallButton variant="primary" onClick={() => void saveProfile({ complete: true })} disabled={saving || !profileComplete}>
+            {saving ? 'Saving...' : 'Complete reseller onboarding'}
+          </SmallButton>
+        ) : (
+          <PublishControls
+            label="Save profile"
+            busy={saving}
+            onPublishNow={() => saveProfile()}
+            onSchedule={(scheduledFor, timezone) => saveProfile({ publication: { scheduledFor, timezone } })}
+          />
+        )}
       </div>
     </div>
   )
