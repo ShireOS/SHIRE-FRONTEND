@@ -236,6 +236,12 @@ export default function OverviewPage({ restaurantBase = '/restaurants' }) {
             {visible('profit_after_labor') && <MetricCard label="Profit after labor" value={money(totals.profit_after_labor)} comparison={comparisonFor('profit_after_labor')} />}
           </div>
 
+          <div className="grid gap-4 md:grid-cols-3">
+            <MetricCard label="Processed by Shire" value={money(totals.shire_card_total)} detail="Card volume processed through Shire" />
+            <MetricCard label="External" value={money(totals.external_total)} detail="Recorded on the external processor" />
+            <MetricCard label="Combined card" value={money(totals.combined_card_total)} detail="Shire plus external card volume" />
+          </div>
+
           {visible('portfolio_trends') && (
             <section className="glass-card rounded-2xl p-5">
               <div className="mb-4"><p className="label-mono">Portfolio trend</p><h2 className="mt-1 text-lg font-semibold">Net sales over time</h2></div>

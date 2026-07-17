@@ -5,6 +5,7 @@ import { supabase } from '../../shared/lib/supabase'
 import { fetchPosApi } from '../../shared/api/posClient'
 import { fetchWithSupabaseAuth } from '../../shared/query'
 import MenuPanel from '../MenuPanel'
+import ResilientPrintingCard from '../components/printing/ResilientPrintingCard'
 
 const DEFAULT_CONFIG = {
   receipt_detail: 'clean',
@@ -215,13 +216,13 @@ export default function PrintingRoutingPage({ restaurantId }) {
       {message && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">{message}</div>}
 
       {section === 'overview' && (
-        <div className="grid gap-4 md:grid-cols-3">
+        <><div className="grid gap-4 md:grid-cols-3">
           {[
             [Route, 'Stations', `${stations.length} active`],
             [Printer, 'Printer targets', `${(routing.targets || []).filter(target => target.is_active !== false).length} active`],
             [ReceiptText, 'Customer receipt', config.receipt_detail === 'full' ? 'Full detail' : 'Clean detail'],
           ].map(([Icon, label, value]) => <div key={label} className="rounded-2xl border border-white/10 bg-white/[0.035] p-5"><Icon className="h-5 w-5 text-dash-gold" /><p className="mt-4 label-mono">{label}</p><p className="mt-1 text-xl font-semibold">{value}</p></div>)}
-        </div>
+        </div><ResilientPrintingCard restaurantId={restaurantId} /></>
       )}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,.85fr)]">

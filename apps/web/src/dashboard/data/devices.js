@@ -1,4 +1,5 @@
 import { supabase } from '../../shared/lib/supabase'
+import { fetchPosApi } from '../../shared/api/posClient'
 
 // Physical layer: which printer a terminal talks to, per role. One target per
 // role per device — 'backup' is its own role rather than a priority scheme.
@@ -37,6 +38,15 @@ export const deviceTypeLabel = (type) =>
 // A device that hasn't checked in for 10 minutes reads as offline.
 export const isDeviceOnline = (device) =>
   Boolean(device?.last_seen_at) && Date.now() - new Date(device.last_seen_at).getTime() < 10 * 60 * 1000
+
+export const fetchPrinterFailover = restaurantId =>
+  fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printer-failover`, { cache: 'no-store' })
+
+export const savePrinterFailover = (restaurantId, targetId, policy) =>
+  fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printer-failover/${targetId}`, {
+    method: 'PUT',
+    body: JSON.stringify(policy),
+  })
 
 export async function fetchPortfolioDevices(restaurantIds) {
   if (!restaurantIds || restaurantIds.length === 0) return []

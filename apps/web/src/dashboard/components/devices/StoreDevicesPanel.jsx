@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, Copy, Layers, Monitor, Plus, Printer, RefreshCw, Send, Trash2 } from 'lucide-react'
+import { AlertTriangle, Check, Copy, Layers, Monitor, Plus, Printer, RefreshCw, Send, ShieldCheck, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '../shared/Card'
 import { Button } from '../shared/Button'
 import { Badge } from '../shared/Badge'
@@ -17,11 +17,13 @@ import {
   deviceTypeLabel,
   fetchActivePairingCodes,
   fetchLegacyPrinterConfig,
+  fetchPrinterFailover,
   fetchStoreDeviceConfig,
   fetchTestPrint,
   isDeviceOnline,
   requestTestPrint,
   revokePairingCode,
+  savePrinterFailover,
   setCategoryPrintGroup,
   setDevicePrinter,
   setGroupPrinter,
@@ -164,6 +166,112 @@ function DeviceRow({ device, printerTargets, onRename, onPrinterChange, onToggle
   )
 }
 
+function FailoverTargetRow({ target, targets, busy, onSave }) {
+  const policy = target.failover || {}
+  const [action, setAction] = useState(policy.action || 'hold')
+  const [backupTargetId, setBackupTargetId] = useState(policy.backup_target_id || '')
+  const [autoActivate, setAutoActivate] = useState(Boolean(policy.auto_activate))
+  const isDown = target.last_test_status === 'failed'
+  const isHealthy = ['healthy', 'passed', 'printed'].includes(target.last_test_status)
+  const active = Boolean(policy.active)
+  const eligibleBackups = targets.filter((candidate) => candidate.is_active && candidate.requires_failover !== false && candidate.id !== target.id)
+
+  useEffect(() => {
+    setAction(policy.action || 'hold')
+    setBackupTargetId(policy.backup_target_id || '')
+    setAutoActivate(Boolean(policy.auto_activate))
+  }, [policy.action, policy.auto_activate, policy.backup_target_id])
+
+  const submit = (nextActive = active) => onSave(target, {
+    action,
+    backup_target_id: action === 'reroute' ? backupTargetId || null : null,
+    auto_activate: action === 'reroute' && autoActivate,
+    active: action === 'reroute' && nextActive,
+    reason: nextActive ? 'Manager activated printer outage reroute' : active ? 'Manager restored normal printer routing' : 'Manager configured printer outage policy',
+  })
+
+  return (
+    <div className={`rounded-xl border p-4 ${active ? 'border-dash-warning/60 bg-dash-warning/10' : isDown ? 'border-dash-danger/50 bg-dash-danger/10' : 'border-dash-border bg-[var(--glass-bg)]'}`}>
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-dash-cream">{target.name}</span>
+            {active ? <Badge variant="warning" dot>Rerouted</Badge> : isDown ? <Badge variant="danger" dot>Down</Badge> : isHealthy ? <Badge variant="success" dot>Ready</Badge> : <Badge variant="neutral" dot>Unknown</Badge>}
+            {!policy.configured && <Badge variant="danger">Failover required</Badge>}
+          </div>
+          <p className="mt-1 text-xs text-dash-tertiary">
+            {(target.stations || []).length ? `Print groups: ${target.stations.join(', ')}` : 'Not assigned to a print group'}
+            {target.queued_count ? ` · ${target.queued_count} ticket${target.queued_count === 1 ? '' : 's'} waiting` : ''}
+          </p>
+          {target.last_test_error && isDown && <p className="mt-1 text-xs text-dash-danger">{target.last_test_error}</p>}
+        </div>
+        {active && (
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => submit(false)}>
+            Restore normal routing
+          </Button>
+        )}
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-[150px_minmax(180px,1fr)_auto_auto] md:items-end">
+        <SelectField label="If this printer fails" value={action} disabled={busy || active} onChange={(event) => setAction(event.target.value)}>
+          <option value="hold">Hold & alert</option>
+          <option value="reroute">Reroute to backup</option>
+        </SelectField>
+        <SelectField label="Backup printer" value={backupTargetId} disabled={busy || active || action !== 'reroute'} onChange={(event) => setBackupTargetId(event.target.value)}>
+          <option value="">Choose backup…</option>
+          {eligibleBackups.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+        </SelectField>
+        <label className={`flex min-h-[34px] items-center gap-2 text-xs text-dash-secondary ${action !== 'reroute' ? 'opacity-50' : ''}`}>
+          <input type="checkbox" checked={autoActivate} disabled={busy || active || action !== 'reroute'} onChange={(event) => setAutoActivate(event.target.checked)} />
+          Auto-reroute after a confirmed failure
+        </label>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" disabled={busy || active || (action === 'reroute' && !backupTargetId)} onClick={() => submit(false)}>Save policy</Button>
+          {action === 'reroute' && !active && (
+            <Button size="sm" disabled={busy || !backupTargetId} onClick={() => submit(true)}>Reroute now</Button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PrinterFailoverSection({ status, busy, onRefresh, onSave }) {
+  const targets = (status?.targets || []).filter((target) => target.is_active && target.requires_failover !== false)
+  const devices = status?.devices || []
+  const offlineDevices = devices.filter((device) => !isDeviceOnline(device))
+  const needsSetup = Number(status?.unconfigured_count || 0)
+  const downTargets = targets.filter((target) => target.last_test_status === 'failed')
+
+  return (
+    <Card className={needsSetup || downTargets.length ? 'border-dash-danger/50' : 'border-dash-success/30'}>
+      <CardHeader className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <SectionTitle icon={needsSetup || downTargets.length ? AlertTriangle : ShieldCheck} title="Printer outage protection" />
+          <p className="mt-1 max-w-3xl text-sm text-dash-secondary">Required production setup. Tickets are never silently discarded: hold them safely or send them to an explicitly chosen backup.</p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onRefresh} icon={<RefreshCw size={14} aria-hidden="true" />}>Refresh status</Button>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {needsSetup > 0 && (
+          <div className="rounded-xl border border-dash-danger/50 bg-dash-danger/10 px-4 py-3 text-sm text-dash-danger">
+            <strong>Action required:</strong> {needsSetup} active printer{needsSetup === 1 ? '' : 's'} still need an outage policy.
+          </div>
+        )}
+        {offlineDevices.length > 0 && (
+          <div className="rounded-xl border border-dash-warning/40 bg-dash-warning/10 px-4 py-3 text-sm text-dash-warning">
+            Offline POS devices: {offlineDevices.map((device) => device.name).join(', ')}. Printer jobs bound to those devices may need rerouting.
+          </div>
+        )}
+        {targets.length === 0 ? (
+          <p className="text-sm text-dash-secondary">Add a production printer below before configuring outage protection.</p>
+        ) : targets.map((target) => (
+          <FailoverTargetRow key={target.id} target={target} targets={targets} busy={busy} onSave={onSave} />
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
 function PairingModal({ restaurantId, isOpen, onClose }) {
   const [deviceName, setDeviceName] = useState('')
   const [deviceType, setDeviceType] = useState('android_tablet')
@@ -287,6 +395,7 @@ function PairingModal({ restaurantId, isOpen, onClose }) {
 // menu categories → print groups → printers, plus per-device printer roles.
 export default function StoreDevicesPanel({ restaurantId }) {
   const [config, setConfig] = useState(null)
+  const [failoverStatus, setFailoverStatus] = useState(null)
   const [legacyConfig, setLegacyConfig] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -296,15 +405,26 @@ export default function StoreDevicesPanel({ restaurantId }) {
   const [groupDraft, setGroupDraft] = useState('')
   const [testStates, setTestStates] = useState({})
 
+  const loadFailover = useCallback(async () => {
+    if (!restaurantId) return
+    try {
+      setFailoverStatus(await fetchPrinterFailover(restaurantId))
+    } catch (err) {
+      setError(err.message || 'Could not load printer outage protection')
+    }
+  }, [restaurantId])
+
   const load = useCallback(async () => {
     if (!restaurantId) return
     try {
-      const [cfg, legacy] = await Promise.all([
+      const [cfg, legacy, failover] = await Promise.all([
         fetchStoreDeviceConfig(restaurantId),
         fetchLegacyPrinterConfig(restaurantId),
+        fetchPrinterFailover(restaurantId).catch(() => null),
       ])
       setConfig(cfg)
       setLegacyConfig(legacy)
+      setFailoverStatus(failover)
       setError(null)
     } catch (err) {
       setError(err.message || 'Could not load device configuration')
@@ -319,6 +439,13 @@ export default function StoreDevicesPanel({ restaurantId }) {
     load()
   }, [load])
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadFailover()
+    }, 60_000)
+    return () => window.clearInterval(timer)
+  }, [loadFailover])
+
   const mutate = useCallback(async (action) => {
     setBusy(true)
     try {
@@ -330,6 +457,19 @@ export default function StoreDevicesPanel({ restaurantId }) {
       setBusy(false)
     }
   }, [load])
+
+  const mutateFailover = useCallback(async (target, policy) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await savePrinterFailover(restaurantId, target.id, policy)
+      await loadFailover()
+    } catch (err) {
+      setError(err.message || 'Could not update printer outage protection')
+    } finally {
+      setBusy(false)
+    }
+  }, [loadFailover, restaurantId])
 
   const printerTargets = useMemo(
     () => (config?.targets || []).filter((t) => t.is_active),
@@ -397,6 +537,13 @@ export default function StoreDevicesPanel({ restaurantId }) {
           {error}
         </div>
       )}
+
+      <PrinterFailoverSection
+        status={failoverStatus}
+        busy={busy}
+        onRefresh={loadFailover}
+        onSave={mutateFailover}
+      />
 
       <Card>
         <CardHeader className="flex flex-wrap items-center justify-between gap-3">
