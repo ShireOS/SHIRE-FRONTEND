@@ -36,6 +36,8 @@ import {
 } from '@/api/uiThemes';
 import { color_pallet, semanticColors, statusColors } from '@/styles/colors';
 import { typography } from '@/styles/typography';
+import { PublishControls } from '@/components/ui/PublishControls';
+import { scheduleChange } from '@/api/scheduledChanges';
 
 type ScopeTab = 'restaurants' | 'groups';
 
@@ -260,10 +262,21 @@ export default function ResellerUiEditor() {
     setDrafts((current) => ({ ...current, [service]: { ...current[service], [key]: color } }));
   };
 
-  const pushToIpads = async () => {
+  const pushToIpads = async (publication?: { scheduledFor: string; timezone: string }) => {
     setSaving(true);
     setMessage(null);
     try {
+      if (publication) {
+        const scheduled = await scheduleChange({
+          label: `${service.toUpperCase()} UI theme`,
+          scheduledFor: publication.scheduledFor,
+          timezone: publication.timezone,
+          commands: [{ method: 'PUT', path: '/reseller/ui-themes', body: { service, restaurant_ids: selectedIds, tokens: drafts[service], component_overrides: componentDrafts[service] }, target_type: 'reseller' }],
+        });
+        setMessage({ tone: 'success', text: `${service.toUpperCase()} UI scheduled for ${new Date(scheduled.scheduled_for).toLocaleString()}.` });
+        setSaving(false);
+        return;
+      }
       await applyUiTheme(service, selectedIds, drafts[service], componentDrafts[service]);
       await loadSelection(selectedIds);
       setMessage({ tone: 'success', text: `${service.toUpperCase()} UI pushed to ${selectedIds.length} restaurants.` });
@@ -357,7 +370,7 @@ export default function ResellerUiEditor() {
     <View style={styles.page}>
       <ScopeModal visible={scopeOpen} restaurants={restaurants} groups={groups} initialIds={selectedIds} dismissible={selectedIds.length > 0} onClose={() => setScopeOpen(false)} onApply={(ids) => void loadSelection(ids)} />
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.headingRow}><View style={{ flex: 1 }}><Text style={styles.eyebrow}>RESELLER UI EDITOR</Text><Text style={styles.title}>Application colors</Text><Text style={styles.supporting}>Edit the runtime theme for the selected POS and Host apps.</Text></View><View style={styles.headingActions}><Pressable onPress={openScope} style={styles.secondaryButton}><Feather name="filter" size={15} color={semanticColors.text} /><Text style={styles.secondaryButtonText}>Scope</Text></Pressable>{dirty[service] && <Pressable disabled={saving} onPress={() => void pushToIpads()} style={[styles.pushButton, saving && styles.disabled]}>{saving ? <ActivityIndicator color={semanticColors.textInverse} /> : <><Feather name="send" size={15} color={semanticColors.textInverse} /><Text style={styles.pushButtonText}>Push to iPads</Text></>}</Pressable>}</View></View>
+        <View style={styles.headingRow}><View style={{ flex: 1 }}><Text style={styles.eyebrow}>RESELLER UI EDITOR</Text><Text style={styles.title}>Application colors</Text><Text style={styles.supporting}>Edit the runtime theme for the selected POS and Host apps.</Text></View><View style={styles.headingActions}><Pressable onPress={openScope} style={styles.secondaryButton}><Feather name="filter" size={15} color={semanticColors.text} /><Text style={styles.secondaryButtonText}>Scope</Text></Pressable>{dirty[service] && <PublishControls label="Push to iPads" busy={saving} onPublishNow={() => pushToIpads()} onSchedule={(scheduledFor, timezone) => pushToIpads({ scheduledFor, timezone })} />}</View></View>
         <View style={styles.scopeSummary}><Text style={styles.scopeSummaryText}>{selectedIds.length ? `${selectedIds.length} restaurants selected` : 'Choose restaurants to begin'}</Text></View>
         {message && <View style={[styles.message, message.tone === 'error' ? styles.messageError : styles.messageSuccess]}><Text style={message.tone === 'error' ? styles.messageErrorText : styles.messageSuccessText}>{message.text}</Text></View>}
         <View style={styles.segmented}>{(['pos', 'host'] as UiService[]).map((item) => <Pressable key={item} onPress={() => { setService(item); setActiveToken(null); }} style={[styles.segment, service === item && styles.segmentActive]}><Text style={[styles.segmentText, service === item && styles.segmentTextActive]}>{item.toUpperCase()}</Text></Pressable>)}</View>

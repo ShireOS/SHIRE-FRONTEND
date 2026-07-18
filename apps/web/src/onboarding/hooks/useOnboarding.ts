@@ -90,6 +90,7 @@ export interface OnboardingData {
 
   // Step 11: Sections & Areas
   sections: string[]
+  section_behaviors: SectionBehaviorData[]
 
   // Step 12: Hours
   operating_hours: OperatingHoursData[]
@@ -144,6 +145,19 @@ export interface ServiceChargeData {
   auto_apply: boolean
   is_tip: boolean
   is_active?: boolean
+}
+
+export interface SectionBehaviorData {
+  id?: string | null
+  name: string
+  service_mode: 'standard' | 'hibachi' | 'bar' | 'patio' | 'counter' | 'custom'
+  auto_gratuity_enabled: boolean
+  auto_gratuity_type: 'percentage' | 'fixed'
+  auto_gratuity_value: string
+  auto_gratuity_label: string
+  auto_gratuity_taxable: boolean
+  minimum_party_size: string
+  tip_prompt_mode: 'normal' | 'additional' | 'disabled'
 }
 
 export interface MenuCategoryData {
@@ -632,6 +646,7 @@ const INITIAL_DATA: OnboardingData = {
   seating_capacity: null,
   table_count: null,
   sections: ['Table', 'Main Floor', 'Bar', 'Patio'],
+  section_behaviors: [],
 
   menu_categories: defaultMenuCategories(),
   menu_import_method: 'skip',
@@ -673,6 +688,8 @@ const CREDIT_CARD_TIP_PAYOUTS: OnboardingData['credit_card_tip_payout'][] = ['ni
 const TAX_APPLIES_TO: TaxRateData['applies_to'][] = ['all', 'food', 'alcohol', 'non_alcohol', 'merchandise']
 const CHARGE_TYPES: ServiceChargeData['charge_type'][] = ['percentage', 'fixed']
 const CHARGE_APPLIES_TO: ServiceChargeData['applies_to'][] = ['all', 'dine_in', 'bar', 'takeout', 'delivery', 'catering', 'large_party']
+const SECTION_SERVICE_MODES: SectionBehaviorData['service_mode'][] = ['standard', 'hibachi', 'bar', 'patio', 'counter', 'custom']
+const SECTION_TIP_PROMPT_MODES: SectionBehaviorData['tip_prompt_mode'][] = ['normal', 'additional', 'disabled']
 const DISCOUNT_TYPES: DiscountRuleData['discount_type'][] = ['discount', 'comp', 'promo', 'employee_meal', 'service_recovery']
 const DISCOUNT_APPLIES_TO: DiscountRuleData['applies_to'][] = ['item', 'check', 'both']
 const DISCOUNT_VALUE_TYPES: DiscountRuleData['value_type'][] = ['percent', 'fixed', 'open']
@@ -737,6 +754,26 @@ const normalizeSectionNames = (sections: string[]): string[] => {
     normalized.push(key === 'table' ? 'Table' : name)
   }
   return normalized.length > 0 ? normalized : ['Table']
+}
+
+const normalizeSectionBehaviors = (value: unknown, names: string[]): SectionBehaviorData[] => {
+  const rows = Array.isArray(value) ? value.filter(isRecord) : []
+  const byName = new Map(rows.map(row => [asString(row.name).trim().toLowerCase(), row]))
+  return normalizeSectionNames(names).map(name => {
+    const row = byName.get(name.toLowerCase())
+    return {
+      id: row ? asNullableString(row.id) : null,
+      name,
+      service_mode: row ? asEnum(row.service_mode, SECTION_SERVICE_MODES, 'standard') : 'standard',
+      auto_gratuity_enabled: row ? row.auto_gratuity_enabled === true : false,
+      auto_gratuity_type: row ? asEnum(row.auto_gratuity_type, CHARGE_TYPES, 'percentage') : 'percentage',
+      auto_gratuity_value: row ? asStringNumber(row.auto_gratuity_value) || '18' : '18',
+      auto_gratuity_label: row ? asString(row.auto_gratuity_label).trim() || `${name} Service Charge` : `${name} Service Charge`,
+      auto_gratuity_taxable: row ? row.auto_gratuity_taxable === true : false,
+      minimum_party_size: row && row.minimum_party_size != null ? asStringNumber(row.minimum_party_size) : '',
+      tip_prompt_mode: row ? asEnum(row.tip_prompt_mode, SECTION_TIP_PROMPT_MODES, 'additional') : 'additional',
+    }
+  })
 }
 
 const asEnum = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
@@ -1352,6 +1389,7 @@ const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): On
     seating_capacity: asNullableNumber(input.seating_capacity),
     table_count: asNullableNumber(input.table_count),
     sections,
+    section_behaviors: normalizeSectionBehaviors(input.section_behaviors, sections),
     menu_import_method: asMenuImportMethod(input.menu_import_method),
     team_setup_method: asTeamSetupMethod(input.team_setup_method),
     invites: asInvites(input.invites),
@@ -1657,6 +1695,17 @@ const fetchTaxesCharges = async (restaurantId: string) => {
   return response.json()
 }
 
+const fetchSections = async (restaurantId: string) => {
+  const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/sections`, {
+    headers: await getApiHeaders(),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(asString(body.detail) || asString(body.message) || `Loading sections failed (${response.status})`)
+  }
+  return response.json()
+}
+
 const fetchDiscountRules = async (restaurantId: string) => {
   const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/discount-rules`, {
     headers: await getApiHeaders(),
@@ -1863,14 +1912,12 @@ export function useOnboarding() {
         'Loading operating hours timed out.'
       ),
       runWithTimeout(
-        () =>
-          supabase
-            .from('sections')
-            .select('name')
-            .eq('restaurant_id', restaurant.id)
-            .eq('is_active', true),
+        () => fetchSections(restaurant.id),
         'Loading sections timed out.'
-      ),
+      ).catch(err => {
+        console.warn('[Onboarding] Could not hydrate sections:', err)
+        return []
+      }),
       runWithTimeout(
         () => fetchTaxesCharges(restaurant.id),
         'Loading taxes and charges timed out.'
@@ -1939,11 +1986,8 @@ export function useOnboarding() {
     if (hoursResult.error) {
       console.warn('[Onboarding] Could not hydrate operating hours:', hoursResult.error.message)
     }
-    if (sectionsResult.error) {
-      console.warn('[Onboarding] Could not hydrate sections:', sectionsResult.error.message)
-    }
-
-    const sectionNames = normalizeSectionNames(asStringArray((sectionsResult.data || []).map(section => section.name)))
+    const sectionRows = Array.isArray(sectionsResult) ? sectionsResult : []
+    const sectionNames = normalizeSectionNames(asStringArray(sectionRows.map(section => isRecord(section) ? section.name : null)))
     const configData = parseConfig(restaurant.config)
     const jobCodes = normalizeJobCodes(jobCodesResult)
 
@@ -1962,6 +2006,7 @@ export function useOnboarding() {
       table_count: restaurant.table_count,
       operating_hours: normalizeOperatingHours(hoursResult.data),
       sections: sectionNames.length > 0 ? sectionNames : INITIAL_DATA.sections,
+      section_behaviors: normalizeSectionBehaviors(sectionRows, sectionNames),
       tax_rates: normalizeTaxRates(isRecord(taxesChargesResult) ? taxesChargesResult.tax_rates : []),
       service_charges: normalizeServiceCharges(isRecord(taxesChargesResult) ? taxesChargesResult.service_charges : []),
       discount_rules: normalizeDiscountRules(isRecord(discountRulesResult) ? discountRulesResult.discount_rules : []),
@@ -2788,11 +2833,19 @@ export function useOnboarding() {
     try {
       const activeRestaurantId = getActiveRestaurantId()
       const sectionNames = normalizeSectionNames(data.sections)
+      const sectionBehaviors = normalizeSectionBehaviors(data.section_behaviors, sectionNames)
       const response = await runWithTimeout(
         async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/sections`, {
           method: 'PUT',
           headers: await getApiHeaders(),
-          body: JSON.stringify({ sections: sectionNames }),
+          body: JSON.stringify({
+            sections: sectionBehaviors.map(section => ({
+              ...section,
+              id: section.id || undefined,
+              auto_gratuity_value: Number(section.auto_gratuity_value || 0),
+              minimum_party_size: section.minimum_party_size ? Number(section.minimum_party_size) : null,
+            })),
+          }),
         }),
         'Saving restaurant sections timed out. Please retry.'
       )
@@ -2804,7 +2857,10 @@ export function useOnboarding() {
 
       const saved = await response.json().catch(() => [])
       const savedNames = normalizeSectionNames(asStringArray((saved || []).map((section: { name?: unknown }) => section.name)))
-      setData(prev => mergeOnboardingData(prev, { sections: savedNames }))
+      setData(prev => mergeOnboardingData(prev, {
+        sections: savedNames,
+        section_behaviors: normalizeSectionBehaviors(saved, savedNames),
+      }))
 
       const { error: stepError } = isSetupEditor
         ? { error: null }
@@ -2826,7 +2882,7 @@ export function useOnboarding() {
     } finally {
       setIsLoading(false)
     }
-  }, [data.sections, getActiveRestaurantId, isSetupEditor, runWithTimeout])
+  }, [data.section_behaviors, data.sections, getActiveRestaurantId, isSetupEditor, runWithTimeout])
 
   // Save operating hours (after step 4)
   const saveOperatingHours = useCallback(async () => {

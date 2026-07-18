@@ -1,11 +1,74 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, ChevronDown, Eye, Palette, Pencil, RefreshCw, Send, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ChevronDown, Eye, Palette, Pencil, RefreshCw, Search, Trash2, X, Zap } from 'lucide-react'
 import { defaultUiTheme, effectiveUiTheme, groupUiThemeTokens } from '@shire/db'
 import { applyUiTheme, deleteUiThemeHistoryColor, fetchUiThemes } from './data/uiThemes'
+import { applyPosQuickMenu, fetchPosQuickMenu } from './data/quickMenu'
 import { buildGroupCards, UNGROUPED_ID } from './data/resellerPortfolio'
 import UiAppPreview from './UiAppPreview'
+import { PublishControls } from '../shared/components/PublishControls'
+import { scheduleChange } from '../shared/api/scheduledChanges'
 
 const SERVICE_LABELS = { pos: 'POS', host: 'Host' }
+const QUICK_MENU_LIMIT = 6
+
+function resolvedQuickMenu(draft) {
+  if (!draft) return null
+  const configured = draft.mode === 'custom'
+    ? draft.configured_item_ids
+    : draft.items.filter((item) => item.is_available).slice(0, QUICK_MENU_LIMIT).map((item) => item.id)
+  const available = new Set(draft.items.filter((item) => item.is_available).map((item) => item.id))
+  return { ...draft, resolved_item_ids: configured.filter((id) => available.has(id)).slice(0, QUICK_MENU_LIMIT) }
+}
+
+function QuickMenuEditor({ restaurants, restaurantId, onRestaurantChange, draft, loading, onChange }) {
+  const [search, setSearch] = useState('')
+  const selectedIds = draft?.configured_item_ids || []
+  const itemById = new Map((draft?.items || []).map((item) => [item.id, item]))
+  const visibleItems = (draft?.items || []).filter((item) => {
+    const query = search.trim().toLowerCase()
+    return !query || `${item.name} ${item.category}`.toLowerCase().includes(query)
+  })
+  const update = (patch) => onChange(resolvedQuickMenu({ ...draft, ...patch }))
+  const setMode = (mode) => {
+    const configured = mode === 'custom' && draft.mode !== 'custom'
+      ? draft.resolved_item_ids.slice(0, QUICK_MENU_LIMIT)
+      : selectedIds
+    update({ mode, configured_item_ids: mode === 'custom' ? configured : [] })
+  }
+  const toggleItem = (item) => {
+    if (!item.is_available) return
+    const next = selectedIds.includes(item.id)
+      ? selectedIds.filter((id) => id !== item.id)
+      : selectedIds.length < QUICK_MENU_LIMIT ? [...selectedIds, item.id] : selectedIds
+    update({ mode: 'custom', configured_item_ids: next })
+  }
+  const move = (index, delta) => {
+    const target = index + delta
+    if (target < 0 || target >= selectedIds.length) return
+    const next = [...selectedIds]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    update({ configured_item_ids: next })
+  }
+
+  return <aside className="min-w-0 border-t border-dash-border pt-4 xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0">
+    <div className="flex items-start justify-between gap-3"><div><h3 className="text-sm font-semibold">Quick Menu</h3><p className="mt-1 text-xs text-dash-tertiary">Top sellers fill the free space; custom picks compact to stay non-scrollable.</p></div><span className="font-mono text-xs text-dash-tertiary">{draft?.mode === 'custom' ? selectedIds.length : draft?.resolved_item_ids?.length || 0}/{QUICK_MENU_LIMIT}</span></div>
+    {restaurants.length > 1 && <label className="mt-4 block text-xs font-semibold">Restaurant<select value={restaurantId} onChange={(event) => onRestaurantChange(event.target.value)} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-transparent px-3 text-sm">{restaurants.map((restaurant) => <option key={restaurant.id} value={restaurant.id}>{restaurant.name}</option>)}</select></label>}
+    {loading || !draft ? <div className="mt-5 text-sm text-dash-secondary">Loading menu...</div> : <>
+      <div className="mt-4 grid grid-cols-2 rounded-lg border border-dash-border p-1">
+        {[['automatic', 'Automatic'], ['custom', 'Custom']].map(([id, label]) => <button key={id} type="button" onClick={() => setMode(id)} className={`rounded-md px-3 py-2 text-xs font-semibold ${draft.mode === id ? 'bg-shell-cta text-shell-cta-text' : 'text-dash-secondary'}`}>{label}</button>)}
+      </div>
+      <p className="mt-2 text-xs text-dash-tertiary">{draft.mode === 'automatic' ? 'Ranked by units sold across completed local days in the last 90 days.' : 'Shown in this exact order; unavailable items remain configured but are hidden on the POS.'}</p>
+      {draft.mode === 'custom' && <div className="mt-4 space-y-2">
+        <p className="text-xs font-semibold">Button order</p>
+        {selectedIds.length ? selectedIds.map((id, index) => { const item = itemById.get(id); return <div key={id} className="flex min-h-10 items-center gap-2 border-b border-dash-border py-2"><span className="w-5 font-mono text-xs text-dash-tertiary">{index + 1}</span><span className="min-w-0 flex-1"><strong className="block truncate text-xs">{item?.name || 'Removed item'}</strong><span className="block truncate text-[11px] text-dash-tertiary">{item?.category || 'No longer on menu'}</span></span><button type="button" title="Move up" disabled={index === 0} onClick={() => move(index, -1)} className="grid h-8 w-8 place-items-center rounded-md border border-dash-border disabled:opacity-30"><ArrowUp size={13} /></button><button type="button" title="Move down" disabled={index === selectedIds.length - 1} onClick={() => move(index, 1)} className="grid h-8 w-8 place-items-center rounded-md border border-dash-border disabled:opacity-30"><ArrowDown size={13} /></button><button type="button" title="Remove item" onClick={() => toggleItem(item || { id, is_available: true })} className="grid h-8 w-8 place-items-center rounded-md border border-dash-border"><X size={13} /></button></div> }) : <p className="text-xs text-dash-tertiary">Select up to six items below.</p>}
+      </div>}
+      <label className="relative mt-4 block"><span className="sr-only">Search menu items</span><Search size={14} className="pointer-events-none absolute left-3 top-3 text-dash-tertiary" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search menu" className="h-10 w-full rounded-md border border-dash-border bg-transparent pl-9 pr-3 text-sm outline-none" /></label>
+      <div className="mt-2 max-h-[360px] overflow-y-auto border-y border-dash-border">
+        {visibleItems.map((item) => { const checked = draft.mode === 'custom' ? selectedIds.includes(item.id) : draft.resolved_item_ids.includes(item.id); return <label key={item.id} className={`flex cursor-pointer items-center gap-3 border-b border-dash-border px-1 py-3 last:border-0 ${item.is_available ? '' : 'cursor-not-allowed opacity-45'}`}><input type="checkbox" checked={checked} disabled={!item.is_available} onChange={() => toggleItem(item)} className="h-4 w-4 accent-[var(--shell-accent)]" /><span className="min-w-0 flex-1"><strong className="block truncate text-xs">{item.name}</strong><span className="mt-0.5 block truncate text-[11px] text-dash-tertiary">#{item.popularity_rank} · {item.category} · {item.units_sold} sold</span></span><span className="font-mono text-[11px] text-dash-secondary">${Number(item.price).toFixed(2)}</span></label> })}
+      </div>
+    </>}
+  </aside>
+}
 
 function pickerHex(value) {
   if (/^#[0-9a-f]{6}$/i.test(value)) return value
@@ -91,6 +154,10 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
   const [componentColor, setComponentColor] = useState('#000000')
   const [status, setStatus] = useState({ tone: '', text: '' })
   const [loading, setLoading] = useState(false)
+  const [quickRestaurantId, setQuickRestaurantId] = useState('')
+  const [quickMenus, setQuickMenus] = useState({})
+  const [savedQuickMenus, setSavedQuickMenus] = useState({})
+  const [quickLoading, setQuickLoading] = useState(false)
 
   const load = async (ids) => {
     setLoading(true)
@@ -124,6 +191,9 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
       setSavedComponents(nextComponents)
       setPreviewComponents(nextComponents)
       setMixed(nextMixed)
+      setQuickRestaurantId(ids[0] || '')
+      setQuickMenus({})
+      setSavedQuickMenus({})
       setPreviewMode('view')
       setComponentSelection(null)
       setPickerOpen(false)
@@ -138,6 +208,28 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
     if (pickerOpen) return
     setActiveToken(null)
   }, [pickerOpen, service])
+
+  useEffect(() => {
+    if (service !== 'pos' && previewMode === 'quick-menu') setPreviewMode('view')
+  }, [previewMode, service])
+
+  useEffect(() => {
+    if (previewMode !== 'quick-menu' || service !== 'pos' || !quickRestaurantId || quickMenus[quickRestaurantId]) return
+    let cancelled = false
+    setQuickLoading(true)
+    fetchPosQuickMenu(quickRestaurantId)
+      .then((response) => {
+        if (cancelled) return
+        const normalized = resolvedQuickMenu(response)
+        setQuickMenus((current) => ({ ...current, [quickRestaurantId]: normalized }))
+        setSavedQuickMenus((current) => ({ ...current, [quickRestaurantId]: normalized }))
+      })
+      .catch((error) => {
+        if (!cancelled) setStatus({ tone: 'error', text: error instanceof Error ? error.message : 'Could not load Quick Menu.' })
+      })
+      .finally(() => { if (!cancelled) setQuickLoading(false) })
+    return () => { cancelled = true }
+  }, [previewMode, quickMenus, quickRestaurantId, service])
 
   const updateColor = (key, value) => {
     setActiveToken(key)
@@ -194,15 +286,64 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
     setStatus({ tone: 'success', text: `${componentSelection.label} now inherits its theme color in the sandbox.` })
   }
 
-  const pushToIpads = async () => {
+  const pushToIpads = async (publication) => {
     setLoading(true)
     setStatus({ tone: '', text: '' })
     try {
+      if (publication?.scheduledFor) {
+        const scheduled = await scheduleChange({
+          label: `${SERVICE_LABELS[service]} UI theme`,
+          scheduledFor: publication.scheduledFor,
+          timezone: publication.timezone,
+          commands: [{
+            method: 'PUT',
+            path: '/reseller/ui-themes',
+            body: { service, restaurant_ids: selectedIds, tokens: drafts[service], component_overrides: componentDrafts[service] },
+            target_type: 'reseller',
+          }],
+        })
+        setStatus({ tone: 'success', text: `${SERVICE_LABELS[service]} UI scheduled for ${new Date(scheduled.scheduled_for).toLocaleString()}.` })
+        setLoading(false)
+        return
+      }
       await applyUiTheme(service, selectedIds, drafts[service], componentDrafts[service])
       await load(selectedIds)
       setStatus({ tone: 'success', text: `${SERVICE_LABELS[service]} UI pushed to ${selectedIds.length} restaurant${selectedIds.length === 1 ? '' : 's'}.` })
     } catch (error) {
       setStatus({ tone: 'error', text: error instanceof Error ? error.message : 'Could not apply theme.' })
+      setLoading(false)
+    }
+  }
+
+  const pushQuickMenu = async (publication) => {
+    const draft = quickMenus[quickRestaurantId]
+    if (!draft) return
+    setLoading(true)
+    setStatus({ tone: '', text: '' })
+    try {
+      if (publication?.scheduledFor) {
+        const scheduled = await scheduleChange({
+          label: 'POS Quick Menu',
+          scheduledFor: publication.scheduledFor,
+          timezone: publication.timezone,
+          commands: [{
+            method: 'PUT',
+            path: '/reseller/pos-quick-menu',
+            body: { restaurant_id: quickRestaurantId, mode: draft.mode, item_ids: draft.mode === 'custom' ? draft.configured_item_ids : [] },
+            target_type: 'reseller',
+            restaurant_id: quickRestaurantId,
+          }],
+        })
+        setStatus({ tone: 'success', text: `Quick Menu scheduled for ${new Date(scheduled.scheduled_for).toLocaleString()}.` })
+      } else {
+        const saved = resolvedQuickMenu(await applyPosQuickMenu(quickRestaurantId, draft.mode, draft.configured_item_ids))
+        setQuickMenus((current) => ({ ...current, [quickRestaurantId]: saved }))
+        setSavedQuickMenus((current) => ({ ...current, [quickRestaurantId]: saved }))
+        setStatus({ tone: 'success', text: 'Quick Menu pushed. Paired iPads will refresh within one minute.' })
+      }
+    } catch (error) {
+      setStatus({ tone: 'error', text: error instanceof Error ? error.message : 'Could not push Quick Menu.' })
+    } finally {
       setLoading(false)
     }
   }
@@ -225,8 +366,11 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
   ]))
   const previewOutdated = JSON.stringify(drafts[service]) !== JSON.stringify(previewDrafts[service])
     || JSON.stringify(componentDrafts[service]) !== JSON.stringify(previewComponents[service])
+  const quickDraft = quickMenus[quickRestaurantId] || null
+  const quickDirty = Boolean(quickDraft && JSON.stringify(quickDraft) !== JSON.stringify(savedQuickMenus[quickRestaurantId]))
+  const anyQuickDirty = Object.entries(quickMenus).some(([restaurantId, draft]) => JSON.stringify(draft) !== JSON.stringify(savedQuickMenus[restaurantId]))
   const openPicker = () => {
-    if (Object.values(dirty).some(Boolean) && !window.confirm('Changing the selection will discard unpushed UI changes. Continue?')) return
+    if ((Object.values(dirty).some(Boolean) || anyQuickDirty) && !window.confirm('Changing the selection will discard unpushed UI changes. Continue?')) return
     setPickerOpen(true)
   }
 
@@ -237,7 +381,9 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
         <div><p className="label-mono">Reseller UI editor</p><h1 className="mt-1 text-2xl font-semibold">Application colors</h1><p className="mt-2 max-w-2xl text-sm text-dash-secondary">Edit the runtime theme delivered to each selected restaurant's POS and Host applications.</p></div>
         <div className="flex flex-wrap justify-end gap-2">
           <button type="button" onClick={openPicker} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-dash-border px-4 text-sm font-semibold"><RefreshCw size={15} />Change selection</button>
-          {dirty[service] && <button type="button" disabled={loading} onClick={() => void pushToIpads()} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-shell-cta px-4 text-sm font-semibold text-shell-cta-text disabled:opacity-40"><Send size={15} />{loading ? 'Pushing...' : 'Push to iPads'}</button>}
+          {previewMode === 'quick-menu'
+            ? quickDirty && <PublishControls label="Push to iPads" busy={loading} onPublishNow={() => pushQuickMenu()} onSchedule={(scheduledFor, timezone) => pushQuickMenu({ scheduledFor, timezone })} />
+            : dirty[service] && <PublishControls label="Push to iPads" busy={loading} onPublishNow={() => pushToIpads()} onSchedule={(scheduledFor, timezone) => pushToIpads({ scheduledFor, timezone })} />}
         </div>
       </header>
       <div className="rounded-lg border border-dash-border bg-[var(--glass-bg)] p-4"><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold">Viewing</span>{selectedNames.slice(0, 4).map((name) => <span key={name} className="rounded-full border border-dash-border px-3 py-1 text-xs text-dash-secondary">{name}</span>)}{selectedNames.length > 4 && <span className="text-xs text-dash-tertiary">+{selectedNames.length - 4} more</span>}</div></div>
@@ -246,10 +392,13 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
       {mixed[service] && <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">The selected restaurants have different {SERVICE_LABELS[service]} UI settings. The editor is showing the service default; pushing will make the complete scheme consistent across this selection.</div>}
       <section className="space-y-5">
         <div className="rounded-lg border border-dash-border bg-[var(--glass-bg)] p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Real application sandbox</h2><p className="mt-1 text-xs text-dash-tertiary">Uses the service's actual screens and components with isolated in-memory data.</p></div><div className="inline-flex rounded-lg border border-dash-border p-1">{[{ id: 'view', label: 'View', icon: Eye }, { id: 'edit', label: 'Edit', icon: Pencil }].map((item) => <button key={item.id} type="button" onClick={() => setPreviewMode(item.id)} className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold ${previewMode === item.id ? 'bg-shell-cta text-shell-cta-text' : 'text-dash-secondary'}`}><item.icon size={14} />{item.label}</button>)}</div></div>
-          <UiAppPreview service={service} tokens={previewDrafts[service]} componentOverrides={previewComponents[service]} mode={previewMode} onComponentSelect={selectComponent} />
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Real application sandbox</h2><p className="mt-1 text-xs text-dash-tertiary">Uses the service's actual screens and components with isolated in-memory data.</p></div><div className="inline-flex rounded-lg border border-dash-border p-1">{[{ id: 'view', label: 'View', icon: Eye }, { id: 'edit', label: 'Edit', icon: Pencil }, ...(service === 'pos' ? [{ id: 'quick-menu', label: 'Quick Menu', icon: Zap }] : [])].map((item) => <button key={item.id} type="button" onClick={() => setPreviewMode(item.id)} className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold ${previewMode === item.id ? 'bg-shell-cta text-shell-cta-text' : 'text-dash-secondary'}`}><item.icon size={14} />{item.label}</button>)}</div></div>
+          {previewMode === 'quick-menu' ? <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+            <div className="min-w-0"><UiAppPreview service="pos" tokens={previewDrafts.pos} componentOverrides={previewComponents.pos} mode="quick-menu" menuItems={quickDraft?.items} quickMenu={quickDraft} onComponentSelect={selectComponent} /></div>
+            <QuickMenuEditor restaurants={restaurants.filter((item) => selectedIds.includes(item.id))} restaurantId={quickRestaurantId} onRestaurantChange={setQuickRestaurantId} draft={quickDraft} loading={quickLoading} onChange={(next) => setQuickMenus((current) => ({ ...current, [quickRestaurantId]: next }))} />
+          </div> : <UiAppPreview service={service} tokens={previewDrafts[service]} componentOverrides={previewComponents[service]} mode={previewMode} onComponentSelect={selectComponent} />}
         </div>
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        {previewMode !== 'quick-menu' && <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-5">
           {groupUiThemeTokens(service).map(({ group, tokens }) => <div key={group} className="rounded-lg border border-dash-border bg-[var(--glass-bg)] p-4"><h2 className="text-sm font-semibold">{group}</h2><div className="mt-3 grid gap-2 sm:grid-cols-2">{tokens.map((item) => <label key={item.key} onClick={() => setActiveToken(item.key)} className={`grid grid-cols-[42px_1fr] items-center gap-3 rounded-lg border p-3 ${activeToken === item.key ? 'border-shell-accent' : 'border-dash-border'}`}><input type="color" aria-label={`Choose ${item.label}`} value={pickerHex(colors[item.key])} onChange={(event) => updateColor(item.key, event.target.value)} className="h-10 w-10 cursor-pointer border-0 bg-transparent p-0" /><span className="min-w-0"><span className="block text-xs font-semibold">{item.label}</span><input aria-label={`${item.label} color code`} value={colors[item.key]} onChange={(event) => updateColor(item.key, event.target.value)} className="mt-1 w-full bg-transparent font-mono text-xs text-dash-secondary outline-none" /></span></label>)}</div></div>)}
         </div>
@@ -257,7 +406,7 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
           <div className="rounded-lg border border-dash-border bg-[var(--glass-bg)] p-4"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Recent colors</h2><p className="mt-1 text-xs text-dash-tertiary">Select a color to apply it to the active field. Right-click to remove it.</p></div><Palette size={18} className="text-dash-tertiary" /></div>{history.length ? <div className="mt-4 flex flex-wrap gap-2">{history.map((item) => <div key={item.color} className="group relative"><button type="button" title={item.color} onClick={() => activeToken && updateColor(activeToken, item.color)} onContextMenu={(event) => { event.preventDefault(); void deleteHistory(item.color) }} className="h-10 w-10 rounded-md border border-dash-border" style={{ background: item.color }} /><button type="button" aria-label={`Delete ${item.color}`} onClick={() => void deleteHistory(item.color)} className="absolute -right-1 -top-1 hidden h-5 w-5 place-items-center rounded-full bg-red-600 text-white group-hover:grid"><Trash2 size={11} /></button></div>)}</div> : <p className="mt-4 text-sm text-dash-tertiary">Saved colors appear after the first theme is applied.</p>}</div>
           <button type="button" disabled={!previewOutdated} onClick={previewChanges} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-shell-cta py-3 text-sm font-semibold text-shell-cta-text disabled:opacity-40"><Eye size={15} />Preview changes</button>
         </aside>
-        </div>
+        </div>}
       </section>
     </div>
     {componentSelection && <div className="fixed inset-0 z-[90] grid place-items-center bg-black/75 p-4" onMouseDown={(event) => event.target === event.currentTarget && setComponentSelection(null)}>

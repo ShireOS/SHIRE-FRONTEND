@@ -34,6 +34,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 type ScheduleScope = 'mine' | 'all';
+type TradeView = 'needs_you' | 'in_progress' | 'history';
 
 export default function EmployeeSchedule() {
   const [profile, setProfile] = useState<EmployeeProfile | null>(null);
@@ -44,6 +45,7 @@ export default function EmployeeSchedule() {
   const [all, setAll] = useState<EmployeeShift[]>([]);
   const [contacts, setContacts] = useState<StaffContact[]>([]);
   const [tradeRequests, setTradeRequests] = useState<ShiftTradeRequest[]>([]);
+  const [tradeView, setTradeView] = useState<TradeView>('needs_you');
   const [selectedShift, setSelectedShift] = useState<EmployeeShift | null>(null);
   const [targetWaiterId, setTargetWaiterId] = useState('');
   const [tradeReason, setTradeReason] = useState('');
@@ -60,7 +62,7 @@ export default function EmployeeSchedule() {
       fetchEmployeeWeekSchedule(weekStart, 'mine'),
       fetchEmployeeWeekSchedule(weekStart, 'all'),
       fetchEmployeeContacts(),
-      fetchEmployeeShiftTrades(),
+      fetchEmployeeShiftTrades('all'),
     ])
       .then(([profileData, mineData, allData, contactData, tradeData]) => {
         if (cancelled) return;
@@ -83,13 +85,38 @@ export default function EmployeeSchedule() {
     };
   }, [weekStart]);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchEmployeeShiftTrades('all').then(setTradeRequests).catch(() => undefined);
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
   const visibleShifts = scope === 'mine' ? mine : all;
   const shiftsByDate = useMemo(() => groupShiftsByDate(visibleShifts), [visibleShifts]);
   const weekDates = Array.from({ length: 7 }, (_, index) => toDateKey(addDays(weekStart, index)));
   const eligibleTargets = contacts.filter((contact) => !contact.is_me);
-  const activeTradeRequests = tradeRequests.filter((trade) => (
+  const currentWaiterId = profile?.waiter_id || profile?.id;
+  const isActiveTrade = (trade: ShiftTradeRequest) => (
     trade.status === 'pending_target' || trade.status === 'pending_manager'
-  ));
+  );
+  const needsApprovalCount = tradeRequests.filter((trade) => (
+    trade.status === 'pending_target' && trade.target_waiter_id === currentWaiterId
+  )).length;
+  const inProgressCount = tradeRequests.filter((trade) => (
+    isActiveTrade(trade)
+    && !(trade.status === 'pending_target' && trade.target_waiter_id === currentWaiterId)
+  )).length;
+  const visibleTradeRequests = tradeRequests.filter((trade) => {
+    if (tradeView === 'needs_you') {
+      return trade.status === 'pending_target' && trade.target_waiter_id === currentWaiterId;
+    }
+    if (tradeView === 'in_progress') {
+      return isActiveTrade(trade)
+        && !(trade.status === 'pending_target' && trade.target_waiter_id === currentWaiterId);
+    }
+    return !isActiveTrade(trade);
+  });
 
   const moveWeek = (direction: number) => {
     const next = toDateKey(addDays(weekStart, direction * 7));
@@ -114,10 +141,11 @@ export default function EmployeeSchedule() {
     try {
       const created = await createEmployeeShiftTrade(selectedShift.id, targetWaiterId, tradeReason);
       setTradeRequests((current) => [created, ...current]);
+      setTradeView('in_progress');
       setSelectedShift(null);
-      setMessage('Shift trade sent for approval.');
+      setMessage('Shift transfer sent for approval.');
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not send shift trade.');
+      setMessage(err instanceof Error ? err.message : 'Could not send shift transfer.');
     } finally {
       setIsSaving(false);
     }
@@ -125,13 +153,16 @@ export default function EmployeeSchedule() {
 
   const respondToTrade = async (trade: ShiftTradeRequest, status: 'approved' | 'denied' | 'cancelled') => {
     setIsSaving(true);
-    setMessage(status === 'approved' ? 'Approving shift trade...' : 'Updating shift trade...');
+    setMessage(status === 'approved' ? 'Accepting shift transfer...' : 'Updating shift transfer...');
     try {
       const updated = await respondEmployeeShiftTrade(trade.id, status);
       setTradeRequests((current) => current.map((item) => item.id === updated.id ? updated : item));
-      setMessage(status === 'approved' ? 'Shift trade approved.' : 'Shift trade updated.');
+      if (status === 'approved') setTradeView('in_progress');
+      if (status === 'denied' || status === 'cancelled') setTradeView('history');
+      setMessage(status === 'approved' ? 'Accepted. Waiting for manager approval.' : 'Shift transfer updated.');
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not update shift trade.');
+      setMessage(err instanceof Error ? err.message : 'Could not update shift transfer.');
+      fetchEmployeeShiftTrades('all').then(setTradeRequests).catch(() => undefined);
     } finally {
       setIsSaving(false);
     }
@@ -184,23 +215,36 @@ export default function EmployeeSchedule() {
 
       {!isLoading && !error && (
         <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-          {activeTradeRequests.length > 0 ? (
-            <View style={styles.approvalsCard}>
-              <UiText variant="eyebrow" tone="muted">Shift Requests</UiText>
-              <UiText variant="title" style={styles.approvalsTitle}>Trade approvals</UiText>
-              {activeTradeRequests.map((trade) => (
+          <View style={styles.approvalsCard}>
+              <View>
+                <UiText variant="eyebrow" tone="muted">Shift Transfers</UiText>
+                <UiText variant="title" style={styles.approvalsTitle}>Requests inbox</UiText>
+              </View>
+              <SegmentedControl
+                value={tradeView}
+                options={[
+                  { id: 'needs_you', label: `Needs You${needsApprovalCount ? ` (${needsApprovalCount})` : ''}` },
+                  { id: 'in_progress', label: `In Progress${inProgressCount ? ` (${inProgressCount})` : ''}` },
+                  { id: 'history', label: 'History' },
+                ]}
+                onChange={setTradeView}
+              />
+              {visibleTradeRequests.length === 0 ? (
+                <View style={styles.emptyTradeState}>
+                  <UiText variant="bodySmall" tone="muted">No shift transfers in this view.</UiText>
+                </View>
+              ) : visibleTradeRequests.map((trade) => (
                 <EmployeeTradeRow
                   key={trade.id}
                   trade={trade}
-                  currentWaiterId={profile?.waiter_id || profile?.id}
+                  currentWaiterId={currentWaiterId}
                   disabled={isSaving}
                   onApprove={() => respondToTrade(trade, 'approved')}
                   onDeny={() => respondToTrade(trade, trade.status === 'pending_target' ? 'denied' : 'cancelled')}
                   onCancel={() => respondToTrade(trade, 'cancelled')}
                 />
               ))}
-            </View>
-          ) : null}
+          </View>
           {weekDates.map((dateKey) => (
             <DayScheduleSection
               key={dateKey}
@@ -223,9 +267,9 @@ export default function EmployeeSchedule() {
           <View style={styles.tradeModal}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
-                <UiText variant="eyebrow" tone="muted">Shift Trade</UiText>
+                <UiText variant="eyebrow" tone="muted">Shift Transfer</UiText>
                 <UiText variant="h3" style={styles.modalTitle}>
-                  {selectedShift ? `${formatShiftDate(selectedShift.shift_date)} ${formatTime(selectedShift.shift_start)}-${formatTime(selectedShift.shift_end)}` : 'Trade shift'}
+                  {selectedShift ? `${formatShiftDate(selectedShift.shift_date)} ${formatTime(selectedShift.shift_start)}-${formatTime(selectedShift.shift_end)}` : 'Transfer shift'}
                 </UiText>
               </View>
               <Pressable onPress={() => setSelectedShift(null)} style={styles.closeButton}>
@@ -256,7 +300,7 @@ export default function EmployeeSchedule() {
             <TextField value={tradeReason} onChangeText={setTradeReason} placeholder="Reason optional" multiline />
             <View style={styles.modalActions}>
               <UiButton label="Cancel" variant="secondary" onPress={() => setSelectedShift(null)} style={styles.modalActionButton} />
-              <UiButton label={isSaving ? 'Sending...' : 'Send trade'} disabled={isSaving || !targetWaiterId} onPress={submitTradeRequest} style={styles.modalActionButton} />
+              <UiButton label={isSaving ? 'Sending...' : 'Send transfer'} disabled={isSaving || !targetWaiterId} onPress={submitTradeRequest} style={styles.modalActionButton} />
             </View>
           </View>
         </View>
@@ -290,7 +334,10 @@ function EmployeeTradeRow({
   onCancel: () => void;
 }) {
   const needsMyApproval = trade.status === 'pending_target' && trade.target_waiter_id === currentWaiterId;
-  const canCancel = trade.status === 'pending_target' && trade.requesting_waiter_id === currentWaiterId;
+  const canCancel = (
+    trade.status === 'pending_target' || trade.status === 'pending_manager'
+  ) && trade.requesting_waiter_id === currentWaiterId;
+  const isFinal = ['approved', 'denied', 'cancelled', 'expired'].includes(String(trade.status));
   return (
     <View style={styles.tradeRow}>
       <View style={styles.tradeRowTop}>
@@ -314,11 +361,17 @@ function EmployeeTradeRow({
         </View>
       ) : canCancel ? (
         <View style={styles.tradeActions}>
-          <UiButton label="Cancel trade" size="small" variant="secondary" disabled={disabled} onPress={onCancel} style={styles.tradeActionButton} />
+          <UiButton label="Cancel transfer" size="small" variant="secondary" disabled={disabled} onPress={onCancel} style={styles.tradeActionButton} />
         </View>
       ) : (
         <UiText variant="bodySmall" tone="muted">
-          {trade.status === 'pending_manager' ? 'Waiting for manager approval.' : 'Waiting for coworker approval.'}
+          {trade.status === 'pending_manager'
+            ? 'Waiting for manager approval.'
+            : isFinal
+              ? trade.reviewed_by_name
+                ? `Reviewed by ${trade.reviewed_by_name}.`
+                : 'This transfer is closed.'
+              : 'Waiting for coworker approval.'}
         </UiText>
       )}
     </View>
@@ -368,6 +421,14 @@ const styles = StyleSheet.create({
   approvalsTitle: {
     color: palette.ink[900],
     marginTop: spacing[1],
+  },
+  emptyTradeState: {
+    alignItems: 'center',
+    borderColor: semanticColors.border,
+    borderRadius: radius.md,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    padding: spacing[4],
   },
   tradeRow: {
     backgroundColor: semanticColors.elevated,

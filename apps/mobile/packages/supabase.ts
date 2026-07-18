@@ -461,7 +461,7 @@ export async function getUserRole(userId?: string): Promise<userRole> {
   if (!membership) return null;
 
   const membershipRole = membership.role?.toLowerCase();
-  if (membershipRole === 'owner' || membershipRole === 'admin') return 'owner';
+  if (membershipRole === 'owner' || membershipRole === 'admin' || membershipRole === 'manager') return 'owner';
   if (membershipRole === 'developer') return 'developer';
   return 'employee';
 }
@@ -481,7 +481,7 @@ export async function getOwnerRestaurant(): Promise<OwnerRestaurant | null> {
     role?: string;
     status?: string;
   }[]>(
-    `${supabaseUrl}/rest/v1/restaurant_members?user_id=eq.${encodeURIComponent(session.userId)}&status=in.(accepted,active)&role=in.(owner,admin,developer)&select=restaurant_id,role,status&limit=5`,
+    `${supabaseUrl}/rest/v1/restaurant_members?user_id=eq.${encodeURIComponent(session.userId)}&status=in.(accepted,active)&role=in.(owner,admin,manager,developer)&select=restaurant_id,role,status&limit=5`,
     { headers },
     'Loading owner restaurant',
     ROLE_TIMEOUT_MS,

@@ -17,6 +17,9 @@ import {
 import { color_pallet, semanticColors, statusColors } from '@/styles/colors';
 import { typography } from '@/styles/typography';
 import { Feather } from '@expo/vector-icons';
+import { scheduleChange } from '@/api/scheduledChanges';
+import { PublishControls } from '@/components/ui/PublishControls';
+import { ScheduledChangesPanel } from '@/components/ui/ScheduledChangesPanel';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -538,11 +541,37 @@ function ResellerProfilePanel({
       onError(err instanceof Error ? err.message : 'Could not choose logo.');
     }
   };
-  const saveProfile = async (complete = false) => {
+  const saveProfile = async (complete = false, publication?: { scheduledFor: string; timezone: string }) => {
     if (!resellerId) return;
     onSavingChange(true);
     onError(null);
     try {
+      if (publication && !complete) {
+        await scheduleChange({
+          label: 'Reseller organization profile',
+          scheduledFor: publication.scheduledFor,
+          timezone: publication.timezone,
+          commands: [{
+            method: 'PATCH',
+            path: '/reseller/profile',
+            body: {
+              patch: {
+                organization_name: profile.organization_name.trim(),
+                legal_business_name: profile.legal_business_name?.trim() || null,
+                business_email: profile.business_email?.trim() || null,
+                phone: profile.phone?.trim() || null,
+                website: profile.website?.trim() || null,
+                default_general_propagation: profile.default_general_propagation,
+                default_specified_propagation: profile.default_specified_propagation,
+              },
+              complete: false,
+            },
+            target_type: 'reseller',
+            target_id: resellerId,
+          }],
+        });
+        return;
+      }
       const saved = await saveResellerProfile(resellerId, profile, { complete });
       onProfileChange(saved);
     } catch (err) {
@@ -583,6 +612,7 @@ function ResellerProfilePanel({
 
   return (
     <View style={styles.list}>
+      {canManage && <ScheduledChangesPanel />}
       <View style={styles.profileCard}>
         <View style={styles.profileHeader}>
           <View>
@@ -631,9 +661,12 @@ function ResellerProfilePanel({
           onChange={(value) => updateProfile({ default_specified_propagation: value as ResellerProfile['default_specified_propagation'] })}
         />
         {canManage && (
-          <Pressable disabled={isSaving} onPress={() => saveProfile(true)} style={[styles.primaryButton, isSaving && styles.disabledButton]}>
-            <Text style={styles.primaryButtonText}>{isSaving ? 'Saving...' : 'Save profile'}</Text>
-          </Pressable>
+          <PublishControls
+            label="Save profile"
+            busy={isSaving}
+            onPublishNow={() => saveProfile(false)}
+            onSchedule={(scheduledFor, timezone) => saveProfile(false, { scheduledFor, timezone })}
+          />
         )}
       </View>
 

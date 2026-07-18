@@ -54,7 +54,10 @@ import {
 import { staleWhileRevalidate, writeCacheRecord } from '@/cache/staleWhileRevalidate';
 import ScanCatalog from '@/screens/ScanCatalog';
 import { UiButton } from '@/components/ui/Button';
+import { PublishControls } from '@/components/ui/PublishControls';
+import { ScheduledChangesPanel } from '@/components/ui/ScheduledChangesPanel';
 import { UiText } from '@/components/ui/Text';
+import { scheduleChange, type ScheduledCommand } from '@/api/scheduledChanges';
 import { registerManagerPushToken } from '@/notifications/pushNotifications';
 import { palette, semanticColors, statusColors } from '@/styles/colors';
 import { radius, spacing } from '@/styles/tokens';
@@ -965,6 +968,26 @@ export default function OwnerSettings() {
   const [isSavingTipPayroll, setIsSavingTipPayroll] = useState(false);
 
   const restaurantId = restaurant?.id;
+
+  type Publication = { scheduledFor: string; timezone: string } | undefined;
+  const scheduleRestaurantSave = async (
+    publication: Publication,
+    label: string,
+    command: Omit<ScheduledCommand, 'target_type' | 'target_id'>,
+    onScheduled: (message: string) => void = setMessage,
+  ) => {
+    if (!publication || !restaurantId) return false;
+    const result = await scheduleChange({
+      label,
+      scheduledFor: publication.scheduledFor,
+      timezone: publication.timezone,
+      commands: [{ ...command, target_type: 'restaurant', target_id: restaurantId }],
+    });
+    const message = `${label} scheduled for ${new Date(result.scheduled_for).toLocaleString()}.`;
+    setMessage(message);
+    onScheduled(message);
+    return true;
+  };
   const settings = policy?.remote_time_clock || DEFAULT_REMOTE_TIME_CLOCK_POLICY.remote_time_clock;
   const roleOptions = Array.from(new Set([
     ...jobCodes.map((code) => code.code || code.label).filter(Boolean),
@@ -1078,11 +1101,13 @@ export default function OwnerSettings() {
     }
   };
 
-  const saveSections = async () => {
+  const saveSections = async (publication?: Publication) => {
     if (!restaurantId) return;
     setIsSavingSections(true);
     setSectionsMessage('Saving sections...');
     try {
+      const body = { sections: normalizeSectionNames(sectionEdits) };
+      if (await scheduleRestaurantSave(publication, 'Restaurant sections', { method: 'PUT', path: `/restaurants/${restaurantId}/sections`, body }, setSectionsMessage)) return;
       const saved = await saveRestaurantSections(restaurantId, normalizeSectionNames(sectionEdits));
       setSectionEdits(normalizeSectionNames(saved.map((section) => section.name)));
       setFloorSections(saved.map((section) => ({ id: section.id, name: section.name })).filter((section) => section.id && section.name));
@@ -1112,12 +1137,13 @@ export default function OwnerSettings() {
     })));
   };
 
-  const saveFloorTables = async () => {
+  const saveFloorTables = async (publication?: Publication) => {
     if (!restaurantId) return;
     setIsSavingFloorTables(true);
     setFloorTablesMessage('Saving table setup...');
     try {
       const prepared = normalizeFloorTables(floorTables).map(floorTablePayload);
+      if (await scheduleRestaurantSave(publication, 'Table setup', { method: 'POST', path: `/restaurants/${restaurantId}/floor-plan/save`, body: { image_url: null, tables: prepared } }, setFloorTablesMessage)) return;
       await saveFloorPlanTables(restaurantId, prepared);
       setFloorTables(normalizeFloorTables(prepared));
       const unfinished = prepared.filter((table) => !isFloorTableComplete(table)).length;
@@ -1129,7 +1155,7 @@ export default function OwnerSettings() {
     }
   };
 
-  const saveLegal = async () => {
+  const saveLegal = async (publication?: Publication) => {
     if (!restaurantId) return;
     if (!legalEdits.legal_business_name.trim() || !legalEdits.legal_contact_name.trim()) {
       setLegalMessage('Legal business name and authorized signer are required.');
@@ -1140,6 +1166,8 @@ export default function OwnerSettings() {
     try {
       const signedAt = legalEdits.tos_signed_at || new Date().toISOString();
       const signature = legalEdits.tos_signature_data_url || buildSignatureDataUrl(legalEdits.legal_contact_name);
+      const patch = { ...legalEdits, tos_signature_data_url: signature, tos_signed_at: signedAt, tos_version: 'shire-placeholder-tos-v1' };
+      if (await scheduleRestaurantSave(publication, 'Legal setup', { method: 'PATCH', path: `/restaurants/${restaurantId}/setup-config`, body: { patch } }, setLegalMessage)) return;
       const saved = await saveRestaurantSetupConfig(restaurantId, {
         ...legalEdits,
         tos_signature_data_url: signature,
@@ -1165,11 +1193,12 @@ export default function OwnerSettings() {
     setLegalMessage(`Signed ${new Date(signedAt).toLocaleString()}. Save legal setup to sync.`);
   };
 
-  const savePayments = async () => {
+  const savePayments = async (publication?: Publication) => {
     if (!restaurantId) return;
     setIsSavingPayments(true);
     setPaymentsMessage('Saving payment setup...');
     try {
+      if (await scheduleRestaurantSave(publication, 'Payment setup', { method: 'PATCH', path: `/restaurants/${restaurantId}/setup-config`, body: { patch: paymentEdits } }, setPaymentsMessage)) return;
       const saved = await saveRestaurantSetupConfig(restaurantId, paymentEdits);
       setPaymentEdits(normalizeSetupConfig(saved).payments);
       setPaymentsMessage('Payment setup saved.');
@@ -1180,7 +1209,7 @@ export default function OwnerSettings() {
     }
   };
 
-  const saveServiceModel = async () => {
+  const saveServiceModel = async (publication?: Publication) => {
     if (!restaurantId) return;
     setIsSavingServiceModel(true);
     setServiceModelMessage('Saving service model...');
@@ -1188,6 +1217,8 @@ export default function OwnerSettings() {
       const serviceModes = serviceModelEdits.service_modes.length > 0
         ? serviceModelEdits.service_modes
         : DEFAULT_SERVICE_MODEL.service_modes;
+      const patch = { service_modes: serviceModes, default_guest_flow: serviceModelEdits.default_guest_flow };
+      if (await scheduleRestaurantSave(publication, 'Service model', { method: 'PATCH', path: `/restaurants/${restaurantId}/setup-config`, body: { patch } }, setServiceModelMessage)) return;
       const saved = await saveRestaurantSetupConfig(restaurantId, {
         service_modes: serviceModes,
         default_guest_flow: serviceModelEdits.default_guest_flow,
@@ -1222,12 +1253,14 @@ export default function OwnerSettings() {
     setServiceChargeEdits((current) => current.map((row, currentIndex) => (currentIndex === index ? { ...row, ...patch } : row)));
   };
 
-  const saveTaxesCharges = async () => {
+  const saveTaxesCharges = async (publication?: Publication) => {
     if (!restaurantId) return;
     setIsSavingTaxes(true);
     setTaxesMessage('Saving taxes and charges...');
     try {
-      const saved = await saveRestaurantTaxesCharges(restaurantId, taxChargePayload(taxRateEdits, serviceChargeEdits));
+      const payload = taxChargePayload(taxRateEdits, serviceChargeEdits);
+      if (await scheduleRestaurantSave(publication, 'Taxes and charges', { method: 'PUT', path: `/restaurants/${restaurantId}/taxes-charges`, body: payload as unknown as Record<string, unknown> }, setTaxesMessage)) return;
+      const saved = await saveRestaurantTaxesCharges(restaurantId, payload);
       setTaxRateEdits(normalizeTaxRates(saved.tax_rates));
       setServiceChargeEdits(normalizeServiceCharges(saved.service_charges));
       setTaxesMessage('Taxes and charges saved.');
@@ -1244,12 +1277,14 @@ export default function OwnerSettings() {
     )));
   };
 
-  const saveMenuCategories = async () => {
+  const saveMenuCategories = async (publication?: Publication) => {
     if (!restaurantId) return;
     setIsSavingMenuCategories(true);
     setMenuCategoriesMessage('Saving menu categories...');
     try {
-      const saved = await saveRestaurantMenuCategories(restaurantId, menuCategoriesPayload(menuCategoryEdits));
+      const payload = menuCategoriesPayload(menuCategoryEdits);
+      if (await scheduleRestaurantSave(publication, 'Menu categories', { method: 'PUT', path: `/restaurants/${restaurantId}/menu/categories`, body: payload as unknown as Record<string, unknown> }, setMenuCategoriesMessage)) return;
+      const saved = await saveRestaurantMenuCategories(restaurantId, payload);
       setMenuCategoryEdits(normalizeMenuCategories(saved.categories));
       setMenuCategoriesMessage('Menu categories saved.');
     } catch (err) {
@@ -1266,12 +1301,14 @@ export default function OwnerSettings() {
   const toggleListValue = <T extends string | number,>(values: T[], value: T) =>
     values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
 
-  const saveDiscountRules = async () => {
+  const saveDiscountRules = async (publication?: Publication) => {
     if (!restaurantId) return;
     setIsSavingDiscounts(true);
     setDiscountsMessage('Saving discounts...');
     try {
-      const saved = await saveRestaurantDiscountRules(restaurantId, discountRulesPayload(discountRuleEdits));
+      const payload = discountRulesPayload(discountRuleEdits);
+      if (await scheduleRestaurantSave(publication, 'Discounts', { method: 'PUT', path: `/restaurants/${restaurantId}/discount-rules`, body: payload as unknown as Record<string, unknown> }, setDiscountsMessage)) return;
+      const saved = await saveRestaurantDiscountRules(restaurantId, payload);
       setDiscountRuleEdits(normalizeDiscountRules(saved.discount_rules));
       setDiscountsMessage('Discounts saved.');
     } catch (err) {
@@ -1285,12 +1322,14 @@ export default function OwnerSettings() {
     setRolePermissionEdits((current) => current.map((row, currentIndex) => (currentIndex === index ? { ...row, ...patch } : row)));
   };
 
-  const saveManagerControls = async () => {
+  const saveManagerControls = async (publication?: Publication) => {
     if (!restaurantId) return;
     setIsSavingManagerControls(true);
     setManagerControlsMessage('Saving manager controls...');
     try {
-      const saved = await saveRestaurantManagerControls(restaurantId, managerControlsPayload(rolePermissionEdits, jobCodes));
+      const payload = managerControlsPayload(rolePermissionEdits, jobCodes);
+      if (await scheduleRestaurantSave(publication, 'Manager controls', { method: 'PUT', path: `/restaurants/${restaurantId}/manager-controls`, body: payload as unknown as Record<string, unknown> }, setManagerControlsMessage)) return;
+      const saved = await saveRestaurantManagerControls(restaurantId, payload);
       setRolePermissionEdits(normalizeRolePermissions(saved.role_permissions, jobCodes));
       setManagerControlsMessage('Manager controls saved.');
     } catch (err) {
@@ -1308,12 +1347,14 @@ export default function OwnerSettings() {
     setCheckWorkflowEdits((current) => ({ ...current, ...patch }));
   };
 
-  const saveCloseoutSettings = async () => {
+  const saveCloseoutSettings = async (publication?: Publication) => {
     if (!restaurantId) return;
     setIsSavingCloseout(true);
     setCloseoutMessage('Saving closeout settings...');
     try {
-      const saved = await saveRestaurantCloseoutSettings(restaurantId, closeoutPayload(closeoutEdits));
+      const payload = closeoutPayload(closeoutEdits);
+      if (await scheduleRestaurantSave(publication, 'Closeout settings', { method: 'PUT', path: `/restaurants/${restaurantId}/closeout-settings`, body: payload as unknown as Record<string, unknown> }, setCloseoutMessage)) return;
+      const saved = await saveRestaurantCloseoutSettings(restaurantId, payload);
       setCloseoutEdits(normalizeCloseoutSettings(saved));
       setCloseoutMessage('Closeout settings saved.');
     } catch (err) {
@@ -1323,12 +1364,14 @@ export default function OwnerSettings() {
     }
   };
 
-  const saveCheckWorkflow = async () => {
+  const saveCheckWorkflow = async (publication?: Publication) => {
     if (!restaurantId) return;
     setIsSavingCheckWorkflow(true);
     setCheckWorkflowMessage('Saving check workflow settings...');
     try {
-      const saved = await saveRestaurantCheckWorkflowSettings(restaurantId, checkWorkflowPayload(checkWorkflowEdits));
+      const payload = checkWorkflowPayload(checkWorkflowEdits);
+      if (await scheduleRestaurantSave(publication, 'Check workflow', { method: 'PUT', path: `/restaurants/${restaurantId}/check-workflow-settings`, body: payload as unknown as Record<string, unknown> }, setCheckWorkflowMessage)) return;
+      const saved = await saveRestaurantCheckWorkflowSettings(restaurantId, payload);
       setCheckWorkflowEdits(normalizeCheckWorkflowSettings(saved));
       setCheckWorkflowMessage('Check workflow settings saved.');
     } catch (err) {
@@ -1349,12 +1392,14 @@ export default function OwnerSettings() {
     }));
   };
 
-  const saveTipPayroll = async () => {
+  const saveTipPayroll = async (publication?: Publication) => {
     if (!restaurantId) return;
     setIsSavingTipPayroll(true);
     setTipPayrollMessage('Saving tips and payroll...');
     try {
-      const saved = await saveRestaurantTipPayrollSettings(restaurantId, tipPayrollPayload(tipPayrollEdits, jobCodes));
+      const payload = tipPayrollPayload(tipPayrollEdits, jobCodes);
+      if (await scheduleRestaurantSave(publication, 'Tips and payroll', { method: 'PUT', path: `/restaurants/${restaurantId}/tips-payroll-settings`, body: payload as unknown as Record<string, unknown> }, setTipPayrollMessage)) return;
+      const saved = await saveRestaurantTipPayrollSettings(restaurantId, payload);
       setTipPayrollEdits(normalizeTipPayrollSettings(saved, jobCodes));
       setTipPayrollMessage('Tips and payroll saved.');
     } catch (err) {
@@ -1377,7 +1422,7 @@ export default function OwnerSettings() {
     });
   };
 
-  const saveRoleRate = async (jobCode: JobCode) => {
+  const saveRoleRate = async (jobCode: JobCode, publication?: Publication) => {
     if (!restaurantId) return;
     const rawRate = String(jobCode.default_hourly_rate ?? rateEdits[jobCode.id] ?? '');
     const parsed = Number(rawRate);
@@ -1398,6 +1443,11 @@ export default function OwnerSettings() {
         sort_order: Number(jobCode.sort_order) || 0,
         is_active: jobCode.is_active !== false,
       };
+      if (jobCode.id && await scheduleRestaurantSave(publication, `${jobCode.label || jobCode.code} role`, {
+        method: 'PATCH',
+        path: `/manager/job-codes/${jobCode.id}`,
+        body: payload,
+      })) return;
       const saved = jobCode.id
         ? await updateManagerJobCode(jobCode.id, payload)
         : await createManagerJobCode(restaurantId, payload);
@@ -1415,7 +1465,7 @@ export default function OwnerSettings() {
     }
   };
 
-  const saveStaffPay = async (person: StaffContact) => {
+  const saveStaffPay = async (person: StaffContact, publication?: Publication) => {
     const rawRate = staffPayEdits[person.id]?.trim() ?? '';
     const rawHours = staffHoursEdits[person.id]?.trim() ?? '';
     const role = staffRoleEdits[person.id]?.trim() || person.role || undefined;
@@ -1434,12 +1484,23 @@ export default function OwnerSettings() {
     setMessage(`Saving ${person.name || 'employee'} pay...`);
     try {
       const payPatch = buildPayPatch(person, parsedRate);
-      const saved = await updateManagerStaff(person.id, {
+      const payload = {
         role,
         job_code_id: jobCode?.id || null,
         suggested_weekly_hours: parsedHours,
         ...payPatch,
-      });
+      };
+      if (publication && restaurantId) {
+        const scheduled = await scheduleChange({
+          label: `${person.name || 'Employee'} pay and role`,
+          scheduledFor: publication.scheduledFor,
+          timezone: publication.timezone,
+          commands: [{ method: 'PATCH', path: `/waiters/${person.id}`, body: payload, target_type: 'employee', target_id: person.id, restaurant_id: restaurantId }],
+        });
+        setMessage(`${person.name || 'Employee'} pay and role scheduled for ${new Date(scheduled.scheduled_for).toLocaleString()}.`);
+        return;
+      }
+      const saved = await updateManagerStaff(person.id, payload);
       setStaff((current) => current.map((item) => (item.id === saved.id ? saved : item)));
       setStaffPayEdits((current) => ({ ...current, [saved.id]: stringifyPayRate(saved) }));
       setStaffHoursEdits((current) => ({ ...current, [saved.id]: String(saved.suggested_weekly_hours ?? '') }));
@@ -1475,6 +1536,8 @@ export default function OwnerSettings() {
           {restaurant?.name || 'Restaurant'} controls for employee tools.
         </UiText>
       </View>
+
+      <ScheduledChangesPanel />
 
       <View style={styles.card}>
         <View style={styles.cardHeader}>
@@ -1536,11 +1599,7 @@ export default function OwnerSettings() {
           })
         )}
         {floorTables.length > 0 ? (
-          <UiButton
-            label={isSavingFloorTables ? 'Saving...' : 'Save table setup'}
-            disabled={isSavingFloorTables || !restaurantId}
-            onPress={saveFloorTables}
-          />
+          <PublishControls label="Save table setup" busy={isSavingFloorTables} disabled={!restaurantId} onPublishNow={() => saveFloorTables()} onSchedule={(scheduledFor, timezone) => saveFloorTables({ scheduledFor, timezone })} />
         ) : null}
         {floorTablesMessage ? (
           <View style={styles.messageCard}>
@@ -1704,12 +1763,7 @@ export default function OwnerSettings() {
             onPress={() => setDiscountRuleEdits((current) => [...current, defaultDiscountRule(current.length)])}
             style={styles.sectionActionButton}
           />
-          <UiButton
-            label={isSavingDiscounts ? 'Saving...' : 'Save discounts'}
-            disabled={isSavingDiscounts || !restaurantId}
-            onPress={saveDiscountRules}
-            style={styles.sectionActionButton}
-          />
+          <PublishControls label="Save discounts" busy={isSavingDiscounts} disabled={!restaurantId} onPublishNow={() => saveDiscountRules()} onSchedule={(scheduledFor, timezone) => saveDiscountRules({ scheduledFor, timezone })} />
         </View>
         <View style={styles.sectionActions}>
           {[
@@ -1786,11 +1840,7 @@ export default function OwnerSettings() {
             </View>
           </View>
         ))}
-        <UiButton
-          label={isSavingManagerControls ? 'Saving...' : 'Save manager controls'}
-          disabled={isSavingManagerControls || !restaurantId}
-          onPress={saveManagerControls}
-        />
+        <PublishControls label="Save manager controls" busy={isSavingManagerControls} disabled={!restaurantId} onPublishNow={() => saveManagerControls()} onSchedule={(scheduledFor, timezone) => saveManagerControls({ scheduledFor, timezone })} />
         {managerControlsMessage ? (
           <View style={styles.messageCard}>
             <UiText variant="bodySmall" tone="muted">{managerControlsMessage}</UiText>
@@ -1934,11 +1984,7 @@ export default function OwnerSettings() {
             );
           })}
         </View>
-        <UiButton
-          label={isSavingCloseout ? 'Saving...' : 'Save closeout'}
-          disabled={isSavingCloseout || !restaurantId}
-          onPress={saveCloseoutSettings}
-        />
+        <PublishControls label="Save closeout" busy={isSavingCloseout} disabled={!restaurantId} onPublishNow={() => saveCloseoutSettings()} onSchedule={(scheduledFor, timezone) => saveCloseoutSettings({ scheduledFor, timezone })} />
         {closeoutMessage ? (
           <View style={styles.messageCard}>
             <UiText variant="bodySmall" tone="muted">{closeoutMessage}</UiText>
@@ -2100,11 +2146,7 @@ export default function OwnerSettings() {
           multiline
           style={[styles.setupInput, styles.notesInput]}
         />
-        <UiButton
-          label={isSavingCheckWorkflow ? 'Saving...' : 'Save check workflow'}
-          disabled={isSavingCheckWorkflow || !restaurantId}
-          onPress={saveCheckWorkflow}
-        />
+        <PublishControls label="Save check workflow" busy={isSavingCheckWorkflow} disabled={!restaurantId} onPublishNow={() => saveCheckWorkflow()} onSchedule={(scheduledFor, timezone) => saveCheckWorkflow({ scheduledFor, timezone })} />
         {checkWorkflowMessage ? (
           <View style={styles.messageCard}>
             <UiText variant="bodySmall" tone="muted">{checkWorkflowMessage}</UiText>
@@ -2253,11 +2295,7 @@ export default function OwnerSettings() {
           multiline
           style={[styles.setupInput, styles.notesInput]}
         />
-        <UiButton
-          label={isSavingTipPayroll ? 'Saving...' : 'Save tips & payroll'}
-          disabled={isSavingTipPayroll || !restaurantId}
-          onPress={saveTipPayroll}
-        />
+        <PublishControls label="Save tips & payroll" busy={isSavingTipPayroll} disabled={!restaurantId} onPublishNow={() => saveTipPayroll()} onSchedule={(scheduledFor, timezone) => saveTipPayroll({ scheduledFor, timezone })} />
         {tipPayrollMessage ? (
           <View style={styles.messageCard}>
             <UiText variant="bodySmall" tone="muted">{tipPayrollMessage}</UiText>
@@ -2394,12 +2432,7 @@ export default function OwnerSettings() {
             onPress={signLegalTerms}
             style={styles.sectionActionButton}
           />
-          <UiButton
-            label={isSavingLegal ? 'Saving...' : 'Save legal'}
-            disabled={isSavingLegal || !restaurantId}
-            onPress={saveLegal}
-            style={styles.sectionActionButton}
-          />
+          <PublishControls label="Save legal" busy={isSavingLegal} disabled={!restaurantId} onPublishNow={() => saveLegal()} onSchedule={(scheduledFor, timezone) => saveLegal({ scheduledFor, timezone })} />
         </View>
         {legalMessage ? (
           <View style={styles.messageCard}>
@@ -2490,11 +2523,7 @@ export default function OwnerSettings() {
           options={[['nightly', 'Nightly'], ['payroll', 'Payroll']]}
           onChange={(value) => setPaymentEdits((current) => ({ ...current, credit_card_tip_payout: value as typeof paymentEdits.credit_card_tip_payout }))}
         />
-        <UiButton
-          label={isSavingPayments ? 'Saving...' : 'Save payments'}
-          disabled={isSavingPayments || !restaurantId}
-          onPress={savePayments}
-        />
+        <PublishControls label="Save payments" busy={isSavingPayments} disabled={!restaurantId} onPublishNow={() => savePayments()} onSchedule={(scheduledFor, timezone) => savePayments({ scheduledFor, timezone })} />
         {paymentsMessage ? (
           <View style={styles.messageCard}>
             <UiText variant="bodySmall" tone="muted">{paymentsMessage}</UiText>
@@ -2533,11 +2562,7 @@ export default function OwnerSettings() {
           options={GUEST_FLOW_OPTIONS.map((option) => [option.id, option.label])}
           onChange={(value) => setServiceModelEdits((current) => ({ ...current, default_guest_flow: value }))}
         />
-        <UiButton
-          label={isSavingServiceModel ? 'Saving...' : 'Save service model'}
-          disabled={isSavingServiceModel || !restaurantId}
-          onPress={saveServiceModel}
-        />
+        <PublishControls label="Save service model" busy={isSavingServiceModel} disabled={!restaurantId} onPublishNow={() => saveServiceModel()} onSchedule={(scheduledFor, timezone) => saveServiceModel({ scheduledFor, timezone })} />
         {serviceModelMessage ? (
           <View style={styles.messageCard}>
             <UiText variant="bodySmall" tone="muted">{serviceModelMessage}</UiText>
@@ -2674,12 +2699,7 @@ export default function OwnerSettings() {
             onPress={() => setServiceChargeEdits((current) => [...current, defaultServiceCharge(current.length)])}
             style={styles.sectionActionButton}
           />
-          <UiButton
-            label={isSavingTaxes ? 'Saving...' : 'Save taxes'}
-            disabled={isSavingTaxes || !restaurantId}
-            onPress={saveTaxesCharges}
-            style={styles.sectionActionButton}
-          />
+          <PublishControls label="Save taxes" busy={isSavingTaxes} disabled={!restaurantId} onPublishNow={() => saveTaxesCharges()} onSchedule={(scheduledFor, timezone) => saveTaxesCharges({ scheduledFor, timezone })} />
         </View>
         {taxesMessage ? (
           <View style={styles.messageCard}>
@@ -2780,12 +2800,7 @@ export default function OwnerSettings() {
             onPress={() => setMenuCategoryEdits((current) => [...normalizeMenuCategories(current), { name: `Custom Category ${current.length + 1}`, tax_rate_id: null, routing_station_id: null, routing_station_name: 'Kitchen', default_course_type: null, default_fire_mode: 'inherit', prep_time_minutes: null, kds_display_group: '', is_active: true }])}
             style={styles.sectionActionButton}
           />
-          <UiButton
-            label={isSavingMenuCategories ? 'Saving...' : 'Save categories'}
-            disabled={isSavingMenuCategories || !restaurantId}
-            onPress={saveMenuCategories}
-            style={styles.sectionActionButton}
-          />
+          <PublishControls label="Save categories" busy={isSavingMenuCategories} disabled={!restaurantId} onPublishNow={() => saveMenuCategories()} onSchedule={(scheduledFor, timezone) => saveMenuCategories({ scheduledFor, timezone })} />
         </View>
         {menuCategoriesMessage ? (
           <View style={styles.messageCard}>
@@ -2836,12 +2851,7 @@ export default function OwnerSettings() {
             })}
             style={styles.sectionActionButton}
           />
-          <UiButton
-            label={isSavingSections ? 'Saving...' : 'Save sections'}
-            disabled={isSavingSections || !restaurantId}
-            onPress={saveSections}
-            style={styles.sectionActionButton}
-          />
+          <PublishControls label="Save sections" busy={isSavingSections} disabled={!restaurantId} onPublishNow={() => saveSections()} onSchedule={(scheduledFor, timezone) => saveSections({ scheduledFor, timezone })} />
         </View>
         {sectionsMessage ? (
           <View style={styles.messageCard}>
@@ -2923,11 +2933,7 @@ export default function OwnerSettings() {
                   placeholderTextColor={palette.ink[400]}
                   style={styles.setupInput}
                 />
-                <UiButton
-                  label={savingRateId === code.id ? 'Saving...' : 'Save role'}
-                  disabled={Boolean(savingRateId)}
-                  onPress={() => saveRoleRate(code)}
-                />
+                <PublishControls label="Save role" busy={savingRateId === code.id} disabled={Boolean(savingRateId)} onPublishNow={() => saveRoleRate(code)} onSchedule={(scheduledFor, timezone) => saveRoleRate(code, { scheduledFor, timezone })} />
               </View>
             ))
         )}
@@ -3051,12 +3057,7 @@ export default function OwnerSettings() {
                     style={styles.payInput}
                   />
                 </View>
-                <UiButton
-                  label={savingStaffId === person.id ? 'Saving...' : 'Save'}
-                  disabled={Boolean(savingStaffId)}
-                  onPress={() => saveStaffPay(person)}
-                  style={styles.staffPayButton}
-                />
+                <PublishControls label="Save employee" busy={savingStaffId === person.id} disabled={Boolean(savingStaffId)} onPublishNow={() => saveStaffPay(person)} onSchedule={(scheduledFor, timezone) => saveStaffPay(person, { scheduledFor, timezone })} />
               </View>
             </View>
           ))
