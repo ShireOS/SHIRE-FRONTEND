@@ -19,6 +19,7 @@ const PERMISSIONS: Array<{ key: keyof RolePermissionData; label: string }> = [
   { key: 'can_view_reports', label: 'Reports' },
   { key: 'can_close_drawer', label: 'Close drawer' },
   { key: 'can_close_day', label: 'Close day' },
+  { key: 'can_reopen_business_day', label: 'Reopen business day' },
   { key: 'can_change_payment_settings', label: 'Payment settings' },
   { key: 'can_edit_sent_items_within_window', label: 'Sent corrections in window' },
   { key: 'can_edit_sent_items_after_window', label: 'Sent corrections after window' },

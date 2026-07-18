@@ -188,6 +188,7 @@ export type RolePermission = {
   can_view_reports: boolean;
   can_close_drawer: boolean;
   can_close_day: boolean;
+  can_reopen_business_day: boolean;
   can_change_payment_settings: boolean;
   require_manager_pin_for_approval: boolean;
 };
@@ -231,6 +232,8 @@ export type CloseoutSettings = {
   eod_require_tip_adjustments_reviewed: boolean;
   eod_report_recipients: string[];
   eod_reports: string[];
+  eod_email_on_close: boolean;
+  eod_email_formats: ('pdf' | 'xlsx')[];
 };
 
 export async function fetchCloseoutSettings(restaurantId: string) {

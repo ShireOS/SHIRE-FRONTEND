@@ -197,6 +197,7 @@ export interface RolePermissionData {
   can_view_reports: boolean
   can_close_drawer: boolean
   can_close_day: boolean
+  can_reopen_business_day: boolean
   can_change_payment_settings: boolean
   can_edit_sent_items_within_window: boolean
   can_edit_sent_items_after_window: boolean
@@ -229,6 +230,8 @@ export interface CloseoutSettingsData {
   eod_require_tip_adjustments_reviewed: boolean
   eod_report_recipients: string[]
   eod_reports: string[]
+  eod_email_on_close: boolean
+  eod_email_formats: Array<'pdf' | 'xlsx'>
 }
 
 export interface CheckWorkflowSettingsData {
@@ -458,6 +461,7 @@ const defaultRolePermission = (roleKey: string): RolePermissionData => {
     can_view_reports: elevated,
     can_close_drawer: elevated || cashier,
     can_close_day: elevated,
+    can_reopen_business_day: normalizedRoleKey === 'owner',
     can_change_payment_settings: normalizedRoleKey === 'owner',
     can_edit_sent_items_within_window: elevated || service,
     can_edit_sent_items_after_window: elevated,
@@ -480,7 +484,7 @@ const defaultCloseoutSettings = (): CloseoutSettingsData => ({
   cash_variance_threshold: '',
   server_require_all_checks_closed: true,
   server_require_tabs_closed: true,
-  server_require_cash_tips_declared: true,
+  server_require_cash_tips_declared: false,
   server_require_credit_tips_reviewed: true,
   server_require_tipout_entry: false,
   server_require_manager_approval: true,
@@ -494,6 +498,8 @@ const defaultCloseoutSettings = (): CloseoutSettingsData => ({
   eod_require_tip_adjustments_reviewed: true,
   eod_report_recipients: [],
   eod_reports: ['sales_summary', 'cash_drawer_summary', 'tip_summary', 'discounts_voids_refunds', 'tax_summary'],
+  eod_email_on_close: false,
+  eod_email_formats: ['pdf'],
 })
 
 const defaultMenuCategories = (): MenuCategoryData[] => [
@@ -924,6 +930,7 @@ const normalizeRolePermissions = (value: unknown, jobCodes: JobCodeData[] = defa
       can_view_reports: typeof row.can_view_reports === 'boolean' ? row.can_view_reports : false,
       can_close_drawer: typeof row.can_close_drawer === 'boolean' ? row.can_close_drawer : false,
       can_close_day: typeof row.can_close_day === 'boolean' ? row.can_close_day : false,
+      can_reopen_business_day: typeof row.can_reopen_business_day === 'boolean' ? row.can_reopen_business_day : defaults.can_reopen_business_day,
       can_change_payment_settings: typeof row.can_change_payment_settings === 'boolean' ? row.can_change_payment_settings : false,
       can_edit_sent_items_within_window: typeof row.can_edit_sent_items_within_window === 'boolean' ? row.can_edit_sent_items_within_window : defaults.can_edit_sent_items_within_window,
       can_edit_sent_items_after_window: typeof row.can_edit_sent_items_after_window === 'boolean' ? row.can_edit_sent_items_after_window : defaults.can_edit_sent_items_after_window,
@@ -964,7 +971,7 @@ const normalizeCloseoutSettings = (value: unknown): CloseoutSettingsData => {
     cash_variance_threshold: asStringNumber(value.cash_variance_threshold),
     server_require_all_checks_closed: typeof value.server_require_all_checks_closed === 'boolean' ? value.server_require_all_checks_closed : fallback.server_require_all_checks_closed,
     server_require_tabs_closed: typeof value.server_require_tabs_closed === 'boolean' ? value.server_require_tabs_closed : fallback.server_require_tabs_closed,
-    server_require_cash_tips_declared: typeof value.server_require_cash_tips_declared === 'boolean' ? value.server_require_cash_tips_declared : fallback.server_require_cash_tips_declared,
+    server_require_cash_tips_declared: false,
     server_require_credit_tips_reviewed: typeof value.server_require_credit_tips_reviewed === 'boolean' ? value.server_require_credit_tips_reviewed : fallback.server_require_credit_tips_reviewed,
     server_require_tipout_entry: typeof value.server_require_tipout_entry === 'boolean' ? value.server_require_tipout_entry : fallback.server_require_tipout_entry,
     server_require_manager_approval: typeof value.server_require_manager_approval === 'boolean' ? value.server_require_manager_approval : fallback.server_require_manager_approval,
@@ -978,6 +985,10 @@ const normalizeCloseoutSettings = (value: unknown): CloseoutSettingsData => {
     eod_require_tip_adjustments_reviewed: typeof value.eod_require_tip_adjustments_reviewed === 'boolean' ? value.eod_require_tip_adjustments_reviewed : fallback.eod_require_tip_adjustments_reviewed,
     eod_report_recipients: normalizeReportRecipients(value.eod_report_recipients),
     eod_reports: normalizeEodReports(value.eod_reports),
+    eod_email_on_close: typeof value.eod_email_on_close === 'boolean' ? value.eod_email_on_close : fallback.eod_email_on_close,
+    eod_email_formats: asStringArray(value.eod_email_formats).filter((format): format is 'pdf' | 'xlsx' => format === 'pdf' || format === 'xlsx').length > 0
+      ? asStringArray(value.eod_email_formats).filter((format): format is 'pdf' | 'xlsx' => format === 'pdf' || format === 'xlsx')
+      : fallback.eod_email_formats,
   }
 }
 

@@ -80,6 +80,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
       can_view_reports: elevated,
       can_close_drawer: elevated || cashier,
       can_close_day: elevated,
+      can_reopen_business_day: roleKey === 'owner',
       can_change_payment_settings: roleKey === 'owner',
       can_edit_sent_items_within_window: elevated || service,
       can_edit_sent_items_after_window: elevated,

@@ -81,11 +81,25 @@ function TextField({ label, value, onChange, placeholder, className = '' }) {
   )
 }
 
-function DeviceRow({ device, printerTargets, onRename, onPrinterChange, onToggleStatus, busy }) {
+function DeviceRow({ device, printerTargets, printerEndpoints, onRename, onPrinterChange, onHardwareChange, onToggleStatus, busy }) {
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState(device.name || '')
   const online = isDeviceOnline(device)
   const revoked = device.status === 'revoked'
+  const observed = device.observed_capabilities || {}
+  const hardware = device.hardware_config || {}
+  const cash = hardware.cash || {}
+  const discoveredPrinters = Array.isArray(observed.discovered_printers) ? observed.discovered_printers : []
+  const usbEndpoints = (printerEndpoints || []).filter((endpoint) => endpoint.agent_device_id === device.id && endpoint.connection_type === 'usb' && endpoint.is_active)
+  const endpointFor = (printer) => usbEndpoints.find((endpoint) => {
+    const endpointSerial = String(endpoint.config?.serial_number || '').trim()
+    const printerSerial = String(printer.serial_number || '').trim()
+    if (endpointSerial && printerSerial) return endpointSerial === printerSerial
+    if (endpoint.config?.usb_device_id != null && Number(endpoint.config.usb_device_id) === Number(printer.device_id)) return true
+    return Number(endpoint.config?.vendor_id) === Number(printer.vendor_id)
+      && Number(endpoint.config?.product_id) === Number(printer.product_id)
+      && discoveredPrinters.filter((candidate) => Number(candidate.vendor_id) === Number(printer.vendor_id) && Number(candidate.product_id) === Number(printer.product_id)).length === 1
+  })
   const assignments = useMemo(() => {
     const map = {}
     for (const row of device.printers || []) map[row.role] = row.target_id
@@ -145,22 +159,65 @@ function DeviceRow({ device, printerTargets, onRename, onPrinterChange, onToggle
         </div>
       </div>
       {!revoked && (
-        <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
-          {DEVICE_PRINTER_ROLES.map((role) => (
-            <SelectField
-              key={role.id}
-              label={role.label}
-              value={assignments[role.id] || ''}
-              disabled={busy}
-              onChange={(e) => onPrinterChange(device, role.id, e.target.value || null)}
-            >
-              <option value="">— none —</option>
-              {printerTargets.map((target) => (
-                <option key={target.id} value={target.id}>{target.name}</option>
-              ))}
-            </SelectField>
-          ))}
-        </div>
+        <>
+          <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+            {DEVICE_PRINTER_ROLES.map((role) => (
+              <SelectField
+                key={role.id}
+                label={role.label}
+                value={assignments[role.id] || ''}
+                disabled={busy}
+                onChange={(e) => onPrinterChange(device, role.id, e.target.value || null)}
+              >
+                <option value="">— none —</option>
+                {printerTargets.map((target) => (
+                  <option key={target.id} value={target.id}>{target.name}</option>
+                ))}
+              </SelectField>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-dash-border pt-3 text-xs text-dash-secondary">
+            <span>
+              Observed: {observed.platform || 'not reported'} · USB {observed.usb_printer_module_available ? 'available' : 'unavailable'}
+              {device.capabilities_reported_at ? ` · ${new Date(device.capabilities_reported_at).toLocaleString()}` : ''}
+            </span>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={hardware.local_agent_enabled !== false} disabled={busy} onChange={(event) => onHardwareChange(device, { ...hardware, local_agent_enabled: event.target.checked })} />
+              Local hardware agent
+            </label>
+            <label className={`flex items-center gap-2 ${!observed.usb_printer_module_available ? 'opacity-50' : ''}`}>
+              <input type="checkbox" checked={Boolean(hardware.serve_usb_peripherals)} disabled={busy || !observed.usb_printer_module_available} onChange={(event) => onHardwareChange(device, { ...hardware, serve_usb_peripherals: event.target.checked })} />
+              Serve USB peripherals
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={Boolean(cash.accepts_cash)} disabled={busy} onChange={(event) => onHardwareChange(device, { ...hardware, cash: { ...cash, accepts_cash: event.target.checked, auto_open: event.target.checked ? Boolean(cash.auto_open) : false } })} />
+              Accept cash
+            </label>
+            <label className={`flex items-center gap-2 ${!cash.accepts_cash || !assignments.cash_drawer ? 'opacity-50' : ''}`}>
+              <input type="checkbox" checked={Boolean(cash.auto_open)} disabled={busy || !cash.accepts_cash || !assignments.cash_drawer} onChange={(event) => onHardwareChange(device, { ...hardware, cash: { ...cash, auto_open: event.target.checked } })} />
+              Auto-open assigned drawer
+            </label>
+          </div>
+          {discoveredPrinters.length > 0 && (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {discoveredPrinters.map((printer) => {
+                const endpoint = endpointFor(printer)
+                return (
+                  <div key={`${printer.vendor_id}:${printer.product_id}:${printer.device_id}`} className="rounded-lg border border-dash-border bg-[var(--glass-bg)] px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold text-dash-cream">{printer.name || 'USB printer'}</span>
+                      <Badge variant={endpoint ? 'success' : 'warning'}>{endpoint ? 'Configured' : 'Discovered — unassigned'}</Badge>
+                    </div>
+                    <p className="mt-1 font-mono text-[10px] text-dash-tertiary">
+                      USB {printer.vendor_id}:{printer.product_id}{printer.serial_number ? ` · serial ${printer.serial_number}` : ''} · {printer.has_permission ? 'permission ready' : 'permission needed'}
+                    </p>
+                    <p className="mt-1 text-[10px] text-dash-tertiary">{endpoint ? endpoint.name : 'Assign this printer from Manager → Daily Operations → USB Printer Agent on this terminal.'}</p>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -169,7 +226,7 @@ function DeviceRow({ device, printerTargets, onRename, onPrinterChange, onToggle
 function FailoverTargetRow({ target, targets, busy, onSave }) {
   const policy = target.failover || {}
   const [action, setAction] = useState(policy.action || 'hold')
-  const [backupTargetId, setBackupTargetId] = useState(policy.backup_target_id || '')
+  const [backupTargetIds, setBackupTargetIds] = useState(() => policy.backup_target_ids?.length ? policy.backup_target_ids : policy.backup_target_id ? [policy.backup_target_id] : [])
   const [autoActivate, setAutoActivate] = useState(Boolean(policy.auto_activate))
   const isDown = target.last_test_status === 'failed'
   const isHealthy = ['healthy', 'passed', 'printed'].includes(target.last_test_status)
@@ -178,13 +235,23 @@ function FailoverTargetRow({ target, targets, busy, onSave }) {
 
   useEffect(() => {
     setAction(policy.action || 'hold')
-    setBackupTargetId(policy.backup_target_id || '')
+    setBackupTargetIds(policy.backup_target_ids?.length ? policy.backup_target_ids : policy.backup_target_id ? [policy.backup_target_id] : [])
     setAutoActivate(Boolean(policy.auto_activate))
-  }, [policy.action, policy.auto_activate, policy.backup_target_id])
+  }, [policy.action, policy.auto_activate, policy.backup_target_id, JSON.stringify(policy.backup_target_ids || [])])
+
+  const normalizedBackupIds = backupTargetIds.filter(Boolean)
+  const setBackupAt = (index, value) => {
+    setBackupTargetIds((current) => {
+      const next = [...current]
+      next[index] = value
+      return next.slice(0, 4)
+    })
+  }
 
   const submit = (nextActive = active) => onSave(target, {
     action,
-    backup_target_id: action === 'reroute' ? backupTargetId || null : null,
+    backup_target_id: action === 'reroute' ? normalizedBackupIds[0] || null : null,
+    backup_target_ids: action === 'reroute' ? normalizedBackupIds : [],
     auto_activate: action === 'reroute' && autoActivate,
     active: action === 'reroute' && nextActive,
     reason: nextActive ? 'Manager activated printer outage reroute' : active ? 'Manager restored normal printer routing' : 'Manager configured printer outage policy',
@@ -216,18 +283,22 @@ function FailoverTargetRow({ target, targets, busy, onSave }) {
           <option value="hold">Hold & alert</option>
           <option value="reroute">Reroute to backup</option>
         </SelectField>
-        <SelectField label="Backup printer" value={backupTargetId} disabled={busy || active || action !== 'reroute'} onChange={(event) => setBackupTargetId(event.target.value)}>
-          <option value="">Choose backup…</option>
-          {eligibleBackups.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
-        </SelectField>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {[0, 1, 2, 3].map((index) => (
+            <SelectField key={index} label={`Backup ${index + 1}`} value={backupTargetIds[index] || ''} disabled={busy || active || action !== 'reroute'} onChange={(event) => setBackupAt(index, event.target.value)}>
+              <option value="">— none —</option>
+              {eligibleBackups.filter((candidate) => !normalizedBackupIds.includes(candidate.id) || backupTargetIds[index] === candidate.id).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+            </SelectField>
+          ))}
+        </div>
         <label className={`flex min-h-[34px] items-center gap-2 text-xs text-dash-secondary ${action !== 'reroute' ? 'opacity-50' : ''}`}>
           <input type="checkbox" checked={autoActivate} disabled={busy || active || action !== 'reroute'} onChange={(event) => setAutoActivate(event.target.checked)} />
           Auto-reroute after a confirmed failure
         </label>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" disabled={busy || active || (action === 'reroute' && !backupTargetId)} onClick={() => submit(false)}>Save policy</Button>
+          <Button variant="outline" size="sm" disabled={busy || active || (action === 'reroute' && !normalizedBackupIds.length)} onClick={() => submit(false)}>Save policy</Button>
           {action === 'reroute' && !active && (
-            <Button size="sm" disabled={busy || !backupTargetId} onClick={() => submit(true)}>Reroute now</Button>
+            <Button size="sm" disabled={busy || !normalizedBackupIds.length} onClick={() => submit(true)}>Reroute now</Button>
           )}
         </div>
       </div>
@@ -472,9 +543,18 @@ export default function StoreDevicesPanel({ restaurantId }) {
   }, [loadFailover, restaurantId])
 
   const printerTargets = useMemo(
-    () => (config?.targets || []).filter((t) => t.is_active),
+    () => (config?.targets || []).filter((t) => t.is_active && t.target_type === 'printer'),
     [config?.targets]
   )
+  const physicalPrinterTargets = useMemo(
+    () => (failoverStatus?.targets || []).filter((target) => target.is_active && target.target_type === 'printer'),
+    [failoverStatus?.targets]
+  )
+  const cashDrawerTargetIds = useMemo(() => new Set(
+    (config?.devices || []).flatMap((device) => (device.printers || [])
+      .filter((assignment) => assignment.role === 'cash_drawer')
+      .map((assignment) => assignment.target_id))
+  ), [config?.devices])
 
   // Test tickets print via an online POS device's LAN bridge, so the request
   // is queued in the DB and polled until a device picks it up (or we give up).
@@ -568,9 +648,11 @@ export default function StoreDevicesPanel({ restaurantId }) {
               key={device.id}
               device={device}
               printerTargets={printerTargets}
+              printerEndpoints={config.printerEndpoints}
               busy={busy}
               onRename={(d, name) => mutate(() => updateDevice(d.id, { name }))}
               onPrinterChange={(d, role, targetId) => mutate(() => setDevicePrinter(d.id, role, targetId))}
+              onHardwareChange={(d, hardwareConfig) => mutate(() => updateDevice(d.id, { hardware_config: hardwareConfig }))}
               onToggleStatus={(d) => mutate(() => updateDevice(d.id, { status: d.status === 'revoked' ? 'active' : 'revoked' }))}
             />
           ))}
@@ -587,6 +669,7 @@ export default function StoreDevicesPanel({ restaurantId }) {
           {targets.map((target) => {
             const test = testStates[target.id]
             const canTest = target.is_active && target.target_type === 'printer' && Boolean(target.config?.host)
+            const controlsDrawer = cashDrawerTargetIds.has(target.id)
             return (
               <div key={target.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-dash-border bg-[var(--glass-bg)] px-4 py-3">
                 <span className="text-sm font-semibold text-dash-cream">{target.name}</span>
@@ -595,6 +678,45 @@ export default function StoreDevicesPanel({ restaurantId }) {
                   {CONNECTION_TYPES.find((c) => c.id === target.connection_type)?.label || target.connection_type}
                   {target.config?.host ? ` · ${target.config.host}${target.config.port ? `:${target.config.port}` : ''}` : ''}
                 </span>
+                {controlsDrawer && (
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-dash-secondary">
+                    <label className="flex items-center gap-2">
+                      <span>Connected through</span>
+                      <select
+                        value={target.config?.physical_target_id || ''}
+                        disabled={busy}
+                        onChange={(event) => mutate(() => updatePrinterTarget(target.id, { config: { ...(target.config || {}), physical_target_id: event.target.value || null } }))}
+                        className="min-h-[30px] rounded-lg border border-dash-border bg-[var(--glass-bg)] px-2 text-xs text-dash-cream"
+                      >
+                        <option value="">This target directly</option>
+                        {physicalPrinterTargets.map((physical) => <option key={physical.id} value={physical.id}>{physical.name} · its ordered Ethernet/USB paths</option>)}
+                      </select>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <span>Drawer port</span>
+                      <select
+                        value={Number(target.config?.drawer?.port || 1)}
+                        disabled={busy}
+                        onChange={(event) => mutate(() => updatePrinterTarget(target.id, {
+                          config: {
+                            ...(target.config || {}),
+                            drawer: {
+                              ...(target.config?.drawer || {}),
+                              port: Number(event.target.value),
+                              profile: target.config?.drawer?.profile || 'escpos_standard',
+                              pulse_on_units: Number(target.config?.drawer?.pulse_on_units || 50),
+                              pulse_off_units: Number(target.config?.drawer?.pulse_off_units || 250),
+                            },
+                          },
+                        }))}
+                        className="min-h-[30px] rounded-lg border border-dash-border bg-[var(--glass-bg)] px-2 text-xs text-dash-cream"
+                      >
+                        <option value={1}>Drawer 1</option>
+                        <option value={2}>Drawer 2</option>
+                      </select>
+                    </label>
+                  </div>
+                )}
                 {test && (
                   <span className={`text-xs ${test.phase === 'failed' ? 'text-dash-danger' : test.phase === 'printed' ? 'text-dash-success' : 'text-dash-secondary'}`}>
                     {test.phase === 'queued' ? 'Sending test ticket…' : test.message}

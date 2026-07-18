@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../shared/lib/supabase'
 import { useAuth } from '../../auth'
 
-// Analytics (profit breakdowns by period), rates/payout data, and devices
-// (resellers do the IT for their stores) are mandatory for resellers; owners
-// toggle the remaining operational surfaces per store.
-export const RESELLER_TOGGLEABLE_TABS = ['setup', 'menu', 'feedback', 'team', 'scheduling', 'messaging', 'payments']
+// Analytics and rates/payout data remain mandatory. Device and peripheral
+// management is explicitly grantable per store because it can operate live
+// terminals, printers, and drawers.
+export const RESELLER_TOGGLEABLE_TABS = ['devices', 'setup', 'menu', 'feedback', 'team', 'scheduling', 'messaging', 'payments']
 export const DEFAULT_RESELLER_PERMISSIONS = {
+  devices: true,
   setup: true,
   menu: true,
   feedback: true,
@@ -68,14 +69,13 @@ export function useAllowedStoreTabs(restaurant) {
       .then(({ data, error }) => {
         if (cancelled) return
         if (error) {
-          // Fail closed: mandatory analytics + devices only.
-          setAllowed(['analytics', 'devices'])
+          // Fail closed to the mandatory read-only surface.
+          setAllowed(['analytics'])
           return
         }
         const permissions = normalizePermissions(data?.permissions)
         setAllowed([
           'analytics',
-          'devices',
           ...RESELLER_TOGGLEABLE_TABS.filter((tab) => permissions[tab]),
         ])
       })

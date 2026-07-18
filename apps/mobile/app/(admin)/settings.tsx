@@ -153,6 +153,7 @@ const MANAGER_PERMISSION_FIELDS = [
   ['can_view_reports', 'Reports'],
   ['can_close_drawer', 'Close drawer'],
   ['can_close_day', 'Close day'],
+  ['can_reopen_business_day', 'Reopen business day'],
   ['can_change_payment_settings', 'Payment settings'],
 ] as const;
 const CASH_TRACKING_OPTIONS = [
@@ -362,6 +363,7 @@ function defaultRolePermission(roleKey: string): RolePermission {
     can_view_reports: elevated,
     can_close_drawer: elevated || cashier,
     can_close_day: elevated,
+    can_reopen_business_day: key === 'owner',
     can_change_payment_settings: key === 'owner',
     require_manager_pin_for_approval: !elevated,
   };
@@ -377,7 +379,7 @@ const DEFAULT_CLOSEOUT_SETTINGS: CloseoutSettings = {
   cash_variance_threshold: '',
   server_require_all_checks_closed: true,
   server_require_tabs_closed: true,
-  server_require_cash_tips_declared: true,
+  server_require_cash_tips_declared: false,
   server_require_credit_tips_reviewed: true,
   server_require_tipout_entry: false,
   server_require_manager_approval: true,
@@ -391,6 +393,8 @@ const DEFAULT_CLOSEOUT_SETTINGS: CloseoutSettings = {
   eod_require_tip_adjustments_reviewed: true,
   eod_report_recipients: [],
   eod_reports: ['sales_summary', 'cash_drawer_summary', 'tip_summary', 'discounts_voids_refunds', 'tax_summary'],
+  eod_email_on_close: false,
+  eod_email_formats: ['pdf'],
 };
 
 const DEFAULT_CHECK_WORKFLOW_SETTINGS: CheckWorkflowSettings = {
@@ -710,7 +714,10 @@ function normalizeCloseoutSettings(row: CloseoutSettings | undefined): CloseoutS
     cash_variance_threshold: numberText(source.cash_variance_threshold),
     server_checkout_report_delivery: CHECKOUT_REPORT_OPTIONS.some(([value]) => value === source.server_checkout_report_delivery) ? source.server_checkout_report_delivery : 'print',
     eod_batch_close_mode: EOD_BATCH_OPTIONS.some(([value]) => value === source.eod_batch_close_mode) ? source.eod_batch_close_mode : 'prompt_manager',
+    server_require_cash_tips_declared: false,
     eod_report_recipients: Array.isArray(source.eod_report_recipients) ? source.eod_report_recipients.map(String).filter(Boolean) : [],
+    eod_email_on_close: source.eod_email_on_close === true,
+    eod_email_formats: Array.isArray(source.eod_email_formats) && source.eod_email_formats.length ? source.eod_email_formats.filter((format): format is 'pdf' | 'xlsx' => format === 'pdf' || format === 'xlsx') : ['pdf'],
     eod_reports: normalizeReports(source.eod_reports),
   };
 }
@@ -1853,7 +1860,6 @@ export default function OwnerSettings() {
           {[
             ['server_require_all_checks_closed', 'Checks closed'],
             ['server_require_tabs_closed', 'Tabs closed'],
-            ['server_require_cash_tips_declared', 'Cash tips'],
             ['server_require_credit_tips_reviewed', 'Credit tips'],
             ['server_require_tipout_entry', 'Tipout'],
             ['server_require_manager_approval', 'Manager approval'],
@@ -1887,6 +1893,13 @@ export default function OwnerSettings() {
           style={styles.setupInput}
         />
         <View style={styles.choiceWrap}>
+          <Pressable onPress={() => updateCloseout({ eod_email_on_close: !closeoutEdits.eod_email_on_close })} style={[styles.choicePill, closeoutEdits.eod_email_on_close && styles.choicePillActive]}>
+            <UiText variant="caption" style={closeoutEdits.eod_email_on_close ? styles.choiceTextActive : styles.choiceText}>Email report on close</UiText>
+          </Pressable>
+          {(['pdf', 'xlsx'] as const).map((format) => {
+            const active = closeoutEdits.eod_email_formats.includes(format);
+            return <Pressable key={format} onPress={() => updateCloseout({ eod_email_formats: active ? closeoutEdits.eod_email_formats.filter((value) => value !== format) : [...closeoutEdits.eod_email_formats, format] })} style={[styles.choicePill, active && styles.choicePillActive]}><UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{format.toUpperCase()}</UiText></Pressable>;
+          })}
           {[
             ['eod_require_drawers_closed', 'Drawers closed'],
             ['eod_require_servers_checked_out', 'Servers checked out'],

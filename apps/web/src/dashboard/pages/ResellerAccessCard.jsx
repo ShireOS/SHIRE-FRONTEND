@@ -9,6 +9,7 @@ import {
 } from '../data/resellerAccess'
 
 const TAB_LABELS = {
+  devices: 'Devices & peripherals',
   setup: 'Setup',
   team: 'Team & pay',
   scheduling: 'Scheduling',

@@ -211,6 +211,7 @@ const MANAGER_PERMISSION_OPTIONS = [
   { key: 'can_view_reports', label: 'Reports' },
   { key: 'can_close_drawer', label: 'Close drawer' },
   { key: 'can_close_day', label: 'Close day' },
+  { key: 'can_reopen_business_day', label: 'Reopen business day' },
   { key: 'can_change_payment_settings', label: 'Payment settings' },
   { key: 'can_edit_sent_items_within_window', label: 'Sent corrections in window' },
   { key: 'can_edit_sent_items_after_window', label: 'Sent corrections after window' },
@@ -1001,6 +1002,7 @@ function defaultRolePermission(roleKey) {
     can_view_reports: elevated,
     can_close_drawer: elevated || cashier,
     can_close_day: elevated,
+    can_reopen_business_day: key === 'owner',
     can_change_payment_settings: key === 'owner',
     can_edit_sent_items_within_window: elevated || service,
     can_edit_sent_items_after_window: elevated,
@@ -1037,7 +1039,7 @@ function defaultCloseoutSettings() {
     cash_variance_threshold: '',
     server_require_all_checks_closed: true,
     server_require_tabs_closed: true,
-    server_require_cash_tips_declared: true,
+    server_require_cash_tips_declared: false,
     server_require_credit_tips_reviewed: true,
     server_require_tipout_entry: false,
     server_require_manager_approval: true,
@@ -1051,6 +1053,8 @@ function defaultCloseoutSettings() {
     eod_require_tip_adjustments_reviewed: true,
     eod_report_recipients: [],
     eod_reports: ['sales_summary', 'cash_drawer_summary', 'tip_summary', 'discounts_voids_refunds', 'tax_summary'],
+    eod_email_on_close: false,
+    eod_email_formats: ['pdf'],
   }
 }
 
@@ -1388,7 +1392,10 @@ function normalizeCloseoutSettings(row) {
     cash_variance_threshold: source.cash_variance_threshold == null ? '' : sanitizeNumber(source.cash_variance_threshold),
     server_checkout_report_delivery: CHECKOUT_REPORT_OPTIONS.some(option => option.value === source.server_checkout_report_delivery) ? source.server_checkout_report_delivery : fallback.server_checkout_report_delivery,
     eod_batch_close_mode: EOD_BATCH_OPTIONS.some(option => option.value === source.eod_batch_close_mode) ? source.eod_batch_close_mode : fallback.eod_batch_close_mode,
+    server_require_cash_tips_declared: false,
     eod_report_recipients: Array.isArray(source.eod_report_recipients) ? source.eod_report_recipients.map(String).filter(Boolean) : [],
+    eod_email_on_close: source.eod_email_on_close === true,
+    eod_email_formats: Array.isArray(source.eod_email_formats) && source.eod_email_formats.length ? source.eod_email_formats.filter(format => format === 'pdf' || format === 'xlsx') : ['pdf'],
     eod_reports: Array.isArray(source.eod_reports) && source.eod_reports.length > 0
       ? source.eod_reports.map(String).filter(report => EOD_REPORT_OPTIONS.some(option => option.value === report))
       : fallback.eod_reports,
@@ -3499,7 +3506,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                 {[
                   ['server_require_all_checks_closed', 'Checks closed'],
                   ['server_require_tabs_closed', 'Tabs closed'],
-                  ['server_require_cash_tips_declared', 'Cash tips declared'],
                   ['server_require_credit_tips_reviewed', 'Credit tips reviewed'],
                   ['server_require_tipout_entry', 'Tipout entry'],
                   ['server_require_manager_approval', 'Manager approval'],
@@ -3519,6 +3525,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                 <TextInput value={closeoutSettings.eod_report_recipients.join(', ')} onChange={event => updateCloseoutSettings({ eod_report_recipients: event.target.value.split(',').map(email => email.trim()).filter(Boolean) })} placeholder="Report emails, comma-separated" />
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
+                <SmallButton variant={closeoutSettings.eod_email_on_close ? 'primary' : 'secondary'} onClick={() => updateCloseoutSettings({ eod_email_on_close: !closeoutSettings.eod_email_on_close })}>Email report on close</SmallButton>
+                <SmallButton variant={closeoutSettings.eod_email_formats.includes('pdf') ? 'primary' : 'secondary'} onClick={() => updateCloseoutSettings({ eod_email_formats: toggleDiscountArrayValue(closeoutSettings.eod_email_formats, 'pdf') })}>PDF</SmallButton>
+                <SmallButton variant={closeoutSettings.eod_email_formats.includes('xlsx') ? 'primary' : 'secondary'} onClick={() => updateCloseoutSettings({ eod_email_formats: toggleDiscountArrayValue(closeoutSettings.eod_email_formats, 'xlsx') })}>Excel</SmallButton>
                 {[
                   ['eod_require_drawers_closed', 'Drawers closed'],
                   ['eod_require_servers_checked_out', 'Servers checked out'],

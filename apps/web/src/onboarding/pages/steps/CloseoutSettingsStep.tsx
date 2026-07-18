@@ -119,7 +119,6 @@ export function CloseoutSettingsStep({ onboarding }: CloseoutSettingsStepProps) 
         <div className="mt-3 flex flex-wrap gap-2">
           <Toggle active={settings.server_require_all_checks_closed} onClick={() => update({ server_require_all_checks_closed: !settings.server_require_all_checks_closed })}>Checks closed</Toggle>
           <Toggle active={settings.server_require_tabs_closed} onClick={() => update({ server_require_tabs_closed: !settings.server_require_tabs_closed })}>Tabs closed</Toggle>
-          <Toggle active={settings.server_require_cash_tips_declared} onClick={() => update({ server_require_cash_tips_declared: !settings.server_require_cash_tips_declared })}>Cash tips declared</Toggle>
           <Toggle active={settings.server_require_credit_tips_reviewed} onClick={() => update({ server_require_credit_tips_reviewed: !settings.server_require_credit_tips_reviewed })}>Credit tips reviewed</Toggle>
           <Toggle active={settings.server_require_tipout_entry} onClick={() => update({ server_require_tipout_entry: !settings.server_require_tipout_entry })}>Tipout entry</Toggle>
           <Toggle active={settings.server_require_manager_approval} onClick={() => update({ server_require_manager_approval: !settings.server_require_manager_approval })}>Manager approval</Toggle>
@@ -141,6 +140,9 @@ export function CloseoutSettingsStep({ onboarding }: CloseoutSettingsStepProps) 
           />
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
+          <Toggle active={settings.eod_email_on_close} onClick={() => update({ eod_email_on_close: !settings.eod_email_on_close })}>Email final report on close</Toggle>
+          <Toggle active={settings.eod_email_formats.includes('pdf')} onClick={() => update({ eod_email_formats: settings.eod_email_formats.includes('pdf') ? settings.eod_email_formats.filter(format => format !== 'pdf') : [...settings.eod_email_formats, 'pdf'] })}>PDF</Toggle>
+          <Toggle active={settings.eod_email_formats.includes('xlsx')} onClick={() => update({ eod_email_formats: settings.eod_email_formats.includes('xlsx') ? settings.eod_email_formats.filter(format => format !== 'xlsx') : [...settings.eod_email_formats, 'xlsx'] })}>Excel</Toggle>
           <Toggle active={settings.eod_require_drawers_closed} onClick={() => update({ eod_require_drawers_closed: !settings.eod_require_drawers_closed })}>Drawers closed</Toggle>
           <Toggle active={settings.eod_require_servers_checked_out} onClick={() => update({ eod_require_servers_checked_out: !settings.eod_require_servers_checked_out })}>Servers checked out</Toggle>
           <Toggle active={settings.eod_require_open_checks_resolved} onClick={() => update({ eod_require_open_checks_resolved: !settings.eod_require_open_checks_resolved })}>Open checks resolved</Toggle>
