@@ -1,4 +1,5 @@
 import { apiRequest } from './mobileApi';
+import type { ReportingDimensions } from './homepageWidgets';
 
 export const REPORT_SECTIONS = [
   'sales_revenue',
@@ -43,6 +44,16 @@ export type ReportRecipient = {
 
 export function fetchRestaurantReport(restaurantId: string, query: URLSearchParams) {
   return apiRequest<RestaurantReport>(`/restaurants/${restaurantId}/reports?${query.toString()}`);
+}
+
+export function fetchRestaurantReportingDimensions(restaurantId: string) {
+  return apiRequest<ReportingDimensions>(`/restaurants/${restaurantId}/reports/dimensions`);
+}
+
+export function assignReportingDeviceSection(restaurantId: string, deviceId: string, sectionId: string | null) {
+  return apiRequest(`/restaurants/${restaurantId}/reports/dimensions/devices/${deviceId}`, {
+    method: 'PUT', body: { section_id: sectionId },
+  });
 }
 
 export function fetchReportPreference(restaurantId: string) {

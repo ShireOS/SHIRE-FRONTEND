@@ -2,6 +2,7 @@ import {
   downloadHomepageWidgetPdf,
   fetchHomepageData,
   fetchHomepagePreferences,
+  fetchReportingDimensions,
   saveHomepagePreferences,
   type HomepagePreferences,
   type WidgetCatalogItem,
@@ -9,6 +10,7 @@ import {
   type WidgetPdfPayload,
   type WidgetScope,
   type WidgetSettings,
+  type ReportingDimensions,
 } from '@/api/homepageWidgets';
 import type { PortfolioPeriod } from '@/api/portfolioReports';
 import { semanticColors, statusColors } from '@/styles/colors';
@@ -69,14 +71,19 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
   const [error, setError] = useState('');
   const [configure, setConfigure] = useState(false);
   const [settingsId, setSettingsId] = useState<string | null>(null);
+  const [dimensions, setDimensions] = useState<ReportingDimensions | null>(null);
   const groupKey = JSON.stringify(groupIds);
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const next = await fetchHomepagePreferences(scope, restaurantId);
-      setPreferences(next);
-      const ids = next.widget_order.filter((id) => next.visible_widgets.includes(id));
       const requestedGroupIds = JSON.parse(groupKey) as string[] | null;
+      const [next, nextDimensions] = await Promise.all([
+        fetchHomepagePreferences(scope, restaurantId),
+        fetchReportingDimensions(scope, restaurantId, requestedGroupIds, includeUngrouped),
+      ]);
+      setPreferences(next);
+      setDimensions(nextDimensions);
+      const ids = next.widget_order.filter((id) => next.visible_widgets.includes(id));
       const portfolioScope = scope === 'portfolio'
         ? { ...(requestedGroupIds?.length ? { group_ids: requestedGroupIds } : {}), include_ungrouped: includeUngrouped }
         : {};
@@ -102,7 +109,7 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
       return <Widget key={id} widget={widget} data={data[id]} settings={preferences?.widget_settings[id] || {}} onSettings={() => setSettingsId(id)} onPress={onWidgetPress ? () => onWidgetPress(id) : undefined} />;
     })}
     {configure && preferences ? <ConfigureSheet preferences={preferences} onClose={() => setConfigure(false)} onSave={save} /> : null}
-    {selectedWidget && preferences ? <SettingsSheet widget={selectedWidget} widgetData={data[settingsId!]} settings={preferences.widget_settings[settingsId!] || {}} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={(next) => save({ visible_widgets: preferences.visible_widgets, widget_order: preferences.widget_order, widget_settings: { ...preferences.widget_settings, [settingsId!]: next } })} /> : null}
+    {selectedWidget && preferences ? <SettingsSheet widget={selectedWidget} widgetData={data[settingsId!]} dimensions={dimensions} settings={preferences.widget_settings[settingsId!] || {}} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={(next) => save({ visible_widgets: preferences.visible_widgets, widget_order: preferences.widget_order, widget_settings: { ...preferences.widget_settings, [settingsId!]: next } })} /> : null}
   </View>;
 }
 
@@ -176,7 +183,23 @@ function ConfigureSheet({ preferences, onClose, onSave }: { preferences: Homepag
   return <Sheet title="Configure homepage" onClose={onClose}><Text style={styles.sectionLabel}>VISIBLE WIDGETS</Text>{preferences.catalog.map((widget) => <Pressable key={widget.id} onPress={() => setVisible((current) => current.includes(widget.id) ? current.filter((id) => id !== widget.id) : [...current, widget.id])} style={[styles.option, selected.has(widget.id) && styles.optionActive]}><View style={styles.flex}><Text style={styles.optionTitle}>{widget.label}</Text><Text style={styles.muted}>{widget.description}</Text></View>{selected.has(widget.id) ? <Feather name="check" size={18} color={semanticColors.primary} /> : null}</Pressable>)}<Text style={styles.sectionLabel}>HOMEPAGE ORDER</Text>{ordered.map((id, index) => <View key={id} style={styles.orderRow}><Text style={styles.orderIndex}>{index + 1}</Text><Text style={[styles.optionTitle, styles.flex]}>{preferences.catalog.find((item) => item.id === id)?.label}</Text><Pressable disabled={index === 0} onPress={() => move(id, -1)} style={styles.iconButton}><Feather name="arrow-up" size={16} color={semanticColors.textMuted} /></Pressable><Pressable disabled={index === ordered.length - 1} onPress={() => move(id, 1)} style={styles.iconButton}><Feather name="arrow-down" size={16} color={semanticColors.textMuted} /></Pressable></View>)}<Pressable disabled={saving || !visible.length} onPress={async () => { setSaving(true); try { await onSave({ visible_widgets: visible, widget_order: order, widget_settings: preferences.widget_settings }); } finally { setSaving(false); } }} style={styles.primaryButton}><Text style={styles.primaryText}>{saving ? 'Saving...' : 'Save homepage'}</Text></Pressable></Sheet>;
 }
 
-function SettingsSheet({ widget, widgetData, settings, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave }: { widget: WidgetCatalogItem; widgetData?: WidgetData; settings: WidgetSettings; period: PortfolioPeriod; anchorDate?: string | null; scope: WidgetScope; restaurantId?: string; groupIds?: string[] | null; includeUngrouped: boolean; onClose: () => void; onSave: (next: WidgetSettings) => Promise<void> }) {
+function ReportingScopeFields<T extends WidgetSettings | WidgetPdfPayload>({ widget, dimensions, value, onChange }: { widget: WidgetCatalogItem; dimensions: ReportingDimensions | null; value: T; onChange: (value: T) => void }) {
+  if (!widget.reporting_dimensions.length) return <Text style={styles.auditHelp}>This widget is restaurant-wide because its source records do not carry a reliable section or device assignment.</Text>;
+  const dimension = value.scope_dimension || 'none';
+  const ids = value.scope_ids || [];
+  const options = dimension === 'revenue_center' ? (dimensions?.sections || []) : dimension === 'device' ? (dimensions?.devices || []) : [];
+  const setDimension = (next: 'none' | 'revenue_center' | 'device') => onChange({ ...value, scope_dimension: next, scope_mode: next === 'none' ? 'cumulative' : value.scope_mode || 'cumulative', scope_ids: [] });
+  const toggle = (id: string) => onChange({ ...value, scope_ids: ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id] });
+  return <View style={styles.scopeBox}>
+    <Text style={styles.sectionLabel}>REPORTING SCOPE</Text>
+    <View style={styles.choiceWrap}><ScopeChoice label="Whole restaurant" selected={dimension === 'none'} onPress={() => setDimension('none')} />{widget.reporting_dimensions.includes('revenue_center') ? <ScopeChoice label="Sections" selected={dimension === 'revenue_center'} onPress={() => setDimension('revenue_center')} /> : null}{widget.reporting_dimensions.includes('device') ? <ScopeChoice label="Devices" selected={dimension === 'device'} onPress={() => setDimension('device')} /> : null}</View>
+    {dimension !== 'none' ? <><Text style={styles.muted}>No selection includes every {dimension === 'device' ? 'device' : 'section'}. Sections are used as revenue centers in reports.</Text><View style={styles.choiceWrap}><ScopeChoice label="Cumulative total" selected={(value.scope_mode || 'cumulative') === 'cumulative'} onPress={() => onChange({ ...value, scope_mode: 'cumulative' })} /><ScopeChoice label="Break down results" selected={value.scope_mode === 'breakdown'} onPress={() => onChange({ ...value, scope_mode: 'breakdown' })} /></View>{options.map((option) => <CheckRow key={option.id} label={`${option.restaurant_name ? `${option.restaurant_name} / ` : ''}${option.name}${dimension === 'device' && option.section_name ? ` (${option.section_name})` : ''}`} checked={ids.includes(option.id)} onPress={() => toggle(option.id)} />)}</> : null}
+  </View>;
+}
+
+function ScopeChoice({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) { return <Pressable onPress={onPress} style={[styles.choice, selected && styles.choiceActive]}><Text style={[styles.choiceText, selected && styles.choiceTextActive]}>{label}</Text></Pressable>; }
+
+function SettingsSheet({ widget, widgetData, dimensions, settings, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave }: { widget: WidgetCatalogItem; widgetData?: WidgetData; dimensions: ReportingDimensions | null; settings: WidgetSettings; period: PortfolioPeriod; anchorDate?: string | null; scope: WidgetScope; restaurantId?: string; groupIds?: string[] | null; includeUngrouped: boolean; onClose: () => void; onSave: (next: WidgetSettings) => Promise<void> }) {
   const dates = periodDates(period, anchorDate);
   const [tab, setTab] = useState<'display' | 'pdf'>('display');
   const [working, setWorking] = useState(false);
@@ -188,6 +211,7 @@ function SettingsSheet({ widget, widgetData, settings, period, anchorDate, scope
     chart_type: settings.chart_type || (widget.id === 'sales_trend' ? 'line' : 'bar'),
     sort_by: settings.sort_by || widget.default_columns[0], sort_direction: settings.sort_direction || 'desc', limit: settings.limit || 12,
     alert_z_score: settings.alert_z_score || 2, alert_min_actions: settings.alert_min_actions || 5,
+    scope_dimension: settings.scope_dimension || 'none', scope_mode: settings.scope_mode || 'cumulative', scope_ids: settings.scope_ids || [],
   });
   const [pdf, setPdf] = useState<WidgetPdfPayload>({
     start_date: dates.start, end_date: dates.end, grain: widget.id === 'sales_trend' ? 'day' : 'total',
@@ -195,6 +219,7 @@ function SettingsSheet({ widget, widgetData, settings, period, anchorDate, scope
     chart_type: widget.id === 'sales_trend' ? 'line' : 'bar', title: `${widget.label} report`,
     employee_ids: [], action_types: ['discount', 'comp', 'item_void', 'check_void'], reason_codes: [],
     include_team_average: true, alert_z_score: settings.alert_z_score || 2, alert_min_actions: settings.alert_min_actions || 5,
+    scope_dimension: settings.scope_dimension || 'none', scope_mode: settings.scope_mode || 'cumulative', scope_ids: settings.scope_ids || [],
     ...(scope === 'portfolio' ? { ...(groupIds?.length ? { group_ids: groupIds } : {}), include_ungrouped: includeUngrouped } : {}),
   });
   const toggle = (values: string[], value: string) => values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
@@ -248,7 +273,7 @@ function SettingsSheet({ widget, widgetData, settings, period, anchorDate, scope
 
   return <Sheet title={widget.label} onClose={onClose}>
     <View style={styles.tabs}><Tab label="Display" active={tab === 'display'} onPress={() => setTab('display')} /><Tab label="PDF report" active={tab === 'pdf'} onPress={() => setTab('pdf')} /></View>
-    {tab === 'display' ? <>{widget.id === 'discount_review' ? auditDisplay : genericDisplay}<Pressable disabled={widget.id !== 'discount_review' && !display.display_columns?.length} onPress={() => void onSave(display)} style={styles.primaryButton}><Text style={styles.primaryText}>Save widget</Text></Pressable></> : <><View style={styles.fieldRow}><LabeledInput label="From" value={pdf.start_date} onChange={(value) => setPdf({ ...pdf, start_date: value })} /><LabeledInput label="Through" value={pdf.end_date} onChange={(value) => setPdf({ ...pdf, end_date: value })} /></View><LabeledInput label="Report title" value={pdf.title} onChange={(value) => setPdf({ ...pdf, title: value })} />{widget.id === 'discount_review' ? auditPdf : genericPdf}<Pressable disabled={working || (widget.id === 'discount_review' ? !pdf.action_types?.length : !pdf.columns.length)} onPress={() => void download()} style={styles.primaryButton}><Feather name="download" size={16} color={semanticColors.textInverse} /><Text style={styles.primaryText}>{working ? 'Building PDF...' : 'Download PDF'}</Text></Pressable></>}
+    {tab === 'display' ? <><ReportingScopeFields widget={widget} dimensions={dimensions} value={display} onChange={setDisplay} />{widget.id === 'discount_review' ? auditDisplay : genericDisplay}<Pressable disabled={widget.id !== 'discount_review' && !display.display_columns?.length} onPress={() => void onSave(display)} style={styles.primaryButton}><Text style={styles.primaryText}>Save widget</Text></Pressable></> : <><View style={styles.fieldRow}><LabeledInput label="From" value={pdf.start_date} onChange={(value) => setPdf({ ...pdf, start_date: value })} /><LabeledInput label="Through" value={pdf.end_date} onChange={(value) => setPdf({ ...pdf, end_date: value })} /></View><LabeledInput label="Report title" value={pdf.title} onChange={(value) => setPdf({ ...pdf, title: value })} /><ReportingScopeFields widget={widget} dimensions={dimensions} value={pdf} onChange={setPdf} />{widget.id === 'discount_review' ? auditPdf : genericPdf}<Pressable disabled={working || (widget.id === 'discount_review' ? !pdf.action_types?.length : !pdf.columns.length)} onPress={() => void download()} style={styles.primaryButton}><Feather name="download" size={16} color={semanticColors.textInverse} /><Text style={styles.primaryText}>{working ? 'Building PDF...' : 'Download PDF'}</Text></Pressable></>}
   </Sheet>;
 }
 
@@ -270,5 +295,6 @@ const styles = StyleSheet.create({
   option: { minHeight: 58, borderWidth: 1, borderColor: semanticColors.border, borderRadius: radius.md, padding: spacing[3], flexDirection: 'row', alignItems: 'center', gap: spacing[3] }, optionActive: { borderColor: semanticColors.primary, backgroundColor: statusColors.info.bg }, optionTitle: { ...typography.bodySmall, fontWeight: '600', color: semanticColors.text }, orderRow: { minHeight: 52, borderWidth: 1, borderColor: semanticColors.border, borderRadius: radius.md, paddingHorizontal: spacing[3], flexDirection: 'row', alignItems: 'center', gap: spacing[2] }, orderIndex: { ...typography.caption, color: semanticColors.textSubtle, width: 24 },
   primaryButton: { minHeight: 48, borderRadius: radius.md, backgroundColor: semanticColors.primary, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: spacing[2], marginTop: spacing[3] }, primaryText: { ...typography.bodySmall, fontWeight: '700', color: semanticColors.textInverse }, tabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: semanticColors.border }, tab: { paddingHorizontal: spacing[4], paddingVertical: spacing[3], borderBottomWidth: 2, borderBottomColor: 'transparent' }, tabActive: { borderBottomColor: semanticColors.primary }, tabText: { ...typography.bodySmall, fontWeight: '600', color: semanticColors.textMuted }, tabTextActive: { color: semanticColors.text },
   choiceWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing[2] }, choice: { minHeight: 40, borderWidth: 1, borderColor: semanticColors.border, borderRadius: radius.md, paddingHorizontal: spacing[3], alignItems: 'center', justifyContent: 'center' }, choiceActive: { backgroundColor: semanticColors.primary, borderColor: semanticColors.primary }, choiceText: { ...typography.bodySmall, color: semanticColors.textMuted, textTransform: 'capitalize' }, choiceTextActive: { color: semanticColors.textInverse, fontWeight: '700' },
+  scopeBox: { gap: spacing[2], borderWidth: 1, borderColor: semanticColors.border, borderRadius: radius.md, padding: spacing[3] },
   fieldRow: { flexDirection: 'row', gap: spacing[3] }, field: { flex: 1 }, input: { minHeight: 48, borderWidth: 1, borderColor: semanticColors.border, borderRadius: radius.md, backgroundColor: semanticColors.elevated, color: semanticColors.text, paddingHorizontal: spacing[3] }, switchRow: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 });

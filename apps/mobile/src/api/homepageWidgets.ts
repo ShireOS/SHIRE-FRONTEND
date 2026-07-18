@@ -13,6 +13,7 @@ export type WidgetCatalogItem = {
   default_breakdown: string;
   charts: ('bar' | 'line')[];
   grains: ('total' | 'day' | 'week' | 'month' | 'detail')[];
+  reporting_dimensions: ('revenue_center' | 'device')[];
 };
 export type WidgetSettings = {
   display_grain?: 'total' | 'day' | 'week' | 'month';
@@ -25,6 +26,9 @@ export type WidgetSettings = {
   limit?: number;
   alert_z_score?: number;
   alert_min_actions?: number;
+  scope_dimension?: 'none' | 'revenue_center' | 'device';
+  scope_mode?: 'cumulative' | 'breakdown';
+  scope_ids?: string[];
 };
 export type HomepagePreferences = {
   visible_widgets: string[];
@@ -62,8 +66,18 @@ export type WidgetPdfPayload = {
   include_team_average?: boolean;
   alert_z_score?: number;
   alert_min_actions?: number;
+  scope_dimension?: 'none' | 'revenue_center' | 'device';
+  scope_mode?: 'cumulative' | 'breakdown';
+  scope_ids?: string[];
 };
 export type PdfArtifact = { file_name: string; mime_type: string; base64: string; rows: number };
+export type ReportingDimensions = {
+  sections: { id: string; restaurant_id: string; restaurant_name: string; name: string; section_name?: string | null }[];
+  devices: { id: string; restaurant_id: string; restaurant_name: string; name: string; section_name?: string | null; revenue_center_id?: string | null }[];
+  coverage: { total_orders?: number; section_attributed_orders?: number; device_attributed_orders?: number; unassigned_orders?: number };
+  copy: string;
+  can_manage?: boolean;
+};
 
 function prefix(scope: WidgetScope, restaurantId?: string) {
   if (scope === 'portfolio') return '/api/v1/portfolio-reports/homepage';
@@ -92,4 +106,15 @@ export function fetchHomepageData(scope: WidgetScope, restaurantId: string | und
 
 export function downloadHomepageWidgetPdf(scope: WidgetScope, restaurantId: string | undefined, widgetId: string, payload: WidgetPdfPayload) {
   return apiRequest<PdfArtifact>(`${prefix(scope, restaurantId)}/widgets/${widgetId}/pdf`, { method: 'POST', body: payload });
+}
+
+export function fetchReportingDimensions(scope: WidgetScope, restaurantId?: string, groupIds?: string[] | null, includeUngrouped = false) {
+  if (scope === 'portfolio') {
+    const query = new URLSearchParams();
+    if (groupIds?.length) query.set('group_ids', groupIds.join(','));
+    query.set('include_ungrouped', String(includeUngrouped));
+    return apiGet<ReportingDimensions>(`/api/v1/portfolio-reports/dimensions?${query.toString()}`);
+  }
+  if (!restaurantId) throw new Error('Restaurant is required for reporting dimensions.');
+  return apiGet<ReportingDimensions>(`/api/v1/restaurants/${restaurantId}/reports/dimensions`);
 }
