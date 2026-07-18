@@ -22,7 +22,10 @@ export function ScheduledChangesPanel() {
     try {
       setChanges((await listScheduledChanges()).filter((change) => OPEN_STATUSES.has(change.status)))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load scheduled changes.')
+      // A 404 means the scheduled-changes API is not deployed on this backend;
+      // hide the panel instead of surfacing an error the user can't act on.
+      if ((err as { status?: number })?.status === 404) setChanges([])
+      else setError(err instanceof Error ? err.message : 'Could not load scheduled changes.')
     } finally {
       setLoading(false)
     }

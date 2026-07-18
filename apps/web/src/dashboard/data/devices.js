@@ -48,6 +48,18 @@ export const savePrinterFailover = (restaurantId, targetId, policy) =>
     body: JSON.stringify(policy),
   })
 
+export const saveDeviceHardwareConfig = (restaurantId, deviceId, hardwareConfig, reason) =>
+  fetchPosApi(restaurantId, `/restaurants/${restaurantId}/devices/${deviceId}/hardware-config`, {
+    method: 'PUT',
+    body: JSON.stringify({ hardware_config: hardwareConfig, reason }),
+  })
+
+export const saveCashDrawerTargetConfig = (restaurantId, targetId, config, reason) =>
+  fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printer-targets/${targetId}/cash-drawer-config`, {
+    method: 'PUT',
+    body: JSON.stringify({ config, reason }),
+  })
+
 export async function fetchPortfolioDevices(restaurantIds) {
   if (!restaurantIds || restaurantIds.length === 0) return []
   const { data, error } = await supabase

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CalendarDays, Clock3, FileText, ListChecks, Phone, Plus, Printer, ReceiptText, Trash2, UserRoundCheck, Utensils } from 'lucide-react'
-import { fetchWithSupabaseAuth } from '../../shared/query'
+import { fetchPosApi } from '../../shared/api/posClient'
 
 const ACTION_LABELS = {
   discount: 'Discounts',
@@ -113,7 +113,7 @@ function TerminalHomeDesigner({ restaurantId }) {
   const load = async () => {
     setError('')
     try {
-      const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/terminal-home-config`)
+      const data = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/terminal-home-config`)
       const normalized = normalizeTerminalHomeConfig(data)
       setConfig(normalized)
       setSelectedId((current) => normalized.tiles.some((tile) => tile.id === current) ? current : normalized.tiles[0]?.id || null)
@@ -188,7 +188,7 @@ function TerminalHomeDesigner({ restaurantId }) {
     setMessage('')
     setError('')
     try {
-      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/terminal-home-config`, {
+      const saved = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/terminal-home-config`, {
         method: 'PUT',
         body: JSON.stringify(config),
       })
@@ -394,7 +394,7 @@ export default function PosSettingsPage({ restaurantId }) {
   const load = async () => {
     setError('')
     try {
-      const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reason-presets?include_inactive=true`)
+      const data = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/reason-presets?include_inactive=true`)
       setPresets(Array.isArray(data) ? data : [])
     } catch (err) {
       setError(err?.message || 'Could not load reason presets')
@@ -426,7 +426,7 @@ export default function PosSettingsPage({ restaurantId }) {
     setMessage('')
     setError('')
     try {
-      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reason-presets`, {
+      await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/reason-presets`, {
         method: 'POST',
         body: JSON.stringify({
           id: editingId || undefined,
@@ -452,7 +452,7 @@ export default function PosSettingsPage({ restaurantId }) {
     setMessage('')
     setError('')
     try {
-      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reason-presets/${preset.id}`, { method: 'DELETE' })
+      await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/reason-presets/${preset.id}`, { method: 'DELETE' })
       setMessage('Reason preset archived')
       await load()
     } catch (err) {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Navigate } from 'react-router-dom'
 import { ArrowLeft, Monitor, Search, Settings2 } from 'lucide-react'
 import { useAuth } from '../../auth'
 import { Card, CardContent } from '../components/shared/Card'
@@ -6,6 +7,7 @@ import { Button } from '../components/shared/Button'
 import { Badge } from '../components/shared/Badge'
 import StoreDevicesPanel from '../components/devices/StoreDevicesPanel'
 import { deviceTypeLabel, fetchPortfolioDevices, isDeviceOnline } from '../data/devices'
+import { fetchDeviceAccessibleRestaurantIds } from '../data/resellerAccess'
 
 function SummaryTile({ label, value, tone = 'text-dash-cream' }) {
   return (
@@ -22,9 +24,18 @@ function SummaryTile({ label, value, tone = 'text-dash-cream' }) {
 export default function DevicesPage() {
   const auth = useAuth()
   const restaurants = auth.restaurant.restaurants || []
+  const [accessibleRestaurantIds, setAccessibleRestaurantIds] = useState(null)
+  const accessibleIdSet = useMemo(
+    () => new Set(accessibleRestaurantIds || []),
+    [accessibleRestaurantIds]
+  )
+  const accessibleRestaurants = useMemo(
+    () => restaurants.filter((restaurant) => accessibleIdSet.has(restaurant.id)),
+    [accessibleIdSet, restaurants]
+  )
   const restaurantsById = useMemo(
-    () => Object.fromEntries(restaurants.map((r) => [r.id, r])),
-    [restaurants]
+    () => Object.fromEntries(accessibleRestaurants.map((r) => [r.id, r])),
+    [accessibleRestaurants]
   )
 
   const [devices, setDevices] = useState(null)
@@ -34,12 +45,36 @@ export default function DevicesPage() {
 
   useEffect(() => {
     let cancelled = false
-    fetchPortfolioDevices(restaurants.map((r) => r.id))
-      .then((rows) => { if (!cancelled) setDevices(rows) })
-      .catch((err) => { if (!cancelled) { setDevices([]); setError(err.message || 'Could not load devices') } })
+    setDevices(null)
+    setAccessibleRestaurantIds(null)
+    setSelectedStoreId(null)
+    fetchDeviceAccessibleRestaurantIds({
+      accountType: auth.accountType,
+      userId: auth.user?.id,
+      restaurantIds: restaurants.map((restaurant) => restaurant.id),
+      ownedRestaurantIds: restaurants
+        .filter((restaurant) => restaurant.owner_id === auth.user?.id)
+        .map((restaurant) => restaurant.id),
+    })
+      .then(async (allowedIds) => {
+        if (cancelled) return
+        setAccessibleRestaurantIds(allowedIds)
+        const rows = await fetchPortfolioDevices(allowedIds)
+        if (!cancelled) {
+          setDevices(rows)
+          setError(null)
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setAccessibleRestaurantIds([])
+          setDevices([])
+          setError(err.message || 'Could not load device access')
+        }
+      })
     return () => { cancelled = true }
     // Reload when the portfolio itself changes, not on unrelated auth churn.
-  }, [restaurants.map((r) => r.id).join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [auth.accountType, auth.user?.id, restaurants.map((r) => r.id).join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => {
     if (!devices) return []
@@ -77,10 +112,18 @@ export default function DevicesPage() {
   const online = (devices || []).filter((d) => d.status !== 'revoked' && isDeviceOnline(d)).length
   const active = (devices || []).filter((d) => d.status !== 'revoked').length
 
+  if (
+    accessibleRestaurantIds !== null
+    && ['reseller', 'reseller_employee'].includes(auth.accountType)
+    && accessibleRestaurants.length === 0
+  ) {
+    return <Navigate to="/reseller" replace />
+  }
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <SummaryTile label="Stores" value={restaurants.length} />
+        <SummaryTile label="Stores" value={accessibleRestaurants.length} />
         <SummaryTile label="Devices" value={active} />
         <SummaryTile label="Online" value={online} tone="text-dash-success" />
         <SummaryTile label="Offline" value={active - online} tone={active - online > 0 ? 'text-dash-warning' : 'text-dash-cream'} />
@@ -119,9 +162,9 @@ export default function DevicesPage() {
                   ? 'No devices paired yet. Open a store below to generate a pairing code.'
                   : 'No devices match your search.'}
               </p>
-              {devices.length === 0 && restaurants.length > 0 && (
-                <Button className="mt-4" size="sm" onClick={() => setSelectedStoreId(restaurants[0].id)}>
-                  Set up {restaurants[0].name || 'first store'}
+              {devices.length === 0 && accessibleRestaurants.length > 0 && (
+                <Button className="mt-4" size="sm" onClick={() => setSelectedStoreId(accessibleRestaurants[0].id)}>
+                  Set up {accessibleRestaurants[0].name || 'first store'}
                 </Button>
               )}
             </div>
@@ -159,9 +202,9 @@ export default function DevicesPage() {
         </CardContent>
       </Card>
 
-      {restaurants.length > 0 && (
+      {accessibleRestaurants.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {restaurants.map((store) => (
+          {accessibleRestaurants.map((store) => (
             <button
               key={store.id}
               type="button"

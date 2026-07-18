@@ -23,7 +23,9 @@ export async function fetchWithSupabaseAuth<T = any>(
       : detail
         ? JSON.stringify(detail)
         : `Request failed (${response.status})`
-    throw new Error(message)
+    const error = new Error(message) as Error & { status?: number }
+    error.status = response.status
+    throw error
   }
   if (response.status === 204) return null as T
   return response.json() as Promise<T>

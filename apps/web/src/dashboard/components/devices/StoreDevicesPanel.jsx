@@ -24,12 +24,19 @@ import {
   requestTestPrint,
   revokePairingCode,
   savePrinterFailover,
+  saveCashDrawerTargetConfig,
+  saveDeviceHardwareConfig,
   setCategoryPrintGroup,
   setDevicePrinter,
   setGroupPrinter,
   updateDevice,
   updatePrinterTarget,
 } from '../../data/devices'
+
+const requestHardwareChangeReason = (label) => {
+  const value = window.prompt(`Reason for ${label.toLowerCase()} (required for the audit trail):`)
+  return value?.trim() || null
+}
 
 const lastSeenLabel = (device) => {
   if (!device.last_seen_at) return 'Never checked in'
@@ -652,7 +659,10 @@ export default function StoreDevicesPanel({ restaurantId }) {
               busy={busy}
               onRename={(d, name) => mutate(() => updateDevice(d.id, { name }))}
               onPrinterChange={(d, role, targetId) => mutate(() => setDevicePrinter(d.id, role, targetId))}
-              onHardwareChange={(d, hardwareConfig) => mutate(() => updateDevice(d.id, { hardware_config: hardwareConfig }))}
+              onHardwareChange={(d, hardwareConfig) => {
+                const reason = requestHardwareChangeReason('changing terminal hardware settings')
+                if (reason) mutate(() => saveDeviceHardwareConfig(restaurantId, d.id, hardwareConfig, reason))
+              }}
               onToggleStatus={(d) => mutate(() => updateDevice(d.id, { status: d.status === 'revoked' ? 'active' : 'revoked' }))}
             />
           ))}
@@ -685,7 +695,10 @@ export default function StoreDevicesPanel({ restaurantId }) {
                       <select
                         value={target.config?.physical_target_id || ''}
                         disabled={busy}
-                        onChange={(event) => mutate(() => updatePrinterTarget(target.id, { config: { ...(target.config || {}), physical_target_id: event.target.value || null } }))}
+                        onChange={(event) => {
+                          const reason = requestHardwareChangeReason('changing the cash drawer printer path')
+                          if (reason) mutate(() => saveCashDrawerTargetConfig(restaurantId, target.id, { ...(target.config || {}), physical_target_id: event.target.value || null }, reason))
+                        }}
                         className="min-h-[30px] rounded-lg border border-dash-border bg-[var(--glass-bg)] px-2 text-xs text-dash-cream"
                       >
                         <option value="">This target directly</option>
@@ -697,8 +710,10 @@ export default function StoreDevicesPanel({ restaurantId }) {
                       <select
                         value={Number(target.config?.drawer?.port || 1)}
                         disabled={busy}
-                        onChange={(event) => mutate(() => updatePrinterTarget(target.id, {
-                          config: {
+                        onChange={(event) => {
+                          const reason = requestHardwareChangeReason('changing the cash drawer port')
+                          if (!reason) return
+                          mutate(() => saveCashDrawerTargetConfig(restaurantId, target.id, {
                             ...(target.config || {}),
                             drawer: {
                               ...(target.config?.drawer || {}),
@@ -707,8 +722,8 @@ export default function StoreDevicesPanel({ restaurantId }) {
                               pulse_on_units: Number(target.config?.drawer?.pulse_on_units || 50),
                               pulse_off_units: Number(target.config?.drawer?.pulse_off_units || 250),
                             },
-                          },
-                        }))}
+                          }, reason))
+                        }}
                         className="min-h-[30px] rounded-lg border border-dash-border bg-[var(--glass-bg)] px-2 text-xs text-dash-cream"
                       >
                         <option value={1}>Drawer 1</option>

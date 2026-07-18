@@ -205,10 +205,15 @@ async function fetchReservationsApi(endpoint, options = {}) {
   const headers = new Headers(options.headers || {})
   if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   if (sessionData?.session?.access_token) headers.set('Authorization', `Bearer ${sessionData.session.access_token}`)
-  const response = await fetch(`${RESERVATIONS_API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  })
+  let response
+  try {
+    response = await fetch(`${RESERVATIONS_API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+    })
+  } catch {
+    throw new Error(`Reservations service is unreachable at ${RESERVATIONS_API_BASE_URL}. Start the reservations API or set VITE_RESERVATIONS_API_BASE_URL.`)
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
     throw new Error(body.message || body.detail || `Request failed (${response.status})`)

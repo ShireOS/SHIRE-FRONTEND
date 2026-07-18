@@ -22,6 +22,42 @@ const normalizePermissions = (permissions) => ({
   ...(permissions && typeof permissions === 'object' ? permissions : {}),
 })
 
+export async function fetchDeviceAccessibleRestaurantIds({ accountType, userId, restaurantIds, ownedRestaurantIds = [] }) {
+  const ids = [...new Set((restaurantIds || []).filter(Boolean))]
+  if (!['reseller', 'reseller_employee'].includes(accountType) || ids.length === 0) return ids
+
+  const ownedIds = accountType === 'reseller'
+    ? ids.filter((id) => ownedRestaurantIds.includes(id))
+    : []
+  const assignedCandidateIds = ids.filter((id) => !ownedIds.includes(id))
+  if (assignedCandidateIds.length === 0) return ownedIds
+
+  let resellerId = userId
+  if (accountType === 'reseller_employee') {
+    const { data: employee, error: employeeError } = await supabase
+      .from('reseller_employees')
+      .select('reseller_id')
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .maybeSingle()
+    if (employeeError) throw employeeError
+    resellerId = employee?.reseller_id
+  }
+  if (!resellerId) return []
+
+  const { data, error } = await supabase
+    .from('reseller_restaurants')
+    .select('restaurant_id, permissions')
+    .eq('reseller_id', resellerId)
+    .eq('status', 'active')
+    .in('restaurant_id', assignedCandidateIds)
+  if (error) throw error
+
+  return [...ownedIds, ...(data || [])
+    .filter((assignment) => normalizePermissions(assignment.permissions).devices)
+    .map((assignment) => assignment.restaurant_id)]
+}
+
 export async function fetchResellerAssignments(restaurantId) {
   const { data, error } = await supabase
     .from('reseller_restaurants')
