@@ -1,13 +1,10 @@
 import {
   deletePortfolioRecipient,
-  fetchPortfolioPreferences,
   fetchPortfolioRecipients,
   fetchPortfolioReport,
-  savePortfolioPreferences,
   savePortfolioRecipient,
   sendPortfolioTest,
   type PortfolioGroup,
-  type PortfolioModule,
   type PortfolioPeriod,
   type PortfolioRecipient,
   type PortfolioRecipientPayload,
@@ -17,7 +14,8 @@ import { semanticColors, statusColors } from '@/styles/colors';
 import { card, layout, radius, spacing } from '@/styles/tokens';
 import { typography } from '@/styles/typography';
 import { Feather } from '@expo/vector-icons';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import HomepageWidgets from '@/components/HomepageWidgets';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -35,48 +33,34 @@ const PERIODS: { id: PortfolioPeriod; label: string }[] = [
   { id: 'day', label: 'Day' }, { id: 'week', label: 'Week' },
   { id: 'month', label: 'Month' }, { id: 'year', label: 'Year' }, { id: 'full', label: 'Full' },
 ];
-const MODULES: { id: PortfolioModule; label: string; description: string }[] = [
-  { id: 'profit_after_labor', label: 'Profit after labor', description: 'Sales minus recorded hourly labor.' },
-  { id: 'period_comparison', label: 'Period comparison', description: 'Changes from the immediately preceding period.' },
-  { id: 'portfolio_trends', label: 'Portfolio trends', description: 'Consolidated sales buckets over time.' },
-  { id: 'group_performance', label: 'Group performance', description: 'Sales, profit, and labor by group.' },
-  { id: 'store_rankings', label: 'Store rankings', description: 'Rank, profit, and movement by store.' },
-];
 const EMPTY_RECIPIENT: PortfolioRecipientPayload = {
   name: '', email: '', frequency: 'weekly', send_time: '07:00', timezone: 'America/Chicago',
   weekday: 1, month_day: 1, scope_mode: 'all', group_ids: [], include_ungrouped: true, is_active: true,
 };
 
-const money = (value: unknown) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value || 0));
 const number = (value: unknown) => new Intl.NumberFormat('en-US').format(Number(value || 0));
 
 export default function PortfolioOverview() {
   const [tab, setTab] = useState<'overview' | 'email'>('overview');
   const [period, setPeriod] = useState<PortfolioPeriod>('week');
   const [report, setReport] = useState<PortfolioReport | null>(null);
-  const [modules, setModules] = useState<PortfolioModule[]>([]);
   const [groupIds, setGroupIds] = useState<string[]>([]);
   const [includeUngrouped, setIncludeUngrouped] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [configureOpen, setConfigureOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [nextReport, preference] = await Promise.all([
-        fetchPortfolioReport(period, groupIds, includeUngrouped),
-        fetchPortfolioPreferences(),
-      ]);
-      setReport(nextReport); setModules(preference.visible_modules || []);
+      const nextReport = await fetchPortfolioReport(period, groupIds, includeUngrouped);
+      setReport(nextReport);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load portfolio analytics.');
     } finally { setLoading(false); }
   }, [groupIds, includeUngrouped, period]);
 
   useEffect(() => { void load(); }, [load]);
-  const visible = (id: PortfolioModule) => modules.includes(id);
   const totals = report?.totals || {};
   const filterLabel = groupIds.length || includeUngrouped
     ? `${groupIds.length + (includeUngrouped ? 1 : 0)} groups`
@@ -91,25 +75,12 @@ export default function PortfolioOverview() {
 
       <View style={styles.tabs}><Tab label="Overview" selected={tab === 'overview'} onPress={() => setTab('overview')} /><Tab label="Email reports" selected={tab === 'email'} onPress={() => setTab('email')} /></View>
       {tab === 'email' ? <EmailPanel groups={report?.scope.groups || []} /> : <>
-        <View style={styles.toolbarRow}><Pressable onPress={() => setFilterOpen(true)} style={styles.secondaryButton}><Feather name="filter" size={15} color={semanticColors.textMuted} /><Text style={styles.secondaryButtonText}>{filterLabel}</Text></Pressable><Pressable onPress={() => setConfigureOpen(true)} style={styles.secondaryButton}><Feather name="sliders" size={15} color={semanticColors.textMuted} /><Text style={styles.secondaryButtonText}>Configure</Text></Pressable></View>
+        <View style={styles.toolbarRow}><Pressable onPress={() => setFilterOpen(true)} style={styles.secondaryButton}><Feather name="filter" size={15} color={semanticColors.textMuted} /><Text style={styles.secondaryButtonText}>{filterLabel}</Text></Pressable></View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.periodRow}>{PERIODS.map((item) => <Pressable key={item.id} onPress={() => setPeriod(item.id)} style={[styles.periodButton, period === item.id && styles.periodButtonActive]}><Text style={[styles.periodText, period === item.id && styles.periodTextActive]}>{item.label}</Text></Pressable>)}</ScrollView>
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        {loading && !report ? <ActivityIndicator color={semanticColors.primary} style={styles.loader} /> : <>
-          <View style={styles.metricGrid}>
-            <Metric label="Net sales" value={money(totals.net_sales)} comparison={visible('period_comparison') ? report?.comparison.net_sales : undefined} />
-            <Metric label="Orders" value={number(totals.orders)} comparison={visible('period_comparison') ? report?.comparison.orders : undefined} moneyDelta={false} />
-            <Metric label="Covers" value={number(totals.covers)} comparison={visible('period_comparison') ? report?.comparison.covers : undefined} moneyDelta={false} />
-            <Metric label="Labor" value={money(totals.labor_cost)} comparison={visible('period_comparison') ? report?.comparison.labor_cost : undefined} />
-            {visible('profit_after_labor') && <Metric label="Profit after labor" value={money(totals.profit_after_labor)} comparison={visible('period_comparison') ? report?.comparison.profit_after_labor : undefined} />}
-          </View>
-          {visible('portfolio_trends') && <TrendCard rows={report?.trends || []} />}
-          {visible('group_performance') && <GroupCards groups={report?.groups || []} />}
-          <Text style={styles.sectionTitle}>{visible('store_rankings') ? 'Store rankings' : 'Stores'}</Text>
-          {(report?.restaurants || []).map((store) => <View key={store.id} style={styles.storeCard}><View style={styles.storeHeader}>{visible('store_rankings') && <Text style={styles.rank}>#{store.rank}</Text>}<View style={styles.storeNameWrap}><Text numberOfLines={1} style={styles.storeName}>{store.name}</Text>{!store.has_data && <Text style={styles.warning}>No data</Text>}</View><Text style={styles.storeSales}>{money(store.net_sales)}</Text></View><View style={styles.storeStats}><SmallStat label="Orders" value={number(store.order_count)} /><SmallStat label="Labor" value={money(store.labor_cost)} />{visible('store_rankings') && <SmallStat label="Profit" value={money(store.profit_after_labor)} />}</View></View>)}
-        </>}
+        {loading && !report ? <ActivityIndicator color={semanticColors.primary} style={styles.loader} /> : <HomepageWidgets scope="portfolio" period={period} groupIds={groupIds} includeUngrouped={includeUngrouped} />}
       </>}
       <GroupFilterModal visible={filterOpen} groups={report?.scope.groups || []} selected={groupIds} includeUngrouped={includeUngrouped} onClose={() => setFilterOpen(false)} onApply={(ids, ungrouped) => { setGroupIds(ids); setIncludeUngrouped(ungrouped); setFilterOpen(false); }} />
-      <ConfigureModal visible={configureOpen} selected={modules} onClose={() => setConfigureOpen(false)} onSave={async (next) => { await savePortfolioPreferences(next); setModules(next); setConfigureOpen(false); }} />
     </ScrollView>
   );
 }
@@ -118,34 +89,11 @@ function Tab({ label, selected, onPress }: { label: string; selected: boolean; o
   return <Pressable onPress={onPress} style={[styles.tab, selected && styles.tabActive]}><Text style={[styles.tabText, selected && styles.tabTextActive]}>{label}</Text></Pressable>;
 }
 
-function Metric({ label, value, comparison, moneyDelta = true }: { label: string; value: string; comparison?: { delta: number; percent: number | null }; moneyDelta?: boolean }) {
-  const delta = Number(comparison?.delta || 0);
-  return <View style={styles.metric}><Text style={styles.metricLabel}>{label}</Text><Text numberOfLines={1} adjustsFontSizeToFit style={styles.metricValue}>{value}</Text>{comparison && <Text style={[styles.delta, { color: delta >= 0 ? statusColors.success.text : statusColors.danger.text }]}>{delta > 0 ? '+' : ''}{moneyDelta ? money(delta) : number(delta)}{comparison.percent == null ? '' : ` (${Number(comparison.percent).toFixed(1)}%)`}</Text>}</View>;
-}
-
-function TrendCard({ rows }: { rows: PortfolioReport['trends'] }) {
-  const max = Math.max(1, ...rows.map((row) => Number(row.net_sales || 0)));
-  return <View style={styles.card}><Text style={styles.eyebrow}>PORTFOLIO TREND</Text><Text style={styles.sectionTitleInline}>Net sales over time</Text><View style={styles.trendRows}>{rows.map((row) => <View key={row.bucket} style={styles.trendRow}><Text style={styles.trendLabel}>{String(row.bucket).slice(5, 10)}</Text><View style={styles.trendTrack}><View style={[styles.trendFill, { width: `${Math.max(2, (Number(row.net_sales || 0) / max) * 100)}%` }]} /></View><Text style={styles.trendValue}>{money(row.net_sales)}</Text></View>)}</View></View>;
-}
-
-function GroupCards({ groups }: { groups: PortfolioGroup[] }) {
-  return <View><Text style={styles.sectionTitle}>Group performance</Text>{groups.map((group) => <View key={group.id} style={styles.card}><View style={styles.groupHeader}><View style={[styles.dot, { backgroundColor: group.color }]} /><Text style={styles.storeName}>{group.name}</Text><Text style={styles.storeSales}>{money(group.net_sales)}</Text></View><View style={styles.storeStats}><SmallStat label="Stores" value={number(group.store_count)} /><SmallStat label="Profit" value={money(group.profit_after_labor)} /><SmallStat label="Labor" value={group.labor_percentage == null ? '—' : `${Number(group.labor_percentage).toFixed(1)}%`} /></View></View>)}</View>;
-}
-
-function SmallStat({ label, value }: { label: string; value: string }) { return <View style={styles.smallStat}><Text style={styles.smallLabel}>{label}</Text><Text style={styles.smallValue}>{value}</Text></View>; }
-
 function GroupFilterModal({ visible, groups, selected, includeUngrouped, onClose, onApply }: { visible: boolean; groups: PortfolioGroup[]; selected: string[]; includeUngrouped: boolean; onClose: () => void; onApply: (ids: string[], ungrouped: boolean) => void }) {
   const [draft, setDraft] = useState(selected); const [ungrouped, setUngrouped] = useState(includeUngrouped);
   useEffect(() => { if (visible) { setDraft(selected); setUngrouped(includeUngrouped); } }, [includeUngrouped, selected, visible]);
   const toggle = (id: string) => setDraft((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   return <Sheet visible={visible} title="Filter portfolio" onClose={onClose}><Pressable onPress={() => { setDraft([]); setUngrouped(false); }} style={[styles.option, draft.length === 0 && !ungrouped && styles.optionSelected]}><Text style={styles.optionTitle}>All groups</Text>{draft.length === 0 && !ungrouped && <Feather name="check" size={18} color={semanticColors.primary} />}</Pressable>{groups.map((group) => <Pressable key={group.id} onPress={() => toggle(group.id)} style={[styles.option, draft.includes(group.id) && styles.optionSelected]}><View style={styles.groupHeader}><View style={[styles.dot, { backgroundColor: group.color }]} /><Text style={styles.optionTitle}>{group.name}</Text></View>{draft.includes(group.id) && <Feather name="check" size={18} color={semanticColors.primary} />}</Pressable>)}<Pressable onPress={() => setUngrouped(!ungrouped)} style={[styles.option, ungrouped && styles.optionSelected]}><Text style={styles.optionTitle}>Ungrouped</Text>{ungrouped && <Feather name="check" size={18} color={semanticColors.primary} />}</Pressable><Pressable onPress={() => onApply(draft, ungrouped)} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Apply filter</Text></Pressable></Sheet>;
-}
-
-function ConfigureModal({ visible, selected, onClose, onSave }: { visible: boolean; selected: PortfolioModule[]; onClose: () => void; onSave: (items: PortfolioModule[]) => Promise<void> }) {
-  const [draft, setDraft] = useState(selected); const [saving, setSaving] = useState(false);
-  useEffect(() => { if (visible) setDraft(selected); }, [selected, visible]);
-  const toggle = (id: PortfolioModule) => setDraft((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-  return <Sheet visible={visible} title="Configure Overview" onClose={onClose}><Text style={styles.muted}>Additional rollup modules start turned off.</Text>{MODULES.map((module) => <Pressable key={module.id} onPress={() => toggle(module.id)} style={[styles.option, draft.includes(module.id) && styles.optionSelected]}><View style={styles.optionCopy}><Text style={styles.optionTitle}>{module.label}</Text><Text style={styles.optionDescription}>{module.description}</Text></View>{draft.includes(module.id) && <Feather name="check" size={18} color={semanticColors.primary} />}</Pressable>)}<Pressable disabled={saving} onPress={async () => { setSaving(true); try { await onSave(draft); } finally { setSaving(false); } }} style={styles.primaryButton}><Text style={styles.primaryButtonText}>{saving ? 'Saving…' : 'Save layout'}</Text></Pressable></Sheet>;
 }
 
 function Sheet({ visible, title, onClose, children }: { visible: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
