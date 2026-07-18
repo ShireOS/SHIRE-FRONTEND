@@ -53,10 +53,10 @@ export async function fetchPortfolioDevices(restaurantIds) {
 // assignments, the printer registry, print groups (kitchen_stations) with
 // their subscribed targets, and menu categories with their group assignment.
 export async function fetchStoreDeviceConfig(restaurantId) {
-  const [devices, targets, stations, categories, typePolicies] = await Promise.all([
+  const [devices, targets, stations, categories, typePolicies, sections] = await Promise.all([
     supabase
       .from('pos_devices')
-      .select('id, restaurant_id, name, device_type, status, last_seen_at, created_at, idle_lock_seconds, absolute_ttl_seconds, persist_manager_session, printers:pos_device_printers(role, target_id)')
+      .select('id, restaurant_id, name, device_type, status, last_seen_at, created_at, revenue_center_id, idle_lock_seconds, absolute_ttl_seconds, persist_manager_session, printers:pos_device_printers(role, target_id)')
       .eq('restaurant_id', restaurantId)
       .order('name'),
     supabase
@@ -80,8 +80,14 @@ export async function fetchStoreDeviceConfig(restaurantId) {
       .select('id, device_type, idle_lock_seconds, absolute_ttl_seconds, persist_manager_session')
       .eq('restaurant_id', restaurantId)
       .order('device_type'),
+    supabase
+      .from('sections')
+      .select('id, name, is_active')
+      .eq('restaurant_id', restaurantId)
+      .eq('is_active', true)
+      .order('name'),
   ])
-  const firstError = devices.error || targets.error || stations.error || categories.error || typePolicies.error
+  const firstError = devices.error || targets.error || stations.error || categories.error || typePolicies.error || sections.error
   if (firstError) throw firstError
   return {
     devices: devices.data || [],
@@ -89,6 +95,7 @@ export async function fetchStoreDeviceConfig(restaurantId) {
     stations: stations.data || [],
     categories: categories.data || [],
     typePolicies: typePolicies.data || [],
+    sections: sections.data || [],
   }
 }
 
