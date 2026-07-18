@@ -151,7 +151,24 @@ function Choice({ selected, children, onClick }) {
   return <button type="button" onClick={onClick} className={`min-h-9 rounded-md border px-3 text-sm ${selected ? 'border-shell-accent bg-shell-accent/10 text-dash-cream' : 'border-dash-border text-dash-secondary'}`}>{children}</button>
 }
 
-function WidgetSettingsModal({ widget, widgetData, settings, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave }) {
+function ReportingScopeFields({ widget, dimensions, value, onChange }) {
+  const supported = widget.reporting_dimensions || []
+  if (!supported.length) return <p className="rounded-md border border-dash-border p-3 text-xs leading-5 text-dash-tertiary">This widget is restaurant-wide because its source records do not carry a reliable section or device assignment.</p>
+  const dimension = value.scope_dimension || 'none'
+  const options = dimension === 'revenue_center' ? (dimensions?.sections || []) : dimension === 'device' ? (dimensions?.devices || []) : []
+  const ids = value.scope_ids || []
+  const toggle = (id) => onChange({ ...value, scope_ids: ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id] })
+  return <div className="space-y-3 rounded-md border border-dash-border p-4">
+    <div><p className="label-mono mb-2">Reporting scope</p><div className="flex flex-wrap gap-2"><Choice selected={dimension === 'none'} onClick={() => onChange({ ...value, scope_dimension: 'none', scope_mode: 'cumulative', scope_ids: [] })}>Whole restaurant</Choice>{supported.includes('revenue_center') && <Choice selected={dimension === 'revenue_center'} onClick={() => onChange({ ...value, scope_dimension: 'revenue_center', scope_ids: [] })}>Sections</Choice>}{supported.includes('device') && <Choice selected={dimension === 'device'} onClick={() => onChange({ ...value, scope_dimension: 'device', scope_ids: [] })}>Devices</Choice>}</div></div>
+    {dimension !== 'none' && <>
+      <p className="text-xs leading-5 text-dash-tertiary">No selection includes every {dimension === 'device' ? 'device' : 'section'}. Sections are used as revenue centers in reports.</p>
+      <div className="flex gap-2"><Choice selected={(value.scope_mode || 'cumulative') === 'cumulative'} onClick={() => onChange({ ...value, scope_mode: 'cumulative' })}>Cumulative total</Choice><Choice selected={value.scope_mode === 'breakdown'} onClick={() => onChange({ ...value, scope_mode: 'breakdown' })}>Break down results</Choice></div>
+      <div className="grid max-h-48 gap-2 overflow-y-auto sm:grid-cols-2">{options.map((option) => <label key={option.id} className="flex min-h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm"><input type="checkbox" checked={ids.includes(option.id)} onChange={() => toggle(option.id)} /><span className="truncate">{option.restaurant_name ? `${option.restaurant_name} / ` : ''}{option.name}{dimension === 'device' && option.section_name ? <span className="ml-1 text-xs text-dash-tertiary">({option.section_name})</span> : null}</span></label>)}</div>
+    </>}
+  </div>
+}
+
+function WidgetSettingsModal({ widget, widgetData, dimensions, settings, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave }) {
   const dates = periodDates(period, anchorDate)
   const [tab, setTab] = useState('display')
   const [draft, setDraft] = useState(() => ({
@@ -165,6 +182,7 @@ function WidgetSettingsModal({ widget, widgetData, settings, period, anchorDate,
     limit: settings.limit || 12,
     alert_z_score: settings.alert_z_score || 2,
     alert_min_actions: settings.alert_min_actions || 5,
+    scope_dimension: settings.scope_dimension || 'none', scope_mode: settings.scope_mode || 'cumulative', scope_ids: settings.scope_ids || [],
   }))
   const [report, setReport] = useState(() => ({
     start_date: dates.start, end_date: dates.end,
@@ -175,6 +193,7 @@ function WidgetSettingsModal({ widget, widgetData, settings, period, anchorDate,
     employee_ids: [], action_types: ['discount', 'comp', 'item_void', 'check_void'],
     reason_codes: [], include_team_average: true,
     alert_z_score: settings.alert_z_score || 2, alert_min_actions: settings.alert_min_actions || 5,
+    scope_dimension: settings.scope_dimension || 'none', scope_mode: settings.scope_mode || 'cumulative', scope_ids: settings.scope_ids || [],
   }))
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
@@ -203,6 +222,7 @@ function WidgetSettingsModal({ widget, widgetData, settings, period, anchorDate,
     <Modal title={widget.label} onClose={onClose}>
       <div className="flex border-b border-dash-border px-5"><button type="button" onClick={() => setTab('display')} className={`h-11 border-b-2 px-4 text-sm font-semibold ${tab === 'display' ? 'border-shell-accent' : 'border-transparent text-dash-tertiary'}`}>Display</button><button type="button" onClick={() => setTab('pdf')} className={`h-11 border-b-2 px-4 text-sm font-semibold ${tab === 'pdf' ? 'border-shell-accent' : 'border-transparent text-dash-tertiary'}`}>PDF report</button></div>
       {tab === 'display' ? <div className="space-y-5 p-5">
+        <ReportingScopeFields widget={widget} dimensions={dimensions} value={draft} onChange={setDraft} />
         {widget.id === 'discount_review' ? <>
           <p className="text-sm leading-6 text-dash-secondary">Employees are flagged only after meeting the minimum sample and exceeding the selected number of standard deviations above peers at the same restaurant.</p>
           <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">Outlier threshold<input type="number" min="1" max="5" step="0.1" value={draft.alert_z_score} onChange={(event) => setDraft({ ...draft, alert_z_score: Number(event.target.value) })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-3" /><span className="mt-1 block text-xs text-dash-tertiary">Standard deviations above peers</span></label><label className="text-sm">Minimum actions<input type="number" min="1" max="100" value={draft.alert_min_actions} onChange={(event) => setDraft({ ...draft, alert_min_actions: Number(event.target.value) })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-3" /><span className="mt-1 block text-xs text-dash-tertiary">Prevents one-off false alerts</span></label></div>
@@ -214,6 +234,7 @@ function WidgetSettingsModal({ widget, widgetData, settings, period, anchorDate,
         <div className="grid gap-4 sm:grid-cols-3"><label className="text-sm">Sort by<select value={draft.sort_by} onChange={(event) => setDraft({ ...draft, sort_by: event.target.value })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-2">{widget.columns.map((column) => <option key={column.id} value={column.id}>{column.label}</option>)}</select></label><label className="text-sm">Direction<select value={draft.sort_direction} onChange={(event) => setDraft({ ...draft, sort_direction: event.target.value })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-2"><option value="desc">Highest first</option><option value="asc">Lowest first</option></select></label><label className="text-sm">Rows<input type="number" min="1" max="100" value={draft.limit} onChange={(event) => setDraft({ ...draft, limit: Number(event.target.value) })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-2" /></label></div>
         </>}
       </div> : <div className="space-y-5 p-5">
+        <ReportingScopeFields widget={widget} dimensions={dimensions} value={report} onChange={setReport} />
         <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">From<input type="date" value={report.start_date} onChange={(event) => setReport({ ...report, start_date: event.target.value })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-3" /></label><label className="text-sm">Through<input type="date" value={report.end_date} onChange={(event) => setReport({ ...report, end_date: event.target.value })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-3" /></label></div>
         <label className="block text-sm">Report title<input value={report.title} onChange={(event) => setReport({ ...report, title: event.target.value })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-3" /></label>
         {widget.id === 'discount_review' ? renderAuditOptions() : <>
@@ -336,6 +357,10 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
   const preferencePath = scope === 'portfolio' ? '/portfolio-reports/homepage/preferences' : `/restaurants/${restaurantId}/reports/homepage/preferences`
   const preferenceQuery = useQuery({ queryKey: ['homepage-preferences', scope, restaurantId], queryFn: () => fetchWithSupabaseAuth(preferencePath), enabled: scope === 'portfolio' || Boolean(restaurantId) })
   const preference = preferenceQuery.data || { visible_widgets: [], widget_order: [], widget_settings: {}, catalog: [] }
+  const dimensionPath = scope === 'portfolio'
+    ? `/portfolio-reports/dimensions?${new URLSearchParams({ ...(groupIds?.length ? { group_ids: groupIds.join(',') } : {}), include_ungrouped: String(includeUngrouped) })}`
+    : `/restaurants/${restaurantId}/reports/dimensions`
+  const dimensionQuery = useQuery({ queryKey: ['reporting-dimensions', scope, restaurantId, (groupIds || []).join(','), includeUngrouped], queryFn: () => fetchWithSupabaseAuth(dimensionPath), enabled: scope === 'portfolio' || Boolean(restaurantId) })
   const orderedVisible = useMemo(() => (preference.widget_order || []).filter((id) => (preference.visible_widgets || []).includes(id)), [preference])
   const dataPath = scope === 'portfolio' ? '/portfolio-reports/homepage/data' : `/restaurants/${restaurantId}/reports/homepage/data`
   const portfolioScope = scope === 'portfolio'
@@ -383,6 +408,6 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
     </div>
     {!orderedVisible.length && <div className="rounded-md border border-dash-border p-8 text-center"><FileText className="mx-auto text-dash-tertiary" /><p className="mt-3 text-sm text-dash-secondary">Choose widgets to build this homepage.</p></div>}
     {configureOpen && <ConfigureModal catalog={preference.catalog || []} visible={preference.visible_widgets || []} order={preference.widget_order || []} saving={saving} onClose={() => setConfigureOpen(false)} onSave={(visible, order) => savePreference({ visible_widgets: visible, widget_order: order, widget_settings: preference.widget_settings || {} })} />}
-    {selectedWidget && <WidgetSettingsModal widget={selectedWidget} widgetData={dataQuery.data?.widgets?.[settingsId]} settings={preference.widget_settings?.[settingsId] || {}} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={saveSettings} />}
+    {selectedWidget && <WidgetSettingsModal widget={selectedWidget} widgetData={dataQuery.data?.widgets?.[settingsId]} dimensions={dimensionQuery.data} settings={preference.widget_settings?.[settingsId] || {}} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={saveSettings} />}
   </div>
 }
