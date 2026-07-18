@@ -129,6 +129,7 @@ export type ShiftTradeRequest = {
   shift_start?: string | null;
   shift_end?: string | null;
   role?: string | null;
+  is_future?: boolean;
   requester_approved_at?: string | null;
   target_approved_at?: string | null;
   manager_approved_at?: string | null;
@@ -269,8 +270,11 @@ export function fetchEmployeeAnnouncements() {
   return apiRequest<Announcement[]>('/employee/announcements', { auth: 'supabase' });
 }
 
-export function fetchEmployeeShiftTrades() {
-  return apiRequest<ShiftTradeRequest[]>('/employee/shift-trades', { auth: 'supabase' });
+export function fetchEmployeeShiftTrades(scope: 'active' | 'all' = 'active') {
+  return apiRequest<ShiftTradeRequest[]>(
+    `/employee/shift-trades?scope=${encodeURIComponent(scope)}`,
+    { auth: 'supabase' },
+  );
 }
 
 export function createEmployeeShiftTrade(scheduleItemId: string, targetWaiterId: string, reason?: string | null) {
