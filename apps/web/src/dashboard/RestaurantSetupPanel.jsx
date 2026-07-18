@@ -933,6 +933,39 @@ function normalizeSectionNames(sections) {
   return out.length > 0 ? out : ['Table']
 }
 
+function defaultSectionProfile(name) {
+  const key = String(name || '').toLowerCase()
+  return {
+    name,
+    service_mode: key === 'hibachi' ? 'hibachi' : key === 'bar' ? 'bar' : ['patio', 'outdoor'].includes(key) ? 'patio' : String(name).startsWith('New Section') ? 'custom' : 'standard',
+    auto_gratuity_enabled: key === 'hibachi',
+    auto_gratuity_type: 'percentage',
+    auto_gratuity_value: '18',
+    auto_gratuity_label: key === 'hibachi' ? 'Hibachi Service Charge' : `${name} Service Charge`,
+    auto_gratuity_taxable: false,
+    minimum_party_size: '',
+    tip_prompt_mode: 'additional',
+  }
+}
+
+function normalizeSectionProfiles(rows, names = []) {
+  const source = Array.isArray(rows) ? rows : []
+  const sectionNames = normalizeSectionNames(names.length ? names : source.map(row => row?.name))
+  const byName = new Map(source.map(row => [String(row?.name || '').trim().toLowerCase(), row]))
+  return sectionNames.map(name => {
+    const row = byName.get(name.toLowerCase())
+    const fallback = defaultSectionProfile(name)
+    if (!row) return fallback
+    return {
+      ...fallback,
+      ...row,
+      name,
+      auto_gratuity_value: String(row.auto_gratuity_value ?? 18),
+      minimum_party_size: row.minimum_party_size == null ? '' : String(row.minimum_party_size),
+    }
+  })
+}
+
 function sanitizeNumber(value) {
   return String(value ?? '').replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1').slice(0, 10)
 }
@@ -1972,6 +2005,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [checkWorkflowSettings, setCheckWorkflowSettings] = useState(defaultCheckWorkflowSettings())
   const [tipPayrollSettings, setTipPayrollSettings] = useState(defaultTipPayrollSettings())
   const [sections, setSections] = useState(['Table'])
+  const [sectionProfiles, setSectionProfiles] = useState([])
   const [hours, setHours] = useState(DEFAULT_HOURS)
   const [sameHours, setSameHours] = useState(true)
   const [floorTables, setFloorTables] = useState([])
@@ -2346,7 +2380,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setJobCodes(normalizedJobCodes)
       setRateEdits(Object.fromEntries(normalizedJobCodes.map(code => [code.id, String(code.default_hourly_rate ?? '')])))
       setMenuItems(mapMenuItems(menuRows))
-      setSections(normalizeSectionNames((Array.isArray(sectionRows) ? sectionRows : []).map(section => section.name)))
+      const sectionNames = normalizeSectionNames((Array.isArray(sectionRows) ? sectionRows : []).map(section => section.name))
+      setSections(sectionNames)
+      setSectionProfiles(normalizeSectionProfiles(sectionRows, sectionNames))
       setFloorTables(mapFloorPlanTables(floorPlan))
       setTaxRates(normalizeTaxRates(taxesCharges?.tax_rates))
       setServiceCharges(normalizeServiceCharges(taxesCharges?.service_charges))
@@ -2752,7 +2788,15 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   }
 
   const saveSections = async (publication) => {
-    const payload = { sections: normalizeSectionNames(sections) }
+    const sectionNames = normalizeSectionNames(sections)
+    const payload = {
+      sections: normalizeSectionProfiles(sectionProfiles, sectionNames).map(section => ({
+        ...section,
+        id: section.id || undefined,
+        auto_gratuity_value: Number(section.auto_gratuity_value || 0),
+        minimum_party_size: section.minimum_party_size ? Number(section.minimum_party_size) : null,
+      })),
+    }
     await saveWithPropagation({
       sectionId: 'sections',
       label: 'Sections',
@@ -2761,7 +2805,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/sections', payload),
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/sections', payload),
       onSourceSaved: (saved) => {
-        setSections(normalizeSectionNames((Array.isArray(saved) ? saved : []).map(section => section.name)))
+        const savedNames = normalizeSectionNames((Array.isArray(saved) ? saved : []).map(section => section.name))
+        setSections(savedNames)
+        setSectionProfiles(normalizeSectionProfiles(saved, savedNames))
         queryClient.setQueryData(queryKeys.sections(restaurantId), saved)
         setFloorTables(prev => prev.map(table => {
           if (table.section_id) return table
@@ -3771,35 +3817,58 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               Missing: {setupWarnings.sections.join(', ')}
             </div>
           )}
-          <div className="space-y-3">
-            {normalizeSectionNames(sections).map((section, index) => (
-              <div key={`${index}:${index === 0 ? 'default' : section}`} className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                <TextInput
-                  value={section}
-                  disabled={index === 0}
-                  placeholder="Bar, Patio, Outdoor..."
-                  onChange={event => {
+          <div className="space-y-4">
+            {normalizeSectionNames(sections).map((section, index) => {
+              const profile = normalizeSectionProfiles(sectionProfiles, sections).find(item => item.name.toLowerCase() === section.toLowerCase()) || defaultSectionProfile(section)
+              const patchProfile = (patch) => setSectionProfiles(prev => [
+                ...prev.filter(item => String(item.name).toLowerCase() !== section.toLowerCase()),
+                { ...profile, ...patch, name: section },
+              ])
+              return (
+              <div key={profile.id || `${index}:${section}`} className="space-y-4 rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <TextInput value={section} disabled={index === 0} placeholder="Bar, Patio, Hibachi..." onChange={event => {
                     const next = normalizeSectionNames(sections)
+                    const oldName = next[index]
                     next[index] = index === 0 ? 'Table' : event.target.value
                     setSections(next)
-                  }}
-                />
-                <SmallButton
-                  variant={index === 0 ? 'secondary' : 'danger'}
-                  disabled={index === 0}
-                  onClick={() => setSections(prev => normalizeSectionNames(prev).filter((_, currentIndex) => currentIndex !== index))}
-                >
-                  Remove
-                </SmallButton>
+                    setSectionProfiles(prev => prev.map(item => String(item.name).toLowerCase() === oldName.toLowerCase() ? { ...item, name: next[index] } : item))
+                  }} />
+                  <SmallButton variant={index === 0 ? 'secondary' : 'danger'} disabled={index === 0} onClick={() => {
+                    setSections(prev => normalizeSectionNames(prev).filter((_, currentIndex) => currentIndex !== index))
+                    setSectionProfiles(prev => prev.filter(item => String(item.name).toLowerCase() !== section.toLowerCase()))
+                  }}>Remove</SmallButton>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label="Section behavior">
+                    <SelectInput value={profile.service_mode} onChange={event => patchProfile({ service_mode: event.target.value })}>
+                      <option value="standard">Standard dining</option><option value="hibachi">Hibachi</option><option value="bar">Bar</option><option value="patio">Patio</option><option value="counter">Counter service</option><option value="custom">Custom</option>
+                    </SelectInput>
+                  </Field>
+                  <label className="flex items-center gap-3 self-end rounded-xl border border-white/10 px-4 py-3 text-sm text-dash-primary">
+                    <input type="checkbox" checked={Boolean(profile.auto_gratuity_enabled)} onChange={event => patchProfile({ auto_gratuity_enabled: event.target.checked })} className="h-4 w-4 accent-dash-gold" />
+                    Automatically apply service charge
+                  </label>
+                </div>
+                {profile.auto_gratuity_enabled && <div className="grid gap-3 border-t border-white/10 pt-4 md:grid-cols-2 lg:grid-cols-3">
+                  <Field label="Charge amount"><div className="grid grid-cols-[1fr_7rem] gap-2"><TextInput inputMode="decimal" value={profile.auto_gratuity_value} onChange={event => patchProfile({ auto_gratuity_value: sanitizeNumber(event.target.value) })} /><SelectInput value={profile.auto_gratuity_type} onChange={event => patchProfile({ auto_gratuity_type: event.target.value })}><option value="percentage">Percent</option><option value="fixed">Fixed</option></SelectInput></div></Field>
+                  <Field label="Receipt label"><TextInput value={profile.auto_gratuity_label} onChange={event => patchProfile({ auto_gratuity_label: event.target.value })} /></Field>
+                  <Field label="Minimum party size"><TextInput inputMode="numeric" placeholder="Any party size" value={profile.minimum_party_size} onChange={event => patchProfile({ minimum_party_size: event.target.value.replace(/\D/g, '') })} /></Field>
+                  <Field label="Tip prompt"><SelectInput value={profile.tip_prompt_mode} onChange={event => patchProfile({ tip_prompt_mode: event.target.value })}><option value="additional">Offer additional tip</option><option value="normal">Standard tip prompt</option><option value="disabled">No tip prompt</option></SelectInput></Field>
+                  <label className="flex items-center gap-3 self-end px-1 py-3 text-sm text-dash-primary"><input type="checkbox" checked={Boolean(profile.auto_gratuity_taxable)} onChange={event => patchProfile({ auto_gratuity_taxable: event.target.checked })} className="h-4 w-4 accent-dash-gold" />Charge is taxable</label>
+                </div>}
               </div>
-            ))}
+              )
+            })}
             <div className="flex flex-wrap gap-2 pt-2">
               <SmallButton onClick={() => setSections(prev => {
                 const current = normalizeSectionNames(prev)
-                return [...current, `New Section ${current.length}`]
+                const name = `New Section ${current.length}`
+                setSectionProfiles(profiles => [...profiles, defaultSectionProfile(name)])
+                return [...current, name]
               })}>Add section</SmallButton>
               {['Main Dining', 'Bar', 'Patio', 'Outdoor'].filter(name => !normalizeSectionNames(sections).some(section => section.toLowerCase() === name.toLowerCase())).map(name => (
-                <SmallButton key={name} onClick={() => setSections(prev => [...normalizeSectionNames(prev), name])}>{name}</SmallButton>
+                <SmallButton key={name} onClick={() => { setSections(prev => [...normalizeSectionNames(prev), name]); setSectionProfiles(prev => [...prev, defaultSectionProfile(name)]) }}>{name}</SmallButton>
               ))}
             </div>
           </div>
