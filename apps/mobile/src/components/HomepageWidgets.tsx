@@ -4,6 +4,7 @@ import {
   fetchHomepagePreferences,
   fetchReportingDimensions,
   saveHomepagePreferences,
+  saveHomepageWidgetPreferences,
   type HomepagePreferences,
   type WidgetCatalogItem,
   type WidgetData,
@@ -93,10 +94,21 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
     finally { setLoading(false); }
   }, [anchorDate, groupKey, includeUngrouped, period, restaurantId, scope]);
   useEffect(() => { void load(); }, [load]);
-  const save = async (next: Omit<HomepagePreferences, 'catalog'>) => {
+  const save = async (next: Pick<HomepagePreferences, 'visible_widgets' | 'widget_order' | 'widget_settings'>) => {
     if (!preferences) return;
     const saved = await saveHomepagePreferences(scope, restaurantId, next);
     setPreferences(saved); setConfigure(false); setSettingsId(null); await load();
+  };
+  const saveWidget = async (kind: 'display' | 'pdf', next: WidgetSettings | WidgetPdfPayload) => {
+    if (!settingsId) return;
+    const saved = await saveHomepageWidgetPreferences(scope, restaurantId, settingsId, {
+      [kind === 'display' ? 'display_settings' : 'pdf_settings']: next,
+    });
+    setPreferences(saved);
+    if (kind === 'display') {
+      setSettingsId(null);
+      await load();
+    }
   };
   const ordered = useMemo(() => preferences?.widget_order.filter((id) => preferences.visible_widgets.includes(id)) || [], [preferences]);
   const selectedWidget = preferences?.catalog.find((item) => item.id === settingsId);
@@ -109,12 +121,15 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
       return <Widget key={id} widget={widget} data={data[id]} settings={preferences?.widget_settings[id] || {}} onSettings={() => setSettingsId(id)} onPress={onWidgetPress ? () => onWidgetPress(id) : undefined} />;
     })}
     {configure && preferences ? <ConfigureSheet preferences={preferences} onClose={() => setConfigure(false)} onSave={save} /> : null}
-    {selectedWidget && preferences ? <SettingsSheet widget={selectedWidget} widgetData={data[settingsId!]} dimensions={dimensions} settings={preferences.widget_settings[settingsId!] || {}} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={(next) => save({ visible_widgets: preferences.visible_widgets, widget_order: preferences.widget_order, widget_settings: { ...preferences.widget_settings, [settingsId!]: next } })} /> : null}
+    {selectedWidget && preferences ? <SettingsSheet widget={selectedWidget} widgetData={data[settingsId!]} dimensions={dimensions} settings={preferences.widget_settings[settingsId!] || {}} pdfSettings={preferences.widget_pdf_settings[settingsId!] || {}} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={(next) => saveWidget('display', next)} onSavePdf={(next) => saveWidget('pdf', next)} /> : null}
   </View>;
 }
 
 function Widget({ widget, data, settings, onSettings, onPress }: { widget: WidgetCatalogItem; data?: WidgetData; settings: WidgetSettings; onSettings: () => void; onPress?: () => void }) {
   const measures = data?.measure_columns || []; const rows = data?.rows || [];
+  if (isScopedBreakdown(data) && widget.id !== 'discount_review') {
+    return <ScopedBreakdownWidget widget={widget} data={data} settings={settings} onSettings={onSettings} />;
+  }
   if (KPI_WIDGETS.has(widget.id)) {
     const column = measures[0] || widget.columns[0]; const row = rows[0] || {};
     const secondary = measures.slice(1, 3);
@@ -132,14 +147,39 @@ function Widget({ widget, data, settings, onSettings, onPress }: { widget: Widge
   return <View style={styles.card}><WidgetHeader widget={widget} onSettings={onSettings} />{rows.length ? rows.map((row, index) => <View key={`${row.period}-${row.breakdown}-${index}`} style={styles.tableRow}><View style={styles.flex}><Text numberOfLines={1} style={styles.rowTitle}>{dimensions.map((id) => format(row[id], id === 'period' ? 'date' : 'text')).join(' · ') || `Row ${index + 1}`}</Text><Text style={styles.muted}>{measures.slice(1, 3).map((column) => `${column.label}: ${format(row[column.id], column.kind)}`).join(' · ')}</Text></View>{measures[0] ? <Text style={styles.rowValue}>{format(row[measures[0].id], measures[0].kind)}</Text> : null}</View>) : <Text style={styles.empty}>No data for this range.</Text>}</View>;
 }
 
+function isScopedBreakdown(data?: WidgetData) {
+  return data?.reporting_scope?.mode === 'breakdown'
+    && (data.reporting_scope.dimension === 'revenue_center' || data.reporting_scope.dimension === 'device');
+}
+
+function scopeNoun(data?: WidgetData) {
+  return data?.reporting_scope?.dimension === 'device' ? 'device' : 'section';
+}
+
+function ScopedBreakdownWidget({ widget, data, settings, onSettings }: { widget: WidgetCatalogItem; data?: WidgetData; settings: WidgetSettings; onSettings: () => void }) {
+  const rows = data?.rows || []; const measures = data?.measure_columns || [];
+  const primary = measures[0] || widget.columns[0]; const noun = scopeNoun(data);
+  const hasPeriods = rows.some((row) => row.period != null);
+  const names = [...new Set(rows.map((row) => String(row.breakdown || `Unassigned ${noun}`)))];
+  const max = Math.max(1, ...rows.map((row) => Math.abs(Number(row[primary.id] || 0))));
+  return <View style={styles.card}>
+    <WidgetHeader widget={widget} onSettings={onSettings} />
+    <View style={styles.scopeHeading}><Feather name="layers" size={15} color={semanticColors.textMuted} /><Text style={styles.performanceTitle}>{hasPeriods ? 'Trend' : 'Results'} by {noun}</Text></View>
+    {rows.length ? hasPeriods ? names.map((name) => <View key={name} style={styles.scopeGroup}><Text style={styles.rowTitle}>{name}</Text><GraphRows rows={rows.filter((row) => String(row.breakdown || `Unassigned ${noun}`) === name)} column={primary} chartType={settings.chart_type || 'line'} /></View>) : rows.map((row, index) => <View key={`${row.breakdown || noun}-${index}`} style={styles.performanceRow}><View style={styles.flex}><Text numberOfLines={1} style={styles.rowTitle}>{String(row.breakdown || `Unassigned ${noun}`)}</Text><Text style={styles.muted}>{measures.slice(1, 4).map((item) => `${item.label}: ${format(row[item.id], item.kind)}`).join(' · ')}</Text><View style={styles.auditBarTrack}><View style={[styles.auditBarFill, { width: `${Math.max(2, Math.abs(Number(row[primary.id] || 0)) / max * 100)}%` }]} /></View></View><Text style={styles.rowValue}>{format(row[primary.id], primary.kind)}</Text></View>) : <Text style={styles.empty}>No attributed {noun} data for this range.</Text>}
+  </View>;
+}
+
 function DiscountReviewWidget({ widget, data, onSettings }: { widget: WidgetCatalogItem; data?: WidgetData; onSettings: () => void }) {
   const summary = data?.summary || {};
   const employees = (data?.employees || []).filter((employee) => employee.action_count > 0).slice(0, 8);
   const alerts = data?.alerts || [];
   const reasons = data?.reasons || [];
+  const scopeRows = data?.scope_breakdown || [];
+  const scopeName = scopeNoun(data);
   const maxAmount = Math.max(1, ...employees.map((employee) => Number(employee.total_amount || 0)));
   return <View style={styles.card}>
     <WidgetHeader widget={widget} onSettings={onSettings} />
+    {isScopedBreakdown(data) ? <View style={styles.scopeGroup}><View style={styles.scopeHeading}><Feather name="layers" size={15} color={semanticColors.textMuted} /><Text style={styles.performanceTitle}>Impact by {scopeName}</Text></View>{scopeRows.length ? scopeRows.map((row) => <View key={row.breakdown} style={styles.tableRow}><View style={styles.flex}><Text style={styles.rowTitle}>{row.breakdown}</Text><Text style={styles.muted}>{number(row.action_count)} actions · {money(row.average_action_amount)} average</Text></View><Text style={styles.rowValue}>{money(row.total_amount)}</Text></View>) : <Text style={styles.empty}>No attributed {scopeName} activity for this range.</Text>}</View> : null}
     <View style={styles.summaryGrid}>
       {[['Total impact', summary.total_amount, 'money'], ['Actions', summary.action_count, 'number'], ['Flagged', summary.flagged_employees, 'number'], ['Unattributed', summary.unattributed_actions, 'number']].map(([label, value, kind]) => <View key={String(label)} style={[styles.summaryMetric, label === 'Flagged' && Number(value) > 0 && styles.alertMetric]}><Text style={styles.eyebrow}>{String(label).toUpperCase()}</Text><Text style={[styles.summaryValue, label === 'Flagged' && Number(value) > 0 && styles.alertText]}>{format(value, String(kind))}</Text></View>)}
     </View>
@@ -176,7 +216,7 @@ function GraphRows({ rows, column, chartType }: { rows: Record<string, unknown>[
 }
 function WidgetHeader({ widget, onSettings }: { widget: WidgetCatalogItem; onSettings: () => void }) { return <View style={styles.widgetHeader}><View style={styles.flex}><Text style={styles.eyebrow}>HOMEPAGE WIDGET</Text><Text style={styles.widgetTitle}>{widget.label}</Text></View><Pressable accessibilityLabel={`Configure ${widget.label}`} onPress={(event) => { event.stopPropagation(); onSettings(); }} style={styles.iconButton}><Feather name="settings" size={16} color={semanticColors.textMuted} /></Pressable></View>; }
 
-function ConfigureSheet({ preferences, onClose, onSave }: { preferences: HomepagePreferences; onClose: () => void; onSave: (next: Omit<HomepagePreferences, 'catalog'>) => Promise<void> }) {
+function ConfigureSheet({ preferences, onClose, onSave }: { preferences: HomepagePreferences; onClose: () => void; onSave: (next: Pick<HomepagePreferences, 'visible_widgets' | 'widget_order' | 'widget_settings'>) => Promise<void> }) {
   const [visible, setVisible] = useState([...preferences.visible_widgets]); const [order, setOrder] = useState([...preferences.widget_order]); const [saving, setSaving] = useState(false);
   const selected = new Set(visible); const ordered = order.filter((id) => selected.has(id));
   const move = (id: string, delta: number) => setOrder((current) => { const next = [...current]; const index = next.indexOf(id); const target = index + delta; if (target < 0 || target >= next.length) return current; [next[index], next[target]] = [next[target], next[index]]; return next; });
@@ -199,7 +239,7 @@ function ReportingScopeFields<T extends WidgetSettings | WidgetPdfPayload>({ wid
 
 function ScopeChoice({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) { return <Pressable onPress={onPress} style={[styles.choice, selected && styles.choiceActive]}><Text style={[styles.choiceText, selected && styles.choiceTextActive]}>{label}</Text></Pressable>; }
 
-function SettingsSheet({ widget, widgetData, dimensions, settings, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave }: { widget: WidgetCatalogItem; widgetData?: WidgetData; dimensions: ReportingDimensions | null; settings: WidgetSettings; period: PortfolioPeriod; anchorDate?: string | null; scope: WidgetScope; restaurantId?: string; groupIds?: string[] | null; includeUngrouped: boolean; onClose: () => void; onSave: (next: WidgetSettings) => Promise<void> }) {
+function SettingsSheet({ widget, widgetData, dimensions, settings, pdfSettings, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave, onSavePdf }: { widget: WidgetCatalogItem; widgetData?: WidgetData; dimensions: ReportingDimensions | null; settings: WidgetSettings; pdfSettings: Partial<WidgetPdfPayload>; period: PortfolioPeriod; anchorDate?: string | null; scope: WidgetScope; restaurantId?: string; groupIds?: string[] | null; includeUngrouped: boolean; onClose: () => void; onSave: (next: WidgetSettings) => Promise<void>; onSavePdf: (next: WidgetPdfPayload) => Promise<void> }) {
   const dates = periodDates(period, anchorDate);
   const [tab, setTab] = useState<'display' | 'pdf'>('display');
   const [working, setWorking] = useState(false);
@@ -220,12 +260,14 @@ function SettingsSheet({ widget, widgetData, dimensions, settings, period, ancho
     employee_ids: [], action_types: ['discount', 'comp', 'item_void', 'check_void'], reason_codes: [],
     include_team_average: true, alert_z_score: settings.alert_z_score || 2, alert_min_actions: settings.alert_min_actions || 5,
     scope_dimension: settings.scope_dimension || 'none', scope_mode: settings.scope_mode || 'cumulative', scope_ids: settings.scope_ids || [],
+    ...pdfSettings,
     ...(scope === 'portfolio' ? { ...(groupIds?.length ? { group_ids: groupIds } : {}), include_ungrouped: includeUngrouped } : {}),
   });
   const toggle = (values: string[], value: string) => values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
   const download = async () => {
     setWorking(true);
     try {
+      await onSavePdf(pdf);
       const file = await downloadHomepageWidgetPdf(scope, restaurantId, widget.id, pdf);
       const uri = `${FileSystem.cacheDirectory}${file.file_name}`;
       await FileSystem.writeAsStringAsync(uri, file.base64, { encoding: FileSystem.EncodingType.Base64 });
@@ -287,7 +329,7 @@ const styles = StyleSheet.create({
   wrap: { gap: spacing[3] }, loader: { marginVertical: spacing[8] }, error: { ...typography.bodySmall, color: statusColors.danger.text }, flex: { flex: 1 },
   configureButton: { alignSelf: 'flex-end', minHeight: 42, borderWidth: 1, borderColor: semanticColors.border, borderRadius: radius.md, paddingHorizontal: spacing[3], flexDirection: 'row', alignItems: 'center', gap: spacing[2] }, configureText: { ...typography.bodySmall, fontWeight: '600', color: semanticColors.textMuted },
   metricCard: { ...card.base, minHeight: 150 }, card: { ...card.base, gap: spacing[2] }, widgetHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing[3] }, eyebrow: { ...typography.eyebrow, color: semanticColors.textSubtle }, widgetTitle: { ...typography.h3, color: semanticColors.text, marginTop: 2 }, iconButton: { width: 38, height: 38, borderWidth: 1, borderColor: semanticColors.border, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' }, metricValue: { ...typography.h1, color: semanticColors.text, marginTop: spacing[4] }, metricSecondaryRow: { flexDirection: 'row', gap: spacing[2], borderTopWidth: 1, borderTopColor: semanticColors.border, paddingTop: spacing[3], marginTop: spacing[3] }, metricSecondary: { flex: 1 }, metricSecondaryValue: { ...typography.bodySmall, color: semanticColors.text, fontWeight: '700', marginTop: 2 }, muted: { ...typography.caption, color: semanticColors.textSubtle, marginTop: 2 }, empty: { ...typography.bodySmall, color: semanticColors.textSubtle, paddingVertical: spacing[4], textAlign: 'center' },
-  chartRows: { gap: spacing[2] }, chartRow: { flexDirection: 'row', alignItems: 'center', gap: spacing[2] }, chartLabel: { ...typography.caption, color: semanticColors.textSubtle, width: 68 }, chartTrack: { flex: 1, height: 8, borderRadius: 4, backgroundColor: semanticColors.surface, overflow: 'hidden' }, chartFill: { height: 8, borderRadius: 4, backgroundColor: semanticColors.primary }, chartValue: { ...typography.caption, color: semanticColors.textMuted, width: 82, textAlign: 'right' }, chartEndpoints: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  chartRows: { gap: spacing[2] }, chartRow: { flexDirection: 'row', alignItems: 'center', gap: spacing[2] }, chartLabel: { ...typography.caption, color: semanticColors.textSubtle, width: 68 }, chartTrack: { flex: 1, height: 8, borderRadius: 4, backgroundColor: semanticColors.surface, overflow: 'hidden' }, chartFill: { height: 8, borderRadius: 4, backgroundColor: semanticColors.primary }, chartValue: { ...typography.caption, color: semanticColors.textMuted, width: 82, textAlign: 'right' }, chartEndpoints: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, scopeHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing[2] }, scopeGroup: { gap: spacing[2], borderWidth: 1, borderColor: semanticColors.border, borderRadius: radius.md, padding: spacing[3] },
   tableRow: { flexDirection: 'row', gap: spacing[3], paddingVertical: spacing[3], borderTopWidth: 1, borderTopColor: semanticColors.border }, rowTitle: { ...typography.bodySmall, fontWeight: '600', color: semanticColors.text }, rowValue: { ...typography.bodySmall, fontWeight: '700', color: semanticColors.text },
   performanceColumn: { gap: spacing[1], marginTop: spacing[3] }, performanceTitle: { ...typography.bodySmall, color: semanticColors.text, fontWeight: '700', marginBottom: spacing[1] }, performanceRow: { flexDirection: 'row', alignItems: 'center', gap: spacing[3], borderWidth: 1, borderColor: semanticColors.border, borderRadius: radius.md, padding: spacing[3] }, summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing[2] }, summaryMetric: { width: '48%', minHeight: 82, borderWidth: 1, borderColor: semanticColors.border, borderRadius: radius.md, padding: spacing[3], justifyContent: 'space-between' }, summaryValue: { ...typography.h3, color: semanticColors.text },
   alertMetric: { borderColor: statusColors.danger.border, backgroundColor: statusColors.danger.bg }, alertText: { color: statusColors.danger.text }, auditEmployee: { gap: spacing[2], borderWidth: 1, borderColor: semanticColors.border, borderRadius: radius.md, padding: spacing[3] }, auditEmployeeAlert: { borderColor: statusColors.danger.border, backgroundColor: statusColors.danger.bg }, auditEmployeeHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing[2] }, auditBarTrack: { height: 7, borderRadius: 4, backgroundColor: semanticColors.surface, overflow: 'hidden' }, auditBarFill: { height: 7, borderRadius: 4, backgroundColor: semanticColors.primary }, auditBarAlert: { backgroundColor: statusColors.danger.text }, alertBox: { gap: spacing[2], borderWidth: 1, borderColor: statusColors.danger.border, borderRadius: radius.md, backgroundColor: statusColors.danger.bg, padding: spacing[3] }, alertDetail: { ...typography.caption, color: statusColors.danger.text, lineHeight: 18 }, auditHelp: { ...typography.bodySmall, color: semanticColors.textMuted, lineHeight: 21 },

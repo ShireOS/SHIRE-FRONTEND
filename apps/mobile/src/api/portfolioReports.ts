@@ -51,6 +51,12 @@ export type PortfolioReport = {
     include_ungrouped: boolean;
   };
 };
+export type PortfolioOverviewViewSettings = {
+  period: PortfolioPeriod;
+  group_ids: string[];
+  include_ungrouped: boolean;
+  anchor_date?: string | null;
+};
 
 export type PortfolioRecipient = {
   id: string;
@@ -85,6 +91,16 @@ export function fetchPortfolioPreferences() {
 export function savePortfolioPreferences(visible_modules: PortfolioModule[]) {
   return apiRequest<{ visible_modules: PortfolioModule[] }>('/api/v1/portfolio-reports/preferences', {
     method: 'PUT', body: { visible_modules },
+  });
+}
+
+export function fetchPortfolioViewPreferences() {
+  return apiGet<{ settings: { overview?: PortfolioOverviewViewSettings } }>('/api/v1/portfolio-reports/view-preferences');
+}
+
+export function savePortfolioViewPreferences(settings: PortfolioOverviewViewSettings) {
+  return apiRequest<{ settings: { overview: PortfolioOverviewViewSettings } }>('/api/v1/portfolio-reports/view-preferences/overview', {
+    method: 'PUT', body: { settings },
   });
 }
 

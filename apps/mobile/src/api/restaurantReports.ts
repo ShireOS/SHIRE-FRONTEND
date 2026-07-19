@@ -24,6 +24,34 @@ export type ReportPreference = {
   section_order: ReportSectionId[];
   section_settings: Record<string, unknown>;
 };
+export type RestaurantReportViewSettings = {
+  period_preset: 'week' | 'month' | 'quarter' | 'year' | 'custom';
+  custom_start_date?: string | null;
+  custom_end_date?: string | null;
+  comparison_enabled: boolean;
+  comparison_mode: 'previous_period' | 'previous_year' | 'custom';
+  comparison_start_date?: string | null;
+  comparison_end_date?: string | null;
+  category?: string;
+  daypart: '' | 'breakfast' | 'lunch' | 'dinner' | 'late_night';
+  day_of_week?: number | null;
+  hour?: number | null;
+  top_n?: number;
+  rank_basis: 'units' | 'revenue' | 'margin';
+  scope_dimension: 'none' | 'revenue_center' | 'device';
+  scope_mode: 'cumulative' | 'breakdown';
+  scope_ids: string[];
+};
+export type RestaurantHomepageViewSettings = {
+  period: 'day' | 'week' | 'month' | 'year' | 'full';
+  anchor_date?: string | null;
+};
+export type RestaurantViewPreferences = {
+  settings: {
+    reports?: RestaurantReportViewSettings;
+    homepage?: RestaurantHomepageViewSettings;
+  };
+};
 export type ReportRecipient = {
   id: string;
   name: string;
@@ -64,6 +92,20 @@ export function saveReportPreference(restaurantId: string, preference: ReportPre
   return apiRequest<ReportPreference>(`/restaurants/${restaurantId}/reports/preferences`, {
     method: 'PUT',
     body: preference,
+  });
+}
+
+export function fetchRestaurantViewPreferences(restaurantId: string) {
+  return apiRequest<RestaurantViewPreferences>(`/restaurants/${restaurantId}/reports/view-preferences`);
+}
+
+export function saveRestaurantViewPreferences(
+  restaurantId: string,
+  context: 'reports' | 'homepage',
+  settings: RestaurantReportViewSettings | RestaurantHomepageViewSettings,
+) {
+  return apiRequest<RestaurantViewPreferences>(`/restaurants/${restaurantId}/reports/view-preferences/${context}`, {
+    method: 'PUT', body: { settings },
   });
 }
 

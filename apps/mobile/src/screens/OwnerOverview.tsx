@@ -11,6 +11,7 @@ import { card, divider, layout, radius, spacing } from '@/styles/tokens';
 import { typography } from '@/styles/typography';
 import { Feather } from '@expo/vector-icons';
 import HomepageWidgets from '@/components/HomepageWidgets';
+import { fetchRestaurantViewPreferences, saveRestaurantViewPreferences } from '@/api/restaurantReports';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -57,6 +58,8 @@ export default function OwnerOverview() {
   const [isLoading, setIsLoading] = useState(true);
   const [isReviewingTime, setIsReviewingTime] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [viewHydrated, setViewHydrated] = useState(false);
+  const [viewPersistenceReady, setViewPersistenceReady] = useState(false);
 
   const dateKey = toDateKey(date);
 
@@ -92,6 +95,37 @@ export default function OwnerOverview() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!restaurant?.id) return;
+    let cancelled = false;
+    setViewHydrated(false);
+    setViewPersistenceReady(false);
+    fetchRestaurantViewPreferences(restaurant.id)
+      .then((payload) => {
+        if (cancelled) return;
+        const saved = payload.settings.homepage;
+        if (saved) {
+          setPeriod(saved.period || 'day');
+          if (saved.anchor_date) setDate(new Date(`${saved.anchor_date}T12:00:00`));
+        }
+        setViewPersistenceReady(true);
+      })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setViewHydrated(true); });
+    return () => { cancelled = true; };
+  }, [restaurant?.id]);
+
+  useEffect(() => {
+    if (!restaurant?.id || !viewHydrated || !viewPersistenceReady) return;
+    const timeout = setTimeout(() => {
+      saveRestaurantViewPreferences(restaurant.id, 'homepage', {
+        period,
+        anchor_date: dateKey,
+      }).catch(() => undefined);
+    }, 450);
+    return () => clearTimeout(timeout);
+  }, [dateKey, period, restaurant?.id, viewHydrated, viewPersistenceReady]);
 
   useEffect(() => {
     if (!restaurant?.id) return;
@@ -231,7 +265,7 @@ export default function OwnerOverview() {
               ))}
             </View>
           )}
-          <HomepageWidgets scope="restaurant" restaurantId={restaurant.id} period={period} anchorDate={dateKey} onWidgetPress={(widgetId) => { if (widgetId === 'net_sales' || widgetId === 'orders') openChecks(); }} />
+          {viewHydrated && <HomepageWidgets scope="restaurant" restaurantId={restaurant.id} period={period} anchorDate={dateKey} onWidgetPress={(widgetId) => { if (widgetId === 'net_sales' || widgetId === 'orders') openChecks(); }} />}
         </>
       )}
     </ScrollView>
