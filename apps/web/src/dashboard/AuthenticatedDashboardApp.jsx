@@ -448,7 +448,34 @@ function MiniTable({ columns, rows }) {
 }
 
 function AnalyticsDashboard({ restaurant }) {
-  const [period, setPeriod] = usePersistedPeriod('shire_home_period')
+  const [period, setPeriod] = useState('week')
+  const [viewHydrated, setViewHydrated] = useState(false)
+  const [viewPersistenceReady, setViewPersistenceReady] = useState(false)
+  useEffect(() => {
+    if (!restaurant?.id) return
+    let cancelled = false
+    setViewHydrated(false)
+    setViewPersistenceReady(false)
+    fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/reports/view-preferences`)
+      .then((payload) => {
+        if (!cancelled) {
+          setPeriod(payload.settings?.homepage?.period || 'week')
+          setViewPersistenceReady(true)
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setViewHydrated(true) })
+    return () => { cancelled = true }
+  }, [restaurant?.id])
+  useEffect(() => {
+    if (!restaurant?.id || !viewHydrated || !viewPersistenceReady) return
+    const timeout = window.setTimeout(() => {
+      fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/reports/view-preferences/homepage`, {
+        method: 'PUT', body: JSON.stringify({ settings: { period, anchor_date: null } }),
+      }).catch(() => undefined)
+    }, 450)
+    return () => window.clearTimeout(timeout)
+  }, [restaurant?.id, viewHydrated, viewPersistenceReady, period])
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-5 border-b border-white/10 pb-5 lg:flex-row lg:items-end lg:justify-between">
@@ -463,7 +490,7 @@ function AnalyticsDashboard({ restaurant }) {
           ))}
         </nav>
       </header>
-      <HomepageWidgets scope="restaurant" restaurantId={restaurant?.id} period={period} />
+      {viewHydrated && <HomepageWidgets scope="restaurant" restaurantId={restaurant?.id} period={period} />}
     </div>
   )
 }
@@ -2798,6 +2825,11 @@ function EmployeePortal() {
     }
   })
   const [weekSchedule, setWeekSchedule] = useState({ mine: [], all: [] })
+  const [tradeRequests, setTradeRequests] = useState([])
+  const [tradeView, setTradeView] = useState('needs_you')
+  const [selectedTradeShift, setSelectedTradeShift] = useState(null)
+  const [targetWaiterId, setTargetWaiterId] = useState('')
+  const [tradeReason, setTradeReason] = useState('')
   const [requests, setRequests] = useState([])
   const [availability, setAvailability] = useState([])
   const [contacts, setContacts] = useState([])
@@ -2845,8 +2877,9 @@ function EmployeePortal() {
       employeeFetch('/employee/earnings/biweekly'),
       employeeFetch('/employee/messages/conversations'),
       employeeFetch('/employee/announcements'),
+      employeeFetch('/employee/shift-trades?scope=all'),
     ])
-      .then(([me, requestData, availabilityData, contactData, earningsData, conversationData, announcementData]) => {
+      .then(([me, requestData, availabilityData, contactData, earningsData, conversationData, announcementData, tradeData]) => {
         if (cancelled) return
         setProfile(me)
         setRequests(requestData)
@@ -2855,6 +2888,7 @@ function EmployeePortal() {
         setEarnings(earningsData)
         setConversations(conversationData)
         setAnnouncements(announcementData)
+        setTradeRequests(Array.isArray(tradeData) ? tradeData : [])
         if (conversationData[0]?.id) setSelectedConversationId(String(conversationData[0].id))
       })
       .catch(err => {
@@ -2913,6 +2947,23 @@ function EmployeePortal() {
     return () => cancelAnimationFrame(frame)
   }, [activeEmployeeTab, scheduleScope, selectedDate, weekStart])
 
+  useEffect(() => {
+    if (!token || activeEmployeeTab !== 'schedule') return
+    const interval = window.setInterval(() => {
+      Promise.all([
+        employeeFetch(`/employee/schedule/week?week_start=${weekStart}&scope=mine`),
+        employeeFetch(`/employee/schedule/week?week_start=${weekStart}&scope=all`),
+        employeeFetch('/employee/shift-trades?scope=all'),
+      ])
+        .then(([mine, all, tradeData]) => {
+          setWeekSchedule({ mine: mine.items || [], all: all.items || [] })
+          setTradeRequests(Array.isArray(tradeData) ? tradeData : [])
+        })
+        .catch(() => undefined)
+    }, 15_000)
+    return () => window.clearInterval(interval)
+  }, [activeEmployeeTab, token, weekStart])
+
   if (!token) {
     return <Navigate to="/auth/login" replace />
   }
@@ -2924,13 +2975,14 @@ function EmployeePortal() {
   }
 
   const refreshEmployeeData = async () => {
-    const [requestData, availabilityData, contactData, earningsData, conversationData, announcementData] = await Promise.all([
+    const [requestData, availabilityData, contactData, earningsData, conversationData, announcementData, tradeData] = await Promise.all([
       employeeFetch('/employee/requests'),
       employeeFetch('/employee/availability'),
       employeeFetch('/employee/contacts'),
       employeeFetch('/employee/earnings/biweekly'),
       employeeFetch('/employee/messages/conversations'),
       employeeFetch('/employee/announcements'),
+      employeeFetch('/employee/shift-trades?scope=all'),
     ])
     setRequests(requestData)
     setAvailability(availabilityData)
@@ -2938,6 +2990,7 @@ function EmployeePortal() {
     setEarnings(earningsData)
     setConversations(conversationData)
     setAnnouncements(announcementData)
+    setTradeRequests(Array.isArray(tradeData) ? tradeData : [])
   }
 
   const saveAvailability = async (nextAvailability = availability) => {
@@ -3063,6 +3116,78 @@ function EmployeePortal() {
     }
   }
 
+  const refreshEmployeeSchedule = async () => {
+    const [mine, all, tradeData] = await Promise.all([
+      employeeFetch(`/employee/schedule/week?week_start=${weekStart}&scope=mine`),
+      employeeFetch(`/employee/schedule/week?week_start=${weekStart}&scope=all`),
+      employeeFetch('/employee/shift-trades?scope=all'),
+    ])
+    setWeekSchedule({ mine: mine.items || [], all: all.items || [] })
+    setTradeRequests(Array.isArray(tradeData) ? tradeData : [])
+  }
+
+  const openTradeModal = (shift) => {
+    const firstTarget = contacts.find(contact => !contact.is_me)
+    setSelectedTradeShift(shift)
+    setTargetWaiterId(firstTarget ? String(firstTarget.id) : '')
+    setTradeReason('')
+    setMessage('')
+  }
+
+  const submitTradeRequest = async () => {
+    if (!selectedTradeShift || !targetWaiterId) {
+      setMessage('Choose a coworker before sending the transfer.')
+      return
+    }
+    setIsSaving(true)
+    setMessage('')
+    try {
+      const created = await employeeFetch('/employee/shift-trades', {
+        method: 'POST',
+        body: JSON.stringify({
+          schedule_item_id: selectedTradeShift.id,
+          target_waiter_id: targetWaiterId,
+          reason: tradeReason.trim() || null,
+        }),
+      })
+      setTradeRequests(prev => [created, ...prev])
+      setTradeView('in_progress')
+      setSelectedTradeShift(null)
+      setMessage('Shift transfer sent. Your coworker must accept it before a manager can approve it.')
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not send shift transfer')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const respondToTrade = async (trade, status) => {
+    setIsSaving(true)
+    setMessage('')
+    try {
+      const updated = await employeeFetch(`/employee/shift-trades/${trade.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      })
+      setTradeRequests(prev => prev.map(item => String(item.id) === String(updated.id) ? updated : item))
+      if (status === 'approved') {
+        setTradeView('in_progress')
+        setMessage('Accepted. This transfer is now waiting for manager approval.')
+      } else {
+        setTradeView('history')
+        setMessage(status === 'cancelled' ? 'Shift transfer cancelled.' : 'Shift transfer denied.')
+      }
+      await refreshEmployeeSchedule()
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not update shift transfer')
+      await employeeFetch('/employee/shift-trades?scope=all')
+        .then(data => setTradeRequests(Array.isArray(data) ? data : []))
+        .catch(() => undefined)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const weekDates = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index))
   const todayKey = toDateKey(new Date())
   const scopedShifts = scheduleScope === 'mine' ? weekSchedule.mine : weekSchedule.all
@@ -3074,6 +3199,35 @@ function EmployeePortal() {
   const totalWeekHours = weekSchedule.mine.reduce((sum, shift) => sum + shiftDurationHours(shift), 0)
   const employeeLaborCost = firstPresent(earnings?.actual_labor_cost, earnings?.labor_cost, earnings?.estimated_wages)
   const selectedConversation = conversations.find(item => String(item.id) === String(selectedConversationId))
+  const currentWaiterId = String(profile?.waiter_id || profile?.id || '')
+  const eligibleTradeTargets = contacts.filter(contact => !contact.is_me && String(contact.id) !== currentWaiterId)
+  const isActiveTrade = trade => ['pending_target', 'pending_manager'].includes(String(trade.status))
+  const activeTradeShiftIds = new Set(
+    tradeRequests.filter(isActiveTrade).map(trade => String(trade.schedule_item_id))
+  )
+  const needsTradeApprovalCount = tradeRequests.filter(trade => (
+    trade.status === 'pending_target' && String(trade.target_waiter_id) === currentWaiterId
+  )).length
+  const inProgressTradeCount = tradeRequests.filter(trade => (
+    isActiveTrade(trade)
+    && !(trade.status === 'pending_target' && String(trade.target_waiter_id) === currentWaiterId)
+  )).length
+  const visibleTradeRequests = tradeRequests.filter(trade => {
+    if (tradeView === 'needs_you') {
+      return trade.status === 'pending_target' && String(trade.target_waiter_id) === currentWaiterId
+    }
+    if (tradeView === 'in_progress') {
+      return isActiveTrade(trade)
+        && !(trade.status === 'pending_target' && String(trade.target_waiter_id) === currentWaiterId)
+    }
+    return !isActiveTrade(trade)
+  })
+
+  const canTransferShift = (shift) => {
+    if (scheduleScope !== 'mine' || shift.schedule_status !== 'published') return false
+    const startsAt = new Date(`${shift.shift_date}T${String(shift.shift_start).slice(0, 8)}`)
+    return startsAt > new Date()
+  }
 
   const moveWeek = (direction) => {
     const nextWeekStart = toDateKey(addDays(weekStart, direction * 7))
@@ -3187,6 +3341,84 @@ function EmployeePortal() {
                 <button type="button" onClick={() => moveWeek(1)} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-dash-secondary">Next</button>
               </div>
             </div>
+            <div className="space-y-3 border-y border-white/10 py-4">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="label-mono">Shift transfers</p>
+                  <h2 className="mt-1 text-lg font-semibold">Requests inbox</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void refreshEmployeeSchedule()}
+                  className="rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-dash-secondary transition hover:border-white/20 hover:text-dash-cream"
+                >
+                  Refresh
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  ['needs_you', `Needs you${needsTradeApprovalCount ? ` (${needsTradeApprovalCount})` : ''}`],
+                  ['in_progress', `In progress${inProgressTradeCount ? ` (${inProgressTradeCount})` : ''}`],
+                  ['history', 'History'],
+                ].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setTradeView(id)}
+                    className={[
+                      'min-w-0 rounded-xl px-2 py-2 text-xs font-semibold transition sm:px-3 sm:text-sm',
+                      tradeView === id ? 'bg-white text-black' : 'border border-white/10 text-dash-secondary',
+                    ].join(' ')}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {visibleTradeRequests.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-dash-secondary">
+                  No shift transfers in this view.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {visibleTradeRequests.map(trade => {
+                    const needsMyApproval = trade.status === 'pending_target' && String(trade.target_waiter_id) === currentWaiterId
+                    const canCancel = isActiveTrade(trade) && String(trade.requesting_waiter_id) === currentWaiterId
+                    return (
+                      <article key={trade.id} className="rounded-xl border border-white/10 bg-white/[0.035] p-3 text-sm">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold">
+                              {trade.requesting_waiter_name || 'Coworker'} to {trade.target_waiter_name || 'coworker'}
+                            </p>
+                            <p className="mt-1 text-dash-secondary">
+                              {new Date(`${trade.shift_date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                              {' · '}{formatEmployeeTime(trade.shift_start)}-{formatEmployeeTime(trade.shift_end)}
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-white/10 px-2 py-1 text-xs capitalize text-dash-tertiary">
+                            {String(trade.status).replaceAll('_', ' ')}
+                          </span>
+                        </div>
+                        {trade.reason && <p className="mt-2 text-dash-tertiary">{trade.reason}</p>}
+                        {(needsMyApproval || canCancel) && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {needsMyApproval && (
+                              <>
+                                <button type="button" disabled={isSaving} onClick={() => void respondToTrade(trade, 'approved')} className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-black disabled:opacity-50">Accept</button>
+                                <button type="button" disabled={isSaving} onClick={() => void respondToTrade(trade, 'denied')} className="rounded-xl border border-white/15 px-3 py-2 text-xs font-semibold text-dash-secondary disabled:opacity-50">Deny</button>
+                              </>
+                            )}
+                            {canCancel && (
+                              <button type="button" disabled={isSaving} onClick={() => void respondToTrade(trade, 'cancelled')} className="rounded-xl border border-white/15 px-3 py-2 text-xs font-semibold text-dash-secondary disabled:opacity-50">Cancel request</button>
+                            )}
+                          </div>
+                        )}
+                      </article>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
             <div className="grid grid-cols-7 gap-2">
               {weekDates.map((day, index) => {
                 const key = toDateKey(day)
@@ -3224,7 +3456,19 @@ function EmployeePortal() {
                               <p className="font-semibold">{shift.waiter_name || profile?.name || 'Staff'}</p>
                               <p className="capitalize text-dash-tertiary">{shift.role || shift.waiter_role || 'Staff'}</p>
                             </div>
-                            <p className="text-right text-dash-secondary">{formatEmployeeTime(shift.shift_start)}<br />{formatEmployeeTime(shift.shift_end)}</p>
+                            <div className="flex items-center gap-3">
+                              <p className="text-right text-dash-secondary">{formatEmployeeTime(shift.shift_start)}<br />{formatEmployeeTime(shift.shift_end)}</p>
+                              {canTransferShift(shift) && (
+                                <button
+                                  type="button"
+                                  disabled={activeTradeShiftIds.has(String(shift.id))}
+                                  onClick={() => openTradeModal(shift)}
+                                  className="rounded-xl border border-dash-gold/40 px-3 py-2 text-xs font-semibold text-dash-gold transition hover:bg-dash-gold/10 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {activeTradeShiftIds.has(String(shift.id)) ? 'Pending' : 'Transfer'}
+                                </button>
+                              )}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -3412,6 +3656,55 @@ function EmployeePortal() {
             </div>
             )}
           </section>
+        )}
+
+        {selectedTradeShift && (
+          <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/70 p-4 backdrop-blur-sm sm:items-center" role="dialog" aria-modal="true" aria-labelledby="shift-transfer-title">
+            <div className="w-full max-w-lg rounded-2xl border border-white/15 bg-dash-base p-5 shadow-2xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="label-mono">Shift transfer</p>
+                  <h2 id="shift-transfer-title" className="mt-1 text-xl font-semibold">
+                    {new Date(`${selectedTradeShift.shift_date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
+                  </h2>
+                  <p className="mt-1 text-sm text-dash-secondary">
+                    {formatEmployeeTime(selectedTradeShift.shift_start)}-{formatEmployeeTime(selectedTradeShift.shift_end)}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setSelectedTradeShift(null)} className="h-9 w-9 rounded-full border border-white/10 text-lg text-dash-secondary" aria-label="Close shift transfer">×</button>
+              </div>
+              <p className="mt-4 text-sm text-dash-secondary">
+                Choose one coworker. They must accept the full shift, then a manager gives final approval.
+              </p>
+              <label className="mt-4 block text-sm font-semibold" htmlFor="shift-transfer-target">Coworker</label>
+              <select
+                id="shift-transfer-target"
+                value={targetWaiterId}
+                onChange={event => setTargetWaiterId(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-white/15 bg-dash-base px-3 py-3 text-sm text-dash-cream outline-none focus:border-dash-gold"
+              >
+                <option value="">Select a coworker</option>
+                {eligibleTradeTargets.map(contact => (
+                  <option key={contact.id} value={contact.id}>{contactName(contact)}</option>
+                ))}
+              </select>
+              <label className="mt-4 block text-sm font-semibold" htmlFor="shift-transfer-reason">Reason <span className="font-normal text-dash-tertiary">optional</span></label>
+              <textarea
+                id="shift-transfer-reason"
+                value={tradeReason}
+                onChange={event => setTradeReason(event.target.value.slice(0, 500))}
+                rows={3}
+                placeholder="Add context for your coworker and manager"
+                className="mt-2 w-full resize-none rounded-xl border border-white/15 bg-white/[0.035] px-3 py-3 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary focus:border-dash-gold"
+              />
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <button type="button" onClick={() => setSelectedTradeShift(null)} className="rounded-xl border border-white/15 px-4 py-3 text-sm font-semibold text-dash-secondary">Cancel</button>
+                <button type="button" disabled={isSaving || !targetWaiterId} onClick={() => void submitTradeRequest()} className="rounded-xl bg-dash-gold px-4 py-3 text-sm font-semibold text-black disabled:opacity-50">
+                  {isSaving ? 'Sending...' : 'Send transfer'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         <nav className="fixed inset-x-4 bottom-4 z-20 mx-auto grid max-w-2xl grid-cols-4 gap-2 rounded-2xl border border-white/10 bg-black/85 p-2 shadow-2xl backdrop-blur">
