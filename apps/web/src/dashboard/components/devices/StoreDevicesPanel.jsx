@@ -88,7 +88,7 @@ function TextField({ label, value, onChange, placeholder, className = '' }) {
   )
 }
 
-function DeviceRow({ device, printerTargets, printerEndpoints, onRename, onPrinterChange, onHardwareChange, onToggleStatus, busy }) {
+function DeviceRow({ device, printerTargets, printerEndpoints, sections, onRename, onSectionChange, onPrinterChange, onHardwareChange, onToggleStatus, busy }) {
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState(device.name || '')
   const online = isDeviceOnline(device)
@@ -167,7 +167,16 @@ function DeviceRow({ device, printerTargets, printerEndpoints, onRename, onPrint
       </div>
       {!revoked && (
         <>
-          <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+          <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-5">
+            <SelectField
+              label="Section (revenue center)"
+              value={device.revenue_center_id || ''}
+              disabled={busy}
+              onChange={(e) => onSectionChange(device, e.target.value || null)}
+            >
+              <option value="">Table / unassigned</option>
+              {sections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
+            </SelectField>
             {DEVICE_PRINTER_ROLES.map((role) => (
               <SelectField
                 key={role.id}
@@ -615,7 +624,7 @@ export default function StoreDevicesPanel({ restaurantId }) {
     return <p className="text-sm text-dash-danger">{error || 'Could not load device configuration'}</p>
   }
 
-  const { devices, targets, stations, categories } = config
+  const { devices, targets, stations, categories, sections } = config
 
   return (
     <div className="space-y-6">
@@ -656,8 +665,10 @@ export default function StoreDevicesPanel({ restaurantId }) {
               device={device}
               printerTargets={printerTargets}
               printerEndpoints={config.printerEndpoints}
+              sections={sections}
               busy={busy}
               onRename={(d, name) => mutate(() => updateDevice(d.id, { name }))}
+              onSectionChange={(d, sectionId) => mutate(() => updateDevice(d.id, { revenue_center_id: sectionId }))}
               onPrinterChange={(d, role, targetId) => mutate(() => setDevicePrinter(d.id, role, targetId))}
               onHardwareChange={(d, hardwareConfig) => {
                 const reason = requestHardwareChangeReason('changing terminal hardware settings')

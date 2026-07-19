@@ -75,10 +75,10 @@ export async function fetchPortfolioDevices(restaurantIds) {
 // assignments, the printer registry, print groups (kitchen_stations) with
 // their subscribed targets, and menu categories with their group assignment.
 export async function fetchStoreDeviceConfig(restaurantId) {
-  const [devices, targets, stations, categories, typePolicies, printerEndpoints] = await Promise.all([
+  const [devices, targets, stations, categories, typePolicies, printerEndpoints, sections] = await Promise.all([
     supabase
       .from('pos_devices')
-      .select('id, restaurant_id, name, device_type, status, last_seen_at, created_at, idle_lock_seconds, absolute_ttl_seconds, persist_manager_session, observed_capabilities, hardware_config, capabilities_reported_at, printers:pos_device_printers(role, target_id)')
+      .select('id, restaurant_id, name, device_type, status, last_seen_at, created_at, revenue_center_id, idle_lock_seconds, absolute_ttl_seconds, persist_manager_session, observed_capabilities, hardware_config, capabilities_reported_at, printers:pos_device_printers(role, target_id)')
       .eq('restaurant_id', restaurantId)
       .order('name'),
     supabase
@@ -107,8 +107,14 @@ export async function fetchStoreDeviceConfig(restaurantId) {
       .select('id, target_id, agent_device_id, name, connection_type, priority, config, is_active, last_health_status, last_health_error, last_health_at')
       .eq('restaurant_id', restaurantId)
       .order('priority'),
+    supabase
+      .from('sections')
+      .select('id, name, is_active')
+      .eq('restaurant_id', restaurantId)
+      .eq('is_active', true)
+      .order('name'),
   ])
-  const firstError = devices.error || targets.error || stations.error || categories.error || typePolicies.error || printerEndpoints.error
+  const firstError = devices.error || targets.error || stations.error || categories.error || typePolicies.error || printerEndpoints.error || sections.error
   if (firstError) throw firstError
   return {
     devices: devices.data || [],
@@ -117,6 +123,7 @@ export async function fetchStoreDeviceConfig(restaurantId) {
     categories: categories.data || [],
     typePolicies: typePolicies.data || [],
     printerEndpoints: printerEndpoints.data || [],
+    sections: sections.data || [],
   }
 }
 

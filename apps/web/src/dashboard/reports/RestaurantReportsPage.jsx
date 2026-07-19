@@ -7,6 +7,7 @@ import {
   FileSpreadsheet,
   FileText,
   Mail,
+  Layers,
   Printer,
   RefreshCw,
   Save,
@@ -508,6 +509,8 @@ export default function RestaurantReportsPage({ restaurantId }) {
   const [comparisonMode, setComparisonMode] = useState('previous_period')
   const [compareDraft, setCompareDraft] = useState(() => ({ ...initialDates(), mode: 'previous_period', enabled: false }))
   const [filters, setFilters] = useState({ category: '', daypart: '', dayOfWeek: '', hour: '', topN: 10, basis: 'revenue' })
+  const [reportingScope, setReportingScope] = useState({ scope_dimension: 'none', scope_mode: 'cumulative', scope_ids: [] })
+  const [dimensions, setDimensions] = useState({ sections: [], devices: [], coverage: {} })
   const [report, setReport] = useState(null)
   const [preference, setPreference] = useState({ visible_sections: SECTION_META.map(([id]) => id), section_order: SECTION_META.map(([id]) => id), section_settings: {} })
   const [recipients, setRecipients] = useState([])
@@ -570,17 +573,22 @@ export default function RestaurantReportsPage({ restaurantId }) {
     if (filters.daypart) query.set('daypart', filters.daypart)
     if (filters.dayOfWeek !== '') query.set('day_of_week', filters.dayOfWeek)
     if (filters.hour !== '') query.set('hour', filters.hour)
+    query.set('scope_dimension', reportingScope.scope_dimension)
+    query.set('scope_mode', reportingScope.scope_mode)
+    if (reportingScope.scope_ids.length) query.set('scope_ids', reportingScope.scope_ids.join(','))
     try {
-      const [nextReport, nextPreference, emailConfig] = await Promise.all([
+      const [nextReport, nextPreference, emailConfig, nextDimensions] = await Promise.all([
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports?${query}`),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/preferences`),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/recipients`),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/dimensions`),
       ])
       setReport(nextReport)
       setPreference(nextPreference)
       setRecipients(emailConfig.recipients || [])
       setCanManageRecipients(Boolean(emailConfig.can_manage))
       setEmailDelivery({ enabled: Boolean(emailConfig.delivery_enabled), reason: emailConfig.delivery_disabled_reason || '' })
+      setDimensions(nextDimensions)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load reports.')
     } finally {
@@ -588,7 +596,7 @@ export default function RestaurantReportsPage({ restaurantId }) {
     }
   }
 
-  useEffect(() => { void load() }, [restaurantId, dates, comparisonEnabled, filters.category, filters.daypart, filters.dayOfWeek, filters.hour, filters.topN, filters.basis])
+  useEffect(() => { void load() }, [restaurantId, dates, comparisonEnabled, filters.category, filters.daypart, filters.dayOfWeek, filters.hour, filters.topN, filters.basis, reportingScope])
 
   useEffect(() => {
     if (!restaurantId) return
@@ -685,6 +693,7 @@ export default function RestaurantReportsPage({ restaurantId }) {
             </div>
             <div className="flex shrink-0 flex-wrap justify-end gap-2 sm:ml-auto">
               <IconButton label="Set comparison" icon={CalendarRange} onClick={() => { setCompareDraft({ ...dates, mode: comparisonMode, enabled: comparisonEnabled }); setModal('compare') }} />
+              <IconButton label={reportingScope.scope_dimension === 'none' ? 'Scope' : reportingScope.scope_dimension === 'device' ? 'Devices' : 'Sections'} icon={Layers} onClick={() => setModal('scope')} />
               <IconButton label="Configure" icon={Settings2} onClick={() => setModal('config')} />
               <IconButton label="Email" icon={Mail} onClick={() => setModal('email')} />
               <IconButton label="Refresh" icon={RefreshCw} onClick={load} disabled={loading} />
@@ -705,6 +714,10 @@ export default function RestaurantReportsPage({ restaurantId }) {
           <CalendarRange className="h-4 w-4 shrink-0 text-dash-gold" />
           <span><strong className="text-dash-cream">Comparison active:</strong> {comparisonLabel}</span>
         </div>}
+        {reportingScope.scope_dimension !== 'none' && <div className="mt-3 flex items-start gap-2 rounded-md border border-sky-400/20 bg-sky-400/5 px-3 py-2 text-xs text-dash-secondary">
+          <Layers className="mt-0.5 h-4 w-4 shrink-0 text-sky-300" />
+          <span><strong className="text-dash-cream">Scoped reporting:</strong> sales-derived sections use the selected {reportingScope.scope_dimension === 'device' ? 'devices' : 'sections'}. Employee, payroll, and punch data remain restaurant-wide because those records do not yet have reliable section or device attribution.</span>
+        </div>}
       </header>
 
       {error && <div className="my-5 rounded-md border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">{error}</div>}
@@ -718,10 +731,29 @@ export default function RestaurantReportsPage({ restaurantId }) {
       {hubTab === 'automation' && <AutomationPanel recipients={recipients} canManage={canManageRecipients} emailDelivery={emailDelivery} onConfigure={() => setModal('email')} />}
 
       {modal === 'compare' && <Modal title="Comparison period" onClose={() => setModal(null)}><div className="space-y-4"><div className="flex items-center justify-between gap-4 rounded-md border border-white/10 bg-white/[0.025] p-3"><div><p className="text-sm font-semibold">Comparison</p><p className="mt-1 text-xs text-dash-tertiary">Show changes against another period.</p></div><ComparisonToggle enabled={compareDraft.enabled} onChange={(enabled) => setCompareDraft({ ...compareDraft, enabled })} /></div><div className={compareDraft.enabled ? '' : 'pointer-events-none opacity-40'}><div className="space-y-4"><Field label="Compare against"><select value={compareDraft.mode} onChange={(event) => updateComparisonDraftMode(event.target.value)}><option value="previous_period">Previous equal period</option><option value="previous_year">Same period last year</option><option value="custom">Custom period</option></select></Field><div className="grid gap-4 sm:grid-cols-2"><Field label="Comparison from"><input type="date" value={compareDraft.comparisonStart} onChange={(event) => setCompareDraft({ ...compareDraft, mode: 'custom', comparisonStart: event.target.value })} /></Field><Field label="Comparison through"><input type="date" value={compareDraft.comparisonEnd} onChange={(event) => setCompareDraft({ ...compareDraft, mode: 'custom', comparisonEnd: event.target.value })} /></Field></div></div></div></div><div className="mt-5 flex justify-end"><IconButton label="Save comparison" icon={CalendarRange} primary disabled={compareDraft.enabled && (!compareDraft.comparisonStart || !compareDraft.comparisonEnd || compareDraft.comparisonStart > compareDraft.comparisonEnd)} onClick={() => { setComparisonMode(compareDraft.mode); setComparisonEnabled(compareDraft.enabled); setDates((current) => ({ ...current, comparisonStart: compareDraft.comparisonStart, comparisonEnd: compareDraft.comparisonEnd })); setModal(null) }} /></div></Modal>}
+      {modal === 'scope' && <ReportScopeModal value={reportingScope} dimensions={dimensions} onClose={() => setModal(null)} onApply={(next) => { setReportingScope(next); setModal(null) }} />}
       {modal === 'config' && <ConfigModal preference={preference} onClose={() => setModal(null)} onSave={savePreference} />}
       {modal === 'email' && <EmailModal recipients={recipients} canManage={canManageRecipients} deliveryEnabled={emailDelivery.enabled} disabledReason={emailDelivery.reason} defaultTimezone={report?.restaurant?.timezone} onClose={() => setModal(null)} onSave={saveRecipient} onDelete={deleteRecipient} onTest={testRecipient} />}
     </div>
   )
+}
+
+function ReportScopeModal({ value, dimensions, onClose, onApply }) {
+  const [draft, setDraft] = useState(() => ({ ...value, scope_ids: [...value.scope_ids] }))
+  const options = draft.scope_dimension === 'revenue_center' ? dimensions.sections || [] : draft.scope_dimension === 'device' ? dimensions.devices || [] : []
+  const toggle = (id) => setDraft((current) => ({ ...current, scope_ids: current.scope_ids.includes(id) ? current.scope_ids.filter((item) => item !== id) : [...current.scope_ids, id] }))
+  return <Modal title="Report scope" onClose={onClose}>
+    <div className="space-y-5">
+      <p className="text-sm leading-6 text-dash-secondary">Sections are used as revenue centers in reporting. Device reports use the terminal that opened each order.</p>
+      <div className="flex flex-wrap gap-2">{[['none', 'Whole restaurant'], ['revenue_center', 'Sections'], ['device', 'Devices']].map(([id, label]) => <button key={id} type="button" onClick={() => setDraft({ ...draft, scope_dimension: id, scope_ids: [], scope_mode: id === 'none' ? 'cumulative' : draft.scope_mode })} className={`h-10 rounded-md border px-3 text-sm font-semibold ${draft.scope_dimension === id ? 'border-dash-gold bg-dash-gold/10 text-dash-cream' : 'border-white/10 text-dash-secondary'}`}>{label}</button>)}</div>
+      {draft.scope_dimension !== 'none' && <>
+        <div className="flex gap-2">{[['cumulative', 'Cumulative total'], ['breakdown', 'Break down results']].map(([id, label]) => <button key={id} type="button" onClick={() => setDraft({ ...draft, scope_mode: id })} className={`h-10 rounded-md border px-3 text-sm font-semibold ${draft.scope_mode === id ? 'border-dash-gold bg-dash-gold/10 text-dash-cream' : 'border-white/10 text-dash-secondary'}`}>{label}</button>)}</div>
+        <p className="text-xs text-dash-tertiary">No selection includes every {draft.scope_dimension === 'device' ? 'device' : 'section'}.</p>
+        <div className="grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2">{options.map((option) => <label key={option.id} className="flex min-h-11 items-center gap-3 rounded-md border border-white/10 px-3 text-sm"><input type="checkbox" checked={draft.scope_ids.includes(option.id)} onChange={() => toggle(option.id)} /><span>{option.name}{draft.scope_dimension === 'device' && option.section_name ? <span className="ml-1 text-xs text-dash-tertiary">({option.section_name})</span> : null}</span></label>)}</div>
+      </>}
+    </div>
+    <div className="mt-5 flex justify-end gap-2"><IconButton label="Cancel" icon={X} onClick={onClose} /><IconButton label="Apply scope" icon={Layers} primary onClick={() => onApply(draft)} /></div>
+  </Modal>
 }
 
 function SalesRevenue({ section = {}, filters, setFilters, categories, comparisonEnabled }) {
@@ -733,7 +765,7 @@ function SalesRevenue({ section = {}, filters, setFilters, categories, compariso
     ? [{ key: 'name', label: 'Item' }, { key: 'category', label: 'Category' }, { key: 'units', label: 'Units', render: number }, { key: 'revenue', label: 'Revenue', render: money }, { key: 'revenue_share_pct', label: '% revenue', render: percent }, { key: 'cost', label: 'Cost', render: money }, { key: 'margin', label: 'Margin', render: money }]
     : [{ key: 'label', label: view === 'days_of_week' ? 'Day' : view.slice(0, -1) }, { key: 'units', label: 'Units', render: number }, { key: 'revenue', label: 'Revenue', render: money }, { key: 'cost', label: 'Cost', render: money }, { key: 'margin', label: 'Margin', render: money }]
   const displayRows = rows.map((row) => view === 'days_of_week' ? { ...row, label: DAY_LABELS[Number(row.label)] || row.label } : view === 'hours' ? { ...row, label: `${String(row.label).padStart(2, '0')}:00` } : row)
-  return <Section id="sales-revenue" title="Sales & revenue" subtitle="Labor-adjusted profit is net revenue minus recorded wages; other operating costs are not included yet." exportRows={displayRows}><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat label="Net revenue" value={money(summary.net_revenue)} comparison={comparison.net_revenue} comparisonFormat={money} /><Stat label="Employee cost" value={money(summary.labor_cost)} comparison={comparison.labor_cost} comparisonFormat={money} invertDelta /><Stat label="Profit after labor" value={money(summary.labor_adjusted_profit)} comparison={comparison.labor_adjusted_profit} comparisonFormat={money} /><Stat label="Gross revenue" value={money(summary.gross_revenue)} comparison={comparison.gross_revenue} comparisonFormat={money} /><Stat label="Units sold" value={number(summary.units_sold)} comparison={comparison.units_sold} /><Stat label="Item margin" value={money(summary.item_margin)} comparison={comparison.item_margin} comparisonFormat={money} /><Stat label="Tickets" value={number(summary.ticket_count)} comparison={comparison.ticket_count} /></div><div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"><Segmented value={view} onChange={setView} options={[{ id: 'items', label: 'Items' }, { id: 'categories', label: 'Category' }, { id: 'dayparts', label: 'Daypart' }, { id: 'days_of_week', label: 'Day' }, { id: 'hours', label: 'Hour' }]} /><div className="grid grid-cols-2 gap-2 sm:flex"><select aria-label="Category filter" value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })} className="h-10 rounded-md border border-white/10 bg-dash-surface px-3 text-sm"><option value="">All categories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select><select aria-label="Daypart filter" value={filters.daypart} onChange={(event) => setFilters({ ...filters, daypart: event.target.value })} className="h-10 rounded-md border border-white/10 bg-dash-surface px-3 text-sm"><option value="">All dayparts</option><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner">Dinner</option><option value="late_night">Late night</option></select></div></div><div className="mt-4"><Table columns={columns} rows={displayRows} /></div></Section>
+  return <Section id="sales-revenue" title="Sales & revenue" subtitle={summary.labor_cost == null ? 'Sales are scoped. Labor remains restaurant-wide, so scoped profit is intentionally omitted.' : 'Labor-adjusted profit is net revenue minus recorded wages; other operating costs are not included yet.'} exportRows={displayRows}><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat label="Net revenue" value={money(summary.net_revenue)} comparison={comparison.net_revenue} comparisonFormat={money} /><Stat label="Employee cost" value={summary.labor_cost == null ? '—' : money(summary.labor_cost)} comparison={comparison.labor_cost} comparisonFormat={money} invertDelta /><Stat label="Profit after labor" value={summary.labor_adjusted_profit == null ? '—' : money(summary.labor_adjusted_profit)} comparison={comparison.labor_adjusted_profit} comparisonFormat={money} /><Stat label="Gross revenue" value={money(summary.gross_revenue)} comparison={comparison.gross_revenue} comparisonFormat={money} /><Stat label="Units sold" value={number(summary.units_sold)} comparison={comparison.units_sold} /><Stat label="Item margin" value={money(summary.item_margin)} comparison={comparison.item_margin} comparisonFormat={money} /><Stat label="Tickets" value={number(summary.ticket_count)} comparison={comparison.ticket_count} /></div>{section.scope_breakdown?.length > 0 && <div className="mt-5"><h3 className="mb-2 text-sm font-semibold">Section / device performance</h3><Table columns={[{ key: 'name', label: 'Area or device' }, { key: 'ticket_count', label: 'Tickets', render: number }, { key: 'net_revenue', label: 'Net revenue', render: money }, { key: 'tips', label: 'Tips', render: money }, { key: 'discounts', label: 'Discounts', render: money }, { key: 'average_check', label: 'Average check', render: money }]} rows={section.scope_breakdown} /></div>}<div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"><Segmented value={view} onChange={setView} options={[{ id: 'items', label: 'Items' }, { id: 'categories', label: 'Category' }, { id: 'dayparts', label: 'Daypart' }, { id: 'days_of_week', label: 'Day' }, { id: 'hours', label: 'Hour' }]} /><div className="grid grid-cols-2 gap-2 sm:flex"><select aria-label="Category filter" value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })} className="h-10 rounded-md border border-white/10 bg-dash-surface px-3 text-sm"><option value="">All categories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select><select aria-label="Daypart filter" value={filters.daypart} onChange={(event) => setFilters({ ...filters, daypart: event.target.value })} className="h-10 rounded-md border border-white/10 bg-dash-surface px-3 text-sm"><option value="">All dayparts</option><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner">Dinner</option><option value="late_night">Late night</option></select></div></div><div className="mt-4"><Table columns={columns} rows={displayRows} /></div></Section>
 }
 
 function TopBottom({ section = {}, filters, setFilters }) {

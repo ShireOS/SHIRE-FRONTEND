@@ -372,6 +372,11 @@ export default function DashboardShell({
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [theme, setTheme] = useShellTheme()
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [location.pathname])
+
   // Section-scoped nav items (e.g. the Payroll & Tips entries) match on the
   // URL hash; no hash means the first section ('overview').
   const activeSection = (location.hash || '').replace('#', '') || 'overview'

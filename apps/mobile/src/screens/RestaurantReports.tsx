@@ -4,6 +4,8 @@ import {
   fetchReportPreference,
   fetchReportRecipients,
   fetchRestaurantReport,
+  fetchRestaurantReportingDimensions,
+  assignReportingDeviceSection,
   generateStaffReportInsight,
   saveReportPreference,
   saveReportRecipient,
@@ -13,6 +15,7 @@ import {
   type ReportSectionId,
   type RestaurantReport,
 } from '@/api/restaurantReports';
+import type { ReportingDimensions } from '@/api/homepageWidgets';
 import { color_pallet, semanticColors } from '@/styles/colors';
 import { typography } from '@/styles/typography';
 import { Feather } from '@expo/vector-icons';
@@ -129,6 +132,7 @@ function validDateRange(start: string, end: string) {
 }
 
 function formatMoney(value: unknown) {
+  if (value == null) return '—';
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value || 0));
 }
 
@@ -155,6 +159,8 @@ export default function RestaurantReportsScreen() {
   const [compareDraft, setCompareDraft] = useState(() => ({ ...initialRange(), mode: 'previous_period' as ComparisonMode, enabled: false }));
   const [basis, setBasis] = useState<'units' | 'revenue' | 'margin'>('revenue');
   const [daypart, setDaypart] = useState('');
+  const [reportingScope, setReportingScope] = useState<{ scope_dimension: 'none' | 'revenue_center' | 'device'; scope_mode: 'cumulative' | 'breakdown'; scope_ids: string[] }>({ scope_dimension: 'none', scope_mode: 'cumulative', scope_ids: [] });
+  const [dimensions, setDimensions] = useState<ReportingDimensions | null>(null);
   const [report, setReport] = useState<RestaurantReport | null>(null);
   const [preference, setPreference] = useState<ReportPreference>(DEFAULT_PREFERENCE);
   const [recipients, setRecipients] = useState<ReportRecipient[]>([]);
@@ -162,7 +168,7 @@ export default function RestaurantReportsScreen() {
   const [emailDelivery, setEmailDelivery] = useState({ enabled: false, reason: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [modal, setModal] = useState<'period' | 'dates' | 'compare' | 'config' | 'email' | null>(null);
+  const [modal, setModal] = useState<'period' | 'dates' | 'compare' | 'scope' | 'config' | 'email' | null>(null);
   const [insights, setInsights] = useState<Record<string, { loading?: boolean; data?: any; error?: string }>>({});
 
   useEffect(() => {
@@ -218,10 +224,14 @@ export default function RestaurantReportsScreen() {
         query.set('comparison_end_date', dateRange.comparisonEnd);
       }
       if (daypart) query.set('daypart', daypart);
-      const [nextReport, nextPreference, recipientData] = await Promise.all([
+      query.set('scope_dimension', reportingScope.scope_dimension);
+      query.set('scope_mode', reportingScope.scope_mode);
+      if (reportingScope.scope_ids.length) query.set('scope_ids', reportingScope.scope_ids.join(','));
+      const [nextReport, nextPreference, recipientData, nextDimensions] = await Promise.all([
         fetchRestaurantReport(restaurantId, query),
         fetchReportPreference(restaurantId),
         fetchReportRecipients(restaurantId),
+        fetchRestaurantReportingDimensions(restaurantId),
       ]);
       setReport(nextReport);
       setPreference(nextPreference);
@@ -231,12 +241,13 @@ export default function RestaurantReportsScreen() {
         enabled: Boolean(recipientData.delivery_enabled),
         reason: recipientData.delivery_disabled_reason || '',
       });
+      setDimensions(nextDimensions);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Could not load reports.');
     } finally {
       setLoading(false);
     }
-  }, [basis, comparisonEnabled, dateRange.comparisonEnd, dateRange.comparisonStart, dateRange.end, dateRange.start, daypart, restaurantId]);
+  }, [basis, comparisonEnabled, dateRange.comparisonEnd, dateRange.comparisonStart, dateRange.end, dateRange.start, daypart, reportingScope, restaurantId]);
 
   useEffect(() => { load().catch(() => undefined); }, [load]);
 
@@ -292,6 +303,7 @@ export default function RestaurantReportsScreen() {
           </View>
           <View style={styles.headerActionRow}>
             <IconAction icon="calendar" label="Compare" onPress={() => { setCompareDraft({ ...dateRange, mode: comparisonMode, enabled: comparisonEnabled }); setModal('compare'); }} />
+            <IconAction icon="layers" label="Scope" onPress={() => setModal('scope')} />
             <IconAction icon="settings" label="Configure" onPress={() => setModal('config')} />
             <IconAction icon="mail" label="Email" onPress={() => setModal('email')} />
             <IconAction icon="refresh-cw" label="Refresh" onPress={() => load()} />
@@ -309,6 +321,7 @@ export default function RestaurantReportsScreen() {
             </Pressable>
           </View>
           {comparisonEnabled && <View style={styles.comparisonBanner}><Feather name="bar-chart-2" size={15} color={semanticColors.primary} /><Text style={styles.comparisonText}><Text style={styles.comparisonStrong}>Comparison active: </Text>{dateRange.comparisonStart} — {dateRange.comparisonEnd}</Text></View>}
+          {reportingScope.scope_dimension !== 'none' && <View style={styles.scopeBanner}><Feather name="layers" size={15} color={semanticColors.primary} /><Text style={styles.scopeText}><Text style={styles.scopeStrong}>Scoped reporting: </Text>Sales-derived sections use the selected {reportingScope.scope_dimension === 'device' ? 'devices' : 'sections'}. Employee, payroll, and punch data remain restaurant-wide because those records do not have reliable section or device attribution.</Text></View>}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
             <Chip label="All dayparts" active={!daypart} onPress={() => setDaypart('')} />
             {['breakfast', 'lunch', 'dinner', 'late_night'].map((item) => <Chip key={item} label={item.replace('_', ' ')} active={daypart === item} onPress={() => setDaypart(item)} />)}
@@ -321,7 +334,7 @@ export default function RestaurantReportsScreen() {
         {report && visibleSections.map((id) => {
           const section = sections?.[id];
           if (!section) return null;
-          if (id === 'sales_revenue') return <SalesSection key={id} section={section} statWidth={statWidth} comparisonEnabled={comparisonEnabled} />;
+          if (id === 'sales_revenue') return <ScopedSalesSection key={id} section={section} statWidth={statWidth} comparisonEnabled={comparisonEnabled} />;
           if (id === 'top_bottom_sellers') return <RankingSection key={id} section={section} basis={basis} onBasis={setBasis} />;
           if (id === 'average_check') return <AverageSection key={id} section={section} statWidth={statWidth} comparisonEnabled={comparisonEnabled} />;
           if (id === 'employee_reports') return <EmployeeSection key={id} section={section} insights={insights} onInsight={generateInsight} />;
@@ -335,6 +348,7 @@ export default function RestaurantReportsScreen() {
       <PeriodModal visible={modal === 'period'} selected={periodPreset} onClose={() => setModal(null)} onSelect={selectPeriod} />
       <DateRangeModal visible={modal === 'dates'} draft={dateDraft} onChange={setDateDraft} onClose={() => setModal(null)} onApply={() => { applyPrimaryRange(dateDraft); setModal(null); }} />
       <ComparisonModal visible={modal === 'compare'} draft={compareDraft} onChange={setCompareDraft} onMode={updateCompareMode} onClose={() => setModal(null)} onApply={() => { setComparisonMode(compareDraft.mode); setComparisonEnabled(compareDraft.enabled); setDateRange((current) => ({ ...current, comparisonStart: compareDraft.comparisonStart, comparisonEnd: compareDraft.comparisonEnd })); setModal(null); }} />
+      <ReportScopeModal visible={modal === 'scope'} value={reportingScope} dimensions={dimensions} restaurantId={restaurantId} onChangeDimensions={setDimensions} onClose={() => setModal(null)} onApply={(next) => { setReportingScope(next); setModal(null); }} />
       <ConfigModal visible={modal === 'config'} preference={preference} onClose={() => setModal(null)} onSave={savePreference} />
       <EmailModal visible={modal === 'email'} recipients={recipients} canManage={canManageRecipients} deliveryEnabled={emailDelivery.enabled} disabledReason={emailDelivery.reason} defaultTimezone={report?.restaurant?.timezone} onClose={() => setModal(null)} onSave={saveRecipient} onDelete={removeRecipient} onTest={testRecipient} />
     </View>
@@ -360,6 +374,11 @@ function SalesSection({ section, statWidth, comparisonEnabled }: { section: any;
   const summary = section.summary || {};
   const comparison = comparisonEnabled ? section.comparison || {} : {};
   return <ReportSection title="Sales & revenue" subtitle="Profit after labor is net revenue minus recorded wages; other costs are not included yet."><View style={styles.statGrid}><Stat width={statWidth} label="Net sales" value={formatMoney(summary.net_revenue)} comparison={comparison.net_revenue} comparisonFormat={formatMoney} /><Stat width={statWidth} label="Employee cost" value={formatMoney(summary.labor_cost)} comparison={comparison.labor_cost} comparisonFormat={formatMoney} invertDelta /><Stat width={statWidth} label="Profit after labor" value={formatMoney(summary.labor_adjusted_profit)} comparison={comparison.labor_adjusted_profit} comparisonFormat={formatMoney} /><Stat width={statWidth} label="Units" value={formatNumber(summary.units_sold)} comparison={comparison.units_sold} /><Stat width={statWidth} label="Item margin" value={formatMoney(summary.item_margin)} comparison={comparison.item_margin} comparisonFormat={formatMoney} /><Stat width={statWidth} label="Tickets" value={formatNumber(summary.ticket_count)} comparison={comparison.ticket_count} /></View><DataTable columns={[['name', 'Item'], ['category', 'Category'], ['units', 'Units'], ['revenue', 'Revenue'], ['margin', 'Margin']]} rows={section.items || []} formatters={{ revenue: formatMoney, margin: formatMoney }} /></ReportSection>;
+}
+
+function ScopedSalesSection(props: { section: any; statWidth: any; comparisonEnabled: boolean }) {
+  const rows = props.section?.scope_breakdown || [];
+  return <><SalesSection {...props} />{rows.length ? <ReportSection title="Section / device performance" subtitle="Breakdown uses the section or originating device captured on each order."><DataTable columns={[["name", "Area or device"], ["ticket_count", "Tickets"], ["net_revenue", "Net revenue"], ["tips", "Tips"], ["discounts", "Discounts"], ["average_check", "Average check"]]} rows={rows} formatters={{ net_revenue: formatMoney, tips: formatMoney, discounts: formatMoney, average_check: formatMoney }} /></ReportSection> : null}</>;
 }
 
 function RankingSection({ section, basis, onBasis }: { section: any; basis: string; onBasis: (value: any) => void }) {
@@ -441,6 +460,30 @@ function ComparisonModal({ visible, draft, onChange, onMode, onClose, onApply }:
   ];
   const invalid = draft.enabled && !valid;
   return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.modalCard}><ModalHeader title="Comparison period" onClose={onClose} /><View style={styles.form}><View style={styles.comparisonControl}><Text style={styles.comparisonControlLabel}>Comparison</Text><Switch accessibilityLabel="Toggle comparison" value={draft.enabled} onValueChange={(enabled) => onChange({ ...draft, enabled })} trackColor={{ false: semanticColors.borderStrong, true: color_pallet.sky[300] }} thumbColor={draft.enabled ? semanticColors.primary : color_pallet.stone[100]} /></View><View pointerEvents={draft.enabled ? 'auto' : 'none'} style={!draft.enabled && styles.disabledSection}>{modes.map((mode) => <Pressable key={mode.id} onPress={() => onMode(mode.id)} style={styles.optionRow}><Text style={styles.optionText}>{mode.label}</Text><Feather name={draft.mode === mode.id ? 'check-circle' : 'circle'} size={18} color={draft.mode === mode.id ? semanticColors.primary : semanticColors.textMuted} /></Pressable>)}<View style={styles.comparisonDateFields}><LabeledInput label="Comparison from" value={draft.comparisonStart} onChangeText={(comparisonStart) => onChange({ ...draft, comparisonStart, mode: 'custom' })} keyboardType="numbers-and-punctuation" /><LabeledInput label="Comparison through" value={draft.comparisonEnd} onChangeText={(comparisonEnd) => onChange({ ...draft, comparisonEnd, mode: 'custom' })} keyboardType="numbers-and-punctuation" /></View></View>{invalid && <Text style={styles.validationText}>Enter a valid comparison range.</Text>}<Pressable disabled={invalid} onPress={onApply} style={[styles.primaryButton, invalid && styles.buttonDisabled]}><Text style={styles.primaryButtonText}>Save comparison</Text></Pressable></View></View></View></Modal>;
+}
+
+type ReportScope = { scope_dimension: 'none' | 'revenue_center' | 'device'; scope_mode: 'cumulative' | 'breakdown'; scope_ids: string[] };
+
+function ReportScopeModal({ visible, value, dimensions, restaurantId, onChangeDimensions, onClose, onApply }: { visible: boolean; value: ReportScope; dimensions: ReportingDimensions | null; restaurantId: string; onChangeDimensions: (value: ReportingDimensions) => void; onClose: () => void; onApply: (value: ReportScope) => void }) {
+  const [draft, setDraft] = useState<ReportScope>(value);
+  const [workingDevice, setWorkingDevice] = useState('');
+  const [assignmentError, setAssignmentError] = useState('');
+  useEffect(() => { if (visible) { setDraft({ ...value, scope_ids: [...value.scope_ids] }); setAssignmentError(''); } }, [value, visible]);
+  const options = draft.scope_dimension === 'revenue_center' ? dimensions?.sections || [] : draft.scope_dimension === 'device' ? dimensions?.devices || [] : [];
+  const toggle = (id: string) => setDraft((current) => ({ ...current, scope_ids: current.scope_ids.includes(id) ? current.scope_ids.filter((item) => item !== id) : [...current.scope_ids, id] }));
+  const assign = async (deviceId: string, sectionId: string | null) => {
+    if (!dimensions) return;
+    setWorkingDevice(deviceId);
+    setAssignmentError('');
+    try {
+      await assignReportingDeviceSection(restaurantId, deviceId, sectionId);
+      const section = dimensions.sections.find((item) => item.id === sectionId);
+      onChangeDimensions({ ...dimensions, devices: dimensions.devices.map((device) => device.id === deviceId ? { ...device, revenue_center_id: sectionId, section_name: section?.name || null } : device) });
+    } catch (nextError) {
+      setAssignmentError(nextError instanceof Error ? nextError.message : 'Could not update the device section.');
+    } finally { setWorkingDevice(''); }
+  };
+  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}><View style={styles.modalBackdrop}><View style={styles.modalCard}><ModalHeader title="Report scope" onClose={onClose} /><ScrollView style={styles.modalScroll} contentContainerStyle={styles.form}><Text style={styles.sectionSubtitle}>Sections are used as revenue centers in reporting. Device reports use the terminal that opened each order.</Text><View style={styles.chipRow}>{([['none', 'Whole restaurant'], ['revenue_center', 'Sections'], ['device', 'Devices']] as const).map(([id, label]) => <Chip key={id} label={label} active={draft.scope_dimension === id} onPress={() => setDraft({ ...draft, scope_dimension: id, scope_mode: id === 'none' ? 'cumulative' : draft.scope_mode, scope_ids: [] })} />)}</View>{draft.scope_dimension !== 'none' ? <><View style={styles.chipRow}><Chip label="Cumulative total" active={draft.scope_mode === 'cumulative'} onPress={() => setDraft({ ...draft, scope_mode: 'cumulative' })} /><Chip label="Break down results" active={draft.scope_mode === 'breakdown'} onPress={() => setDraft({ ...draft, scope_mode: 'breakdown' })} /></View><Text style={styles.sectionSubtitle}>No selection includes every {draft.scope_dimension === 'device' ? 'device' : 'section'}.</Text>{options.map((option) => <Pressable key={option.id} onPress={() => toggle(option.id)} style={styles.toggleRow}><Feather name={draft.scope_ids.includes(option.id) ? 'check-square' : 'square'} size={19} color={draft.scope_ids.includes(option.id) ? semanticColors.primary : semanticColors.textMuted} /><Text style={styles.toggleText}>{option.name}{draft.scope_dimension === 'device' && option.section_name ? ` (${option.section_name})` : ''}</Text></Pressable>)}</> : null}{draft.scope_dimension === 'device' && dimensions?.can_manage ? <><Text style={styles.inputLabel}>DEVICE SECTION ASSIGNMENTS</Text>{assignmentError ? <Text style={styles.validationText}>{assignmentError}</Text> : null}{dimensions.devices.map((device) => <View key={device.id} style={styles.deviceAssignment}><Text style={styles.optionText}>{device.name}</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}><Chip label="Table / unassigned" active={!device.revenue_center_id} onPress={() => void assign(device.id, null)} />{dimensions.sections.filter((section) => section.restaurant_id === device.restaurant_id).map((section) => <Chip key={section.id} label={section.name} active={device.revenue_center_id === section.id} onPress={() => void assign(device.id, section.id)} />)}</ScrollView>{workingDevice === device.id ? <ActivityIndicator color={semanticColors.primary} /> : null}</View>)}</> : null}</ScrollView><Pressable onPress={() => onApply(draft)} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Apply scope</Text></Pressable></View></View></Modal>;
 }
 
 function ConfigModal({ visible, preference, onClose, onSave }: { visible: boolean; preference: ReportPreference; onClose: () => void; onSave: (value: ReportPreference) => Promise<void> }) {
@@ -573,6 +616,9 @@ const styles = StyleSheet.create({
   comparisonBanner: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 7, borderWidth: 1, borderColor: color_pallet.amber[600], backgroundColor: color_pallet.amber[100] },
   comparisonText: { ...typography.caption, flex: 1, color: color_pallet.ink[700] },
   comparisonStrong: { fontWeight: '700', color: color_pallet.ink[900] },
+  scopeBanner: { minHeight: 38, flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 8, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 7, borderWidth: 1, borderColor: semanticColors.border, backgroundColor: color_pallet.elevated.DEFAULT },
+  scopeText: { ...typography.caption, flex: 1, color: semanticColors.textMuted },
+  scopeStrong: { fontWeight: '700', color: semanticColors.text },
   chipRow: { flexDirection: 'row', gap: 7, paddingTop: 10, paddingBottom: 2 },
   chip: { minHeight: 34, paddingHorizontal: 12, borderRadius: 7, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: semanticColors.border, backgroundColor: color_pallet.elevated.DEFAULT },
   chipActive: { backgroundColor: color_pallet.ink[900], borderColor: color_pallet.ink[900] },
@@ -647,4 +693,5 @@ const styles = StyleSheet.create({
   statusMessage: { ...typography.bodySmall, color: semanticColors.textMuted, marginBottom: 10 },
   recipientRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 13, borderBottomWidth: 1, borderColor: semanticColors.border },
   recipientCopy: { flex: 1 },
+  deviceAssignment: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: semanticColors.border },
 });

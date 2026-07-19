@@ -1,17 +1,4 @@
-import {
-  fetchHostShiftAnalytics,
-  fetchOwnerChecks,
-  fetchOwnerOperationalMetrics,
-  fetchOwnerAnalytics,
-  type AnalyticsPeriod,
-  type HostShiftAnalyticsPayload,
-  type HostShiftAnalyticsRange,
-  type HourlySalesBucket,
-  type OwnerChecksPayload,
-  type OwnerOperationalMetrics,
-  type MenuSalesItem,
-  type OwnerAnalyticsPayload,
-} from '@/api/ownerAnalytics';
+import { type AnalyticsPeriod } from '@/api/ownerAnalytics';
 import {
   fetchManagerTimeClockRequests,
   reviewTimeClockRequest,
@@ -20,12 +7,12 @@ import {
 import { staleWhileRevalidate } from '@/cache/staleWhileRevalidate';
 import { registerManagerPushToken } from '@/notifications/pushNotifications';
 import { color_pallet, semanticColors, statusColors } from '@/styles/colors';
-import { shadowMd } from '@/styles/shadows';
 import { card, divider, layout, radius, spacing } from '@/styles/tokens';
 import { typography } from '@/styles/typography';
 import { Feather } from '@expo/vector-icons';
+import HomepageWidgets from '@/components/HomepageWidgets';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { getOwnerRestaurant, type OwnerRestaurant } from '../../packages/supabase';
 
@@ -61,70 +48,24 @@ function formatDateLabel(date: Date) {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-function formatCurrency(value: unknown) {
-  const number = Number(value || 0);
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-  }).format(Number.isFinite(number) ? number : 0);
-}
-
-function formatNumber(value: unknown, digits = 0) {
-  const number = Number(value || 0);
-  return new Intl.NumberFormat('en-US', {
-    maximumFractionDigits: digits,
-    minimumFractionDigits: digits,
-  }).format(Number.isFinite(number) ? number : 0);
-}
-
-function formatMinutes(value: unknown) {
-  const number = Number(value);
-  if (!Number.isFinite(number) || number <= 0) return 'No data';
-  return `${Math.round(number)}m`;
-}
-
-function firstDefined<T>(...values: T[]) {
-  return values.find((value) => value !== null && value !== undefined);
-}
-
-function firstPositiveNumber(...values: unknown[]) {
-  return values
-    .map((value) => Number(value))
-    .find((value) => Number.isFinite(value) && value > 0);
-}
-
-function divideCurrency(total: unknown, count: unknown) {
-  const totalNumber = Number(total || 0);
-  const countNumber = Number(count || 0);
-  if (!Number.isFinite(totalNumber) || !Number.isFinite(countNumber) || countNumber <= 0) {
-    return undefined;
-  }
-  return totalNumber / countNumber;
-}
-
-function laborHours(minutes: unknown) {
-  const number = Number(minutes || 0);
-  if (!Number.isFinite(number) || number <= 0) return 0;
-  return number / 60;
-}
-
 export default function OwnerOverview() {
   const router = useRouter();
   const [restaurant, setRestaurant] = useState<OwnerRestaurant | null>(null);
   const [period, setPeriod] = useState<AnalyticsPeriod>('day');
   const [date, setDate] = useState(() => new Date());
-  const [payload, setPayload] = useState<OwnerAnalyticsPayload | null>(null);
-  const [checksPayload, setChecksPayload] = useState<OwnerChecksPayload | null>(null);
-  const [operationalMetrics, setOperationalMetrics] = useState<OwnerOperationalMetrics | null>(null);
-  const [hostShiftAnalytics, setHostShiftAnalytics] = useState<HostShiftAnalyticsPayload | null>(null);
   const [timeClockRequests, setTimeClockRequests] = useState<TimeClockRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isReviewingTime, setIsReviewingTime] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const dateKey = toDateKey(date);
+
+  const openChecks = () => {
+    if (!restaurant?.id) return;
+    router.push(
+      `/owner-checks?restaurantId=${encodeURIComponent(restaurant.id)}&restaurantName=${encodeURIComponent(restaurant.name)}&date=${encodeURIComponent(dateKey)}`,
+    );
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -139,8 +80,9 @@ export default function OwnerOverview() {
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Could not load restaurant.');
-          setIsLoading(false);
         }
+      } finally {
+        if (!cancelled) setIsLoading(false);
       }
     }
 
@@ -150,53 +92,6 @@ export default function OwnerOverview() {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (!restaurant?.id) {
-      if (restaurant === null) setIsLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setIsLoading(true);
-    setError(null);
-
-    const hostAnalyticsRange = getHostAnalyticsRange(period, dateKey);
-
-    fetchOwnerAnalytics(restaurant.id, period, dateKey, {
-      onRevalidate: (data) => {
-        if (!cancelled) setPayload(data);
-      },
-    })
-      .then(async (data) => {
-        const [shiftAnalytics, checksData, operationalData] = await Promise.all([
-          hostAnalyticsRange
-            ? fetchHostShiftAnalytics(restaurant.id, hostAnalyticsRange).catch(() => null)
-            : Promise.resolve(null),
-          period === 'day'
-            ? fetchOwnerChecks(restaurant.id, dateKey).catch(() => null)
-            : Promise.resolve(null),
-          period === 'day'
-            ? fetchOwnerOperationalMetrics(restaurant.id, dateKey).catch(() => null)
-            : Promise.resolve(null),
-        ]);
-        if (cancelled) return;
-        if (!cancelled) setPayload(data);
-        setChecksPayload(checksData);
-        setOperationalMetrics(operationalData);
-        setHostShiftAnalytics(shiftAnalytics);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load analytics.');
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [dateKey, period, restaurant]);
 
   useEffect(() => {
     if (!restaurant?.id) return;
@@ -219,20 +114,6 @@ export default function OwnerOverview() {
       cancelled = true;
     };
   }, [restaurant]);
-
-  const metrics = useMemo(
-    () => buildMetrics(payload, hostShiftAnalytics, checksPayload, operationalMetrics),
-    [payload, hostShiftAnalytics, checksPayload, operationalMetrics],
-  );
-  const salesBars = useMemo(() => buildSalesBars(payload), [payload]);
-  const menuItems = payload?.sections?.menu?.items || [];
-
-  const openChecks = () => {
-    if (!restaurant?.id) return;
-    router.push(
-      `/owner-checks?restaurantId=${encodeURIComponent(restaurant.id)}&restaurantName=${encodeURIComponent(restaurant.name)}&date=${encodeURIComponent(dateKey)}`,
-    );
-  };
 
   const reviewRemoteTime = async (request: TimeClockRequest, status: 'approved' | 'denied') => {
     if (!restaurant?.id) return;
@@ -306,7 +187,7 @@ export default function OwnerOverview() {
 
       {isLoading && (
         <View style={styles.loadingCard}>
-          <Text style={[typography.bodySmall, styles.loadingText]}>Loading owner analytics...</Text>
+          <Text style={[typography.bodySmall, styles.loadingText]}>Loading restaurant...</Text>
         </View>
       )}
 
@@ -317,7 +198,7 @@ export default function OwnerOverview() {
         </View>
       )}
 
-      {!isLoading && !error && (
+      {!isLoading && restaurant && (
         <>
           {timeClockRequests.length > 0 && (
             <View style={styles.timeAlertCard}>
@@ -350,245 +231,10 @@ export default function OwnerOverview() {
               ))}
             </View>
           )}
-          <Pressable style={[styles.salesCard, shadowMd]} onPress={openChecks}>
-            <View style={styles.cardHeader}>
-              <Text style={[typography.eyebrow, styles.cardEyebrow]}>Sales</Text>
-              <Feather name="chevron-right" size={18} color={color_pallet.ink[500]} />
-            </View>
-            <Text style={[typography.metric, styles.salesValue]}>{formatCurrency(metrics.sales)}</Text>
-            <Text style={[typography.caption, styles.salesDetail]}>
-              {formatNumber(metrics.orders)} orders · {formatCurrency(metrics.avgOrder)} avg order
-            </Text>
-            <SparkBars values={salesBars} color={color_pallet.danger[600]} />
-          </Pressable>
-
-          <View style={styles.metricGrid}>
-            <MetricTile label="Covers" value={formatNumber(metrics.covers)} />
-            <MetricTile
-              label="Turn Time"
-              value={formatMinutes(metrics.turnTime)}
-              detail={metrics.turnTime ? 'Avg check duration' : 'Needs closed checks'}
-              muted={!metrics.turnTime}
-            />
-            <MetricTile label="Team" value={formatNumber(metrics.team)} detail="staffed" />
-            <MetricTile
-              label="Labor Cost"
-              value={metrics.laborCost == null ? 'No data' : formatCurrency(metrics.laborCost)}
-              detail={
-                metrics.laborCost == null
-                  ? 'Needs clocked hours'
-                  : metrics.missingLaborRate
-                    ? 'Missing rates'
-                    : 'Clocked'
-              }
-              muted={metrics.laborCost == null}
-            />
-          </View>
-
-          <View style={styles.section}>
-            <Text style={[typography.h3, styles.sectionTitle]}>Today at a glance</Text>
-            <MetricRow label="Orders" value={formatNumber(metrics.orders)} detail="Tap to inspect checks" onPress={openChecks} />
-            <MetricRow label="Avg Check" value={formatCurrency(metrics.avgOrder)} />
-            <MetricRow label="Tips" value={formatCurrency(metrics.tips)} />
-            <MetricRow label="Card Deposit" value={formatCurrency(metrics.cardDeposit)} detail={metrics.processorFeesPending ? 'Fees pending' : 'After known fees'} muted={metrics.processorFeesPending} />
-            <MetricRow label="Processing Fees" value={formatCurrency(metrics.processorFees)} detail={metrics.configuredFeeInSales ? 'Card price stays in sales' : 'Known fees'} muted={metrics.processorFeesPending} />
-            <MetricRow
-              label="SPLH"
-              value={metrics.salesPerLaborHour == null ? 'DNE' : formatCurrency(metrics.salesPerLaborHour)}
-              detail={metrics.laborMinutes ? `${formatNumber(metrics.laborMinutes / 60, 1)} labor hrs` : 'Needs clocked hours'}
-              muted={metrics.salesPerLaborHour == null}
-            />
-          </View>
-
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[typography.h3, styles.sectionTitle]}>Item sales</Text>
-              <Text style={[typography.caption, styles.sectionHint]}>{menuItems.length} items</Text>
-            </View>
-            {menuItems.length > 0 ? (
-              menuItems.slice(0, 5).map((item, index) => (
-                <MenuRow key={`${item.name || 'item'}-${index}`} item={item} />
-              ))
-            ) : (
-              <Text style={[typography.bodySmall, styles.emptyText]}>No item sales for this range.</Text>
-            )}
-          </View>
+          <HomepageWidgets scope="restaurant" restaurantId={restaurant.id} period={period} anchorDate={dateKey} onWidgetPress={(widgetId) => { if (widgetId === 'net_sales' || widgetId === 'orders') openChecks(); }} />
         </>
       )}
     </ScrollView>
-  );
-}
-
-function getHostAnalyticsRange(
-  period: AnalyticsPeriod,
-  dateKey: string,
-): HostShiftAnalyticsRange | null {
-  if (dateKey !== toDateKey(new Date())) return null;
-  if (period === 'day') return 'today';
-  if (period === 'week') return 'week';
-  return null;
-}
-
-function buildMetrics(
-  payload: OwnerAnalyticsPayload | null,
-  hostShiftAnalytics: HostShiftAnalyticsPayload | null,
-  checksPayload: OwnerChecksPayload | null,
-  operationalMetrics: OwnerOperationalMetrics | null,
-) {
-  const revenue = payload?.sections?.revenue?.data || {};
-  const visits = payload?.sections?.visits?.data || {};
-  const staff = payload?.sections?.staff?.data || {};
-  const labor = payload?.sections?.labor?.data || payload?.labor?.totals || {};
-  const hostSummary = hostShiftAnalytics?.summary || {};
-  const sales = firstDefined(
-    revenue.sales_excluding_tax_tip,
-    revenue.net_sales,
-    revenue.sales,
-    revenue.gross_sales,
-    revenue.total_revenue,
-  );
-  const orderCount = revenue.order_count;
-
-  return {
-    sales,
-    orders: orderCount,
-    avgOrder: firstDefined(revenue.avg_order_value, revenue.average_check, divideCurrency(sales, orderCount)),
-    tips: revenue.tips,
-    processorFees: revenue.processor_fees_known,
-    processorFeesPending: Boolean(revenue.processor_fees_pending),
-    cardDeposit: revenue.card_deposit_estimate,
-    configuredFeeInSales: Boolean(revenue.configured_fee_in_sales),
-    covers: firstDefined(hostSummary.covers, visits.covers, checksPayload?.totals?.covers),
-    turnTime: firstPositiveNumber(
-      hostSummary.avgTurnTimeMinutes,
-      visits.avg_turn_minutes,
-      visits.avg_turn_time_minutes,
-      visits.avg_turnover_minutes,
-      visits.average_turn_minutes,
-      averageCheckTurnMinutes(checksPayload),
-      operationalMetrics?.avgTurnMinutes,
-    ),
-    team: firstDefined(staff.staff_worked, staff.shift_count, hostShiftAnalytics?.waiters?.length, operationalMetrics?.staffWorked),
-    laborCost: firstDefined(staff.labor_cost, labor.labor_cost, operationalMetrics?.laborCost),
-    laborMinutes: firstDefined(staff.worked_minutes, labor.worked_minutes, operationalMetrics?.workedMinutes),
-    missingLaborRate: Boolean(staff.has_missing_labor_rate || labor.has_missing_labor_rate || operationalMetrics?.missingLaborRate),
-    salesPerLaborHour: divideCurrency(
-      sales,
-      laborHours(firstDefined(staff.worked_minutes, labor.worked_minutes, operationalMetrics?.workedMinutes)),
-    ),
-  };
-}
-
-function averageCheckTurnMinutes(checksPayload: OwnerChecksPayload | null) {
-  const durations = (checksPayload?.checks || [])
-    .map((check) => minutesBetween(check.opened_at, check.closed_at))
-    .filter((value): value is number => value !== null && value > 0 && value <= 8 * 60);
-  if (durations.length === 0) return undefined;
-  return durations.reduce((sum, value) => sum + value, 0) / durations.length;
-}
-
-function minutesBetween(start?: string | null, end?: string | null) {
-  if (!start || !end) return null;
-  const startMs = new Date(start).getTime();
-  const endMs = new Date(end).getTime();
-  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return null;
-  return (endMs - startMs) / 60000;
-}
-
-function buildSalesBars(payload: OwnerAnalyticsPayload | null) {
-  const rows: HourlySalesBucket[] = payload?.sections?.time_series?.revenue || [];
-  return rows.slice(-10).map((row) => Number(row.revenue || 0)).filter((value) => value > 0);
-}
-
-function SparkBars({ values, color }: { values: number[]; color: string }) {
-  const max = Math.max(...values, 1);
-  const displayValues = values.length > 0 ? values : [0, 0, 0, 0, 0, 0, 0, 0];
-
-  return (
-    <View style={styles.sparkWrap}>
-      {displayValues.map((value, index) => {
-        const height = value > 0 ? 8 + (value / max) * 34 : 10;
-        return (
-          <View
-            key={`${value}-${index}`}
-            style={[
-              styles.sparkBar,
-              {
-                height,
-                backgroundColor: value > 0 ? color : color_pallet.stone[200],
-                opacity: value > 0 ? 1 : 0.65,
-              },
-            ]}
-          />
-        );
-      })}
-    </View>
-  );
-}
-
-function MetricTile({
-  label,
-  value,
-  detail,
-  muted,
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-  muted?: boolean;
-}) {
-  return (
-    <View style={[styles.metricTile, muted && styles.metricTileMuted]}>
-      <Text style={[typography.caption, styles.tileLabel]}>{label}</Text>
-      <Text style={[typography.h2, styles.tileValue, muted && styles.tileValueUnavailable]}>{value}</Text>
-      {detail && <Text style={[typography.caption, styles.tileDetail]}>{detail}</Text>}
-    </View>
-  );
-}
-
-function MetricRow({
-  label,
-  value,
-  detail,
-  muted,
-  onPress,
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-  muted?: boolean;
-  onPress?: () => void;
-}) {
-  const Content = (
-    <View style={styles.metricRow}>
-      <View>
-        <Text style={[typography.caption, styles.rowLabel]}>{label}</Text>
-        {detail && <Text style={[typography.caption, styles.rowDetail]}>{detail}</Text>}
-      </View>
-      <View style={styles.rowValueGroup}>
-        <Text style={[typography.title, styles.rowValue, muted && styles.mutedText]}>{value}</Text>
-        {onPress && <Feather name="chevron-right" size={16} color={color_pallet.ink[500]} />}
-      </View>
-    </View>
-  );
-
-  if (!onPress) return Content;
-  return <Pressable onPress={onPress}>{Content}</Pressable>;
-}
-
-function MenuRow({ item }: { item: MenuSalesItem }) {
-  return (
-    <View style={styles.metricRow}>
-      <View style={{ flex: 1 }}>
-        <Text numberOfLines={1} style={[typography.caption, styles.rowLabel]}>
-          {item.name || 'Menu item'}
-        </Text>
-        <Text style={[typography.caption, styles.rowDetail]}>
-          {item.category || 'Uncategorized'} · {formatNumber(item.quantity)} sold
-        </Text>
-      </View>
-      <Text style={[typography.title, styles.rowValue]}>{formatCurrency(item.revenue)}</Text>
-    </View>
   );
 }
 

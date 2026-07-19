@@ -44,6 +44,7 @@ import { useBackOfficeAccess } from '../shared/hooks/useBackOfficeAccess'
 import { TAB_PERMISSIONS } from '../shared/permissions'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
 import SalesTiles from './components/SalesTiles'
+import HomepageWidgets from './components/HomepageWidgets'
 import { usePersistedPeriod } from './data/analyticsSummary'
 import ResellerApp from '../reseller/ResellerApp'
 import RestaurantReportsPage from './reports/RestaurantReportsPage'
@@ -452,7 +453,24 @@ function MiniTable({ columns, rows }) {
 }
 
 function AnalyticsDashboard({ restaurant }) {
-  return <LegacyAnalyticsDashboard restaurant={restaurant} />
+  const [period, setPeriod] = usePersistedPeriod('shire_home_period')
+  return (
+    <div className="space-y-6">
+      <header className="flex flex-col gap-5 border-b border-white/10 pb-5 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="label-mono">Back office</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">{restaurant?.name || 'Restaurant'}</h1>
+          <p className="mt-2 text-sm text-dash-secondary">Live restaurant performance and operational reporting.</p>
+        </div>
+        <nav className="grid grid-cols-5 rounded-xl border border-white/10 p-1">
+          {ANALYTICS_PERIODS.map((item) => (
+            <button key={item.id} type="button" onClick={() => setPeriod(item.id)} className={`rounded-lg px-3 py-2 text-sm font-semibold ${period === item.id ? 'bg-dash-gold text-black' : 'text-dash-secondary hover:text-dash-cream'}`}>{item.label}</button>
+          ))}
+        </nav>
+      </header>
+      <HomepageWidgets scope="restaurant" restaurantId={restaurant?.id} period={period} />
+    </div>
+  )
 }
 
 function LegacyAnalyticsDashboard({ restaurant }) {
