@@ -6,6 +6,7 @@ import { applyPosQuickMenu, fetchPosQuickMenu } from './data/quickMenu'
 import { buildGroupCards, UNGROUPED_ID } from './data/resellerPortfolio'
 import UiAppPreview from './UiAppPreview'
 import { PublishControls } from '../shared/components/PublishControls'
+import MenuWorkspaceEditor from '../shared/components/MenuWorkspaceEditor'
 import { scheduleChange } from '../shared/api/scheduledChanges'
 
 const SERVICE_LABELS = { pos: 'POS', host: 'Host' }
@@ -135,7 +136,7 @@ function ScopePicker({ restaurants, groups, initialRestaurantIds, onCancel, onAp
   )
 }
 
-export default function ResellerUiEditor({ restaurants, groups, initialRestaurantId }) {
+export default function ResellerUiEditor({ restaurants, groups, initialRestaurantId, canEditMenuWorkspace = false }) {
   const [selectedIds, setSelectedIds] = useState([])
   const [pickerOpen, setPickerOpen] = useState(true)
   const [service, setService] = useState('pos')
@@ -210,7 +211,7 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
   }, [pickerOpen, service])
 
   useEffect(() => {
-    if (service !== 'pos' && previewMode === 'quick-menu') setPreviewMode('view')
+    if (service !== 'pos' && (previewMode === 'quick-menu' || previewMode === 'menu-workspace')) setPreviewMode('view')
   }, [previewMode, service])
 
   useEffect(() => {
@@ -392,13 +393,13 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
       {mixed[service] && <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">The selected restaurants have different {SERVICE_LABELS[service]} UI settings. The editor is showing the service default; pushing will make the complete scheme consistent across this selection.</div>}
       <section className="space-y-5">
         <div className="rounded-lg border border-dash-border bg-[var(--glass-bg)] p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Real application sandbox</h2><p className="mt-1 text-xs text-dash-tertiary">Uses the service's actual screens and components with isolated in-memory data.</p></div><div className="inline-flex rounded-lg border border-dash-border p-1">{[{ id: 'view', label: 'View', icon: Eye }, { id: 'edit', label: 'Edit', icon: Pencil }, ...(service === 'pos' ? [{ id: 'quick-menu', label: 'Quick Menu', icon: Zap }] : [])].map((item) => <button key={item.id} type="button" onClick={() => setPreviewMode(item.id)} className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold ${previewMode === item.id ? 'bg-shell-cta text-shell-cta-text' : 'text-dash-secondary'}`}><item.icon size={14} />{item.label}</button>)}</div></div>
-          {previewMode === 'quick-menu' ? <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Real application sandbox</h2><p className="mt-1 text-xs text-dash-tertiary">Uses the service's actual screens and components with isolated in-memory data.</p></div><div className="inline-flex rounded-lg border border-dash-border p-1">{[{ id: 'view', label: 'View', icon: Eye }, { id: 'edit', label: 'Edit', icon: Pencil }, ...(service === 'pos' ? [{ id: 'menu-workspace', label: 'POS Menus', icon: Zap }] : [])].map((item) => <button key={item.id} type="button" onClick={() => setPreviewMode(item.id)} className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold ${previewMode === item.id ? 'bg-shell-cta text-shell-cta-text' : 'text-dash-secondary'}`}><item.icon size={14} />{item.label}</button>)}</div></div>
+          {previewMode === 'menu-workspace' ? <MenuWorkspaceEditor restaurantId={quickRestaurantId} compact canEdit={canEditMenuWorkspace} /> : previewMode === 'quick-menu' ? <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
             <div className="min-w-0"><UiAppPreview service="pos" tokens={previewDrafts.pos} componentOverrides={previewComponents.pos} mode="quick-menu" menuItems={quickDraft?.items} quickMenu={quickDraft} onComponentSelect={selectComponent} /></div>
             <QuickMenuEditor restaurants={restaurants.filter((item) => selectedIds.includes(item.id))} restaurantId={quickRestaurantId} onRestaurantChange={setQuickRestaurantId} draft={quickDraft} loading={quickLoading} onChange={(next) => setQuickMenus((current) => ({ ...current, [quickRestaurantId]: next }))} />
           </div> : <UiAppPreview service={service} tokens={previewDrafts[service]} componentOverrides={previewComponents[service]} mode={previewMode} onComponentSelect={selectComponent} />}
         </div>
-        {previewMode !== 'quick-menu' && <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        {previewMode !== 'quick-menu' && previewMode !== 'menu-workspace' && <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-5">
           {groupUiThemeTokens(service).map(({ group, tokens }) => <div key={group} className="rounded-lg border border-dash-border bg-[var(--glass-bg)] p-4"><h2 className="text-sm font-semibold">{group}</h2><div className="mt-3 grid gap-2 sm:grid-cols-2">{tokens.map((item) => <label key={item.key} onClick={() => setActiveToken(item.key)} className={`grid grid-cols-[42px_1fr] items-center gap-3 rounded-lg border p-3 ${activeToken === item.key ? 'border-shell-accent' : 'border-dash-border'}`}><input type="color" aria-label={`Choose ${item.label}`} value={pickerHex(colors[item.key])} onChange={(event) => updateColor(item.key, event.target.value)} className="h-10 w-10 cursor-pointer border-0 bg-transparent p-0" /><span className="min-w-0"><span className="block text-xs font-semibold">{item.label}</span><input aria-label={`${item.label} color code`} value={colors[item.key]} onChange={(event) => updateColor(item.key, event.target.value)} className="mt-1 w-full bg-transparent font-mono text-xs text-dash-secondary outline-none" /></span></label>)}</div></div>)}
         </div>

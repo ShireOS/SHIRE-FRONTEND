@@ -48,6 +48,7 @@ import HomepageWidgets from './components/HomepageWidgets'
 import { usePersistedPeriod } from './data/analyticsSummary'
 import ResellerApp from '../reseller/ResellerApp'
 import RestaurantReportsPage from './reports/RestaurantReportsPage'
+import MenuWorkspaceEditor from '../shared/components/MenuWorkspaceEditor'
 
 function LoadingScreen() {
   return (
@@ -131,6 +132,7 @@ const TABS = [
   { id: 'reports', label: 'Reports' },
   { id: 'setup', label: 'Edit Setup' },
   { id: 'menu', label: 'Menu' },
+  { id: 'menu-workspace', label: 'POS Menus' },
   { id: 'taxes', label: 'Taxes' },
   { id: 'devices', label: 'Devices' },
   { id: 'pos-settings', label: 'POS Settings' },
@@ -4678,6 +4680,12 @@ export function RestaurantWorkspace({
           <MenuPanel
             restaurantId={restaurantId}
             canEditPrices={backOfficeAccess.can('menu.edit_prices')}
+          />
+        )}
+        {activeTab === 'menu-workspace' && (
+          <MenuWorkspaceEditor
+            restaurantId={restaurantId}
+            canEdit={backOfficeAccess.can('menu.edit_items')}
           />
         )}
         {activeTab === 'taxes' && <TaxesPage restaurantId={restaurantId} />}

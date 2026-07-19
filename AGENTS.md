@@ -122,3 +122,8 @@ list must stay in sync.
 - Supabase-direct menu writes use `can_manage_store_menu()` RLS. Category-question
   and item-modifier override policies also verify that every referenced row
   belongs to the submitted restaurant, preventing cross-tenant record links.
+- Server Quick Menu, Fast Bar, department ranking, and bartender home preferences
+  use existing `menu.view` for Back Office visibility and `menu.edit_items` for
+  mutation. Owners and authorized resellers share the audited POS-backend
+  `/reseller/pos-menu-workspace` contract; the browser never writes these tables
+  directly. Fast Bar and Server Menu always retain access to every department.

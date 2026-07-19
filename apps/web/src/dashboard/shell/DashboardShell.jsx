@@ -147,6 +147,7 @@ const STORE_NAV = [
   { id: 'reports', label: 'Reports', icon: LayoutGrid },
   { id: 'setup', label: 'Setup', icon: Wrench },
   { id: 'ui', label: 'UI Editor', icon: Palette, resellerOnly: true },
+  { id: 'menu-workspace', label: 'POS Menus', icon: SlidersHorizontal },
   { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
   { id: 'taxes', label: 'Taxes', icon: Percent },
   { id: 'feedback', label: 'Complaints', icon: MessageSquareWarning },

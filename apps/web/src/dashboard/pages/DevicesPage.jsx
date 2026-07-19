@@ -67,7 +67,9 @@ export default function DevicesPage() {
       })
       .catch((err) => {
         if (!cancelled) {
-          setAccessibleRestaurantIds([])
+          // Keep access unresolved so a transport/query failure is not
+          // mistaken for a successful lookup that returned no allowed stores.
+          setAccessibleRestaurantIds(null)
           setDevices([])
           setError(err.message || 'Could not load device access')
         }

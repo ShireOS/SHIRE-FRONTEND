@@ -115,6 +115,7 @@ export const TAB_PERMISSIONS: Record<string, string> = {
   reports: 'reports.view',
   setup: 'settings.edit',
   menu: 'menu.view',
+  'menu-workspace': 'menu.view',
   taxes: 'settings.edit',
   feedback: 'reports.view',
   devices: 'settings.edit',

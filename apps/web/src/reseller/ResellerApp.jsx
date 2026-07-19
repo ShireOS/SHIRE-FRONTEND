@@ -1254,7 +1254,7 @@ function ResellerUiEditorRoute() {
   const auth = useAuth()
   const { restaurantId } = useParams()
   const restaurant = auth.restaurant.restaurants.find((item) => item.id === restaurantId) || null
-  const { groups, restaurants, isLoading, error } = useResellerPortfolio()
+  const { employee, groups, restaurants, isLoading, error } = useResellerPortfolio()
 
   if (!restaurant) return <Navigate to="/reseller" replace />
   if (isLoading) return <LoadingScreen />
@@ -1272,7 +1272,12 @@ function ResellerUiEditorRoute() {
       routes={RESELLER_SHELL_ROUTES}
     >
       {error && <StatusMessage tone="error">{error}</StatusMessage>}
-      <ResellerUiEditor restaurants={restaurants} groups={groups} initialRestaurantId={restaurantId} />
+      <ResellerUiEditor
+        restaurants={restaurants}
+        groups={groups}
+        initialRestaurantId={restaurantId}
+        canEditMenuWorkspace={['reseller', 'admin'].includes(auth.accountType) || Boolean(employee?.permissions?.edit_setup)}
+      />
     </DashboardShell>
   )
 }

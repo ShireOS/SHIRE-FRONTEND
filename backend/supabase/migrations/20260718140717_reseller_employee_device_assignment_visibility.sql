@@ -16,3 +16,31 @@ create policy "Reseller employees view accessible assignments"
     and reseller_id = public.current_reseller_id()
     and public.is_reseller_staff_for(restaurant_id)
   );
+
+-- Resolve reseller employees through reseller_employees.user_id -> reseller_id,
+-- then require both their direct/group store assignment and the owner's
+-- per-store Devices permission. Direct resellers keep the same behavior.
+create or replace function public.can_manage_store_devices(rid uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.restaurants r
+    where r.id = rid
+      and r.owner_id = auth.uid()
+  )
+  or exists (
+    select 1
+    from public.reseller_restaurants rr
+    where rr.restaurant_id = rid
+      and rr.reseller_id = public.current_reseller_id()
+      and rr.status = 'active'
+      and coalesce((rr.permissions ->> 'devices')::boolean, true)
+      and public.is_reseller_staff_for(rid)
+  )
+  or public.is_platform_admin();
+$$;
