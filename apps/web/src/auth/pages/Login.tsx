@@ -180,7 +180,7 @@ export function LoginPage() {
           )}
 
           {mode === 'employee' ? (
-            <>
+            <div className="space-y-4 rounded-2xl border border-dash-border/80 bg-white/[0.025] p-4 shadow-sm">
               <div className="space-y-1.5">
                 <label htmlFor="restaurant-search" className="block text-sm font-semibold text-primary">
                   Restaurant
@@ -190,14 +190,14 @@ export function LoginPage() {
                   type="text"
                   value={restaurantSearch}
                   onChange={(e) => setRestaurantSearch(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl bg-transparent border border-dash-border/60 hover:border-dash-border/80 text-primary placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-[15px] shadow-sm"
+                  className="w-full px-4 py-3 rounded-xl bg-white/[0.035] border border-dash-border hover:border-primary/50 text-primary placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-[15px] shadow-sm"
                   placeholder="Search restaurants"
                 />
                 <select
                   value={selectedRestaurantId}
                   onChange={(e) => setSelectedRestaurantId(e.target.value)}
                   required
-                  className="w-full px-4 py-3 rounded-xl bg-transparent border border-dash-border/60 hover:border-dash-border/80 text-primary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-[15px] shadow-sm"
+                  className="w-full px-4 py-3 rounded-xl bg-white/[0.035] border border-dash-border hover:border-primary/50 text-primary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-[15px] shadow-sm"
                 >
                   {filteredRestaurants.map(restaurant => (
                     <option key={restaurant.id} value={restaurant.id}>
@@ -218,7 +218,7 @@ export function LoginPage() {
                   required
                   value={employeeIdentifier}
                   onChange={(e) => setEmployeeIdentifier(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl bg-transparent border border-dash-border/60 hover:border-dash-border/80 text-primary placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-[15px] shadow-sm"
+                  className="w-full px-4 py-3 rounded-xl bg-white/[0.035] border border-dash-border hover:border-primary/50 text-primary placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-[15px] shadow-sm"
                   placeholder="ryan or you@restaurant.com"
                 />
               </div>
@@ -235,11 +235,11 @@ export function LoginPage() {
                   required
                   value={employeePin}
                   onChange={(e) => setEmployeePin(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                  className="w-full px-4 py-3 rounded-xl bg-transparent border border-dash-border/60 hover:border-dash-border/80 text-primary placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-[15px] shadow-sm"
+                  className="w-full px-4 py-3 rounded-xl bg-white/[0.035] border border-dash-border hover:border-primary/50 text-primary placeholder:text-tertiary focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-[15px] shadow-sm"
                   placeholder="PIN"
                 />
               </div>
-            </>
+            </div>
           ) : (
             <>
               <div className="space-y-1.5">
