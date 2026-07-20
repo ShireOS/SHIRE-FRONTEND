@@ -71,7 +71,13 @@ export default function PrintingRoutingPage({ restaurantId }) {
       setLoading(true)
       try {
         const [printing, routes, itemsResult, modifiersResult] = await Promise.all([
-          fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`),
+          // printing-config 404s until the POS receipt-config backend build is
+          // deployed — fall back to defaults so routing/aliases still work.
+          fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`)
+            .catch(err => {
+              if (err?.status === 404) return null
+              throw err
+            }),
           fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing`),
           supabase.from('menu_items').select('id,name,category').eq('restaurant_id', restaurantId).is('archived_at', null).order('name'),
           supabase.from('menu_modifiers').select('id,name,group_name').eq('restaurant_id', restaurantId).is('archived_at', null).order('name'),
@@ -80,10 +86,10 @@ export default function PrintingRoutingPage({ restaurantId }) {
         if (itemsResult.error) throw itemsResult.error
         if (modifiersResult.error) throw modifiersResult.error
         setConfig({
-          ...clone(DEFAULT_CONFIG), ...printing,
+          ...clone(DEFAULT_CONFIG), ...(printing || {}),
           customer: {
-            ...clone(DEFAULT_CONFIG.customer), ...(printing.customer || {}),
-            suggested_tips: { ...clone(DEFAULT_CONFIG.customer.suggested_tips), ...(printing.customer?.suggested_tips || {}) },
+            ...clone(DEFAULT_CONFIG.customer), ...(printing?.customer || {}),
+            suggested_tips: { ...clone(DEFAULT_CONFIG.customer.suggested_tips), ...(printing?.customer?.suggested_tips || {}) },
           },
         })
         setRouting(routes || { stations: [], targets: [] })
@@ -118,7 +124,9 @@ export default function PrintingRoutingPage({ restaurantId }) {
         if (requestId === previewRequestRef.current) setPreview(result.preview || 'No preview available')
       } catch (err) {
         if (err?.name !== 'AbortError' && requestId === previewRequestRef.current) {
-          setPreview(err?.message || 'Preview unavailable')
+          setPreview(err?.status === 404
+            ? 'Receipt preview needs the latest POS backend deployment.'
+            : (err?.message || 'Preview unavailable'))
         }
       }
     }, 250)

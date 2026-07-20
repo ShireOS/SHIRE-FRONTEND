@@ -4713,6 +4713,7 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   analytics: 'Overview',
   reports: 'Reports',
   setup: 'Setup',
+  'menu-workspace': 'POS Menus',
   menu: 'Menu',
   taxes: 'Taxes',
   feedback: 'Complaints',

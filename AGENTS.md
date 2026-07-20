@@ -93,6 +93,11 @@ list must stay in sync.
   tipout configuration uses existing `payroll.adjust_tips`: item overrides replace
   category rules, category rules replace restaurant defaults, and configuration
   is stored on the shared tips/payroll settings contract using stable menu IDs.
+- Reseller UI editing is store-scoped at `/reseller/restaurants/:restaurantId/ui`.
+  Resellers, reseller employees, and admins see **UI Editor** in the selected
+  store sidebar; admins entering through `/restaurants/:restaurantId/*` are
+  routed to that canonical reseller editor path. Editor mutation authorization
+  remains enforced by the existing reseller backend guards.
 - Migrations (manual run): ML `supabase/migrations/0055_team_hub_access.sql`
   (restaurant_members + back_office_permissions + invitations alter), POS repo
   `0022_pos_timeclock_breaks_v1.sql` (pos_time_clock_breaks).

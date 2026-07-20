@@ -1,18 +1,20 @@
-import { fetchWithSupabaseAuth } from '../query'
+import { fetchPosApi } from './posClient'
 
-const endpoint = (restaurantId) =>
-  `/reseller/pos-menu-workspace?restaurant_id=${encodeURIComponent(restaurantId)}`
-
+// The POS menu workspace endpoints live on the POS backend
+// (Shire_POS_backend menu_workspace router), on the plain /api/v1 integration
+// mount rather than the consolidated /api/v1/dev-v2 POS surface.
 export function fetchPosMenuWorkspace(restaurantId) {
-  return fetchWithSupabaseAuth(endpoint(restaurantId), {
-    headers: { 'X-Restaurant-Id': restaurantId },
-  })
+  return fetchPosApi(
+    restaurantId,
+    `/reseller/pos-menu-workspace?restaurant_id=${encodeURIComponent(restaurantId)}`,
+    { mount: 'integration' },
+  )
 }
 
 export function applyPosMenuWorkspace(restaurantId, workspace, reason) {
-  return fetchWithSupabaseAuth('/reseller/pos-menu-workspace', {
+  return fetchPosApi(restaurantId, '/reseller/pos-menu-workspace', {
+    mount: 'integration',
     method: 'PUT',
-    headers: { 'X-Restaurant-Id': restaurantId },
     body: JSON.stringify({
       restaurant_id: restaurantId,
       version: workspace.version,

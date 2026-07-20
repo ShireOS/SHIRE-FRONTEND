@@ -617,8 +617,15 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   }
 
   const loadPrintingConfig = async () => {
-    const data = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`)
-    setPrintingConfig(data || { aliases: { items: {}, modifiers: {} } })
+    try {
+      const data = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`)
+      setPrintingConfig(data || { aliases: { items: {}, modifiers: {} } })
+    } catch (err) {
+      // printing-config ships with the POS receipt-config backend build and
+      // 404s until that is deployed — kitchen aliases just fall back to defaults.
+      if (err?.status !== 404) throw err
+      setPrintingConfig({ aliases: { items: {}, modifiers: {} } })
+    }
   }
 
   useEffect(() => {
@@ -627,21 +634,29 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     setLoading(true)
     setError('')
     setSelectedItemId(null)
-    Promise.allSettled([
-      loadItems(),
-      loadImages(),
-      loadCategories(),
-      loadModifiers(),
-      loadGroups(),
-      loadItemModifierOverrides(),
-      loadAllergies(),
-      loadSpecials(),
-      loadRouting(),
-      loadPrintingConfig(),
-    ]).then(results => {
+    const loaders = [
+      ['items', loadItems],
+      ['images', loadImages],
+      ['categories', loadCategories],
+      ['modifiers', loadModifiers],
+      ['questions', loadGroups],
+      ['modifier overrides', loadItemModifierOverrides],
+      ['allergies', loadAllergies],
+      ['specials', loadSpecials],
+      ['kitchen routing', loadRouting],
+      ['printing config', loadPrintingConfig],
+    ]
+    Promise.allSettled(loaders.map(([, load]) => load())).then(results => {
       if (cancelled) return
-      if (results.some(result => result.status === 'rejected')) {
-        setError('Some menu data failed to load. Try again or refresh.')
+      const failed = results.flatMap((result, index) =>
+        result.status === 'rejected' ? [loaders[index][0]] : [])
+      if (failed.length) {
+        results.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            console.error(`Menu load failed (${loaders[index][0]}):`, result.reason)
+          }
+        })
+        setError(`Couldn't load ${failed.join(', ')}. Try again or refresh.`)
       }
       setLoading(false)
     })
