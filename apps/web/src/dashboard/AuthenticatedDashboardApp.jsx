@@ -502,9 +502,107 @@ function AnalyticsDashboard({ restaurant }) {
   )
 }
 
+const RESTAURANT_HOMEPAGE_WIDGETS = [
+  { id: 'sales', label: 'Sales overview', description: 'Net sales, checks, guests, discounts, and average check.' },
+  { id: 'revenue', label: 'Revenue details', description: 'Average order, tips, and paid versus closed checks.' },
+  { id: 'menu', label: 'Menu sales', description: 'Top-selling items and categories.' },
+  { id: 'visits', label: 'Visits and turn time', description: 'Completed turns, covers, and service timing.' },
+  { id: 'reservations', label: 'Reservations', description: 'Party size and reservation status activity.' },
+  { id: 'turn_times', label: 'Turn-time detail', description: 'Turn percentiles, first-order timing, and server detail.' },
+  { id: 'floor', label: 'Current floor', description: 'Active tables, capacity, and occupancy.' },
+  { id: 'staff', label: 'Staff and labor', description: 'Shifts, labor cost, hours, and sales per labor hour.' },
+  { id: 'state_events', label: 'State events', description: 'POS, host, and ML state-event activity.' },
+  { id: 'trend', label: 'Revenue trend', description: 'Recent revenue buckets for the selected period.' },
+]
+const DEFAULT_RESTAURANT_HOMEPAGE_WIDGETS = RESTAURANT_HOMEPAGE_WIDGETS.map((widget) => widget.id)
+
+function RestaurantHomepageConfigureModal({ visible, saving, onClose, onSave }) {
+  const [draft, setDraft] = useState(() => new Set(visible))
+  const toggle = (id) => setDraft((current) => {
+    const next = new Set(current)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true" aria-labelledby="restaurant-homepage-configure-title">
+      <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-dash-border bg-dash-elevated shadow-2xl">
+        <header className="sticky top-0 z-10 flex items-center justify-between border-b border-dash-border bg-dash-elevated px-5 py-4">
+          <h2 id="restaurant-homepage-configure-title" className="text-lg font-semibold text-dash-cream">Configure homepage</h2>
+          <button type="button" onClick={onClose} aria-label="Close" className="grid h-9 w-9 place-items-center rounded-md text-xl text-dash-secondary hover:bg-white/5">×</button>
+        </header>
+        <div className="p-5">
+          <p className="label-mono">Available widgets</p>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {RESTAURANT_HOMEPAGE_WIDGETS.map((widget) => (
+              <button key={widget.id} type="button" onClick={() => toggle(widget.id)} className={`flex min-h-20 items-start justify-between gap-3 rounded-lg border p-3 text-left ${draft.has(widget.id) ? 'border-shell-accent bg-shell-accent/10' : 'border-dash-border'}`}>
+                <span><span className="block text-sm font-semibold text-dash-cream">{widget.label}</span><span className="mt-1 block text-xs leading-5 text-dash-tertiary">{widget.description}</span></span>
+                <span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded border text-xs ${draft.has(widget.id) ? 'border-shell-accent bg-shell-accent text-shell-cta-text' : 'border-dash-border'}`}>{draft.has(widget.id) ? '✓' : ''}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <footer className="sticky bottom-0 flex justify-end gap-2 border-t border-dash-border bg-dash-elevated p-5">
+          <button type="button" onClick={onClose} className="h-10 rounded-md border border-dash-border px-4 text-sm">Cancel</button>
+          <button type="button" disabled={saving || draft.size === 0} onClick={() => onSave([...draft])} className="h-10 rounded-md bg-shell-cta px-4 text-sm font-semibold text-shell-cta-text disabled:opacity-40">{saving ? 'Saving...' : 'Save homepage'}</button>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
 function LegacyAnalyticsDashboard({ restaurant }) {
   const [period, setPeriod] = usePersistedPeriod('shire_home_period')
   const restaurantId = restaurant?.id
+  const [visibleWidgets, setVisibleWidgets] = useState(DEFAULT_RESTAURANT_HOMEPAGE_WIDGETS)
+  const [configureOpen, setConfigureOpen] = useState(false)
+  const [savingHomepage, setSavingHomepage] = useState(false)
+  const [preferencesReady, setPreferencesReady] = useState(false)
+
+  useEffect(() => {
+    if (!restaurantId) return
+    let cancelled = false
+    setPreferencesReady(false)
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/view-preferences`)
+      .then((payload) => {
+        if (cancelled) return
+        const homepage = payload.settings?.homepage || {}
+        if (homepage.period) setPeriod(homepage.period)
+        if (Array.isArray(homepage.visible_widgets) && homepage.visible_widgets.length) {
+          const supported = homepage.visible_widgets.filter((id) => DEFAULT_RESTAURANT_HOMEPAGE_WIDGETS.includes(id))
+          if (supported.length) setVisibleWidgets(supported)
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setPreferencesReady(true) })
+    return () => { cancelled = true }
+  }, [restaurantId, setPeriod])
+
+  useEffect(() => {
+    if (!restaurantId || !preferencesReady) return
+    const timeout = window.setTimeout(() => {
+      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/view-preferences/homepage`, {
+        method: 'PUT',
+        body: JSON.stringify({ settings: { period, anchor_date: null, visible_widgets: visibleWidgets } }),
+      }).catch(() => undefined)
+    }, 450)
+    return () => window.clearTimeout(timeout)
+  }, [restaurantId, preferencesReady, period, visibleWidgets])
+
+  const saveHomepage = async (nextVisible) => {
+    setSavingHomepage(true)
+    try {
+      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/view-preferences/homepage`, {
+        method: 'PUT',
+        body: JSON.stringify({ settings: { period, anchor_date: null, visible_widgets: nextVisible } }),
+      })
+      setVisibleWidgets(nextVisible)
+      setConfigureOpen(false)
+    } finally {
+      setSavingHomepage(false)
+    }
+  }
+  const widgetVisible = (id) => visibleWidgets.includes(id)
 
   // Cached per restaurant + period; keepPreviousData keeps the current numbers
   // on screen while a new period loads instead of flashing a spinner.
@@ -573,6 +671,7 @@ function LegacyAnalyticsDashboard({ restaurant }) {
               </button>
             ))}
           </nav>
+          <button type="button" onClick={() => setConfigureOpen(true)} className="h-10 rounded-xl border border-white/10 px-4 text-sm font-semibold text-dash-secondary hover:text-dash-cream">Configure homepage</button>
         </div>
         {payload?.window && (
           <p className="mt-4 text-xs text-dash-tertiary">
@@ -588,8 +687,9 @@ function LegacyAnalyticsDashboard({ restaurant }) {
 
       {!isLoading && !error && payload && (
         <>
-          <SalesTiles restaurantId={restaurantId} period={period} />
+          {widgetVisible('sales') && <SalesTiles restaurantId={restaurantId} period={period} />}
 
+          {widgetVisible('revenue') && (
           <AnalyticsSection
             title="Revenue"
             source="pos_orders"
@@ -603,7 +703,9 @@ function LegacyAnalyticsDashboard({ restaurant }) {
               <MetricCard label="Paid / Closed" value={`${formatNumber(revenueData.paid_orders)} / ${formatNumber(revenueData.closed_orders)}`} />
             </div>
           </AnalyticsSection>
+          )}
 
+          {widgetVisible('menu') && (
           <AnalyticsSection
             title="Menu Sales"
             source="pos_order_items + pos_orders"
@@ -621,8 +723,10 @@ function LegacyAnalyticsDashboard({ restaurant }) {
               ]}
             />
           </AnalyticsSection>
+          )}
 
           <div className="grid gap-6 xl:grid-cols-2">
+            {widgetVisible('visits') && (
             <AnalyticsSection
               title="Visits & Turn Time"
               source="visits"
@@ -637,7 +741,9 @@ function LegacyAnalyticsDashboard({ restaurant }) {
                 <MetricCard label="Covers" value={formatNumber(visitData.covers)} />
               </div>
             </AnalyticsSection>
+            )}
 
+            {widgetVisible('reservations') && (
             <AnalyticsSection
               title="Reservations"
               source="reservations"
@@ -659,8 +765,10 @@ function LegacyAnalyticsDashboard({ restaurant }) {
                 />
               </div>
             </AnalyticsSection>
+            )}
           </div>
 
+          {widgetVisible('turn_times') && (
           <AnalyticsSection
             title="Turn Times"
             source="pos_orders + visits"
@@ -704,8 +812,10 @@ function LegacyAnalyticsDashboard({ restaurant }) {
               <p className="mt-3 text-xs text-dash-tertiary">{turnTimes.quality.message}</p>
             )}
           </AnalyticsSection>
+          )}
 
           <div className="grid gap-6 xl:grid-cols-2">
+            {widgetVisible('floor') && (
             <AnalyticsSection
               title="Current Floor"
               source="tables"
@@ -728,7 +838,9 @@ function LegacyAnalyticsDashboard({ restaurant }) {
                 />
               </div>
             </AnalyticsSection>
+            )}
 
+            {widgetVisible('staff') && (
             <AnalyticsSection
               title="Staff"
               source="shifts + waiters"
@@ -754,9 +866,11 @@ function LegacyAnalyticsDashboard({ restaurant }) {
                 />
               </div>
             </AnalyticsSection>
+            )}
           </div>
 
           <div className="grid gap-6 xl:grid-cols-2">
+            {widgetVisible('state_events') && (
             <AnalyticsSection
               title="State Machine Events"
               source="table_state_events"
@@ -779,7 +893,9 @@ function LegacyAnalyticsDashboard({ restaurant }) {
                 />
               </div>
             </AnalyticsSection>
+            )}
 
+            {widgetVisible('trend') && (
             <AnalyticsSection
               title="Trend"
               source="pos_orders + visits"
@@ -796,9 +912,11 @@ function LegacyAnalyticsDashboard({ restaurant }) {
                 ]}
               />
             </AnalyticsSection>
+            )}
           </div>
         </>
       )}
+      {configureOpen && <RestaurantHomepageConfigureModal visible={visibleWidgets} saving={savingHomepage} onClose={() => setConfigureOpen(false)} onSave={saveHomepage} />}
     </div>
   )
 }
@@ -4965,7 +5083,7 @@ export function RestaurantWorkspace({
           <>
             <RateApprovalBanner restaurant={restaurant} />
             <ResellerAccessCard restaurant={restaurant} />
-            <AnalyticsDashboard restaurant={restaurant} />
+            <LegacyAnalyticsDashboard restaurant={restaurant} />
           </>
         )}
         {activeTab === 'reports' && <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurant?.name} />}

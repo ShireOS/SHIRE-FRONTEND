@@ -57,7 +57,32 @@ export async function fetchResellerGroups(resellerId) {
   return { groups: groups || [], memberships: memberships || [] }
 }
 
+async function fetchAllResellerGroups() {
+  const [{ data: groups, error: groupsError }, { data: memberships, error: membersError }] = await Promise.all([
+    supabase.from('reseller_restaurant_groups').select('*').order('name'),
+    supabase.from('reseller_restaurant_group_members').select('*'),
+  ])
+  if (groupsError) throw groupsError
+  if (membersError) throw membersError
+  return { groups: groups || [], memberships: memberships || [] }
+}
+
 export async function fetchResellerPortfolioForUser({ userId, accountType, restaurants }) {
+  // Platform admins can open the reseller editor for any store, but their
+  // profile ID is not itself a reseller ID. Query the admin-visible portfolio
+  // rows without filtering by auth.uid(), otherwise every store is incorrectly
+  // presented as "Ungrouped".
+  if (accountType === 'admin') {
+    const data = await fetchAllResellerGroups()
+    return {
+      resellerId: null,
+      employee: null,
+      groups: data.groups,
+      memberships: data.memberships,
+      restaurants: groupRestaurants(restaurants || [], data.groups, data.memberships),
+    }
+  }
+
   if (accountType !== 'reseller_employee') {
     const data = await fetchResellerGroups(userId)
     return {

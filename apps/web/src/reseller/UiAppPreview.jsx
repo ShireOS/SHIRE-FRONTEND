@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Expand, ExternalLink, LoaderCircle, X } from 'lucide-react'
+import { Expand, ExternalLink, LoaderCircle, RotateCcw, X } from 'lucide-react'
 
-const LOCAL_PREVIEW_URLS = {
-  pos: 'http://localhost:8082/?shirePreview=1',
-  host: 'http://localhost:8081/?shirePreview=1',
+const LOCAL_PREVIEW_PORTS = {
+  pos: [8082, 8081],
+  host: [8081, 8082],
 }
 
-function previewUrl(service) {
-  const configured = service === 'pos'
-    ? import.meta.env.VITE_POS_UI_PREVIEW_URL
-    : import.meta.env.VITE_HOST_UI_PREVIEW_URL
-  const url = configured?.trim() || LOCAL_PREVIEW_URLS[service]
+function withPreviewFlag(url) {
   const parsed = new URL(url, window.location.origin)
   parsed.searchParams.set('shirePreview', '1')
   return parsed.toString()
+}
+
+function previewUrls(service) {
+  const configured = service === 'pos'
+    ? import.meta.env.VITE_POS_UI_PREVIEW_URL
+    : import.meta.env.VITE_HOST_UI_PREVIEW_URL
+  if (configured?.trim()) return [withPreviewFlag(configured.trim())]
+  return LOCAL_PREVIEW_PORTS[service].map((port) => withPreviewFlag(`http://localhost:${port}/`))
 }
 
 function PreviewFrame({
@@ -28,7 +32,16 @@ function PreviewFrame({
 }) {
   const frame = useRef(null)
   const [loaded, setLoaded] = useState(false)
-  const url = useMemo(() => previewUrl(service), [service])
+  const [candidateIndex, setCandidateIndex] = useState(0)
+  const [failed, setFailed] = useState(false)
+  const urls = useMemo(() => previewUrls(service), [service])
+  const url = urls[candidateIndex]
+
+  const retry = () => {
+    setLoaded(false)
+    setFailed(false)
+    setCandidateIndex(0)
+  }
 
   const sendState = () => {
     const targetOrigin = new URL(url).origin
@@ -60,13 +73,27 @@ function PreviewFrame({
 
   useEffect(() => sendState(), [componentOverrides, menuItems, mode, quickMenu, service, tokens, url])
 
+  useEffect(() => {
+    setLoaded(false)
+    setFailed(false)
+    setCandidateIndex(0)
+  }, [service])
+
+  useEffect(() => {
+    if (loaded) return undefined
+    const timeout = window.setTimeout(() => {
+      if (candidateIndex < urls.length - 1) setCandidateIndex((current) => current + 1)
+      else setFailed(true)
+    }, 2500)
+    return () => window.clearTimeout(timeout)
+  }, [candidateIndex, loaded, urls.length])
+
   return <div className={`relative overflow-hidden rounded-md border border-dash-border bg-black ${expanded ? 'h-full w-full' : 'aspect-[4/3] min-h-[620px] min-w-[820px] w-full'}`}>
-    {!loaded && <div className="absolute inset-0 z-10 grid place-items-center bg-dash-base"><div className="text-center"><LoaderCircle className="mx-auto animate-spin text-dash-tertiary" size={24} /><p className="mt-3 text-sm font-semibold">Opening the real {service === 'pos' ? 'POS' : 'Host'} sandbox</p><p className="mt-1 text-xs text-dash-tertiary">The service preview server must be running.</p></div></div>}
+    {!loaded && <div className="absolute inset-0 z-10 grid place-items-center bg-dash-base"><div className="max-w-sm px-6 text-center">{failed ? <><p className="text-sm font-semibold">Could not reach the {service === 'pos' ? 'POS' : 'Host'} sandbox</p><p className="mt-2 text-xs leading-5 text-dash-tertiary">Start its Expo web preview, or configure the hosted preview URL, then try again.</p><button type="button" onClick={retry} className="mx-auto mt-4 inline-flex items-center gap-2 rounded-md border border-dash-border px-3 py-2 text-xs font-semibold"><RotateCcw size={14} />Retry preview</button></> : <><LoaderCircle className="mx-auto animate-spin text-dash-tertiary" size={24} /><p className="mt-3 text-sm font-semibold">Opening the real {service === 'pos' ? 'POS' : 'Host'} sandbox</p><p className="mt-1 text-xs text-dash-tertiary">Checking the local preview server.</p></>}</div></div>}
     <iframe
       ref={frame}
       title={`${service === 'pos' ? 'POS' : 'Host'} sandbox preview`}
       src={url}
-      onLoad={() => { setLoaded(true); window.setTimeout(sendState, 100) }}
       className="h-full w-full border-0 bg-white"
       allow="clipboard-read; clipboard-write"
     />
@@ -83,7 +110,7 @@ export default function UiAppPreview({
   onComponentSelect,
 }) {
   const [expanded, setExpanded] = useState(false)
-  const url = useMemo(() => previewUrl(service), [service])
+  const url = useMemo(() => previewUrls(service)[0], [service])
 
   return <>
     <div className="overflow-x-auto pb-2"><PreviewFrame key={`${service}:${mode === 'quick-menu' ? 'quick-menu' : 'theme'}`} service={service} tokens={tokens} componentOverrides={componentOverrides} mode={mode} menuItems={menuItems} quickMenu={quickMenu} onComponentSelect={onComponentSelect} /></div>

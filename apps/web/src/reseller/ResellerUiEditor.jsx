@@ -83,7 +83,7 @@ function sameTheme(left, right) {
   return Object.keys(left).every((key) => left[key] === right[key])
 }
 
-function ScopePicker({ restaurants, groups, initialRestaurantIds, onCancel, onApply }) {
+function ScopePicker({ restaurants, groups, initialRestaurantIds, onCancel, onApply, loading = false, error = '' }) {
   const cards = useMemo(() => buildGroupCards(restaurants, groups), [groups, restaurants])
   const [tab, setTab] = useState('restaurants')
   const [groupFilter, setGroupFilter] = useState('all')
@@ -106,18 +106,29 @@ function ScopePicker({ restaurants, groups, initialRestaurantIds, onCancel, onAp
     return next
   })
 
+  useEffect(() => {
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape' && !loading) onCancel()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [loading, onCancel])
+
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-3 sm:p-6">
-      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-dash-border bg-dash-base shadow-2xl">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-3 sm:p-6" onMouseDown={(event) => event.target === event.currentTarget && !loading && onCancel()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="ui-scope-title" className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-dash-border bg-dash-base shadow-2xl">
         <header className="border-b border-dash-border p-5">
-          <p className="label-mono">UI scope</p>
-          <h2 className="mt-1 text-2xl font-semibold">Choose what you want to view</h2>
+          <div className="flex items-start justify-between gap-4">
+            <div><p className="label-mono">UI scope</p><h2 id="ui-scope-title" className="mt-1 text-2xl font-semibold">Choose what you want to view</h2></div>
+            <button type="button" onClick={onCancel} disabled={loading} aria-label="Close scope picker" className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-dash-border text-dash-secondary disabled:opacity-40"><X size={16} /></button>
+          </div>
           <p className="mt-2 text-sm text-dash-secondary">The editor loads the effective theme for these restaurants. Saving applies back to the same selection.</p>
           <div className="mt-5 inline-flex rounded-lg border border-dash-border p-1">
             {['restaurants', 'groups'].map((item) => <button key={item} type="button" onClick={() => setTab(item)} className={`rounded-md px-4 py-2 text-sm font-semibold capitalize ${tab === item ? 'bg-shell-cta text-shell-cta-text' : 'text-dash-secondary'}`}>{item}</button>)}
           </div>
         </header>
         <div className="min-h-0 flex-1 overflow-auto p-5">
+          {error && <p role="alert" className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</p>}
           {tab === 'restaurants' ? <>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <label className="relative">
@@ -130,7 +141,7 @@ function ScopePicker({ restaurants, groups, initialRestaurantIds, onCancel, onAp
             <div className="grid gap-3 sm:grid-cols-2">{visible.map((restaurant) => <button key={restaurant.id} type="button" onClick={() => toggleRestaurant(restaurant.id)} className={`flex items-center gap-3 rounded-lg border p-4 text-left ${restaurantIds.has(restaurant.id) ? 'border-shell-accent bg-shell-accent/10' : 'border-dash-border'}`}><span className="grid h-5 w-5 place-items-center rounded border border-dash-border">{restaurantIds.has(restaurant.id) && <Check size={14} />}</span><span className="min-w-0 flex-1"><strong className="block truncate">{restaurant.name}</strong><span className="mt-1 flex items-center gap-2 text-xs text-dash-secondary"><span className="h-2.5 w-2.5 rounded-full" style={{ background: restaurant.reseller_group_color }} />{restaurant.reseller_group_name}</span></span></button>)}</div>
           </> : <div className="grid gap-3 sm:grid-cols-2">{cards.map((group) => <button key={group.id} type="button" onClick={() => toggleGroup(group.id)} className={`flex items-center gap-3 rounded-lg border p-4 text-left ${groupIds.has(group.id) ? 'border-shell-accent bg-shell-accent/10' : 'border-dash-border'}`}><span className="h-3 w-3 rounded-full" style={{ background: group.color }} /><span className="flex-1"><strong>{group.name}</strong><span className="mt-1 block text-xs text-dash-secondary">{group.restaurant_count} restaurants</span></span>{groupIds.has(group.id) && <Check size={16} />}</button>)}</div>}
         </div>
-        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-dash-border p-5"><p className="text-sm text-dash-secondary">{targetIds.length} restaurant{targetIds.length === 1 ? '' : 's'} selected</p><div className="flex gap-2">{onCancel && <button type="button" onClick={onCancel} className="h-10 rounded-lg border border-dash-border px-4 text-sm font-semibold">Cancel</button>}<button type="button" disabled={targetIds.length === 0} onClick={() => onApply(targetIds)} className="h-10 rounded-lg bg-shell-cta px-4 text-sm font-semibold text-shell-cta-text disabled:opacity-40">View selection</button></div></footer>
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-dash-border p-5"><p className="text-sm text-dash-secondary">{targetIds.length} restaurant{targetIds.length === 1 ? '' : 's'} selected</p><div className="flex gap-2"><button type="button" onClick={onCancel} disabled={loading} className="h-10 rounded-lg border border-dash-border px-4 text-sm font-semibold disabled:opacity-40">Cancel</button><button type="button" disabled={targetIds.length === 0 || loading} onClick={() => onApply(targetIds)} className="h-10 rounded-lg bg-shell-cta px-4 text-sm font-semibold text-shell-cta-text disabled:opacity-40">{loading ? 'Loading…' : 'View selection'}</button></div></footer>
       </div>
     </div>
   )
@@ -376,7 +387,7 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
   }
 
   return <>
-    {pickerOpen && <ScopePicker restaurants={restaurants} groups={groups} initialRestaurantIds={selectedIds.length ? selectedIds : [initialRestaurantId].filter(Boolean)} onCancel={selectedIds.length ? () => setPickerOpen(false) : null} onApply={(ids) => void load(ids)} />}
+    {pickerOpen && <ScopePicker restaurants={restaurants} groups={groups} initialRestaurantIds={selectedIds.length ? selectedIds : [initialRestaurantId].filter(Boolean)} onCancel={() => setPickerOpen(false)} onApply={(ids) => void load(ids)} loading={loading} error={status.tone === 'error' ? status.text : ''} />}
     <div className="space-y-5">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div><p className="label-mono">Reseller UI editor</p><h1 className="mt-1 text-2xl font-semibold">Application colors</h1><p className="mt-2 max-w-2xl text-sm text-dash-secondary">Edit the runtime theme delivered to each selected restaurant's POS and Host applications.</p></div>

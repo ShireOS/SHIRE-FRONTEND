@@ -3751,7 +3751,8 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
             </div>
 
             <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-              <p className="label-mono mb-3">Tabs & Preauthorization</p>
+              <p className="label-mono mb-1">Tabs & Preauthorization</p>
+              <p className="mb-3 text-xs text-dash-secondary">The card is tapped once when the tab opens; the hold rises automatically as the tab grows and is captured with tip at close. Blank = $25 default.</p>
               <div className="grid gap-3 lg:grid-cols-3">
                 <Field label="Default Preauth Amount">
                   <TextInput value={checkWorkflowSettings.default_preauth_amount} inputMode="decimal" onChange={event => updateCheckWorkflowSettings({ default_preauth_amount: sanitizeNumber(event.target.value) })} placeholder="Optional" />

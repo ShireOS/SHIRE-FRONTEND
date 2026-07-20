@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Mail, Pause, Play, Plus, Send, Trash2, X } from 'lucide-react'
 import { fetchWithSupabaseAuth } from '../../shared/query'
+import { supabase } from '../../shared/lib/supabase'
 
 const EMPTY = {
   name: '', email: '', frequency: 'weekly', send_time: '07:00', timezone: 'America/Chicago',
@@ -34,16 +35,105 @@ function RecipientEditor({ recipient, groups, onClose, onSaved }) {
   return <Modal title={recipient?.id ? 'Edit rollup recipient' : 'Add rollup recipient'} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><Field label="Recipient name"><input className={inputClass} value={draft.name} onChange={(event) => set('name', event.target.value)} /></Field><Field label="Email"><input type="email" className={inputClass} value={draft.email} onChange={(event) => set('email', event.target.value)} /></Field><Field label="Frequency"><select className={inputClass} value={draft.frequency} onChange={(event) => set('frequency', event.target.value)}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></Field><Field label="Send time"><input type="time" className={inputClass} value={draft.send_time} onChange={(event) => set('send_time', event.target.value)} /></Field><Field label="Timezone"><input className={inputClass} value={draft.timezone} onChange={(event) => set('timezone', event.target.value)} /></Field>{draft.frequency === 'weekly' && <Field label="Weekday"><select className={inputClass} value={draft.weekday} onChange={(event) => set('weekday', event.target.value)}>{['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].map((day, index) => <option key={day} value={index}>{day}</option>)}</select></Field>}{draft.frequency === 'monthly' && <Field label="Day of month"><input type="number" min="1" max="28" className={inputClass} value={draft.month_day} onChange={(event) => set('month_day', event.target.value)} /></Field>}</div><div className="border-t border-dash-border p-5"><p className="label-mono">Report scope</p><div className="mt-3 grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => set('scope_mode', 'all')} className={`flex items-center justify-between rounded-xl border p-4 text-left ${draft.scope_mode === 'all' ? 'border-shell-accent bg-shell-accent/10' : 'border-dash-border'}`}><span><span className="block font-semibold">All groups</span><span className="text-xs text-dash-tertiary">Includes future groups and current access</span></span>{draft.scope_mode === 'all' && <Check size={17} />}</button><button type="button" onClick={() => set('scope_mode', 'groups')} className={`flex items-center justify-between rounded-xl border p-4 text-left ${draft.scope_mode === 'groups' ? 'border-shell-accent bg-shell-accent/10' : 'border-dash-border'}`}><span><span className="block font-semibold">Selected groups</span><span className="text-xs text-dash-tertiary">Choose a dynamic subset</span></span>{draft.scope_mode === 'groups' && <Check size={17} />}</button></div>{draft.scope_mode === 'groups' && <div className="mt-3 space-y-2">{groups.map((group) => <button key={group.id} type="button" onClick={() => toggleGroup(group.id)} className={`flex w-full items-center justify-between rounded-xl border p-3 text-left ${draft.group_ids.includes(group.id) ? 'border-shell-accent bg-shell-accent/10' : 'border-dash-border'}`}><span className="flex items-center gap-2"><span className="h-3 w-3 rounded-full" style={{ backgroundColor: group.color }} />{group.name}</span>{draft.group_ids.includes(group.id) && <Check size={16} />}</button>)}<button type="button" onClick={() => set('include_ungrouped', !draft.include_ungrouped)} className={`flex w-full items-center justify-between rounded-xl border p-3 text-left ${draft.include_ungrouped ? 'border-shell-accent bg-shell-accent/10' : 'border-dash-border'}`}><span>Ungrouped</span>{draft.include_ungrouped && <Check size={16} />}</button></div>}{error && <p className="mt-3 text-sm text-dash-danger">{error}</p>}</div><footer className="flex justify-end gap-2 border-t border-dash-border p-5"><button type="button" onClick={onClose} className="h-10 rounded-xl border border-dash-border px-4 text-sm font-semibold text-dash-secondary">Cancel</button><button type="button" disabled={saving || !draft.email} onClick={() => void save()} className="h-10 rounded-xl bg-shell-cta px-4 text-sm font-semibold text-shell-cta-text disabled:opacity-50">{saving ? 'Saving…' : 'Save recipient'}</button></footer></Modal>
 }
 
+async function loadRecipientData() {
+  const data = await fetchWithSupabaseAuth('/portfolio-reports/recipients')
+  if (Array.isArray(data.store_recipients)) return data
+
+  // Backward-compatible rollout path for an older API deployment. This table
+  // already has portfolio-aware SELECT RLS, so the browser can only receive
+  // recipients for stores the signed-in user is authorized to see.
+  const { data: storeRows, error } = await supabase
+    .from('restaurant_report_recipients')
+    .select('*, restaurants(name)')
+    .order('is_active', { ascending: false })
+    .order('email')
+  if (error) throw error
+  return {
+    ...data,
+    store_recipients: (storeRows || []).map(({ restaurants, ...recipient }) => ({
+      ...recipient,
+      restaurant_name: restaurants?.name || 'Store',
+    })),
+  }
+}
+
 export default function PortfolioEmailPanel() {
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(null)
   const [message, setMessage] = useState('')
-  const query = useQuery({ queryKey: ['portfolio-report-recipients'], queryFn: () => fetchWithSupabaseAuth('/portfolio-reports/recipients') })
+  const query = useQuery({ queryKey: ['portfolio-report-recipients'], queryFn: loadRecipientData })
   const data = query.data || {}
+  const portfolioRecipients = data.recipients || []
+  const storeRecipients = data.store_recipients || []
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['portfolio-report-recipients'] })
   const update = async (recipient, patch) => { await fetchWithSupabaseAuth(`/portfolio-reports/recipients/${recipient.id}`, { method: 'PUT', body: JSON.stringify({ ...recipient, ...patch, group_ids: recipient.group_ids || [], send_time: String(recipient.send_time).slice(0, 5) }) }); await refresh() }
   const remove = async (recipient) => { if (!window.confirm(`Delete reports for ${recipient.email}?`)) return; await fetchWithSupabaseAuth(`/portfolio-reports/recipients/${recipient.id}`, { method: 'DELETE' }); await refresh() }
   const test = async (recipient) => { setMessage(''); try { const result = await fetchWithSupabaseAuth(`/portfolio-reports/recipients/${recipient.id}/test`, { method: 'POST' }); setMessage(result.message) } catch (error) { setMessage(error.message || 'Test email failed.') } await refresh() }
   useEffect(() => { if (message) { const id = setTimeout(() => setMessage(''), 6000); return () => clearTimeout(id) } }, [message])
-  return <section className="space-y-4"><header className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-semibold">Portfolio email reports</h2><p className="mt-1 text-sm text-dash-secondary">Each recipient gets a fixed rollup for their selected dynamic group scope.</p></div>{data.can_manage && <button type="button" onClick={() => setEditing({})} className="inline-flex h-10 items-center gap-2 rounded-xl bg-shell-cta px-4 text-sm font-semibold text-shell-cta-text"><Plus size={16} />Add recipient</button>}</header>{!data.delivery_enabled && data.delivery_disabled_reason && <p className="rounded-xl border border-dash-warning/30 bg-dash-warning/10 p-4 text-sm text-dash-warning">{data.delivery_disabled_reason}</p>}{message && <p className="rounded-xl border border-dash-border bg-[var(--glass-bg)] p-3 text-sm text-dash-secondary">{message}</p>}<div className="space-y-3">{(data.recipients || []).map((recipient) => <article key={recipient.id} className="glass-card rounded-2xl p-4"><div className="flex flex-col gap-4 lg:flex-row lg:items-center"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-shell-accent/10 text-shell-accent"><Mail size={18} /></div><button type="button" onClick={() => setEditing(recipient)} className="min-w-0 flex-1 text-left"><p className="truncate font-semibold">{recipient.name || recipient.email}</p><p className="truncate text-sm text-dash-secondary">{recipient.email}</p><p className="mt-1 text-xs text-dash-tertiary">{recipient.frequency} at {String(recipient.send_time).slice(0, 5)} · {recipient.scope_mode === 'all' ? 'All groups' : `${recipient.group_ids?.length || 0} groups${recipient.include_ungrouped ? ' + Ungrouped' : ''}`}</p></button><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${recipient.last_delivery_status === 'failed' ? 'bg-dash-danger/10 text-dash-danger' : 'bg-[var(--glass-bg)] text-dash-secondary'}`}>{recipient.last_delivery_status || 'Not sent'}</span><button type="button" disabled={!data.delivery_enabled} onClick={() => void test(recipient)} title="Send test" className="grid h-9 w-9 place-items-center rounded-xl border border-dash-border text-dash-secondary disabled:opacity-40"><Send size={15} /></button><button type="button" onClick={() => void update(recipient, { is_active: !recipient.is_active })} title={recipient.is_active ? 'Pause' : 'Activate'} className="grid h-9 w-9 place-items-center rounded-xl border border-dash-border text-dash-secondary">{recipient.is_active ? <Pause size={15} /> : <Play size={15} />}</button><button type="button" onClick={() => void remove(recipient)} title="Delete" className="grid h-9 w-9 place-items-center rounded-xl border border-dash-danger/30 text-dash-danger"><Trash2 size={15} /></button></div></div>{recipient.last_delivery_error && <p className="mt-3 text-xs text-dash-danger">{recipient.last_delivery_error}</p>}</article>)}{!query.isLoading && (data.recipients || []).length === 0 && <div className="glass-card rounded-2xl p-8 text-center"><Mail className="mx-auto text-dash-tertiary" /><h3 className="mt-3 font-semibold">No portfolio recipients</h3><p className="mt-1 text-sm text-dash-secondary">Add a recipient to schedule consolidated group and store reporting.</p></div>}</div>{editing && <RecipientEditor recipient={editing.id ? editing : null} groups={data.groups || []} onClose={() => setEditing(null)} onSaved={refresh} />}</section>
+  return (
+    <section className="space-y-6">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold">Portfolio email reports</h2>
+          <p className="mt-1 text-sm text-dash-secondary">Consolidated portfolio schedules are managed here. Existing store report recipients appear below.</p>
+        </div>
+        {data.can_manage && <button type="button" onClick={() => setEditing({})} className="inline-flex h-10 items-center gap-2 rounded-xl bg-shell-cta px-4 text-sm font-semibold text-shell-cta-text"><Plus size={16} />Add recipient</button>}
+      </header>
+
+      {query.isError && <p className="rounded-xl border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger">{query.error?.message || 'Could not load email recipients.'}</p>}
+      {!data.delivery_enabled && data.delivery_disabled_reason && <p className="rounded-xl border border-dash-warning/30 bg-dash-warning/10 p-4 text-sm text-dash-warning">{data.delivery_disabled_reason}</p>}
+      {message && <p className="rounded-xl border border-dash-border bg-[var(--glass-bg)] p-3 text-sm text-dash-secondary">{message}</p>}
+
+      <div className="space-y-3">
+        {portfolioRecipients.map((recipient) => (
+          <article key={recipient.id} className="glass-card rounded-2xl p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-shell-accent/10 text-shell-accent"><Mail size={18} /></div>
+              <button type="button" disabled={!data.can_manage} onClick={() => setEditing(recipient)} className="min-w-0 flex-1 text-left disabled:cursor-default">
+                <p className="truncate font-semibold">{recipient.name || recipient.email}</p>
+                <p className="truncate text-sm text-dash-secondary">{recipient.email}</p>
+                <p className="mt-1 text-xs text-dash-tertiary">{recipient.frequency} at {String(recipient.send_time).slice(0, 5)} · {recipient.scope_mode === 'all' ? 'All groups' : `${recipient.group_ids?.length || 0} groups${recipient.include_ungrouped ? ' + Ungrouped' : ''}`}</p>
+              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${recipient.last_delivery_status === 'failed' ? 'bg-dash-danger/10 text-dash-danger' : 'bg-[var(--glass-bg)] text-dash-secondary'}`}>{recipient.last_delivery_status || 'Not sent'}</span>
+                {data.can_manage && <>
+                  <button type="button" disabled={!data.delivery_enabled} onClick={() => void test(recipient)} title="Send test" className="grid h-9 w-9 place-items-center rounded-xl border border-dash-border text-dash-secondary disabled:opacity-40"><Send size={15} /></button>
+                  <button type="button" onClick={() => void update(recipient, { is_active: !recipient.is_active })} title={recipient.is_active ? 'Pause' : 'Activate'} className="grid h-9 w-9 place-items-center rounded-xl border border-dash-border text-dash-secondary">{recipient.is_active ? <Pause size={15} /> : <Play size={15} />}</button>
+                  <button type="button" onClick={() => void remove(recipient)} title="Delete" className="grid h-9 w-9 place-items-center rounded-xl border border-dash-danger/30 text-dash-danger"><Trash2 size={15} /></button>
+                </>}
+              </div>
+            </div>
+            {recipient.last_delivery_error && <p className="mt-3 text-xs text-dash-danger">{recipient.last_delivery_error}</p>}
+          </article>
+        ))}
+        {!query.isLoading && !query.isError && portfolioRecipients.length === 0 && storeRecipients.length > 0 && <p className="rounded-xl border border-dash-border bg-[var(--glass-bg)] p-4 text-sm text-dash-secondary">No consolidated portfolio schedule has been added yet.</p>}
+      </div>
+
+      {storeRecipients.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <h3 className="text-base font-semibold">Store report recipients</h3>
+            <p className="mt-1 text-sm text-dash-secondary">These existing schedules send reports for an individual store and are managed from that store’s Reports page.</p>
+          </div>
+          {storeRecipients.map((recipient) => (
+            <article key={recipient.id} className="glass-card rounded-2xl p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--glass-bg)] text-dash-secondary"><Mail size={18} /></div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold">{recipient.name || recipient.email}</p>
+                  <p className="truncate text-sm text-dash-secondary">{recipient.email}</p>
+                  <p className="mt-1 text-xs text-dash-tertiary">{recipient.restaurant_name} · {recipient.frequency} at {String(recipient.send_time).slice(0, 5)} · {recipient.timezone}</p>
+                </div>
+                <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${recipient.last_delivery_status === 'failed' ? 'bg-dash-danger/10 text-dash-danger' : 'bg-[var(--glass-bg)] text-dash-secondary'}`}>{recipient.is_active ? (recipient.last_delivery_status || 'Active') : 'Paused'}</span>
+              </div>
+              {recipient.last_delivery_error && <p className="mt-3 text-xs text-dash-danger">{recipient.last_delivery_error}</p>}
+            </article>
+          ))}
+        </section>
+      )}
+
+      {!query.isLoading && !query.isError && portfolioRecipients.length === 0 && storeRecipients.length === 0 && <div className="glass-card rounded-2xl p-8 text-center"><Mail className="mx-auto text-dash-tertiary" /><h3 className="mt-3 font-semibold">No email recipients</h3><p className="mt-1 text-sm text-dash-secondary">Add a recipient to schedule consolidated group and store reporting.</p></div>}
+      {editing && <RecipientEditor recipient={editing.id ? editing : null} groups={data.groups || []} onClose={() => setEditing(null)} onSaved={refresh} />}
+    </section>
+  )
 }

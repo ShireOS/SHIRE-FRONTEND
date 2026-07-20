@@ -97,7 +97,10 @@ list must stay in sync.
   Resellers, reseller employees, and admins see **UI Editor** in the selected
   store sidebar; admins entering through `/restaurants/:restaurantId/*` are
   routed to that canonical reseller editor path. Editor mutation authorization
-  remains enforced by the existing reseller backend guards.
+  remains enforced by the existing reseller backend guards. Admin portfolio
+  scope loads all admin-visible reseller groups instead of treating the admin's
+  profile ID as a reseller ID; the scope picker is always dismissible and shows
+  theme-loading failures inside the dialog.
 - Migrations (manual run): ML `supabase/migrations/0055_team_hub_access.sql`
   (restaurant_members + back_office_permissions + invitations alter), POS repo
   `0022_pos_timeclock_breaks_v1.sql` (pos_time_clock_breaks).
@@ -124,6 +127,15 @@ list must stay in sync.
 - End-of-day report delivery is configured with `eod_email_on_close` and
   `eod_email_formats` (`pdf` / `xlsx`). Reopening a closed business day requires
   the POS role permission `can_reopen_business_day` and records the acting manager.
+- Portfolio email recipient schedules are shared reseller setup: the reseller
+  account and its active employees see the same recipient list, and the same
+  scope is enforced for edit, delete, test-send, and delivery history. Platform
+  admins can manage all portfolio schedules. Ordinary owner/member portfolios
+  remain creator-scoped because overlapping restaurant membership is not a safe
+  ownership boundary. The portfolio Email reports tab also lists existing
+  store-level report recipients for every restaurant in the viewer's authorized
+  portfolio; those schedules remain managed from the individual store Reports
+  page and are not silently converted into consolidated rollups.
 - Supabase-direct menu writes use `can_manage_store_menu()` RLS. Category-question
   and item-modifier override policies also verify that every referenced row
   belongs to the submitted restaurant, preventing cross-tenant record links.
