@@ -3,7 +3,7 @@ import { Expand, ExternalLink, LoaderCircle, X } from 'lucide-react'
 
 const LOCAL_PREVIEW_URLS = {
   pos: 'http://localhost:8082/?shirePreview=1',
-  host: 'http://localhost:8081/?shirePreview=1',
+  host: 'http://localhost:8083/?shirePreview=1',
 }
 
 function previewUrl(service) {
@@ -29,6 +29,10 @@ function PreviewFrame({
   const frame = useRef(null)
   const [loaded, setLoaded] = useState(false)
   const url = useMemo(() => previewUrl(service), [service])
+
+  useEffect(() => {
+    setLoaded(false)
+  }, [service, url])
 
   const sendState = () => {
     const targetOrigin = new URL(url).origin
@@ -66,7 +70,7 @@ function PreviewFrame({
       ref={frame}
       title={`${service === 'pos' ? 'POS' : 'Host'} sandbox preview`}
       src={url}
-      onLoad={() => { setLoaded(true); window.setTimeout(sendState, 100) }}
+      onLoad={() => window.setTimeout(sendState, 100)}
       className="h-full w-full border-0 bg-white"
       allow="clipboard-read; clipboard-write"
     />
