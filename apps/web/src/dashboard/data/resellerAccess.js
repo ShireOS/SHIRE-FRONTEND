@@ -22,6 +22,18 @@ const normalizePermissions = (permissions) => ({
   ...(permissions && typeof permissions === 'object' ? permissions : {}),
 })
 
+const allowedTabsForResellerPermissions = (permissions) => {
+  const normalized = normalizePermissions(permissions)
+  const tabs = [
+    'analytics',
+    ...RESELLER_TOGGLEABLE_TABS.filter((tab) => normalized[tab]),
+  ]
+  // POS Menus uses the existing owner-controlled Menu grant; it is not a
+  // separate reseller permission stored on reseller_restaurants.
+  if (normalized.menu) tabs.push('menu-workspace')
+  return tabs
+}
+
 export async function fetchDeviceAccessibleRestaurantIds({ accountType, userId, restaurantIds, ownedRestaurantIds = [] }) {
   const ids = [...new Set((restaurantIds || []).filter(Boolean))]
   if (!['reseller', 'reseller_employee'].includes(accountType) || ids.length === 0) return ids
@@ -85,7 +97,7 @@ export function useAllowedStoreTabs(restaurant) {
   const auth = useAuth()
   const [allowed, setAllowed] = useState(null) // null = everything
 
-  const isReseller = auth.accountType === 'reseller'
+  const isReseller = ['reseller', 'reseller_employee'].includes(auth.accountType)
   const isOwned = restaurant?.owner_id === auth.user?.id
   const restaurantId = restaurant?.id
 
@@ -95,30 +107,43 @@ export function useAllowedStoreTabs(restaurant) {
       return
     }
     let cancelled = false
-    supabase
-      .from('reseller_restaurants')
-      .select('permissions')
-      .eq('restaurant_id', restaurantId)
-      .eq('reseller_id', auth.user.id)
-      .eq('status', 'active')
-      .maybeSingle()
-      .then(({ data, error }) => {
+    const load = async () => {
+      let resellerId = auth.user.id
+      if (auth.accountType === 'reseller_employee') {
+        const { data: employee, error: employeeError } = await supabase
+          .from('reseller_employees')
+          .select('reseller_id')
+          .eq('user_id', auth.user.id)
+          .eq('status', 'active')
+          .maybeSingle()
+        if (employeeError) throw employeeError
+        resellerId = employee?.reseller_id
+      }
+      if (!resellerId) throw new Error('Active reseller account not found')
+
+      const { data, error } = await supabase
+        .from('reseller_restaurants')
+        .select('permissions')
+        .eq('restaurant_id', restaurantId)
+        .eq('reseller_id', resellerId)
+        .eq('status', 'active')
+        .maybeSingle()
+      if (error) throw error
+      return data
+    }
+
+    load()
+      .then((data) => {
         if (cancelled) return
-        if (error) {
-          // Fail closed to the mandatory read-only surface.
-          setAllowed(['analytics'])
-          return
-        }
-        const permissions = normalizePermissions(data?.permissions)
-        setAllowed([
-          'analytics',
-          ...RESELLER_TOGGLEABLE_TABS.filter((tab) => permissions[tab]),
-        ])
+        setAllowed(allowedTabsForResellerPermissions(data?.permissions))
+      })
+      .catch(() => {
+        if (!cancelled) setAllowed(['analytics'])
       })
     return () => {
       cancelled = true
     }
-  }, [isReseller, isOwned, restaurantId, auth.user?.id])
+  }, [auth.accountType, isReseller, isOwned, restaurantId, auth.user?.id])
 
   return allowed
 }

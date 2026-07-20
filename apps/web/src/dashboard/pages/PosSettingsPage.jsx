@@ -394,7 +394,7 @@ export default function PosSettingsPage({ restaurantId }) {
   const load = async () => {
     setError('')
     try {
-      const data = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/reason-presets?include_inactive=true`)
+      const data = await fetchPosApi(restaurantId, '/manager/reason-presets?include_inactive=true')
       setPresets(Array.isArray(data) ? data : [])
     } catch (err) {
       setError(err?.message || 'Could not load reason presets')
@@ -426,7 +426,7 @@ export default function PosSettingsPage({ restaurantId }) {
     setMessage('')
     setError('')
     try {
-      await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/reason-presets`, {
+      await fetchPosApi(restaurantId, '/manager/reason-presets', {
         method: 'POST',
         body: JSON.stringify({
           id: editingId || undefined,
@@ -452,7 +452,7 @@ export default function PosSettingsPage({ restaurantId }) {
     setMessage('')
     setError('')
     try {
-      await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/reason-presets/${preset.id}`, { method: 'DELETE' })
+      await fetchPosApi(restaurantId, `/manager/reason-presets/${preset.id}`, { method: 'DELETE' })
       setMessage('Reason preset archived')
       await load()
     } catch (err) {

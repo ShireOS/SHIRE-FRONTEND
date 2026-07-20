@@ -143,4 +143,7 @@ list must stay in sync.
   use existing `menu.view` for Back Office visibility and `menu.edit_items` for
   mutation. Owners and authorized resellers share the audited POS-backend
   `/reseller/pos-menu-workspace` contract; the browser never writes these tables
-  directly. Fast Bar and Server Menu always retain access to every department.
+  directly. The reseller store-tab resolver maps the existing owner-controlled
+  `menu` grant to both Menu and POS Menus, and reseller employees resolve through
+  their active parent reseller assignment before those tabs are shown. Fast Bar
+  and Server Menu always retain access to every department.
