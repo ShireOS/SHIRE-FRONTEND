@@ -9,6 +9,7 @@ import {
   Download,
   FileText,
   LineChart as LineChartIcon,
+  Layers3,
   Settings2,
   TrendingDown,
   TrendingUp,
@@ -21,6 +22,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -168,7 +170,7 @@ function ReportingScopeFields({ widget, dimensions, value, onChange }) {
   </div>
 }
 
-function WidgetSettingsModal({ widget, widgetData, dimensions, settings, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave }) {
+function WidgetSettingsModal({ widget, widgetData, dimensions, settings, pdfSettings, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave, onSavePdf }) {
   const dates = periodDates(period, anchorDate)
   const [tab, setTab] = useState('display')
   const [draft, setDraft] = useState(() => ({
@@ -194,6 +196,7 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, period,
     reason_codes: [], include_team_average: true,
     alert_z_score: settings.alert_z_score || 2, alert_min_actions: settings.alert_min_actions || 5,
     scope_dimension: settings.scope_dimension || 'none', scope_mode: settings.scope_mode || 'cumulative', scope_ids: settings.scope_ids || [],
+    ...(pdfSettings || {}),
   }))
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
@@ -204,6 +207,7 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, period,
       const path = scope === 'portfolio' ? `/portfolio-reports/homepage/widgets/${widget.id}/pdf` : `/restaurants/${restaurantId}/reports/homepage/widgets/${widget.id}/pdf`
       const body = { ...report }
       if (scope === 'portfolio') Object.assign(body, { group_ids: groupIds || null, include_ungrouped: includeUngrouped })
+      await onSavePdf(body)
       const file = await fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify(body) })
       savePdf(file)
     } catch (nextError) { setError(nextError instanceof Error ? nextError.message : 'Could not generate this PDF.') }
@@ -289,6 +293,49 @@ function KpiWidget({ widget, data, detail, expanded, onToggle, onSettings }) {
   </section>
 }
 
+const SCOPE_COLORS = ['#4f7ee8', '#22c55e', '#f59e0b', '#ec4899', '#14b8a6', '#a78bfa', '#f97316', '#06b6d4']
+
+function scopedBreakdown(data) {
+  const scope = data?.reporting_scope || {}
+  return scope.mode === 'breakdown' && ['revenue_center', 'device'].includes(scope.dimension)
+}
+
+function scopeNoun(data) {
+  return data?.reporting_scope?.dimension === 'device' ? 'device' : 'section'
+}
+
+function ScopedBreakdownWidget({ widget, data, settings, onSettings }) {
+  const rows = data?.rows || []
+  const measures = data?.measure_columns || []
+  const primary = measures[0] || widget.columns[0]
+  const noun = scopeNoun(data)
+  const hasPeriods = rows.some((row) => row.period != null)
+  const names = [...new Set(rows.map((row) => String(row.breakdown || `Unassigned ${noun}`)))]
+
+  if (hasPeriods && names.length) {
+    const periods = [...new Set(rows.map((row) => String(row.period)))].sort()
+    const chartRows = periods.map((period) => {
+      const point = { period }
+      rows.filter((row) => String(row.period) === period).forEach((row) => {
+        point[String(row.breakdown || `Unassigned ${noun}`)] = Number(row[primary.id] || 0)
+      })
+      return point
+    })
+    return <section className="glass-card rounded-lg p-5 xl:col-span-2">
+      <WidgetHeader widget={widget} onSettings={onSettings} />
+      <div className="mb-4 flex items-center gap-2 text-xs font-semibold text-dash-secondary"><Layers3 size={15} /><span className="capitalize">Trend by {noun}</span></div>
+      <div className="h-72"><ResponsiveContainer width="100%" height="100%">{settings?.chart_type === 'bar' ? <BarChart data={chartRows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey="period" tickFormatter={(value) => String(value).slice(5, 10)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis tickFormatter={(value) => MONEY_IDS.has(primary.id) ? `$${Math.round(value / 1000)}k` : number(value)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={(value) => formatValue(value, primary.kind)} /><Legend wrapperStyle={{ fontSize: 11 }} />{names.map((name, index) => <Bar key={name} dataKey={name} fill={SCOPE_COLORS[index % SCOPE_COLORS.length]} radius={[2, 2, 0, 0]} />)}</BarChart> : <LineChart data={chartRows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey="period" tickFormatter={(value) => String(value).slice(5, 10)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis tickFormatter={(value) => MONEY_IDS.has(primary.id) ? `$${Math.round(value / 1000)}k` : number(value)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={(value) => formatValue(value, primary.kind)} /><Legend wrapperStyle={{ fontSize: 11 }} />{names.map((name, index) => <Line key={name} type="monotone" dataKey={name} stroke={SCOPE_COLORS[index % SCOPE_COLORS.length]} strokeWidth={2.5} dot={{ r: 2.5 }} connectNulls />)}</LineChart>}</ResponsiveContainer></div>
+    </section>
+  }
+
+  const max = Math.max(1, ...rows.map((row) => Math.abs(Number(row[primary.id] || 0))))
+  return <section className="glass-card rounded-lg p-5 xl:col-span-2">
+    <WidgetHeader widget={widget} onSettings={onSettings} />
+    <div className="mb-4 flex items-center gap-2 text-xs font-semibold text-dash-secondary"><Layers3 size={15} /><span className="capitalize">Results by {noun}</span></div>
+    {rows.length ? <div className="space-y-3">{rows.map((row, index) => <div key={`${row.breakdown || noun}-${index}`} className="rounded-md border border-dash-border p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-dash-cream">{row.breakdown || `Unassigned ${noun}`}</p><p className="mt-1 text-[10px] text-dash-tertiary">{measures.slice(1, 4).map((item) => `${item.label}: ${formatValue(row[item.id], item.kind)}`).join(' · ')}</p></div><p className="shrink-0 font-mono text-sm text-dash-cream">{formatValue(row[primary.id], primary.kind)}</p></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/5"><div className="h-full rounded-full bg-shell-accent" style={{ width: `${Math.max(2, Math.abs(Number(row[primary.id] || 0)) / max * 100)}%` }} /></div></div>)}</div> : <p className="py-8 text-center text-sm text-dash-tertiary">No attributed {noun} data for this range.</p>}
+  </section>
+}
+
 function ChartWidget({ widget, data, settings, onSettings }) {
   const measure = data?.measure_columns?.[0] || widget.columns[0]
   const rows = data?.rows || []
@@ -320,7 +367,11 @@ function SummaryWidget({ widget, data, onSettings }) {
 function TableWidget({ widget, data, onSettings }) {
   const dimensions = data?.dimension_columns || []
   const measures = data?.measure_columns || []
-  const columns = [...dimensions.map((id) => ({ id, label: id.replaceAll('_', ' '), kind: id === 'period' ? 'date' : 'text' })), ...measures]
+  const columns = [...dimensions.map((id) => ({
+    id,
+    label: id === 'breakdown' ? String(data?.breakdown || 'breakdown').replaceAll('_', ' ').replace('revenue center', 'section') : id.replaceAll('_', ' '),
+    kind: id === 'period' ? 'date' : 'text',
+  })), ...measures]
   return <section className="glass-card overflow-hidden rounded-lg xl:col-span-2"><div className="p-5 pb-1"><WidgetHeader widget={widget} onSettings={onSettings} /></div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-y border-dash-border">{columns.map((column) => <th key={column.id} className="label-mono px-4 py-3 !text-[10px] capitalize">{column.label}</th>)}</tr></thead><tbody>{(data?.rows || []).map((row, index) => <tr key={`${row.period || ''}-${row.breakdown || ''}-${index}`} className="border-b border-dash-border last:border-0">{columns.map((column) => <td key={column.id} className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row[column.id], column.kind)}</td>)}</tr>)}{!data?.rows?.length && <tr><td colSpan={Math.max(1, columns.length)} className="px-4 py-8 text-center text-dash-tertiary">No data for this range.</td></tr>}</tbody></table></div></section>
 }
 
@@ -329,8 +380,11 @@ function DiscountReviewWidget({ widget, data, onSettings }) {
   const employees = (data?.employees || []).filter((employee) => employee.action_count > 0).slice(0, 10)
   const alerts = data?.alerts || []
   const reasons = data?.reasons || []
+  const scopeRows = data?.scope_breakdown || []
+  const scopeName = scopeNoun(data)
   return <section className="glass-card rounded-lg p-5 xl:col-span-4">
     <WidgetHeader widget={widget} onSettings={onSettings} />
+    {scopedBreakdown(data) && <div className="mb-5 rounded-md border border-dash-border p-4"><div className="mb-3 flex items-center gap-2"><Layers3 size={15} className="text-dash-secondary" /><h3 className="text-sm font-semibold capitalize">Impact by {scopeName}</h3></div>{scopeRows.length ? <div className="grid gap-2 md:grid-cols-2">{scopeRows.map((row) => <div key={row.breakdown} className="flex items-center justify-between gap-3 rounded-md bg-white/[0.03] p-3"><div className="min-w-0"><p className="truncate text-sm font-semibold">{row.breakdown}</p><p className="text-[10px] text-dash-tertiary">{number(row.action_count)} actions · {money(row.average_action_amount)} average</p></div><p className="shrink-0 font-mono text-sm">{money(row.total_amount)}</p></div>)}</div> : <p className="text-sm text-dash-tertiary">No attributed {scopeName} activity for this range.</p>}</div>}
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       {[['Total impact', summary.total_amount, 'money'], ['Actions', summary.action_count, 'number'], ['Average action', summary.average_action_amount, 'money'], ['Flagged employees', summary.flagged_employees, 'number'], ['Unattributed actions', summary.unattributed_actions, 'number']].map(([label, value, kind]) => <div key={label} className={`rounded-md border p-3 ${label === 'Flagged employees' && Number(value) > 0 ? 'border-red-500/50 bg-red-500/10' : 'border-dash-border'}`}><p className="label-mono !text-[9px]">{label}</p><p className={`mt-1 font-mono text-lg ${label === 'Flagged employees' && Number(value) > 0 ? 'text-red-300' : 'text-dash-cream'}`}>{formatValue(value, kind)}</p></div>)}
     </div>
@@ -356,7 +410,7 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
   const [saving, setSaving] = useState(false)
   const preferencePath = scope === 'portfolio' ? '/portfolio-reports/homepage/preferences' : `/restaurants/${restaurantId}/reports/homepage/preferences`
   const preferenceQuery = useQuery({ queryKey: ['homepage-preferences', scope, restaurantId], queryFn: () => fetchWithSupabaseAuth(preferencePath), enabled: scope === 'portfolio' || Boolean(restaurantId) })
-  const preference = preferenceQuery.data || { visible_widgets: [], widget_order: [], widget_settings: {}, catalog: [] }
+  const preference = preferenceQuery.data || { visible_widgets: [], widget_order: [], widget_settings: {}, widget_pdf_settings: {}, catalog: [] }
   const dimensionPath = scope === 'portfolio'
     ? `/portfolio-reports/dimensions?${new URLSearchParams({ ...(groupIds?.length ? { group_ids: groupIds.join(',') } : {}), include_ungrouped: String(includeUngrouped) })}`
     : `/restaurants/${restaurantId}/reports/dimensions`
@@ -385,7 +439,19 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
       setConfigureOpen(false); setSettingsId(null)
     } finally { setSaving(false) }
   }
-  const saveSettings = async (settings) => savePreference({ visible_widgets: preference.visible_widgets, widget_order: preference.widget_order, widget_settings: { ...(preference.widget_settings || {}), [settingsId]: settings } })
+  const saveWidgetPreference = async (kind, settings) => {
+    const path = `${preferencePath}/widgets/${settingsId}`
+    const saved = await fetchWithSupabaseAuth(path, {
+      method: 'PATCH',
+      body: JSON.stringify({ [kind === 'display' ? 'display_settings' : 'pdf_settings']: settings }),
+    })
+    queryClient.setQueryData(['homepage-preferences', scope, restaurantId], saved)
+    if (kind === 'display') {
+      await queryClient.invalidateQueries({ queryKey: ['homepage-data', scope, restaurantId] })
+      setSettingsId(null)
+    }
+  }
+  const saveSettings = async (settings) => saveWidgetPreference('display', settings)
   const selectedWidget = (preference.catalog || []).find((widget) => widget.id === settingsId)
   if (preferenceQuery.isPending) return <p className="p-6 text-sm text-dash-tertiary">Loading homepage...</p>
   return <div className="space-y-4">
@@ -397,8 +463,9 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
         if (!widget) return null
         const data = dataQuery.data?.widgets?.[id]
         const onSettings = () => setSettingsId(id)
-        if (KPI_WIDGETS.has(id)) return <KpiWidget key={id} widget={widget} data={data} detail={richKpiDetail(id, richMetricsQuery.data)} expanded={expandedKpi === id} onToggle={() => setExpandedKpi((current) => current === id ? null : id)} onSettings={onSettings} />
         const settings = preference.widget_settings?.[id] || {}
+        if (scopedBreakdown(data) && id !== 'discount_review') return <ScopedBreakdownWidget key={id} widget={widget} data={data} settings={settings} onSettings={onSettings} />
+        if (KPI_WIDGETS.has(id)) return <KpiWidget key={id} widget={widget} data={data} detail={richKpiDetail(id, richMetricsQuery.data)} expanded={expandedKpi === id} onToggle={() => setExpandedKpi((current) => current === id ? null : id)} onSettings={onSettings} />
         if (id === 'discount_review') return <DiscountReviewWidget key={id} widget={widget} data={data} onSettings={onSettings} />
         if (id === 'menu_performance') return <MenuPerformanceWidget key={id} widget={widget} data={data} settings={settings} onSettings={onSettings} />
         if (id === 'sales_trend' || settings.display_mode === 'chart') return <ChartWidget key={id} widget={widget} data={data} settings={settings} onSettings={onSettings} />
@@ -408,6 +475,6 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
     </div>
     {!orderedVisible.length && <div className="rounded-md border border-dash-border p-8 text-center"><FileText className="mx-auto text-dash-tertiary" /><p className="mt-3 text-sm text-dash-secondary">Choose widgets to build this homepage.</p></div>}
     {configureOpen && <ConfigureModal catalog={preference.catalog || []} visible={preference.visible_widgets || []} order={preference.widget_order || []} saving={saving} onClose={() => setConfigureOpen(false)} onSave={(visible, order) => savePreference({ visible_widgets: visible, widget_order: order, widget_settings: preference.widget_settings || {} })} />}
-    {selectedWidget && <WidgetSettingsModal widget={selectedWidget} widgetData={dataQuery.data?.widgets?.[settingsId]} dimensions={dimensionQuery.data} settings={preference.widget_settings?.[settingsId] || {}} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={saveSettings} />}
+    {selectedWidget && <WidgetSettingsModal widget={selectedWidget} widgetData={dataQuery.data?.widgets?.[settingsId]} dimensions={dimensionQuery.data} settings={preference.widget_settings?.[settingsId] || {}} pdfSettings={preference.widget_pdf_settings?.[settingsId] || {}} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={saveSettings} onSavePdf={(settings) => saveWidgetPreference('pdf', settings)} />}
   </div>
 }

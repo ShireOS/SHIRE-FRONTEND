@@ -5,9 +5,11 @@ import {
   fetchReportRecipients,
   fetchRestaurantReport,
   fetchRestaurantReportingDimensions,
+  fetchRestaurantViewPreferences,
   assignReportingDeviceSection,
   generateStaffReportInsight,
   saveReportPreference,
+  saveRestaurantViewPreferences,
   saveReportRecipient,
   sendTestReportRecipient,
   type ReportPreference,
@@ -170,6 +172,8 @@ export default function RestaurantReportsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<'period' | 'dates' | 'compare' | 'scope' | 'config' | 'email' | null>(null);
   const [insights, setInsights] = useState<Record<string, { loading?: boolean; data?: any; error?: string }>>({});
+  const [viewHydrated, setViewHydrated] = useState(false);
+  const [viewPersistenceReady, setViewPersistenceReady] = useState(false);
 
   useEffect(() => {
     if (passedRestaurantId) return;
@@ -181,6 +185,64 @@ export default function RestaurantReportsScreen() {
       })
       .catch((nextError) => setError(nextError instanceof Error ? nextError.message : 'Could not load restaurant.'));
   }, [passedRestaurantId]);
+
+  useEffect(() => {
+    if (!restaurantId) return;
+    let cancelled = false;
+    setViewHydrated(false);
+    setViewPersistenceReady(false);
+    fetchRestaurantViewPreferences(restaurantId)
+      .then((payload) => {
+        if (cancelled) return;
+        const saved = payload.settings.reports;
+        if (!saved) {
+          setViewPersistenceReady(true);
+          return;
+        }
+        const preset = saved.period_preset || 'week';
+        const primary = preset === 'custom' && saved.custom_start_date && saved.custom_end_date
+          ? { start: saved.custom_start_date, end: saved.custom_end_date }
+          : periodRange(preset as Exclude<PeriodPreset, 'custom'>);
+        const mode = saved.comparison_mode || 'previous_period';
+        const comparison = mode === 'custom' && saved.comparison_start_date && saved.comparison_end_date
+          ? { comparisonStart: saved.comparison_start_date, comparisonEnd: saved.comparison_end_date }
+          : comparisonRange(primary.start, primary.end, mode as Exclude<ComparisonMode, 'custom'>);
+        setPeriodPreset(preset);
+        setComparisonMode(mode);
+        setComparisonEnabled(Boolean(saved.comparison_enabled));
+        setDateRange({ ...primary, ...comparison });
+        setBasis(saved.rank_basis || 'revenue');
+        setDaypart(saved.daypart || '');
+        setReportingScope({
+          scope_dimension: saved.scope_dimension || 'none',
+          scope_mode: saved.scope_mode || 'cumulative',
+          scope_ids: saved.scope_ids || [],
+        });
+        setViewPersistenceReady(true);
+      })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setViewHydrated(true); });
+    return () => { cancelled = true; };
+  }, [restaurantId]);
+
+  useEffect(() => {
+    if (!restaurantId || !viewHydrated || !viewPersistenceReady) return;
+    const timeout = setTimeout(() => {
+      saveRestaurantViewPreferences(restaurantId, 'reports', {
+        period_preset: periodPreset,
+        custom_start_date: periodPreset === 'custom' ? dateRange.start : null,
+        custom_end_date: periodPreset === 'custom' ? dateRange.end : null,
+        comparison_enabled: comparisonEnabled,
+        comparison_mode: comparisonMode,
+        comparison_start_date: comparisonMode === 'custom' ? dateRange.comparisonStart : null,
+        comparison_end_date: comparisonMode === 'custom' ? dateRange.comparisonEnd : null,
+        daypart: daypart as '' | 'breakfast' | 'lunch' | 'dinner' | 'late_night',
+        rank_basis: basis,
+        ...reportingScope,
+      }).catch(() => undefined);
+    }, 450);
+    return () => clearTimeout(timeout);
+  }, [basis, comparisonEnabled, comparisonMode, dateRange, daypart, periodPreset, reportingScope, restaurantId, viewHydrated, viewPersistenceReady]);
 
   const applyPrimaryRange = (range: { start: string; end: string }, preset: PeriodPreset = 'custom') => {
     const comparison = comparisonMode === 'custom'
@@ -249,7 +311,7 @@ export default function RestaurantReportsScreen() {
     }
   }, [basis, comparisonEnabled, dateRange.comparisonEnd, dateRange.comparisonStart, dateRange.end, dateRange.start, daypart, reportingScope, restaurantId]);
 
-  useEffect(() => { load().catch(() => undefined); }, [load]);
+  useEffect(() => { if (viewHydrated) load().catch(() => undefined); }, [load, viewHydrated]);
 
   const savePreference = async (next: ReportPreference) => {
     if (!restaurantId) return;

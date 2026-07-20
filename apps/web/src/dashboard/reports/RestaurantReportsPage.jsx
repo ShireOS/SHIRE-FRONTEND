@@ -10,6 +10,7 @@ import {
   Layers,
   Printer,
   RefreshCw,
+  RotateCcw,
   Save,
   Send,
   Settings2,
@@ -509,6 +510,7 @@ export default function RestaurantReportsPage({ restaurantId }) {
   const [comparisonMode, setComparisonMode] = useState('previous_period')
   const [compareDraft, setCompareDraft] = useState(() => ({ ...initialDates(), mode: 'previous_period', enabled: false }))
   const [filters, setFilters] = useState({ category: '', daypart: '', dayOfWeek: '', hour: '', topN: 10, basis: 'revenue' })
+  const [salesView, setSalesView] = useState('items')
   const [reportingScope, setReportingScope] = useState({ scope_dimension: 'none', scope_mode: 'cumulative', scope_ids: [] })
   const [dimensions, setDimensions] = useState({ sections: [], devices: [], coverage: {} })
   const [report, setReport] = useState(null)
@@ -525,6 +527,8 @@ export default function RestaurantReportsPage({ restaurantId }) {
   const [selectedServerId, setSelectedServerId] = useState('')
   const [serverLoading, setServerLoading] = useState(false)
   const [serverMessage, setServerMessage] = useState('')
+  const [viewHydrated, setViewHydrated] = useState(false)
+  const [viewPersistenceReady, setViewPersistenceReady] = useState(false)
 
   const setPrimaryRange = (range, preset = 'custom') => {
     const comparison = comparisonMode === 'custom'
@@ -555,6 +559,76 @@ export default function RestaurantReportsPage({ restaurantId }) {
       : comparisonRange(dates.start, dates.end, mode)
     setCompareDraft({ ...compareDraft, ...comparison, mode })
   }
+
+  useEffect(() => {
+    if (!restaurantId) return
+    let cancelled = false
+    setViewHydrated(false)
+    setViewPersistenceReady(false)
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/view-preferences`)
+      .then((payload) => {
+        if (cancelled) return
+        const saved = payload.settings?.reports
+        if (saved) {
+          const preset = saved.period_preset || 'week'
+          const primary = preset === 'custom' && saved.custom_start_date && saved.custom_end_date
+            ? { start: saved.custom_start_date, end: saved.custom_end_date }
+            : periodRange(preset)
+          const mode = saved.comparison_mode || 'previous_period'
+          const comparison = mode === 'custom' && saved.comparison_start_date && saved.comparison_end_date
+            ? { comparisonStart: saved.comparison_start_date, comparisonEnd: saved.comparison_end_date }
+            : comparisonRange(primary.start, primary.end, mode)
+          setPeriodPreset(preset)
+          setComparisonMode(mode)
+          setComparisonEnabled(Boolean(saved.comparison_enabled))
+          setDates({ ...primary, ...comparison })
+          setFilters({
+            category: saved.category || '', daypart: saved.daypart || '',
+            dayOfWeek: saved.day_of_week ?? '', hour: saved.hour ?? '',
+            topN: saved.top_n || 10, basis: saved.rank_basis || 'revenue',
+          })
+          setSalesView(saved.sales_view || 'items')
+          setReportingScope({
+            scope_dimension: saved.scope_dimension || 'none',
+            scope_mode: saved.scope_mode || 'cumulative',
+            scope_ids: saved.scope_ids || [],
+          })
+        }
+        setViewPersistenceReady(true)
+      })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setViewHydrated(true) })
+    return () => { cancelled = true }
+  }, [restaurantId])
+
+  useEffect(() => {
+    if (!restaurantId || !viewHydrated || !viewPersistenceReady) return
+    const timeout = window.setTimeout(() => {
+      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/view-preferences/reports`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          settings: {
+            period_preset: periodPreset,
+            custom_start_date: periodPreset === 'custom' ? dates.start : null,
+            custom_end_date: periodPreset === 'custom' ? dates.end : null,
+            comparison_enabled: comparisonEnabled,
+            comparison_mode: comparisonMode,
+            comparison_start_date: comparisonMode === 'custom' ? dates.comparisonStart : null,
+            comparison_end_date: comparisonMode === 'custom' ? dates.comparisonEnd : null,
+            category: filters.category,
+            daypart: filters.daypart,
+            day_of_week: filters.dayOfWeek === '' ? null : Number(filters.dayOfWeek),
+            hour: filters.hour === '' ? null : Number(filters.hour),
+            top_n: filters.topN,
+            rank_basis: filters.basis,
+            sales_view: salesView,
+            ...reportingScope,
+          },
+        }),
+      }).catch(() => undefined)
+    }, 450)
+    return () => window.clearTimeout(timeout)
+  }, [restaurantId, viewHydrated, viewPersistenceReady, periodPreset, dates, comparisonEnabled, comparisonMode, filters, salesView, reportingScope])
 
   const load = async () => {
     if (!restaurantId) return
@@ -596,7 +670,7 @@ export default function RestaurantReportsPage({ restaurantId }) {
     }
   }
 
-  useEffect(() => { void load() }, [restaurantId, dates, comparisonEnabled, filters.category, filters.daypart, filters.dayOfWeek, filters.hour, filters.topN, filters.basis, reportingScope])
+  useEffect(() => { if (viewHydrated) void load() }, [restaurantId, viewHydrated, dates, comparisonEnabled, filters.category, filters.daypart, filters.dayOfWeek, filters.hour, filters.topN, filters.basis, reportingScope])
 
   useEffect(() => {
     if (!restaurantId) return
@@ -672,7 +746,7 @@ export default function RestaurantReportsPage({ restaurantId }) {
   }
 
   const sectionRenderers = {
-    sales_revenue: () => <SalesRevenue section={sections.sales_revenue} filters={filters} setFilters={setFilters} categories={categories} comparisonEnabled={comparisonEnabled} />,
+    sales_revenue: () => <SalesRevenue section={sections.sales_revenue} filters={filters} setFilters={setFilters} categories={categories} comparisonEnabled={comparisonEnabled} view={salesView} setView={setSalesView} />,
     top_bottom_sellers: () => <TopBottom section={sections.top_bottom_sellers} filters={filters} setFilters={setFilters} />,
     average_check: () => <AverageCheck section={sections.average_check} comparisonEnabled={comparisonEnabled} />,
     employee_reports: () => <EmployeeReports section={sections.employee_reports} insights={insights} onInsight={generateInsight} />,
@@ -696,6 +770,14 @@ export default function RestaurantReportsPage({ restaurantId }) {
               <IconButton label={reportingScope.scope_dimension === 'none' ? 'Scope' : reportingScope.scope_dimension === 'device' ? 'Devices' : 'Sections'} icon={Layers} onClick={() => setModal('scope')} />
               <IconButton label="Configure" icon={Settings2} onClick={() => setModal('config')} />
               <IconButton label="Email" icon={Mail} onClick={() => setModal('email')} />
+              <IconButton label="Reset filters" icon={RotateCcw} onClick={() => {
+                const primary = periodRange('week')
+                setPeriodPreset('week'); setComparisonMode('previous_period'); setComparisonEnabled(false)
+                setDates({ ...primary, ...comparisonRange(primary.start, primary.end, 'previous_period') })
+                setFilters({ category: '', daypart: '', dayOfWeek: '', hour: '', topN: 10, basis: 'revenue' })
+                setSalesView('items')
+                setReportingScope({ scope_dimension: 'none', scope_mode: 'cumulative', scope_ids: [] })
+              }} />
               <IconButton label="Refresh" icon={RefreshCw} onClick={load} disabled={loading} />
             </div>
           </div>
@@ -756,8 +838,7 @@ function ReportScopeModal({ value, dimensions, onClose, onApply }) {
   </Modal>
 }
 
-function SalesRevenue({ section = {}, filters, setFilters, categories, comparisonEnabled }) {
-  const [view, setView] = useState('items')
+function SalesRevenue({ section = {}, filters, setFilters, categories, comparisonEnabled, view, setView }) {
   const summary = section.summary || {}
   const comparison = comparisonEnabled ? section.comparison || {} : {}
   const rows = view === 'items' ? section.items || [] : section[view] || []

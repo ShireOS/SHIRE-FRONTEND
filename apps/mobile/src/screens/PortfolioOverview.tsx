@@ -2,7 +2,9 @@ import {
   deletePortfolioRecipient,
   fetchPortfolioRecipients,
   fetchPortfolioReport,
+  fetchPortfolioViewPreferences,
   savePortfolioRecipient,
+  savePortfolioViewPreferences,
   sendPortfolioTest,
   type PortfolioGroup,
   type PortfolioPeriod,
@@ -49,6 +51,35 @@ export default function PortfolioOverview() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [viewHydrated, setViewHydrated] = useState(false);
+  const [viewPersistenceReady, setViewPersistenceReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPortfolioViewPreferences()
+      .then((payload) => {
+        if (cancelled) return;
+        const saved = payload.settings.overview;
+        if (saved) {
+          setPeriod(saved.period || 'week');
+          setGroupIds(saved.group_ids || []);
+          setIncludeUngrouped(Boolean(saved.include_ungrouped));
+        }
+        setViewPersistenceReady(true);
+      })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setViewHydrated(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!viewHydrated || !viewPersistenceReady) return;
+    const timeout = setTimeout(() => {
+      savePortfolioViewPreferences({ period, group_ids: groupIds, include_ungrouped: includeUngrouped })
+        .catch(() => undefined);
+    }, 450);
+    return () => clearTimeout(timeout);
+  }, [groupIds, includeUngrouped, period, viewHydrated, viewPersistenceReady]);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -60,7 +91,7 @@ export default function PortfolioOverview() {
     } finally { setLoading(false); }
   }, [groupIds, includeUngrouped, period]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (viewHydrated) void load(); }, [load, viewHydrated]);
   const totals = report?.totals || {};
   const filterLabel = groupIds.length || includeUngrouped
     ? `${groupIds.length + (includeUngrouped ? 1 : 0)} groups`
@@ -78,7 +109,7 @@ export default function PortfolioOverview() {
         <View style={styles.toolbarRow}><Pressable onPress={() => setFilterOpen(true)} style={styles.secondaryButton}><Feather name="filter" size={15} color={semanticColors.textMuted} /><Text style={styles.secondaryButtonText}>{filterLabel}</Text></Pressable></View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.periodRow}>{PERIODS.map((item) => <Pressable key={item.id} onPress={() => setPeriod(item.id)} style={[styles.periodButton, period === item.id && styles.periodButtonActive]}><Text style={[styles.periodText, period === item.id && styles.periodTextActive]}>{item.label}</Text></Pressable>)}</ScrollView>
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        {loading && !report ? <ActivityIndicator color={semanticColors.primary} style={styles.loader} /> : <HomepageWidgets scope="portfolio" period={period} groupIds={groupIds} includeUngrouped={includeUngrouped} />}
+        {loading && !report ? <ActivityIndicator color={semanticColors.primary} style={styles.loader} /> : viewHydrated ? <HomepageWidgets scope="portfolio" period={period} groupIds={groupIds} includeUngrouped={includeUngrouped} /> : null}
       </>}
       <GroupFilterModal visible={filterOpen} groups={report?.scope.groups || []} selected={groupIds} includeUngrouped={includeUngrouped} onClose={() => setFilterOpen(false)} onApply={(ids, ungrouped) => { setGroupIds(ids); setIncludeUngrouped(ungrouped); setFilterOpen(false); }} />
     </ScrollView>

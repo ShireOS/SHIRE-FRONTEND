@@ -141,18 +141,47 @@ function ConfigureModal({ visibleModules, onSave, onClose, saving }) {
 }
 
 export default function OverviewPage({ restaurantBase = '/restaurants' }) {
-  const [period, setPeriod] = useState(() => localStorage.getItem('shire_overview_period') || 'week')
+  const [period, setPeriod] = useState('week')
   const [tab, setTab] = useState('overview')
   const [selectedGroups, setSelectedGroups] = useState(new Set())
   const [includeUngrouped, setIncludeUngrouped] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
+  const [viewHydrated, setViewHydrated] = useState(false)
+  const [viewPersistenceReady, setViewPersistenceReady] = useState(false)
 
-  useEffect(() => localStorage.setItem('shire_overview_period', period), [period])
+  useEffect(() => {
+    let cancelled = false
+    fetchWithSupabaseAuth('/portfolio-reports/view-preferences')
+      .then((payload) => {
+        if (cancelled) return
+        const saved = payload.settings?.overview
+        if (saved) {
+          setPeriod(saved.period || 'week')
+          setSelectedGroups(new Set(saved.group_ids || []))
+          setIncludeUngrouped(Boolean(saved.include_ungrouped))
+        }
+        setViewPersistenceReady(true)
+      })
+      .catch(() => undefined)
+      .finally(() => { if (!cancelled) setViewHydrated(true) })
+    return () => { cancelled = true }
+  }, [])
+  useEffect(() => {
+    if (!viewHydrated || !viewPersistenceReady) return
+    const timeout = window.setTimeout(() => {
+      fetchWithSupabaseAuth('/portfolio-reports/view-preferences/overview', {
+        method: 'PUT',
+        body: JSON.stringify({ settings: { period, group_ids: [...selectedGroups], include_ungrouped: includeUngrouped } }),
+      }).catch(() => undefined)
+    }, 450)
+    return () => window.clearTimeout(timeout)
+  }, [viewHydrated, viewPersistenceReady, period, selectedGroups, includeUngrouped])
   const groupQuery = [...selectedGroups].sort().join(',')
   const reportQuery = useQuery({
     queryKey: ['portfolio-report', period, groupQuery, includeUngrouped],
     queryFn: () => fetchWithSupabaseAuth(`/portfolio-reports?period=${period}${groupQuery ? `&group_ids=${groupQuery}` : ''}${includeUngrouped ? '&include_ungrouped=true' : ''}`),
     staleTime: STALE_TIMES.analytics,
+    enabled: viewHydrated,
   })
   const report = reportQuery.data || {}
   const totals = report.totals || {}
@@ -192,7 +221,7 @@ export default function OverviewPage({ restaurantBase = '/restaurants' }) {
         })}
       </div>
 
-      {tab === 'email' ? <PortfolioEmailPanel /> : <HomepageWidgets scope="portfolio" period={period} groupIds={[...selectedGroups]} includeUngrouped={includeUngrouped} />}
+      {tab === 'email' ? <PortfolioEmailPanel /> : viewHydrated && <HomepageWidgets scope="portfolio" period={period} groupIds={[...selectedGroups]} includeUngrouped={includeUngrouped} />}
 
       {filterOpen && <FilterModal groups={groups} selected={selectedGroups} includeUngrouped={includeUngrouped} onClose={() => setFilterOpen(false)} onApply={(next, ungrouped) => { setSelectedGroups(next); setIncludeUngrouped(ungrouped); setFilterOpen(false) }} />}
     </div>

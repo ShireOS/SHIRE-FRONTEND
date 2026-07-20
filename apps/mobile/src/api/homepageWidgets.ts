@@ -34,6 +34,7 @@ export type HomepagePreferences = {
   visible_widgets: string[];
   widget_order: string[];
   widget_settings: Record<string, WidgetSettings>;
+  widget_pdf_settings: Record<string, WidgetPdfPayload>;
   catalog: WidgetCatalogItem[];
 };
 export type WidgetData = {
@@ -42,6 +43,17 @@ export type WidgetData = {
   measure_columns?: WidgetColumn[];
   grain?: string;
   breakdown?: string;
+  reporting_scope?: {
+    dimension: 'none' | 'revenue_center' | 'device';
+    mode: 'cumulative' | 'breakdown';
+    ids: string[];
+  };
+  scope_breakdown?: (Record<string, unknown> & {
+    breakdown: string;
+    total_amount: number;
+    action_count: number;
+    average_action_amount: number;
+  })[];
   summary?: Record<string, number>;
   employees?: (Record<string, unknown> & { employee_id?: string | null; employee_name: string; restaurant_id: string; restaurant_name: string; action_count: number; total_amount: number; is_flagged: boolean; alert_reasons: string[] })[];
   reasons?: (Record<string, unknown> & { reason_code: string; reason_label: string; action_type: string; restaurant_id: string; restaurant_name: string; count: number; total_amount: number; average_amount: number; share_percent: number })[];
@@ -89,8 +101,19 @@ export function fetchHomepagePreferences(scope: WidgetScope, restaurantId?: stri
   return apiGet<HomepagePreferences>(`${prefix(scope, restaurantId)}/preferences`);
 }
 
-export function saveHomepagePreferences(scope: WidgetScope, restaurantId: string | undefined, payload: Omit<HomepagePreferences, 'catalog'>) {
+export function saveHomepagePreferences(scope: WidgetScope, restaurantId: string | undefined, payload: Pick<HomepagePreferences, 'visible_widgets' | 'widget_order' | 'widget_settings'>) {
   return apiRequest<HomepagePreferences>(`${prefix(scope, restaurantId)}/preferences`, { method: 'PUT', body: payload });
+}
+
+export function saveHomepageWidgetPreferences(
+  scope: WidgetScope,
+  restaurantId: string | undefined,
+  widgetId: string,
+  payload: { display_settings?: WidgetSettings; pdf_settings?: WidgetPdfPayload },
+) {
+  return apiRequest<HomepagePreferences>(`${prefix(scope, restaurantId)}/preferences/widgets/${widgetId}`, {
+    method: 'PATCH', body: payload,
+  });
 }
 
 export function fetchHomepageData(scope: WidgetScope, restaurantId: string | undefined, payload: {
