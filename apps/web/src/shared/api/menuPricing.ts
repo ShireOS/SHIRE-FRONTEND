@@ -19,6 +19,7 @@ export type PricingChangeInput = {
   end_time?: string | null
   days_of_week?: number[]
   priority?: number
+  preserve_gratuity_basis?: boolean
 }
 
 const base = (restaurantId: string) => `/restaurants/${restaurantId}/menu/pricing`

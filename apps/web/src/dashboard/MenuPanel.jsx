@@ -103,6 +103,7 @@ const defaultSpecialDraft = () => ({
   cycle_length_days: '',
   cycle_day_number: '',
   expires_at: '',
+  preserve_gratuity_basis: true,
 })
 
 const defaultGroupDraft = () => ({
@@ -1328,6 +1329,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         expires_at: specialDraft.expires_at ? new Date(specialDraft.expires_at).toISOString() : null,
         sort_order: specials.length,
         is_active: true,
+        preserve_gratuity_basis: specialDraft.preserve_gratuity_basis,
       }
       await createPricingSpecial(restaurantId, payload)
       setSpecialDraft(defaultSpecialDraft())
@@ -2222,6 +2224,10 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                             </SmallButton>
                             <SmallButton variant="danger" onClick={() => void archiveSpecial(special)}>Archive</SmallButton>
                           </div>
+                          <label className="flex items-center gap-2 text-xs text-dash-secondary">
+                            <input type="checkbox" checked={special.preserve_gratuity_basis !== false} onChange={event => void updateSpecial(special, { preserve_gratuity_basis: event.target.checked })} className="h-4 w-4 accent-dash-gold" />
+                            Regular-price gratuity
+                          </label>
                         </div>
                       </div>
                     </div>
@@ -2306,6 +2312,10 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                   <Field label="Expires (optional)">
                     <TextInput type="datetime-local" value={specialDraft.expires_at} onChange={event => setSpecialDraft(prev => ({ ...prev, expires_at: event.target.value }))} />
                   </Field>
+                  <label className="flex min-h-11 items-center gap-3 rounded-md border border-white/10 px-3 text-sm text-dash-primary">
+                    <input type="checkbox" checked={specialDraft.preserve_gratuity_basis} onChange={event => setSpecialDraft(prev => ({ ...prev, preserve_gratuity_basis: event.target.checked }))} className="h-4 w-4 accent-dash-gold" />
+                    <span>Calculate gratuity using the regular price</span>
+                  </label>
                   <SmallButton variant="primary" onClick={() => void createSpecial()} disabled={busy}>Save special</SmallButton>
                 </div>
               </div>
