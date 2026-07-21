@@ -43,6 +43,12 @@ const OWNER_TABS: RoleTab[] = [
     sfSymbol: 'fork.knife',
   },
   {
+    name: 'ui',
+    title: 'UI',
+    androidIcon: 'color-palette',
+    sfSymbol: { default: 'paintpalette', selected: 'paintpalette.fill' },
+  },
+  {
     name: 'feedback',
     title: 'Complaints',
     androidIcon: 'alert-circle',

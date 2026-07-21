@@ -114,6 +114,7 @@ export function can(permissions: PermissionMap | null | undefined, key: string):
 export const TAB_PERMISSIONS: Record<string, string> = {
   reports: 'reports.view',
   setup: 'settings.edit',
+  ui: 'settings.edit',
   menu: 'menu.view',
   taxes: 'settings.edit',
   feedback: 'reports.view',

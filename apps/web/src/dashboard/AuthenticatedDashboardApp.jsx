@@ -47,6 +47,7 @@ import SalesTiles from './components/SalesTiles'
 import HomepageWidgets from './components/HomepageWidgets'
 import { usePersistedPeriod } from './data/analyticsSummary'
 import ResellerApp from '../reseller/ResellerApp'
+import ResellerUiEditor from '../reseller/ResellerUiEditor'
 import RestaurantReportsPage from './reports/RestaurantReportsPage'
 
 function LoadingScreen() {
@@ -130,6 +131,7 @@ const TABS = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'reports', label: 'Reports' },
   { id: 'setup', label: 'Edit Setup' },
+  { id: 'ui', label: 'UI Editor' },
   { id: 'menu', label: 'Menu' },
   { id: 'taxes', label: 'Taxes' },
   { id: 'devices', label: 'Devices' },
@@ -4962,6 +4964,18 @@ export function RestaurantWorkspace({
           </>
         )}
         {activeTab === 'reports' && <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurant?.name} />}
+        {activeTab === 'ui' && (
+          <ResellerUiEditor
+            restaurants={restaurant ? [{
+              ...restaurant,
+              reseller_group_id: 'ungrouped',
+              reseller_group_name: 'Current store',
+              reseller_group_color: '#9CA3AF',
+            }] : []}
+            groups={[]}
+            initialRestaurantId={restaurantId}
+          />
+        )}
         {activeTab === 'menu' && (
           <MenuPanel
             restaurantId={restaurantId}
@@ -4993,6 +5007,7 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   analytics: 'Overview',
   reports: 'Reports',
   setup: 'Setup',
+  ui: 'UI Editor',
   menu: 'Menu',
   taxes: 'Taxes',
   feedback: 'Complaints',

@@ -25,6 +25,8 @@ import {
 import {
   RESELLER_UNGROUPED_ID,
   fetchResellerPortfolio,
+  getOwnerRestaurant,
+  getUserRole,
   type ResellerGroup,
   type ResellerRestaurant,
 } from '../../packages/supabase';
@@ -212,10 +214,44 @@ export default function ResellerUiEditor() {
   const [message, setMessage] = useState<{ tone: 'error' | 'success'; text: string } | null>(null);
 
   useEffect(() => {
-    fetchResellerPortfolio()
-      .then((portfolio) => { setRestaurants(portfolio.restaurants); setGroups(portfolio.groups); })
-      .catch((error) => setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Could not load portfolio.' }))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    async function loadScope() {
+      try {
+        const role = await getUserRole();
+        if (role === 'reseller' || role === 'reseller_employee') {
+          const portfolio = await fetchResellerPortfolio();
+          if (cancelled) return;
+          setRestaurants(portfolio.restaurants);
+          setGroups(portfolio.groups);
+          return;
+        }
+
+        const restaurant = await getOwnerRestaurant();
+        if (cancelled) return;
+        if (!restaurant?.id) {
+          setRestaurants([]);
+          setGroups([]);
+          setMessage({ tone: 'error', text: 'No editable restaurant was found for this account.' });
+          return;
+        }
+        const ownerRestaurant = {
+          id: restaurant.id,
+          name: restaurant.name,
+          reseller_group_id: RESELLER_UNGROUPED_ID,
+          reseller_group_name: 'Current store',
+          reseller_group_color: '#9CA3AF',
+        } as ResellerRestaurant;
+        setRestaurants([ownerRestaurant]);
+        setGroups([]);
+        await loadSelection([restaurant.id]);
+      } catch (error) {
+        if (!cancelled) setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Could not load UI editor scope.' });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void loadScope();
+    return () => { cancelled = true; };
   }, []);
 
   const loadSelection = async (ids: string[]) => {
@@ -271,7 +307,13 @@ export default function ResellerUiEditor() {
           label: `${service.toUpperCase()} UI theme`,
           scheduledFor: publication.scheduledFor,
           timezone: publication.timezone,
-          commands: [{ method: 'PUT', path: '/reseller/ui-themes', body: { service, restaurant_ids: selectedIds, tokens: drafts[service], component_overrides: componentDrafts[service] }, target_type: 'reseller' }],
+          commands: [{
+            method: 'PUT',
+            path: '/reseller/ui-themes',
+            body: { service, restaurant_ids: selectedIds, tokens: drafts[service], component_overrides: componentDrafts[service] },
+            target_type: selectedIds.length === 1 ? 'restaurant' : 'reseller',
+            target_id: selectedIds.length === 1 ? selectedIds[0] : null,
+          }],
         });
         setMessage({ tone: 'success', text: `${service.toUpperCase()} UI scheduled for ${new Date(scheduled.scheduled_for).toLocaleString()}.` });
         setSaving(false);
@@ -370,12 +412,12 @@ export default function ResellerUiEditor() {
     <View style={styles.page}>
       <ScopeModal visible={scopeOpen} restaurants={restaurants} groups={groups} initialIds={selectedIds} dismissible={selectedIds.length > 0} onClose={() => setScopeOpen(false)} onApply={(ids) => void loadSelection(ids)} />
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.headingRow}><View style={{ flex: 1 }}><Text style={styles.eyebrow}>RESELLER UI EDITOR</Text><Text style={styles.title}>Application colors</Text><Text style={styles.supporting}>Edit the runtime theme for the selected POS and Host apps.</Text></View><View style={styles.headingActions}><Pressable onPress={openScope} style={styles.secondaryButton}><Feather name="filter" size={15} color={semanticColors.text} /><Text style={styles.secondaryButtonText}>Scope</Text></Pressable>{dirty[service] && <PublishControls label="Push to iPads" busy={saving} onPublishNow={() => pushToIpads()} onSchedule={(scheduledFor, timezone) => pushToIpads({ scheduledFor, timezone })} />}</View></View>
+        <View style={styles.headingRow}><View style={{ flex: 1 }}><Text style={styles.eyebrow}>UI EDITOR</Text><Text style={styles.title}>Application colors</Text><Text style={styles.supporting}>Edit the runtime theme for the selected POS and Host apps.</Text></View><View style={styles.headingActions}><Pressable onPress={openScope} style={styles.secondaryButton}><Feather name="filter" size={15} color={semanticColors.text} /><Text style={styles.secondaryButtonText}>Scope</Text></Pressable>{dirty[service] && <PublishControls label="Push to iPads" busy={saving} onPublishNow={() => pushToIpads()} onSchedule={(scheduledFor, timezone) => pushToIpads({ scheduledFor, timezone })} />}</View></View>
         <View style={styles.scopeSummary}><Text style={styles.scopeSummaryText}>{selectedIds.length ? `${selectedIds.length} restaurants selected` : 'Choose restaurants to begin'}</Text></View>
         {message && <View style={[styles.message, message.tone === 'error' ? styles.messageError : styles.messageSuccess]}><Text style={message.tone === 'error' ? styles.messageErrorText : styles.messageSuccessText}>{message.text}</Text></View>}
         <View style={styles.segmented}>{(['pos', 'host'] as UiService[]).map((item) => <Pressable key={item} onPress={() => { setService(item); setActiveToken(null); }} style={[styles.segment, service === item && styles.segmentActive]}><Text style={[styles.segmentText, service === item && styles.segmentTextActive]}>{item.toUpperCase()}</Text></Pressable>)}</View>
         {mixed[service] && <View style={styles.mixedNotice}><Text style={styles.mixedText}>These restaurants have different {service.toUpperCase()} UI settings. The service default is shown; pushing makes the complete scheme consistent.</Text></View>}
-        <View style={styles.panel}><View style={styles.previewHeading}><View style={{ flex: 1 }}><Text style={styles.panelTitle}>Real application sandbox</Text><Text style={styles.panelHelp}>Uses the service's actual screens with in-memory preview data.</Text></View><Pressable accessibilityLabel="Open full-screen preview" onPress={() => setPreviewOpen(true)} style={styles.iconButton}><Feather name="maximize-2" size={18} color={semanticColors.text} /></Pressable></View><View style={styles.modeSegmented}>{(['view', 'edit'] as UiPreviewMode[]).map((item) => <Pressable key={item} onPress={() => setPreviewMode(item)} style={[styles.modeSegment, previewMode === item && styles.modeSegmentActive]}><Feather name={item === 'view' ? 'eye' : 'edit-2'} size={14} color={previewMode === item ? semanticColors.textInverse : semanticColors.textMuted} /><Text style={[styles.modeText, previewMode === item && styles.modeTextActive]}>{item === 'view' ? 'View' : 'Edit'}</Text></Pressable>)}</View><RealThemePreview service={service} tokens={previewDrafts[service]} componentOverrides={previewComponents[service]} mode={previewMode} onComponentSelect={selectComponent} /></View>
+        <View style={styles.panel}><View style={styles.previewHeading}><View style={{ flex: 1 }}><Text style={styles.panelTitle}>Real application sandbox</Text><Text style={styles.panelHelp}>Uses the service&apos;s actual screens with in-memory preview data.</Text></View><Pressable accessibilityLabel="Open full-screen preview" onPress={() => setPreviewOpen(true)} style={styles.iconButton}><Feather name="maximize-2" size={18} color={semanticColors.text} /></Pressable></View><View style={styles.modeSegmented}>{(['view', 'edit'] as UiPreviewMode[]).map((item) => <Pressable key={item} onPress={() => setPreviewMode(item)} style={[styles.modeSegment, previewMode === item && styles.modeSegmentActive]}><Feather name={item === 'view' ? 'eye' : 'edit-2'} size={14} color={previewMode === item ? semanticColors.textInverse : semanticColors.textMuted} /><Text style={[styles.modeText, previewMode === item && styles.modeTextActive]}>{item === 'view' ? 'View' : 'Edit'}</Text></Pressable>)}</View><RealThemePreview service={service} tokens={previewDrafts[service]} componentOverrides={previewComponents[service]} mode={previewMode} onComponentSelect={selectComponent} /></View>
         <View style={styles.panel}><Text style={styles.panelTitle}>Recent colors</Text><Text style={styles.panelHelp}>Tap to apply to the active field. Long-press to delete.</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyRow}>{(data?.color_history || []).map((item) => <Pressable key={item.color} accessibilityLabel={`Use ${item.color}`} onPress={() => activeToken && updateColor(activeToken, item.color)} onLongPress={() => void removeHistory(item.color)} style={[styles.historySwatch, { backgroundColor: item.color }]} />)}{!data?.color_history.length && <Text style={styles.selectionMeta}>Colors appear after the first save.</Text>}</ScrollView></View>
         {groupUiThemeTokens(service).map(({ group, tokens }) => <View key={group} style={styles.panel}><Text style={styles.panelTitle}>{group}</Text><View style={styles.tokenList}>{tokens.map((item) => <Pressable key={item.key} onPress={() => { setActiveToken(item.key); setColorPickerOpen(true); }} style={[styles.tokenRow, activeToken === item.key && styles.tokenRowActive]}><View style={[styles.tokenSwatch, { backgroundColor: colors[item.key] }]} /><View style={{ flex: 1 }}><Text style={styles.tokenLabel}>{item.label}</Text><TextInput value={colors[item.key]} onFocus={() => setActiveToken(item.key)} onChangeText={(value) => updateColor(item.key, value)} autoCapitalize="none" autoCorrect={false} style={styles.colorCode} /></View><Feather name="chevron-right" size={18} color={semanticColors.textMuted} /></Pressable>)}</View></View>)}
         <Pressable disabled={!previewOutdated} onPress={previewChanges} style={[styles.saveButton, !previewOutdated && styles.disabled]}><Feather name="eye" size={16} color={semanticColors.textInverse} /><Text style={styles.saveButtonText}>Preview changes</Text></Pressable>

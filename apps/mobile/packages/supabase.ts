@@ -488,7 +488,20 @@ export async function getOwnerRestaurant(): Promise<OwnerRestaurant | null> {
   );
 
   const membership = memberships?.[0];
-  if (!membership?.restaurant_id) return null;
+  if (!membership?.restaurant_id) {
+    const owned = await fetchJsonWithTimeout<{ id?: string; name?: string }[]>(
+      `${supabaseUrl}/rest/v1/restaurants?owner_id=eq.${encodeURIComponent(session.userId)}&select=id,name&limit=1`,
+      { headers },
+      'Loading restaurant',
+      ROLE_TIMEOUT_MS,
+    );
+    if (!owned?.[0]?.id) return null;
+    return {
+      id: owned[0].id,
+      name: owned[0].name || 'Restaurant',
+      role: 'owner',
+    };
+  }
 
   const restaurants = await fetchJsonWithTimeout<{ id?: string; name?: string }[]>(
     `${supabaseUrl}/rest/v1/restaurants?id=eq.${encodeURIComponent(membership.restaurant_id)}&select=id,name&limit=1`,
