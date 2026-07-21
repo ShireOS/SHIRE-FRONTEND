@@ -109,6 +109,12 @@ const RESELLER_TABS: RoleTab[] = [
     sfSymbol: { default: 'building.2', selected: 'building.2.fill' },
   },
   {
+    name: 'menu',
+    title: 'Menu',
+    androidIcon: 'restaurant',
+    sfSymbol: 'fork.knife',
+  },
+  {
     name: 'ui',
     title: 'UI',
     androidIcon: 'color-palette',

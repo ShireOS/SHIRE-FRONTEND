@@ -8,6 +8,7 @@ import {
   type AdminMenuItem,
   type MenuItemInsight,
 } from '@/api/menu';
+import { MobilePricingWorkspace } from '@/components/MobilePricingWorkspace';
 import { color_pallet, semanticColors, statusColors } from '@/styles/colors';
 import { card, layout, radius, spacing } from '@/styles/tokens';
 import { typography } from '@/styles/typography';
@@ -27,9 +28,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { getOwnerRestaurant, type OwnerRestaurant } from '../../packages/supabase';
+import { fetchResellerPortfolio, getOwnerRestaurant, type OwnerRestaurant } from '../../packages/supabase';
 
 type AvailabilityFilter = 'all' | 'available' | 'unavailable';
+type MenuWorkspaceMode = 'items' | 'pricing' | 'availability';
 type AvailabilityMode = NonNullable<AdminMenuItem['availability_mode']>;
 type MenuItemForm = {
   name: string;
@@ -63,7 +65,7 @@ const DAY_OPTIONS = [
 ];
 
 const SERVICE_MODE_OPTIONS = ['Dine-in', 'Takeout', 'Delivery', 'Bar', 'Patio'];
-const COURSE_OPTIONS: Array<[NonNullable<AdminMenuItem['course_type']> | '', string]> = [
+const COURSE_OPTIONS: [NonNullable<AdminMenuItem['course_type']> | '', string][] = [
   ['', 'Default'],
   ['none', 'None'],
   ['appetizer', 'App'],
@@ -73,7 +75,7 @@ const COURSE_OPTIONS: Array<[NonNullable<AdminMenuItem['course_type']> | '', str
   ['side', 'Side'],
   ['other', 'Other'],
 ];
-const FIRE_OPTIONS: Array<[NonNullable<AdminMenuItem['fire_mode']> | '', string]> = [
+const FIRE_OPTIONS: [NonNullable<AdminMenuItem['fire_mode']> | '', string][] = [
   ['', 'Default'],
   ['inherit', 'Inherit'],
   ['immediate', 'Immediate'],
@@ -126,6 +128,8 @@ const EMPTY_FORM: MenuItemForm = {
 
 export default function AdminMenu() {
   const [restaurant, setRestaurant] = useState<OwnerRestaurant | null>(null);
+  const [restaurantOptions, setRestaurantOptions] = useState<OwnerRestaurant[]>([]);
+  const [workspaceMode, setWorkspaceMode] = useState<MenuWorkspaceMode>('items');
   const [items, setItems] = useState<AdminMenuItem[]>([]);
   const [filter, setFilter] = useState<AvailabilityFilter>('all');
   const [query, setQuery] = useState('');
@@ -150,20 +154,32 @@ export default function AdminMenu() {
     setError(null);
 
     try {
-      const ownerRestaurant = restaurant ?? await getOwnerRestaurant();
-      setRestaurant(ownerRestaurant);
-      if (!ownerRestaurant?.id) {
+      let selectedRestaurant = restaurant ?? await getOwnerRestaurant();
+      if (!selectedRestaurant) {
+        const portfolio = await fetchResellerPortfolio();
+        const options = portfolio.restaurants.map((row) => ({
+          id: row.id,
+          name: row.name || 'Restaurant',
+          role: portfolio.employee ? 'reseller_employee' : 'reseller',
+        }));
+        setRestaurantOptions(options);
+        selectedRestaurant = options[0] || null;
+      } else if (!restaurantOptions.some((row) => row.id === selectedRestaurant?.id)) {
+        setRestaurantOptions([selectedRestaurant]);
+      }
+      setRestaurant(selectedRestaurant);
+      if (!selectedRestaurant?.id) {
         setItems([]);
         return;
       }
-      setItems(sortMenuItems(await fetchAdminMenuItems(ownerRestaurant.id)));
+      setItems(sortMenuItems(await fetchAdminMenuItems(selectedRestaurant.id)));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load menu.');
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [restaurant]);
+  }, [restaurant, restaurantOptions]);
 
   useEffect(() => {
     void loadMenu();
@@ -373,20 +389,53 @@ export default function AdminMenu() {
           <Pressable style={styles.iconButton} onPress={() => void loadMenu({ refreshing: true })}>
             <Feather name="refresh-cw" size={18} color={color_pallet.ink[700]} />
           </Pressable>
-          <Pressable style={styles.addButton} onPress={() => setIsAddModalVisible(true)}>
+          {workspaceMode === 'items' && <Pressable style={styles.addButton} onPress={() => setIsAddModalVisible(true)}>
             <Feather name="plus" size={18} color={color_pallet.cream[50]} />
             <Text style={[typography.caption, styles.addButtonText]}>Add</Text>
-          </Pressable>
+          </Pressable>}
         </View>
       </View>
 
-      <View style={styles.summaryRow}>
+      {restaurantOptions.length > 1 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.restaurantOptions}>
+          {restaurantOptions.map((option) => (
+            <Pressable
+              key={option.id}
+              onPress={() => {
+                if (option.id === restaurant?.id) return;
+                setRestaurant(option);
+                setItems([]);
+                setSelectedItem(null);
+              }}
+              style={[styles.restaurantOption, option.id === restaurant?.id && styles.restaurantOptionActive]}
+            >
+              <Text style={[styles.restaurantOptionText, option.id === restaurant?.id && styles.restaurantOptionTextActive]}>{option.name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
+
+      <View style={styles.workspaceTabs}>
+        {([
+          ['items', 'Items'],
+          ['pricing', 'Pricing'],
+          ['availability', 'Item Availability'],
+        ] as const).map(([id, label]) => (
+          <Pressable key={id} onPress={() => setWorkspaceMode(id)} style={[styles.workspaceTab, workspaceMode === id && styles.workspaceTabActive]}>
+            <Text style={[styles.workspaceTabText, workspaceMode === id && styles.workspaceTabTextActive]}>{label}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {workspaceMode === 'pricing' && restaurant?.id ? <MobilePricingWorkspace restaurantId={restaurant.id} /> : null}
+
+      {workspaceMode !== 'pricing' && <View style={styles.summaryRow}>
         <SummaryPill label="Items" value={counts.total} />
         <SummaryPill label="Available" value={counts.available} tone="success" />
         <SummaryPill label="86'd" value={counts.unavailable} tone="warning" />
-      </View>
+      </View>}
 
-      <View style={styles.searchWrap}>
+      {workspaceMode !== 'pricing' && <View style={styles.searchWrap}>
         <Feather name="search" size={17} color={color_pallet.ink[500]} />
         <TextInput
           value={query}
@@ -401,9 +450,9 @@ export default function AdminMenu() {
             <Feather name="x" size={16} color={color_pallet.ink[500]} />
           </Pressable>
         )}
-      </View>
+      </View>}
 
-      <View style={styles.filterRow}>
+      {workspaceMode !== 'pricing' && <View style={styles.filterRow}>
         {FILTERS.map((item) => (
           <Pressable
             key={item.id}
@@ -415,22 +464,22 @@ export default function AdminMenu() {
             </Text>
           </Pressable>
         ))}
-      </View>
+      </View>}
 
-      {isLoading && (
+      {workspaceMode !== 'pricing' && isLoading && (
         <View style={styles.stateCard}>
           <Text style={[typography.bodySmall, styles.stateText]}>Loading menu...</Text>
         </View>
       )}
 
-      {error && (
+      {workspaceMode !== 'pricing' && error && (
         <View style={styles.errorCard}>
           <Text style={[typography.caption, styles.errorTitle]}>Menu sync needs attention</Text>
           <Text style={[typography.bodySmall, styles.errorCopy]}>{error}</Text>
         </View>
       )}
 
-      {!isLoading && groupedItems.length === 0 && (
+      {workspaceMode !== 'pricing' && !isLoading && groupedItems.length === 0 && (
         <View style={styles.emptyCard}>
           <View style={styles.emptyIcon}>
             <Feather name="coffee" size={22} color={color_pallet.ink[600]} />
@@ -446,7 +495,7 @@ export default function AdminMenu() {
         </View>
       )}
 
-      {!isLoading && groupedItems.map(([category, categoryItems]) => (
+      {workspaceMode !== 'pricing' && !isLoading && groupedItems.map(([category, categoryItems]) => (
         <View key={category} style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[typography.h3, styles.sectionTitle]}>{category}</Text>
@@ -1159,6 +1208,60 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing[2],
+  },
+  restaurantOptions: {
+    gap: spacing[2],
+    paddingTop: spacing[3],
+  },
+  restaurantOption: {
+    borderColor: semanticColors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    minHeight: 34,
+    justifyContent: 'center',
+    paddingHorizontal: spacing[3],
+  },
+  restaurantOptionActive: {
+    backgroundColor: color_pallet.elevated.dark,
+    borderColor: color_pallet.elevated.dark,
+  },
+  restaurantOptionText: {
+    color: color_pallet.ink[600],
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+  },
+  restaurantOptionTextActive: {
+    color: color_pallet.cream[50],
+  },
+  workspaceTabs: {
+    backgroundColor: color_pallet.stone[100],
+    borderRadius: radius.md,
+    flexDirection: 'row',
+    gap: spacing[1],
+    marginTop: spacing[4],
+    padding: spacing[1],
+  },
+  workspaceTab: {
+    alignItems: 'center',
+    borderRadius: radius.sm,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 40,
+    paddingHorizontal: spacing[1],
+  },
+  workspaceTabActive: {
+    backgroundColor: semanticColors.elevated,
+    borderColor: semanticColors.border,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  workspaceTabText: {
+    color: color_pallet.ink[500],
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  workspaceTabTextActive: {
+    color: color_pallet.ink[900],
   },
   iconButton: {
     alignItems: 'center',
