@@ -333,7 +333,10 @@ const DEFAULT_MENU_CATEGORIES: MenuCategory[] = [
 function rolePermissionKeys(jobCodes: JobCode[] = []): string[] {
   const seen = new Set<string>();
   const keys: string[] = [];
-  [...DEFAULT_ROLE_PERMISSION_OPTIONS, ...jobCodes.map((code) => code.code)].forEach((raw) => {
+  const sourceRoles = jobCodes.length > 0
+    ? jobCodes.filter((code) => code.is_active !== false).map((code) => code.code)
+    : DEFAULT_ROLE_PERMISSION_OPTIONS;
+  sourceRoles.forEach((raw) => {
     const key = roleCode(raw);
     if (!key || seen.has(key)) return;
     seen.add(key);
@@ -1463,6 +1466,34 @@ export default function OwnerSettings() {
       setMessage('Role saved.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not save role.');
+    } finally {
+      setSavingRateId(null);
+    }
+  };
+
+  const removeRoleRate = async (jobCode: JobCode) => {
+    if (!jobCode.id) return;
+    setSavingRateId(jobCode.id);
+    setMessage(`Removing ${jobCode.label || jobCode.code} role...`);
+    try {
+      await updateManagerJobCode(jobCode.id, {
+        code: roleCode(jobCode.code || jobCode.label),
+        label: jobCode.label || jobCode.code,
+        permission_tier: jobCode.permission_tier || 'normal',
+        default_hourly_rate: Number(jobCode.default_hourly_rate || rateEdits[jobCode.id] || 0).toFixed(2),
+        is_tipped: Boolean(jobCode.is_tipped),
+        tipout_role: jobCode.tipout_role || null,
+        sort_order: Number(jobCode.sort_order) || 0,
+        is_active: false,
+      });
+      const normalized = normalizeJobCodes(jobCodes.filter((code) => code.id !== jobCode.id));
+      setJobCodes(normalized);
+      setRateEdits(Object.fromEntries(normalized.map((code) => [code.id, String(code.default_hourly_rate ?? '')])));
+      setTipPayrollEdits((current) => normalizeTipPayrollSettings(current, normalized));
+      setRolePermissionEdits((current) => normalizeRolePermissions(current, normalized));
+      setMessage('Role removed.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not remove role.');
     } finally {
       setSavingRateId(null);
     }
@@ -2931,6 +2962,9 @@ export default function OwnerSettings() {
                   style={styles.setupInput}
                 />
                 <PublishControls label="Save role" busy={savingRateId === code.id} disabled={Boolean(savingRateId)} onPublishNow={() => saveRoleRate(code)} onSchedule={(scheduledFor, timezone) => saveRoleRate(code, { scheduledFor, timezone })} />
+                <Pressable disabled={Boolean(savingRateId)} onPress={() => removeRoleRate(code)} style={[styles.removePill, Boolean(savingRateId) && styles.disabled]}>
+                  <UiText variant="caption" tone="danger">Remove role</UiText>
+                </Pressable>
               </View>
             ))
         )}
@@ -3140,7 +3174,7 @@ function ChoiceGroup({
 }: {
   label: string;
   value: string;
-  options: ReadonlyArray<readonly [string, string]>;
+  options: readonly (readonly [string, string])[];
   onChange: (value: string) => void;
 }) {
   return (
@@ -3317,6 +3351,9 @@ const styles = StyleSheet.create({
   floorTableRowIncomplete: {
     backgroundColor: statusColors.danger.bg,
     borderColor: statusColors.danger.border,
+  },
+  disabled: {
+    opacity: 0.5,
   },
   floorTableHeader: {
     alignItems: 'center',

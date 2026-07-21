@@ -1049,7 +1049,10 @@ function defaultRolePermission(roleKey) {
 function rolePermissionKeys(jobCodes = []) {
   const seen = new Set()
   const keys = []
-  ;[...DEFAULT_ROLE_PERMISSION_OPTIONS, ...jobCodes.map(code => code.code)].forEach(raw => {
+  const sourceRoles = jobCodes.length > 0
+    ? jobCodes.filter(code => code.is_active !== false).map(code => code.code)
+    : DEFAULT_ROLE_PERMISSION_OPTIONS
+  ;sourceRoles.forEach(raw => {
     const key = slugRoleCode(raw)
     if (!key || seen.has(key)) return
     seen.add(key)
@@ -2803,6 +2806,30 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     }
   }
 
+  const removeJobCode = async (jobCode) => {
+    if (!jobCode?.id) return
+    setSavingRateId(jobCode.id)
+    setSetupError('')
+    try {
+      await fetchWithSupabaseAuth(`/manager/job-codes/${jobCode.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(jobCodePayload({ ...jobCode, is_active: false })),
+      })
+      const normalized = normalizeJobCodes(jobCodes.filter(code => code.id !== jobCode.id))
+      setJobCodes(normalized)
+      setRateEdits(Object.fromEntries(normalized.map(code => [code.id, String(code.default_hourly_rate ?? '')])))
+      setTipPayrollSettings(prev => normalizeTipPayrollSettings(prev, normalized))
+      setRolePermissions(prev => normalizeRolePermissions(prev, normalized))
+      void queryClient.invalidateQueries({ queryKey: queryKeys.jobCodes(restaurantId) })
+      setSaveMessage('Removed role.')
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not remove role.')
+    } finally {
+      setSavingRateId('')
+    }
+  }
+
   const saveSections = async (publication) => {
     const sectionNames = normalizeSectionNames(sections)
     const payload = {
@@ -4415,7 +4442,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
             ) : (
               <div className="grid gap-3">
                 {jobCodes.filter(code => code.is_active !== false).map(code => (
-                  <div key={code.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto]">
+                  <div key={code.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto_auto]">
                     <TextInput
                       value={code.label || code.code}
                       onChange={event => setJobCodes(prev => prev.map(item => item.id === code.id ? { ...item, label: event.target.value } : item))}
@@ -4440,6 +4467,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                       onPublishNow={() => saveJobCode(code)}
                       onSchedule={(scheduledFor, timezone) => saveJobCode(code, { scheduledFor, timezone })}
                     />
+                    <SmallButton variant="danger" onClick={() => void removeJobCode(code)} disabled={Boolean(savingRateId)}>Remove</SmallButton>
                   </div>
                 ))}
                 <div className="grid gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto]">
