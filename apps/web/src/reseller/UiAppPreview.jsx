@@ -3,7 +3,7 @@ import { Expand, ExternalLink, LoaderCircle, RotateCcw, X } from 'lucide-react'
 
 const LOCAL_PREVIEW_PORTS = {
   pos: [8082, 8081],
-  host: [8081, 8082],
+  host: [8083, 8081],
 }
 
 function withPreviewFlag(url) {
@@ -42,6 +42,10 @@ function PreviewFrame({
     setFailed(false)
     setCandidateIndex(0)
   }
+
+  useEffect(() => {
+    setLoaded(false)
+  }, [service, url])
 
   const sendState = () => {
     const targetOrigin = new URL(url).origin
@@ -94,6 +98,7 @@ function PreviewFrame({
       ref={frame}
       title={`${service === 'pos' ? 'POS' : 'Host'} sandbox preview`}
       src={url}
+      onLoad={() => window.setTimeout(sendState, 100)}
       className="h-full w-full border-0 bg-white"
       allow="clipboard-read; clipboard-write"
     />
