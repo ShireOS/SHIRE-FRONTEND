@@ -639,7 +639,7 @@ function normalizeDiscountRules(rows: DiscountRule[] | undefined): DiscountRule[
       is_active: row.is_active !== false,
     }))
     .map((row) => ({ ...row, allowed_roles: row.allowed_roles.length > 0 ? row.allowed_roles : ['owner', 'manager'] }))
-    .filter((row) => row.name && row.is_active);
+    .filter((row) => row.is_active);
 }
 
 function discountRulesPayload(discountRules: DiscountRule[]): DiscountRulesPayload {
@@ -663,6 +663,15 @@ function discountRulesPayload(discountRules: DiscountRule[]): DiscountRulesPaylo
       is_active: true,
     })),
   };
+}
+
+function validateDiscountRules(discountRules: DiscountRule[]) {
+  const rows = normalizeDiscountRules(discountRules);
+  const blankIndex = rows.findIndex((row) => !row.name);
+  if (blankIndex >= 0) {
+    throw new Error(`Discount ${blankIndex + 1} needs a name before saving.`);
+  }
+  return rows;
 }
 
 function normalizeRolePermissions(rows: RolePermission[] | undefined, jobCodes: JobCode[] = []): RolePermission[] {
@@ -1299,6 +1308,7 @@ export default function OwnerSettings() {
     setIsSavingDiscounts(true);
     setDiscountsMessage('Saving discounts...');
     try {
+      validateDiscountRules(discountRuleEdits);
       const payload = discountRulesPayload(discountRuleEdits);
       if (await scheduleRestaurantSave(publication, 'Discounts', { method: 'PUT', path: `/restaurants/${restaurantId}/discount-rules`, body: payload as unknown as Record<string, unknown> }, setDiscountsMessage)) return;
       const saved = await saveRestaurantDiscountRules(restaurantId, payload);

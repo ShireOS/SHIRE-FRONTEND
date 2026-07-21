@@ -1388,7 +1388,7 @@ function normalizeDiscountRules(rows) {
       is_active: row?.is_active !== false,
     }))
     .map(row => ({ ...row, allowed_roles: row.allowed_roles.length > 0 ? row.allowed_roles : ['owner', 'manager'] }))
-    .filter(row => row.name && row.is_active)
+    .filter(row => row.is_active)
 }
 
 function normalizeRolePermissions(rows, jobCodes = []) {
@@ -1493,10 +1493,10 @@ function menuCategoriesPayload(menuCategories) {
   }
 }
 
-function discountRulesPayload(discountRules) {
+function discountRulesPayload(discountRules, { includeIds = true } = {}) {
   return {
     discount_rules: normalizeDiscountRules(discountRules).map(row => ({
-      id: row.id || undefined,
+      id: includeIds && row.id ? row.id : undefined,
       name: row.name,
       discount_type: row.discount_type,
       applies_to: row.applies_to,
@@ -1514,6 +1514,15 @@ function discountRulesPayload(discountRules) {
       is_active: true,
     })),
   }
+}
+
+function validateDiscountRules(discountRules) {
+  const rows = normalizeDiscountRules(discountRules)
+  const blankIndex = rows.findIndex(row => !row.name)
+  if (blankIndex >= 0) {
+    throw new Error(`Discount ${blankIndex + 1} needs a name before saving.`)
+  }
+  return rows
 }
 
 function managerControlsPayload(rolePermissions, jobCodes = []) {
@@ -2629,14 +2638,21 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     values.includes(value) ? values.filter(item => item !== value) : [...values, value]
 
   const saveDiscountRules = async (publication) => {
+    try {
+      validateDiscountRules(discountRules)
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Check discount rules before saving.')
+      return null
+    }
     const payload = discountRulesPayload(discountRules)
+    const propagationPayload = discountRulesPayload(discountRules, { includeIds: false })
     await saveWithPropagation({
       sectionId: 'discounts',
       label: 'Discounts, Comps & Promos',
       propagation: SETUP_PROPAGATION.discounts,
       successMessage: 'Saved discounts.',
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/discount-rules', payload),
-      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/discount-rules', payload),
+      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/discount-rules', propagationPayload),
       onSourceSaved: (saved) => {
         setDiscountRules(normalizeDiscountRules(saved?.discount_rules))
         queryClient.setQueryData(queryKeys.discountRules(restaurantId), saved)
