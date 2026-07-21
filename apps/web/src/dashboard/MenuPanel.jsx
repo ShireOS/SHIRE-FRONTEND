@@ -644,8 +644,12 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   }
 
   const loadPrintingConfig = async () => {
-    const data = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`)
-    setPrintingConfig(data || { aliases: { items: {}, modifiers: {} } })
+    try {
+      const data = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`)
+      setPrintingConfig(data || { aliases: { items: {}, modifiers: {} } })
+    } catch {
+      setPrintingConfig({ aliases: { items: {}, modifiers: {} } })
+    }
   }
 
   useEffect(() => {
@@ -654,21 +658,27 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     setLoading(true)
     setError('')
     setSelectedItemId(null)
-    Promise.allSettled([
-      loadItems(),
-      loadImages(),
-      loadCategories(),
-      loadModifiers(),
-      loadGroups(),
-      loadItemModifierOverrides(),
-      loadAllergies(),
-      loadSpecials({ soft: true }),
-      loadRouting(),
-      loadPrintingConfig(),
-    ]).then(results => {
+    const initialLoaders = [
+      ['items', loadItems()],
+      ['images', loadImages()],
+      ['categories', loadCategories()],
+      ['modifiers', loadModifiers()],
+      ['modifier groups', loadGroups()],
+      ['modifier item overrides', loadItemModifierOverrides()],
+      ['allergies', loadAllergies()],
+      ['specials', loadSpecials({ soft: true })],
+      ['kitchen routing', loadRouting()],
+      ['printing config', loadPrintingConfig()],
+    ]
+    Promise.allSettled(initialLoaders.map(([, promise]) => promise)).then(results => {
       if (cancelled) return
-      if (results.some(result => result.status === 'rejected')) {
-        setError('Some menu data failed to load. Try again or refresh.')
+      const failures = results.flatMap((result, index) => (
+        result.status === 'rejected'
+          ? [`${initialLoaders[index][0]}: ${describeError(result.reason)}`]
+          : []
+      ))
+      if (failures.length > 0) {
+        setError(`Some menu data failed to load: ${failures.join('; ')}.`)
       }
       setLoading(false)
     })
