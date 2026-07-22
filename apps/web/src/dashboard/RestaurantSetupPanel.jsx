@@ -104,6 +104,7 @@ const defaultSpecialDraft = () => ({
   expires_at: '',
   sort_order: 0,
   is_active: true,
+  suggested_tip_basis: 'after_discount',
 })
 const DEFAULT_HOURS = [
   { day_of_week: 0, open_time: '11:00', close_time: '22:00', is_closed: true },
@@ -1012,6 +1013,7 @@ function defaultDiscountRule(index = 0) {
     service_modes: [],
     days_of_week: [],
     is_active: true,
+    suggested_tip_basis: 'before_discount',
   }
 }
 
@@ -1398,6 +1400,7 @@ function normalizeDiscountRules(rows) {
       service_modes: Array.from(new Set((Array.isArray(row?.service_modes) ? row.service_modes : []).map(String).filter(mode => DISCOUNT_SERVICE_MODE_OPTIONS.some(option => option.value === mode)))),
       days_of_week: Array.from(new Set((Array.isArray(row?.days_of_week) ? row.days_of_week : []).map(Number).filter(day => Number.isInteger(day) && day >= 0 && day <= 6))).sort((a, b) => a - b),
       is_active: row?.is_active !== false,
+      suggested_tip_basis: row?.suggested_tip_basis === 'after_discount' ? 'after_discount' : 'before_discount',
     }))
     .map(row => ({ ...row, allowed_roles: row.allowed_roles.length > 0 ? row.allowed_roles : ['owner', 'manager'] }))
     .filter(row => row.name && row.is_active)
@@ -1527,6 +1530,7 @@ function discountRulesPayload(discountRules) {
       service_modes: row.service_modes,
       days_of_week: row.days_of_week,
       is_active: true,
+      suggested_tip_basis: row.suggested_tip_basis,
     })),
   }
 }
@@ -2335,6 +2339,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     sort_order: Number(draft.sort_order || 0),
     is_active: draft.is_active !== false,
     created_by_name: auth?.user?.email || 'Owner dashboard',
+    suggested_tip_basis: draft.suggested_tip_basis || 'after_discount',
   })
 
   const createDailySpecial = async () => {
@@ -3519,6 +3524,15 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   </SelectInput>
                 </div>
 
+                <div className="mt-3 rounded-xl border border-dash-gold/20 bg-dash-gold/[0.06] p-3">
+                  <p className="label-mono mb-2">Suggested-tip calculation</p>
+                  <SelectInput value={rule.suggested_tip_basis} onChange={event => updateDiscountRule(index, { suggested_tip_basis: event.target.value })}>
+                    <option value="before_discount">Before discount — ignore this reduction</option>
+                    <option value="after_discount">After discount — reduce the tip basis</option>
+                  </SelectInput>
+                  <p className="mt-2 text-xs text-dash-tertiary">This choice is snapshotted when the discount, comp, employee meal, or recovery is applied.</p>
+                </div>
+
                 <div className="mt-3 flex flex-wrap gap-2">
                   <SmallButton variant={rule.editable_by_employee ? 'primary' : 'secondary'} onClick={() => updateDiscountRule(index, { editable_by_employee: !rule.editable_by_employee })}>Editable by employee</SmallButton>
                   <SmallButton variant={rule.requires_manager_approval ? 'primary' : 'secondary'} onClick={() => updateDiscountRule(index, { requires_manager_approval: !rule.requires_manager_approval })}>Manager approval</SmallButton>
@@ -4207,6 +4221,13 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                         </div>
                         <div className="text-right">
                           <div className="text-lg font-semibold">${special.special_price || baseItem?.price || '0.00'}</div>
+                          <SelectInput
+                            value={special.suggested_tip_basis || 'after_discount'}
+                            onChange={event => void updateDailySpecial(special, { suggested_tip_basis: event.target.value })}
+                          >
+                            <option value="after_discount">Tips after special price</option>
+                            <option value="before_discount">Tips before special price</option>
+                          </SelectInput>
                           <SmallButton variant={special.is_active ? 'primary' : 'secondary'} onClick={() => void updateDailySpecial(special, { is_active: !special.is_active })}>
                             {special.is_active ? 'Active' : 'Paused'}
                           </SmallButton>
@@ -4254,6 +4275,12 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   </div>
                   <Field label="Note">
                     <TextInput value={specialDraft.note} onChange={event => setSpecialDraft(prev => ({ ...prev, note: event.target.value }))} placeholder="Blackened mahi, lemon slaw" />
+                  </Field>
+                  <Field label="Suggested tips">
+                    <SelectInput value={specialDraft.suggested_tip_basis} onChange={event => setSpecialDraft(prev => ({ ...prev, suggested_tip_basis: event.target.value }))}>
+                      <option value="after_discount">Use special price</option>
+                      <option value="before_discount">Use regular price</option>
+                    </SelectInput>
                   </Field>
                   <SmallButton variant="primary" onClick={() => void createDailySpecial()} disabled={isSaving || !dailySpecialSettings.enabled}>
                     Pin special
@@ -4324,6 +4351,14 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   <Field label="End time"><TextInput type="time" value={specialDraft.end_time} onChange={event => setSpecialDraft(prev => ({ ...prev, end_time: event.target.value }))} /></Field>
                 </div>
                 <div className="mt-3">
+                  <Field label="Suggested tips">
+                    <SelectInput value={specialDraft.suggested_tip_basis} onChange={event => setSpecialDraft(prev => ({ ...prev, suggested_tip_basis: event.target.value }))}>
+                      <option value="after_discount">Use scheduled special price</option>
+                      <option value="before_discount">Use regular price</option>
+                    </SelectInput>
+                  </Field>
+                </div>
+                <div className="mt-3">
                   <SmallButton variant="primary" onClick={() => void createDailySpecial()} disabled={isSaving || !specialDraft.menu_item_id}>Add scheduled special</SmallButton>
                 </div>
               </div>
@@ -4338,6 +4373,13 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                         <p className="mt-1 text-sm text-dash-secondary">{baseItem?.name || 'Base item'} · {special.schedule_kind}</p>
                       </div>
                       <div className="flex flex-wrap gap-2">
+                        <SelectInput
+                          value={special.suggested_tip_basis || 'after_discount'}
+                          onChange={event => void updateDailySpecial(special, { suggested_tip_basis: event.target.value })}
+                        >
+                          <option value="after_discount">Tips after special</option>
+                          <option value="before_discount">Tips before special</option>
+                        </SelectInput>
                         <SmallButton variant={special.is_active ? 'primary' : 'secondary'} onClick={() => void updateDailySpecial(special, { is_active: !special.is_active })}>{special.is_active ? 'Active' : 'Paused'}</SmallButton>
                         <SmallButton variant="danger" onClick={() => void archiveDailySpecial(special)}>Archive</SmallButton>
                       </div>

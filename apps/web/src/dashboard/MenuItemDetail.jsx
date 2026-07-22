@@ -741,7 +741,7 @@ export function MenuItemDetail({
   const [newQuestion, setNewQuestion] = useState('')
   const [questionSearch, setQuestionSearch] = useState('')
   const [showQuickPicker, setShowQuickPicker] = useState(false)
-  const [specialForm, setSpecialForm] = useState({ display_name: '', special_price: '', note: '', expires_at: '' })
+  const [specialForm, setSpecialForm] = useState({ display_name: '', special_price: '', note: '', expires_at: '', suggested_tip_basis: 'after_discount' })
   const [schedule, setSchedule] = useState(() => ({
     availability_mode: item.availability_mode || 'always',
     availability_days: Array.isArray(item.availability_days) && item.availability_days.length > 0 ? item.availability_days : [0, 1, 2, 3, 4, 5, 6],
@@ -902,6 +902,7 @@ export function MenuItemDetail({
         display_name: specialForm.display_name.trim() || item.name,
         note: specialForm.note.trim() || null,
         special_price: specialForm.special_price === '' ? null : Number(specialForm.special_price),
+        suggested_tip_basis: specialForm.suggested_tip_basis,
         schedule_kind: 'manual',
         days_of_week: [0, 1, 2, 3, 4, 5, 6],
         expires_at: specialForm.expires_at ? new Date(specialForm.expires_at).toISOString() : null,
@@ -917,7 +918,7 @@ export function MenuItemDetail({
       event_type: 'created',
       after_data: data,
     }).then(() => null, () => null)
-    setSpecialForm({ display_name: '', special_price: '', note: '', expires_at: '' })
+    setSpecialForm({ display_name: '', special_price: '', note: '', expires_at: '', suggested_tip_basis: 'after_discount' })
     await reloadSpecials()
   }, 'Special pinned.')
 
@@ -930,6 +931,16 @@ export function MenuItemDetail({
     if (error) throw error
     await reloadSpecials()
   })
+
+  const setSpecialTipBasis = (special, suggestedTipBasis) => run(async () => {
+    const { error } = await supabase
+      .from('pos_daily_specials')
+      .update({ suggested_tip_basis: suggestedTipBasis, updated_at: new Date().toISOString() })
+      .eq('id', special.id)
+      .eq('restaurant_id', restaurantId)
+    if (error) throw error
+    await reloadSpecials()
+  }, 'Suggested tip basis updated.')
 
   const archiveSpecial = (special) => run(async () => {
     const { error } = await supabase
@@ -948,7 +959,7 @@ export function MenuItemDetail({
   const [itemPriceRules, setItemPriceRules] = useState([])
   const [priceRuleForm, setPriceRuleForm] = useState({
     name: '', adjustment_type: 'percent_off', adjustment_value: '', start_time: '', end_time: '',
-    days_of_week: WEEKDAY_PRICE_RULE_DAYS,
+    days_of_week: WEEKDAY_PRICE_RULE_DAYS, suggested_tip_basis: 'after_discount',
   })
   const reloadPriceRules = async () => {
     const { data } = await supabase
@@ -996,6 +1007,7 @@ export function MenuItemDetail({
         menu_item_id: item.id,
         adjustment_type: priceRuleForm.adjustment_type,
         adjustment_value: value,
+        suggested_tip_basis: priceRuleForm.suggested_tip_basis,
         is_active: true,
         schedule_kind: scheduled ? 'weekly' : 'manual',
         days_of_week: scheduled ? [...priceRuleForm.days_of_week].sort((a, b) => a - b) : ALL_PRICE_RULE_DAYS,
@@ -1013,7 +1025,7 @@ export function MenuItemDetail({
     }).then(() => null, () => null)
     setPriceRuleForm({
       name: '', adjustment_type: 'percent_off', adjustment_value: '', start_time: '', end_time: '',
-      days_of_week: WEEKDAY_PRICE_RULE_DAYS,
+      days_of_week: WEEKDAY_PRICE_RULE_DAYS, suggested_tip_basis: 'after_discount',
     })
     await reloadPriceRules()
   }, 'Price rule added.')
@@ -1027,6 +1039,16 @@ export function MenuItemDetail({
     if (error) throw error
     await reloadPriceRules()
   })
+
+  const setPriceRuleTipBasis = (rule, suggestedTipBasis) => run(async () => {
+    const { error } = await supabase
+      .from('pos_menu_price_rules')
+      .update({ suggested_tip_basis: suggestedTipBasis, updated_at: new Date().toISOString() })
+      .eq('id', rule.id)
+      .eq('restaurant_id', restaurantId)
+    if (error) throw error
+    await reloadPriceRules()
+  }, 'Suggested tip basis updated.')
 
   const archivePriceRule = (rule) => run(async () => {
     const { error } = await supabase
@@ -1303,6 +1325,10 @@ export function MenuItemDetail({
                     <span className="ml-2 text-dash-tertiary">{special.special_price != null ? money(special.special_price) : money(item.price)} · {special.schedule_kind}</span>
                   </div>
                   <div className="flex gap-2">
+                    <SelectInput value={special.suggested_tip_basis || 'after_discount'} onChange={event => void setSpecialTipBasis(special, event.target.value)}>
+                      <option value="after_discount">Tips on special price</option>
+                      <option value="before_discount">Tips on regular price</option>
+                    </SelectInput>
                     <SmallButton variant={special.is_active ? 'primary' : 'secondary'} onClick={() => void toggleSpecial(special)}>
                       {special.is_active ? 'Active' : 'Paused'}
                     </SmallButton>
@@ -1311,11 +1337,15 @@ export function MenuItemDetail({
                 </div>
               ))}
             </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-[1.2fr_110px_1.4fr_1fr_auto]">
+            <div className="mt-3 grid gap-3 md:grid-cols-[1.2fr_110px_1.4fr_1fr_180px_auto]">
               <TextInput value={specialForm.display_name} onChange={event => setSpecialForm(prev => ({ ...prev, display_name: event.target.value }))} placeholder={`Special name (${item.name})`} />
               <TextInput inputMode="decimal" value={specialForm.special_price} onChange={event => setSpecialForm(prev => ({ ...prev, special_price: cleanDecimal(event.target.value) }))} placeholder="Price" />
               <TextInput value={specialForm.note} onChange={event => setSpecialForm(prev => ({ ...prev, note: event.target.value }))} placeholder="Note (optional)" />
               <TextInput type="datetime-local" value={specialForm.expires_at} onChange={event => setSpecialForm(prev => ({ ...prev, expires_at: event.target.value }))} />
+              <SelectInput value={specialForm.suggested_tip_basis} onChange={event => setSpecialForm(prev => ({ ...prev, suggested_tip_basis: event.target.value }))}>
+                <option value="after_discount">Tips on special price</option>
+                <option value="before_discount">Tips on regular price</option>
+              </SelectInput>
               <SmallButton variant="primary" onClick={() => void pinSpecial()} disabled={busy}>Pin special</SmallButton>
             </div>
           </DetailCard>
@@ -1332,6 +1362,10 @@ export function MenuItemDetail({
                     </span>
                   </div>
                   <div className="flex gap-2">
+                    <SelectInput value={rule.suggested_tip_basis || 'after_discount'} onChange={event => void setPriceRuleTipBasis(rule, event.target.value)}>
+                      <option value="after_discount">Tips after rule</option>
+                      <option value="before_discount">Tips before rule</option>
+                    </SelectInput>
                     <SmallButton variant={rule.is_active ? 'primary' : 'secondary'} onClick={() => void togglePriceRule(rule)}>
                       {rule.is_active ? 'Active' : 'Paused'}
                     </SmallButton>
@@ -1341,7 +1375,7 @@ export function MenuItemDetail({
               ))}
               {itemPriceRules.length === 0 ? <p className="text-sm text-dash-tertiary">No price rules yet.</p> : null}
             </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-[1.3fr_120px_110px_110px_110px_auto]">
+            <div className="mt-3 grid gap-3 md:grid-cols-[1.3fr_120px_110px_110px_110px_170px_auto]">
               <TextInput value={priceRuleForm.name} onChange={event => setPriceRuleForm(prev => ({ ...prev, name: event.target.value }))} placeholder="Rule name (Happy hour)" />
               <SelectInput value={priceRuleForm.adjustment_type} onChange={event => setPriceRuleForm(prev => ({ ...prev, adjustment_type: event.target.value }))}>
                 <option value="percent_off">% off</option>
@@ -1351,6 +1385,10 @@ export function MenuItemDetail({
               <TextInput inputMode="decimal" value={priceRuleForm.adjustment_value} onChange={event => setPriceRuleForm(prev => ({ ...prev, adjustment_value: cleanDecimal(event.target.value) }))} placeholder={priceRuleForm.adjustment_type === 'percent_off' ? '20' : '2.00'} />
               <TextInput type="time" value={priceRuleForm.start_time} onChange={event => setPriceRuleForm(prev => ({ ...prev, start_time: event.target.value }))} />
               <TextInput type="time" value={priceRuleForm.end_time} onChange={event => setPriceRuleForm(prev => ({ ...prev, end_time: event.target.value }))} />
+              <SelectInput value={priceRuleForm.suggested_tip_basis} onChange={event => setPriceRuleForm(prev => ({ ...prev, suggested_tip_basis: event.target.value }))}>
+                <option value="after_discount">Tips after rule</option>
+                <option value="before_discount">Tips before rule</option>
+              </SelectInput>
               <SmallButton variant="primary" onClick={() => void addPriceRule()} disabled={busy}>Add rule</SmallButton>
             </div>
             {(priceRuleForm.start_time || priceRuleForm.end_time) && (

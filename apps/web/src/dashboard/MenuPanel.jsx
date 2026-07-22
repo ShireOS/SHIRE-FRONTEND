@@ -93,6 +93,7 @@ const defaultSpecialDraft = () => ({
   display_name: '',
   note: '',
   special_price: '',
+  suggested_tip_basis: 'after_discount',
   schedule_kind: 'manual',
   days_of_week: [1, 2, 3, 4, 5],
   start_time: '',
@@ -865,6 +866,13 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     availability_start_date: '',
     availability_end_date: '',
     availability_notes: '',
+    // Staged question/modifier picks, applied right after the item is created:
+    // question_ids attach existing questions; extra_modifier_ids land in a new
+    // "Extras" question; pending_group_options add a just-created modifier as
+    // an option of an existing question (picker "category" matched its name).
+    question_ids: [],
+    extra_modifier_ids: [],
+    pending_group_options: [],
   })
 
   // Duplicate flow: everything but the name (and photo) prefills from the source.
@@ -888,6 +896,22 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const startCreateItem = (source = null) => {
     setSelectedItemId(null)
     setCreating({ source, draft: null })
+  }
+
+  // Create-new from the create screen's modifier picker. The modifier is a
+  // shared library object, so creating it before the item exists is safe.
+  const createModifierForDraft = async (modifierDraft) => {
+    try {
+      const created = await api(`/restaurants/${restaurantId}/menu/modifiers`, {
+        method: 'POST',
+        body: JSON.stringify({ ...modifierDraft, is_active: true }),
+      })
+      await loadModifiers()
+      return created
+    } catch (err) {
+      setError(`Couldn’t create the modifier — ${describeError(err)}`)
+      return null
+    }
   }
 
   // Save from the create screen. With `duplicate`, the screen stays open with
@@ -967,6 +991,38 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           sourceSpecials: specials.filter(special => special.menu_item_id === source.id),
         }))
       }
+      // Staged question/modifier picks from the create screen.
+      try {
+        let order = source ? (behaviorByItemId[source.id]?.questions?.length || 0) : 0
+        for (const groupId of draft.question_ids || []) {
+          await attachGroupToItem(groupId, full.id, order)
+          order += 1
+        }
+        for (const pending of draft.pending_group_options || []) {
+          const group = groups.find(candidate => candidate.id === pending.group_id)
+          if (!group || group.options.some(option => option.modifier_id === pending.modifier_id)) continue
+          await addGroupOption(pending.group_id, pending.modifier_id, { display_order: group.options.length })
+          if (groupAnswerSortMode(group) === 'alpha') await applyAlphaOrderToGroup(pending.group_id)
+        }
+        if ((draft.extra_modifier_ids || []).length > 0) {
+          const extras = await createModifierGroup(restaurantId, {
+            name: 'Extras',
+            min_selections: 0,
+            max_selections: null,
+            is_required: false,
+            prompt_on_order: true,
+            display_order: groups.length,
+          })
+          await attachGroupToItem(extras.id, full.id, order)
+          let optionOrder = 0
+          for (const modifierId of draft.extra_modifier_ids) {
+            await addGroupOption(extras.id, modifierId, { display_order: optionOrder })
+            optionOrder += 1
+          }
+        }
+      } catch {
+        warnings.push('questions & modifiers')
+      }
       invalidateItems()
       await Promise.allSettled([
         loadItems(true),
@@ -979,7 +1035,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       const base = duplicate ? `"${full.name}" saved — set up the next one.` : `"${full.name}" added.`
       setNotice(warnings.length ? `${base} Couldn’t copy: ${[...new Set(warnings)].join(', ')}.` : base)
       if (duplicate) {
-        setCreating({ source: full, draft: { ...draft, name: '' } })
+        // Staged picks were just saved onto this item, so they now carry over
+        // via the copy path — clear them to avoid double-attaching.
+        setCreating({ source: full, draft: { ...draft, name: '', question_ids: [], extra_modifier_ids: [], pending_group_options: [] } })
       } else {
         setCreating(null)
         setSelectedItemId(full.id)
@@ -1432,6 +1490,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         display_name: specialDraft.display_name.trim() || null,
         note: specialDraft.note.trim() || null,
         special_price: specialDraft.special_price === '' ? null : Number(specialDraft.special_price),
+        suggested_tip_basis: specialDraft.suggested_tip_basis,
         schedule_kind: specialDraft.schedule_kind,
         days_of_week: specialDraft.schedule_kind === 'weekly' ? specialDraft.days_of_week : [0, 1, 2, 3, 4, 5, 6],
         start_time: specialDraft.start_time || null,
@@ -1605,8 +1664,15 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         <MenuItemCreate
           key={creating.source?.id || 'new-item'}
           categoryNames={categoryNames}
+          categoriesByName={categoriesByName}
           stations={stations}
+          groups={groups}
+          modifiers={modifiers}
           source={creating.source}
+          sourceGroupIds={creating.source
+            ? (behaviorByItemId[creating.source.id]?.questions || []).filter(row => row.source === 'item').map(row => row.group.id)
+            : []}
+          onCreateModifier={createModifierForDraft}
           carryover={creating.source ? {
             questions: behaviorByItemId[creating.source.id]?.questions?.length || 0,
             modOverrides: Object.keys(itemModifierOverrides[creating.source.id] || {}).length,
@@ -2347,6 +2413,13 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                         </div>
                         <div className="flex flex-col items-end gap-2">
                           <div className="text-lg font-semibold">{special.special_price != null ? money(special.special_price) : money(baseItem?.price)}</div>
+                          <SelectInput
+                            value={special.suggested_tip_basis || 'after_discount'}
+                            onChange={event => void updateSpecial(special, { suggested_tip_basis: event.target.value })}
+                          >
+                            <option value="after_discount">Tips on special price</option>
+                            <option value="before_discount">Tips on regular price</option>
+                          </SelectInput>
                           <div className="flex gap-2">
                             <SmallButton variant={special.is_active ? 'primary' : 'secondary'} onClick={() => void updateSpecial(special, { is_active: !special.is_active })}>
                               {special.is_active ? 'Active' : 'Paused'}
@@ -2390,6 +2463,12 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                   </div>
                   <Field label="Note">
                     <TextInput value={specialDraft.note} onChange={event => setSpecialDraft(prev => ({ ...prev, note: event.target.value }))} placeholder="Blackened mahi, lemon slaw" />
+                  </Field>
+                  <Field label="Suggested tips">
+                    <SelectInput value={specialDraft.suggested_tip_basis} onChange={event => setSpecialDraft(prev => ({ ...prev, suggested_tip_basis: event.target.value }))}>
+                      <option value="after_discount">Use special price</option>
+                      <option value="before_discount">Use regular price</option>
+                    </SelectInput>
                   </Field>
                   <Field label="Schedule">
                     <SelectInput value={specialDraft.schedule_kind} onChange={event => setSpecialDraft(prev => ({ ...prev, schedule_kind: event.target.value }))}>
