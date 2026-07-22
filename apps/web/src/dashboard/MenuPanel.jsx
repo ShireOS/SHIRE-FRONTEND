@@ -37,6 +37,8 @@ import {
   setItemPillExcluded,
 } from './data/menuAllergies'
 import { MenuItemDetail } from './MenuItemDetail'
+import { MenuItemCreate } from './MenuItemCreate'
+import { copyItemConfig } from './data/menuDuplicate'
 import {
   ColorSwatchPicker,
   DAYS_SHORT,
@@ -560,7 +562,8 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [itemSearch, setItemSearch] = useState('')
   const [itemCategoryFilter, setItemCategoryFilter] = useState('all')
   const [itemAvailabilityFilter, setItemAvailabilityFilter] = useState('all')
-  const [itemDraft, setItemDraft] = useState({ name: '', category: '', price: '' })
+  // null | { source: item-to-duplicate | null, draft: prefilled draft | null }
+  const [creating, setCreating] = useState(null)
   const [expandedCategoryNames, setExpandedCategoryNames] = useState(() => new Set())
   const [categoryScrollTarget, setCategoryScrollTarget] = useState(null)
 
@@ -847,27 +850,141 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     invalidateItems()
   }, message, 'Couldn’t update the item')
 
-  const createItem = () => {
-    if (!itemDraft.name.trim() || itemDraft.price === '') {
+  const emptyItemDraft = () => ({
+    name: '',
+    category: '',
+    price: '',
+    description: '',
+    course_type: '',
+    prep_time_minutes: '',
+    routing: ROUTE_INHERIT_VALUE,
+    availability_mode: 'always',
+    availability_days: [0, 1, 2, 3, 4, 5, 6],
+    availability_start_time: '',
+    availability_end_time: '',
+    availability_start_date: '',
+    availability_end_date: '',
+    availability_notes: '',
+  })
+
+  // Duplicate flow: everything but the name (and photo) prefills from the source.
+  const draftFromItem = (item) => ({
+    ...emptyItemDraft(),
+    category: item.category || '',
+    price: item.price != null ? String(item.price) : '',
+    description: item.description || '',
+    course_type: item.course_type || '',
+    prep_time_minutes: item.prep_time_minutes == null ? '' : String(item.prep_time_minutes),
+    routing: itemProductionRouting(item).value,
+    availability_mode: item.availability_mode || 'always',
+    availability_days: Array.isArray(item.availability_days) && item.availability_days.length > 0 ? item.availability_days : [0, 1, 2, 3, 4, 5, 6],
+    availability_start_time: item.availability_start_time ? String(item.availability_start_time).slice(0, 5) : '',
+    availability_end_time: item.availability_end_time ? String(item.availability_end_time).slice(0, 5) : '',
+    availability_start_date: item.availability_start_date || '',
+    availability_end_date: item.availability_end_date || '',
+    availability_notes: item.availability_notes || '',
+  })
+
+  const startCreateItem = (source = null) => {
+    setSelectedItemId(null)
+    setCreating({ source, draft: null })
+  }
+
+  // Save from the create screen. With `duplicate`, the screen stays open with
+  // the just-saved item as the new source, so a merchant can burn through a
+  // whole section typing only names.
+  const saveNewItem = (draft, { duplicate }) => {
+    if (!draft.name.trim() || draft.price === '') {
       setError('New items need at least a name and a price.')
       return
     }
+    const source = creating?.source || null
     return run(async () => {
       const created = await api(`/restaurants/${restaurantId}/menu/items/single`, {
         method: 'POST',
         body: JSON.stringify({
           restaurant_id: restaurantId,
-          name: itemDraft.name.trim(),
-          category: itemDraft.category.trim() || 'Other',
-          price: Number(itemDraft.price) || 0,
+          name: draft.name.trim(),
+          category: draft.category.trim() || 'Other',
+          price: Number(draft.price) || 0,
           is_available: true,
         }),
       })
-      setItemDraft({ name: '', category: itemDraft.category, price: '' })
+      if (!created?.id) throw new Error('The item was not created.')
+      const warnings = []
+      let full = created
+      try {
+        const patched = await api(`/restaurants/${restaurantId}/menu/items/${created.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            description: draft.description.trim() || null,
+            course_type: draft.course_type || null,
+            prep_time_minutes: draft.prep_time_minutes === '' ? null : Number(draft.prep_time_minutes),
+            availability_mode: draft.availability_mode,
+            availability_days: draft.availability_days,
+            availability_start_time: draft.availability_start_time || null,
+            availability_end_time: draft.availability_end_time || null,
+            availability_start_date: draft.availability_start_date || null,
+            availability_end_date: draft.availability_end_date || null,
+            availability_notes: draft.availability_notes.trim() || null,
+          }),
+        })
+        full = { ...created, ...patched }
+      } catch {
+        warnings.push('description/availability details')
+      }
+      try {
+        if (draft.routing === ROUTE_NO_PRODUCTION_VALUE) {
+          await api(`/restaurants/${restaurantId}/kitchen-routing/exclusions`, {
+            method: 'POST',
+            body: JSON.stringify({ source_type: 'menu_item', source_id: full.id, reason: 'No production route' }),
+          })
+        } else if (draft.routing === ROUTE_MULTI_VALUE && source) {
+          for (const rule of itemRouteRules(source)) {
+            await api(`/restaurants/${restaurantId}/kitchen-routing/rules`, {
+              method: 'POST',
+              body: JSON.stringify({ source_type: 'menu_item', source_id: full.id, station_id: rule.station_id, target_types: ['printer', 'display'] }),
+            })
+          }
+        } else if (draft.routing) {
+          await api(`/restaurants/${restaurantId}/kitchen-routing/rules`, {
+            method: 'POST',
+            body: JSON.stringify({ source_type: 'menu_item', source_id: full.id, station_id: draft.routing, target_types: ['printer', 'display'] }),
+          })
+        }
+      } catch {
+        warnings.push('printer routing')
+      }
+      if (source) {
+        warnings.push(...await copyItemConfig({
+          restaurantId,
+          api,
+          sourceItem: source,
+          targetItem: full,
+          groups,
+          sourceModifierOverrides: itemModifierOverrides[source.id] || {},
+          sourceAllergyExclusions: allergyExclusions.filter(row => row.item_id === source.id),
+          sourceSpecials: specials.filter(special => special.menu_item_id === source.id),
+        }))
+      }
       invalidateItems()
-      await loadItems(true)
-      if (created?.id) setSelectedItemId(created.id)
-    }, 'Item added — fill in the details.', 'Couldn’t add the item')
+      await Promise.allSettled([
+        loadItems(true),
+        loadGroups(),
+        loadItemModifierOverrides(),
+        loadSpecials(),
+        loadAllergies(),
+        draft.routing ? loadRouting(true) : Promise.resolve(),
+      ])
+      const base = duplicate ? `"${full.name}" saved — set up the next one.` : `"${full.name}" added.`
+      setNotice(warnings.length ? `${base} Couldn’t copy: ${[...new Set(warnings)].join(', ')}.` : base)
+      if (duplicate) {
+        setCreating({ source: full, draft: { ...draft, name: '' } })
+      } else {
+        setCreating(null)
+        setSelectedItemId(full.id)
+      }
+    }, undefined, 'Couldn’t add the item')
   }
 
   const deleteItem = (itemId) => run(async () => {
@@ -1472,6 +1589,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
             onClick={() => {
               setActiveTab(tab.id)
               setSelectedItemId(null)
+              setCreating(null)
             }}
           >
             {tab.label}
@@ -1483,7 +1601,26 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       {notice && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">{notice}</div>}
       {loading && <div className="text-sm text-dash-tertiary">Loading menu...</div>}
 
-      {!loading && activeTab === 'items' && selectedItem && (
+      {!loading && activeTab === 'items' && creating && (
+        <MenuItemCreate
+          key={creating.source?.id || 'new-item'}
+          categoryNames={categoryNames}
+          stations={stations}
+          source={creating.source}
+          carryover={creating.source ? {
+            questions: behaviorByItemId[creating.source.id]?.questions?.length || 0,
+            modOverrides: Object.keys(itemModifierOverrides[creating.source.id] || {}).length,
+            specials: specials.filter(special => special.menu_item_id === creating.source.id).length,
+            allergens: allergyExclusions.filter(row => row.item_id === creating.source.id).length,
+          } : null}
+          initialDraft={creating.draft || (creating.source ? draftFromItem(creating.source) : emptyItemDraft())}
+          busy={busy}
+          onCancel={() => setCreating(null)}
+          onSave={saveNewItem}
+        />
+      )}
+
+      {!loading && activeTab === 'items' && !creating && selectedItem && (
         <MenuItemDetail
           key={selectedItem.id}
           restaurantId={restaurantId}
@@ -1508,31 +1645,16 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           itemModifierOverrides={itemModifierOverrides[selectedItem.id] || {}}
           reloadItemModifierOverrides={loadItemModifierOverrides}
           canEditPrices={canEditPrices}
+          onDuplicate={item => startCreateItem(item)}
         />
       )}
 
-      {!loading && activeTab === 'items' && !selectedItem && (
+      {!loading && activeTab === 'items' && !creating && !selectedItem && (
         <SectionShell
           title="Items"
-          description="Click an item to open its full editor. Quick-add below, quick-86 on every row."
+          description="Click an item to open its full editor. Quick-86 on every row."
+          actions={<SmallButton variant="primary" onClick={() => startCreateItem()} disabled={busy}>+ Add item</SmallButton>}
         >
-          <div className="mb-4 grid gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 md:grid-cols-[minmax(0,1fr)_minmax(180px,240px)_120px_auto]">
-            <TextInput value={itemDraft.name} onChange={event => setItemDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="New item name" />
-            <SelectInput
-              aria-label="Category for new item"
-              value={itemDraft.category}
-              onChange={event => setItemDraft(prev => ({ ...prev, category: event.target.value }))}
-            >
-              <option value="">Other / no category</option>
-              {categoryNames.filter(name => name !== 'Other').map(name => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-              {categoryNames.includes('Other') && <option value="Other">Other</option>}
-            </SelectInput>
-            <TextInput inputMode="decimal" value={itemDraft.price} onChange={event => setItemDraft(prev => ({ ...prev, price: cleanDecimal(event.target.value) }))} placeholder="12.00" />
-            <SmallButton variant="primary" onClick={() => void createItem()} disabled={busy}>Add & edit</SmallButton>
-          </div>
-
           <div className="mb-4 grid gap-3 md:grid-cols-[1.6fr_1fr_1fr]">
             <TextInput value={itemSearch} onChange={event => setItemSearch(event.target.value)} placeholder="Search items, descriptions, categories..." />
             <SelectInput value={itemCategoryFilter} onChange={event => setItemCategoryFilter(event.target.value)}>

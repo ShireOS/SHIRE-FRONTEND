@@ -735,7 +735,7 @@ export function MenuItemDetail({
   busy, onBack, patchItem, deleteItem, run,
   reloadGroups, reloadModifiers, reloadSpecials, reloadImages,
   itemModifierOverrides = {}, reloadItemModifierOverrides = null,
-  canEditPrices = false,
+  canEditPrices = false, onDuplicate = null,
 }) {
   const fileInputRef = useRef(null)
   const [newQuestion, setNewQuestion] = useState('')
@@ -1052,6 +1052,15 @@ export function MenuItemDetail({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {onDuplicate && (
+            <SmallButton
+              title="Start a new item with this item's category, price, printers, mods, specials, and schedule — you just type the name (edits here save as you go, so nothing is lost)"
+              onClick={() => onDuplicate(item)}
+              disabled={busy}
+            >
+              Save & duplicate
+            </SmallButton>
+          )}
           <SmallButton
             variant={item.is_available === false ? 'danger' : 'secondary'}
             onClick={() => void patchItem(item.id, { is_available: item.is_available === false }, item.is_available === false ? 'Item restored.' : "Item 86'd.")}
