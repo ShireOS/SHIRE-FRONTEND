@@ -448,6 +448,10 @@ function defaultTipPayrollSettings(jobCodes: JobCode[] = []): TipPayrollSettings
     credit_tip_payout_timing: 'payroll',
     payroll_provider: '',
     payroll_export_frequency: 'biweekly',
+    payroll_period_start_weekday: 0,
+    payroll_period_anchor_date: null,
+    payroll_semimonthly_cutoff_day: 15,
+    payroll_report_default_period: 'last_completed',
     tip_pooling_enabled: false,
     tip_pool_reset: 'day',
     tipout_basis: 'none',
@@ -826,6 +830,10 @@ function normalizeTipPayrollSettings(row: TipPayrollSettings | undefined, jobCod
     credit_tip_payout_timing: source.credit_tip_payout_timing === 'nightly' ? 'nightly' : 'payroll',
     payroll_provider: source.payroll_provider || '',
     payroll_export_frequency: PAYROLL_EXPORT_OPTIONS.some(([value]) => value === source.payroll_export_frequency) ? source.payroll_export_frequency : 'biweekly',
+    payroll_period_start_weekday: Math.max(0, Math.min(6, Number(source.payroll_period_start_weekday ?? 0))),
+    payroll_period_anchor_date: source.payroll_period_anchor_date || null,
+    payroll_semimonthly_cutoff_day: Math.max(1, Math.min(27, Number(source.payroll_semimonthly_cutoff_day ?? 15))),
+    payroll_report_default_period: source.payroll_report_default_period === 'current_open' ? 'current_open' : 'last_completed',
     tip_pool_reset: TIP_POOL_RESET_OPTIONS.some(([value]) => value === source.tip_pool_reset) ? source.tip_pool_reset : 'day',
     tipout_basis: TIPOUT_BASIS_OPTIONS.some(([value]) => value === source.tipout_basis) ? source.tipout_basis : 'none',
     credit_card_fee_percent: numberText(source.credit_card_fee_percent),
@@ -838,6 +846,9 @@ function tipPayrollPayload(row: TipPayrollSettings, jobCodes: JobCode[]): TipPay
   const settings = normalizeTipPayrollSettings(row, jobCodes);
   return {
     ...settings,
+    payroll_period_anchor_date: settings.payroll_period_anchor_date || null,
+    payroll_period_start_weekday: Number(settings.payroll_period_start_weekday),
+    payroll_semimonthly_cutoff_day: Number(settings.payroll_semimonthly_cutoff_day),
     credit_card_fee_percent: settings.credit_card_fee_percent === '' ? null : Number(settings.credit_card_fee_percent),
     role_tip_rules: settings.role_tip_rules.map((rule) => ({
       ...rule,

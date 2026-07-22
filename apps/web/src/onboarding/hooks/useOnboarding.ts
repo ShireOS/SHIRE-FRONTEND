@@ -336,6 +336,10 @@ export interface TipPayrollSettingsData {
   credit_tip_payout_timing: 'nightly' | 'payroll'
   payroll_provider: string
   payroll_export_frequency: 'daily' | 'weekly' | 'biweekly' | 'semimonthly' | 'monthly' | 'manual'
+  payroll_period_start_weekday: number
+  payroll_period_anchor_date: string
+  payroll_semimonthly_cutoff_day: number
+  payroll_report_default_period: 'last_completed' | 'current_open'
   tip_pooling_enabled: boolean
   tip_pool_reset: 'shift' | 'day' | 'pay_period'
   tipout_basis: 'none' | 'sales' | 'tips' | 'hours' | 'points' | 'custom'
@@ -420,6 +424,10 @@ const defaultTipPayrollSettings = (): TipPayrollSettingsData => ({
   credit_tip_payout_timing: 'payroll',
   payroll_provider: '',
   payroll_export_frequency: 'biweekly',
+  payroll_period_start_weekday: 0,
+  payroll_period_anchor_date: '',
+  payroll_semimonthly_cutoff_day: 15,
+  payroll_report_default_period: 'last_completed',
   tip_pooling_enabled: false,
   tip_pool_reset: 'day',
   tipout_basis: 'none',
@@ -1171,6 +1179,10 @@ const normalizeTipPayrollSettings = (value: unknown, jobCodes: JobCodeData[] = d
     credit_tip_payout_timing: asEnum(value.credit_tip_payout_timing, CREDIT_CARD_TIP_PAYOUTS, fallback.credit_tip_payout_timing),
     payroll_provider: asString(value.payroll_provider),
     payroll_export_frequency: asEnum(value.payroll_export_frequency, PAYROLL_EXPORT_FREQUENCIES, fallback.payroll_export_frequency),
+    payroll_period_start_weekday: Math.max(0, Math.min(6, Number(value.payroll_period_start_weekday ?? fallback.payroll_period_start_weekday))),
+    payroll_period_anchor_date: asString(value.payroll_period_anchor_date),
+    payroll_semimonthly_cutoff_day: Math.max(1, Math.min(27, Number(value.payroll_semimonthly_cutoff_day ?? fallback.payroll_semimonthly_cutoff_day))),
+    payroll_report_default_period: value.payroll_report_default_period === 'current_open' ? 'current_open' : 'last_completed',
     tip_pooling_enabled: typeof value.tip_pooling_enabled === 'boolean' ? value.tip_pooling_enabled : fallback.tip_pooling_enabled,
     tip_pool_reset: asEnum(value.tip_pool_reset, TIP_POOL_RESETS, fallback.tip_pool_reset),
     tipout_basis: asEnum(value.tipout_basis, TIPOUT_BASES, fallback.tipout_basis),
@@ -1299,6 +1311,9 @@ const tipPayrollToPayload = (data: OnboardingData) => {
   }))
   return {
     ...settings,
+    payroll_period_anchor_date: settings.payroll_period_anchor_date || null,
+    payroll_period_start_weekday: Number(settings.payroll_period_start_weekday),
+    payroll_semimonthly_cutoff_day: Number(settings.payroll_semimonthly_cutoff_day),
     credit_card_fee_percent: settings.credit_card_fee_percent === '' ? null : Number(settings.credit_card_fee_percent),
     role_tip_rules: roleRulesPayload(settings.role_tip_rules),
     category_tip_profiles: settings.category_tip_profiles.map(profile => ({

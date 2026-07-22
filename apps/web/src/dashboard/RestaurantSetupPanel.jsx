@@ -1166,6 +1166,10 @@ export function defaultTipPayrollSettings(jobCodes = []) {
     credit_tip_payout_timing: 'payroll',
     payroll_provider: '',
     payroll_export_frequency: 'biweekly',
+    payroll_period_start_weekday: 0,
+    payroll_period_anchor_date: '',
+    payroll_semimonthly_cutoff_day: 15,
+    payroll_report_default_period: 'last_completed',
     tip_pooling_enabled: false,
     tip_pool_reset: 'day',
     tipout_basis: 'none',
@@ -1311,6 +1315,10 @@ export function normalizeTipPayrollSettings(row, jobCodes = []) {
     credit_tip_payout_timing: source.credit_tip_payout_timing === 'nightly' ? 'nightly' : 'payroll',
     payroll_provider: source.payroll_provider || '',
     payroll_export_frequency: PAYROLL_EXPORT_OPTIONS.some(option => option.value === source.payroll_export_frequency) ? source.payroll_export_frequency : fallback.payroll_export_frequency,
+    payroll_period_start_weekday: Number.isInteger(Number(source.payroll_period_start_weekday)) ? Math.max(0, Math.min(6, Number(source.payroll_period_start_weekday))) : fallback.payroll_period_start_weekday,
+    payroll_period_anchor_date: String(source.payroll_period_anchor_date || ''),
+    payroll_semimonthly_cutoff_day: Number.isInteger(Number(source.payroll_semimonthly_cutoff_day)) ? Math.max(1, Math.min(27, Number(source.payroll_semimonthly_cutoff_day))) : fallback.payroll_semimonthly_cutoff_day,
+    payroll_report_default_period: source.payroll_report_default_period === 'current_open' ? 'current_open' : 'last_completed',
     tip_pool_reset: TIP_POOL_RESET_OPTIONS.some(option => option.value === source.tip_pool_reset) ? source.tip_pool_reset : fallback.tip_pool_reset,
     tipout_basis: TIPOUT_BASIS_OPTIONS.some(option => option.value === source.tipout_basis) ? source.tipout_basis : fallback.tipout_basis,
     credit_card_fee_percent: source.credit_card_fee_percent == null ? '' : sanitizeNumber(source.credit_card_fee_percent),
@@ -1580,6 +1588,9 @@ export function tipPayrollPayload(settings, jobCodes) {
   }))
   return {
     ...normalized,
+    payroll_period_anchor_date: normalized.payroll_period_anchor_date || null,
+    payroll_period_start_weekday: Number(normalized.payroll_period_start_weekday),
+    payroll_semimonthly_cutoff_day: Number(normalized.payroll_semimonthly_cutoff_day),
     credit_card_fee_percent: normalized.credit_card_fee_percent === '' ? null : Number(normalized.credit_card_fee_percent),
     role_tip_rules: roleRulesPayload(normalized.role_tip_rules),
     category_tip_profiles: normalized.category_tip_profiles.map(profile => ({
@@ -1829,7 +1840,13 @@ export function TipRulesFields({
 }
 
 // Payroll defaults: provider, export cadence, cash/credit handling, card fees.
-export function PayrollSetupFields({ settings, onUpdateSettings }) {
+export function PayrollSetupFields({ settings, onUpdateSettings, payPeriodCalendar = null }) {
+  const periods = payPeriodCalendar?.periods || {}
+  const periodCards = [
+    ['previous', 'Previous'],
+    ['last_completed', 'Last completed'],
+    ['current_open', 'Current open'],
+  ].filter(([key]) => periods[key])
   return (
     <div className="space-y-5">
       <div className="grid gap-3 lg:grid-cols-3">
@@ -1855,6 +1872,46 @@ export function PayrollSetupFields({ settings, onUpdateSettings }) {
             <option value="payroll">Payroll</option>
           </SelectInput>
         </Field>
+      </div>
+      <div className="rounded-xl border border-dash-border bg-white/[0.025] p-4">
+        <div>
+          <p className="text-sm font-semibold text-dash-cream">Pay-period calendar</p>
+          <p className="mt-1 text-xs text-dash-secondary">Shared by pay runs, Tips &amp; Tip-out, and emailed Excel reports. Dates are resolved by the backend in the restaurant timezone.</p>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          <Field label="Period starts">
+            <SelectInput value={settings.payroll_period_start_weekday} onChange={event => onUpdateSettings({ payroll_period_start_weekday: Number(event.target.value) })} disabled={!['weekly', 'biweekly'].includes(settings.payroll_export_frequency)}>
+              {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((label, index) => <option key={label} value={index}>{label}</option>)}
+            </SelectInput>
+          </Field>
+          <Field label="Biweekly anchor date">
+            <TextInput type="date" value={settings.payroll_period_anchor_date} onChange={event => onUpdateSettings({ payroll_period_anchor_date: event.target.value })} disabled={settings.payroll_export_frequency !== 'biweekly'} />
+          </Field>
+          <Field label="Report default">
+            <SelectInput value={settings.payroll_report_default_period} onChange={event => onUpdateSettings({ payroll_report_default_period: event.target.value })} disabled={settings.payroll_export_frequency === 'manual'}>
+              <option value="last_completed">Last completed period</option>
+              <option value="current_open">Current open period</option>
+            </SelectInput>
+          </Field>
+          {settings.payroll_export_frequency === 'semimonthly' ? (
+            <Field label="First period ends on">
+              <TextInput type="number" min="1" max="27" value={settings.payroll_semimonthly_cutoff_day} onChange={event => onUpdateSettings({ payroll_semimonthly_cutoff_day: Math.max(1, Math.min(27, Number(event.target.value) || 15)) })} />
+            </Field>
+          ) : null}
+        </div>
+        {payPeriodCalendar?.available ? (
+          <div className="mt-4 grid gap-2 md:grid-cols-3">
+            {periodCards.map(([key, label]) => (
+              <div key={key} className={`rounded-lg border p-3 ${key === payPeriodCalendar.default_period ? 'border-dash-gold bg-dash-gold/5' : 'border-dash-border'}`}>
+                <p className="font-mono text-[10px] uppercase tracking-[0.08em] text-dash-tertiary">{label}</p>
+                <p className="mt-1 text-sm font-medium text-dash-cream">{periods[key].start_date} to {periods[key].end_date}</p>
+                <p className="mt-1 text-[11px] text-dash-tertiary">{periods[key].id}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 rounded-lg border border-dash-border p-3 text-xs text-dash-secondary">{payPeriodCalendar?.reason || 'Save payroll setup to preview backend-resolved periods.'}</p>
+        )}
       </div>
       <div className="flex flex-wrap gap-2">
         <SmallButton variant={settings.auto_withhold_credit_card_fees ? 'primary' : 'secondary'} onClick={() => onUpdateSettings({ auto_withhold_credit_card_fees: !settings.auto_withhold_credit_card_fees })}>Withhold card fees from tips</SmallButton>

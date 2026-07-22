@@ -3,15 +3,19 @@ import { supabase } from '../shared/lib/supabase'
 import { fetchCached, fetchWithSupabaseAuth, queryClient, queryKeys, STALE_TIMES } from '../shared/query'
 import {
   addGroupOption,
+  applyAlphaOrderToGroup,
   attachGroupToItem,
   cloneGroupChainForItem,
   createModifierGroup,
   detachGroupFromItem,
   effectiveItemQuestions,
   effectivePromptMode,
+  groupAnswerSortMode,
   itemOrderingBehavior,
   optedOutItemQuestions,
   removeGroupOption,
+  reorderGroupOptions,
+  setGroupAnswerSortMode,
   setItemGroupLinkOrder,
   setItemGroupOverride,
   setItemModifierOverride,
@@ -19,6 +23,7 @@ import {
   updateModifierGroup,
   wouldCreateCycle,
 } from './data/menuGroups'
+import { SortableRows, DragHandle } from './components/shared/SortableRows'
 import { setItemImage, uploadMenuImage } from './data/menuExtras'
 import {
   DAYS_SHORT,
@@ -246,7 +251,7 @@ function QuestionEditor({
   run, reloadGroups, reloadModifiers, depth = 0, seenIds = [],
   parentModifierName = null, onUnlink = null,
   source = 'item', itemOverride = null, inheritedFromName = null,
-  positionLabel = null, onMoveUp = null, onMoveDown = null,
+  positionLabel = null, dragHandleProps = null,
   itemModOverrides = {}, saveItemModOverride = null,
 }) {
   const group = groups.find(candidate => candidate.id === groupId)
@@ -257,6 +262,13 @@ function QuestionEditor({
   const nextSeen = [...seenIds, groupId]
 
   const modifiersById = Object.fromEntries(modifiers.map(m => [m.id, m]))
+  const answerSortMode = groupAnswerSortMode(group)
+  // A–Z sorts client-side too, so the list reads right even before the
+  // normalized display_order values land in the DB.
+  const orderedOptions = answerSortMode === 'alpha'
+    ? [...group.options].sort((a, b) => (modifiersById[a.modifier_id]?.name || '')
+        .localeCompare(modifiersById[b.modifier_id]?.name || '', undefined, { sensitivity: 'base' }))
+    : group.options
   const usedByCount = group.item_ids.length + (group.category_links || []).length
   const sharedElsewhere = depth === 0 && (usedByCount > 1 || source === 'category')
   const nestableGroups = groups.filter(candidate =>
@@ -307,6 +319,7 @@ function QuestionEditor({
       await addGroupOption(group.id, modifierId, { display_order: order })
       order += 1
     }
+    if (answerSortMode === 'alpha') await applyAlphaOrderToGroup(group.id)
     await reloadGroups()
   }, modifierIds.length > 1 ? 'Modifiers added.' : 'Modifier added.')
 
@@ -323,6 +336,7 @@ function QuestionEditor({
         }).catch(() => null)
       }
       await addGroupOption(group.id, created.id, { display_order: group.options.length })
+      if (answerSortMode === 'alpha') await applyAlphaOrderToGroup(group.id)
     }
     await reloadModifiers()
     await reloadGroups()
@@ -354,22 +368,9 @@ function QuestionEditor({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-64 flex-1 items-center gap-2">
           {depth === 0 && positionLabel != null && (
-            <div className="flex flex-col items-center gap-0.5">
-              <button
-                type="button"
-                onClick={onMoveUp || undefined}
-                disabled={!onMoveUp}
-                title="Ask this question earlier"
-                className="rounded border border-white/10 px-1.5 text-xs text-dash-secondary transition hover:border-dash-gold/60 disabled:opacity-30"
-              >▲</button>
+            <div className="flex flex-col items-center gap-1">
+              <DragHandle handleProps={dragHandleProps || {}} title="Drag to ask this question earlier or later" />
               <span className="text-[11px] font-bold text-dash-gold">{positionLabel}</span>
-              <button
-                type="button"
-                onClick={onMoveDown || undefined}
-                disabled={!onMoveDown}
-                title="Ask this question later"
-                className="rounded border border-white/10 px-1.5 text-xs text-dash-secondary transition hover:border-dash-gold/60 disabled:opacity-30"
-              >▼</button>
             </div>
           )}
           <TextInput
@@ -539,8 +540,37 @@ function QuestionEditor({
         </div>
       )}
 
-      <div className="mt-3 space-y-2">
-        {group.options.map(option => {
+      {(group.options || []).length > 1 && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-dash-tertiary">Answer order:</span>
+          <SmallButton
+            variant={answerSortMode === 'alpha' ? 'primary' : 'secondary'}
+            title="Keep answers alphabetical — including ones added later"
+            onClick={() => void linkWork(() => setGroupAnswerSortMode(group.id, 'alpha'), 'Answers now stay A–Z.')}
+          >
+            A–Z
+          </SmallButton>
+          <SmallButton
+            variant={answerSortMode === 'custom' ? 'primary' : 'secondary'}
+            title="Arrange answers by hand — drag the ⠿ grip"
+            onClick={() => void linkWork(() => setGroupAnswerSortMode(group.id, 'custom'), 'Answers keep your custom order.')}
+          >
+            Custom
+          </SmallButton>
+          {sharedElsewhere && <span className="text-dash-tertiary">(changes everywhere this question is used)</span>}
+        </div>
+      )}
+      <SortableRows
+        ids={orderedOptions.map(option => option.modifier_id)}
+        className="mt-3 space-y-2"
+        onReorder={orderedIds => linkWork(async () => {
+          // Dragging while A–Z is on switches to a custom order.
+          if (answerSortMode === 'alpha') await updateModifierGroup(group.id, { modifier_sort_mode: 'custom' })
+          await reorderGroupOptions(group.id, orderedIds)
+        }, 'Answer order saved.')}
+        renderRow={(rowModifierId, { handleProps }) => {
+          const option = orderedOptions.find(candidate => candidate.modifier_id === rowModifierId)
+          if (!option) return null
           const modifier = modifiersById[option.modifier_id]
           const childGroup = option.child_group_id ? groups.find(candidate => candidate.id === option.child_group_id) : null
           const showingChild = expandedChild === option.modifier_id
@@ -550,8 +580,12 @@ function QuestionEditor({
           const priceHere = modOverride?.price_delta != null ? Number(modOverride.price_delta) : null
           const neverPrints = modifier?.print_on_kitchen_ticket === false
           return (
-            <div key={option.modifier_id} className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
               <div className="flex flex-wrap items-center gap-2">
+                <DragHandle
+                  handleProps={handleProps}
+                  title={answerSortMode === 'alpha' ? 'Drag to switch to a custom order' : 'Drag to reorder this answer'}
+                />
                 <span className="min-w-32 text-sm font-medium text-dash-cream">
                   {modifier?.name || 'Modifier'}
                   {priceHere != null ? (
@@ -669,9 +703,9 @@ function QuestionEditor({
               )}
             </div>
           )
-        })}
-        {group.options.length === 0 && <p className="text-sm text-dash-tertiary">No answers in this question yet — add some below.</p>}
-      </div>
+        }}
+      />
+      {group.options.length === 0 && <p className="mt-3 text-sm text-dash-tertiary">No answers in this question yet — add some below.</p>}
 
       <div className="mt-3">
         {showPicker ? (
@@ -744,15 +778,14 @@ export function MenuItemDetail({
     if (reloadItemModifierOverrides) await reloadItemModifierOverrides()
   }
 
-  // Reorder the questions the guest is asked. Direct links keep their order on
+  // Persist a drag-reordered question list. Direct links keep their order on
   // the link row (clearing any stale per-item override); inherited questions
   // keep theirs on the override row.
-  const moveQuestion = (index, delta) => run(async () => {
-    const rows = [...questionRows]
-    const [row] = rows.splice(index, 1)
-    rows.splice(index + delta, 0, row)
-    for (let position = 0; position < rows.length; position += 1) {
-      const entry = rows[position]
+  const reorderQuestions = (orderedGroupIds) => run(async () => {
+    const rowsById = Object.fromEntries(questionRows.map(row => [row.group.id, row]))
+    for (let position = 0; position < orderedGroupIds.length; position += 1) {
+      const entry = rowsById[orderedGroupIds[position]]
+      if (!entry) continue
       if (entry.source === 'item') {
         await setItemGroupLinkOrder(entry.group.id, item.id, position)
         if (entry.override?.display_order != null) {
@@ -1075,7 +1108,7 @@ export function MenuItemDetail({
 
           <DetailCard
             title={`Questions & modifiers (${questionRows.length})`}
-            hint="Asked top to bottom when this item is ordered — use ▲▼ to change the order. Questions inherited from the category apply to every item in it; opt out to skip one here."
+            hint="Asked top to bottom when this item is ordered — drag the ⠿ grip to change the order. Questions inherited from the category apply to every item in it; opt out to skip one here."
           >
             {/* How this item behaves at the POS, in plain English. */}
             {questionRows.length > 0 && (
@@ -1112,34 +1145,41 @@ export function MenuItemDetail({
               </div>
             )}
 
-            <div className="space-y-3">
-              {questionRows.map((row, index) => (
-                <QuestionEditor
-                  key={row.group.id}
-                  groupId={row.group.id}
-                  restaurantId={restaurantId}
-                  itemId={item.id}
-                  groups={groups}
-                  modifiers={modifiers}
-                  run={run}
-                  reloadGroups={reloadGroups}
-                  reloadModifiers={reloadModifiers}
-                  source={row.source}
-                  itemOverride={row.override}
-                  inheritedFromName={row.source === 'category' ? (item.category || 'category') : null}
-                  positionLabel={index + 1}
-                  onMoveUp={index > 0 ? () => void moveQuestion(index, -1) : null}
-                  onMoveDown={index < questionRows.length - 1 ? () => void moveQuestion(index, 1) : null}
-                  itemModOverrides={itemModifierOverrides}
-                  saveItemModOverride={saveItemModOverride}
-                />
-              ))}
-              {questionRows.length === 0 && (
-                <MenuEmptyState title="No modifiers yet">
-                  Quick-add modifiers below, or create a named question — "Choose a side", "Pick a temperature".
-                </MenuEmptyState>
-              )}
-            </div>
+            <SortableRows
+              ids={questionRows.map(row => row.group.id)}
+              className="space-y-3"
+              disabled={busy || questionRows.length < 2}
+              onReorder={orderedGroupIds => reorderQuestions(orderedGroupIds)}
+              renderRow={(groupId, { handleProps }) => {
+                const index = questionRows.findIndex(row => row.group.id === groupId)
+                const row = questionRows[index]
+                if (!row) return null
+                return (
+                  <QuestionEditor
+                    groupId={row.group.id}
+                    restaurantId={restaurantId}
+                    itemId={item.id}
+                    groups={groups}
+                    modifiers={modifiers}
+                    run={run}
+                    reloadGroups={reloadGroups}
+                    reloadModifiers={reloadModifiers}
+                    source={row.source}
+                    itemOverride={row.override}
+                    inheritedFromName={row.source === 'category' ? (item.category || 'category') : null}
+                    positionLabel={index + 1}
+                    dragHandleProps={handleProps}
+                    itemModOverrides={itemModifierOverrides}
+                    saveItemModOverride={saveItemModOverride}
+                  />
+                )
+              }}
+            />
+            {questionRows.length === 0 && (
+              <MenuEmptyState title="No modifiers yet">
+                Quick-add modifiers below, or create a named question — "Choose a side", "Pick a temperature".
+              </MenuEmptyState>
+            )}
 
             {optedOutGroups.length > 0 && (
               <div className="mt-4 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-3">

@@ -120,6 +120,29 @@ export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
           </select>
         </div>
         <div>
+          <label className={labelClass}>Pay period starts</label>
+          <select value={settings.payroll_period_start_weekday} onChange={(event) => update({ payroll_period_start_weekday: Number(event.target.value) })} disabled={!['weekly', 'biweekly'].includes(settings.payroll_export_frequency)} className={inputClass}>
+            {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((label, index) => <option key={label} value={index} className="bg-[#1a1a1a]">{label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelClass}>Biweekly anchor date</label>
+          <input type="date" value={settings.payroll_period_anchor_date} onChange={(event) => update({ payroll_period_anchor_date: event.target.value })} disabled={settings.payroll_export_frequency !== 'biweekly'} className={inputClass} />
+        </div>
+        <div>
+          <label className={labelClass}>Reports open to</label>
+          <select value={settings.payroll_report_default_period} onChange={(event) => update({ payroll_report_default_period: event.target.value as TipPayrollSettingsData['payroll_report_default_period'] })} disabled={settings.payroll_export_frequency === 'manual'} className={inputClass}>
+            <option value="last_completed" className="bg-[#1a1a1a]">Last completed period</option>
+            <option value="current_open" className="bg-[#1a1a1a]">Current open period</option>
+          </select>
+        </div>
+        {settings.payroll_export_frequency === 'semimonthly' ? (
+          <div>
+            <label className={labelClass}>First period ends on</label>
+            <input type="number" min={1} max={27} value={settings.payroll_semimonthly_cutoff_day} onChange={(event) => update({ payroll_semimonthly_cutoff_day: Math.max(1, Math.min(27, Number(event.target.value) || 15)) })} className={inputClass} />
+          </div>
+        ) : null}
+        <div>
           <label className={labelClass}>Payroll provider</label>
           <input value={settings.payroll_provider} onChange={(event) => update({ payroll_provider: event.target.value })} placeholder="ADP, Gusto, manual..." className={inputClass} />
         </div>

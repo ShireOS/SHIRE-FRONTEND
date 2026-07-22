@@ -3,6 +3,7 @@ import { supabase } from '../shared/lib/supabase'
 import { queryClient, queryKeys, fetchCached, fetchWithSupabaseAuth, STALE_TIMES } from '../shared/query'
 import {
   addGroupOption,
+  applyAlphaOrderToGroup,
   attachGroupToCategory,
   attachGroupToItem,
   archiveModifierGroup,
@@ -11,13 +12,18 @@ import {
   fetchItemModifierOverrides,
   fetchModifierGroups,
   followUpParents,
+  groupAnswerSortMode,
   itemOrderingBehavior,
   removeGroupOption,
+  reorderCategoryGroups,
+  reorderGroupOptions,
   replaceGroupItems,
+  setGroupAnswerSortMode,
   updateGroupOption,
   updateModifierGroup,
   wouldCreateCycle,
 } from './data/menuGroups'
+import { SortableRows, DragHandle } from './components/shared/SortableRows'
 import { fetchCategoryColors, fetchItemImages, setCategoryColor } from './data/menuExtras'
 import { fetchPosApi } from '../shared/api/posClient'
 import {
@@ -187,6 +193,15 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
     .map(link => categories.find(category => category.id === link.category_id))
     .filter(Boolean)
   const followUpHosts = useMemo(() => followUpParents(groups, group.id), [groups, group.id])
+  const answerSortMode = groupAnswerSortMode(group)
+  // A–Z sorts client-side too, so the list is right even before the
+  // normalized display_order values land in the DB.
+  const orderedOptions = useMemo(() => (
+    answerSortMode === 'alpha'
+      ? [...group.options].sort((a, b) => (modifiersById[a.modifier_id]?.name || '')
+          .localeCompare(modifiersById[b.modifier_id]?.name || '', undefined, { sensitivity: 'base' }))
+      : group.options
+  ), [answerSortMode, group.options, modifiersById])
 
   const saveFields = () => {
     const minSelections = Math.max(draft.is_required ? 1 : 0, Number(draft.min_selections) || 0)
@@ -310,12 +325,49 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
           </div>
 
           <div>
-            <p className="label-mono mb-2">Options in this group</p>
-            <div className="space-y-2">
-              {group.options.map(option => {
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="label-mono !mb-0">Options in this group</p>
+              {group.options.length > 1 && (
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="text-dash-tertiary">Answer order:</span>
+                  <SmallButton
+                    variant={answerSortMode === 'alpha' ? 'primary' : 'secondary'}
+                    title="Keep answers alphabetical — including ones added later"
+                    disabled={busy}
+                    onClick={() => onLink(() => setGroupAnswerSortMode(group.id, 'alpha'))}
+                  >
+                    A–Z
+                  </SmallButton>
+                  <SmallButton
+                    variant={answerSortMode === 'custom' ? 'primary' : 'secondary'}
+                    title="Arrange answers by hand — drag the ⠿ grip"
+                    disabled={busy}
+                    onClick={() => onLink(() => setGroupAnswerSortMode(group.id, 'custom'))}
+                  >
+                    Custom
+                  </SmallButton>
+                </div>
+              )}
+            </div>
+            <SortableRows
+              ids={orderedOptions.map(option => option.modifier_id)}
+              className="space-y-2"
+              disabled={busy}
+              onReorder={orderedIds => onLink(async () => {
+                // Dragging while A–Z is on switches to a custom order.
+                if (answerSortMode === 'alpha') await updateModifierGroup(group.id, { modifier_sort_mode: 'custom' })
+                await reorderGroupOptions(group.id, orderedIds)
+              })}
+              renderRow={(modifierId, { handleProps }) => {
+                const option = orderedOptions.find(candidate => candidate.modifier_id === modifierId)
+                if (!option) return null
                 const modifier = modifiersById[option.modifier_id]
                 return (
-                  <div key={option.modifier_id} className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 lg:grid-cols-[1.2fr_auto_1fr_1fr_1.3fr_auto] lg:items-center">
+                  <div className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 lg:grid-cols-[auto_1.2fr_auto_1fr_1fr_1.3fr_auto] lg:items-center">
+                    <DragHandle
+                      handleProps={handleProps}
+                      title={answerSortMode === 'alpha' ? 'Drag to switch to a custom order' : 'Drag to reorder this answer'}
+                    />
                     <div className="text-sm">
                       <span className="font-medium text-dash-cream">{modifier?.name || 'Modifier'}</span>
                       {Number(modifier?.price_delta) > 0 && <span className="ml-2 text-dash-tertiary">+{money(modifier.price_delta)}</span>}
@@ -379,9 +431,9 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
                     <SmallButton variant="danger" onClick={() => onLink(() => removeGroupOption(group.id, option.modifier_id))}>Remove</SmallButton>
                   </div>
                 )
-              })}
-              {group.options.length === 0 && <p className="text-sm text-dash-tertiary">Add modifiers below to give this question answers.</p>}
-            </div>
+              }}
+            />
+            {group.options.length === 0 && <p className="text-sm text-dash-tertiary">Add modifiers below to give this question answers.</p>}
             <div className="mt-3">
               <ModifierPicker
                 modifiers={modifiers}
@@ -919,38 +971,6 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     }
     return map
   }, [mergedItems, groups, categoriesByName, modifiersById])
-  const nestedReadiness = useMemo(() => {
-    const groupsById = Object.fromEntries(groups.map(group => [group.id, group]))
-    const parentEdges = []
-    const childUseCount = {}
-    for (const group of groups) {
-      for (const option of group.options || []) {
-        if (!option.child_group_id) continue
-        const child = groupsById[option.child_group_id]
-        parentEdges.push({ group, option, child })
-        childUseCount[option.child_group_id] = (childUseCount[option.child_group_id] || 0) + 1
-      }
-    }
-
-    const emptyChildren = parentEdges.filter(edge => !edge.child || (edge.child.options || []).length === 0)
-    const requiredChildren = parentEdges.filter(edge => edge.child && (edge.child.is_required || Number(edge.child.min_selections || 0) > 0))
-    const sharedChildren = parentEdges.filter(edge =>
-      edge.child &&
-      ((edge.child.item_ids || []).length > 1 || childUseCount[edge.child.id] > 1)
-    )
-    const chains = parentEdges.filter(edge =>
-      edge.child && (edge.child.options || []).some(childOption => childOption.child_group_id)
-    )
-
-    return {
-      edgeCount: parentEdges.length,
-      emptyChildren,
-      requiredChildren,
-      sharedChildren,
-      chains,
-    }
-  }, [groups])
-
   // ── Categories ───────────────────────────────────────────────────────────
 
   const saveCategories = (nextCategories) => run(async () => {
@@ -982,43 +1002,6 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     setCategories(prev => prev.map((category, currentIndex) => (currentIndex === index ? { ...category, ...patch } : category)))
   }
 
-  // The taxes-charges PUT is a full replace (it deactivates anything omitted),
-  // so creating one rate inline means re-fetching both lists and sending them
-  // back with the new rate appended.
-  const createTaxRate = (name, ratePercent) => run(async () => {
-    const current = await api(`/restaurants/${restaurantId}/taxes-charges`)
-    await api(`/restaurants/${restaurantId}/taxes-charges`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        tax_rates: [
-          ...(current?.tax_rates || []).map(row => ({
-            id: row.id,
-            name: row.name,
-            rate: Number(row.rate) || 0,
-            applies_to: row.applies_to || 'all',
-            is_default: Boolean(row.is_default),
-            is_inclusive: Boolean(row.is_inclusive),
-            is_active: true,
-          })),
-          { name, rate: ratePercent, applies_to: 'all', is_default: false, is_inclusive: false, is_active: true },
-        ],
-        service_charges: (current?.service_charges || []).map(row => ({
-          id: row.id,
-          name: row.name,
-          charge_type: row.charge_type || 'percentage',
-          amount: Number(row.amount) || 0,
-          applies_to: row.applies_to || 'all',
-          taxable: Boolean(row.taxable),
-          auto_apply: Boolean(row.auto_apply),
-          is_tip: Boolean(row.is_tip),
-          is_active: true,
-        })),
-      }),
-    })
-    queryClient.invalidateQueries({ queryKey: queryKeys.taxesCharges(restaurantId) })
-    await loadCategories(true)
-  }, `Tax rate "${name}" created — assign it to a category below and save.`, 'Couldn’t create the tax rate')
-
   // True inheritance: link a question to the CATEGORY. Every item in it asks
   // the question — including items created later. Items opt out individually
   // from their own editor.
@@ -1037,6 +1020,11 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   }, shouldAttach
     ? `Every item in ${category.name} now asks "${group.name}" — including items you add later.`
     : `"${group.name}" is no longer inherited by ${category.name}.`, 'Couldn’t update the question')
+
+  const reorderCategoryQuestions = (category, orderedGroupIds) => run(async () => {
+    await reorderCategoryGroups(category.id, orderedGroupIds)
+    await loadGroups()
+  }, `Question order saved for ${category.name}.`, 'Couldn’t reorder the questions')
 
   const pickCategoryColor = (category, color) => run(async () => {
     await setCategoryColor(restaurantId, category.id, color)
@@ -1139,6 +1127,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     }
     if (!group.options.some(option => option.modifier_id === modifier.id)) {
       await addGroupOption(group.id, modifier.id, { display_order: group.options.length })
+      if (groupAnswerSortMode(group) === 'alpha') await applyAlphaOrderToGroup(group.id)
     }
     await loadGroups()
   }, `"${modifier.name}" is now an answer in "${group.name}".`, 'Couldn’t attach the modifier')
@@ -1279,6 +1268,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       await addGroupOption(group.id, modifierId, { display_order: order })
       order += 1
     }
+    if (groupAnswerSortMode(group) === 'alpha') await applyAlphaOrderToGroup(group.id)
     await loadGroups()
   }, modifierIds.length > 1 ? 'Options added.' : 'Option added.', 'Couldn’t add the options')
 
@@ -1288,6 +1278,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       body: JSON.stringify({ ...draft, is_active: true }),
     })
     if (created?.id) await addGroupOption(group.id, created.id, { display_order: group.options.length })
+    if (groupAnswerSortMode(group) === 'alpha') await applyAlphaOrderToGroup(group.id)
     await loadModifiers()
     await loadGroups()
   }, 'Modifier created and added.', 'Couldn’t create the modifier')
@@ -1660,7 +1651,6 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           description="How the menu is organized on the POS. Each category card shows exactly how its button will look on the device, and sets the tax rate, prep station, and course its items inherit. Click an item count to see what's inside."
           actions={<SmallButton variant="primary" onClick={() => void saveCategories(categories)} disabled={busy}>{busy ? 'Saving...' : 'Save categories'}</SmallButton>}
         >
-          <NewTaxRateInline busy={busy} onCreate={(name, rate) => void createTaxRate(name, rate)} />
           <div className="space-y-3">
             {mergedCategories.map((category, index) => {
               const categoryItems = allItemsByCategoryName[category.name] || []
@@ -1804,6 +1794,43 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                               <p className="text-sm text-dash-tertiary">No questions yet — build one on the Questions tab or inside any item.</p>
                             )}
                           </div>
+                          {(() => {
+                            const inheritedGroups = groups
+                              .filter(group => (group.category_links || []).some(link => link.category_id === category.id))
+                              .sort((a, b) => {
+                                const orderA = (a.category_links || []).find(link => link.category_id === category.id)?.display_order ?? 0
+                                const orderB = (b.category_links || []).find(link => link.category_id === category.id)?.display_order ?? 0
+                                return orderA - orderB || a.name.localeCompare(b.name)
+                              })
+                            if (inheritedGroups.length < 2) return null
+                            return (
+                              <div className="mt-3">
+                                <p className="label-mono mb-1">Asked in this order</p>
+                                <p className="mb-2 text-xs text-dash-tertiary">
+                                  Drag to set the order every item in {category.name} asks these — an individual item can still drag its own order in its editor.
+                                </p>
+                                <SortableRows
+                                  ids={inheritedGroups.map(group => group.id)}
+                                  className="max-w-xl space-y-1.5"
+                                  disabled={busy}
+                                  onReorder={orderedIds => reorderCategoryQuestions(category, orderedIds)}
+                                  renderRow={(groupId, { handleProps }) => {
+                                    const group = inheritedGroups.find(candidate => candidate.id === groupId)
+                                    if (!group) return null
+                                    const position = inheritedGroups.indexOf(group) + 1
+                                    return (
+                                      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-2.5">
+                                        <DragHandle handleProps={handleProps} />
+                                        <span className="w-5 text-center text-[11px] font-bold text-dash-gold">{position}</span>
+                                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-dash-cream">{group.name}</span>
+                                        <span className="text-xs text-dash-tertiary">{group.options.length} option{group.options.length === 1 ? '' : 's'}</span>
+                                      </div>
+                                    )
+                                  }}
+                                />
+                              </div>
+                            )
+                          })()}
                         </div>
                       )}
                       {!category.id && (
@@ -2130,40 +2157,6 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
             </p>
           </div>
 
-          <div className="mb-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="label-mono">Nested readiness</p>
-                <p className="mt-1 text-sm text-dash-secondary">Follow-up questions that POS will show after an option is selected.</p>
-              </div>
-              <span className="rounded-full border border-white/10 px-3 py-1 text-sm font-semibold text-dash-secondary">
-                {nestedReadiness.edgeCount} nested link{nestedReadiness.edgeCount === 1 ? '' : 's'}
-              </span>
-            </div>
-            <div className="grid gap-3 md:grid-cols-4">
-              {[
-                ['Empty child groups', nestedReadiness.emptyChildren, 'Add options before using this follow-up.'],
-                ['Required follow-ups', nestedReadiness.requiredChildren, 'Blocks add only after parent option is selected.'],
-                ['Shared questions', nestedReadiness.sharedChildren, 'Edits affect every item/path using this question.'],
-                ['Nested chains', nestedReadiness.chains, 'Option opens a question that opens another question.'],
-              ].map(([label, rows, hint]) => (
-                <div key={label} className="rounded-lg border border-white/10 bg-black/20 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-bold uppercase tracking-[0.08em] text-dash-secondary">{label}</p>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${rows.length ? 'bg-dash-gold/15 text-dash-gold' : 'bg-emerald-400/10 text-emerald-300'}`}>{rows.length}</span>
-                  </div>
-                  <p className="mt-1 text-xs text-dash-tertiary">{hint}</p>
-                  {rows.slice(0, 3).map(edge => (
-                    <p key={`${edge.group.id}:${edge.option.modifier_id}:${edge.option.child_group_id}`} className="mt-2 truncate text-xs text-dash-primary">
-                      {edge.group.name} &rarr; {edge.child?.name || 'Missing question'}
-                    </p>
-                  ))}
-                  {rows.length > 3 && <p className="mt-2 text-xs text-dash-tertiary">+{rows.length - 3} more</p>}
-                </div>
-              ))}
-            </div>
-          </div>
-
           <div className="space-y-3">
             {groups.map(group => (
               <GroupCard
@@ -2480,37 +2473,6 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 }
 
 // ── Modifier list row ───────────────────────────────────────────────────────
-
-function NewTaxRateInline({ busy, onCreate }) {
-  const [name, setName] = useState('')
-  const [rate, setRate] = useState('')
-  const rateNumber = rate === '' ? null : Number(rate)
-
-  return (
-    <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-3">
-      <span className="label-mono">New tax rate</span>
-      <div className="w-48">
-        <TextInput value={name} onChange={event => setName(event.target.value)} placeholder="Liquor tax" className="!py-2" />
-      </div>
-      <div className="w-24">
-        <TextInput inputMode="decimal" value={rate} onChange={event => setRate(cleanDecimal(event.target.value))} placeholder="15" className="!py-2" />
-      </div>
-      <span className="text-sm text-dash-secondary">%</span>
-      <SmallButton
-        variant="primary"
-        disabled={!name.trim() || rateNumber == null || rateNumber > 100 || busy}
-        onClick={() => {
-          onCreate(name.trim(), rateNumber)
-          setName('')
-          setRate('')
-        }}
-      >
-        Create rate
-      </SmallButton>
-      <span className="text-xs text-dash-tertiary">e.g. state liquor at 15% — then assign it to a category below.</span>
-    </div>
-  )
-}
 
 function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitchenAlias, askedByGroups = [], allGroups = [], onAddToQuestion = null, busy, onRename, onReprice, onRecategorize, onSetTaxRate, onSetReportingCategory, onSetPrint, onReplaceItems, onDelete }) {
   const [expanded, setExpanded] = useState(false)

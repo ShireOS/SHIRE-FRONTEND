@@ -334,6 +334,10 @@ export type TipPayrollSettings = {
   credit_tip_payout_timing: 'nightly' | 'payroll';
   payroll_provider: string | null;
   payroll_export_frequency: 'daily' | 'weekly' | 'biweekly' | 'semimonthly' | 'monthly' | 'manual';
+  payroll_period_start_weekday: number;
+  payroll_period_anchor_date: string | null;
+  payroll_semimonthly_cutoff_day: number;
+  payroll_report_default_period: 'last_completed' | 'current_open';
   tip_pooling_enabled: boolean;
   tip_pool_reset: 'shift' | 'day' | 'pay_period';
   tipout_basis: 'none' | 'sales' | 'tips' | 'hours' | 'points' | 'custom';

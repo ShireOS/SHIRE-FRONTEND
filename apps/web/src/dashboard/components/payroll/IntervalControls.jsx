@@ -14,9 +14,18 @@ export default function IntervalControls({
   preset,
   onChange,
   payrollFrequency = 'biweekly',
+  payPeriodCalendar = null,
   className = '',
 }) {
   const updatePreset = (nextPreset) => {
+    if (nextPreset === 'pay_period' && payPeriodCalendar?.available) {
+      const key = payPeriodCalendar.default_period === 'current_open' ? 'current_open' : 'last_completed'
+      const period = payPeriodCalendar.periods?.[key]
+      if (period?.start_date && period?.end_date) {
+        onChange({ preset: nextPreset, interval: { start: period.start_date, end: period.end_date, preset: nextPreset, period_id: period.id } })
+        return
+      }
+    }
     onChange({
       preset: nextPreset,
       interval: setIntervalPreset(nextPreset, interval, payrollFrequency),

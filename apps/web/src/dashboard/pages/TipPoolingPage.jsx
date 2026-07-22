@@ -53,6 +53,13 @@ function windowLabel(run) {
   return `${start.toLocaleDateString('en-US', dateFmt)} – ${end.toLocaleDateString('en-US', { ...dateFmt, year: 'numeric' })}`
 }
 
+function intervalFromPayPeriodCalendar(calendar, fallbackFrequency = 'biweekly') {
+  const key = calendar?.default_period === 'current_open' ? 'current_open' : 'last_completed'
+  const period = calendar?.available ? calendar?.periods?.[key] : null
+  if (!period?.start_date || !period?.end_date) return closedPayrollInterval(fallbackFrequency)
+  return { start: period.start_date, end: period.end_date, preset: 'pay_period', period_id: period.id }
+}
+
 function yesterdayISO() {
   const d = new Date(Date.now() - 24 * 60 * 60 * 1000)
   return d.toISOString().slice(0, 10)
@@ -324,6 +331,7 @@ export default function TipPoolingPage({ restaurantId }) {
   const [menuCategories, setMenuCategories] = useState([])
   const [menuItems, setMenuItems] = useState([])
   const [tipPayrollSettings, setTipPayrollSettings] = useState(defaultTipPayrollSettings())
+  const [payPeriodCalendar, setPayPeriodCalendar] = useState(null)
   const [closeoutRecipients, setCloseoutRecipients] = useState([])
   const [overview, setOverview] = useState(null)
   const [overviewLoading, setOverviewLoading] = useState(false)
@@ -391,13 +399,14 @@ export default function TipPoolingPage({ restaurantId }) {
     setConfigError('')
     setConfigMessage('')
     try {
-      const [jobCodeRows, tipPayrollData, waiterRows, menuCategoryData, menuItemData, closeoutSettings] = await Promise.all([
+      const [jobCodeRows, tipPayrollData, waiterRows, menuCategoryData, menuItemData, closeoutSettings, resolvedPeriods] = await Promise.all([
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`).catch(() => []),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`).catch(() => null),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=true`).catch(() => []),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/categories`).catch(() => null),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`).catch(() => null),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`).catch(() => null),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pay-periods`).catch(() => null),
       ])
       const normalizedJobCodes = normalizeJobCodes(jobCodeRows)
       const normalizedTipPayroll = normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes)
@@ -406,8 +415,9 @@ export default function TipPoolingPage({ restaurantId }) {
       setMenuCategories(Array.isArray(menuCategoryData?.categories) ? menuCategoryData.categories.filter(c => c?.is_active !== false) : [])
       setMenuItems(Array.isArray(menuItemData?.items) ? menuItemData.items.filter(item => item?.is_active !== false) : Array.isArray(menuItemData) ? menuItemData.filter(item => item?.is_active !== false) : [])
       setTipPayrollSettings(normalizedTipPayroll)
+      setPayPeriodCalendar(resolvedPeriods)
       setRunPreset('pay_period')
-      setRunInterval(closedPayrollInterval(normalizedTipPayroll.payroll_export_frequency))
+      setRunInterval(intervalFromPayPeriodCalendar(resolvedPeriods, normalizedTipPayroll.payroll_export_frequency))
       setCloseoutRecipients(Array.isArray(closeoutSettings?.eod_report_recipients) ? closeoutSettings.eod_report_recipients.map(String).filter(Boolean) : [])
     } catch (err) {
       setConfigError(err?.message || 'Could not load tipout configuration')
@@ -514,6 +524,12 @@ export default function TipPoolingPage({ restaurantId }) {
         body: JSON.stringify(tipPayrollPayload(tipPayrollSettings, jobCodes)),
       })
       setTipPayrollSettings(normalizeTipPayrollSettings(saved, jobCodes))
+      const resolvedPeriods = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pay-periods`).catch(() => null)
+      setPayPeriodCalendar(resolvedPeriods)
+      if (resolvedPeriods?.available) {
+        setRunPreset('pay_period')
+        setRunInterval(intervalFromPayPeriodCalendar(resolvedPeriods, saved.payroll_export_frequency))
+      }
       setConfigMessage('Saved configuration')
       const list = await loadRuns()
       setOverview(null) // recompute next time Overview is opened
@@ -768,7 +784,7 @@ export default function TipPoolingPage({ restaurantId }) {
                 <button type="button" onClick={createRun} disabled={!canRunPayroll || working || !runInterval.start || !runInterval.end} className="rounded-lg border border-dash-gold bg-dash-gold/10 px-3 py-1.5 text-sm font-medium text-dash-gold hover:bg-dash-gold/20 disabled:opacity-50">Create draft</button>
               </div>
             </div>
-            <IntervalControls interval={runInterval} preset={runPreset} payrollFrequency={tipPayrollSettings.payroll_export_frequency} onChange={updateRunInterval} className="mt-4" />
+            <IntervalControls interval={runInterval} preset={runPreset} payrollFrequency={tipPayrollSettings.payroll_export_frequency} payPeriodCalendar={payPeriodCalendar} onChange={updateRunInterval} className="mt-4" />
           </section>
 
           {loading ? <div className="rounded-xl border border-dash-border bg-dash-panel p-4 text-sm text-dash-secondary">Loading runs…</div> : null}
@@ -884,7 +900,7 @@ export default function TipPoolingPage({ restaurantId }) {
           {configLoading ? (
             <div className="rounded-xl border border-dash-border bg-white/[0.025] p-4 text-sm text-dash-secondary">Loading configuration…</div>
           ) : (
-            <PayrollSetupFields settings={tipPayrollSettings} onUpdateSettings={updateTipPayrollSettings} />
+            <PayrollSetupFields settings={tipPayrollSettings} onUpdateSettings={updateTipPayrollSettings} payPeriodCalendar={payPeriodCalendar} />
           )}
           {configError ? <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{configError}</div> : null}
           {configMessage ? <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{configMessage}</div> : null}

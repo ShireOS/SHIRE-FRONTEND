@@ -138,6 +138,10 @@ export async function createModifierGroup(restaurantId, draft) {
   return data
 }
 
+// Columns added by later manual-run migrations — stripped and retried on
+// 42703 so saves keep working before the migration is applied.
+const OPTIONAL_GROUP_COLUMNS = ['no_print', 'modifier_sort_mode']
+
 export async function updateModifierGroup(groupId, patch) {
   let { data, error } = await supabase
     .from('menu_modifier_groups')
@@ -145,9 +149,9 @@ export async function updateModifierGroup(groupId, patch) {
     .eq('id', groupId)
     .select('*')
     .single()
-  // Pre-migration fallback: retry without no_print if the column is missing.
-  if (error && error.code === '42703' && 'no_print' in patch) {
-    const { no_print: _noPrint, ...rest } = patch
+  if (error && error.code === '42703' && OPTIONAL_GROUP_COLUMNS.some(column => column in patch)) {
+    const rest = { ...patch }
+    for (const column of OPTIONAL_GROUP_COLUMNS) delete rest[column]
     ;({ data, error } = await supabase
       .from('menu_modifier_groups')
       .update({ ...rest, updated_at: new Date().toISOString() })
@@ -205,7 +209,63 @@ export async function setItemGroupLinkOrder(groupId, itemId, displayOrder) {
   if (error) throw error
 }
 
+// ── Answer ordering within a question ───────────────────────────────────────
+
+export const groupAnswerSortMode = (group) => (group?.modifier_sort_mode === 'alpha' ? 'alpha' : 'custom')
+
+// Persist a hand-arranged answer order (display_order = array position). The
+// POS reads options ORDER BY display_order, so persisting here is all it takes.
+export async function reorderGroupOptions(groupId, orderedModifierIds) {
+  for (let index = 0; index < orderedModifierIds.length; index += 1) {
+    const { error } = await supabase
+      .from('menu_modifier_group_options')
+      .update({ display_order: index })
+      .eq('group_id', groupId)
+      .eq('modifier_id', orderedModifierIds[index])
+    if (error) throw error
+  }
+}
+
+// A–Z mode physically rewrites display_order alphabetically (by modifier
+// name) instead of sorting at read time, so the POS needs no changes. Re-run
+// after adding answers to an A–Z question.
+export async function applyAlphaOrderToGroup(groupId) {
+  const { data: options, error } = await supabase
+    .from('menu_modifier_group_options')
+    .select('modifier_id')
+    .eq('group_id', groupId)
+  if (error) throw error
+  const ids = (options || []).map(row => row.modifier_id)
+  if (ids.length < 2) return
+  const { data: mods, error: modError } = await supabase
+    .from('menu_modifiers')
+    .select('id, name')
+    .in('id', ids)
+  if (modError) throw modError
+  const nameById = Object.fromEntries((mods || []).map(mod => [mod.id, mod.name || '']))
+  ids.sort((a, b) => (nameById[a] || '').localeCompare(nameById[b] || '', undefined, { sensitivity: 'base' }))
+  await reorderGroupOptions(groupId, ids)
+}
+
+export async function setGroupAnswerSortMode(groupId, mode) {
+  await updateModifierGroup(groupId, { modifier_sort_mode: mode })
+  if (mode === 'alpha') await applyAlphaOrderToGroup(groupId)
+}
+
 // ── Category inheritance ─────────────────────────────────────────────────────
+
+// Default question order for every item in a category (per-item overrides
+// still win — see effectiveItemQuestions).
+export async function reorderCategoryGroups(categoryId, orderedGroupIds) {
+  for (let index = 0; index < orderedGroupIds.length; index += 1) {
+    const { error } = await supabase
+      .from('menu_category_modifier_groups')
+      .update({ display_order: index })
+      .eq('category_id', categoryId)
+      .eq('group_id', orderedGroupIds[index])
+    if (error) throw error
+  }
+}
 
 export async function attachGroupToCategory(restaurantId, groupId, categoryId, displayOrder = 0) {
   const { error } = await supabase
