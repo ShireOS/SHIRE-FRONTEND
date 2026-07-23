@@ -16,16 +16,24 @@ const getToken = async (): Promise<string> => {
 }
 
 const hasRequiredTableFields = (table: FloorPlanTable) =>
-  Boolean(table.table_number?.trim()) && Number(table.capacity) > 0 && Boolean(table.section_id || table.section_name)
+  Boolean(table.table_number?.trim()) && Number(table.capacity) > 0
 
 const isTableComplete = (table: FloorPlanTable) =>
-  hasRequiredTableFields(table) && table.setup_complete === true
+  hasRequiredTableFields(table)
+
+const missingTableDetails = (table: FloorPlanTable) => {
+  const missing: string[] = []
+  if (!table.table_number?.trim()) missing.push('number')
+  if (!(Number(table.capacity) > 0)) missing.push('seats')
+  return missing
+}
 
 const normalizeTable = (table: FloorPlanTable): FloorPlanTable => ({
   ...table,
   table_number: table.table_number ?? '',
   capacity: Number(table.capacity) > 0 ? Number(table.capacity) : 0,
-  setup_complete: Boolean(table.setup_complete) && hasRequiredTableFields(table),
+  section_name: table.section_name || 'Table',
+  setup_complete: hasRequiredTableFields(table),
 })
 
 export function floorPlanIncompleteCount(tables: FloorPlanTable[]) {
@@ -111,7 +119,7 @@ export function FloorPlanTableSetup({ restaurantId, tables, onTablesChange, onSa
       onTablesChange(prepared)
       onSaved?.(prepared)
       const remaining = floorPlanIncompleteCount(prepared)
-      setMessage(remaining > 0 ? `${remaining} table${remaining === 1 ? '' : 's'} still unfinished.` : 'All tables saved and complete.')
+      setMessage(remaining > 0 ? `${remaining} table${remaining === 1 ? '' : 's'} need details.` : 'All tables saved and complete.')
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not save table setup.')
     } finally {
@@ -127,11 +135,11 @@ export function FloorPlanTableSetup({ restaurantId, tables, onTablesChange, onSa
         <div>
           <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">Table setup</p>
           <p className="mt-1 text-xs text-[rgb(var(--text-tertiary))]">
-            Each active table needs a table number, section, and capacity.
+            Each active table needs a table number and seat count. Section is optional; blank tables use Table.
           </p>
         </div>
         <span className={incompleteCount > 0 ? 'text-xs font-semibold text-red-300' : 'text-xs font-semibold text-emerald-300'}>
-          {incompleteCount > 0 ? `${incompleteCount} unfinished` : 'Complete'}
+          {incompleteCount > 0 ? `${incompleteCount} need details` : 'Complete'}
         </span>
       </div>
 
@@ -166,6 +174,7 @@ export function FloorPlanTableSetup({ restaurantId, tables, onTablesChange, onSa
       <div className="space-y-2">
         {normalizedTables.map((table, index) => {
           const incomplete = !isTableComplete(table)
+          const missing = missingTableDetails(table)
           return (
             <div
               key={table.id}
@@ -187,7 +196,7 @@ export function FloorPlanTableSetup({ restaurantId, tables, onTablesChange, onSa
                 onChange={event => updateTable(table.id, { section_id: event.target.value || null })}
                 className="min-h-[40px] rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 text-sm text-[rgb(var(--text-primary))] outline-none"
               >
-                <option value="" className="bg-[#1a1a1a]">Select section</option>
+                <option value="" className="bg-[#1a1a1a]">Table section</option>
                 {sections.map(section => (
                   <option key={section.id} value={section.id} className="bg-[#1a1a1a]">{section.name}</option>
                 ))}
@@ -201,7 +210,7 @@ export function FloorPlanTableSetup({ restaurantId, tables, onTablesChange, onSa
                 className="min-h-[40px] rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 text-sm text-[rgb(var(--text-primary))] outline-none"
               />
               <span className={incomplete ? 'self-center text-xs font-semibold text-red-300' : 'self-center text-xs font-semibold text-emerald-300'}>
-                {incomplete ? 'Unfinished' : 'Ready'}
+                {incomplete ? `Needs ${missing.join(' and ')}` : 'Ready'}
               </span>
             </div>
           )

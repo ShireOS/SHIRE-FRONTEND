@@ -65,7 +65,7 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
     e.preventDefault()
     try {
       if (savedTables.length > 0 && floorPlanIncompleteCount(savedTables) > 0) {
-        setSetupError('Finish table numbers, sections, and capacities before continuing.')
+        setSetupError('Finish table numbers and seat counts before continuing.')
         return
       }
       setSetupError('')
@@ -210,20 +210,22 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
       </div>
 
       {/* Submit */}
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="w-full py-4 px-6 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-      >
-        {isLoading ? (
-          <>
-            <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-[#d4a854]" />
-            Saving...
-          </>
-        ) : (
-          'Continue'
-        )}
-      </button>
+      <div className="sticky bottom-4 z-20 rounded-xl border border-white/10 bg-[#101010]/90 p-3 shadow-2xl shadow-black/40 backdrop-blur">
+        <button
+          type="submit"
+          disabled={isLoading}
+          className="w-full py-4 px-6 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+        >
+          {isLoading ? (
+            <>
+              <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-[#d4a854]" />
+              Saving...
+            </>
+          ) : (
+            'Continue'
+          )}
+        </button>
+      </div>
     </form>
   )
 }

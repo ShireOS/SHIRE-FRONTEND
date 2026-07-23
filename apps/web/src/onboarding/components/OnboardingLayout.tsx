@@ -20,7 +20,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   { id: 'goals', title: 'Goals & Priorities', description: 'What matters most to you' },
   { id: 'demo', title: 'Your Dashboard Preview', description: 'See what SHIRE can do' },
   { id: 'tools', title: 'Tools & Service Model', description: 'Your existing tech stack and guest flow' },
-  { id: 'sections', title: 'Sections & Areas', description: 'Bar, patio, outdoor, and dining-room categories' },
+  { id: 'sections', title: 'Sections & Areas', description: 'Define areas like bar, patio, hibachi, or dining room for better analytics and rules' },
   { id: 'hours', title: 'Operating Hours', description: 'When you\'re open' },
   { id: 'reservation_timing', title: 'Reservation Timing', description: 'How online and staff reservations are allowed' },
   { id: 'capacity', title: 'Tables & Capacity', description: 'Your floor layout' },

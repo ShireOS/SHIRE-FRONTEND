@@ -84,7 +84,7 @@ export function SectionsStep({ onboarding }: SectionsStepProps) {
 
       <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
         <p className="text-sm leading-6 text-[rgb(var(--text-secondary))]">
-          Define each dining area and its service behavior here. Tables are assigned to these sections in the floor plan, and unassigned tables default to Table.
+          Define the areas your restaurant actually runs, like bar, patio, hibachi, counter, or main dining. These sections help SHIRE compare performance by area and apply the right rules for service charges, tip prompts, floor plans, and reporting. Unassigned tables default to Table.
         </p>
       </div>
 

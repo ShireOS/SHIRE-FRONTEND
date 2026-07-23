@@ -23,6 +23,16 @@ const getToken = async (): Promise<string> => {
 const baseUrl = (restaurantId: string) =>
   `${API_CONFIG.baseUrl}/restaurants/${restaurantId}/floor-plan`
 
+const hasTableDetails = (table: FloorPlanTable) =>
+  Boolean(table.table_number?.trim()) && Number(table.capacity) > 0
+
+const nextTableNumber = (tables: FloorPlanTable[]) => {
+  const used = new Set(tables.map(table => table.table_number?.trim()).filter(Boolean))
+  let next = tables.length + 1
+  while (used.has(String(next))) next += 1
+  return String(next)
+}
+
 export function FloorPlanEditor({ restaurantId, mode, initialTables, initialSections = [], onBack, onSave }: FloorPlanEditorProps) {
   const [tables, setTables] = useState<FloorPlanTable[]>(initialTables ?? [])
   const [sections, setSections] = useState<FloorPlanSection[]>(initialSections)
@@ -135,7 +145,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, initialSect
         shape: 'rectangular' as const,
         section_id: t.section_id ?? null,
         section_name: t.section_name ?? null,
-        setup_complete: Boolean(t.setup_complete),
+        setup_complete: hasTableDetails(t),
         confidence: t.confidence,
         notes: t.notes,
       }))
@@ -191,7 +201,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, initialSect
             capacity: t.capacity,
             section_id: t.section_id,
             section_name: t.section_name,
-            setup_complete: Boolean(t.setup_complete),
+            setup_complete: hasTableDetails(t),
             confidence: t.confidence,
             notes: t.notes,
           })),
@@ -213,16 +223,17 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, initialSect
 
   const addTable = () => {
     const offset = (tables.length % 5) * 3
+    const tableNumber = nextTableNumber(tables)
     const newTable: FloorPlanTable = withDefaultSection({
       id: crypto.randomUUID(),
-      table_number: '',
+      table_number: tableNumber,
       center_x: 30 + offset,
       center_y: 30 + offset,
       width: 12,
       height: 10,
       capacity: 4,
       shape: 'rectangular',
-      setup_complete: false,
+      setup_complete: true,
     })
     updateTables(prev => [...prev, newTable])
   }
@@ -230,7 +241,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, initialSect
   const isBusy = phase === 'uploading' || phase === 'analyzing' || phase === 'saving'
 
   return (
-    <div className="flex flex-col h-full min-h-[70vh]">
+    <div className="relative left-1/2 flex min-h-[76vh] w-[min(1180px,calc(100vw-2rem))] -translate-x-1/2 flex-col">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <button
@@ -348,7 +359,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, initialSect
             )}
 
             <p className="text-xs text-[rgb(var(--text-tertiary))]">
-              {tables.length} table{tables.length !== 1 ? 's' : ''} · drag to move · corner handles to resize · click to edit seats and area
+              {tables.length} table{tables.length !== 1 ? 's' : ''} · aligns to nearby tables · Command C/V copies · Delete removes · corner handles resize
             </p>
           </div>
         </div>
