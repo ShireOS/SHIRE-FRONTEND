@@ -13,7 +13,7 @@ const DEFAULT_CONFIG = {
   receipt_detail: 'clean',
   customer: {
     header_message: '', footer_message: '', show_server: true, show_table: true,
-    show_check_number: true, show_guest_count: true,
+    show_tab_name: false, show_check_number: true, show_guest_count: true,
     suggested_tips: { enabled: false, percentages: [18, 20, 22], basis: 'subtotal', placement: 'bottom', show_amounts: true },
   },
   kitchen: {
@@ -281,7 +281,8 @@ export default function PrintingRoutingPage({ restaurantId }) {
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <h2 className="text-lg font-semibold">Check information</h2>
-                <div className="mt-3"><Toggle label="Show table or tab name" checked={config.customer?.show_table ?? true} onChange={value => patchCustomer({ show_table: value })} /><Toggle label="Show check number" checked={config.customer?.show_check_number ?? true} onChange={value => patchCustomer({ show_check_number: value })} /><Toggle label="Show server name" checked={config.customer?.show_server ?? true} onChange={value => patchCustomer({ show_server: value })} /><Toggle label="Show guest count" checked={config.customer?.show_guest_count ?? true} onChange={value => patchCustomer({ show_guest_count: value })} /></div>
+                <p className="mt-1 text-sm text-dash-tertiary">Table numbers and bar-tab names are separate so customer-facing tab names remain optional.</p>
+                <div className="mt-3"><Toggle label="Show table number" checked={config.customer?.show_table ?? true} onChange={value => patchCustomer({ show_table: value })} /><Toggle label="Show bar tab name" checked={config.customer?.show_tab_name ?? false} onChange={value => patchCustomer({ show_tab_name: value })} /><Toggle label="Show check number" checked={config.customer?.show_check_number ?? true} onChange={value => patchCustomer({ show_check_number: value })} /><Toggle label="Show server name" checked={config.customer?.show_server ?? true} onChange={value => patchCustomer({ show_server: value })} /><Toggle label="Show guest count" checked={config.customer?.show_guest_count ?? true} onChange={value => patchCustomer({ show_guest_count: value })} /></div>
               </div>
             </div>
           ) : (

@@ -1347,6 +1347,21 @@ function normalizeTaxRates(rows) {
   return normalized.map((row, index) => ({ ...row, is_default: row.is_default || (!hasDefault && index === 0) }))
 }
 
+function defaultAutoGratuity() {
+  return { enabled: true, party_threshold: '6', percent: '18', label: 'Gratuity' }
+}
+
+function normalizeAutoGratuity(row) {
+  const fallback = defaultAutoGratuity()
+  if (!row || typeof row !== 'object') return fallback
+  return {
+    enabled: row.enabled !== false,
+    party_threshold: row.party_threshold == null ? fallback.party_threshold : String(row.party_threshold).replace(/\D/g, '') || fallback.party_threshold,
+    percent: row.percent == null ? fallback.percent : sanitizeNumber(row.percent),
+    label: String(row.label || '').trim() || fallback.label,
+  }
+}
+
 function normalizeServiceCharges(rows) {
   return (Array.isArray(rows) ? rows : [])
     .map(row => ({
@@ -1469,8 +1484,15 @@ function normalizeCheckWorkflowSettings(row) {
   }
 }
 
-function taxesChargesPayload(taxRates, serviceCharges) {
+function taxesChargesPayload(taxRates, serviceCharges, autoGratuity) {
+  const gratuity = normalizeAutoGratuity(autoGratuity)
   return {
+    auto_gratuity: {
+      enabled: gratuity.enabled,
+      party_threshold: Math.max(1, Number(gratuity.party_threshold) || 6),
+      percent: Math.min(100, Number(gratuity.percent) || 0),
+      label: gratuity.label,
+    },
     tax_rates: normalizeTaxRates(taxRates).map(row => ({
       id: row.id || undefined,
       name: row.name,
@@ -2066,6 +2088,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [serviceModel, setServiceModel] = useState(() => initialServiceModel(restaurant))
   const [taxRates, setTaxRates] = useState([defaultTaxRate()])
   const [serviceCharges, setServiceCharges] = useState([])
+  const [autoGratuity, setAutoGratuity] = useState(defaultAutoGratuity())
   const [menuCategories, setMenuCategories] = useState(defaultMenuCategories())
   const [discountRules, setDiscountRules] = useState([])
   const [rolePermissions, setRolePermissions] = useState(defaultRolePermissions())
@@ -2455,6 +2478,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setFloorTables(mapFloorPlanTables(floorPlan))
       setTaxRates(normalizeTaxRates(taxesCharges?.tax_rates))
       setServiceCharges(normalizeServiceCharges(taxesCharges?.service_charges))
+      setAutoGratuity(normalizeAutoGratuity(taxesCharges?.auto_gratuity))
       setMenuCategories(normalizeMenuCategories(menuCategoryData?.categories))
       setDiscountRules(normalizeDiscountRules(discountData?.discount_rules))
       setRolePermissions(normalizeRolePermissions(managerControls?.role_permissions, normalizedJobCodes))
@@ -2650,7 +2674,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   }
 
   const saveTaxesCharges = async (publication) => {
-    const payload = taxesChargesPayload(taxRates, serviceCharges)
+    const payload = taxesChargesPayload(taxRates, serviceCharges, autoGratuity)
     await saveWithPropagation({
       sectionId: 'taxes_charges',
       label: 'Taxes & Charges',
@@ -2661,6 +2685,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       onSourceSaved: (saved) => {
         setTaxRates(normalizeTaxRates(saved?.tax_rates))
         setServiceCharges(normalizeServiceCharges(saved?.service_charges))
+        setAutoGratuity(normalizeAutoGratuity(saved?.auto_gratuity))
         queryClient.setQueryData(queryKeys.taxesCharges(restaurantId), saved)
       },
       publication,
@@ -3478,6 +3503,24 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                 </div>
               ))}
               <SmallButton onClick={() => setServiceCharges(prev => [...prev, defaultServiceCharge(prev.length)])}>Add service charge</SmallButton>
+            </div>
+
+            <div className="space-y-4 border-t border-white/10 pt-6">
+              <div>
+                <p className="label-mono">Large-Party Auto Gratuity</p>
+                <p className="mt-2 text-sm text-dash-secondary">Restaurant-wide default the POS applies when the party size is at or above the threshold. Section service-charge profiles override this rule for their tables.</p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                <label className="flex items-center gap-3 text-sm text-dash-primary">
+                  <input type="checkbox" checked={autoGratuity.enabled} onChange={event => setAutoGratuity(prev => ({ ...prev, enabled: event.target.checked }))} className="h-4 w-4 accent-dash-gold" />
+                  Automatically apply gratuity to large parties
+                </label>
+                {autoGratuity.enabled && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 md:grid-cols-3">
+                  <Field label="Minimum party size"><TextInput inputMode="numeric" value={autoGratuity.party_threshold} onChange={event => setAutoGratuity(prev => ({ ...prev, party_threshold: event.target.value.replace(/\D/g, '') }))} placeholder="6" /></Field>
+                  <Field label="Gratuity rate %"><TextInput inputMode="decimal" value={autoGratuity.percent} onChange={event => setAutoGratuity(prev => ({ ...prev, percent: sanitizeNumber(event.target.value) }))} placeholder="18" /></Field>
+                  <Field label="Receipt label"><TextInput value={autoGratuity.label} maxLength={40} onChange={event => setAutoGratuity(prev => ({ ...prev, label: event.target.value }))} placeholder="Gratuity" /></Field>
+                </div>}
+              </div>
             </div>
           </div>
         </SectionShell>
