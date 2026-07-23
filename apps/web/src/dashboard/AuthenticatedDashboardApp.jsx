@@ -4825,13 +4825,14 @@ export function RestaurantWorkspace({
   const activeTab = TABS.some((item) => item.id === tab) ? tab : 'analytics'
   const [waiterCount, setWaiterCount] = useState(null)
   const [floorPlanStatus, setFloorPlanStatus] = useState(null)
+  const [jobCodeCount, setJobCodeCount] = useState(null)
   const [setupRefreshKey, setSetupRefreshKey] = useState(0)
   const allowedStoreTabs = useAllowedStoreTabs(restaurant)
   const backOfficeAccess = useBackOfficeAccess(auth, restaurantId)
 
   const setupWarnings = useMemo(
-    () => buildModernSetupWarnings(restaurant || {}, waiterCount, floorPlanStatus),
-    [restaurant, waiterCount, floorPlanStatus]
+    () => buildModernSetupWarnings(restaurant || {}, waiterCount, floorPlanStatus, jobCodeCount),
+    [restaurant, waiterCount, floorPlanStatus, jobCodeCount]
   )
 
   useEffect(() => {
@@ -4857,16 +4858,23 @@ export function RestaurantWorkspace({
         () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`),
         staleTime,
       ).catch(() => null),
+      fetchCached(
+        queryKeys.jobCodes(restaurantId),
+        () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`),
+        staleTime,
+      ).catch(() => null),
     ])
-      .then(([waiterData, floorPlan]) => {
+      .then(([waiterData, floorPlan, jobCodeData]) => {
         if (cancelled) return
         setWaiterCount(Array.isArray(waiterData) ? waiterData.length : 0)
         setFloorPlanStatus(floorPlan)
+        setJobCodeCount(Array.isArray(jobCodeData) ? jobCodeData.filter((code) => code?.is_active !== false).length : null)
       })
       .catch(() => {
         if (!cancelled) {
           setWaiterCount(null)
           setFloorPlanStatus(null)
+          setJobCodeCount(null)
         }
       })
     return () => {
