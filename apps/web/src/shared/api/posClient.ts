@@ -94,6 +94,35 @@ export interface TimeClockEntryInput {
   breaks?: TimeClockBreak[]
 }
 
+export interface CheckLedgerQuery {
+  business_date?: string | null
+  date_from?: string | null
+  date_to?: string | null
+  tab?: 'all' | 'transactions' | 'needs_attention'
+  search?: string
+  status?: string
+  payment_status?: string
+  payment_method?: string
+  page?: number
+  page_size?: number
+}
+
+// Read-only manager check ledger (active/closed/history + per-check detail).
+// Same POS endpoints the in-store manager ledger uses; card data is brand +
+// last four only and no mutations are exposed to the dashboard.
+export const posCheckLedgerApi = {
+  list: (restaurantId: string, query: CheckLedgerQuery = {}, signal?: AbortSignal) => {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== null && value !== '') params.set(key, String(value))
+    }
+    const qs = params.toString()
+    return fetchPosApi(restaurantId, `/manager/check-ledger${qs ? `?${qs}` : ''}`, { signal })
+  },
+  detail: (restaurantId: string, orderId: string, signal?: AbortSignal) =>
+    fetchPosApi(restaurantId, `/manager/check-ledger/${encodeURIComponent(orderId)}`, { signal }),
+}
+
 export const posTimeClockApi = {
   rangeReport: (restaurantId: string, startDate: string, endDate: string) =>
     fetchPosApi(restaurantId, `/manager/timeclock/entries?start_date=${startDate}&end_date=${endDate}`),

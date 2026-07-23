@@ -807,7 +807,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     return ROUTE_INHERIT_VALUE
   }
   const routingDescriptionFor = (rules, exclusions, emptyLabel) => {
-    if (exclusions.length > 0) return 'No production route'
+    if (exclusions.length > 0) return 'No production needed · mark handled'
     if (rules.length > 1) return `Routes to ${rules.map(routeRuleLabel).join(' + ')}`
     if (rules.length === 1) return `Routes to ${routeRuleLabel(rules[0])}`
     return emptyLabel
@@ -2616,7 +2616,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       }}
                     >
                       <option value={ROUTE_INHERIT_VALUE}>Use fallback/no explicit route</option>
-                      <option value={ROUTE_NO_PRODUCTION_VALUE}>No production route</option>
+                      <option value={ROUTE_NO_PRODUCTION_VALUE}>No production needed · mark handled</option>
                       {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
                       {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                     </SelectInput>
@@ -2658,7 +2658,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       }}
                     >
                       <option value={ROUTE_INHERIT_VALUE}>Inherit category/fallback</option>
-                      <option value={ROUTE_NO_PRODUCTION_VALUE}>No production route</option>
+                      <option value={ROUTE_NO_PRODUCTION_VALUE}>No production needed · mark handled</option>
                       {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
                       {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                     </SelectInput>

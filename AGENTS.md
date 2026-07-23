@@ -136,9 +136,10 @@ list must stay in sync.
   store-level report recipients for every restaurant in the viewer's authorized
   portfolio; those schedules remain managed from the individual store Reports
   page and are not silently converted into consolidated rollups.
-- Supabase-direct menu writes use `can_manage_store_menu()` RLS. Category-question
-  and item-modifier override policies also verify that every referenced row
-  belongs to the submitted restaurant, preventing cross-tenant record links.
+- Supabase-direct menu writes use `can_manage_store_menu()` RLS. Category-question,
+  item-modifier override, and item price-allocation policies also verify that every
+  referenced row belongs to the submitted restaurant, preventing cross-tenant
+  record links.
 - Server Quick Menu, Fast Bar, department ranking, and bartender home preferences
   use existing `menu.view` for Back Office visibility and `menu.edit_items` for
   mutation. Owners and authorized resellers share the audited POS-backend
@@ -147,3 +148,14 @@ list must stay in sync.
   `menu` grant to both Menu and POS Menus, and reseller employees resolve through
   their active parent reseller assignment before those tabs are shown. Fast Bar
   and Server Menu always retain access to every department.
+- Production behavior configuration uses the same `menu.view` visibility and
+  `menu.edit_items` mutation boundary. The audited POS-backend
+  `/reseller/pos-production-workflow` contract owns beverage workflow plus
+  role/employee/item/station overrides; browser code never writes those tables
+  directly. Permanent station-scoped rules are distinct from shift-scoped
+  bartender production-area assignments.
+- The production workflow editor also owns beverage-role membership and
+  manager-controlled terminal-to-production-station access. Shift assignments
+  are created by the POS timeclock and may change queue scope during the active
+  shift, but they never replace item/section routing or employee production
+  behavior overrides.

@@ -44,6 +44,7 @@ import { useBackOfficeAccess } from '../shared/hooks/useBackOfficeAccess'
 import { TAB_PERMISSIONS } from '../shared/permissions'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
 import SalesTiles from './components/SalesTiles'
+import CheckLedgerSection from './components/CheckLedgerSection'
 import HomepageWidgets from './components/HomepageWidgets'
 import { usePersistedPeriod } from './data/analyticsSummary'
 import ResellerApp from '../reseller/ResellerApp'
@@ -916,6 +917,11 @@ function LegacyAnalyticsDashboard({ restaurant }) {
           </div>
         </>
       )}
+
+      {/* Independent of the analytics payload: reads the POS check ledger
+          directly and hides itself when the viewer lacks reports.view. */}
+      <CheckLedgerSection restaurantId={restaurantId} />
+
       {configureOpen && <RestaurantHomepageConfigureModal visible={visibleWidgets} saving={savingHomepage} onClose={() => setConfigureOpen(false)} onSave={saveHomepage} />}
     </div>
   )

@@ -5,6 +5,7 @@ import { Button } from '../shared/Button'
 import { Badge } from '../shared/Badge'
 import { Modal } from '../shared/Modal'
 import DeviceSessionPolicySection from './DeviceSessionPolicySection'
+import HardwareChainGuide from '../printing/HardwareChainGuide'
 import {
   CONNECTION_TYPES,
   DEVICE_PRINTER_ROLES,
@@ -633,6 +634,8 @@ export default function StoreDevicesPanel({ restaurantId }) {
           {error}
         </div>
       )}
+
+      <HardwareChainGuide />
 
       <PrinterFailoverSection
         status={failoverStatus}

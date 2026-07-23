@@ -44,6 +44,10 @@ export const queryKeys = {
   backOfficeMembers: (restaurantId: string) => ['restaurant', restaurantId, 'back-office-members'] as const,
   timeClockRange: (restaurantId: string, startDate: string, endDate: string) =>
     ['restaurant', restaurantId, 'time-clock', startDate, endDate] as const,
+  checkLedger: (restaurantId: string, query: Record<string, unknown>) =>
+    ['restaurant', restaurantId, 'check-ledger', query] as const,
+  checkLedgerDetail: (restaurantId: string, orderId: string) =>
+    ['restaurant', restaurantId, 'check-ledger', 'detail', orderId] as const,
 
   conversations: (restaurantId: string) => ['restaurant', restaurantId, 'conversations'] as const,
   conversationMessages: (restaurantId: string, conversationId: string) =>
