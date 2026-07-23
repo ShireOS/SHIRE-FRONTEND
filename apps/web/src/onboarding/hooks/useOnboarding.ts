@@ -440,7 +440,11 @@ function slugRoleCode(value: unknown, fallback = 'role'): string {
 const roleKeysForPermissions = (jobCodes: JobCodeData[] = defaultJobCodes()): string[] => {
   const seen = new Set<string>()
   const keys: string[] = []
-  for (const key of [...DEFAULT_ROLE_KEYS, ...jobCodes.map(code => code.code)]) {
+  const activeJobCodeKeys = jobCodes
+    .filter(code => code?.is_active !== false)
+    .map(code => code.code)
+  const sourceKeys = activeJobCodeKeys.length > 0 ? activeJobCodeKeys : DEFAULT_ROLE_KEYS
+  for (const key of sourceKeys) {
     const roleKey = slugRoleCode(key)
     if (!roleKey || seen.has(roleKey)) continue
     seen.add(roleKey)
@@ -2548,17 +2552,18 @@ export function useOnboarding() {
     }
   }, [data, getActiveRestaurantId, isSetupEditor, runWithTimeout])
 
-  const saveManagerControls = useCallback(async () => {
+  const saveManagerControls = useCallback(async (overrides: Partial<OnboardingData> = {}) => {
     setIsLoading(true)
     setError(null)
 
     try {
       const activeRestaurantId = getActiveRestaurantId()
+      const payloadData = mergeOnboardingData(data, overrides)
       const response = await runWithTimeout(
         async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/manager-controls`, {
           method: 'PUT',
           headers: await getApiHeaders(),
-          body: JSON.stringify(managerControlsToPayload(data)),
+          body: JSON.stringify(managerControlsToPayload(payloadData)),
         }),
         'Saving manager controls timed out. Please retry.'
       )
@@ -2570,7 +2575,11 @@ export function useOnboarding() {
 
       const saved = await response.json().catch(() => ({}))
       setData(prev => mergeOnboardingData(prev, {
-        role_permissions: normalizeRolePermissions(isRecord(saved) ? saved.role_permissions : [], prev.job_codes),
+        ...overrides,
+        role_permissions: normalizeRolePermissions(
+          isRecord(saved) ? saved.role_permissions : [],
+          payloadData.job_codes
+        ),
       }))
 
       const { error: stepError } = isSetupEditor
