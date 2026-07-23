@@ -31,6 +31,10 @@ const PERMISSIONS: Array<{ key: keyof RolePermissionData; label: string }> = [
 
 const inputClass = 'w-full min-w-0 px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]'
 const sanitizeNumber = (value: string) => value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1').slice(0, 10)
+const displayRate = (value: unknown) => {
+  const text = String(value ?? '').trim()
+  return text === '0' || text === '0.0' || text === '0.00' ? '' : text
+}
 const slugRoleCode = (value: string, fallback = 'role') => {
   const raw = value.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '')
   const normalized = raw || fallback
@@ -314,7 +318,7 @@ export function ManagerControlsStep({ onboarding }: ManagerControlsStepProps) {
               <label className="space-y-1">
                 <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))] lg:hidden">Base $/hr</span>
                 <input
-                  value={role.default_hourly_rate}
+                  value={displayRate(role.default_hourly_rate)}
                   onChange={(event) => updateRoleDraft(index, { default_hourly_rate: sanitizeNumber(event.target.value) })}
                   className={inputClass}
                   inputMode="decimal"
