@@ -148,7 +148,7 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
           Floor Plan <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
         </label>
         <p className="mb-3 text-sm leading-6 text-[rgb(var(--text-secondary))]">
-          Assign each table to a section such as Bar, Patio, Outdoor, or Main Dining. Tables without a section save as Table.
+          Draw or upload your floor map, then assign every table to one of the sections you created earlier. Tables without a section save as Table.
         </p>
 
         {savedTableCount !== null && (
@@ -204,7 +204,7 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
               </svg>
               <span className="text-sm font-medium text-[rgb(var(--text-primary))]">Draw Manually</span>
             </div>
-            <span className="text-xs text-[rgb(var(--text-tertiary))]">Place and arrange tables on a blank canvas</span>
+            <span className="text-xs text-[rgb(var(--text-tertiary))]">Place tables, then assign sections and seats</span>
           </button>
         </div>
       </div>

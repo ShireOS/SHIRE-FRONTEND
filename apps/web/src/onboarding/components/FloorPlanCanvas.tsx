@@ -614,7 +614,7 @@ export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgro
                   />
                   {sections.length > 0 && (
                     <>
-                      <span style={{ fontSize: 11, color: 'rgb(var(--text-tertiary))' }}>Area:</span>
+                      <span style={{ fontSize: 11, color: 'rgb(var(--text-tertiary))' }}>Section:</span>
                       <select
                         value={selectedTable?.section_id || defaultSection?.id || ''}
                         onChange={(e) => updateSelectedSection(e.target.value)}

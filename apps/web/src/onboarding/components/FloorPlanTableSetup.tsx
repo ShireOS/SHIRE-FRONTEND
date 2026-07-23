@@ -133,9 +133,9 @@ export function FloorPlanTableSetup({ restaurantId, tables, onTablesChange, onSa
     <div className="mt-4 space-y-4 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">Table setup</p>
+          <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">Table numbers, seats, and sections</p>
           <p className="mt-1 text-xs text-[rgb(var(--text-tertiary))]">
-            Each active table needs a table number and seat count. Section is optional; blank tables use Table.
+            Assign each table to the section it belongs to, such as Bar, Patio, Outdoor, or Main Dining. Blank sections save as Table.
           </p>
         </div>
         <span className={incompleteCount > 0 ? 'text-xs font-semibold text-red-300' : 'text-xs font-semibold text-emerald-300'}>
@@ -172,6 +172,12 @@ export function FloorPlanTableSetup({ restaurantId, tables, onTablesChange, onSa
       </div>
 
       <div className="space-y-2">
+        <div className="hidden gap-2 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-[rgb(var(--text-tertiary))] md:grid md:grid-cols-[1fr_1fr_120px_auto]">
+          <span>Table</span>
+          <span>Section</span>
+          <span>Seats</span>
+          <span>Status</span>
+        </div>
         {normalizedTables.map((table, index) => {
           const incomplete = !isTableComplete(table)
           const missing = missingTableDetails(table)
@@ -196,7 +202,7 @@ export function FloorPlanTableSetup({ restaurantId, tables, onTablesChange, onSa
                 onChange={event => updateTable(table.id, { section_id: event.target.value || null })}
                 className="min-h-[40px] rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 text-sm text-[rgb(var(--text-primary))] outline-none"
               >
-                <option value="" className="bg-[#1a1a1a]">Table section</option>
+                <option value="" className="bg-[#1a1a1a]">Assign section</option>
                 {sections.map(section => (
                   <option key={section.id} value={section.id} className="bg-[#1a1a1a]">{section.name}</option>
                 ))}

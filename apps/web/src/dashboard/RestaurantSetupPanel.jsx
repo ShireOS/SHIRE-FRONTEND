@@ -4469,12 +4469,12 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                 </div>
               ) : (
                 <SetupEmptyState title="No floor plan yet" actionLabel="Draw floor plan" onAction={() => setFloorPlanMode('manual')}>
-                  Use the visual editor to create table records and positions. Upload mode can detect tables from a floor-plan image.
+                  Use the visual editor to create table records, place them on the floor map, and assign each table to a section.
                 </SetupEmptyState>
               )}
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <OptionCard title="Upload Image" description="Upload a floor plan image and let AI detect tables." onClick={() => setFloorPlanMode('upload')} />
-                <OptionCard title="Draw Manually" description="Open the visual table editor and place tables yourself." onClick={() => setFloorPlanMode('manual')} />
+                <OptionCard title="Draw Manually" description="Open the visual editor to place tables, assign sections, and set seats." onClick={() => setFloorPlanMode('manual')} />
               </div>
               {floorTables.length > 0 && (
                 <FloorPlanTableSetup
