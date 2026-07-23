@@ -166,9 +166,7 @@ export interface MenuCategoryData {
   tax_rate_id: string
   routing_station_id: string
   routing_station_name: string
-  default_course_type?: 'none' | 'appetizer' | 'entree' | 'dessert' | 'drink' | 'side' | 'other' | ''
   default_fire_mode?: 'inherit' | 'immediate' | 'hold' | 'manual' | 'by_course' | ''
-  prep_time_minutes?: string
   kds_display_group?: string
   is_active?: boolean
 }
@@ -515,15 +513,15 @@ const defaultCloseoutSettings = (): CloseoutSettingsData => ({
 })
 
 const defaultMenuCategories = (): MenuCategoryData[] => [
-  { name: 'Appetizers', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'appetizer', default_fire_mode: 'by_course', prep_time_minutes: '', kds_display_group: 'Apps', is_active: true },
-  { name: 'Entrees', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'entree', default_fire_mode: 'by_course', prep_time_minutes: '', kds_display_group: 'Entrees', is_active: true },
-  { name: 'Desserts', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'dessert', default_fire_mode: 'by_course', prep_time_minutes: '', kds_display_group: 'Desserts', is_active: true },
-  { name: 'Sides', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'side', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: 'Sides', is_active: true },
-  { name: 'Drinks', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: '', kds_display_group: 'Drinks', is_active: true },
-  { name: 'Cocktails', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: '', kds_display_group: 'Bar', is_active: true },
-  { name: 'Beer & Wine', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: '', kds_display_group: 'Bar', is_active: true },
-  { name: 'Specials', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'other', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: 'Specials', is_active: true },
-  { name: 'Other', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Expo', default_course_type: 'none', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: 'Other', is_active: true },
+  { name: 'Appetizers', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'by_course', kds_display_group: 'Apps', is_active: true },
+  { name: 'Entrees', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'by_course', kds_display_group: 'Entrees', is_active: true },
+  { name: 'Desserts', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'by_course', kds_display_group: 'Desserts', is_active: true },
+  { name: 'Sides', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'inherit', kds_display_group: 'Sides', is_active: true },
+  { name: 'Drinks', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_fire_mode: 'immediate', kds_display_group: 'Drinks', is_active: true },
+  { name: 'Cocktails', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_fire_mode: 'immediate', kds_display_group: 'Bar', is_active: true },
+  { name: 'Beer & Wine', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_fire_mode: 'immediate', kds_display_group: 'Bar', is_active: true },
+  { name: 'Specials', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'inherit', kds_display_group: 'Specials', is_active: true },
+  { name: 'Other', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Expo', default_fire_mode: 'inherit', kds_display_group: 'Other', is_active: true },
 ]
 
 const defaultCheckWorkflowSettings = (): CheckWorkflowSettingsData => ({
@@ -886,13 +884,11 @@ const normalizeMenuCategories = (value: unknown): MenuCategoryData[] => {
       tax_rate_id: asString(row.tax_rate_id),
       routing_station_id: asString(row.routing_station_id),
       routing_station_name: asString(row.routing_station_name),
-      default_course_type: asString(row.default_course_type) as MenuCategoryData['default_course_type'],
       default_fire_mode: asString(row.default_fire_mode) as MenuCategoryData['default_fire_mode'],
-      prep_time_minutes: asString(row.prep_time_minutes),
       kds_display_group: asString(row.kds_display_group),
       is_active: typeof row.is_active === 'boolean' ? row.is_active : true,
     }))
-    .filter(row => row.name && row.is_active !== false)
+    .filter(row => row.is_active !== false)
 
   return normalized.length > 0 ? normalized : defaultMenuCategories()
 }
@@ -1248,13 +1244,18 @@ const menuCategoriesToPayload = (data: OnboardingData) => ({
     tax_rate_id: row.tax_rate_id || null,
     routing_station_id: row.routing_station_id || null,
     routing_station_name: row.routing_station_name || null,
-    default_course_type: row.default_course_type || null,
     default_fire_mode: row.default_fire_mode || null,
-    prep_time_minutes: row.prep_time_minutes === '' ? null : Number(row.prep_time_minutes),
     kds_display_group: row.kds_display_group || null,
     is_active: true,
   })),
 })
+
+const validateMenuCategories = (categories: MenuCategoryData[]) => {
+  const blankIndex = normalizeMenuCategories(categories).findIndex(row => !row.name.trim())
+  if (blankIndex >= 0) {
+    throw new Error(`Menu category ${blankIndex + 1} needs a name. Use Remove to delete it.`)
+  }
+}
 
 const checkWorkflowSettingsToPayload = (data: OnboardingData) => {
   const settings = normalizeCheckWorkflowSettings(data.check_workflow_settings)
@@ -1846,6 +1847,7 @@ export function useOnboarding() {
   const auth = useAuth()
   const { user, refreshRestaurants, seedCurrentRestaurant } = auth
   const currentRestaurant = auth.restaurant.currentRestaurant
+  const isAuthLoading = auth.isLoading
   const isRestaurantLoading = auth.restaurant.isLoading
   const navigate = useNavigate()
   const location = useLocation()
@@ -2014,6 +2016,25 @@ export function useOnboarding() {
     }
   }, [runWithTimeout])
 
+  const fetchDraftRestaurant = useCallback(async (draftRestaurantId: string): Promise<Restaurant | null> => {
+    const { data: restaurantRow, error: fetchError } = await runWithTimeout(
+      () =>
+        supabase
+          .from('restaurants')
+          .select('*')
+          .eq('id', draftRestaurantId)
+          .maybeSingle(),
+      'Loading saved onboarding restaurant timed out. Please retry.'
+    )
+
+    if (fetchError) {
+      console.warn('[Onboarding] Could not load saved onboarding restaurant:', fetchError.message)
+      return null
+    }
+
+    return restaurantRow as Restaurant | null
+  }, [runWithTimeout])
+
   const fetchRestaurantConfig = useCallback(async (activeRestaurantId: string): Promise<Record<string, unknown>> => {
     const { data: restaurantRow, error: fetchError } = await runWithTimeout(
       () =>
@@ -2043,6 +2064,13 @@ export function useOnboarding() {
     let cancelled = false
 
     const hydrate = async () => {
+      if (isAuthLoading) {
+        if (!cancelled) {
+          setIsHydrating(true)
+        }
+        return
+      }
+
       if (!user) {
         if (!cancelled) {
           setData(toOnboardingData(INITIAL_DATA))
@@ -2071,6 +2099,7 @@ export function useOnboarding() {
         localDraft &&
         (
           !isNewRestaurantFlow ||
+          !restaurantId ||
           (restaurantId && localDraft.restaurantId === restaurantId)
         )
       )
@@ -2086,10 +2115,24 @@ export function useOnboarding() {
         currentRestaurant?.id === restaurantId
           ? currentRestaurant
           : null
+      const newFlowDraftRestaurant =
+        isNewRestaurantFlow &&
+        !newFlowCreatedRestaurant &&
+        localDraft?.restaurantId
+          ? await fetchDraftRestaurant(localDraft.restaurantId)
+          : null
+      const newFlowSelectedRestaurant =
+        isNewRestaurantFlow &&
+        !newFlowCreatedRestaurant &&
+        !newFlowDraftRestaurant &&
+        currentRestaurant &&
+        !currentRestaurant.onboarding_completed_at
+          ? currentRestaurant
+          : null
 
       const candidateRestaurant = shouldUseCurrentRestaurant
         ? currentRestaurant
-        : newFlowCreatedRestaurant
+        : newFlowCreatedRestaurant || newFlowDraftRestaurant || newFlowSelectedRestaurant
       const onboardingRestaurant =
         candidateRestaurant &&
         (isSetupEditor || !candidateRestaurant.onboarding_completed_at)
@@ -2124,6 +2167,7 @@ export function useOnboarding() {
     }
   }, [
     user?.id,
+    isAuthLoading,
     isRestaurantLoading,
     currentRestaurant?.id,
     currentRestaurantStep,
@@ -2134,12 +2178,13 @@ export function useOnboarding() {
     isSetupEditor,
     isNewRestaurantFlow,
     hydrateFromRestaurant,
+    fetchDraftRestaurant,
   ])
 
   // Persist in-progress onboarding draft for refresh resilience.
   useEffect(() => {
     if (isSetupEditor) return
-    if (!user || isHydrating) return
+    if (!user || isAuthLoading || isRestaurantLoading || isHydrating) return
 
     writeDraft(user.id, {
       version: ONBOARDING_DRAFT_VERSION,
@@ -2148,7 +2193,7 @@ export function useOnboarding() {
       data,
       updatedAt: new Date().toISOString(),
     })
-  }, [user?.id, isHydrating, isSetupEditor, currentStep, restaurantId, data])
+  }, [user?.id, isAuthLoading, isRestaurantLoading, isHydrating, isSetupEditor, currentStep, restaurantId, data])
 
   // Update data
   const updateData = useCallback((updates: Partial<OnboardingData>) => {
@@ -3050,6 +3095,7 @@ export function useOnboarding() {
     setError(null)
 
     try {
+      validateMenuCategories(data.menu_categories)
       const activeRestaurantId = getActiveRestaurantId()
       const response = await runWithTimeout(
         async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/menu/categories`, {

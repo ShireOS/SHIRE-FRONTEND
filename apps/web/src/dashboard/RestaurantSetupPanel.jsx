@@ -7,7 +7,6 @@ import { normalizeFloorPlanTablesForEditor } from '../onboarding/components/Floo
 import { FloorPlanTableSetup } from '../onboarding/components/FloorPlanTableSetup'
 import { MenuEditor } from '../onboarding/components/MenuEditor'
 import { ModifierEditor } from '../onboarding/components/ModifierEditor'
-import { syncRatePlanFromPricingPolicy } from './data/ratePlans'
 import { assignedStaffRoles, buildStaffRoleUpdate, primaryStaffRole, roleCodeFromJobCode } from './utils/staffRoles'
 import { PublishControls } from '../shared/components/PublishControls'
 import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
@@ -388,16 +387,15 @@ const normalizePricingPolicy = (raw = {}) => {
     jurisdiction_state: String(merged.jurisdiction_state || 'SC').toUpperCase().slice(0, 2),
     label: merged.label || defaultPricingLabel(merged.mode),
     disclosure: merged.disclosure || defaultPricingDisclosure(merged.mode),
-    rate_percent: String(Number.isFinite(rate) ? Math.round(rate * 10000) / 100 : 3.5),
   }
 }
 
 const pricingPolicyPayload = (policy) => {
-  const percent = Number(policy.rate_percent)
+  const rate = Number(policy.rate)
   return {
     enabled: policy.enabled !== false,
     mode: policy.mode || DEFAULT_PRICING_POLICY.mode,
-    rate: Number.isFinite(percent) ? Math.max(0, percent) / 100 : DEFAULT_PRICING_POLICY.rate,
+    rate: Number.isFinite(rate) ? Math.max(0, rate) : DEFAULT_PRICING_POLICY.rate,
     basis: policy.basis || DEFAULT_PRICING_POLICY.basis,
     applies_to: Array.isArray(policy.applies_to) ? policy.applies_to : DEFAULT_PRICING_POLICY.applies_to,
     jurisdiction_state: String(policy.jurisdiction_state || 'SC').toUpperCase().slice(0, 2),
@@ -1095,15 +1093,15 @@ function defaultCloseoutSettings() {
 
 function defaultMenuCategories() {
   return [
-    { name: 'Appetizers', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'appetizer', default_fire_mode: 'by_course', prep_time_minutes: '', kds_display_group: 'Apps', is_active: true },
-    { name: 'Entrees', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'entree', default_fire_mode: 'by_course', prep_time_minutes: '', kds_display_group: 'Entrees', is_active: true },
-    { name: 'Desserts', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'dessert', default_fire_mode: 'by_course', prep_time_minutes: '', kds_display_group: 'Desserts', is_active: true },
-    { name: 'Sides', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'side', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: 'Sides', is_active: true },
-    { name: 'Drinks', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: '', kds_display_group: 'Drinks', is_active: true },
-    { name: 'Cocktails', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: '', kds_display_group: 'Bar', is_active: true },
-    { name: 'Beer & Wine', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: '', kds_display_group: 'Bar', is_active: true },
-    { name: 'Specials', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'other', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: 'Specials', is_active: true },
-    { name: 'Other', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Expo', default_course_type: 'none', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: 'Other', is_active: true },
+    { name: 'Appetizers', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'by_course', kds_display_group: 'Apps', is_active: true },
+    { name: 'Entrees', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'by_course', kds_display_group: 'Entrees', is_active: true },
+    { name: 'Desserts', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'by_course', kds_display_group: 'Desserts', is_active: true },
+    { name: 'Sides', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'inherit', kds_display_group: 'Sides', is_active: true },
+    { name: 'Drinks', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_fire_mode: 'immediate', kds_display_group: 'Drinks', is_active: true },
+    { name: 'Cocktails', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_fire_mode: 'immediate', kds_display_group: 'Bar', is_active: true },
+    { name: 'Beer & Wine', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_fire_mode: 'immediate', kds_display_group: 'Bar', is_active: true },
+    { name: 'Specials', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'inherit', kds_display_group: 'Specials', is_active: true },
+    { name: 'Other', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Expo', default_fire_mode: 'inherit', kds_display_group: 'Other', is_active: true },
   ]
 }
 
@@ -1360,14 +1358,19 @@ function normalizeMenuCategories(rows) {
       tax_rate_id: row?.tax_rate_id || '',
       routing_station_id: row?.routing_station_id || '',
       routing_station_name: row?.routing_station_name || '',
-      default_course_type: row?.default_course_type || '',
       default_fire_mode: row?.default_fire_mode || '',
-      prep_time_minutes: row?.prep_time_minutes != null ? String(row.prep_time_minutes) : '',
       kds_display_group: row?.kds_display_group || '',
       is_active: row?.is_active !== false,
     }))
-    .filter(row => row.name && row.is_active)
+    .filter(row => row.is_active)
   return normalized.length > 0 ? normalized : defaultMenuCategories()
+}
+
+function validateMenuCategories(rows) {
+  const blankIndex = normalizeMenuCategories(rows).findIndex(row => !row.name.trim())
+  if (blankIndex >= 0) {
+    throw new Error(`Menu category ${blankIndex + 1} needs a name. Use Remove to delete it.`)
+  }
 }
 
 function normalizeDiscountRules(rows) {
@@ -1487,9 +1490,7 @@ function menuCategoriesPayload(menuCategories) {
       tax_rate_id: row.tax_rate_id || null,
       routing_station_id: row.routing_station_id || null,
       routing_station_name: row.routing_station_name || null,
-      default_course_type: row.default_course_type || null,
       default_fire_mode: row.default_fire_mode || null,
-      prep_time_minutes: row.prep_time_minutes === '' ? null : Number(row.prep_time_minutes),
       kds_display_group: row.kds_display_group || null,
       is_active: true,
     })),
@@ -2566,7 +2567,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         if (!prev.disclosure || isDefaultPricingCopy(prev.disclosure, DEFAULT_PRICING_DISCLOSURES)) normalizedPatch.disclosure = defaultPricingDisclosure(patch.mode)
       }
       const next = normalizePricingPolicy({ ...prev, ...normalizedPatch })
-      if (Object.prototype.hasOwnProperty.call(patch, 'rate_percent')) next.rate_percent = patch.rate_percent
       return next
     })
   }
@@ -2593,9 +2593,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       onSourceSaved: (saved) => {
         setPricingPolicy(normalizePricingPolicy(saved))
         queryClient.setQueryData(queryKeys.pricingPolicy(restaurantId), saved)
-      },
-      afterSave: (_saved, targetIds) => {
-        targetIds.forEach((targetId) => void syncRatePlanFromPricingPolicy(targetId, payload, auth?.user?.id))
       },
     })
   }
@@ -2645,6 +2642,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   }
 
   const saveMenuCategories = async (publication) => {
+    validateMenuCategories(menuCategories)
     const payload = menuCategoriesPayload(menuCategories)
     await saveWithPropagation({
       sectionId: 'menu_categories',
@@ -3367,13 +3365,15 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   {PRICING_MODE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </SelectInput>
               </Field>
-              <Field label="Rate %">
-                <TextInput
-                  inputMode="decimal"
-                  value={pricingPolicy.rate_percent}
-                  onChange={event => updatePricingPolicy({ rate_percent: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) })}
-                  placeholder="3.5"
-                />
+              <Field label="Commercial Rate">
+                <div className="rounded-xl border border-white/10 bg-white/[0.025] px-4 py-3 text-sm text-dash-secondary">
+                  <span className="font-mono text-dash-cream">
+                    {(Number(pricingPolicy.rate || 0) * 100).toFixed(2).replace(/\.?0+$/, '')}%
+                  </span>
+                  <p className="mt-1 text-xs leading-5 text-dash-tertiary">
+                    Set by Shire or reseller terms. Owners can configure display rules, not the per-transaction rate.
+                  </p>
+                </div>
               </Field>
               <Field label="Basis">
                 <SelectInput value={pricingPolicy.basis} onChange={event => updatePricingPolicy({ basis: event.target.value })}>
@@ -4129,10 +4129,10 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
           </datalist>
           <div className="space-y-3">
             {normalizeMenuCategories(menuCategories).map((category, index) => (
-              <div key={category.id || `${category.name}:${index}`} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[1.2fr_1fr_1fr_0.8fr_0.8fr_0.7fr_auto]">
+              <div key={category.id || `menu-category-${index}`} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[1.2fr_1fr_1fr_0.9fr_1fr_auto]">
                 <TextInput value={category.name} onChange={event => updateMenuCategory(index, { name: event.target.value })} placeholder="Appetizers" />
                 <SelectInput value={category.tax_rate_id} onChange={event => updateMenuCategory(index, { tax_rate_id: event.target.value })}>
-                  <option value="">Default tax</option>
+                  <option value="">Use default tax</option>
                   {normalizeTaxRates(taxRates).map(rate => (
                     <option key={rate.id || rate.name} value={rate.id || ''}>{rate.name}{rate.rate ? ` · ${rate.rate}%` : ''}</option>
                   ))}
@@ -4143,35 +4143,25 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   onChange={event => updateMenuCategory(index, { routing_station_name: event.target.value, routing_station_id: '' })}
                   placeholder="Kitchen, Bar, Expo"
                 />
-                <SelectInput value={category.default_course_type} onChange={event => updateMenuCategory(index, { default_course_type: event.target.value })}>
-                  <option value="">Course default</option>
-                  <option value="appetizer">App</option>
-                  <option value="entree">Entree</option>
-                  <option value="dessert">Dessert</option>
-                  <option value="drink">Drink</option>
-                  <option value="side">Side</option>
-                  <option value="other">Other</option>
-                  <option value="none">None</option>
-                </SelectInput>
                 <SelectInput value={category.default_fire_mode} onChange={event => updateMenuCategory(index, { default_fire_mode: event.target.value })}>
-                  <option value="">Fire default</option>
-                  <option value="inherit">Inherit</option>
+                  <option value="">Use order default</option>
+                  <option value="inherit">Use order default</option>
                   <option value="immediate">Immediate</option>
                   <option value="hold">Hold</option>
                   <option value="manual">Manual</option>
                   <option value="by_course">By course</option>
                 </SelectInput>
-                <TextInput value={category.prep_time_minutes} onChange={event => updateMenuCategory(index, { prep_time_minutes: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="Prep min" />
+                <TextInput value={category.kds_display_group} onChange={event => updateMenuCategory(index, { kds_display_group: event.target.value })} placeholder="KDS group" />
                 <SmallButton variant="danger" onClick={() => setMenuCategories(prev => normalizeMenuCategories(prev).filter((_, currentIndex) => currentIndex !== index))}>Remove</SmallButton>
-                <div className="lg:col-span-7">
-                  <TextInput value={category.kds_display_group} onChange={event => updateMenuCategory(index, { kds_display_group: event.target.value })} placeholder="KDS display group" />
+                <div className="text-xs text-dash-tertiary lg:col-span-6">
+                  Fire timing is the default for new items in this category. Individual items can override it.
                 </div>
               </div>
             ))}
           </div>
           <div className="mt-4">
             <SmallButton
-              onClick={() => setMenuCategories(prev => [...normalizeMenuCategories(prev), { name: `Custom Category ${prev.length + 1}`, tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: '', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: '', is_active: true }])}
+              onClick={() => setMenuCategories(prev => [...normalizeMenuCategories(prev), { name: `Custom Category ${prev.length + 1}`, tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'inherit', kds_display_group: '', is_active: true }])}
             >
               Add category
             </SmallButton>

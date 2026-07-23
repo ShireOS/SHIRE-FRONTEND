@@ -85,6 +85,12 @@ const MENU_OPTIONS: MenuImportOption[] = [
   },
 ]
 
+const priceString = (value: unknown) => {
+  if (value == null || value === '') return ''
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) && numberValue > 0 ? String(value) : ''
+}
+
 export function MenuStep({ onboarding }: MenuStepProps) {
   const { data, updateData, saveMenuProgress, nextStep, isLoading, error } = onboarding
   const restaurantId = onboarding.restaurantId ?? ''
@@ -110,7 +116,7 @@ export function MenuStep({ onboarding }: MenuStepProps) {
           name: item.name ?? '',
           category: item.category ?? '',
           menu_category_id: item.menu_category_id ?? undefined,
-          price: item.price != null ? String(item.price) : '',
+          price: priceString(item.price),
           description: item.description ?? '',
           is_available: item.is_available !== false,
           availability_mode: item.availability_mode || 'always',
@@ -121,12 +127,8 @@ export function MenuStep({ onboarding }: MenuStepProps) {
           availability_start_date: item.availability_start_date || '',
           availability_end_date: item.availability_end_date || '',
           availability_notes: item.availability_notes || '',
-          course_type: item.course_type || '',
           fire_mode: item.fire_mode || '',
-          routing_station_id: item.routing_station_id || '',
-          prep_time_minutes: item.prep_time_minutes != null ? String(item.prep_time_minutes) : '',
           kds_display_group: item.kds_display_group || '',
-          item_routing_notes: item.item_routing_notes || '',
         })))
       }
     }

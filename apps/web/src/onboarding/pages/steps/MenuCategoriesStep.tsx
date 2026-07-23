@@ -6,17 +6,8 @@ interface MenuCategoriesStepProps {
 
 const inputClass = 'w-full min-w-0 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]'
 const DEFAULT_STATIONS = ['Kitchen', 'Bar', 'Expo', 'Dessert', 'Coffee']
-const COURSES = [
-  ['', 'No default'],
-  ['appetizer', 'App'],
-  ['entree', 'Entree'],
-  ['dessert', 'Dessert'],
-  ['drink', 'Drink'],
-  ['side', 'Side'],
-  ['other', 'Other'],
-] as const
 const FIRE_MODES = [
-  ['', 'Inherit'],
+  ['', 'Use order default'],
   ['immediate', 'Immediate'],
   ['hold', 'Hold'],
   ['manual', 'Manual'],
@@ -29,9 +20,7 @@ function blankCategory(index: number): MenuCategoryData {
     tax_rate_id: '',
     routing_station_id: '',
     routing_station_name: 'Kitchen',
-    default_course_type: '',
     default_fire_mode: 'inherit',
-    prep_time_minutes: '',
     kds_display_group: '',
     is_active: true,
   }
@@ -74,61 +63,69 @@ export function MenuCategoriesStep({ onboarding }: MenuCategoriesStepProps) {
 
       <div className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-4">
         <p className="text-sm text-[rgb(var(--text-secondary))]">
-          Create menu categories like appetizers, entrees, desserts, cocktails, and custom groups. Each can inherit the default tax or use a tax override, and each can route to a logical prep station.
+          Create the menu categories your restaurant actually uses, like appetizers, entrees, desserts, cocktails, happy hour, or custom groups. Tax, prep station, fire timing, and KDS group are defaults for new items in that category.
         </p>
       </div>
 
       <div className="space-y-3">
         {categories.map((category, index) => (
-          <div key={category.id || `${category.name}:${index}`} className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-4">
-            <div className="grid gap-3 md:grid-cols-[1.2fr_1fr_1fr_0.8fr_0.8fr_0.7fr_auto]">
-              <input
-                value={category.name}
-                onChange={(event) => updateCategory(index, { name: event.target.value })}
-                className={inputClass}
-                placeholder="Appetizers"
-              />
-              <select value={category.tax_rate_id} onChange={(event) => updateCategory(index, { tax_rate_id: event.target.value })} className={inputClass}>
-                <option value="" className="bg-[#1a1a1a]">Default tax</option>
-                {taxRates.map(rate => (
-                  <option key={rate.id || rate.name} value={rate.id || ''} className="bg-[#1a1a1a]">
-                    {rate.name}{rate.rate ? ` · ${rate.rate}%` : ''}
-                  </option>
-                ))}
-              </select>
-              <input
-                value={category.routing_station_name}
-                onChange={(event) => updateCategory(index, { routing_station_name: event.target.value, routing_station_id: '' })}
-                className={inputClass}
-                list="menu-category-stations"
-                placeholder="Kitchen, Bar, Expo"
-              />
-              <select value={category.default_course_type || ''} onChange={(event) => updateCategory(index, { default_course_type: event.target.value as MenuCategoryData['default_course_type'] })} className={inputClass}>
-                {COURSES.map(([value, label]) => <option key={value} value={value} className="bg-[#1a1a1a]">{label}</option>)}
-              </select>
-              <select value={category.default_fire_mode || ''} onChange={(event) => updateCategory(index, { default_fire_mode: event.target.value as MenuCategoryData['default_fire_mode'] })} className={inputClass}>
-                {FIRE_MODES.map(([value, label]) => <option key={value} value={value} className="bg-[#1a1a1a]">{label}</option>)}
-              </select>
-              <input
-                value={category.prep_time_minutes || ''}
-                onChange={(event) => updateCategory(index, { prep_time_minutes: event.target.value.replace(/\D/g, '').slice(0, 3) })}
-                className={inputClass}
-                placeholder="Prep min"
-              />
+          <div key={category.id || `menu-category-${index}`} className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-4">
+            <div className="grid gap-3 md:grid-cols-[1.2fr_1fr_auto]">
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">Category name</span>
+                <input
+                  value={category.name}
+                  onChange={(event) => updateCategory(index, { name: event.target.value })}
+                  className={inputClass}
+                  placeholder="Appetizers"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">Tax override</span>
+                <select value={category.tax_rate_id} onChange={(event) => updateCategory(index, { tax_rate_id: event.target.value })} className={inputClass}>
+                  <option value="" className="bg-[#1a1a1a]">Use default tax</option>
+                  {taxRates.map(rate => (
+                    <option key={rate.id || rate.name} value={rate.id || ''} className="bg-[#1a1a1a]">
+                      {rate.name}{rate.rate ? ` · ${rate.rate}%` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button
                 type="button"
                 onClick={() => removeCategory(index)}
-                className="rounded-lg border border-red-500/20 px-3 py-2 text-xs font-semibold text-red-300 transition hover:bg-red-500/10"
+                className="self-end rounded-lg border border-red-500/20 px-3 py-2 text-xs font-semibold text-red-300 transition hover:bg-red-500/10"
               >
                 Remove
               </button>
             </div>
-            <input
-              value={category.kds_display_group || ''}
-              onChange={(event) => updateCategory(index, { kds_display_group: event.target.value })}
-              className={`${inputClass} mt-3`}
-              placeholder="KDS display group, e.g. Grill, Bar, Desserts"
-            />
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">Default prep station</span>
+                <input
+                  value={category.routing_station_name}
+                  onChange={(event) => updateCategory(index, { routing_station_name: event.target.value, routing_station_id: '' })}
+                  className={inputClass}
+                  list="menu-category-stations"
+                  placeholder="Kitchen, Bar, Expo"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">Fire timing default</span>
+                <select value={category.default_fire_mode || ''} onChange={(event) => updateCategory(index, { default_fire_mode: event.target.value as MenuCategoryData['default_fire_mode'] })} className={inputClass}>
+                  {FIRE_MODES.map(([value, label]) => <option key={value} value={value} className="bg-[#1a1a1a]">{label}</option>)}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">KDS group</span>
+                <input
+                  value={category.kds_display_group || ''}
+                  onChange={(event) => updateCategory(index, { kds_display_group: event.target.value })}
+                  className={inputClass}
+                  placeholder="Grill, Bar, Desserts"
+                />
+              </label>
+            </div>
           </div>
         ))}
       </div>
