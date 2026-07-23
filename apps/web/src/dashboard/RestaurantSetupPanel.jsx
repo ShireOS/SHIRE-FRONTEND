@@ -26,6 +26,7 @@ const SETUP_TABS = [
   // the tab is intentionally not surfaced here to avoid duplicate config.
   { id: 'sections', label: 'Sections' },
   { id: 'hours', label: 'Hours' },
+  { id: 'reservation_timing', label: 'Reservations' },
   { id: 'capacity', label: 'Capacity / Floor Plan' },
   { id: 'menu_categories', label: 'Menu Categories' },
   { id: 'specials', label: 'Specials' },
@@ -50,6 +51,7 @@ const SETUP_PROPAGATION = {
   tips_payroll: 'general',
   sections: 'specified',
   hours: 'specified',
+  reservation_timing: 'specified',
   capacity: 'specified',
   menu_categories: 'general',
 }
@@ -113,6 +115,27 @@ const DEFAULT_HOURS = [
   { day_of_week: 5, open_time: '11:00', close_time: '23:00', is_closed: false },
   { day_of_week: 6, open_time: '11:00', close_time: '23:00', is_closed: false },
 ]
+
+const DEFAULT_RESERVATION_TIMING = {
+  reservation_timing_same_for_channels: true,
+  reservation_online_booking_horizon_days: '30',
+  reservation_online_lead_time_minutes: '120',
+  reservation_online_grace_period_minutes: '15',
+  reservation_staff_booking_horizon_days: '30',
+  reservation_staff_lead_time_minutes: '120',
+  reservation_staff_grace_period_minutes: '15',
+  reservation_slot_interval_minutes: '15',
+  reservation_min_party_size: '1',
+  reservation_max_party_size: '10',
+  reservation_default_duration_minutes: '90',
+  reservation_windows_follow_operating_hours: true,
+}
+
+const RESERVATIONS_API_BASE_URL = (
+  import.meta.env.VITE_RESERVATIONS_API_BASE_URL ||
+  import.meta.env.VITE_RESERVATIONS_API_BASE ||
+  'http://localhost:4100/api/v1'
+).replace(/\/+$/, '')
 
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   const hours = Math.floor(i / 2)
@@ -966,6 +989,158 @@ function normalizeSectionProfiles(rows, names = []) {
 
 function sanitizeNumber(value) {
   return String(value ?? '').replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1').slice(0, 10)
+}
+
+function clampInteger(value, fallback, min, max) {
+  const parsed = Number.parseInt(String(value ?? ''), 10)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, parsed))
+}
+
+const reservationConfigString = (value, fallback) => {
+  const text = String(value ?? '').trim()
+  return text === '' ? String(fallback) : text
+}
+
+function normalizeReservationTiming(raw = {}) {
+  const source = raw && typeof raw === 'object' ? raw : {}
+  return {
+    reservation_timing_same_for_channels:
+      typeof source.reservation_timing_same_for_channels === 'boolean'
+        ? source.reservation_timing_same_for_channels
+        : DEFAULT_RESERVATION_TIMING.reservation_timing_same_for_channels,
+    reservation_online_booking_horizon_days: reservationConfigString(source.reservation_online_booking_horizon_days, DEFAULT_RESERVATION_TIMING.reservation_online_booking_horizon_days),
+    reservation_online_lead_time_minutes: reservationConfigString(source.reservation_online_lead_time_minutes, DEFAULT_RESERVATION_TIMING.reservation_online_lead_time_minutes),
+    reservation_online_grace_period_minutes: reservationConfigString(source.reservation_online_grace_period_minutes, DEFAULT_RESERVATION_TIMING.reservation_online_grace_period_minutes),
+    reservation_staff_booking_horizon_days: reservationConfigString(source.reservation_staff_booking_horizon_days, DEFAULT_RESERVATION_TIMING.reservation_staff_booking_horizon_days),
+    reservation_staff_lead_time_minutes: reservationConfigString(source.reservation_staff_lead_time_minutes, DEFAULT_RESERVATION_TIMING.reservation_staff_lead_time_minutes),
+    reservation_staff_grace_period_minutes: reservationConfigString(source.reservation_staff_grace_period_minutes, DEFAULT_RESERVATION_TIMING.reservation_staff_grace_period_minutes),
+    reservation_slot_interval_minutes: reservationConfigString(source.reservation_slot_interval_minutes, DEFAULT_RESERVATION_TIMING.reservation_slot_interval_minutes),
+    reservation_min_party_size: reservationConfigString(source.reservation_min_party_size, DEFAULT_RESERVATION_TIMING.reservation_min_party_size),
+    reservation_max_party_size: reservationConfigString(source.reservation_max_party_size, DEFAULT_RESERVATION_TIMING.reservation_max_party_size),
+    reservation_default_duration_minutes: reservationConfigString(source.reservation_default_duration_minutes, DEFAULT_RESERVATION_TIMING.reservation_default_duration_minutes),
+    reservation_windows_follow_operating_hours:
+      typeof source.reservation_windows_follow_operating_hours === 'boolean'
+        ? source.reservation_windows_follow_operating_hours
+        : DEFAULT_RESERVATION_TIMING.reservation_windows_follow_operating_hours,
+  }
+}
+
+function reservationTimingPayload(data) {
+  const slotIntervalMinutes = clampInteger(data.reservation_slot_interval_minutes, 15, 5, 180)
+  const minPartySize = clampInteger(data.reservation_min_party_size, 1, 1, 99)
+  const maxPartySize = Math.max(minPartySize, clampInteger(data.reservation_max_party_size, 10, 1, 99))
+  const defaultDurationMinutes = clampInteger(data.reservation_default_duration_minutes, 90, 15, 240)
+  const online = {
+    bookingHorizonDays: clampInteger(data.reservation_online_booking_horizon_days, 30, 0, 365),
+    leadTimeMinutes: clampInteger(data.reservation_online_lead_time_minutes, 120, 0, 10080),
+    gracePeriodMinutes: clampInteger(data.reservation_online_grace_period_minutes, 15, 0, 360),
+  }
+  const staff = data.reservation_timing_same_for_channels
+    ? { ...online }
+    : {
+        bookingHorizonDays: clampInteger(data.reservation_staff_booking_horizon_days, online.bookingHorizonDays, 0, 365),
+        leadTimeMinutes: clampInteger(data.reservation_staff_lead_time_minutes, online.leadTimeMinutes, 0, 10080),
+        gracePeriodMinutes: clampInteger(data.reservation_staff_grace_period_minutes, online.gracePeriodMinutes, 0, 360),
+      }
+  return {
+    reservation_timing_same_for_channels: data.reservation_timing_same_for_channels,
+    reservation_online_booking_horizon_days: String(online.bookingHorizonDays),
+    reservation_online_lead_time_minutes: String(online.leadTimeMinutes),
+    reservation_online_grace_period_minutes: String(online.gracePeriodMinutes),
+    reservation_staff_booking_horizon_days: String(staff.bookingHorizonDays),
+    reservation_staff_lead_time_minutes: String(staff.leadTimeMinutes),
+    reservation_staff_grace_period_minutes: String(staff.gracePeriodMinutes),
+    reservation_slot_interval_minutes: String(slotIntervalMinutes),
+    reservation_min_party_size: String(minPartySize),
+    reservation_max_party_size: String(maxPartySize),
+    reservation_default_duration_minutes: String(defaultDurationMinutes),
+    reservation_windows_follow_operating_hours: data.reservation_windows_follow_operating_hours,
+    timingPolicies: { online, staff },
+  }
+}
+
+const reservationDayOfWeek = (operatingDayOfWeek) => (Number(operatingDayOfWeek) + 6) % 7
+
+function reservationPeriodsFromHours(timing, operatingHours, existingPeriods = []) {
+  const payload = reservationTimingPayload(timing)
+  const existingByDay = new Map(
+    existingPeriods
+      .filter(period => typeof period.dayOfWeek === 'number')
+      .map(period => [Number(period.dayOfWeek), period])
+  )
+  return normalizeHours(operatingHours).map(day => {
+    const dayOfWeek = reservationDayOfWeek(day.day_of_week)
+    const existing = existingByDay.get(dayOfWeek)
+    return {
+      id: typeof existing?.id === 'string' ? existing.id : undefined,
+      name: dayOfWeek >= 4 ? 'Weekend Reservations' : 'Reservations',
+      dayOfWeek,
+      startTime: `${day.open_time}:00`,
+      endTime: `${day.close_time}:00`,
+      slotIntervalMinutes: Number(payload.reservation_slot_interval_minutes),
+      leadTimeMinutes: Number(payload.reservation_staff_lead_time_minutes),
+      minPartySize: Number(payload.reservation_min_party_size),
+      maxPartySize: Number(payload.reservation_max_party_size),
+      defaultDurationMinutes: Number(payload.reservation_default_duration_minutes),
+      active: !day.is_closed,
+    }
+  })
+}
+
+function reservationPeriodsWithDefaults(timing, periods) {
+  const payload = reservationTimingPayload(timing)
+  return periods.map(period => ({
+    ...period,
+    slotIntervalMinutes: Number(payload.reservation_slot_interval_minutes),
+    minPartySize: Number(payload.reservation_min_party_size),
+    maxPartySize: Number(payload.reservation_max_party_size),
+    defaultDurationMinutes: Number(payload.reservation_default_duration_minutes),
+  }))
+}
+
+const numericReservationValues = (records, field) =>
+  (Array.isArray(records) ? records : [])
+    .map(record => Number(record?.[field]))
+    .filter(Number.isFinite)
+
+const firstReservationValue = (records, field, fallback) => {
+  const value = numericReservationValues(records, field)[0]
+  return Number.isFinite(value) ? String(value) : fallback
+}
+
+function reservationTimingFromSettings(settings) {
+  if (!settings || typeof settings !== 'object') return null
+  const servicePeriods = Array.isArray(settings.servicePeriods)
+    ? settings.servicePeriods.filter(period => period && typeof period === 'object')
+    : []
+  const timingPolicies = settings.timingPolicies && typeof settings.timingPolicies === 'object' ? settings.timingPolicies : {}
+  const online = timingPolicies.online && typeof timingPolicies.online === 'object' ? timingPolicies.online : {}
+  const staff = timingPolicies.staff && typeof timingPolicies.staff === 'object' ? timingPolicies.staff : {}
+  const onlinePatch = {
+    reservation_online_booking_horizon_days: reservationConfigString(online.bookingHorizonDays, reservationConfigString(settings.bookingHorizonDays, DEFAULT_RESERVATION_TIMING.reservation_online_booking_horizon_days)),
+    reservation_online_lead_time_minutes: reservationConfigString(online.leadTimeMinutes, DEFAULT_RESERVATION_TIMING.reservation_online_lead_time_minutes),
+    reservation_online_grace_period_minutes: reservationConfigString(online.gracePeriodMinutes, reservationConfigString(settings.gracePeriodMinutes, DEFAULT_RESERVATION_TIMING.reservation_online_grace_period_minutes)),
+  }
+  const staffPatch = {
+    reservation_staff_booking_horizon_days: reservationConfigString(staff.bookingHorizonDays, onlinePatch.reservation_online_booking_horizon_days),
+    reservation_staff_lead_time_minutes: reservationConfigString(staff.leadTimeMinutes, onlinePatch.reservation_online_lead_time_minutes),
+    reservation_staff_grace_period_minutes: reservationConfigString(staff.gracePeriodMinutes, onlinePatch.reservation_online_grace_period_minutes),
+  }
+  const minPartyValues = numericReservationValues(servicePeriods, 'minPartySize')
+  const maxPartyValues = numericReservationValues(servicePeriods, 'maxPartySize')
+  return normalizeReservationTiming({
+    ...onlinePatch,
+    ...staffPatch,
+    reservation_slot_interval_minutes: reservationConfigString(settings.defaultSlotIntervalMinutes, DEFAULT_RESERVATION_TIMING.reservation_slot_interval_minutes),
+    reservation_min_party_size: minPartyValues.length ? String(Math.min(...minPartyValues)) : DEFAULT_RESERVATION_TIMING.reservation_min_party_size,
+    reservation_max_party_size: maxPartyValues.length ? String(Math.max(...maxPartyValues)) : DEFAULT_RESERVATION_TIMING.reservation_max_party_size,
+    reservation_default_duration_minutes: firstReservationValue(servicePeriods, 'defaultDurationMinutes', DEFAULT_RESERVATION_TIMING.reservation_default_duration_minutes),
+    reservation_timing_same_for_channels:
+      onlinePatch.reservation_online_booking_horizon_days === staffPatch.reservation_staff_booking_horizon_days &&
+      onlinePatch.reservation_online_lead_time_minutes === staffPatch.reservation_staff_lead_time_minutes &&
+      onlinePatch.reservation_online_grace_period_minutes === staffPatch.reservation_staff_grace_period_minutes,
+  })
 }
 
 function defaultTaxRate() {
@@ -2022,6 +2197,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [sectionProfiles, setSectionProfiles] = useState([])
   const [hours, setHours] = useState(DEFAULT_HOURS)
   const [sameHours, setSameHours] = useState(true)
+  const [reservationTiming, setReservationTiming] = useState(() => normalizeReservationTiming(restaurant.config))
   const [floorTables, setFloorTables] = useState([])
   const [floorPlanMode, setFloorPlanMode] = useState(null)
   const [menuItems, setMenuItems] = useState([])
@@ -2072,6 +2248,48 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       method: 'PUT',
       body: JSON.stringify(body),
     })
+
+  const fetchReservationSettings = async (targetRestaurantId) => {
+    const { data: sessionData } = await supabase.auth.getSession()
+    const headers = new Headers()
+    headers.set('Content-Type', 'application/json')
+    if (sessionData?.session?.access_token) headers.set('Authorization', `Bearer ${sessionData.session.access_token}`)
+    const response = await fetch(`${RESERVATIONS_API_BASE_URL}/locations/${targetRestaurantId}/reservation-settings`, { headers })
+    if (!response.ok) return null
+    return response.json()
+  }
+
+  const saveReservationSettings = async (targetRestaurantId, timing, operatingHours) => {
+    const currentSettings = await fetchReservationSettings(targetRestaurantId)
+    const existingPeriods = Array.isArray(currentSettings?.servicePeriods)
+      ? currentSettings.servicePeriods.filter(period => period && typeof period === 'object')
+      : []
+    const payload = reservationTimingPayload(timing)
+    const servicePeriods = timing.reservation_windows_follow_operating_hours
+      ? reservationPeriodsFromHours(timing, operatingHours, existingPeriods)
+      : existingPeriods.length > 0
+        ? reservationPeriodsWithDefaults(timing, existingPeriods)
+        : reservationPeriodsFromHours(timing, operatingHours, existingPeriods)
+    const { data: sessionData } = await supabase.auth.getSession()
+    const headers = new Headers()
+    headers.set('Content-Type', 'application/json')
+    if (sessionData?.session?.access_token) headers.set('Authorization', `Bearer ${sessionData.session.access_token}`)
+    const response = await fetch(`${RESERVATIONS_API_BASE_URL}/locations/${targetRestaurantId}/reservation-settings`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        bookingHorizonDays: Number(payload.reservation_online_booking_horizon_days),
+        gracePeriodMinutes: Number(payload.reservation_online_grace_period_minutes),
+        defaultSlotIntervalMinutes: Number(payload.reservation_slot_interval_minutes),
+        servicePeriods,
+        timingPolicies: payload.timingPolicies,
+      }),
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body?.message || `Saving reservation timing failed (${response.status})`)
+    }
+  }
 
   const saveHoursForRestaurant = async (targetRestaurantId, nextHours) => {
     const { error: deleteError } = await supabase
@@ -2194,6 +2412,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     setPricingPolicy(prev => normalizePricingPolicy({ ...prev, jurisdiction_state: prev.jurisdiction_state || restaurant.state || 'SC' }))
     setDailySpecialSettings(normalizeDailySpecialSettings(restaurant.config))
     setServiceModel(initialServiceModel(restaurant))
+    setReservationTiming(normalizeReservationTiming(restaurant.config))
     setSaveMessage('')
   }, [restaurant])
 
@@ -2391,6 +2610,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         scoped('Check workflow', () => cached(queryKeys.checkWorkflowSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/check-workflow-settings`)), null),
         scoped('Tips and payroll', () => cached(queryKeys.tipsPayrollSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`)), null),
         scoped('Pricing policy', () => cached(queryKeys.pricingPolicy(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pricing-policy`)), null),
+        scoped('Reservation timing', () => fetchReservationSettings(restaurantId), null),
       ])
       const [
         staffRows,
@@ -2407,6 +2627,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         checkWorkflowData,
         tipPayrollData,
         pricingPolicyData,
+        reservationSettingsData,
       ] = results.map(result => result.value)
 
       const normalized = normalizeHours(hoursRows)
@@ -2430,6 +2651,11 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setCheckWorkflowSettings(normalizeCheckWorkflowSettings(checkWorkflowData))
       setTipPayrollSettings(normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes))
       setPricingPolicy(normalizePricingPolicy(pricingPolicyData || { jurisdiction_state: restaurant.state || 'SC' }))
+      {
+        const configReservationTiming = normalizeReservationTiming(restaurant.config)
+        const serviceReservationTiming = reservationTimingFromSettings(reservationSettingsData)
+        setReservationTiming(serviceReservationTiming ? { ...configReservationTiming, ...serviceReservationTiming } : configReservationTiming)
+      }
       const failedLabels = results.filter(result => result.error).map(result => result.label)
       const specialsResult = await scoped('Daily specials', loadDailySpecials, null)
       if (specialsResult.error) failedLabels.push(specialsResult.label)
@@ -2902,6 +3128,66 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       },
       publication,
       buildCommand: (targetId) => ({ method: 'PUT', path: `/restaurants/${targetId}/operating-hours`, body: { hours }, target_type: 'restaurant', target_id: targetId }),
+    })
+  }
+
+  const updateReservationTiming = (patch) => {
+    setReservationTiming(prev => {
+      const next = normalizeReservationTiming({ ...prev, ...patch })
+      if (patch.reservation_timing_same_for_channels === true) {
+        next.reservation_staff_booking_horizon_days = next.reservation_online_booking_horizon_days
+        next.reservation_staff_lead_time_minutes = next.reservation_online_lead_time_minutes
+        next.reservation_staff_grace_period_minutes = next.reservation_online_grace_period_minutes
+      }
+      if (
+        next.reservation_timing_same_for_channels &&
+        (
+          Object.prototype.hasOwnProperty.call(patch, 'reservation_online_booking_horizon_days') ||
+          Object.prototype.hasOwnProperty.call(patch, 'reservation_online_lead_time_minutes') ||
+          Object.prototype.hasOwnProperty.call(patch, 'reservation_online_grace_period_minutes')
+        )
+      ) {
+        next.reservation_staff_booking_horizon_days = next.reservation_online_booking_horizon_days
+        next.reservation_staff_lead_time_minutes = next.reservation_online_lead_time_minutes
+        next.reservation_staff_grace_period_minutes = next.reservation_online_grace_period_minutes
+      }
+      return next
+    })
+  }
+
+  const saveReservationTiming = async (publication) => {
+    const payload = reservationTimingPayload(reservationTiming)
+    const configPatch = {
+      reservation_timing_same_for_channels: payload.reservation_timing_same_for_channels,
+      reservation_online_booking_horizon_days: payload.reservation_online_booking_horizon_days,
+      reservation_online_lead_time_minutes: payload.reservation_online_lead_time_minutes,
+      reservation_online_grace_period_minutes: payload.reservation_online_grace_period_minutes,
+      reservation_staff_booking_horizon_days: payload.reservation_staff_booking_horizon_days,
+      reservation_staff_lead_time_minutes: payload.reservation_staff_lead_time_minutes,
+      reservation_staff_grace_period_minutes: payload.reservation_staff_grace_period_minutes,
+      reservation_slot_interval_minutes: payload.reservation_slot_interval_minutes,
+      reservation_min_party_size: payload.reservation_min_party_size,
+      reservation_max_party_size: payload.reservation_max_party_size,
+      reservation_default_duration_minutes: payload.reservation_default_duration_minutes,
+      reservation_windows_follow_operating_hours: payload.reservation_windows_follow_operating_hours,
+    }
+    await saveWithPropagation({
+      sectionId: 'reservation_timing',
+      label: 'Reservation Timing',
+      propagation: SETUP_PROPAGATION.reservation_timing,
+      successMessage: 'Saved reservation timing.',
+      saveSource: async (targetId) => {
+        await saveReservationSettings(targetId, payload, hours)
+        return mergeRestaurantConfig(targetId, configPatch)
+      },
+      saveTarget: async (targetId) => {
+        await saveReservationSettings(targetId, payload, hours)
+        return mergeRestaurantConfig(targetId, configPatch)
+      },
+      onSourceSaved: () => {
+        setReservationTiming(normalizeReservationTiming(configPatch))
+      },
+      publication,
     })
   }
 
@@ -4029,6 +4315,100 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               })}
             </div>
           )}
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'reservation_timing' && (
+        <SectionShell
+          title="Reservation Timing"
+          description="Booking windows, party limits, turn time, and whether online and staff-created reservations share the same timing."
+          actions={
+            <SmallButton variant="primary" onClick={() => void saveReservationTiming()} disabled={isSaving}>
+              {isSaving ? 'Saving...' : 'Save reservations'}
+            </SmallButton>
+          }
+        >
+          <div className="space-y-5">
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-dash-cream">Reservation channel timing</p>
+                  <p className="mt-1 text-sm leading-6 text-dash-secondary">
+                    Use one timing policy for online booking and host-created reservations, or split them when staff need more flexibility.
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <SmallButton variant={reservationTiming.reservation_timing_same_for_channels ? 'primary' : 'secondary'} onClick={() => updateReservationTiming({ reservation_timing_same_for_channels: true })}>Same</SmallButton>
+                  <SmallButton variant={!reservationTiming.reservation_timing_same_for_channels ? 'primary' : 'secondary'} onClick={() => updateReservationTiming({ reservation_timing_same_for_channels: false })}>Different</SmallButton>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <p className="label-mono mb-3">Slots & Parties</p>
+              <div className="grid gap-3 md:grid-cols-4">
+                <Field label="Slot spacing">
+                  <TextInput inputMode="numeric" value={reservationTiming.reservation_slot_interval_minutes} onChange={event => updateReservationTiming({ reservation_slot_interval_minutes: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="15" />
+                </Field>
+                <Field label="Min party">
+                  <TextInput inputMode="numeric" value={reservationTiming.reservation_min_party_size} onChange={event => updateReservationTiming({ reservation_min_party_size: event.target.value.replace(/\D/g, '').slice(0, 2) })} placeholder="1" />
+                </Field>
+                <Field label="Max party">
+                  <TextInput inputMode="numeric" value={reservationTiming.reservation_max_party_size} onChange={event => updateReservationTiming({ reservation_max_party_size: event.target.value.replace(/\D/g, '').slice(0, 2) })} placeholder="10" />
+                </Field>
+                <Field label="Turn time">
+                  <TextInput inputMode="numeric" value={reservationTiming.reservation_default_duration_minutes} onChange={event => updateReservationTiming({ reservation_default_duration_minutes: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="90" />
+                </Field>
+              </div>
+              <button
+                type="button"
+                onClick={() => updateReservationTiming({ reservation_windows_follow_operating_hours: !reservationTiming.reservation_windows_follow_operating_hours })}
+                className={[
+                  'mt-4 w-full rounded-xl border p-4 text-left text-sm transition',
+                  reservationTiming.reservation_windows_follow_operating_hours
+                    ? 'border-dash-gold/60 bg-dash-gold/10 text-dash-cream'
+                    : 'border-white/10 text-dash-secondary hover:border-dash-gold/50',
+                ].join(' ')}
+              >
+                <span className="font-semibold">Use operating hours as reservation windows</span>
+                <span className="mt-1 block text-xs leading-5 text-dash-tertiary">
+                  Closed days stay closed, and open/close times from the Hours tab become reservation service periods.
+                </span>
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <p className="label-mono mb-3">Online Booking</p>
+              <div className="grid gap-3 md:grid-cols-3">
+                <Field label="Book ahead days">
+                  <TextInput inputMode="numeric" value={reservationTiming.reservation_online_booking_horizon_days} onChange={event => updateReservationTiming({ reservation_online_booking_horizon_days: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="30" />
+                </Field>
+                <Field label="Lead time minutes">
+                  <TextInput inputMode="numeric" value={reservationTiming.reservation_online_lead_time_minutes} onChange={event => updateReservationTiming({ reservation_online_lead_time_minutes: event.target.value.replace(/\D/g, '').slice(0, 5) })} placeholder="120" />
+                </Field>
+                <Field label="No-show grace minutes">
+                  <TextInput inputMode="numeric" value={reservationTiming.reservation_online_grace_period_minutes} onChange={event => updateReservationTiming({ reservation_online_grace_period_minutes: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="15" />
+                </Field>
+              </div>
+            </div>
+
+            {!reservationTiming.reservation_timing_same_for_channels && (
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                <p className="label-mono mb-3">Staff, Phone & Walk-in</p>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <Field label="Book ahead days">
+                    <TextInput inputMode="numeric" value={reservationTiming.reservation_staff_booking_horizon_days} onChange={event => updateReservationTiming({ reservation_staff_booking_horizon_days: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="30" />
+                  </Field>
+                  <Field label="Lead time minutes">
+                    <TextInput inputMode="numeric" value={reservationTiming.reservation_staff_lead_time_minutes} onChange={event => updateReservationTiming({ reservation_staff_lead_time_minutes: event.target.value.replace(/\D/g, '').slice(0, 5) })} placeholder="120" />
+                  </Field>
+                  <Field label="No-show grace minutes">
+                    <TextInput inputMode="numeric" value={reservationTiming.reservation_staff_grace_period_minutes} onChange={event => updateReservationTiming({ reservation_staff_grace_period_minutes: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="15" />
+                  </Field>
+                </div>
+              </div>
+            )}
+          </div>
         </SectionShell>
       )}
 
