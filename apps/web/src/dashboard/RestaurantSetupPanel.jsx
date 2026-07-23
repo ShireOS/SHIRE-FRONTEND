@@ -491,7 +491,7 @@ function StaffRoleAssignment({ waiter, jobCodes, onChange }) {
   }
 
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       <SelectInput
         value={primaryRole}
         onChange={event => {
@@ -504,7 +504,7 @@ function StaffRoleAssignment({ waiter, jobCodes, onChange }) {
           <option value={primaryRole}>{primaryRole}</option>
         )}
       </SelectInput>
-      <div className="flex flex-wrap gap-1">
+      <div className="flex min-w-0 flex-wrap gap-1">
         {availableRoles.map(code => {
           const role = roleCodeFromJobCode(code)
           const selected = assignedRoles.includes(role)
@@ -516,7 +516,7 @@ function StaffRoleAssignment({ waiter, jobCodes, onChange }) {
               onClick={() => toggleRole(role)}
               disabled={selected && assignedRoles.length === 1}
               className={[
-                'rounded-full border px-2 py-1 text-[11px] font-semibold transition disabled:cursor-default disabled:opacity-80',
+                'rounded-full border px-2 py-1 text-[11px] font-semibold leading-none transition disabled:cursor-default disabled:opacity-80',
                 selected
                   ? 'border-dash-gold/60 bg-dash-gold/15 text-dash-cream'
                   : 'border-white/10 text-dash-tertiary hover:border-dash-gold/60 hover:text-dash-cream',
@@ -543,7 +543,7 @@ function SmallButton({ children, onClick, variant = 'secondary', disabled = fals
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-xl px-3 py-2 text-sm font-semibold transition disabled:opacity-50 ${classes}`}
+      className={`inline-flex min-h-10 items-center justify-center whitespace-nowrap rounded-xl px-3 py-2 text-sm font-semibold transition disabled:opacity-50 ${classes}`}
     >
       {children}
     </button>
@@ -1053,7 +1053,10 @@ function defaultRolePermission(roleKey) {
 function rolePermissionKeys(jobCodes = []) {
   const seen = new Set()
   const keys = []
-  ;[...DEFAULT_ROLE_PERMISSION_OPTIONS, ...jobCodes.map(code => code.code)].forEach(raw => {
+  const sourceRoles = jobCodes.length > 0
+    ? jobCodes.filter(code => code.is_active !== false).map(code => code.code)
+    : DEFAULT_ROLE_PERMISSION_OPTIONS
+  ;sourceRoles.forEach(raw => {
     const key = slugRoleCode(raw)
     if (!key || seen.has(key)) return
     seen.add(key)
@@ -1418,7 +1421,7 @@ function normalizeDiscountRules(rows) {
       suggested_tip_basis: row?.suggested_tip_basis === 'after_discount' ? 'after_discount' : 'before_discount',
     }))
     .map(row => ({ ...row, allowed_roles: row.allowed_roles.length > 0 ? row.allowed_roles : ['owner', 'manager'] }))
-    .filter(row => row.name && row.is_active)
+    .filter(row => row.is_active)
 }
 
 function normalizeRolePermissions(rows, jobCodes = []) {
@@ -1533,10 +1536,10 @@ function menuCategoriesPayload(menuCategories) {
   }
 }
 
-function discountRulesPayload(discountRules) {
+function discountRulesPayload(discountRules, { includeIds = true } = {}) {
   return {
     discount_rules: normalizeDiscountRules(discountRules).map(row => ({
-      id: row.id || undefined,
+      id: includeIds && row.id ? row.id : undefined,
       name: row.name,
       discount_type: row.discount_type,
       applies_to: row.applies_to,
@@ -1555,6 +1558,15 @@ function discountRulesPayload(discountRules) {
       suggested_tip_basis: row.suggested_tip_basis,
     })),
   }
+}
+
+function validateDiscountRules(discountRules) {
+  const rows = normalizeDiscountRules(discountRules)
+  const blankIndex = rows.findIndex(row => !row.name)
+  if (blankIndex >= 0) {
+    throw new Error(`Discount ${blankIndex + 1} needs a name before saving.`)
+  }
+  return rows
 }
 
 function managerControlsPayload(rolePermissions, jobCodes = []) {
@@ -2022,7 +2034,7 @@ function isDailySpecialActiveNow(special) {
   return true
 }
 
-export function buildSetupWarnings(restaurant, waiterCount = null, floorPlanStatus = null) {
+export function buildSetupWarnings(restaurant, waiterCount = null, floorPlanStatus = null, jobCodeCount = null) {
   const warnings = {
     basics: [],
     legal: [],
@@ -2060,6 +2072,7 @@ export function buildSetupWarnings(restaurant, waiterCount = null, floorPlanStat
   if (floorPlanStatus && !floorPlanStatus.has_floor_plan) warnings.capacity.push('Floor plan')
 
   if (waiterCount === 0) warnings.employees.push('Employees')
+  if (jobCodeCount === 0) warnings.employees.push('Roles')
 
   return warnings
 }
@@ -2438,12 +2451,19 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     if (!restaurantId) return
     setSetupError('')
     const cached = (key, fn) => fetchCached(key, fn, STALE_TIMES.setup)
+    const scoped = async (label, read, fallback) => {
+      try {
+        return { label, value: await read(), error: null }
+      } catch (err) {
+        return { label, value: fallback, error: err }
+      }
+    }
     try {
-      const [staffRows, menuRows, jobCodeRows, hoursRows, sectionRows, floorPlan, taxesCharges, menuCategoryData, discountData, managerControls, closeoutData, checkWorkflowData, tipPayrollData, pricingPolicyData] = await Promise.all([
-        cached(queryKeys.waiters(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`)),
-        cached(queryKeys.menuItems(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`)),
-        cached(queryKeys.jobCodes(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`)).catch(() => []),
-        cached(queryKeys.operatingHours(restaurantId), async () => {
+      const results = await Promise.all([
+        scoped('Employees', () => fetchCached(queryKeys.waiters(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`), 0), []),
+        scoped('Menu items', () => cached(queryKeys.menuItems(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`)), []),
+        scoped('Roles', () => fetchCached(queryKeys.jobCodes(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`), 0), []),
+        scoped('Hours', () => cached(queryKeys.operatingHours(restaurantId), async () => {
           const { data, error } = await supabase
             .from('operating_hours')
             .select('day_of_week, open_time, close_time, is_closed')
@@ -2451,18 +2471,34 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
             .order('day_of_week')
           if (error) throw error
           return data
-        }),
-        cached(queryKeys.sections(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`)).catch(() => []),
-        cached(queryKeys.floorPlan(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`)).catch(() => null),
-        cached(queryKeys.taxesCharges(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/taxes-charges`)).catch(() => null),
-        cached(queryKeys.menuCategories(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/categories`)).catch(() => null),
-        cached(queryKeys.discountRules(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/discount-rules`)).catch(() => null),
-        cached(queryKeys.managerControls(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-controls`)).catch(() => null),
-        cached(queryKeys.closeoutSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`)).catch(() => null),
-        cached(queryKeys.checkWorkflowSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/check-workflow-settings`)).catch(() => null),
-        cached(queryKeys.tipsPayrollSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`)).catch(() => null),
-        cached(queryKeys.pricingPolicy(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pricing-policy`)).catch(() => null),
+        }), []),
+        scoped('Sections', () => cached(queryKeys.sections(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`)), []),
+        scoped('Floor plan', () => cached(queryKeys.floorPlan(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`)), null),
+        scoped('Taxes and charges', () => cached(queryKeys.taxesCharges(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/taxes-charges`)), null),
+        scoped('Menu categories', () => cached(queryKeys.menuCategories(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/categories`)), null),
+        scoped('Discounts', () => cached(queryKeys.discountRules(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/discount-rules`)), null),
+        scoped('Manager controls', () => cached(queryKeys.managerControls(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-controls`)), null),
+        scoped('Closeout', () => cached(queryKeys.closeoutSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`)), null),
+        scoped('Check workflow', () => cached(queryKeys.checkWorkflowSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/check-workflow-settings`)), null),
+        scoped('Tips and payroll', () => cached(queryKeys.tipsPayrollSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`)), null),
+        scoped('Pricing policy', () => cached(queryKeys.pricingPolicy(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pricing-policy`)), null),
       ])
+      const [
+        staffRows,
+        menuRows,
+        jobCodeRows,
+        hoursRows,
+        sectionRows,
+        floorPlan,
+        taxesCharges,
+        menuCategoryData,
+        discountData,
+        managerControls,
+        closeoutData,
+        checkWorkflowData,
+        tipPayrollData,
+        pricingPolicyData,
+      ] = results.map(result => result.value)
 
       const normalized = normalizeHours(hoursRows)
       setHours(normalized)
@@ -2486,7 +2522,12 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setCheckWorkflowSettings(normalizeCheckWorkflowSettings(checkWorkflowData))
       setTipPayrollSettings(normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes))
       setPricingPolicy(normalizePricingPolicy(pricingPolicyData || { jurisdiction_state: restaurant.state || 'SC' }))
-      await loadDailySpecials()
+      const failedLabels = results.filter(result => result.error).map(result => result.label)
+      const specialsResult = await scoped('Daily specials', loadDailySpecials, null)
+      if (specialsResult.error) failedLabels.push(specialsResult.label)
+      if (failedLabels.length > 0) {
+        setSetupError(`${failedLabels.join(', ')} failed to load. Other setup sections are still editable.`)
+      }
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : 'Could not load setup data.')
     }
@@ -2723,14 +2764,21 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     values.includes(value) ? values.filter(item => item !== value) : [...values, value]
 
   const saveDiscountRules = async (publication) => {
+    try {
+      validateDiscountRules(discountRules)
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Check discount rules before saving.')
+      return null
+    }
     const payload = discountRulesPayload(discountRules)
+    const propagationPayload = discountRulesPayload(discountRules, { includeIds: false })
     await saveWithPropagation({
       sectionId: 'discounts',
       label: 'Discounts, Comps & Promos',
       propagation: SETUP_PROPAGATION.discounts,
       successMessage: 'Saved discounts.',
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/discount-rules', payload),
-      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/discount-rules', payload),
+      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/discount-rules', propagationPayload),
       onSourceSaved: (saved) => {
         setDiscountRules(normalizeDiscountRules(saved?.discount_rules))
         queryClient.setQueryData(queryKeys.discountRules(restaurantId), saved)
@@ -2876,6 +2924,30 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       onSetupChanged?.()
     } catch (err) {
       setSetupError(err instanceof Error ? err.message : 'Could not save role.')
+    } finally {
+      setSavingRateId('')
+    }
+  }
+
+  const removeJobCode = async (jobCode) => {
+    if (!jobCode?.id) return
+    setSavingRateId(jobCode.id)
+    setSetupError('')
+    try {
+      await fetchWithSupabaseAuth(`/manager/job-codes/${jobCode.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(jobCodePayload({ ...jobCode, is_active: false })),
+      })
+      const normalized = normalizeJobCodes(jobCodes.filter(code => code.id !== jobCode.id))
+      setJobCodes(normalized)
+      setRateEdits(Object.fromEntries(normalized.map(code => [code.id, String(code.default_hourly_rate ?? '')])))
+      setTipPayrollSettings(prev => normalizeTipPayrollSettings(prev, normalized))
+      setRolePermissions(prev => normalizeRolePermissions(prev, normalized))
+      void queryClient.invalidateQueries({ queryKey: queryKeys.jobCodes(restaurantId) })
+      setSaveMessage('Removed role.')
+      onSetupChanged?.()
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not remove role.')
     } finally {
       setSavingRateId('')
     }
@@ -4551,7 +4623,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
             ) : (
               <div className="grid gap-3">
                 {jobCodes.filter(code => code.is_active !== false).map(code => (
-                  <div key={code.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto]">
+                  <div key={code.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto_auto]">
                     <TextInput
                       value={code.label || code.code}
                       onChange={event => setJobCodes(prev => prev.map(item => item.id === code.id ? { ...item, label: event.target.value } : item))}
@@ -4576,6 +4648,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                       onPublishNow={() => saveJobCode(code)}
                       onSchedule={(scheduledFor, timezone) => saveJobCode(code, { scheduledFor, timezone })}
                     />
+                    <SmallButton variant="danger" onClick={() => void removeJobCode(code)} disabled={Boolean(savingRateId)}>Remove</SmallButton>
                   </div>
                 ))}
                 <div className="grid gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto]">
@@ -4600,33 +4673,52 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               </SetupEmptyState>
             ) : (
               waiters.map(waiter => (
-                <div key={waiter.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 xl:grid-cols-[1fr_1fr_240px_110px_110px_150px_170px_100px_auto]">
-                  <TextInput defaultValue={waiter.name || ''} onBlur={event => void updateStaff(waiter.id, { name: event.target.value })} />
-                  <TextInput defaultValue={waiter.email || ''} placeholder="Email" onBlur={event => void updateStaff(waiter.id, { email: event.target.value || null })} />
-                  <StaffRoleAssignment
-                    waiter={waiter}
-                    jobCodes={jobCodes}
-                    onChange={updates => void updateStaff(waiter.id, updates)}
-                  />
-                  <TextInput defaultValue={waiter.suggested_weekly_hours ?? ''} placeholder="Hrs/week" onBlur={event => void updateStaff(waiter.id, { suggested_weekly_hours: event.target.value === '' ? null : Number(event.target.value) })} />
-                  <TextInput defaultValue={waiter.hourly_rate ?? ''} placeholder="$/hr" onBlur={event => void updateStaff(waiter.id, { hourly_rate: event.target.value === '' ? null : Number(event.target.value) })} />
-                  <TextInput defaultValue={waiter.employee_login_id || defaultEmployeeId(waiter.name || '')} placeholder="Login ID" onBlur={event => void updateStaff(waiter.id, { employee_login_id: event.target.value || defaultEmployeeId(waiter.name || '') })} />
-                  <TextInput
-                    placeholder="New PIN"
-                    value={pinEdits[waiter.id] || ''}
-                    onChange={event => {
-                      setPinSaved(prev => ({ ...prev, [waiter.id]: false }))
-                      setPinEdits(prev => ({ ...prev, [waiter.id]: event.target.value.replace(/\D/g, '').slice(0, 8) }))
-                    }}
-                  />
-                  <SmallButton
-                    variant={pinEdits[waiter.id] ? 'primary' : 'secondary'}
-                    onClick={() => void saveEditedPin(waiter.id)}
-                    disabled={!pinEdits[waiter.id] || pinSaving[waiter.id]}
-                  >
-                    {pinSaving[waiter.id] ? 'Saving...' : pinSaved[waiter.id] ? 'Saved' : 'Save PIN'}
-                  </SmallButton>
-                  <SmallButton variant="danger" onClick={() => void removeStaff(waiter.id)}>Remove</SmallButton>
+                <div key={waiter.id} className="space-y-3 rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                  <div className="grid gap-3 xl:grid-cols-[minmax(180px,0.9fr)_minmax(240px,1.1fr)_minmax(320px,1.3fr)]">
+                    <Field label="Name">
+                      <TextInput defaultValue={waiter.name || ''} onBlur={event => void updateStaff(waiter.id, { name: event.target.value })} />
+                    </Field>
+                    <Field label="Email">
+                      <TextInput defaultValue={waiter.email || ''} placeholder="Email optional" onBlur={event => void updateStaff(waiter.id, { email: event.target.value || null })} />
+                    </Field>
+                    <Field label="Roles">
+                      <StaffRoleAssignment
+                        waiter={waiter}
+                        jobCodes={jobCodes}
+                        onChange={updates => void updateStaff(waiter.id, updates)}
+                      />
+                    </Field>
+                  </div>
+                  <div className="grid items-end gap-3 md:grid-cols-[120px_120px_minmax(150px,1fr)_minmax(150px,1fr)_auto_auto]">
+                    <Field label="Hrs/week">
+                      <TextInput className="px-3 text-center" defaultValue={waiter.suggested_weekly_hours ?? ''} placeholder="0" onBlur={event => void updateStaff(waiter.id, { suggested_weekly_hours: event.target.value === '' ? null : Number(event.target.value) })} />
+                    </Field>
+                    <Field label="$/hr">
+                      <TextInput className="px-3 text-center" defaultValue={waiter.hourly_rate ?? ''} placeholder="0.00" onBlur={event => void updateStaff(waiter.id, { hourly_rate: event.target.value === '' ? null : Number(event.target.value) })} />
+                    </Field>
+                    <Field label="Login ID">
+                      <TextInput defaultValue={waiter.employee_login_id || defaultEmployeeId(waiter.name || '')} placeholder="Login ID" onBlur={event => void updateStaff(waiter.id, { employee_login_id: event.target.value || defaultEmployeeId(waiter.name || '') })} />
+                    </Field>
+                    <Field label="New PIN">
+                      <TextInput
+                        className="px-3 text-center font-mono tracking-[0.2em]"
+                        placeholder="PIN"
+                        value={pinEdits[waiter.id] || ''}
+                        onChange={event => {
+                          setPinSaved(prev => ({ ...prev, [waiter.id]: false }))
+                          setPinEdits(prev => ({ ...prev, [waiter.id]: event.target.value.replace(/\D/g, '').slice(0, 8) }))
+                        }}
+                      />
+                    </Field>
+                    <SmallButton
+                      variant={pinEdits[waiter.id] ? 'primary' : 'secondary'}
+                      onClick={() => void saveEditedPin(waiter.id)}
+                      disabled={!pinEdits[waiter.id] || pinSaving[waiter.id]}
+                    >
+                      {pinSaving[waiter.id] ? 'Saving...' : pinSaved[waiter.id] ? 'Saved' : 'Save PIN'}
+                    </SmallButton>
+                    <SmallButton variant="danger" onClick={() => void removeStaff(waiter.id)}>Remove</SmallButton>
+                  </div>
                 </div>
               ))
             )}

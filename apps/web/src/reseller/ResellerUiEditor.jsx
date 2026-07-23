@@ -311,7 +311,8 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
             method: 'PUT',
             path: '/reseller/ui-themes',
             body: { service, restaurant_ids: selectedIds, tokens: drafts[service], component_overrides: componentDrafts[service] },
-            target_type: 'reseller',
+            target_type: selectedIds.length === 1 ? 'restaurant' : 'reseller',
+            target_id: selectedIds.length === 1 ? selectedIds[0] : null,
           }],
         })
         setStatus({ tone: 'success', text: `${SERVICE_LABELS[service]} UI scheduled for ${new Date(scheduled.scheduled_for).toLocaleString()}.` })

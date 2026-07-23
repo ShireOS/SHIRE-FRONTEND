@@ -43,6 +43,12 @@ const OWNER_TABS: RoleTab[] = [
     sfSymbol: 'fork.knife',
   },
   {
+    name: 'ui',
+    title: 'UI',
+    androidIcon: 'color-palette',
+    sfSymbol: { default: 'paintpalette', selected: 'paintpalette.fill' },
+  },
+  {
     name: 'feedback',
     title: 'Complaints',
     androidIcon: 'alert-circle',
@@ -107,6 +113,12 @@ const RESELLER_TABS: RoleTab[] = [
     title: 'Stores',
     androidIcon: 'business',
     sfSymbol: { default: 'building.2', selected: 'building.2.fill' },
+  },
+  {
+    name: 'menu',
+    title: 'Menu',
+    androidIcon: 'restaurant',
+    sfSymbol: 'fork.knife',
   },
   {
     name: 'ui',

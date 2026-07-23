@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BadgeDollarSign, Check, Copy, Eye, EyeOff, KeyRound, Plus, RefreshCw, ShieldCheck, UserPlus, Users } from 'lucide-react'
+import { BadgeDollarSign, Check, Copy, Eye, EyeOff, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react'
 import { useAuth } from '../../auth'
 import { fetchWithSupabaseAuth, queryClient, queryKeys } from '../../shared/query'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
@@ -18,6 +18,7 @@ import { Badge } from '../components/shared/Badge'
 import { Modal, ModalFooter } from '../components/shared/Modal'
 import RolePermissionsPanel from '../components/team/RolePermissionsPanel'
 import PermissionEditor, { diffOverrides } from '../components/team/PermissionEditor'
+import { normalizeJobCodes } from '../RestaurantSetupPanel'
 
 const money = (value) =>
   value === null || value === undefined || value === ''
@@ -428,6 +429,7 @@ export default function TeamPage({ restaurantId }) {
   const access = useBackOfficeAccess(auth, restaurantId)
   const [waiters, setWaiters] = useState([])
   const [jobCodes, setJobCodes] = useState([])
+  const [roleLoadError, setRoleLoadError] = useState(false)
   const [rolePerms, setRolePerms] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -451,15 +453,21 @@ export default function TeamPage({ restaurantId }) {
     let cancelled = false
     setLoading(true)
     Promise.all([
-      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=true`).catch(() => []),
-      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`).catch(() => []),
+      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=true`),
+      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`)
+        .then((rows) => ({ rows, failed: false }))
+        .catch(() => ({ rows: [], failed: true })),
       fetchRolePermissions(restaurantId).catch(() => []),
     ])
-      .then(([waiterRows, codeRows, roleRows]) => {
+      .then(([waiterRows, jobCodeResult, roleRows]) => {
         if (cancelled) return
         setWaiters(Array.isArray(waiterRows) ? waiterRows : [])
-        setJobCodes(Array.isArray(codeRows) ? codeRows : [])
+        setJobCodes(normalizeJobCodes(jobCodeResult.rows))
+        setRoleLoadError(jobCodeResult.failed)
         setRolePerms(Array.isArray(roleRows) ? roleRows : [])
+      })
+      .catch((loadError) => {
+        if (!cancelled) setError(loadError?.message || 'Could not load team data.')
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -499,12 +507,13 @@ export default function TeamPage({ restaurantId }) {
   // id: null so buildStaffRoleUpdate never writes a bogus job_code_id.
   const roleOptions = useMemo(() => {
     const known = new Set(jobCodes.map(roleCodeFromJobCode).filter(Boolean))
+    const assigned = new Set(waiters.flatMap((waiter) => assignedStaffRoles(waiter, [])))
     const extras = rolePerms
       .map((row) => normalizeRoleCode(row.role_key))
-      .filter((code) => code && !known.has(code))
+      .filter((code) => code && !known.has(code) && assigned.has(code))
       .map((code) => ({ id: null, code, label: roleLabel(code) }))
     return [...jobCodes, ...extras]
-  }, [jobCodes, rolePerms])
+  }, [jobCodes, rolePerms, waiters])
 
   // Role-default back-office permissions for a waiter (by id) via their
   // primary POS role's pos_role_permissions.back_office_permissions.
@@ -530,9 +539,12 @@ export default function TeamPage({ restaurantId }) {
   const addEmployee = () =>
     act(async () => {
       if (!newEmployee.name.trim()) throw new Error('Employee name is required.')
+      if (jobCodes.length === 0) {
+        throw new Error(roleLoadError ? 'Roles failed to load. Refresh before adding employees.' : 'Add a role before adding employees.')
+      }
       const pin = newEmployee.pin.trim()
       if (pin && !/^\d{4}$/.test(pin)) throw new Error('POS PIN must be exactly 4 digits.')
-      const role = newEmployee.role || jobCodes[0]?.code || 'server'
+      const role = newEmployee.role || jobCodes[0]?.code
       const roleUpdate = buildStaffRoleUpdate(role, [role], jobCodes)
       const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters`, {
         method: 'POST',
@@ -572,7 +584,7 @@ export default function TeamPage({ restaurantId }) {
           is_active: true,
         }),
       })
-      setJobCodes((prev) => [...prev, created])
+      setJobCodes((prev) => normalizeJobCodes([...prev, created]))
       setNewGroup({ label: '', rate: '' })
     })
 
@@ -584,7 +596,18 @@ export default function TeamPage({ restaurantId }) {
         method: 'PATCH',
         body: JSON.stringify({ default_hourly_rate: parsed.toFixed(2) }),
       })
-      setJobCodes((prev) => prev.map((code) => (code.id === saved.id ? saved : code)))
+      setJobCodes((prev) => normalizeJobCodes(prev.map((code) => (code.id === saved.id ? saved : code))))
+    })
+
+  const removeGroup = (jobCode) =>
+    act(async () => {
+      if (!jobCode?.id) throw new Error('This role cannot be removed until it has been saved.')
+      if (!window.confirm(`Remove ${jobCode.label || jobCode.code} from new employee role choices? Existing employees keep their assigned role until changed.`)) return
+      await fetchWithSupabaseAuth(`/manager/job-codes/${jobCode.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_active: false }),
+      })
+      setJobCodes((prev) => prev.filter((code) => code.id !== jobCode.id))
     })
 
   const patchBoMember = (member, patch) =>
@@ -630,6 +653,11 @@ export default function TeamPage({ restaurantId }) {
           {error}
         </p>
       )}
+      {roleLoadError && (
+        <p className="rounded-xl border border-dash-warning/30 bg-dash-warning/10 px-3 py-2 text-sm text-dash-warning">
+          Roles failed to load, so employee role choices are unavailable. Refresh the page or reopen Team after the API recovers.
+        </p>
+      )}
 
       <Pane icon={BadgeDollarSign} eyebrow="Pay groups" title="Set pay once per group">
         <div className="space-y-2">
@@ -644,6 +672,15 @@ export default function TeamPage({ restaurantId }) {
                   placeholder="0.00"
                 />
                 <span className="text-xs text-dash-tertiary">/hr</span>
+                <button
+                  type="button"
+                  onClick={() => void removeGroup(code)}
+                  title="Remove role"
+                  aria-label={`Remove ${code.label || code.code}`}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-dash-border text-dash-tertiary transition hover:border-dash-danger/50 hover:text-dash-danger"
+                >
+                  <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
+                </button>
               </span>
             </div>
           ))}
@@ -754,12 +791,13 @@ export default function TeamPage({ restaurantId }) {
             <select
               value={newEmployee.role || jobCodes[0]?.code || ''}
               onChange={(event) => setNewEmployee((prev) => ({ ...prev, role: event.target.value }))}
+              disabled={jobCodes.length === 0}
               className="rounded-xl border border-dash-border bg-[var(--glass-bg)] px-2.5 py-2 text-xs font-semibold text-dash-secondary outline-none"
             >
               {jobCodes.map((code) => (
                 <option key={code.id} value={code.code}>{code.label || code.code}</option>
               ))}
-              {jobCodes.length === 0 && <option value="server">Server</option>}
+              {jobCodes.length === 0 && <option value="">No roles</option>}
             </select>
             <input
               inputMode="numeric"

@@ -39,6 +39,13 @@ import {
 import { MenuItemDetail } from './MenuItemDetail'
 import { MenuItemCreate } from './MenuItemCreate'
 import { copyItemConfig } from './data/menuDuplicate'
+import BulkPricingPanel from './BulkPricingPanel'
+import {
+  archivePricingSpecial,
+  createPricingSpecial,
+  getPricingSpecials,
+  updatePricingSpecial,
+} from '../shared/api/menuPricing'
 import {
   ColorSwatchPicker,
   DAYS_SHORT,
@@ -67,7 +74,8 @@ const MENU_TABS = [
   { id: 'modifiers', label: 'Modifiers' },
   { id: 'groups', label: 'Questions' },
   { id: 'allergies', label: 'Allergies' },
-  { id: 'specials', label: 'Specials & Schedule' },
+  { id: 'pricing', label: 'Pricing' },
+  { id: 'specials', label: 'Item Availability' },
   { id: 'printing', label: 'Printing & Routing' },
 ]
 
@@ -104,6 +112,7 @@ const defaultSpecialDraft = () => ({
   cycle_length_days: '',
   cycle_day_number: '',
   expires_at: '',
+  preserve_gratuity_basis: true,
 })
 
 const defaultGroupDraft = () => ({
@@ -118,6 +127,21 @@ const defaultGroupDraft = () => ({
   pre_modifiers: [],
   pre_modifier_prices: {},
 })
+
+// Pull a human-readable reason out of whatever was thrown (Error, Supabase
+// PostgrestError-shaped object, string, ...), so banners do not fall back to a
+// generic message that hides the actual failure.
+const describeError = (err) => {
+  if (typeof err === 'string' && err.trim()) return err
+  for (const candidate of [err?.message, err?.error_description, err?.details, err?.hint]) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate
+  }
+  try {
+    const encoded = JSON.stringify(err)
+    if (encoded && encoded !== '{}') return encoded
+  } catch { /* not serializable */ }
+  return 'Something went wrong. Try again.'
+}
 
 const STANDARD_SIDE_BUTTONS = ['No', 'Extra', 'Light', 'On side']
 const normalizedPromptMode = mode => (mode === 'skip_defaults' || mode === 'hidden' ? mode : 'ask')
@@ -552,6 +576,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [groups, setGroups] = useState([])
   const [itemModifierOverrides, setItemModifierOverrides] = useState({})
   const [specials, setSpecials] = useState([])
+  const [specialsError, setSpecialsError] = useState('')
   const [routing, setRouting] = useState(null)
   const [printingConfig, setPrintingConfig] = useState({ aliases: { items: {}, modifiers: {} } })
   const [loading, setLoading] = useState(true)
@@ -652,15 +677,18 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     }
   }
 
-  const loadSpecials = async () => {
-    const { data, error: specialsError } = await supabase
-      .from('pos_daily_specials')
-      .select('*')
-      .eq('restaurant_id', restaurantId)
-      .is('archived_at', null)
-      .order('sort_order', { ascending: true })
-    if (specialsError) throw specialsError
-    setSpecials(data || [])
+  const loadSpecials = async ({ soft = false } = {}) => {
+    try {
+      const nextSpecials = await getPricingSpecials(restaurantId)
+      setSpecials(nextSpecials)
+      setSpecialsError('')
+      return nextSpecials
+    } catch (err) {
+      setSpecials([])
+      setSpecialsError(describeError(err))
+      if (!soft) throw err
+      return []
+    }
   }
 
   const loadRouting = async (force = false) => {
@@ -676,10 +704,10 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     try {
       const data = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`)
       setPrintingConfig(data || { aliases: { items: {}, modifiers: {} } })
-    } catch (err) {
+    } catch {
       // printing-config ships with the POS receipt-config backend build and
-      // 404s until that is deployed — kitchen aliases just fall back to defaults.
-      if (err?.status !== 404) throw err
+      // may be unavailable independently — kitchen aliases fall back to defaults
+      // without blocking the rest of the menu workspace.
       setPrintingConfig({ aliases: { items: {}, modifiers: {} } })
     }
   }
@@ -698,21 +726,19 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       ['questions', loadGroups],
       ['modifier overrides', loadItemModifierOverrides],
       ['allergies', loadAllergies],
-      ['specials', loadSpecials],
+      ['specials', () => loadSpecials({ soft: true })],
       ['kitchen routing', loadRouting],
       ['printing config', loadPrintingConfig],
     ]
     Promise.allSettled(loaders.map(([, load]) => load())).then(results => {
       if (cancelled) return
-      const failed = results.flatMap((result, index) =>
-        result.status === 'rejected' ? [loaders[index][0]] : [])
-      if (failed.length) {
-        results.forEach((result, index) => {
-          if (result.status === 'rejected') {
-            console.error(`Menu load failed (${loaders[index][0]}):`, result.reason)
-          }
-        })
-        setError(`Couldn't load ${failed.join(', ')}. Try again or refresh.`)
+      const failures = results.flatMap((result, index) => (
+        result.status === 'rejected'
+          ? [`${loaders[index][0]}: ${describeError(result.reason)}`]
+          : []
+      ))
+      if (failures.length > 0) {
+        setError(`Some menu data failed to load: ${failures.join('; ')}.`)
       }
       setLoading(false)
     })
@@ -724,21 +750,6 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
   const invalidateItems = () => queryClient.invalidateQueries({ queryKey: queryKeys.menuItems(restaurantId) })
   const invalidateCategories = () => queryClient.invalidateQueries({ queryKey: queryKeys.menuCategories(restaurantId) })
-
-  // Pull a human-readable reason out of whatever was thrown (Error, Supabase
-  // PostgrestError-shaped object, string, ...), so the banner never falls back
-  // to a generic message that hides the actual failure.
-  const describeError = (err) => {
-    if (typeof err === 'string' && err.trim()) return err
-    for (const candidate of [err?.message, err?.error_description, err?.details, err?.hint]) {
-      if (typeof candidate === 'string' && candidate.trim()) return candidate
-    }
-    try {
-      const encoded = JSON.stringify(err)
-      if (encoded && encoded !== '{}') return encoded
-    } catch { /* not serializable */ }
-    return 'Something went wrong. Try again.'
-  }
 
   const run = async (work, successMessage, failLabel) => {
     setBusy(true)
@@ -1460,20 +1471,6 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
   // ── Specials (tab-level scheduling) ──────────────────────────────────────
 
-  const auditSpecial = async (eventType, specialId, before, after) => {
-    try {
-      await supabase.from('pos_daily_special_events').insert({
-        restaurant_id: restaurantId,
-        daily_special_id: specialId,
-        event_type: eventType,
-        before_data: before,
-        after_data: after,
-      })
-    } catch {
-      // Audit is best-effort; the special itself already saved.
-    }
-  }
-
   const createSpecial = () => {
     if (!specialDraft.menu_item_id) {
       setError('Choose a base menu item for the special first.')
@@ -1485,7 +1482,6 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     }
     return run(async () => {
       const payload = {
-        restaurant_id: restaurantId,
         menu_item_id: specialDraft.menu_item_id,
         display_name: specialDraft.display_name.trim() || null,
         note: specialDraft.note.trim() || null,
@@ -1503,36 +1499,21 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         expires_at: specialDraft.expires_at ? new Date(specialDraft.expires_at).toISOString() : null,
         sort_order: specials.length,
         is_active: true,
+        preserve_gratuity_basis: specialDraft.preserve_gratuity_basis,
       }
-      const { data, error: insertError } = await supabase.from('pos_daily_specials').insert(payload).select('*').single()
-      if (insertError) throw insertError
-      await auditSpecial('created', data.id, null, data)
+      await createPricingSpecial(restaurantId, payload)
       setSpecialDraft(defaultSpecialDraft())
       await loadSpecials()
     }, 'Special saved.', 'Couldn’t save the special')
   }
 
   const updateSpecial = (special, patch) => run(async () => {
-    const { data, error: updateError } = await supabase
-      .from('pos_daily_specials')
-      .update({ ...patch, updated_at: new Date().toISOString() })
-      .eq('id', special.id)
-      .eq('restaurant_id', restaurantId)
-      .select('*')
-      .single()
-    if (updateError) throw updateError
-    await auditSpecial('updated', special.id, special, data)
+    await updatePricingSpecial(restaurantId, special.id, patch)
     await loadSpecials()
   }, undefined, 'Couldn’t update the special')
 
   const archiveSpecial = (special) => run(async () => {
-    const { error: archiveError } = await supabase
-      .from('pos_daily_specials')
-      .update({ archived_at: new Date().toISOString(), is_active: false })
-      .eq('id', special.id)
-      .eq('restaurant_id', restaurantId)
-    if (archiveError) throw archiveError
-    await auditSpecial('archived', special.id, special, null)
+    await archivePricingSpecial(restaurantId, special.id)
     await loadSpecials()
   }, 'Special archived.', 'Couldn’t archive the special')
 
@@ -1629,7 +1610,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           <p className="label-mono">Menu Workspace</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-tight">Menu</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-dash-secondary">
-            Click any item to open its full editor — photo, availability, specials, and modifier questions with unlimited follow-ups. Changes reach the POS on its next sync.
+            Click any item to open its full editor — photo, availability, pricing, and modifier questions with unlimited follow-ups. Changes reach the POS on its next sync.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-sm text-dash-tertiary">
@@ -2372,18 +2353,26 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         </SectionShell>
       )}
 
-      {!loading && activeTab === 'specials' && (
+      {!loading && (activeTab === 'pricing' || activeTab === 'specials') && (
         <div className="space-y-5">
+          {activeTab === 'pricing' && (
+            <>
+              <BulkPricingPanel restaurantId={restaurantId} canEditPrices={canEditPrices} />
           <SectionShell
             title="Specials"
             description="Overlay a special name, price, and note on a real menu item — the base item keeps its tax, modifiers, and routing. Schedule weekly, by date window, on an N-day cycle, or pin manually."
           >
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px]">
-              <div className="space-y-3">
-                <p className="label-mono">Current specials</p>
-                {specials.length === 0 && (
-                  <MenuEmptyState title="No specials yet">
-                    Pin today's special or build a schedule on the right.
+	              <div className="space-y-3">
+	                <p className="label-mono">Current specials</p>
+	                {specialsError && (
+	                  <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">
+	                    Specials could not load: {specialsError}
+	                  </div>
+	                )}
+	                {specials.length === 0 && (
+	                  <MenuEmptyState title="No specials yet">
+	                    Pin today's special or build a schedule on the right.
                   </MenuEmptyState>
                 )}
                 {specials.map(special => {
@@ -2426,6 +2415,10 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                             </SmallButton>
                             <SmallButton variant="danger" onClick={() => void archiveSpecial(special)}>Archive</SmallButton>
                           </div>
+                          <label className="flex items-center gap-2 text-xs text-dash-secondary">
+                            <input type="checkbox" checked={special.preserve_gratuity_basis !== false} onChange={event => void updateSpecial(special, { preserve_gratuity_basis: event.target.checked })} className="h-4 w-4 accent-dash-gold" />
+                            Regular-price gratuity
+                          </label>
                         </div>
                       </div>
                     </div>
@@ -2516,12 +2509,19 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                   <Field label="Expires (optional)">
                     <TextInput type="datetime-local" value={specialDraft.expires_at} onChange={event => setSpecialDraft(prev => ({ ...prev, expires_at: event.target.value }))} />
                   </Field>
+                  <label className="flex min-h-11 items-center gap-3 rounded-md border border-white/10 px-3 text-sm text-dash-primary">
+                    <input type="checkbox" checked={specialDraft.preserve_gratuity_basis} onChange={event => setSpecialDraft(prev => ({ ...prev, preserve_gratuity_basis: event.target.checked }))} className="h-4 w-4 accent-dash-gold" />
+                    <span>Calculate gratuity using the regular price</span>
+                  </label>
                   <SmallButton variant="primary" onClick={() => void createSpecial()} disabled={busy}>Save special</SmallButton>
                 </div>
               </div>
             </div>
           </SectionShell>
+            </>
+          )}
 
+          {activeTab === 'specials' && (
           <SectionShell
             title="Item Availability Schedule"
             description="Limit when regular items appear on the POS — brunch-only dishes, seasonal plates, late-night menus. Full editor lives inside each item."
@@ -2571,6 +2571,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
               </div>
             </div>
           </SectionShell>
+          )}
         </div>
       )}
 

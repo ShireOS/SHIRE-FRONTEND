@@ -146,7 +146,7 @@ const STORE_NAV = [
   { id: 'analytics', label: 'Home', icon: Home },
   { id: 'reports', label: 'Reports', icon: LayoutGrid },
   { id: 'setup', label: 'Setup', icon: Wrench },
-  { id: 'ui', label: 'UI Editor', icon: Palette, resellerOnly: true },
+  { id: 'ui', label: 'UI Editor', icon: Palette },
   { id: 'menu-workspace', label: 'POS Menus', icon: SlidersHorizontal },
   { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
   { id: 'taxes', label: 'Taxes', icon: Percent },
@@ -394,10 +394,6 @@ export default function DashboardShell({
   }
 
   const accountType = auth.accountType
-  // Admins share the reseller UI editor's cross-store controls. The editor
-  // route and mutation guards already admit admins, so its navigation must do
-  // the same instead of leaving an authorized account with no visible route.
-  const canAccessResellerUiEditor = ['reseller', 'reseller_employee', 'admin'].includes(accountType)
   const showRates = accountType === 'reseller' || accountType === 'admin'
   const showUsers = accountType === 'admin'
   const inStore = context === 'store' && Boolean(restaurant)
@@ -405,7 +401,6 @@ export default function DashboardShell({
   const hidden = hiddenSurfaces(auth)
   const access = useBackOfficeAccess(auth, inStore ? restaurantId : null)
   const tabVisible = (id) => {
-    if (id === 'ui') return canAccessResellerUiEditor
     if (allowedStoreTabs && !allowedStoreTabs.includes(id)) return false
     if (hidden.has(id)) return false
     // While a member's access is loading, keep nav visible (server enforces).
@@ -420,7 +415,6 @@ export default function DashboardShell({
         : item
     ))
     .filter((item) => {
-      if (item.resellerOnly && !canAccessResellerUiEditor) return false
       return item.children ? item.children.length > 0 : tabVisible(item.id)
     })
 

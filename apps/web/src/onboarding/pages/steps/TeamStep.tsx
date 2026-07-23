@@ -39,6 +39,10 @@ export function TeamStep({ onboarding }: TeamStepProps) {
   const [formError, setFormError] = useState<string | null>(null)
 
   const jobCodes = roleDrafts.length > 0 ? roleDrafts : data.job_codes
+  const activeJobCodes = jobCodes.filter(code => code.is_active !== false)
+  const visibleRoleDrafts = roleDrafts
+    .map((code, index) => ({ code, index }))
+    .filter(({ code }) => code.is_active !== false)
 
   const resetForm = () => {
     setName('')
@@ -90,7 +94,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
     }
   }
 
-  const selectedJobCode = jobCodes.find(code => code.code === role)
+  const selectedJobCode = activeJobCodes.find(code => code.code === role)
 
   const updateRoleDraft = (index: number, patch: Partial<JobCodeData>) => {
     setRoleDrafts(current => current.map((row, currentIndex) => currentIndex === index ? { ...row, ...patch } : row))
@@ -111,6 +115,18 @@ export function TeamStep({ onboarding }: TeamStepProps) {
         is_active: true,
       },
     ])
+  }
+
+  const removeRoleDraft = (index: number) => {
+    setRoleDrafts(current => {
+      const removed = current[index]
+      const next = removed?.id
+        ? current.map((row, currentIndex) => currentIndex === index ? { ...row, is_active: false } : row)
+        : current.filter((_, currentIndex) => currentIndex !== index)
+      const nextActive = next.filter(code => code.is_active !== false)
+      if (removed?.code === role) setRole(nextActive[0]?.code || 'server')
+      return next
+    })
   }
 
   const saveRoles = async () => {
@@ -153,16 +169,18 @@ export function TeamStep({ onboarding }: TeamStepProps) {
         tipout_role: item.tipout_role || '',
         sort_order: Number(item.sort_order ?? index * 10),
       }))
+      const activeNormalized = normalized.filter(code => code.is_active !== false)
       setRoleDrafts(normalized)
+      if (!activeNormalized.some(code => code.code === role)) setRole(activeNormalized[0]?.code || 'server')
       updateData({
-        job_codes: normalized,
-        role_permissions: normalized.map(code => {
+        job_codes: activeNormalized,
+        role_permissions: activeNormalized.map(code => {
           const roleKey = roleCode(code.code || code.label)
           return data.role_permissions.find(row => row.role_key === roleKey) || defaultPermissionForRole(code)
         }),
         tip_payroll_settings: {
           ...data.tip_payroll_settings,
-          role_tip_rules: normalized.map(code => {
+          role_tip_rules: activeNormalized.map(code => {
             const existing = data.tip_payroll_settings.role_tip_rules.find(rule => rule.role_key === code.code)
             return existing || {
               role_key: code.code,
@@ -294,8 +312,8 @@ export function TeamStep({ onboarding }: TeamStepProps) {
           <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">Roles & wages</p>
           <p className="mt-1 text-xs text-[rgb(var(--text-tertiary))]">Add roles here, then assign each employee to one below.</p>
         </div>
-        {jobCodes.map((code, index) => (
-          <div key={code.id || `${code.code}:${index}`} className="grid gap-3 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-3 md:grid-cols-[1fr_110px_110px_auto]">
+        {visibleRoleDrafts.map(({ code, index }) => (
+          <div key={code.id || `${code.code}:${index}`} className="grid gap-3 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-3 md:grid-cols-[1fr_110px_110px_auto_auto]">
             <input
               value={code.label}
               onChange={event => {
@@ -333,6 +351,13 @@ export function TeamStep({ onboarding }: TeamStepProps) {
               ].join(' ')}
             >
               {code.is_tipped ? 'Tipped' : 'Hourly'}
+            </button>
+            <button
+              type="button"
+              onClick={() => removeRoleDraft(index)}
+              className="rounded-lg border border-red-400/30 px-3 py-2 text-sm text-red-300 hover:bg-red-500/10"
+            >
+              Remove
             </button>
           </div>
         ))}
@@ -447,7 +472,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
                 onChange={e => setRole(e.target.value)}
                 className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
               >
-                {jobCodes.map(r => (
+                {activeJobCodes.map(r => (
                   <option key={r.code} value={r.code} className="bg-[#1a1a1a] capitalize">
                     {r.label}
                   </option>

@@ -48,6 +48,7 @@ import CheckLedgerSection from './components/CheckLedgerSection'
 import HomepageWidgets from './components/HomepageWidgets'
 import { usePersistedPeriod } from './data/analyticsSummary'
 import ResellerApp from '../reseller/ResellerApp'
+import ResellerUiEditor from '../reseller/ResellerUiEditor'
 import RestaurantReportsPage from './reports/RestaurantReportsPage'
 import MenuWorkspaceEditor from '../shared/components/MenuWorkspaceEditor'
 
@@ -132,6 +133,7 @@ const TABS = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'reports', label: 'Reports' },
   { id: 'setup', label: 'Edit Setup' },
+  { id: 'ui', label: 'UI Editor' },
   { id: 'menu', label: 'Menu' },
   { id: 'menu-workspace', label: 'POS Menus' },
   { id: 'taxes', label: 'Taxes' },
@@ -4954,13 +4956,14 @@ export function RestaurantWorkspace({
   const activeTab = TABS.some((item) => item.id === tab) ? tab : 'analytics'
   const [waiterCount, setWaiterCount] = useState(null)
   const [floorPlanStatus, setFloorPlanStatus] = useState(null)
+  const [jobCodeCount, setJobCodeCount] = useState(null)
   const [setupRefreshKey, setSetupRefreshKey] = useState(0)
   const allowedStoreTabs = useAllowedStoreTabs(restaurant)
   const backOfficeAccess = useBackOfficeAccess(auth, restaurantId)
 
   const setupWarnings = useMemo(
-    () => buildModernSetupWarnings(restaurant || {}, waiterCount, floorPlanStatus),
-    [restaurant, waiterCount, floorPlanStatus]
+    () => buildModernSetupWarnings(restaurant || {}, waiterCount, floorPlanStatus, jobCodeCount),
+    [restaurant, waiterCount, floorPlanStatus, jobCodeCount]
   )
 
   useEffect(() => {
@@ -4986,16 +4989,23 @@ export function RestaurantWorkspace({
         () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`),
         staleTime,
       ).catch(() => null),
+      fetchCached(
+        queryKeys.jobCodes(restaurantId),
+        () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`),
+        staleTime,
+      ).catch(() => null),
     ])
-      .then(([waiterData, floorPlan]) => {
+      .then(([waiterData, floorPlan, jobCodeData]) => {
         if (cancelled) return
         setWaiterCount(Array.isArray(waiterData) ? waiterData.length : 0)
         setFloorPlanStatus(floorPlan)
+        setJobCodeCount(Array.isArray(jobCodeData) ? jobCodeData.filter((code) => code?.is_active !== false).length : null)
       })
       .catch(() => {
         if (!cancelled) {
           setWaiterCount(null)
           setFloorPlanStatus(null)
+          setJobCodeCount(null)
         }
       })
     return () => {
@@ -5093,6 +5103,18 @@ export function RestaurantWorkspace({
           </>
         )}
         {activeTab === 'reports' && <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurant?.name} />}
+        {activeTab === 'ui' && (
+          <ResellerUiEditor
+            restaurants={restaurant ? [{
+              ...restaurant,
+              reseller_group_id: 'ungrouped',
+              reseller_group_name: 'Current store',
+              reseller_group_color: '#9CA3AF',
+            }] : []}
+            groups={[]}
+            initialRestaurantId={restaurantId}
+          />
+        )}
         {activeTab === 'menu' && (
           <MenuPanel
             restaurantId={restaurantId}
@@ -5131,6 +5153,7 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   reports: 'Reports',
   setup: 'Setup',
   'menu-workspace': 'POS Menus',
+  ui: 'UI Editor',
   menu: 'Menu',
   taxes: 'Taxes',
   feedback: 'Complaints',

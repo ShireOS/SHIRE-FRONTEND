@@ -77,7 +77,9 @@ async function apiRequestFromBase<T>(baseUrl: string, endpoint: string, options:
       ? body.detail
       : typeof body.message === 'string'
         ? body.message
-        : `Request failed (${response.status})`;
+        : body.detail
+          ? JSON.stringify(body.detail)
+          : `Request failed (${response.status})`;
     throw new Error(detail);
   }
 

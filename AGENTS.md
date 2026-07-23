@@ -94,10 +94,12 @@ list must stay in sync.
   category rules, category rules replace restaurant defaults, and configuration
   is stored on the shared tips/payroll settings contract using stable menu IDs.
 - Reseller UI editing is store-scoped at `/reseller/restaurants/:restaurantId/ui`.
-  Resellers, reseller employees, and admins see **UI Editor** in the selected
-  store sidebar; admins entering through `/restaurants/:restaurantId/*` are
-  routed to that canonical reseller editor path. Editor mutation authorization
-  remains enforced by the existing reseller backend guards. Admin portfolio
+  Owners and back-office members with `settings.edit` can open **UI Editor**
+  from `/restaurants/:restaurantId/ui`; resellers, reseller employees, and
+  admins see the same editor in the selected store sidebar. Admins entering
+  through `/restaurants/:restaurantId/*` are routed to the canonical reseller
+  editor path. Editor mutation authorization remains enforced by the existing
+  backend guards. Admin portfolio
   scope loads all admin-visible reseller groups instead of treating the admin's
   profile ID as a reseller ID; the scope picker is always dismissible and shows
   theme-loading failures inside the dialog.
