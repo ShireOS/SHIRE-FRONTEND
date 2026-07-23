@@ -164,7 +164,7 @@ export function useRequireOnboarding() {
       return
     }
 
-    if (auth.accountType === 'reseller') {
+    if (auth.accountType === 'reseller' && !isNewRestaurantFlow) {
       navigate('/reseller/onboarding', { replace: true })
       return
     }
