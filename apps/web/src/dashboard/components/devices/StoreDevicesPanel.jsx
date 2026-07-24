@@ -8,7 +8,6 @@ import DeviceSessionPolicySection from './DeviceSessionPolicySection'
 import HardwareChainGuide from '../printing/HardwareChainGuide'
 import {
   CONNECTION_TYPES,
-  DEVICE_PRINTER_ROLES,
   DEVICE_TYPE_LABELS,
   PAIRING_CODE_TTL_MINUTES,
   TARGET_TYPES,
@@ -33,11 +32,6 @@ import {
   updateDevice,
   updatePrinterTarget,
 } from '../../data/devices'
-
-const requestHardwareChangeReason = (label) => {
-  const value = window.prompt(`Reason for ${label.toLowerCase()} (required for the audit trail):`)
-  return value?.trim() || null
-}
 
 const lastSeenLabel = (device) => {
   if (!device.last_seen_at) return 'Never checked in'
@@ -89,7 +83,7 @@ function TextField({ label, value, onChange, placeholder, className = '' }) {
   )
 }
 
-function DeviceRow({ device, printerTargets, printerEndpoints, sections, onRename, onSectionChange, onPrinterChange, onHardwareChange, onToggleStatus, busy }) {
+function DeviceRow({ device, receiptTargets, printerEndpoints, sections, onRename, onSectionChange, onPrinterChange, onHardwareChange, onToggleStatus, busy }) {
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState(device.name || '')
   const online = isDeviceOnline(device)
@@ -110,9 +104,17 @@ function DeviceRow({ device, printerTargets, printerEndpoints, sections, onRenam
   })
   const assignments = useMemo(() => {
     const map = {}
-    for (const row of device.printers || []) map[row.role] = row.target_id
+    for (const row of device.printers || []) map[row.role] = row.physical_target_id
     return map
   }, [device.printers])
+  const acceptsCash = cash.accepts_cash ?? Boolean(assignments.cash_drawer)
+  const autoOpenDrawer = cash.auto_open ?? Boolean(assignments.cash_drawer)
+  const staleAssignments = (device.printers || []).filter(
+    (assignment) => ['receipt', 'cash_drawer'].includes(assignment.role) && !assignment.physical_target_id
+  )
+  const boundReceiptTarget = receiptTargets.find((target) => target.pos_device_id === device.id)
+  const restaurantDefaultReceiptTarget = receiptTargets.find((target) => !target.pos_device_id)
+  const receiptSelection = assignments.receipt || boundReceiptTarget?.id || ''
 
   const commitName = () => {
     setEditing(false)
@@ -168,7 +170,7 @@ function DeviceRow({ device, printerTargets, printerEndpoints, sections, onRenam
       </div>
       {!revoked && (
         <>
-          <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-5">
+          <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
             <SelectField
               label="Section (revenue center)"
               value={device.revenue_center_id || ''}
@@ -178,21 +180,40 @@ function DeviceRow({ device, printerTargets, printerEndpoints, sections, onRenam
               <option value="">Table / unassigned</option>
               {sections.map((section) => <option key={section.id} value={section.id}>{section.name}</option>)}
             </SelectField>
-            {DEVICE_PRINTER_ROLES.map((role) => (
+            {[
+              { id: 'receipt', label: 'Receipt printer' },
+              { id: 'cash_drawer', label: 'Cash drawer connected to' },
+            ].map((role) => (
               <SelectField
                 key={role.id}
                 label={role.label}
-                value={assignments[role.id] || ''}
+                value={role.id === 'receipt' ? receiptSelection : assignments[role.id] || ''}
                 disabled={busy}
                 onChange={(e) => onPrinterChange(device, role.id, e.target.value || null)}
               >
-                <option value="">— none —</option>
-                {printerTargets.map((target) => (
-                  <option key={target.id} value={target.id}>{target.name}</option>
+                <option value="">
+                  {role.id === 'receipt' && restaurantDefaultReceiptTarget
+                    ? `Restaurant default · ${restaurantDefaultReceiptTarget.name}`
+                    : '— none —'}
+                </option>
+                {receiptTargets.map((target) => (
+                  <option key={target.id} value={target.id}>
+                    {target.name}{target.usage === 'both' ? ' · receipts + kitchen' : ' · receipts'}
+                  </option>
                 ))}
               </SelectField>
             ))}
           </div>
+          {receiptTargets.length === 0 && (
+            <p className="mt-2 text-xs text-dash-warning">
+              No receipt-capable printer is configured. Add one under Printer Setup and mark its usage as Receipts or Both.
+            </p>
+          )}
+          {staleAssignments.length > 0 && (
+            <p className="mt-2 text-xs text-dash-warning">
+              Legacy assignment {staleAssignments.map((assignment) => assignment.legacy_target_name || assignment.target_id).join(', ')} is not linked to a current receipt printer and is intentionally excluded.
+            </p>
+          )}
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-dash-border pt-3 text-xs text-dash-secondary">
             <span>
               Observed: {observed.platform || 'not reported'} · USB {observed.usb_printer_module_available ? 'available' : 'unavailable'}
@@ -207,11 +228,11 @@ function DeviceRow({ device, printerTargets, printerEndpoints, sections, onRenam
               Serve USB peripherals
             </label>
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={Boolean(cash.accepts_cash)} disabled={busy} onChange={(event) => onHardwareChange(device, { ...hardware, cash: { ...cash, accepts_cash: event.target.checked, auto_open: event.target.checked ? Boolean(cash.auto_open) : false } })} />
+              <input type="checkbox" checked={acceptsCash} disabled={busy} onChange={(event) => onHardwareChange(device, { ...hardware, cash: { ...cash, accepts_cash: event.target.checked, auto_open: event.target.checked ? autoOpenDrawer : false } })} />
               Accept cash
             </label>
-            <label className={`flex items-center gap-2 ${!cash.accepts_cash || !assignments.cash_drawer ? 'opacity-50' : ''}`}>
-              <input type="checkbox" checked={Boolean(cash.auto_open)} disabled={busy || !cash.accepts_cash || !assignments.cash_drawer} onChange={(event) => onHardwareChange(device, { ...hardware, cash: { ...cash, auto_open: event.target.checked } })} />
+            <label className={`flex items-center gap-2 ${!acceptsCash || !assignments.cash_drawer ? 'opacity-50' : ''}`}>
+              <input type="checkbox" checked={autoOpenDrawer} disabled={busy || !acceptsCash || !assignments.cash_drawer} onChange={(event) => onHardwareChange(device, { ...hardware, cash: { ...cash, accepts_cash: acceptsCash, auto_open: event.target.checked } })} />
               Auto-open assigned drawer
             </label>
           </div>
@@ -563,6 +584,14 @@ export default function StoreDevicesPanel({ restaurantId }) {
     () => (config?.targets || []).filter((t) => t.is_active && t.target_type === 'printer'),
     [config?.targets]
   )
+  const receiptTargets = useMemo(
+    () => (config?.outputTargets || []).filter(
+      (target) => target.is_active
+        && target.connection_type === 'network'
+        && (target.usage === 'receipt' || target.usage === 'both')
+    ).sort((left, right) => new Date(left.created_at || 0) - new Date(right.created_at || 0)),
+    [config?.outputTargets]
+  )
   const physicalPrinterTargets = useMemo(
     () => (failoverStatus?.targets || []).filter((target) => target.is_active && target.target_type === 'printer'),
     [failoverStatus?.targets]
@@ -666,16 +695,25 @@ export default function StoreDevicesPanel({ restaurantId }) {
             <DeviceRow
               key={device.id}
               device={device}
-              printerTargets={printerTargets}
+              receiptTargets={receiptTargets}
               printerEndpoints={config.printerEndpoints}
               sections={sections}
               busy={busy}
               onRename={(d, name) => mutate(() => updateDevice(d.id, { name }))}
               onSectionChange={(d, sectionId) => mutate(() => updateDevice(d.id, { revenue_center_id: sectionId }))}
-              onPrinterChange={(d, role, targetId) => mutate(() => setDevicePrinter(d.id, role, targetId))}
+              onPrinterChange={(d, role, targetId) => {
+                const reason = role === 'receipt'
+                  ? `Updated receipt printer for ${d.name || 'POS device'}`
+                  : `Updated cash drawer printer connection for ${d.name || 'POS device'}`
+                mutate(() => setDevicePrinter(restaurantId, d.id, role, targetId, reason))
+              }}
               onHardwareChange={(d, hardwareConfig) => {
-                const reason = requestHardwareChangeReason('changing terminal hardware settings')
-                if (reason) mutate(() => saveDeviceHardwareConfig(restaurantId, d.id, hardwareConfig, reason))
+                mutate(() => saveDeviceHardwareConfig(
+                  restaurantId,
+                  d.id,
+                  hardwareConfig,
+                  `Updated terminal hardware settings for ${d.name || 'POS device'}`
+                ))
               }}
               onToggleStatus={(d) => mutate(() => updateDevice(d.id, { status: d.status === 'revoked' ? 'active' : 'revoked' }))}
             />
@@ -710,8 +748,12 @@ export default function StoreDevicesPanel({ restaurantId }) {
                         value={target.config?.physical_target_id || ''}
                         disabled={busy}
                         onChange={(event) => {
-                          const reason = requestHardwareChangeReason('changing the cash drawer printer path')
-                          if (reason) mutate(() => saveCashDrawerTargetConfig(restaurantId, target.id, { ...(target.config || {}), physical_target_id: event.target.value || null }, reason))
+                          mutate(() => saveCashDrawerTargetConfig(
+                            restaurantId,
+                            target.id,
+                            { ...(target.config || {}), physical_target_id: event.target.value || null },
+                            `Updated cash drawer printer path for ${target.name}`
+                          ))
                         }}
                         className="min-h-[30px] rounded-lg border border-dash-border bg-[var(--glass-bg)] px-2 text-xs text-dash-cream"
                       >
@@ -725,8 +767,6 @@ export default function StoreDevicesPanel({ restaurantId }) {
                         value={Number(target.config?.drawer?.port || 1)}
                         disabled={busy}
                         onChange={(event) => {
-                          const reason = requestHardwareChangeReason('changing the cash drawer port')
-                          if (!reason) return
                           mutate(() => saveCashDrawerTargetConfig(restaurantId, target.id, {
                             ...(target.config || {}),
                             drawer: {
@@ -736,7 +776,7 @@ export default function StoreDevicesPanel({ restaurantId }) {
                               pulse_on_units: Number(target.config?.drawer?.pulse_on_units || 50),
                               pulse_off_units: Number(target.config?.drawer?.pulse_off_units || 250),
                             },
-                          }, reason))
+                          }, `Updated cash drawer port for ${target.name}`))
                         }}
                         className="min-h-[30px] rounded-lg border border-dash-border bg-[var(--glass-bg)] px-2 text-xs text-dash-cream"
                       >

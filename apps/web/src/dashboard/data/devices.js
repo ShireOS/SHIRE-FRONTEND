@@ -60,6 +60,12 @@ export const saveCashDrawerTargetConfig = (restaurantId, targetId, config, reaso
     body: JSON.stringify({ config, reason }),
   })
 
+export const setDevicePrinter = (restaurantId, deviceId, role, targetId, reason) =>
+  fetchPosApi(restaurantId, `/restaurants/${restaurantId}/devices/${deviceId}/printer-assignment`, {
+    method: 'PUT',
+    body: JSON.stringify({ role, target_id: targetId || null, reason }),
+  })
+
 export async function fetchPortfolioDevices(restaurantIds) {
   if (!restaurantIds || restaurantIds.length === 0) return []
   const { data, error } = await supabase
@@ -75,7 +81,7 @@ export async function fetchPortfolioDevices(restaurantIds) {
 // assignments, the printer registry, print groups (kitchen_stations) with
 // their subscribed targets, and menu categories with their group assignment.
 export async function fetchStoreDeviceConfig(restaurantId) {
-  const [devices, targets, stations, categories, typePolicies, printerEndpoints, sections] = await Promise.all([
+  const [devices, targets, outputTargets, stations, categories, typePolicies, printerEndpoints, sections] = await Promise.all([
     supabase
       .from('pos_devices')
       .select('id, restaurant_id, name, device_type, status, last_seen_at, created_at, revenue_center_id, idle_lock_seconds, absolute_ttl_seconds, persist_manager_session, observed_capabilities, hardware_config, capabilities_reported_at, printers:pos_device_printers(role, target_id)')
@@ -85,6 +91,13 @@ export async function fetchStoreDeviceConfig(restaurantId) {
       .from('pos_routing_targets')
       .select('id, name, target_type, connection_type, config, is_active')
       .eq('restaurant_id', restaurantId)
+      .order('name'),
+    supabase
+      .from('kitchen_output_targets')
+      .select('id, name, target_type, connection_type, config, is_active, usage, pos_device_id, archived_at, created_at')
+      .eq('restaurant_id', restaurantId)
+      .eq('target_type', 'printer')
+      .is('archived_at', null)
       .order('name'),
     supabase
       .from('kitchen_stations')
@@ -114,11 +127,20 @@ export async function fetchStoreDeviceConfig(restaurantId) {
       .eq('is_active', true)
       .order('name'),
   ])
-  const firstError = devices.error || targets.error || stations.error || categories.error || typePolicies.error || printerEndpoints.error || sections.error
+  const firstError = devices.error || targets.error || outputTargets.error || stations.error || categories.error || typePolicies.error || printerEndpoints.error || sections.error
   if (firstError) throw firstError
+  const compatibilityTargets = new Map((targets.data || []).map((target) => [target.id, target]))
   return {
-    devices: devices.data || [],
+    devices: (devices.data || []).map((device) => ({
+      ...device,
+      printers: (device.printers || []).map((assignment) => ({
+        ...assignment,
+        physical_target_id: compatibilityTargets.get(assignment.target_id)?.config?.physical_target_id || null,
+        legacy_target_name: compatibilityTargets.get(assignment.target_id)?.name || null,
+      })),
+    })),
     targets: targets.data || [],
+    outputTargets: outputTargets.data || [],
     stations: stations.data || [],
     categories: categories.data || [],
     typePolicies: typePolicies.data || [],
@@ -143,26 +165,6 @@ export async function updateDevice(deviceId, patch) {
     .from('pos_devices')
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq('id', deviceId)
-  if (error) throw error
-}
-
-// targetId null clears the role.
-export async function setDevicePrinter(deviceId, role, targetId) {
-  if (!targetId) {
-    const { error } = await supabase
-      .from('pos_device_printers')
-      .delete()
-      .eq('device_id', deviceId)
-      .eq('role', role)
-    if (error) throw error
-    return
-  }
-  const { error } = await supabase
-    .from('pos_device_printers')
-    .upsert(
-      { device_id: deviceId, role, target_id: targetId, updated_at: new Date().toISOString() },
-      { onConflict: 'device_id,role' }
-    )
   if (error) throw error
 }
 

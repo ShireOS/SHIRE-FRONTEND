@@ -121,6 +121,10 @@ list must stay in sync.
   `devices.manage` / `settings.edit` POS guards. Changes are sent through audited
   POS-backend endpoints with a required reason; direct Supabase writes remain
   protected by `can_manage_store_devices()` RLS but are not used for these controls.
+  Receipt-printer and cash-drawer selectors read active receipt-capable
+  `kitchen_output_targets` and persist through the audited
+  `/devices/:deviceId/printer-assignment` route; stale `pos_routing_targets`
+  compatibility rows are never shown as physical printer choices.
   Portfolio device visibility also honors each store's owner-controlled reseller
   `devices` permission. Reseller employees may read only their parent reseller's
   active assignment rows for restaurants they can already access directly or
