@@ -7,7 +7,6 @@ import { normalizeFloorPlanTablesForEditor } from '../onboarding/components/Floo
 import { FloorPlanTableSetup } from '../onboarding/components/FloorPlanTableSetup'
 import { MenuEditor } from '../onboarding/components/MenuEditor'
 import { ModifierEditor } from '../onboarding/components/ModifierEditor'
-import { syncRatePlanFromPricingPolicy } from './data/ratePlans'
 import { assignedStaffRoles, buildStaffRoleUpdate, primaryStaffRole, roleCodeFromJobCode } from './utils/staffRoles'
 import { PublishControls } from '../shared/components/PublishControls'
 import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
@@ -27,6 +26,7 @@ const SETUP_TABS = [
   // the tab is intentionally not surfaced here to avoid duplicate config.
   { id: 'sections', label: 'Sections' },
   { id: 'hours', label: 'Hours' },
+  { id: 'reservation_timing', label: 'Reservations' },
   { id: 'capacity', label: 'Capacity / Floor Plan' },
   { id: 'menu_categories', label: 'Menu Categories' },
   { id: 'specials', label: 'Specials' },
@@ -51,6 +51,7 @@ const SETUP_PROPAGATION = {
   tips_payroll: 'general',
   sections: 'specified',
   hours: 'specified',
+  reservation_timing: 'specified',
   capacity: 'specified',
   menu_categories: 'general',
 }
@@ -115,6 +116,27 @@ const DEFAULT_HOURS = [
   { day_of_week: 5, open_time: '11:00', close_time: '23:00', is_closed: false },
   { day_of_week: 6, open_time: '11:00', close_time: '23:00', is_closed: false },
 ]
+
+const DEFAULT_RESERVATION_TIMING = {
+  reservation_timing_same_for_channels: true,
+  reservation_online_booking_horizon_days: '30',
+  reservation_online_lead_time_minutes: '120',
+  reservation_online_grace_period_minutes: '15',
+  reservation_staff_booking_horizon_days: '30',
+  reservation_staff_lead_time_minutes: '120',
+  reservation_staff_grace_period_minutes: '15',
+  reservation_slot_interval_minutes: '15',
+  reservation_min_party_size: '1',
+  reservation_max_party_size: '10',
+  reservation_default_duration_minutes: '90',
+  reservation_windows_follow_operating_hours: true,
+}
+
+const RESERVATIONS_API_BASE_URL = (
+  import.meta.env.VITE_RESERVATIONS_API_BASE_URL ||
+  import.meta.env.VITE_RESERVATIONS_API_BASE ||
+  'http://localhost:4100/api/v1'
+).replace(/\/+$/, '')
 
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
   const hours = Math.floor(i / 2)
@@ -390,16 +412,15 @@ const normalizePricingPolicy = (raw = {}) => {
     jurisdiction_state: String(merged.jurisdiction_state || 'SC').toUpperCase().slice(0, 2),
     label: merged.label || defaultPricingLabel(merged.mode),
     disclosure: merged.disclosure || defaultPricingDisclosure(merged.mode),
-    rate_percent: String(Number.isFinite(rate) ? Math.round(rate * 10000) / 100 : 3.5),
   }
 }
 
 const pricingPolicyPayload = (policy) => {
-  const percent = Number(policy.rate_percent)
+  const rate = Number(policy.rate)
   return {
     enabled: policy.enabled !== false,
     mode: policy.mode || DEFAULT_PRICING_POLICY.mode,
-    rate: Number.isFinite(percent) ? Math.max(0, percent) / 100 : DEFAULT_PRICING_POLICY.rate,
+    rate: Number.isFinite(rate) ? Math.max(0, rate) : DEFAULT_PRICING_POLICY.rate,
     basis: policy.basis || DEFAULT_PRICING_POLICY.basis,
     applies_to: Array.isArray(policy.applies_to) ? policy.applies_to : DEFAULT_PRICING_POLICY.applies_to,
     jurisdiction_state: String(policy.jurisdiction_state || 'SC').toUpperCase().slice(0, 2),
@@ -972,6 +993,158 @@ function sanitizeNumber(value) {
   return String(value ?? '').replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1').slice(0, 10)
 }
 
+function clampInteger(value, fallback, min, max) {
+  const parsed = Number.parseInt(String(value ?? ''), 10)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, parsed))
+}
+
+const reservationConfigString = (value, fallback) => {
+  const text = String(value ?? '').trim()
+  return text === '' ? String(fallback) : text
+}
+
+function normalizeReservationTiming(raw = {}) {
+  const source = raw && typeof raw === 'object' ? raw : {}
+  return {
+    reservation_timing_same_for_channels:
+      typeof source.reservation_timing_same_for_channels === 'boolean'
+        ? source.reservation_timing_same_for_channels
+        : DEFAULT_RESERVATION_TIMING.reservation_timing_same_for_channels,
+    reservation_online_booking_horizon_days: reservationConfigString(source.reservation_online_booking_horizon_days, DEFAULT_RESERVATION_TIMING.reservation_online_booking_horizon_days),
+    reservation_online_lead_time_minutes: reservationConfigString(source.reservation_online_lead_time_minutes, DEFAULT_RESERVATION_TIMING.reservation_online_lead_time_minutes),
+    reservation_online_grace_period_minutes: reservationConfigString(source.reservation_online_grace_period_minutes, DEFAULT_RESERVATION_TIMING.reservation_online_grace_period_minutes),
+    reservation_staff_booking_horizon_days: reservationConfigString(source.reservation_staff_booking_horizon_days, DEFAULT_RESERVATION_TIMING.reservation_staff_booking_horizon_days),
+    reservation_staff_lead_time_minutes: reservationConfigString(source.reservation_staff_lead_time_minutes, DEFAULT_RESERVATION_TIMING.reservation_staff_lead_time_minutes),
+    reservation_staff_grace_period_minutes: reservationConfigString(source.reservation_staff_grace_period_minutes, DEFAULT_RESERVATION_TIMING.reservation_staff_grace_period_minutes),
+    reservation_slot_interval_minutes: reservationConfigString(source.reservation_slot_interval_minutes, DEFAULT_RESERVATION_TIMING.reservation_slot_interval_minutes),
+    reservation_min_party_size: reservationConfigString(source.reservation_min_party_size, DEFAULT_RESERVATION_TIMING.reservation_min_party_size),
+    reservation_max_party_size: reservationConfigString(source.reservation_max_party_size, DEFAULT_RESERVATION_TIMING.reservation_max_party_size),
+    reservation_default_duration_minutes: reservationConfigString(source.reservation_default_duration_minutes, DEFAULT_RESERVATION_TIMING.reservation_default_duration_minutes),
+    reservation_windows_follow_operating_hours:
+      typeof source.reservation_windows_follow_operating_hours === 'boolean'
+        ? source.reservation_windows_follow_operating_hours
+        : DEFAULT_RESERVATION_TIMING.reservation_windows_follow_operating_hours,
+  }
+}
+
+function reservationTimingPayload(data) {
+  const slotIntervalMinutes = clampInteger(data.reservation_slot_interval_minutes, 15, 5, 180)
+  const minPartySize = clampInteger(data.reservation_min_party_size, 1, 1, 99)
+  const maxPartySize = Math.max(minPartySize, clampInteger(data.reservation_max_party_size, 10, 1, 99))
+  const defaultDurationMinutes = clampInteger(data.reservation_default_duration_minutes, 90, 15, 240)
+  const online = {
+    bookingHorizonDays: clampInteger(data.reservation_online_booking_horizon_days, 30, 0, 365),
+    leadTimeMinutes: clampInteger(data.reservation_online_lead_time_minutes, 120, 0, 10080),
+    gracePeriodMinutes: clampInteger(data.reservation_online_grace_period_minutes, 15, 0, 360),
+  }
+  const staff = data.reservation_timing_same_for_channels
+    ? { ...online }
+    : {
+        bookingHorizonDays: clampInteger(data.reservation_staff_booking_horizon_days, online.bookingHorizonDays, 0, 365),
+        leadTimeMinutes: clampInteger(data.reservation_staff_lead_time_minutes, online.leadTimeMinutes, 0, 10080),
+        gracePeriodMinutes: clampInteger(data.reservation_staff_grace_period_minutes, online.gracePeriodMinutes, 0, 360),
+      }
+  return {
+    reservation_timing_same_for_channels: data.reservation_timing_same_for_channels,
+    reservation_online_booking_horizon_days: String(online.bookingHorizonDays),
+    reservation_online_lead_time_minutes: String(online.leadTimeMinutes),
+    reservation_online_grace_period_minutes: String(online.gracePeriodMinutes),
+    reservation_staff_booking_horizon_days: String(staff.bookingHorizonDays),
+    reservation_staff_lead_time_minutes: String(staff.leadTimeMinutes),
+    reservation_staff_grace_period_minutes: String(staff.gracePeriodMinutes),
+    reservation_slot_interval_minutes: String(slotIntervalMinutes),
+    reservation_min_party_size: String(minPartySize),
+    reservation_max_party_size: String(maxPartySize),
+    reservation_default_duration_minutes: String(defaultDurationMinutes),
+    reservation_windows_follow_operating_hours: data.reservation_windows_follow_operating_hours,
+    timingPolicies: { online, staff },
+  }
+}
+
+const reservationDayOfWeek = (operatingDayOfWeek) => (Number(operatingDayOfWeek) + 6) % 7
+
+function reservationPeriodsFromHours(timing, operatingHours, existingPeriods = []) {
+  const payload = reservationTimingPayload(timing)
+  const existingByDay = new Map(
+    existingPeriods
+      .filter(period => typeof period.dayOfWeek === 'number')
+      .map(period => [Number(period.dayOfWeek), period])
+  )
+  return normalizeHours(operatingHours).map(day => {
+    const dayOfWeek = reservationDayOfWeek(day.day_of_week)
+    const existing = existingByDay.get(dayOfWeek)
+    return {
+      id: typeof existing?.id === 'string' ? existing.id : undefined,
+      name: dayOfWeek >= 4 ? 'Weekend Reservations' : 'Reservations',
+      dayOfWeek,
+      startTime: `${day.open_time}:00`,
+      endTime: `${day.close_time}:00`,
+      slotIntervalMinutes: Number(payload.reservation_slot_interval_minutes),
+      leadTimeMinutes: Number(payload.reservation_staff_lead_time_minutes),
+      minPartySize: Number(payload.reservation_min_party_size),
+      maxPartySize: Number(payload.reservation_max_party_size),
+      defaultDurationMinutes: Number(payload.reservation_default_duration_minutes),
+      active: !day.is_closed,
+    }
+  })
+}
+
+function reservationPeriodsWithDefaults(timing, periods) {
+  const payload = reservationTimingPayload(timing)
+  return periods.map(period => ({
+    ...period,
+    slotIntervalMinutes: Number(payload.reservation_slot_interval_minutes),
+    minPartySize: Number(payload.reservation_min_party_size),
+    maxPartySize: Number(payload.reservation_max_party_size),
+    defaultDurationMinutes: Number(payload.reservation_default_duration_minutes),
+  }))
+}
+
+const numericReservationValues = (records, field) =>
+  (Array.isArray(records) ? records : [])
+    .map(record => Number(record?.[field]))
+    .filter(Number.isFinite)
+
+const firstReservationValue = (records, field, fallback) => {
+  const value = numericReservationValues(records, field)[0]
+  return Number.isFinite(value) ? String(value) : fallback
+}
+
+function reservationTimingFromSettings(settings) {
+  if (!settings || typeof settings !== 'object') return null
+  const servicePeriods = Array.isArray(settings.servicePeriods)
+    ? settings.servicePeriods.filter(period => period && typeof period === 'object')
+    : []
+  const timingPolicies = settings.timingPolicies && typeof settings.timingPolicies === 'object' ? settings.timingPolicies : {}
+  const online = timingPolicies.online && typeof timingPolicies.online === 'object' ? timingPolicies.online : {}
+  const staff = timingPolicies.staff && typeof timingPolicies.staff === 'object' ? timingPolicies.staff : {}
+  const onlinePatch = {
+    reservation_online_booking_horizon_days: reservationConfigString(online.bookingHorizonDays, reservationConfigString(settings.bookingHorizonDays, DEFAULT_RESERVATION_TIMING.reservation_online_booking_horizon_days)),
+    reservation_online_lead_time_minutes: reservationConfigString(online.leadTimeMinutes, DEFAULT_RESERVATION_TIMING.reservation_online_lead_time_minutes),
+    reservation_online_grace_period_minutes: reservationConfigString(online.gracePeriodMinutes, reservationConfigString(settings.gracePeriodMinutes, DEFAULT_RESERVATION_TIMING.reservation_online_grace_period_minutes)),
+  }
+  const staffPatch = {
+    reservation_staff_booking_horizon_days: reservationConfigString(staff.bookingHorizonDays, onlinePatch.reservation_online_booking_horizon_days),
+    reservation_staff_lead_time_minutes: reservationConfigString(staff.leadTimeMinutes, onlinePatch.reservation_online_lead_time_minutes),
+    reservation_staff_grace_period_minutes: reservationConfigString(staff.gracePeriodMinutes, onlinePatch.reservation_online_grace_period_minutes),
+  }
+  const minPartyValues = numericReservationValues(servicePeriods, 'minPartySize')
+  const maxPartyValues = numericReservationValues(servicePeriods, 'maxPartySize')
+  return normalizeReservationTiming({
+    ...onlinePatch,
+    ...staffPatch,
+    reservation_slot_interval_minutes: reservationConfigString(settings.defaultSlotIntervalMinutes, DEFAULT_RESERVATION_TIMING.reservation_slot_interval_minutes),
+    reservation_min_party_size: minPartyValues.length ? String(Math.min(...minPartyValues)) : DEFAULT_RESERVATION_TIMING.reservation_min_party_size,
+    reservation_max_party_size: maxPartyValues.length ? String(Math.max(...maxPartyValues)) : DEFAULT_RESERVATION_TIMING.reservation_max_party_size,
+    reservation_default_duration_minutes: firstReservationValue(servicePeriods, 'defaultDurationMinutes', DEFAULT_RESERVATION_TIMING.reservation_default_duration_minutes),
+    reservation_timing_same_for_channels:
+      onlinePatch.reservation_online_booking_horizon_days === staffPatch.reservation_staff_booking_horizon_days &&
+      onlinePatch.reservation_online_lead_time_minutes === staffPatch.reservation_staff_lead_time_minutes &&
+      onlinePatch.reservation_online_grace_period_minutes === staffPatch.reservation_staff_grace_period_minutes,
+  })
+}
+
 function defaultTaxRate() {
   return {
     name: 'Sales Tax',
@@ -1101,15 +1274,15 @@ function defaultCloseoutSettings() {
 
 function defaultMenuCategories() {
   return [
-    { name: 'Appetizers', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'appetizer', default_fire_mode: 'by_course', prep_time_minutes: '', kds_display_group: 'Apps', is_active: true },
-    { name: 'Entrees', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'entree', default_fire_mode: 'by_course', prep_time_minutes: '', kds_display_group: 'Entrees', is_active: true },
-    { name: 'Desserts', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'dessert', default_fire_mode: 'by_course', prep_time_minutes: '', kds_display_group: 'Desserts', is_active: true },
-    { name: 'Sides', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'side', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: 'Sides', is_active: true },
-    { name: 'Drinks', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: '', kds_display_group: 'Drinks', is_active: true },
-    { name: 'Cocktails', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: '', kds_display_group: 'Bar', is_active: true },
-    { name: 'Beer & Wine', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: '', kds_display_group: 'Bar', is_active: true },
-    { name: 'Specials', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'other', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: 'Specials', is_active: true },
-    { name: 'Other', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Expo', default_course_type: 'none', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: 'Other', is_active: true },
+    { name: 'Appetizers', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'by_course', kds_display_group: 'Apps', is_active: true },
+    { name: 'Entrees', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'by_course', kds_display_group: 'Entrees', is_active: true },
+    { name: 'Desserts', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'by_course', kds_display_group: 'Desserts', is_active: true },
+    { name: 'Sides', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'inherit', kds_display_group: 'Sides', is_active: true },
+    { name: 'Drinks', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_fire_mode: 'immediate', kds_display_group: 'Drinks', is_active: true },
+    { name: 'Cocktails', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_fire_mode: 'immediate', kds_display_group: 'Bar', is_active: true },
+    { name: 'Beer & Wine', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_fire_mode: 'immediate', kds_display_group: 'Bar', is_active: true },
+    { name: 'Specials', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'inherit', kds_display_group: 'Specials', is_active: true },
+    { name: 'Other', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Expo', default_fire_mode: 'inherit', kds_display_group: 'Other', is_active: true },
   ]
 }
 
@@ -1389,14 +1562,19 @@ function normalizeMenuCategories(rows) {
       tax_rate_id: row?.tax_rate_id || '',
       routing_station_id: row?.routing_station_id || '',
       routing_station_name: row?.routing_station_name || '',
-      default_course_type: row?.default_course_type || '',
       default_fire_mode: row?.default_fire_mode || '',
-      prep_time_minutes: row?.prep_time_minutes != null ? String(row.prep_time_minutes) : '',
       kds_display_group: row?.kds_display_group || '',
       is_active: row?.is_active !== false,
     }))
-    .filter(row => row.name && row.is_active)
+    .filter(row => row.is_active)
   return normalized.length > 0 ? normalized : defaultMenuCategories()
+}
+
+function validateMenuCategories(rows) {
+  const blankIndex = normalizeMenuCategories(rows).findIndex(row => !row.name.trim())
+  if (blankIndex >= 0) {
+    throw new Error(`Menu category ${blankIndex + 1} needs a name. Use Remove to delete it.`)
+  }
 }
 
 function normalizeDiscountRules(rows) {
@@ -1527,9 +1705,7 @@ function menuCategoriesPayload(menuCategories) {
       tax_rate_id: row.tax_rate_id || null,
       routing_station_id: row.routing_station_id || null,
       routing_station_name: row.routing_station_name || null,
-      default_course_type: row.default_course_type || null,
       default_fire_mode: row.default_fire_mode || null,
-      prep_time_minutes: row.prep_time_minutes === '' ? null : Number(row.prep_time_minutes),
       kds_display_group: row.kds_display_group || null,
       is_active: true,
     })),
@@ -2112,6 +2288,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [sectionProfiles, setSectionProfiles] = useState([])
   const [hours, setHours] = useState(DEFAULT_HOURS)
   const [sameHours, setSameHours] = useState(true)
+  const [reservationTiming, setReservationTiming] = useState(() => normalizeReservationTiming(restaurant.config))
   const [floorTables, setFloorTables] = useState([])
   const [floorPlanMode, setFloorPlanMode] = useState(null)
   const [menuItems, setMenuItems] = useState([])
@@ -2162,6 +2339,48 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       method: 'PUT',
       body: JSON.stringify(body),
     })
+
+  const fetchReservationSettings = async (targetRestaurantId) => {
+    const { data: sessionData } = await supabase.auth.getSession()
+    const headers = new Headers()
+    headers.set('Content-Type', 'application/json')
+    if (sessionData?.session?.access_token) headers.set('Authorization', `Bearer ${sessionData.session.access_token}`)
+    const response = await fetch(`${RESERVATIONS_API_BASE_URL}/locations/${targetRestaurantId}/reservation-settings`, { headers })
+    if (!response.ok) return null
+    return response.json()
+  }
+
+  const saveReservationSettings = async (targetRestaurantId, timing, operatingHours) => {
+    const currentSettings = await fetchReservationSettings(targetRestaurantId)
+    const existingPeriods = Array.isArray(currentSettings?.servicePeriods)
+      ? currentSettings.servicePeriods.filter(period => period && typeof period === 'object')
+      : []
+    const payload = reservationTimingPayload(timing)
+    const servicePeriods = timing.reservation_windows_follow_operating_hours
+      ? reservationPeriodsFromHours(timing, operatingHours, existingPeriods)
+      : existingPeriods.length > 0
+        ? reservationPeriodsWithDefaults(timing, existingPeriods)
+        : reservationPeriodsFromHours(timing, operatingHours, existingPeriods)
+    const { data: sessionData } = await supabase.auth.getSession()
+    const headers = new Headers()
+    headers.set('Content-Type', 'application/json')
+    if (sessionData?.session?.access_token) headers.set('Authorization', `Bearer ${sessionData.session.access_token}`)
+    const response = await fetch(`${RESERVATIONS_API_BASE_URL}/locations/${targetRestaurantId}/reservation-settings`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({
+        bookingHorizonDays: Number(payload.reservation_online_booking_horizon_days),
+        gracePeriodMinutes: Number(payload.reservation_online_grace_period_minutes),
+        defaultSlotIntervalMinutes: Number(payload.reservation_slot_interval_minutes),
+        servicePeriods,
+        timingPolicies: payload.timingPolicies,
+      }),
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body?.message || `Saving reservation timing failed (${response.status})`)
+    }
+  }
 
   const saveHoursForRestaurant = async (targetRestaurantId, nextHours) => {
     const { error: deleteError } = await supabase
@@ -2284,6 +2503,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     setPricingPolicy(prev => normalizePricingPolicy({ ...prev, jurisdiction_state: prev.jurisdiction_state || restaurant.state || 'SC' }))
     setDailySpecialSettings(normalizeDailySpecialSettings(restaurant.config))
     setServiceModel(initialServiceModel(restaurant))
+    setReservationTiming(normalizeReservationTiming(restaurant.config))
     setSaveMessage('')
   }, [restaurant])
 
@@ -2482,6 +2702,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         scoped('Check workflow', () => cached(queryKeys.checkWorkflowSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/check-workflow-settings`)), null),
         scoped('Tips and payroll', () => cached(queryKeys.tipsPayrollSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`)), null),
         scoped('Pricing policy', () => cached(queryKeys.pricingPolicy(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pricing-policy`)), null),
+        scoped('Reservation timing', () => fetchReservationSettings(restaurantId), null),
       ])
       const [
         staffRows,
@@ -2498,6 +2719,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         checkWorkflowData,
         tipPayrollData,
         pricingPolicyData,
+        reservationSettingsData,
       ] = results.map(result => result.value)
 
       const normalized = normalizeHours(hoursRows)
@@ -2522,6 +2744,11 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setCheckWorkflowSettings(normalizeCheckWorkflowSettings(checkWorkflowData))
       setTipPayrollSettings(normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes))
       setPricingPolicy(normalizePricingPolicy(pricingPolicyData || { jurisdiction_state: restaurant.state || 'SC' }))
+      {
+        const configReservationTiming = normalizeReservationTiming(restaurant.config)
+        const serviceReservationTiming = reservationTimingFromSettings(reservationSettingsData)
+        setReservationTiming(serviceReservationTiming ? { ...configReservationTiming, ...serviceReservationTiming } : configReservationTiming)
+      }
       const failedLabels = results.filter(result => result.error).map(result => result.label)
       const specialsResult = await scoped('Daily specials', loadDailySpecials, null)
       if (specialsResult.error) failedLabels.push(specialsResult.label)
@@ -2659,7 +2886,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         if (!prev.disclosure || isDefaultPricingCopy(prev.disclosure, DEFAULT_PRICING_DISCLOSURES)) normalizedPatch.disclosure = defaultPricingDisclosure(patch.mode)
       }
       const next = normalizePricingPolicy({ ...prev, ...normalizedPatch })
-      if (Object.prototype.hasOwnProperty.call(patch, 'rate_percent')) next.rate_percent = patch.rate_percent
       return next
     })
   }
@@ -2686,9 +2912,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       onSourceSaved: (saved) => {
         setPricingPolicy(normalizePricingPolicy(saved))
         queryClient.setQueryData(queryKeys.pricingPolicy(restaurantId), saved)
-      },
-      afterSave: (_saved, targetIds) => {
-        targetIds.forEach((targetId) => void syncRatePlanFromPricingPolicy(targetId, payload, auth?.user?.id))
       },
     })
   }
@@ -2739,6 +2962,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   }
 
   const saveMenuCategories = async (publication) => {
+    validateMenuCategories(menuCategories)
     const payload = menuCategoriesPayload(menuCategories)
     await saveWithPropagation({
       sectionId: 'menu_categories',
@@ -2998,6 +3222,66 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       },
       publication,
       buildCommand: (targetId) => ({ method: 'PUT', path: `/restaurants/${targetId}/operating-hours`, body: { hours }, target_type: 'restaurant', target_id: targetId }),
+    })
+  }
+
+  const updateReservationTiming = (patch) => {
+    setReservationTiming(prev => {
+      const next = normalizeReservationTiming({ ...prev, ...patch })
+      if (patch.reservation_timing_same_for_channels === true) {
+        next.reservation_staff_booking_horizon_days = next.reservation_online_booking_horizon_days
+        next.reservation_staff_lead_time_minutes = next.reservation_online_lead_time_minutes
+        next.reservation_staff_grace_period_minutes = next.reservation_online_grace_period_minutes
+      }
+      if (
+        next.reservation_timing_same_for_channels &&
+        (
+          Object.prototype.hasOwnProperty.call(patch, 'reservation_online_booking_horizon_days') ||
+          Object.prototype.hasOwnProperty.call(patch, 'reservation_online_lead_time_minutes') ||
+          Object.prototype.hasOwnProperty.call(patch, 'reservation_online_grace_period_minutes')
+        )
+      ) {
+        next.reservation_staff_booking_horizon_days = next.reservation_online_booking_horizon_days
+        next.reservation_staff_lead_time_minutes = next.reservation_online_lead_time_minutes
+        next.reservation_staff_grace_period_minutes = next.reservation_online_grace_period_minutes
+      }
+      return next
+    })
+  }
+
+  const saveReservationTiming = async (publication) => {
+    const payload = reservationTimingPayload(reservationTiming)
+    const configPatch = {
+      reservation_timing_same_for_channels: payload.reservation_timing_same_for_channels,
+      reservation_online_booking_horizon_days: payload.reservation_online_booking_horizon_days,
+      reservation_online_lead_time_minutes: payload.reservation_online_lead_time_minutes,
+      reservation_online_grace_period_minutes: payload.reservation_online_grace_period_minutes,
+      reservation_staff_booking_horizon_days: payload.reservation_staff_booking_horizon_days,
+      reservation_staff_lead_time_minutes: payload.reservation_staff_lead_time_minutes,
+      reservation_staff_grace_period_minutes: payload.reservation_staff_grace_period_minutes,
+      reservation_slot_interval_minutes: payload.reservation_slot_interval_minutes,
+      reservation_min_party_size: payload.reservation_min_party_size,
+      reservation_max_party_size: payload.reservation_max_party_size,
+      reservation_default_duration_minutes: payload.reservation_default_duration_minutes,
+      reservation_windows_follow_operating_hours: payload.reservation_windows_follow_operating_hours,
+    }
+    await saveWithPropagation({
+      sectionId: 'reservation_timing',
+      label: 'Reservation Timing',
+      propagation: SETUP_PROPAGATION.reservation_timing,
+      successMessage: 'Saved reservation timing.',
+      saveSource: async (targetId) => {
+        await saveReservationSettings(targetId, payload, hours)
+        return mergeRestaurantConfig(targetId, configPatch)
+      },
+      saveTarget: async (targetId) => {
+        await saveReservationSettings(targetId, payload, hours)
+        return mergeRestaurantConfig(targetId, configPatch)
+      },
+      onSourceSaved: () => {
+        setReservationTiming(normalizeReservationTiming(configPatch))
+      },
+      publication,
     })
   }
 
@@ -3461,13 +3745,15 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   {PRICING_MODE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </SelectInput>
               </Field>
-              <Field label="Rate %">
-                <TextInput
-                  inputMode="decimal"
-                  value={pricingPolicy.rate_percent}
-                  onChange={event => updatePricingPolicy({ rate_percent: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) })}
-                  placeholder="3.5"
-                />
+              <Field label="Commercial Rate">
+                <div className="rounded-xl border border-white/10 bg-white/[0.025] px-4 py-3 text-sm text-dash-secondary">
+                  <span className="font-mono text-dash-cream">
+                    {(Number(pricingPolicy.rate || 0) * 100).toFixed(2).replace(/\.?0+$/, '')}%
+                  </span>
+                  <p className="mt-1 text-xs leading-5 text-dash-tertiary">
+                    Set by Shire or reseller terms. Owners can configure display rules, not the per-transaction rate.
+                  </p>
+                </div>
               </Field>
               <Field label="Basis">
                 <SelectInput value={pricingPolicy.basis} onChange={event => updatePricingPolicy({ basis: event.target.value })}>
@@ -4156,6 +4442,100 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         </SectionShell>
       )}
 
+      {activeSetupTab === 'reservation_timing' && (
+        <SectionShell
+          title="Reservation Timing"
+          description="Booking windows, party limits, turn time, and whether online and staff-created reservations share the same timing."
+          actions={
+            <SmallButton variant="primary" onClick={() => void saveReservationTiming()} disabled={isSaving}>
+              {isSaving ? 'Saving...' : 'Save reservations'}
+            </SmallButton>
+          }
+        >
+          <div className="space-y-5">
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-dash-cream">Reservation channel timing</p>
+                  <p className="mt-1 text-sm leading-6 text-dash-secondary">
+                    Use one timing policy for online booking and host-created reservations, or split them when staff need more flexibility.
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <SmallButton variant={reservationTiming.reservation_timing_same_for_channels ? 'primary' : 'secondary'} onClick={() => updateReservationTiming({ reservation_timing_same_for_channels: true })}>Same</SmallButton>
+                  <SmallButton variant={!reservationTiming.reservation_timing_same_for_channels ? 'primary' : 'secondary'} onClick={() => updateReservationTiming({ reservation_timing_same_for_channels: false })}>Different</SmallButton>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <p className="label-mono mb-3">Slots & Parties</p>
+              <div className="grid gap-3 md:grid-cols-4">
+                <Field label="Slot spacing">
+                  <TextInput inputMode="numeric" value={reservationTiming.reservation_slot_interval_minutes} onChange={event => updateReservationTiming({ reservation_slot_interval_minutes: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="15" />
+                </Field>
+                <Field label="Min party">
+                  <TextInput inputMode="numeric" value={reservationTiming.reservation_min_party_size} onChange={event => updateReservationTiming({ reservation_min_party_size: event.target.value.replace(/\D/g, '').slice(0, 2) })} placeholder="1" />
+                </Field>
+                <Field label="Max party">
+                  <TextInput inputMode="numeric" value={reservationTiming.reservation_max_party_size} onChange={event => updateReservationTiming({ reservation_max_party_size: event.target.value.replace(/\D/g, '').slice(0, 2) })} placeholder="10" />
+                </Field>
+                <Field label="Turn time">
+                  <TextInput inputMode="numeric" value={reservationTiming.reservation_default_duration_minutes} onChange={event => updateReservationTiming({ reservation_default_duration_minutes: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="90" />
+                </Field>
+              </div>
+              <button
+                type="button"
+                onClick={() => updateReservationTiming({ reservation_windows_follow_operating_hours: !reservationTiming.reservation_windows_follow_operating_hours })}
+                className={[
+                  'mt-4 w-full rounded-xl border p-4 text-left text-sm transition',
+                  reservationTiming.reservation_windows_follow_operating_hours
+                    ? 'border-dash-gold/60 bg-dash-gold/10 text-dash-cream'
+                    : 'border-white/10 text-dash-secondary hover:border-dash-gold/50',
+                ].join(' ')}
+              >
+                <span className="font-semibold">Use operating hours as reservation windows</span>
+                <span className="mt-1 block text-xs leading-5 text-dash-tertiary">
+                  Closed days stay closed, and open/close times from the Hours tab become reservation service periods.
+                </span>
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <p className="label-mono mb-3">Online Booking</p>
+              <div className="grid gap-3 md:grid-cols-3">
+                <Field label="Book ahead days">
+                  <TextInput inputMode="numeric" value={reservationTiming.reservation_online_booking_horizon_days} onChange={event => updateReservationTiming({ reservation_online_booking_horizon_days: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="30" />
+                </Field>
+                <Field label="Lead time minutes">
+                  <TextInput inputMode="numeric" value={reservationTiming.reservation_online_lead_time_minutes} onChange={event => updateReservationTiming({ reservation_online_lead_time_minutes: event.target.value.replace(/\D/g, '').slice(0, 5) })} placeholder="120" />
+                </Field>
+                <Field label="No-show grace minutes">
+                  <TextInput inputMode="numeric" value={reservationTiming.reservation_online_grace_period_minutes} onChange={event => updateReservationTiming({ reservation_online_grace_period_minutes: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="15" />
+                </Field>
+              </div>
+            </div>
+
+            {!reservationTiming.reservation_timing_same_for_channels && (
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                <p className="label-mono mb-3">Staff, Phone & Walk-in</p>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <Field label="Book ahead days">
+                    <TextInput inputMode="numeric" value={reservationTiming.reservation_staff_booking_horizon_days} onChange={event => updateReservationTiming({ reservation_staff_booking_horizon_days: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="30" />
+                  </Field>
+                  <Field label="Lead time minutes">
+                    <TextInput inputMode="numeric" value={reservationTiming.reservation_staff_lead_time_minutes} onChange={event => updateReservationTiming({ reservation_staff_lead_time_minutes: event.target.value.replace(/\D/g, '').slice(0, 5) })} placeholder="120" />
+                  </Field>
+                  <Field label="No-show grace minutes">
+                    <TextInput inputMode="numeric" value={reservationTiming.reservation_staff_grace_period_minutes} onChange={event => updateReservationTiming({ reservation_staff_grace_period_minutes: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="15" />
+                  </Field>
+                </div>
+              </div>
+            )}
+          </div>
+        </SectionShell>
+      )}
+
       {activeSetupTab === 'capacity' && (
         <SectionShell
           title="Capacity / Floor Plan"
@@ -4213,12 +4593,12 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                 </div>
               ) : (
                 <SetupEmptyState title="No floor plan yet" actionLabel="Draw floor plan" onAction={() => setFloorPlanMode('manual')}>
-                  Use the visual editor to create table records and positions. Upload mode can detect tables from a floor-plan image.
+                  Use the visual editor to create table records, place them on the floor map, and assign each table to a section.
                 </SetupEmptyState>
               )}
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <OptionCard title="Upload Image" description="Upload a floor plan image and let AI detect tables." onClick={() => setFloorPlanMode('upload')} />
-                <OptionCard title="Draw Manually" description="Open the visual table editor and place tables yourself." onClick={() => setFloorPlanMode('manual')} />
+                <OptionCard title="Draw Manually" description="Open the visual editor to place tables, assign sections, and set seats." onClick={() => setFloorPlanMode('manual')} />
               </div>
               {floorTables.length > 0 && (
                 <FloorPlanTableSetup
@@ -4253,10 +4633,10 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
           </datalist>
           <div className="space-y-3">
             {normalizeMenuCategories(menuCategories).map((category, index) => (
-              <div key={category.id || `${category.name}:${index}`} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[1.2fr_1fr_1fr_0.8fr_0.8fr_0.7fr_auto]">
+              <div key={category.id || `menu-category-${index}`} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[1.2fr_1fr_1fr_0.9fr_1fr_auto]">
                 <TextInput value={category.name} onChange={event => updateMenuCategory(index, { name: event.target.value })} placeholder="Appetizers" />
                 <SelectInput value={category.tax_rate_id} onChange={event => updateMenuCategory(index, { tax_rate_id: event.target.value })}>
-                  <option value="">Default tax</option>
+                  <option value="">Use default tax</option>
                   {normalizeTaxRates(taxRates).map(rate => (
                     <option key={rate.id || rate.name} value={rate.id || ''}>{rate.name}{rate.rate ? ` · ${rate.rate}%` : ''}</option>
                   ))}
@@ -4267,35 +4647,25 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   onChange={event => updateMenuCategory(index, { routing_station_name: event.target.value, routing_station_id: '' })}
                   placeholder="Kitchen, Bar, Expo"
                 />
-                <SelectInput value={category.default_course_type} onChange={event => updateMenuCategory(index, { default_course_type: event.target.value })}>
-                  <option value="">Course default</option>
-                  <option value="appetizer">App</option>
-                  <option value="entree">Entree</option>
-                  <option value="dessert">Dessert</option>
-                  <option value="drink">Drink</option>
-                  <option value="side">Side</option>
-                  <option value="other">Other</option>
-                  <option value="none">None</option>
-                </SelectInput>
                 <SelectInput value={category.default_fire_mode} onChange={event => updateMenuCategory(index, { default_fire_mode: event.target.value })}>
-                  <option value="">Fire default</option>
-                  <option value="inherit">Inherit</option>
+                  <option value="">Use order default</option>
+                  <option value="inherit">Use order default</option>
                   <option value="immediate">Immediate</option>
                   <option value="hold">Hold</option>
                   <option value="manual">Manual</option>
                   <option value="by_course">By course</option>
                 </SelectInput>
-                <TextInput value={category.prep_time_minutes} onChange={event => updateMenuCategory(index, { prep_time_minutes: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="Prep min" />
+                <TextInput value={category.kds_display_group} onChange={event => updateMenuCategory(index, { kds_display_group: event.target.value })} placeholder="KDS group" />
                 <SmallButton variant="danger" onClick={() => setMenuCategories(prev => normalizeMenuCategories(prev).filter((_, currentIndex) => currentIndex !== index))}>Remove</SmallButton>
-                <div className="lg:col-span-7">
-                  <TextInput value={category.kds_display_group} onChange={event => updateMenuCategory(index, { kds_display_group: event.target.value })} placeholder="KDS display group" />
+                <div className="text-xs text-dash-tertiary lg:col-span-6">
+                  Fire timing is the default for new items in this category. Individual items can override it.
                 </div>
               </div>
             ))}
           </div>
           <div className="mt-4">
             <SmallButton
-              onClick={() => setMenuCategories(prev => [...normalizeMenuCategories(prev), { name: `Custom Category ${prev.length + 1}`, tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: '', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: '', is_active: true }])}
+              onClick={() => setMenuCategories(prev => [...normalizeMenuCategories(prev), { name: `Custom Category ${prev.length + 1}`, tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'inherit', kds_display_group: '', is_active: true }])}
             >
               Add category
             </SmallButton>

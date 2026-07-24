@@ -248,13 +248,15 @@ export function ReservationTimingStep({ onboarding }: ReservationTimingStepProps
         </section>
       )}
 
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="w-full px-6 py-4 rounded-lg bg-[rgb(var(--gold))] text-black font-medium hover:bg-[rgb(var(--gold-light))] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-      >
-        {isLoading ? 'Saving...' : 'Continue'}
-      </button>
+      <div className="sticky bottom-4 z-20 rounded-xl border border-white/10 bg-[#101010]/90 p-3 shadow-2xl shadow-black/40 backdrop-blur">
+        <button
+          type="submit"
+          disabled={isLoading}
+          className="w-full px-6 py-4 rounded-lg bg-white text-black font-medium hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+        >
+          {isLoading ? 'Saving...' : 'Continue'}
+        </button>
+      </div>
     </form>
   )
 }

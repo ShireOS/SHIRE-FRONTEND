@@ -11,10 +11,7 @@ interface MenuEditorProps {
   categories?: Array<{
     id?: string | null
     name: string
-    routing_station_id?: string
-    default_course_type?: string
     default_fire_mode?: string
-    prep_time_minutes?: string
     kds_display_group?: string
   }>
   onBack: () => void
@@ -31,6 +28,12 @@ const getToken = async (): Promise<string> => {
 const baseUrl = (restaurantId: string) =>
   `${API_CONFIG.baseUrl}/restaurants/${restaurantId}/menu`
 
+const priceString = (value: unknown) => {
+  if (value == null || value === '') return ''
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) && numberValue > 0 ? String(value) : ''
+}
+
 const newBlankItem = (): MenuEditorItem => ({
   id: crypto.randomUUID(),
   name: '',
@@ -42,12 +45,8 @@ const newBlankItem = (): MenuEditorItem => ({
   availability_mode: 'always',
   availability_days: [0, 1, 2, 3, 4, 5, 6],
   availability_service_modes: [],
-  course_type: '',
   fire_mode: '',
-  routing_station_id: undefined,
-  prep_time_minutes: '',
   kds_display_group: '',
-  item_routing_notes: '',
 })
 
 export function MenuEditor({ restaurantId, mode, initialItems, categories, onBack, onSave }: MenuEditorProps) {
@@ -115,18 +114,14 @@ export function MenuEditor({ restaurantId, mode, initialItems, categories, onBac
           name: t.name ?? '',
           category: t.category ?? '',
           menu_category_id: category?.id || undefined,
-          price: t.price != null ? String(t.price) : '',
+          price: priceString(t.price),
           description: t.description ?? '',
           is_available: true,
           availability_mode: 'always',
           availability_days: [0, 1, 2, 3, 4, 5, 6],
           availability_service_modes: [],
-          course_type: (category?.default_course_type || '') as MenuEditorItem['course_type'],
           fire_mode: (category?.default_fire_mode || '') as MenuEditorItem['fire_mode'],
-          routing_station_id: category?.routing_station_id || undefined,
-          prep_time_minutes: category?.prep_time_minutes || '',
           kds_display_group: category?.kds_display_group || '',
-          item_routing_notes: '',
         }
       })
 
@@ -180,12 +175,8 @@ export function MenuEditor({ restaurantId, mode, initialItems, categories, onBac
         availability_start_date: item.availability_start_date || undefined,
         availability_end_date: item.availability_end_date || undefined,
         availability_notes: item.availability_notes || undefined,
-        course_type: item.course_type || undefined,
         fire_mode: item.fire_mode || undefined,
-        routing_station_id: item.routing_station_id || undefined,
-        prep_time_minutes: item.prep_time_minutes ? Number(item.prep_time_minutes) : undefined,
         kds_display_group: item.kds_display_group || undefined,
-        item_routing_notes: item.item_routing_notes || undefined,
       }))
 
       const res = await fetch(`${baseUrl(restaurantId)}/items`, {
@@ -214,7 +205,7 @@ export function MenuEditor({ restaurantId, mode, initialItems, categories, onBac
   const validCount = items.filter(i => i.name.trim() !== '').length
 
   return (
-    <div className="flex flex-col h-full min-h-[70vh]">
+    <div className="relative left-1/2 flex min-h-[76vh] w-[min(1180px,calc(100vw-2rem))] -translate-x-1/2 flex-col">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <button
@@ -239,7 +230,7 @@ export function MenuEditor({ restaurantId, mode, initialItems, categories, onBac
         {phase === 'editing' && (
           <button
             onClick={handleSave}
-            className="px-4 py-2 bg-[rgb(var(--gold))] text-black text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
+            className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-gray-100 disabled:opacity-50"
           >
             Save {validCount} Item{validCount !== 1 ? 's' : ''}
           </button>
@@ -298,7 +289,7 @@ export function MenuEditor({ restaurantId, mode, initialItems, categories, onBac
       {/* Item editor */}
       {(phase === 'editing' || phase === 'saving') && (
         <div className="flex-1 flex flex-col gap-3">
-          <div className="flex-1 rounded-xl border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.02)] overflow-hidden">
+          <div className="flex-1 overflow-hidden rounded-xl border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.02)]">
             <MenuItemsTable
               items={items}
               onItemsChange={setItems}

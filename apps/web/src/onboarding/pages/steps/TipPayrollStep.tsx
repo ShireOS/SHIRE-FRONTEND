@@ -7,13 +7,18 @@ interface TipPayrollStepProps {
 const inputClass = 'w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]'
 const labelClass = 'mb-1.5 block text-xs font-medium text-[rgb(var(--text-secondary))]'
 
-const DISTRIBUTION_MODES: Array<{ value: TipPayrollSettingsData['tip_distribution_mode']; label: string }> = [
-  { value: 'individual', label: 'Individual tips' },
-  { value: 'pooled', label: 'Pooled tips' },
-  { value: 'role_based', label: 'Role-based pool' },
-  { value: 'sales_based', label: 'Sales-based split' },
-  { value: 'hours_based', label: 'Hours-based split' },
-  { value: 'points_based', label: 'Point-based split' },
+const POOL_METHODS: Array<{
+  key: 'individual' | 'pooled' | 'hours_based' | 'points_based' | 'sales_based'
+  mode: TipPayrollSettingsData['tip_distribution_mode']
+  pooled: boolean
+  title: string
+  description: string
+}> = [
+  { key: 'individual', mode: 'individual', pooled: false, title: 'Keep own', description: 'Each employee keeps the tips on their own checks. No shared pool.' },
+  { key: 'pooled', mode: 'pooled', pooled: true, title: 'Pool equally', description: 'Pool eligible tips, then split the pool evenly across receivers.' },
+  { key: 'hours_based', mode: 'hours_based', pooled: true, title: 'Pool by hours', description: 'Split the pool based on hours worked. Optional weights can make one role earn more per hour.' },
+  { key: 'points_based', mode: 'points_based', pooled: true, title: 'Pool by points', description: 'Split the pool by role weights, such as Server 10 points and Host 5 points.' },
+  { key: 'sales_based', mode: 'sales_based', pooled: true, title: 'Pool by sales', description: 'Split the pool based on each employee or role sales.' },
 ]
 
 const CASH_TIP_MODES: Array<{ value: TipPayrollSettingsData['cash_tip_declaration_mode']; label: string }> = [
@@ -58,10 +63,23 @@ function Toggle({ active, onClick, children }: { active: boolean; onClick: () =>
   )
 }
 
+function activePoolMethod(settings: TipPayrollSettingsData): (typeof POOL_METHODS)[number]['key'] {
+  if (!settings.tip_pooling_enabled || settings.tip_distribution_mode === 'individual') return 'individual'
+  if (settings.tip_distribution_mode === 'role_based') return 'points_based'
+  return POOL_METHODS.some(method => method.key === settings.tip_distribution_mode)
+    ? settings.tip_distribution_mode as (typeof POOL_METHODS)[number]['key']
+    : 'pooled'
+}
+
 export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
   const { data, updateData, saveTipPayrollSettings, nextStep, isLoading, error } = onboarding
   const settings = data.tip_payroll_settings
   const jobCodes = data.job_codes
+  const methodKey = activePoolMethod(settings)
+  const isPooled = methodKey !== 'individual'
+  const isPointsMode = methodKey === 'points_based'
+  const isHoursMode = methodKey === 'hours_based'
+  const usesPoolWeight = isPointsMode || isHoursMode
 
   const update = (patch: Partial<TipPayrollSettingsData>) => {
     updateData({ tip_payroll_settings: { ...settings, ...patch } })
@@ -89,17 +107,11 @@ export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
 
       <div className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-4">
         <p className="text-sm text-[rgb(var(--text-secondary))]">
-          Configure who keeps tips, whether tips are pooled, how cash tips are declared, and whether credit card tips are paid nightly or through payroll.
+          Configure whether tips are kept individually or pooled, how any pool is split, what tipouts are reserved from a role's tips, and how tips flow into payroll.
         </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div>
-          <label className={labelClass}>Tip distribution</label>
-          <select value={settings.tip_distribution_mode} onChange={(event) => update({ tip_distribution_mode: event.target.value as TipPayrollSettingsData['tip_distribution_mode'] })} className={inputClass}>
-            {DISTRIBUTION_MODES.map(option => <option key={option.value} value={option.value} className="bg-[#1a1a1a]">{option.label}</option>)}
-          </select>
-        </div>
         <div>
           <label className={labelClass}>Cash tips</label>
           <select value={settings.cash_tip_declaration_mode} onChange={(event) => update({ cash_tip_declaration_mode: event.target.value as TipPayrollSettingsData['cash_tip_declaration_mode'] })} className={inputClass}>
@@ -153,9 +165,40 @@ export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
       </div>
 
       <div className="space-y-3">
-        <p className="text-xs font-medium uppercase tracking-[0.14em] text-[rgb(var(--gold))]">Pool & Tipout Rules</p>
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-[rgb(var(--gold))]">Pool & Tipout Rules</p>
+          <p className="mt-1 text-xs text-[rgb(var(--text-secondary))]">
+            Pick one pool method. Points and percentages are not the same: points weight who receives a point-based pool, while percentages say how much of a role's tips gets reserved for a pool or tipout.
+          </p>
+        </div>
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+          {POOL_METHODS.map(method => {
+            const selected = methodKey === method.key
+            return (
+              <button
+                key={method.key}
+                type="button"
+                onClick={() => update({ tip_distribution_mode: method.mode, tip_pooling_enabled: method.pooled })}
+                className={[
+                  'rounded-lg border p-3 text-left transition',
+                  selected
+                    ? 'border-[rgba(212,168,84,0.55)] bg-[rgba(212,168,84,0.12)]'
+                    : 'border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.04)] hover:border-[rgba(212,168,84,0.35)]',
+                ].join(' ')}
+              >
+                <span className="flex items-center gap-2 text-sm font-semibold text-[rgb(var(--text-primary))]">
+                  <span className={[
+                    'h-3.5 w-3.5 flex-none rounded-full border',
+                    selected ? 'border-[rgb(var(--gold))] bg-[rgb(var(--gold))] shadow-[inset_0_0_0_3px_rgba(0,0,0,0.65)]' : 'border-[rgb(var(--text-tertiary))]',
+                  ].join(' ')} />
+                  {method.title}
+                </span>
+                <span className="mt-1.5 block text-xs leading-relaxed text-[rgb(var(--text-secondary))]">{method.description}</span>
+              </button>
+            )
+          })}
+        </div>
         <div className="flex flex-wrap gap-2">
-          <Toggle active={settings.tip_pooling_enabled} onClick={() => update({ tip_pooling_enabled: !settings.tip_pooling_enabled })}>Tip pooling enabled</Toggle>
           <Toggle active={settings.require_tipout_at_checkout} onClick={() => update({ require_tipout_at_checkout: !settings.require_tipout_at_checkout })}>Tipout at checkout</Toggle>
           <Toggle active={settings.allow_manager_tip_adjustments} onClick={() => update({ allow_manager_tip_adjustments: !settings.allow_manager_tip_adjustments })}>Manager tip edits</Toggle>
           <Toggle active={settings.tipout_sales_includes_tax} onClick={() => update({ tipout_sales_includes_tax: !settings.tipout_sales_includes_tax })}>Sales include tax</Toggle>
@@ -165,7 +208,7 @@ export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label className={labelClass}>Pool reset</label>
-            <select value={settings.tip_pool_reset} onChange={(event) => update({ tip_pool_reset: event.target.value as TipPayrollSettingsData['tip_pool_reset'] })} className={inputClass}>
+            <select value={settings.tip_pool_reset} disabled={!isPooled} onChange={(event) => update({ tip_pool_reset: event.target.value as TipPayrollSettingsData['tip_pool_reset'] })} className={`${inputClass} ${isPooled ? '' : 'opacity-40'}`}>
               <option value="shift" className="bg-[#1a1a1a]">Each shift</option>
               <option value="day" className="bg-[#1a1a1a]">Each day</option>
               <option value="pay_period" className="bg-[#1a1a1a]">Pay period</option>
@@ -198,13 +241,48 @@ export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
                 </div>
               </div>
               <div className="grid gap-3 md:grid-cols-3">
-                <input inputMode="decimal" value={rule.pool_points} onChange={(event) => updateRule(index, { pool_points: event.target.value.replace(/[^\d.]/g, '').slice(0, 6) })} placeholder="Pool points" className={inputClass} />
-                <input inputMode="decimal" value={rule.tipout_percent} onChange={(event) => updateRule(index, { tipout_percent: event.target.value.replace(/[^\d.]/g, '').slice(0, 6) })} placeholder="Tipout %" className={inputClass} />
-                <select value={rule.tipout_target_role} onChange={(event) => updateRule(index, { tipout_target_role: event.target.value })} className={inputClass}>
-                  <option value="" className="bg-[#1a1a1a]">No target role</option>
-                  {jobCodes.map(code => <option key={code.code} value={code.code} className="bg-[#1a1a1a]">{code.label}</option>)}
-                </select>
+                {isPooled && rule.contributes_to_pool ? (
+                  <div>
+                    <label className={labelClass}>% of tips into pool</label>
+                    <input inputMode="decimal" value={rule.pool_contribution_percent} onChange={(event) => updateRule(index, { pool_contribution_percent: event.target.value.replace(/[^\d.]/g, '').slice(0, 6) })} placeholder="100" className={inputClass} />
+                  </div>
+                ) : null}
+                {usesPoolWeight ? (
+                  <div>
+                    <label className={labelClass}>{isHoursMode ? 'Hourly pool weight' : 'Pool share points'}</label>
+                    <input
+                      inputMode="decimal"
+                      value={rule.pool_points}
+                      onChange={(event) => updateRule(index, { pool_points: event.target.value.replace(/[^\d.]/g, '').slice(0, 6) })}
+                      placeholder={isHoursMode ? '1.0' : 'e.g. 10'}
+                      className={inputClass}
+                    />
+                  </div>
+                ) : null}
+                <div>
+                  <label className={labelClass}>Tipout amount</label>
+                  <input inputMode="decimal" value={rule.tipout_percent} onChange={(event) => updateRule(index, { tipout_percent: event.target.value.replace(/[^\d.]/g, '').slice(0, 6) })} placeholder="Optional" className={inputClass} />
+                </div>
+                <div>
+                  <label className={labelClass}>Tipout goes to</label>
+                  <select value={rule.tipout_target_role} onChange={(event) => updateRule(index, { tipout_target_role: event.target.value })} className={inputClass}>
+                    <option value="" className="bg-[#1a1a1a]">No target role</option>
+                    {jobCodes.map(code => <option key={code.code} value={code.code} className="bg-[#1a1a1a]">{code.label}</option>)}
+                  </select>
+                </div>
               </div>
+              {usesPoolWeight ? (
+                <p className="mt-2 text-xs text-[rgb(var(--text-tertiary))]">
+                  {isPointsMode
+                    ? 'Points are relative weights for receiving the pool. A 10 point role receives twice the share of a 5 point role.'
+                    : 'Weight per hour multiplies hours for that role. Leave roles at 1 for a straight hours-based split.'}
+                </p>
+              ) : null}
+              {!isPooled ? (
+                <p className="mt-2 text-xs text-[rgb(var(--text-tertiary))]">
+                  Keep own means there is no shared pool. Only use the tipout fields if this role gives a set percent of its own tips to another role.
+                </p>
+              ) : null}
             </div>
           )
         })}

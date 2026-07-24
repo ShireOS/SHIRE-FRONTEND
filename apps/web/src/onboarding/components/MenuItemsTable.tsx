@@ -14,12 +14,8 @@ export interface MenuEditorItem {
   availability_start_date?: string
   availability_end_date?: string
   availability_notes?: string
-  course_type?: 'none' | 'appetizer' | 'entree' | 'dessert' | 'drink' | 'side' | 'other' | ''
   fire_mode?: 'inherit' | 'immediate' | 'hold' | 'manual' | 'by_course' | ''
-  routing_station_id?: string
-  prep_time_minutes?: string
   kds_display_group?: string
-  item_routing_notes?: string
 }
 
 const CATEGORIES = [
@@ -42,7 +38,7 @@ interface MenuItemsTableProps {
   items: MenuEditorItem[]
   onItemsChange: (items: MenuEditorItem[]) => void
   disabled?: boolean
-  categories?: Array<{ id?: string | null; name: string; routing_station_id?: string; routing_station_name?: string; default_course_type?: string; default_fire_mode?: string; prep_time_minutes?: string; kds_display_group?: string }>
+  categories?: Array<{ id?: string | null; name: string; default_fire_mode?: string; kds_display_group?: string }>
 }
 
 const DAYS = [
@@ -56,16 +52,6 @@ const DAYS = [
 ] as const
 
 const SERVICE_MODES = ['dine_in', 'bar', 'takeout', 'delivery', 'catering']
-const COURSE_OPTIONS = [
-  ['', 'Category default'],
-  ['none', 'No course'],
-  ['appetizer', 'App'],
-  ['entree', 'Entree'],
-  ['dessert', 'Dessert'],
-  ['drink', 'Drink'],
-  ['side', 'Side'],
-  ['other', 'Other'],
-] as const
 const FIRE_OPTIONS = [
   ['', 'Category default'],
   ['inherit', 'Default'],
@@ -74,6 +60,14 @@ const FIRE_OPTIONS = [
   ['manual', 'Manual'],
   ['by_course', 'By course'],
 ] as const
+const fieldClass = 'w-full min-w-0 rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-sm text-[rgb(var(--text-primary))] outline-none placeholder:text-[rgb(var(--text-tertiary))] focus:border-[rgba(201,169,98,0.65)]'
+const compactFieldClass = 'w-full min-w-0 rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-xs text-[rgb(var(--text-primary))] outline-none placeholder:text-[rgb(var(--text-tertiary))] focus:border-[rgba(201,169,98,0.65)]'
+
+const sanitizePriceInput = (value: string) => {
+  const cleaned = value.replace(/[^\d.]/g, '')
+  const [whole, ...rest] = cleaned.split('.')
+  return rest.length ? `${whole}.${rest.join('').slice(0, 2)}` : whole
+}
 
 export function MenuItemsTable({ items, onItemsChange, disabled, categories }: MenuItemsTableProps) {
   const categoryOptions = categories?.length ? [{ id: null, name: '' }, ...categories] : CATEGORIES.map(name => ({ id: null, name }))
@@ -88,10 +82,7 @@ export function MenuItemsTable({ items, onItemsChange, disabled, categories }: M
       ...item,
       category: categoryName,
       menu_category_id: category?.id || undefined,
-      routing_station_id: item.routing_station_id || category?.routing_station_id || undefined,
-      course_type: (item.course_type || category?.default_course_type || '') as MenuEditorItem['course_type'],
       fire_mode: (item.fire_mode || category?.default_fire_mode || '') as MenuEditorItem['fire_mode'],
-      prep_time_minutes: item.prep_time_minutes || category?.prep_time_minutes || '',
       kds_display_group: item.kds_display_group || category?.kds_display_group || '',
     } : item))
   }
@@ -119,64 +110,46 @@ export function MenuItemsTable({ items, onItemsChange, disabled, categories }: M
   }
 
   return (
-    <div className="w-full overflow-x-auto">
-      <table className="w-full text-sm border-collapse">
-        <thead>
-          <tr className="border-b border-[rgba(255,255,255,0.08)]">
-            <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs w-[22%]">Name*</th>
-            <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs w-[16%]">Category</th>
-            <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs w-[12%]">Price</th>
-            <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs">Description</th>
-            <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs w-[16%]">Availability</th>
-            <th className="text-left py-2 px-3 text-[rgb(var(--text-tertiary))] font-medium text-xs w-[16%]">Course / Routing</th>
-            <th className="w-8" />
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item) => (
-            <tr
-              key={item.id}
-              className="border-b border-[rgba(255,255,255,0.05)] bg-[rgba(255,255,255,0.01)] hover:bg-[rgba(255,255,255,0.03)] transition-colors"
+    <div className="w-full space-y-3 p-3">
+      {items.map((item, index) => (
+        <div
+          key={item.id}
+          className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.025)] p-3"
+        >
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[rgb(var(--text-tertiary))]">
+              Item {index + 1}
+            </p>
+            <button
+              type="button"
+              onClick={() => remove(item.id)}
+              disabled={disabled}
+              className="rounded-md border border-red-400/25 px-2 py-1 text-xs font-semibold text-red-300 transition hover:bg-red-500/10 disabled:opacity-40"
             >
-              {/* Name */}
-              <td className="py-1.5 px-2">
+              Remove
+            </button>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr_0.65fr_0.9fr]">
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">Name*</span>
                 <input
                   type="text"
                   value={item.name}
                   onChange={(e) => update(item.id, 'name', e.target.value)}
                   disabled={disabled}
                   placeholder="Item name"
-                  style={{
-                    width: '100%',
-                    padding: '4px 8px',
-                    fontSize: 13,
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: 4,
-                    color: 'rgb(var(--text-primary))',
-                    outline: 'none',
-                  }}
-                  onFocus={(e) => (e.target.style.borderColor = 'rgba(201,169,98,0.6)')}
-                  onBlur={(e) => (e.target.style.borderColor = 'rgba(255,255,255,0.08)')}
+                  className={fieldClass}
                 />
-              </td>
+            </label>
 
-              <td className="py-1.5 px-2">
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">Menu category</span>
                 <select
                   value={item.category}
                   onChange={(e) => updateCategory(item.id, e.target.value)}
                   disabled={disabled}
-                  style={{
-                    width: '100%',
-                    padding: '4px 8px',
-                    fontSize: 13,
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: 4,
-                    color: item.category ? 'rgb(var(--text-primary))' : 'rgb(var(--text-tertiary))',
-                    outline: 'none',
-                    cursor: 'pointer',
-                  }}
+                  className={fieldClass}
                 >
                   {categoryOptions.map(cat => (
                     <option key={cat.id || cat.name || 'blank'} value={cat.name} style={{ background: '#1a1a1a', color: '#fff' }}>
@@ -184,182 +157,133 @@ export function MenuItemsTable({ items, onItemsChange, disabled, categories }: M
                     </option>
                   ))}
                 </select>
-              </td>
+            </label>
 
-              {/* Price */}
-              <td className="py-1.5 px-2">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <span style={{ fontSize: 12, color: 'rgb(var(--text-tertiary))' }}>$</span>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">Price</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-[rgb(var(--text-tertiary))]">$</span>
                   <input
-                    type="number"
-                    min={0}
-                    step={0.01}
+                    type="text"
+                    inputMode="decimal"
                     value={item.price}
-                    onChange={(e) => update(item.id, 'price', e.target.value)}
+                    onChange={(e) => update(item.id, 'price', sanitizePriceInput(e.target.value))}
                     disabled={disabled}
                     placeholder="0.00"
-                    style={{
-                      width: '100%',
-                      padding: '4px 8px',
-                      fontSize: 13,
-                      background: 'rgba(255,255,255,0.05)',
-                      border: '1px solid rgba(255,255,255,0.08)',
-                      borderRadius: 4,
-                      color: 'rgb(var(--text-primary))',
-                      outline: 'none',
-                    }}
-                    onFocus={(e) => (e.target.style.borderColor = 'rgba(201,169,98,0.6)')}
-                    onBlur={(e) => (e.target.style.borderColor = 'rgba(255,255,255,0.08)')}
+                    className={fieldClass}
                   />
                 </div>
-              </td>
+            </label>
 
-              {/* Description */}
-              <td className="py-1.5 px-2">
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">Availability</span>
+              <select
+                value={item.availability_mode || 'always'}
+                onChange={(e) => update(item.id, 'availability_mode', e.target.value)}
+                disabled={disabled}
+                className={fieldClass}
+              >
+                <option value="always" style={{ background: '#1a1a1a', color: '#fff' }}>Always</option>
+                <option value="schedule" style={{ background: '#1a1a1a', color: '#fff' }}>By day/time</option>
+                <option value="seasonal" style={{ background: '#1a1a1a', color: '#fff' }}>Seasonal</option>
+                <option value="manual" style={{ background: '#1a1a1a', color: '#fff' }}>Manual/86 only</option>
+              </select>
+            </label>
+          </div>
+
+          <label className="mt-3 block space-y-1">
+            <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">Description</span>
                 <input
                   type="text"
                   value={item.description}
                   onChange={(e) => update(item.id, 'description', e.target.value)}
                   disabled={disabled}
                   placeholder="Optional description"
-                  style={{
-                    width: '100%',
-                    padding: '4px 8px',
-                    fontSize: 13,
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: 4,
-                    color: 'rgb(var(--text-primary))',
-                    outline: 'none',
-                  }}
-                  onFocus={(e) => (e.target.style.borderColor = 'rgba(201,169,98,0.6)')}
-                  onBlur={(e) => (e.target.style.borderColor = 'rgba(255,255,255,0.08)')}
+                  className={fieldClass}
                 />
-              </td>
+          </label>
 
-              <td className="py-1.5 px-2 align-top">
-                <select
-                  value={item.availability_mode || 'always'}
-                  onChange={(e) => update(item.id, 'availability_mode', e.target.value)}
-                  disabled={disabled}
-                  style={{
-                    width: '100%',
-                    padding: '4px 8px',
-                    fontSize: 13,
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: 4,
-                    color: 'rgb(var(--text-primary))',
-                    outline: 'none',
-                  }}
-                >
-                  <option value="always" style={{ background: '#1a1a1a', color: '#fff' }}>Always</option>
-                  <option value="schedule" style={{ background: '#1a1a1a', color: '#fff' }}>By day/time</option>
-                  <option value="seasonal" style={{ background: '#1a1a1a', color: '#fff' }}>Seasonal</option>
-                  <option value="manual" style={{ background: '#1a1a1a', color: '#fff' }}>Manual/86 only</option>
-                </select>
-                {(item.availability_mode === 'schedule' || item.availability_mode === 'seasonal') && (
-                  <div className="mt-2 space-y-2">
-                    {item.availability_mode === 'schedule' && (
-                      <>
-                        <div className="flex flex-wrap gap-1">
-                          {DAYS.map(([value, label]) => {
-                            const active = (item.availability_days || [0, 1, 2, 3, 4, 5, 6]).includes(value)
-                            return (
-                              <button
-                                key={value}
-                                type="button"
-                                disabled={disabled}
-                                onClick={() => update(item.id, 'availability_days', toggleNumber(item.availability_days, value))}
-                                className={`rounded border px-1.5 py-1 text-[10px] ${active ? 'border-[rgb(var(--gold))] text-[rgb(var(--gold))]' : 'border-white/10 text-[rgb(var(--text-tertiary))]'}`}
-                              >
-                                {label}
-                              </button>
-                            )
-                          })}
-                        </div>
-                        <div className="grid grid-cols-2 gap-1">
-                          <input type="time" value={item.availability_start_time || ''} disabled={disabled} onChange={(e) => update(item.id, 'availability_start_time', e.target.value)} className="min-w-0 rounded border border-white/10 bg-white/[0.05] px-1 py-1 text-xs text-white" />
-                          <input type="time" value={item.availability_end_time || ''} disabled={disabled} onChange={(e) => update(item.id, 'availability_end_time', e.target.value)} className="min-w-0 rounded border border-white/10 bg-white/[0.05] px-1 py-1 text-xs text-white" />
-                        </div>
-                      </>
-                    )}
-                    {item.availability_mode === 'seasonal' && (
-                      <div className="grid grid-cols-2 gap-1">
-                        <input type="date" value={item.availability_start_date || ''} disabled={disabled} onChange={(e) => update(item.id, 'availability_start_date', e.target.value)} className="min-w-0 rounded border border-white/10 bg-white/[0.05] px-1 py-1 text-xs text-white" />
-                        <input type="date" value={item.availability_end_date || ''} disabled={disabled} onChange={(e) => update(item.id, 'availability_end_date', e.target.value)} className="min-w-0 rounded border border-white/10 bg-white/[0.05] px-1 py-1 text-xs text-white" />
-                      </div>
-                    )}
-                    <div className="flex flex-wrap gap-1">
-                      {SERVICE_MODES.map(mode => {
-                        const active = (item.availability_service_modes || []).includes(mode)
-                        return (
-                          <button
-                            key={mode}
-                            type="button"
-                            disabled={disabled}
-                            onClick={() => update(item.id, 'availability_service_modes', toggleString(item.availability_service_modes, mode))}
-                            className={`rounded border px-1.5 py-1 text-[10px] ${active ? 'border-[rgb(var(--gold))] text-[rgb(var(--gold))]' : 'border-white/10 text-[rgb(var(--text-tertiary))]'}`}
-                          >
-                            {mode.replace('_', ' ')}
-                          </button>
-                        )
-                      })}
-                    </div>
+          {(item.availability_mode === 'schedule' || item.availability_mode === 'seasonal') && (
+            <div className="mt-3 space-y-2 rounded-lg border border-white/10 bg-black/20 p-3">
+              {item.availability_mode === 'schedule' && (
+                <>
+                  <div className="flex flex-wrap gap-1">
+                    {DAYS.map(([value, label]) => {
+                      const active = (item.availability_days || [0, 1, 2, 3, 4, 5, 6]).includes(value)
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => update(item.id, 'availability_days', toggleNumber(item.availability_days, value))}
+                          className={`rounded border px-2 py-1 text-[10px] ${active ? 'border-[rgb(var(--gold))] text-[rgb(var(--gold))]' : 'border-white/10 text-[rgb(var(--text-tertiary))]'}`}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
                   </div>
-                )}
-              </td>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input type="time" value={item.availability_start_time || ''} disabled={disabled} onChange={(e) => update(item.id, 'availability_start_time', e.target.value)} className={compactFieldClass} />
+                    <input type="time" value={item.availability_end_time || ''} disabled={disabled} onChange={(e) => update(item.id, 'availability_end_time', e.target.value)} className={compactFieldClass} />
+                  </div>
+                </>
+              )}
+              {item.availability_mode === 'seasonal' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="date" value={item.availability_start_date || ''} disabled={disabled} onChange={(e) => update(item.id, 'availability_start_date', e.target.value)} className={compactFieldClass} />
+                  <input type="date" value={item.availability_end_date || ''} disabled={disabled} onChange={(e) => update(item.id, 'availability_end_date', e.target.value)} className={compactFieldClass} />
+                </div>
+              )}
+              <div className="flex flex-wrap gap-1">
+                {SERVICE_MODES.map(mode => {
+                  const active = (item.availability_service_modes || []).includes(mode)
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => update(item.id, 'availability_service_modes', toggleString(item.availability_service_modes, mode))}
+                      className={`rounded border px-2 py-1 text-[10px] capitalize ${active ? 'border-[rgb(var(--gold))] text-[rgb(var(--gold))]' : 'border-white/10 text-[rgb(var(--text-tertiary))]'}`}
+                    >
+                      {mode.replace('_', ' ')}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
-              <td className="py-1.5 px-2 align-top">
-                <div className="space-y-2">
-                  <select
-                    value={item.course_type || ''}
-                    onChange={(e) => update(item.id, 'course_type', e.target.value)}
-                    disabled={disabled}
-                    className="w-full rounded border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-white"
-                  >
-                    {COURSE_OPTIONS.map(([value, label]) => <option key={value} value={value} style={{ background: '#1a1a1a', color: '#fff' }}>{label}</option>)}
-                  </select>
+          <details className="mt-3 rounded-lg border border-white/10 bg-black/15 p-3">
+            <summary className="cursor-pointer text-xs font-semibold text-[rgb(var(--text-secondary))]">
+              Advanced routing overrides
+            </summary>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-xs text-[rgb(var(--text-tertiary))]">Fire override</span>
                   <select
                     value={item.fire_mode || ''}
                     onChange={(e) => update(item.id, 'fire_mode', e.target.value)}
                     disabled={disabled}
-                    className="w-full rounded border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-white"
+                    className={compactFieldClass}
                   >
                     {FIRE_OPTIONS.map(([value, label]) => <option key={value} value={value} style={{ background: '#1a1a1a', color: '#fff' }}>{label}</option>)}
                   </select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs text-[rgb(var(--text-tertiary))]">KDS group</span>
                   <input
                     value={item.kds_display_group || ''}
                     onChange={(e) => update(item.id, 'kds_display_group', e.target.value)}
                     disabled={disabled}
                     placeholder="KDS group"
-                    className="w-full rounded border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-white placeholder:text-[rgb(var(--text-tertiary))]"
+                    className={compactFieldClass}
                   />
-                  <input
-                    value={item.prep_time_minutes || ''}
-                    onChange={(e) => update(item.id, 'prep_time_minutes', e.target.value.replace(/\D/g, '').slice(0, 3))}
-                    disabled={disabled}
-                    placeholder="Prep min"
-                    className="w-full rounded border border-white/10 bg-white/[0.05] px-2 py-1 text-xs text-white placeholder:text-[rgb(var(--text-tertiary))]"
-                  />
-                </div>
-              </td>
-
-              {/* Delete */}
-              <td className="py-1.5 px-2 text-center">
-                <button
-                  onClick={() => remove(item.id)}
-                  disabled={disabled}
-                  style={{ fontSize: 14, color: 'rgb(var(--text-tertiary))', cursor: 'pointer', padding: '2px 4px' }}
-                  title="Remove item"
-                >
-                  ✕
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              </label>
+            </div>
+          </details>
+        </div>
+      ))}
     </div>
   )
 }

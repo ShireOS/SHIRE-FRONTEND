@@ -67,6 +67,7 @@ export function normalizeFloorPlanTablesForEditor(tables: FloorPlanTable[], padd
 }
 
 type ResizeHandle = 'nw' | 'ne' | 'sw' | 'se'
+type AlignmentGuide = { orientation: 'vertical' | 'horizontal'; position: number }
 
 type DragState =
   | { type: 'move'; id: string; startMousePct: { x: number; y: number }; startCenter: { x: number; y: number } }
@@ -83,12 +84,37 @@ interface FloorPlanCanvasProps {
 const MIN_SIZE = 5
 const MAX_SIZE = 50
 const HANDLE_SIZE = 10 // px
+const DUPLICATE_OFFSET = 5
+const ALIGN_THRESHOLD = 1.2
+
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+const makeTableId = () =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `table-${Date.now()}-${Math.random().toString(36).slice(2)}`
+const tableHasSetupDetails = (table: FloorPlanTable) =>
+  Boolean(table.table_number?.trim()) && Number(table.capacity) > 0
+const isEditableTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) return false
+  return ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable
+}
+const nextTableNumber = (tables: FloorPlanTable[], preferred?: string | null) => {
+  const used = new Set(tables.map(table => table.table_number?.trim()).filter(Boolean))
+  const preferredNumber = Number.parseInt(preferred || '', 10)
+  let next = Number.isFinite(preferredNumber) && preferredNumber > 0 ? preferredNumber + 1 : tables.length + 1
+  while (used.has(String(next))) next += 1
+  return String(next)
+}
 
 export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgroundImage, mode }: FloorPlanCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [editingCapacity, setEditingCapacity] = useState<string>('')
+  const [statusMessage, setStatusMessage] = useState('')
+  const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([])
+  const copiedTableRef = useRef<FloorPlanTable | null>(null)
+  const statusTimeoutRef = useRef<number | null>(null)
   // Use ref for drag state so native event handlers always see the current value
   const dragRef = useRef<DragState | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -113,13 +139,93 @@ export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgro
     }
   }, [])
 
+  const showStatus = useCallback((message: string) => {
+    setStatusMessage(message)
+    if (statusTimeoutRef.current) window.clearTimeout(statusTimeoutRef.current)
+    statusTimeoutRef.current = window.setTimeout(() => setStatusMessage(''), 1600)
+  }, [])
+
+  useEffect(() => () => {
+    if (statusTimeoutRef.current) window.clearTimeout(statusTimeoutRef.current)
+  }, [])
+
   const clampTable = (t: FloorPlanTable): FloorPlanTable => {
-    const w = Math.max(MIN_SIZE, Math.min(MAX_SIZE, t.width))
-    const h = Math.max(MIN_SIZE, Math.min(MAX_SIZE, t.height))
-    const cx = Math.max(w / 2, Math.min(100 - w / 2, t.center_x))
-    const cy = Math.max(h / 2, Math.min(100 - h / 2, t.center_y))
+    const w = clamp(t.width, MIN_SIZE, MAX_SIZE)
+    const h = clamp(t.height, MIN_SIZE, MAX_SIZE)
+    const cx = clamp(t.center_x, w / 2, 100 - w / 2)
+    const cy = clamp(t.center_y, h / 2, 100 - h / 2)
     return { ...t, width: w, height: h, center_x: cx, center_y: cy }
   }
+
+  const alignToNearbyTables = (table: FloorPlanTable, allTables: FloorPlanTable[]) => {
+    const others = allTables.filter(item => item.id !== table.id)
+    if (others.length === 0) return { table, guides: [] as AlignmentGuide[] }
+
+    const xAnchors = [
+      { key: 'left', value: table.center_x - table.width / 2 },
+      { key: 'center', value: table.center_x },
+      { key: 'right', value: table.center_x + table.width / 2 },
+    ]
+    const yAnchors = [
+      { key: 'top', value: table.center_y - table.height / 2 },
+      { key: 'middle', value: table.center_y },
+      { key: 'bottom', value: table.center_y + table.height / 2 },
+    ]
+    const candidates = others.flatMap(other => {
+      const otherX = [
+        { key: 'left', value: other.center_x - other.width / 2 },
+        { key: 'center', value: other.center_x },
+        { key: 'right', value: other.center_x + other.width / 2 },
+      ]
+      const otherY = [
+        { key: 'top', value: other.center_y - other.height / 2 },
+        { key: 'middle', value: other.center_y },
+        { key: 'bottom', value: other.center_y + other.height / 2 },
+      ]
+      return [
+        ...xAnchors.flatMap(source => otherX.map(target => ({ axis: 'x' as const, distance: Math.abs(source.value - target.value), delta: target.value - source.value, position: target.value }))),
+        ...yAnchors.flatMap(source => otherY.map(target => ({ axis: 'y' as const, distance: Math.abs(source.value - target.value), delta: target.value - source.value, position: target.value }))),
+      ]
+    })
+
+    const xMatch = candidates
+      .filter(candidate => candidate.axis === 'x' && candidate.distance <= ALIGN_THRESHOLD)
+      .sort((a, b) => a.distance - b.distance)[0]
+    const yMatch = candidates
+      .filter(candidate => candidate.axis === 'y' && candidate.distance <= ALIGN_THRESHOLD)
+      .sort((a, b) => a.distance - b.distance)[0]
+
+    const aligned = clampTable({
+      ...table,
+      center_x: table.center_x + (xMatch?.delta ?? 0),
+      center_y: table.center_y + (yMatch?.delta ?? 0),
+    })
+
+    return {
+      table: aligned,
+      guides: [
+        ...(xMatch ? [{ orientation: 'vertical' as const, position: xMatch.position }] : []),
+        ...(yMatch ? [{ orientation: 'horizontal' as const, position: yMatch.position }] : []),
+      ],
+    }
+  }
+
+  const duplicateTable = useCallback((source: FloorPlanTable, currentTables: FloorPlanTable[]) => {
+    const tableNumber = nextTableNumber(currentTables, source.table_number)
+    const duplicated = clampTable({
+      ...source,
+      id: makeTableId(),
+      table_number: tableNumber,
+      center_x: source.center_x + DUPLICATE_OFFSET,
+      center_y: source.center_y + DUPLICATE_OFFSET,
+      setup_complete: true,
+    })
+    const next = [...currentTables, { ...duplicated, setup_complete: tableHasSetupDetails(duplicated) }]
+    onChangeRef.current(next)
+    tablesRef.current = next
+    setSelectedId(duplicated.id)
+    showStatus(`Copied table ${source.table_number?.trim() || 'table'} to ${tableNumber}`)
+  }, [showStatus])
 
   // Register mouse move/up once — read from refs to avoid stale closures
   useEffect(() => {
@@ -132,8 +238,13 @@ export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgro
       if (drag.type === 'move') {
         const dx = mouse.x - drag.startMousePct.x
         const dy = mouse.y - drag.startMousePct.y
+        const activeTable = current.find(t => t.id === drag.id)
+        if (!activeTable) return
+        const proposed = clampTable({ ...activeTable, center_x: drag.startCenter.x + dx, center_y: drag.startCenter.y + dy })
+        const aligned = alignToNearbyTables(proposed, current)
+        setAlignmentGuides(aligned.guides)
         onChangeRef.current(current.map(t =>
-          t.id !== drag.id ? t : clampTable({ ...t, center_x: drag.startCenter.x + dx, center_y: drag.startCenter.y + dy })
+          t.id !== drag.id ? t : aligned.table
         ))
       }
 
@@ -165,6 +276,7 @@ export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgro
     const handleMouseUp = () => {
       dragRef.current = null
       setIsDragging(false)
+      setAlignmentGuides([])
     }
 
     window.addEventListener('mousemove', handleMouseMove)
@@ -174,6 +286,52 @@ export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgro
       window.removeEventListener('mouseup', handleMouseUp)
     }
   }, [toPct]) // toPct is stable (useCallback with no deps that change)
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) return
+      const current = tablesRef.current
+      const selected = selectedId ? current.find(table => table.id === selectedId) ?? null : null
+      const isShortcut = event.metaKey || event.ctrlKey
+
+      if (isShortcut && event.key.toLowerCase() === 'c' && selected) {
+        event.preventDefault()
+        copiedTableRef.current = { ...selected }
+        showStatus(`Copied table ${selected.table_number?.trim() || 'table'}`)
+        return
+      }
+
+      if (isShortcut && event.key.toLowerCase() === 'v') {
+        const source = copiedTableRef.current ?? selected
+        if (!source) return
+        event.preventDefault()
+        duplicateTable(source, current)
+        return
+      }
+
+      if (isShortcut && event.key.toLowerCase() === 'd' && selected) {
+        event.preventDefault()
+        copiedTableRef.current = { ...selected }
+        duplicateTable(selected, current)
+        return
+      }
+
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selected) {
+        event.preventDefault()
+        const next = current.filter(table => table.id !== selected.id)
+        onChangeRef.current(next)
+        tablesRef.current = next
+        setSelectedId(null)
+        showStatus(`Removed table ${selected.table_number?.trim() || 'table'}`)
+        return
+      }
+
+      if (event.key === 'Escape') setSelectedId(null)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [duplicateTable, selectedId, showStatus])
 
   const startMove = (e: React.MouseEvent, table: FloorPlanTable) => {
     e.stopPropagation()
@@ -213,7 +371,13 @@ export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgro
     const val = parseInt(editingCapacity, 10)
     if (!isNaN(val) && val >= 1 && selectedId) {
       onTablesChange(tables.map(t =>
-        t.id === selectedId ? { ...t, capacity: Math.min(20, Math.max(1, val)) } : t
+        t.id === selectedId
+          ? {
+              ...t,
+              capacity: Math.min(20, Math.max(1, val)),
+              setup_complete: tableHasSetupDetails({ ...t, capacity: val }),
+            }
+          : t
       ))
     }
   }
@@ -233,6 +397,7 @@ export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgro
             ...table,
             section_id: section?.id ?? null,
             section_name: section?.name ?? 'Table',
+            setup_complete: tableHasSetupDetails(table),
           }
         : table
     ))
@@ -258,12 +423,12 @@ export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgro
         onClick={handleCanvasClick}
         style={{
           ...gridStyle,
-          aspectRatio: '4/3',
+          aspectRatio: '1000 / 680',
           cursor: isDragging ? 'grabbing' : 'default',
           position: 'relative',
         }}
         // No overflow-hidden — handles need to poke outside
-        className="w-full rounded-xl border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.02)] select-none"
+        className="min-h-[360px] w-full rounded-xl border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.02)] select-none md:min-h-[540px]"
       >
         {/* Background image clipped separately */}
         {backgroundImage && (
@@ -285,16 +450,32 @@ export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgro
         {/* Empty state */}
         {tables.length === 0 && mode === 'manual' && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <p className="text-[rgb(var(--text-tertiary))] text-sm">Click "+ Add Table" below to place tables</p>
+            <p className="text-[rgb(var(--text-tertiary))] text-sm">Click Add Table below, then drag or use Command V to place copies</p>
           </div>
         )}
+
+        {statusMessage && (
+          <div className="pointer-events-none absolute left-3 top-3 z-[70] rounded-md border border-white/10 bg-black/75 px-3 py-2 text-xs font-medium text-white shadow-lg">
+            {statusMessage}
+          </div>
+        )}
+
+        {alignmentGuides.map((guide, index) => (
+          <div
+            key={`${guide.orientation}-${guide.position}-${index}`}
+            className="pointer-events-none absolute z-[65] bg-[rgb(var(--gold))]/80 shadow-[0_0_10px_rgba(201,169,98,0.5)]"
+            style={guide.orientation === 'vertical'
+              ? { left: `${guide.position}%`, top: 0, bottom: 0, width: 1 }
+              : { top: `${guide.position}%`, left: 0, right: 0, height: 1 }}
+          />
+        ))}
 
         {/* Tables */}
         {tables.map((table, idx) => {
           const isSelected = table.id === selectedId
           const isHovered = table.id === hoveredId
           const sectionLabel = table.section_name || defaultSection?.name || 'Table'
-          const isIncomplete = table.setup_complete === false
+          const isIncomplete = !tableHasSetupDetails(table)
           const style: React.CSSProperties = {
             position: 'absolute',
             left: `${table.center_x - table.width / 2}%`,
@@ -433,7 +614,7 @@ export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgro
                   />
                   {sections.length > 0 && (
                     <>
-                      <span style={{ fontSize: 11, color: 'rgb(var(--text-tertiary))' }}>Area:</span>
+                      <span style={{ fontSize: 11, color: 'rgb(var(--text-tertiary))' }}>Section:</span>
                       <select
                         value={selectedTable?.section_id || defaultSection?.id || ''}
                         onChange={(e) => updateSelectedSection(e.target.value)}
@@ -457,11 +638,37 @@ export function FloorPlanCanvas({ tables, onTablesChange, sections = [], backgro
                   )}
                   <button
                     onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      copiedTableRef.current = selectedTable ? { ...selectedTable } : null
+                      if (selectedTable) duplicateTable(selectedTable, tables)
+                    }}
+                    style={{
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: 5,
+                      color: 'rgb(var(--text-secondary))',
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      padding: '3px 7px',
+                    }}
+                    title="Duplicate table"
+                  >
+                    Copy
+                  </button>
+                  <button
+                    onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); deleteSelected() }}
-                    style={{ fontSize: 13, color: 'rgb(var(--text-tertiary))', cursor: 'pointer', padding: '0 2px' }}
+                    style={{
+                      border: '1px solid rgba(248,113,113,0.35)',
+                      borderRadius: 5,
+                      color: 'rgb(252,165,165)',
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      padding: '3px 7px',
+                    }}
                     title="Delete table"
                   >
-                    ✕
+                    Remove
                   </button>
                 </div>
               )}

@@ -312,53 +312,77 @@ export function TeamStep({ onboarding }: TeamStepProps) {
           <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">Roles & wages</p>
           <p className="mt-1 text-xs text-[rgb(var(--text-tertiary))]">Add roles here, then assign each employee to one below.</p>
         </div>
+        {visibleRoleDrafts.length > 0 && (
+          <div className="hidden gap-3 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-[rgb(var(--text-tertiary))] md:grid md:grid-cols-[1fr_120px_130px_110px_82px]">
+            <span>Role name</span>
+            <span>Default wage</span>
+            <span>Permission level</span>
+            <span>Pay type</span>
+            <span>Action</span>
+          </div>
+        )}
         {visibleRoleDrafts.map(({ code, index }) => (
-          <div key={code.id || `${code.code}:${index}`} className="grid gap-3 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-3 md:grid-cols-[1fr_110px_110px_auto_auto]">
-            <input
-              value={code.label}
-              onChange={event => {
-                const label = event.target.value
-                updateRoleDraft(index, { label, code: code.id ? code.code : roleCode(label) })
-              }}
-              placeholder="Role name"
-              className="rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))]"
-            />
-            <input
-              value={code.default_hourly_rate}
-              onChange={event => updateRoleDraft(index, { default_hourly_rate: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) })}
-              inputMode="decimal"
-              placeholder="$/hr"
-              className="rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))]"
-            />
-            <select
-              value={code.permission_tier}
-              onChange={event => updateRoleDraft(index, { permission_tier: event.target.value as JobCodeData['permission_tier'] })}
-              className="rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))]"
-            >
-              <option value="normal" className="bg-[#1a1a1a]">Normal</option>
-              <option value="manager" className="bg-[#1a1a1a]">Manager</option>
-              <option value="limited" className="bg-[#1a1a1a]">Limited</option>
-              <option value="owner" className="bg-[#1a1a1a]">Owner</option>
-            </select>
-            <button
-              type="button"
-              onClick={() => updateRoleDraft(index, { is_tipped: !code.is_tipped })}
-              className={[
-                'rounded-lg border px-3 py-2 text-sm',
-                code.is_tipped
-                  ? 'border-[rgba(212,168,84,0.45)] bg-[rgba(212,168,84,0.14)] text-[rgb(var(--gold))]'
-                  : 'border-[rgba(255,255,255,0.1)] text-[rgb(var(--text-secondary))]',
-              ].join(' ')}
-            >
-              {code.is_tipped ? 'Tipped' : 'Hourly'}
-            </button>
-            <button
-              type="button"
-              onClick={() => removeRoleDraft(index)}
-              className="rounded-lg border border-red-400/30 px-3 py-2 text-sm text-red-300 hover:bg-red-500/10"
-            >
-              Remove
-            </button>
+          <div key={code.id || `${code.code}:${index}`} className="grid gap-3 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-3 md:grid-cols-[1fr_120px_130px_110px_82px] md:items-end">
+            <label className="space-y-1">
+              <span className="block text-xs font-medium text-[rgb(var(--text-secondary))] md:hidden">Role name</span>
+              <input
+                value={code.label}
+                onChange={event => {
+                  const label = event.target.value
+                  updateRoleDraft(index, { label, code: code.id ? code.code : roleCode(label) })
+                }}
+                placeholder="Server"
+                className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))]"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="block text-xs font-medium text-[rgb(var(--text-secondary))] md:hidden">Default wage</span>
+              <input
+                value={code.default_hourly_rate}
+                onChange={event => updateRoleDraft(index, { default_hourly_rate: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) })}
+                inputMode="decimal"
+                placeholder="$/hr"
+                className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))]"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="block text-xs font-medium text-[rgb(var(--text-secondary))] md:hidden">Permission level</span>
+              <select
+                value={code.permission_tier}
+                onChange={event => updateRoleDraft(index, { permission_tier: event.target.value as JobCodeData['permission_tier'] })}
+                className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))]"
+              >
+                <option value="normal" className="bg-[#1a1a1a]">Normal</option>
+                <option value="manager" className="bg-[#1a1a1a]">Manager</option>
+                <option value="limited" className="bg-[#1a1a1a]">Limited</option>
+                <option value="owner" className="bg-[#1a1a1a]">Owner</option>
+              </select>
+            </label>
+            <div className="space-y-1">
+              <span className="block text-xs font-medium text-[rgb(var(--text-secondary))] md:hidden">Pay type</span>
+              <button
+                type="button"
+                onClick={() => updateRoleDraft(index, { is_tipped: !code.is_tipped })}
+                className={[
+                  'w-full rounded-lg border px-3 py-2 text-sm',
+                  code.is_tipped
+                    ? 'border-[rgba(212,168,84,0.45)] bg-[rgba(212,168,84,0.14)] text-[rgb(var(--gold))]'
+                    : 'border-[rgba(255,255,255,0.1)] text-[rgb(var(--text-secondary))]',
+                ].join(' ')}
+              >
+                {code.is_tipped ? 'Tipped' : 'Hourly'}
+              </button>
+            </div>
+            <div className="space-y-1">
+              <span className="block text-xs font-medium text-[rgb(var(--text-secondary))] md:hidden">Action</span>
+              <button
+                type="button"
+                onClick={() => removeRoleDraft(index)}
+                className="w-full rounded-lg border border-red-400/30 px-3 py-2 text-sm text-red-300 hover:bg-red-500/10"
+              >
+                Remove
+              </button>
+            </div>
           </div>
         ))}
         <div className="grid gap-2 sm:grid-cols-2">

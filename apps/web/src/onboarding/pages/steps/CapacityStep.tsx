@@ -65,7 +65,7 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
     e.preventDefault()
     try {
       if (savedTables.length > 0 && floorPlanIncompleteCount(savedTables) > 0) {
-        setSetupError('Finish table numbers, sections, and capacities before continuing.')
+        setSetupError('Finish table numbers and seat counts before continuing.')
         return
       }
       setSetupError('')
@@ -148,7 +148,7 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
           Floor Plan <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
         </label>
         <p className="mb-3 text-sm leading-6 text-[rgb(var(--text-secondary))]">
-          Assign each table to a section such as Bar, Patio, Outdoor, or Main Dining. Tables without a section save as Table.
+          Draw or upload your floor map, then assign every table to one of the sections you created earlier. Tables without a section save as Table.
         </p>
 
         {savedTableCount !== null && (
@@ -204,26 +204,28 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
               </svg>
               <span className="text-sm font-medium text-[rgb(var(--text-primary))]">Draw Manually</span>
             </div>
-            <span className="text-xs text-[rgb(var(--text-tertiary))]">Place and arrange tables on a blank canvas</span>
+            <span className="text-xs text-[rgb(var(--text-tertiary))]">Place tables, then assign sections and seats</span>
           </button>
         </div>
       </div>
 
       {/* Submit */}
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="w-full py-4 px-6 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-      >
-        {isLoading ? (
-          <>
-            <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-[#d4a854]" />
-            Saving...
-          </>
-        ) : (
-          'Continue'
-        )}
-      </button>
+      <div className="sticky bottom-4 z-20 rounded-xl border border-white/10 bg-[#101010]/90 p-3 shadow-2xl shadow-black/40 backdrop-blur">
+        <button
+          type="submit"
+          disabled={isLoading}
+          className="w-full py-4 px-6 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+        >
+          {isLoading ? (
+            <>
+              <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-[#d4a854]" />
+              Saving...
+            </>
+          ) : (
+            'Continue'
+          )}
+        </button>
+      </div>
     </form>
   )
 }
