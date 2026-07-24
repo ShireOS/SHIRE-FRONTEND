@@ -14,7 +14,7 @@ import EmailPayrollModal from '../components/payroll/EmailPayrollModal'
 import IntervalControls from '../components/payroll/IntervalControls'
 import TipRulesEditor from '../components/payroll/TipRulesEditor'
 import { buildPayrollRows, payrollTotals, exportPayrollCsv, exportPayrollPdf } from './payrollExport'
-import { closedPayrollInterval, intervalDays, intervalLabel, isSingleDay, isoWindow } from '../utils/payrollIntervals'
+import { addDays, closedPayrollInterval, dateKeyOf, intervalDays, intervalLabel, isSingleDay, isoWindow } from '../utils/payrollIntervals'
 
 const MODE_LABELS = {
   individual: 'Keep own',
@@ -332,6 +332,7 @@ export default function TipPoolingPage({ restaurantId }) {
   const [menuItems, setMenuItems] = useState([])
   const [tipPayrollSettings, setTipPayrollSettings] = useState(defaultTipPayrollSettings())
   const [payPeriodCalendar, setPayPeriodCalendar] = useState(null)
+  const [payPeriodNavigationPending, setPayPeriodNavigationPending] = useState(false)
   const [closeoutRecipients, setCloseoutRecipients] = useState([])
   const [overview, setOverview] = useState(null)
   const [overviewLoading, setOverviewLoading] = useState(false)
@@ -691,6 +692,32 @@ export default function TipPoolingPage({ restaurantId }) {
     setError('')
   }
 
+  const shiftRunPayPeriod = async (direction) => {
+    if (payPeriodNavigationPending || !runInterval.start || !runInterval.end) return
+    setPayPeriodNavigationPending(true)
+    setError('')
+    try {
+      const boundary = direction < 0 ? runInterval.start : runInterval.end
+      const asOf = dateKeyOf(addDays(boundary, direction))
+      const resolved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pay-periods?as_of=${asOf}`)
+      const period = resolved?.available ? resolved.periods?.current_open : null
+      if (!period?.start_date || !period?.end_date) throw new Error(resolved?.reason || 'Could not resolve the adjacent pay period')
+      updateRunInterval({
+        preset: 'pay_period',
+        interval: {
+          start: period.start_date,
+          end: period.end_date,
+          preset: 'pay_period',
+          period_id: period.id,
+        },
+      })
+    } catch (err) {
+      setError(err?.message || 'Could not load the adjacent pay period')
+    } finally {
+      setPayPeriodNavigationPending(false)
+    }
+  }
+
   const saveDisabled = configSaving || configLoading || !canAdjustTips
 
   return (
@@ -780,11 +807,20 @@ export default function TipPoolingPage({ restaurantId }) {
                 <p className="mt-1 text-sm text-dash-secondary">Preview a pay period, then save it as a draft to review, finalize, export, or email.</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <button type="button" onClick={previewWindow} disabled={working || !runInterval.start || !runInterval.end} className="rounded-lg border border-dash-border px-3 py-1.5 text-sm text-dash-cream hover:border-dash-gold disabled:opacity-50">Preview period</button>
-                <button type="button" onClick={createRun} disabled={!canRunPayroll || working || !runInterval.start || !runInterval.end} className="rounded-lg border border-dash-gold bg-dash-gold/10 px-3 py-1.5 text-sm font-medium text-dash-gold hover:bg-dash-gold/20 disabled:opacity-50">Create draft</button>
+                <button type="button" onClick={previewWindow} disabled={working || payPeriodNavigationPending || !runInterval.start || !runInterval.end} className="rounded-lg border border-dash-border px-3 py-1.5 text-sm text-dash-cream hover:border-dash-gold disabled:opacity-50">Preview period</button>
+                <button type="button" onClick={createRun} disabled={!canRunPayroll || working || payPeriodNavigationPending || !runInterval.start || !runInterval.end} className="rounded-lg border border-dash-gold bg-dash-gold/10 px-3 py-1.5 text-sm font-medium text-dash-gold hover:bg-dash-gold/20 disabled:opacity-50">Create draft</button>
               </div>
             </div>
-            <IntervalControls interval={runInterval} preset={runPreset} payrollFrequency={tipPayrollSettings.payroll_export_frequency} payPeriodCalendar={payPeriodCalendar} onChange={updateRunInterval} className="mt-4" />
+            <IntervalControls
+              interval={runInterval}
+              preset={runPreset}
+              payrollFrequency={tipPayrollSettings.payroll_export_frequency}
+              payPeriodCalendar={payPeriodCalendar}
+              onPayPeriodShift={shiftRunPayPeriod}
+              payPeriodNavigationPending={payPeriodNavigationPending}
+              onChange={updateRunInterval}
+              className="mt-4"
+            />
           </section>
 
           {loading ? <div className="rounded-xl border border-dash-border bg-dash-panel p-4 text-sm text-dash-secondary">Loading runs…</div> : null}

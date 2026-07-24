@@ -282,13 +282,17 @@ export default function CheckLedgerSection({ restaurantId }) {
   const [tab, setTab] = useState('active')
   const [searchInput, setSearchInput] = useState('')
   const search = useDebounced(searchInput.trim())
-  const [businessDate, setBusinessDate] = useState(todayKey)
+  const [businessDate, setBusinessDate] = useState('')
   const [dateFrom, setDateFrom] = useState(() => daysAgoKey(6))
   const [dateTo, setDateTo] = useState(todayKey)
   const [historyStatus, setHistoryStatus] = useState('')
   const [page, setPage] = useState(1)
   const [fullscreen, setFullscreen] = useState(false)
   const [selectedOrderId, setSelectedOrderId] = useState(null)
+
+  useEffect(() => {
+    setBusinessDate('')
+  }, [restaurantId])
 
   useEffect(() => {
     setPage(1)
@@ -317,7 +321,7 @@ export default function CheckLedgerSection({ restaurantId }) {
       }
     }
     return {
-      business_date: businessDate,
+      business_date: businessDate || undefined,
       status: tab === 'active' ? 'open' : 'closed',
       search: search || undefined,
       page,
@@ -336,6 +340,13 @@ export default function CheckLedgerSection({ restaurantId }) {
     refetchInterval: tab === 'active' && !selectedOrderId ? LIVE_REFRESH_MS : false,
     retry: 1,
   })
+
+  useEffect(() => {
+    const canonicalBusinessDate = ledgerQuery.data?.business_date
+    if (!businessDate && !ledgerQuery.isPlaceholderData && canonicalBusinessDate) {
+      setBusinessDate(canonicalBusinessDate)
+    }
+  }, [businessDate, ledgerQuery.data?.business_date, ledgerQuery.isPlaceholderData])
 
   if (access.loading || !canView) return null
 

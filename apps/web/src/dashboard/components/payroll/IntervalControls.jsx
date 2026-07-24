@@ -15,6 +15,8 @@ export default function IntervalControls({
   onChange,
   payrollFrequency = 'biweekly',
   payPeriodCalendar = null,
+  onPayPeriodShift = null,
+  payPeriodNavigationPending = false,
   className = '',
 }) {
   const updatePreset = (nextPreset) => {
@@ -32,6 +34,10 @@ export default function IntervalControls({
     })
   }
   const shift = (direction) => {
+    if (preset === 'pay_period' && payPeriodCalendar?.available && onPayPeriodShift) {
+      void onPayPeriodShift(direction)
+      return
+    }
     onChange({ preset, interval: shiftInterval(interval, preset, direction) })
   }
   const updateDate = (field, value) => {
@@ -45,8 +51,9 @@ export default function IntervalControls({
           <button
             key={item.id}
             type="button"
+            disabled={payPeriodNavigationPending}
             onClick={() => updatePreset(item.id)}
-            className={`px-3 py-1.5 text-xs font-semibold transition ${
+            className={`px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${
               preset === item.id ? 'bg-dash-gold/15 text-dash-gold' : 'text-dash-secondary hover:text-dash-cream'
             }`}
           >
@@ -55,11 +62,11 @@ export default function IntervalControls({
         ))}
       </div>
       <div className="flex items-center gap-1 rounded-lg border border-dash-border px-1 py-0.5">
-        <button type="button" onClick={() => shift(-1)} title="Previous interval" className="rounded p-1 text-dash-secondary hover:text-dash-cream">
+        <button type="button" onClick={() => shift(-1)} disabled={payPeriodNavigationPending} title="Previous interval" className="rounded p-1 text-dash-secondary hover:text-dash-cream disabled:opacity-50">
           <ChevronLeft size={15} />
         </button>
         <span className="min-w-[11rem] text-center text-sm font-medium tabular-nums text-dash-cream">{intervalLabel(interval)}</span>
-        <button type="button" onClick={() => shift(1)} title="Next interval" className="rounded p-1 text-dash-secondary hover:text-dash-cream">
+        <button type="button" onClick={() => shift(1)} disabled={payPeriodNavigationPending} title="Next interval" className="rounded p-1 text-dash-secondary hover:text-dash-cream disabled:opacity-50">
           <ChevronRight size={15} />
         </button>
       </div>
@@ -67,6 +74,7 @@ export default function IntervalControls({
         <input
           type="date"
           value={interval.start}
+          disabled={payPeriodNavigationPending}
           onChange={(event) => updateDate('start', event.target.value)}
           aria-label="Start date"
           className="w-[8.5rem] bg-transparent text-sm text-dash-cream outline-none"
@@ -75,6 +83,7 @@ export default function IntervalControls({
         <input
           type="date"
           value={interval.end}
+          disabled={payPeriodNavigationPending}
           onChange={(event) => updateDate('end', event.target.value)}
           aria-label="End date"
           className="w-[8.5rem] bg-transparent text-sm text-dash-cream outline-none"

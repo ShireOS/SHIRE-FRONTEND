@@ -587,7 +587,6 @@ export default function StoreDevicesPanel({ restaurantId }) {
   const receiptTargets = useMemo(
     () => (config?.outputTargets || []).filter(
       (target) => target.is_active
-        && target.connection_type === 'network'
         && (target.usage === 'receipt' || target.usage === 'both')
     ).sort((left, right) => new Date(left.created_at || 0) - new Date(right.created_at || 0)),
     [config?.outputTargets]
