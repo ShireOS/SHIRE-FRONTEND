@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../../../shared/lib/supabase'
 import { API_CONFIG } from '../../../shared/api/config'
+import { fetchPosApi } from '../../../shared/api/posClient'
 import type { JobCodeData, RolePermissionData, UseOnboardingReturn } from '../../hooks/useOnboarding'
 
 interface TeamStepProps {
@@ -134,9 +135,6 @@ export function TeamStep({ onboarding }: TeamStepProps) {
     setIsSavingRoles(true)
     setFormError(null)
     try {
-      const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData?.session?.access_token
-      if (!token) throw new Error('Not authenticated')
       const saved: JobCodeData[] = []
       for (const draft of roleDrafts) {
         const payload = {
@@ -149,19 +147,16 @@ export function TeamStep({ onboarding }: TeamStepProps) {
           sort_order: draft.sort_order,
           is_active: draft.is_active !== false,
         }
-        const url = draft.id
-          ? `${API_CONFIG.baseUrl}/manager/job-codes/${draft.id}`
-          : `${API_CONFIG.baseUrl}/restaurants/${restaurantId}/job-codes`
-        const response = await fetch(url, {
-          method: draft.id ? 'PATCH' : 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify(payload),
-        })
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({}))
-          throw new Error((err as { detail?: string; message?: string }).detail || (err as { detail?: string; message?: string }).message || `Error ${response.status}`)
-        }
-        saved.push(await response.json() as JobCodeData)
+        saved.push(await fetchPosApi<JobCodeData>(
+          restaurantId,
+          draft.id
+            ? `/restaurants/${restaurantId}/job-codes/${draft.id}`
+            : `/restaurants/${restaurantId}/job-codes`,
+          {
+            method: draft.id ? 'PATCH' : 'POST',
+            body: JSON.stringify(payload),
+          },
+        ))
       }
       const normalized = saved.map((item, index) => ({
         ...item,
@@ -189,6 +184,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
               receives_from_pool: code.is_tipped,
               pool_points: code.is_tipped ? '1' : '',
               pool_contribution_percent: '100',
+              pool_share_percent: '',
               tipout_split_basis: 'hours',
               tipouts: [],
               tipout_percent: '',

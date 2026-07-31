@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery, keepPreviousData } from '@tanstack/react-query'
+import { useMutation, useQuery, keepPreviousData } from '@tanstack/react-query'
 import {
   ArrowLeft,
   ChevronLeft,
@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../auth'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
-import { posCheckLedgerApi } from '../../shared/api/posClient'
+import { posCheckLedgerApi, posRefundApi } from '../../shared/api/posClient'
 import { queryKeys } from '../../shared/query'
 
 const LIVE_REFRESH_MS = 15000
@@ -115,7 +115,13 @@ function Metric({ title, value }) {
 
 // Nested per-check view: summary, items, payments, and audit activity from
 // GET /manager/check-ledger/{order_id}.
-function CheckDetail({ restaurantId, orderId, onBack }) {
+export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All checks' }) {
+  const auth = useAuth()
+  const access = useBackOfficeAccess(auth, restaurantId)
+  const [refundPayment, setRefundPayment] = useState(null)
+  const [refundAmount, setRefundAmount] = useState('')
+  const [refundReason, setRefundReason] = useState('')
+  const [refundRequestId, setRefundRequestId] = useState(null)
   const detailQuery = useQuery({
     queryKey: queryKeys.checkLedgerDetail(restaurantId, orderId),
     queryFn: ({ signal }) => posCheckLedgerApi.detail(restaurantId, orderId, signal),
@@ -127,6 +133,28 @@ function CheckDetail({ restaurantId, orderId, onBack }) {
   const items = check.items || []
   const payments = detail?.payments || []
   const activity = detail?.activity || []
+  const canRefund = access.can('payments.refund')
+  const refundMutation = useMutation({
+    mutationFn: () => posRefundApi.request(restaurantId, refundPayment.id, {
+      request_id: refundRequestId,
+      amount: Number(refundAmount),
+      reason: refundReason.trim(),
+    }),
+    onSuccess: async () => {
+      setRefundPayment(null)
+      setRefundAmount('')
+      setRefundReason('')
+      setRefundRequestId(null)
+      await detailQuery.refetch()
+    },
+  })
+
+  const openRefund = (payment) => {
+    setRefundPayment(payment)
+    setRefundAmount(Number(payment.total_charged ?? payment.amount ?? 0).toFixed(2))
+    setRefundReason('')
+    setRefundRequestId(crypto.randomUUID())
+  }
 
   return (
     <div>
@@ -136,7 +164,7 @@ function CheckDetail({ restaurantId, orderId, onBack }) {
           onClick={onBack}
           className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-dash-secondary transition hover:text-dash-cream"
         >
-          <ArrowLeft size={13} aria-hidden="true" /> All checks
+          <ArrowLeft size={13} aria-hidden="true" /> {backLabel}
         </button>
         {detail?.needs_attention && (
           <span className="rounded-full bg-red-400/10 px-2.5 py-1 text-[11px] font-semibold text-red-300">
@@ -235,9 +263,70 @@ function CheckDetail({ restaurantId, orderId, onBack }) {
                           {label(payment.status)} · {shortDateTime(payment.completed_at || payment.created_at)}
                           {Number(payment.tip_amount) > 0 ? ` · tip ${money(payment.tip_amount)}` : ''}
                         </p>
+                        {canRefund && payment.payment_provider === 'datacap' && ['completed', 'refunded'].includes(payment.status) && (
+                          <button
+                            type="button"
+                            onClick={() => openRefund(payment)}
+                            className="mt-2 rounded-lg border border-white/10 px-2.5 py-1.5 text-xs font-semibold text-dash-secondary transition hover:text-dash-cream"
+                          >
+                            Issue refund
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>
+                )}
+                {refundPayment && (
+                  <div className="mt-3 rounded-xl border border-shell-accent/30 bg-shell-accent/5 p-3">
+                    <p className="text-sm font-semibold text-dash-cream">
+                      Refund {label(refundPayment.payment_method)} payment
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-dash-tertiary">
+                      A paired POS will execute DataCap ReturnByRecordNo. The ledger changes only after provider approval.
+                    </p>
+                    <label className="mt-3 block">
+                      <span className="label-mono !text-[9px]">Amount</span>
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={refundAmount}
+                        onChange={(event) => setRefundAmount(event.target.value)}
+                        className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-transparent px-3 font-mono text-sm text-dash-cream focus:border-shell-accent focus:outline-none"
+                      />
+                    </label>
+                    <label className="mt-2 block">
+                      <span className="label-mono !text-[9px]">Manager reason</span>
+                      <input
+                        value={refundReason}
+                        onChange={(event) => setRefundReason(event.target.value)}
+                        className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-transparent px-3 text-sm text-dash-cream focus:border-shell-accent focus:outline-none"
+                      />
+                    </label>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        disabled={refundMutation.isPending || Number(refundAmount) <= 0 || refundReason.trim().length < 2}
+                        onClick={() => refundMutation.mutate()}
+                        className="rounded-lg bg-shell-cta px-3 py-2 text-xs font-semibold text-shell-cta-text disabled:opacity-40"
+                      >
+                        {refundMutation.isPending ? 'Queueing…' : 'Send to paired POS'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={refundMutation.isPending}
+                        onClick={() => setRefundPayment(null)}
+                        className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-dash-secondary"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {refundMutation.isError && (
+                      <p className="mt-2 text-xs text-red-300">
+                        {refundMutation.error instanceof Error ? refundMutation.error.message : 'Could not queue refund.'}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
 

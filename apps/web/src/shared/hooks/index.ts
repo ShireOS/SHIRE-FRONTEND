@@ -4,7 +4,6 @@ export { useApiQuery, useApiQueryWithFallback } from './useApiQuery'
 export type { UseApiQueryResult } from './useApiQuery'
 
 export { useWaiterList, useStaffToday } from './useWaiterList'
-export { useWaiterDashboard } from './useWaiterDashboard'
 
 // Scheduling hooks
 export {

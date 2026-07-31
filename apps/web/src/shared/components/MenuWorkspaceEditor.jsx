@@ -1,43 +1,97 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, Check, Search, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, Plus, Search, X } from 'lucide-react'
 import { applyPosMenuWorkspace, fetchPosMenuWorkspace } from '../api/menuWorkspace'
 
 const TABS = [
-  ['departments', 'Departments'],
+  ['navigation', 'Navigation'],
   ['server', 'Server Quick Menu'],
   ['bartender', 'Fast Bar'],
   ['homes', 'Bartender homes'],
 ]
+
+const NAVIGATION_MODES = [
+  ['legacy_top', 'Legacy top categories'],
+  ['smart', 'Smart'],
+  ['items', 'Items only'],
+  ['departments', 'Departments'],
+  ['families', 'Families'],
+  ['families_departments', 'Families + departments'],
+]
+
+const SURFACE_MODES = [['inherit', 'Use restaurant default'], ...NAVIGATION_MODES]
 
 const emptyProfile = (surface) => ({
   surface,
   shortcut_item_ids: [],
   browse_department_ids: [],
   default_open: null,
+  quick_menu_enabled: true,
 })
 
+function rankNavigationNodes(nodes) {
+  const families = nodes.filter((node) => node.kind === 'family')
+  const departments = nodes.filter((node) => node.kind === 'department')
+  const familyIds = new Set(families.map((family) => family.id))
+  const ordered = []
+  for (const family of families) {
+    ordered.push({ ...family, parent_id: null })
+    ordered.push(...departments.filter((department) => department.parent_id === family.id))
+  }
+  ordered.push(...departments.filter((department) => !department.parent_id || !familyIds.has(department.parent_id)).map((department) => ({ ...department, parent_id: null })))
+  return ordered.map((node, display_order) => ({ ...node, display_order }))
+}
+
+function createFamilyId() {
+  if (globalThis.crypto?.randomUUID) return `family:${globalThis.crypto.randomUUID()}`
+  const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (token) => {
+    const value = Math.floor(Math.random() * 16)
+    return (token === 'x' ? value : (value & 0x3) | 0x8).toString(16)
+  })
+  return `family:${uuid}`
+}
+
 function normalizeWorkspace(value) {
-  const departments = Array.isArray(value?.departments)
+  const version = Number(value?.version || 0)
+  const rawDepartments = Array.isArray(value?.departments)
     ? [...value.departments].sort((a, b) => Number(a.display_order) - Number(b.display_order))
-      .map((department, index) => ({ ...department, display_order: index }))
     : []
+  const rawNodes = Array.isArray(value?.navigation_nodes) && value.navigation_nodes.length
+    ? value.navigation_nodes
+    : rawDepartments.map((department) => ({ ...department, kind: 'department', parent_id: null }))
+  const navigationNodes = rankNavigationNodes(rawNodes.map((node, index) => ({
+    ...node,
+    kind: node.kind === 'family' ? 'family' : 'department',
+    parent_id: node.kind === 'family' ? null : node.parent_id || null,
+    display_order: Number.isFinite(Number(node.display_order)) ? Number(node.display_order) : index,
+  })))
+  const departments = navigationNodes
+    .filter((node) => node.kind === 'department')
+    .map(({ kind: _kind, parent_id: _parentId, ...department }) => department)
   const departmentIds = departments.map((department) => department.id)
   const rawServerDefault = value?.profiles?.server?.default_open
   const serverDefaultOpen = rawServerDefault?.kind === 'shortcuts'
     ? { kind: 'shortcuts' }
     : rawServerDefault?.kind === 'department' && departmentIds.includes(rawServerDefault.department_id)
       ? { kind: 'department', department_id: rawServerDefault.department_id }
-      : departmentIds.length
-        ? { kind: 'department', department_id: departmentIds[0] }
-        : { kind: 'shortcuts' }
+      : { kind: 'shortcuts' }
   return {
-    version: Number(value?.version || 0),
+    version,
     updated_at: value?.updated_at || null,
     departments,
+    navigation_nodes: navigationNodes,
+    navigation: {
+      default_mode: version === 0
+        ? 'smart'
+        : NAVIGATION_MODES.some(([id]) => id === value?.navigation?.default_mode)
+          ? value.navigation.default_mode
+          : 'legacy_top',
+      server_mode: SURFACE_MODES.some(([id]) => id === value?.navigation?.server_mode) ? value.navigation.server_mode : 'inherit',
+      bartender_mode: SURFACE_MODES.some(([id]) => id === value?.navigation?.bartender_mode) ? value.navigation.bartender_mode : 'inherit',
+    },
     items: Array.isArray(value?.items) ? value.items : [],
     profiles: {
-      server: { ...emptyProfile('server_menu'), ...value?.profiles?.server, browse_department_ids: departmentIds, default_open: serverDefaultOpen },
-      bartender: { ...emptyProfile('fast_bar'), ...value?.profiles?.bartender, browse_department_ids: departmentIds },
+      server: { ...emptyProfile('server_menu'), ...value?.profiles?.server, browse_department_ids: departmentIds, default_open: serverDefaultOpen, quick_menu_enabled: value?.profiles?.server?.quick_menu_enabled !== false },
+      bartender: { ...emptyProfile('fast_bar'), ...value?.profiles?.bartender, browse_department_ids: departmentIds, quick_menu_enabled: value?.profiles?.bartender?.quick_menu_enabled !== false },
     },
     restaurant_bartender_default_home: value?.restaurant_bartender_default_home === 'tabs' ? 'tabs' : 'fast_bar',
     bartenders: Array.isArray(value?.staff_options)
@@ -100,8 +154,8 @@ function ShortcutEditor({ title, description, profile, items, onChange, disabled
   </div>
 }
 
-export default function MenuWorkspaceEditor({ restaurantId, canEdit = true, compact = false }) {
-  const [tab, setTab] = useState('departments')
+export default function MenuWorkspaceEditor({ restaurantId, canEdit = true, compact = false, onPreviewChange }) {
+  const [tab, setTab] = useState('navigation')
   const [workspace, setWorkspace] = useState(null)
   const [saved, setSaved] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -125,20 +179,76 @@ export default function MenuWorkspaceEditor({ restaurantId, canEdit = true, comp
     return () => { cancelled = true }
   }, [restaurantId])
 
-  const dirty = Boolean(workspace && saved && JSON.stringify(workspace) !== JSON.stringify(saved))
-  const updateProfile = (key, profile) => setWorkspace((current) => ({ ...current, profiles: { ...current.profiles, [key]: profile } }))
-  const moveDepartment = (index, delta) => setWorkspace((current) => {
-    const target = index + delta
-    if (target < 0 || target >= current.departments.length) return current
-    const departments = [...current.departments]
-    ;[departments[index], departments[target]] = [departments[target], departments[index]]
-    const rankedDepartments = departments.map((department, display_order) => ({ ...department, display_order }))
-    const browse = rankedDepartments.map((department) => department.id)
-    return { ...current, departments: rankedDepartments, profiles: {
-      server: { ...current.profiles.server, browse_department_ids: browse },
-      bartender: { ...current.profiles.bartender, browse_department_ids: browse },
-    } }
+  useEffect(() => {
+    onPreviewChange?.(workspace)
+  }, [onPreviewChange, workspace])
+
+  const updateNodes = (updater) => setWorkspace((current) => {
+    const nextNodes = rankNavigationNodes(typeof updater === 'function' ? updater(current.navigation_nodes) : updater)
+    const departments = nextNodes.filter((node) => node.kind === 'department').map(({ kind: _kind, parent_id: _parentId, ...department }) => department)
+    const browse = departments.map((department) => department.id)
+    return {
+      ...current,
+      navigation_nodes: nextNodes,
+      departments,
+      profiles: {
+        server: { ...current.profiles.server, browse_department_ids: browse },
+        bartender: { ...current.profiles.bartender, browse_department_ids: browse },
+      },
+    }
   })
+  const updateProfile = (key, profile) => setWorkspace((current) => ({ ...current, profiles: { ...current.profiles, [key]: profile } }))
+  const families = workspace?.navigation_nodes.filter((node) => node.kind === 'family') || []
+  const departments = workspace?.navigation_nodes.filter((node) => node.kind === 'department') || []
+  const familyIdsWithDepartments = new Set(departments.map((department) => department.parent_id).filter(Boolean))
+  const emptyFamilies = families.filter((family) => !familyIdsWithDepartments.has(family.id))
+  const familyModeSelected = workspace
+    ? [workspace.navigation.default_mode, workspace.navigation.server_mode, workspace.navigation.bartender_mode].some((mode) => mode === 'families' || mode === 'families_departments')
+    : false
+  const unassignedDepartments = departments.filter((department) => !department.parent_id)
+  const configurationBlocked = emptyFamilies.length > 0 || (familyModeSelected && unassignedDepartments.length > 0)
+  const dirty = Boolean(workspace && saved && JSON.stringify(workspace) !== JSON.stringify(saved))
+
+  const addFamily = () => {
+    const id = createFamilyId()
+    updateNodes((nodes) => [...nodes, { id, name: 'New family', kind: 'family', parent_id: null, display_order: nodes.length }])
+  }
+  const moveFamily = (index, delta) => {
+    const target = index + delta
+    if (target < 0 || target >= families.length) return
+    const reordered = [...families]
+    ;[reordered[index], reordered[target]] = [reordered[target], reordered[index]]
+    updateNodes([...reordered, ...departments])
+  }
+  const removeFamily = (familyId) => updateNodes((nodes) => nodes
+    .filter((node) => node.id !== familyId)
+    .map((node) => node.parent_id === familyId ? { ...node, parent_id: null } : node))
+  const departmentSiblingTarget = (index, delta) => {
+    const source = departments[index]
+    if (!source) return -1
+    const siblingIndexes = departments
+      .map((department, departmentIndex) => department.parent_id === source.parent_id ? departmentIndex : -1)
+      .filter((departmentIndex) => departmentIndex >= 0)
+    const siblingIndex = siblingIndexes.indexOf(index)
+    return siblingIndexes[siblingIndex + delta] ?? -1
+  }
+  const moveDepartment = (index, delta) => {
+    const target = departmentSiblingTarget(index, delta)
+    if (target < 0) return
+    const reordered = [...departments]
+    ;[reordered[index], reordered[target]] = [reordered[target], reordered[index]]
+    updateNodes([...families, ...reordered])
+  }
+  const setQuickMenuEnabled = (key, enabled) => setWorkspace((current) => {
+    const profile = { ...current.profiles[key], quick_menu_enabled: enabled }
+    if (key === 'server' && !enabled && profile.default_open?.kind === 'shortcuts') {
+      profile.default_open = current.departments[0]
+        ? { kind: 'department', department_id: current.departments[0].id }
+        : null
+    }
+    return { ...current, profiles: { ...current.profiles, [key]: profile } }
+  })
+
   const save = async () => {
     setSaving(true)
     setStatus({ tone: '', text: '' })
@@ -147,7 +257,7 @@ export default function MenuWorkspaceEditor({ restaurantId, canEdit = true, comp
       setWorkspace(normalized)
       setSaved(normalized)
       setReason('')
-      setStatus({ tone: 'success', text: 'POS menu workspace saved. Paired devices receive it on refresh.' })
+      setStatus({ tone: 'success', text: 'POS menu navigation saved. Paired devices receive it on refresh.' })
     } catch (error) {
       setStatus({ tone: 'error', text: error instanceof Error ? error.message : 'Could not save POS menus.' })
     } finally {
@@ -159,14 +269,19 @@ export default function MenuWorkspaceEditor({ restaurantId, canEdit = true, comp
   if (!workspace) return <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{status.text || 'POS menu workspace is unavailable.'}</div>
 
   return <div className={compact ? 'space-y-4' : 'space-y-5'}>
-    <header className="flex flex-wrap items-start justify-between gap-4"><div><p className="label-mono">POS menus</p><h2 className="mt-1 text-2xl font-semibold">Server Menu & Fast Bar</h2><p className="mt-2 max-w-3xl text-sm text-dash-secondary">Rank departments and configure common items. Every POS always retains search and access to every department.</p></div><div className="w-full max-w-sm"><label className="block text-xs font-semibold">Change reason<input disabled={!canEdit} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why is this layout changing?" className="mt-1 h-10 w-full rounded-md border border-dash-border bg-transparent px-3 text-sm" /></label><button type="button" disabled={!canEdit || !dirty || !reason.trim() || saving} onClick={() => void save()} className="mt-2 h-10 w-full rounded-lg bg-shell-cta px-4 text-sm font-semibold text-shell-cta-text disabled:opacity-40">{saving ? 'Saving…' : 'Save POS menus'}</button></div></header>
+    <header className="flex flex-wrap items-start justify-between gap-4"><div><p className="label-mono">POS menus</p><h2 className="mt-1 text-2xl font-semibold">Adaptive menu navigation</h2><p className="mt-2 max-w-3xl text-sm text-dash-secondary">Families and departments organize browsing only. Opening an item still uses the existing modifier flow.</p></div><div className="w-full max-w-sm"><label className="block text-xs font-semibold">Change reason<input disabled={!canEdit} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Why is this layout changing?" className="mt-1 h-10 w-full rounded-md border border-dash-border bg-transparent px-3 text-sm" /></label><button type="button" disabled={!canEdit || !dirty || !reason.trim() || saving || configurationBlocked} onClick={() => void save()} className="mt-2 h-10 w-full rounded-lg bg-shell-cta px-4 text-sm font-semibold text-shell-cta-text disabled:opacity-40">{saving ? 'Saving…' : 'Save POS menus'}</button></div></header>
     {!canEdit && <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">You can view this configuration. Editing requires Menu: Edit items & modifiers.</div>}
+    {configurationBlocked && <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">{emptyFamilies.length ? 'Assign at least one department to every family before saving.' : 'Family modes require every department to belong to a family.'}</div>}
     {status.text && <div className={`rounded-lg border p-3 text-sm ${status.tone === 'error' ? 'border-red-500/30 bg-red-500/10 text-red-200' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'}`}>{status.text}</div>}
     <div className="flex flex-wrap rounded-lg border border-dash-border p-1">{TABS.map(([id, label]) => <button key={id} type="button" onClick={() => setTab(id)} className={`min-w-[150px] flex-1 rounded-md px-3 py-2.5 text-sm font-semibold ${tab === id ? 'bg-shell-cta text-shell-cta-text' : 'text-dash-secondary'}`}>{label}</button>)}</div>
     <section className="rounded-lg border border-dash-border bg-[var(--glass-bg)] p-4 sm:p-5">
-      {tab === 'departments' && <div><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">Department rank</h3><p className="mt-1 text-sm text-dash-secondary">The POS shows five across and keeps at least two rows visible. Extra rows use this stable order when space remains.</p></div><span className="rounded-full border border-dash-border px-3 py-1 text-xs text-dash-secondary">All departments required</span></div><div className="mt-5 divide-y divide-dash-border rounded-lg border border-dash-border">{workspace.departments.map((department, index) => <div key={department.id} className="flex min-h-14 items-center gap-3 px-3 py-2"><span className="w-7 font-mono text-xs text-dash-tertiary">{index + 1}</span><strong className="min-w-0 flex-1 truncate text-sm">{department.name}</strong><button type="button" disabled={!canEdit || index === 0} onClick={() => moveDepartment(index, -1)} className="grid h-9 w-9 place-items-center rounded-md border border-dash-border disabled:opacity-30"><ArrowUp size={14} /></button><button type="button" disabled={!canEdit || index === workspace.departments.length - 1} onClick={() => moveDepartment(index, 1)} className="grid h-9 w-9 place-items-center rounded-md border border-dash-border disabled:opacity-30"><ArrowDown size={14} /></button></div>)}</div></div>}
-      {tab === 'server' && <div className="space-y-5"><label className="block max-w-sm text-sm font-semibold">Default server view<select disabled={!canEdit} value={workspace.profiles.server.default_open?.kind === 'department' ? `department:${workspace.profiles.server.default_open.department_id}` : 'shortcuts'} onChange={(event) => updateProfile('server', { ...workspace.profiles.server, default_open: event.target.value === 'shortcuts' ? { kind: 'shortcuts' } : { kind: 'department', department_id: event.target.value.replace(/^department:/, '') } })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-transparent px-3"><option value="shortcuts">Quick Menu</option>{workspace.departments.map((department) => <option key={department.id} value={`department:${department.id}`}>{department.name}</option>)}</select></label><ShortcutEditor title="Server Quick Menu" description="Add and rank common server items. There is no fixed shortcut count; the POS shows only what fits after departments." profile={workspace.profiles.server} items={workspace.items} disabled={!canEdit} onChange={(profile) => updateProfile('server', profile)} /></div>}
-      {tab === 'bartender' && <div className="space-y-5"><div className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 p-3 text-sm text-emerald-100">Fast Bar is a complete bartender screen. Search, New Tab, Attach Tab, Tabs, and every department remain available.</div><ShortcutEditor title="Fast Bar items" description="Add and rank common pours and food items. Bartenders can still browse every department from Fast Bar." profile={workspace.profiles.bartender} items={workspace.items} disabled={!canEdit} onChange={(profile) => updateProfile('bartender', profile)} /></div>}
+      {tab === 'navigation' && <div className="space-y-6">
+        <div><h3 className="text-lg font-semibold">Navigation modes</h3><p className="mt-1 text-sm text-dash-secondary">Smart uses the configured structure, never restaurant type, and never invents Food, Beer, or Wine.</p><div className="mt-4 grid gap-3 md:grid-cols-3"><label className="text-sm font-semibold">Restaurant default<select disabled={!canEdit} value={workspace.navigation.default_mode} onChange={(event) => setWorkspace((current) => ({ ...current, navigation: { ...current.navigation, default_mode: event.target.value } }))} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-transparent px-3">{NAVIGATION_MODES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><label className="text-sm font-semibold">Server Menu<select disabled={!canEdit} value={workspace.navigation.server_mode} onChange={(event) => setWorkspace((current) => ({ ...current, navigation: { ...current.navigation, server_mode: event.target.value } }))} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-transparent px-3">{SURFACE_MODES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><label className="text-sm font-semibold">Fast Bar<select disabled={!canEdit} value={workspace.navigation.bartender_mode} onChange={(event) => setWorkspace((current) => ({ ...current, navigation: { ...current.navigation, bartender_mode: event.target.value } }))} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-transparent px-3">{SURFACE_MODES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label></div></div>
+        <div><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">Families</h3><p className="mt-1 text-sm text-dash-secondary">Optional high-level groups shown in the far-left rail.</p></div><button type="button" disabled={!canEdit} onClick={addFamily} className="inline-flex h-10 items-center gap-2 rounded-lg border border-dash-border px-3 text-sm font-semibold disabled:opacity-40"><Plus size={15} />Add family</button></div>{families.length ? <div className="mt-4 divide-y divide-dash-border rounded-lg border border-dash-border">{families.map((family, index) => <div key={family.id} className="flex flex-wrap items-center gap-2 px-3 py-3"><input aria-label={`${family.name} family name`} disabled={!canEdit} value={family.name} onChange={(event) => updateNodes((nodes) => nodes.map((node) => node.id === family.id ? { ...node, name: event.target.value } : node))} className="h-10 min-w-[180px] flex-1 rounded-md border border-dash-border bg-transparent px-3 text-sm font-semibold" /><span className="text-xs text-dash-tertiary">{departments.filter((department) => department.parent_id === family.id).length} departments</span><button type="button" aria-label={`Move ${family.name} up`} disabled={!canEdit || index === 0} onClick={() => moveFamily(index, -1)} className="grid h-9 w-9 place-items-center rounded-md border border-dash-border disabled:opacity-30"><ArrowUp size={14} /></button><button type="button" aria-label={`Move ${family.name} down`} disabled={!canEdit || index === families.length - 1} onClick={() => moveFamily(index, 1)} className="grid h-9 w-9 place-items-center rounded-md border border-dash-border disabled:opacity-30"><ArrowDown size={14} /></button><button type="button" aria-label={`Remove ${family.name}`} disabled={!canEdit} onClick={() => removeFamily(family.id)} className="grid h-9 w-9 place-items-center rounded-md border border-dash-border disabled:opacity-30"><X size={14} /></button></div>)}</div> : <p className="mt-4 rounded-lg border border-dashed border-dash-border p-4 text-sm text-dash-tertiary">No families configured. Department-only and item-only modes continue to work.</p>}</div>
+        <div><h3 className="text-lg font-semibold">Departments</h3><p className="mt-1 text-sm text-dash-secondary">Assign each Department to an optional Family. Removing a Family returns its Departments to ungrouped.</p><div className="mt-4 divide-y divide-dash-border rounded-lg border border-dash-border">{departments.map((department, index) => <div key={department.id} className="flex flex-wrap items-center gap-3 px-3 py-3"><span className="w-7 font-mono text-xs text-dash-tertiary">{index + 1}</span><strong className="min-w-[160px] flex-1 truncate text-sm">{department.name}</strong><select aria-label={`${department.name} family`} disabled={!canEdit} value={department.parent_id || ''} onChange={(event) => updateNodes((nodes) => nodes.map((node) => node.id === department.id ? { ...node, parent_id: event.target.value || null } : node))} className="h-10 min-w-[180px] rounded-md border border-dash-border bg-transparent px-3 text-sm"><option value="">No family</option>{families.map((family) => <option key={family.id} value={family.id}>{family.name}</option>)}</select><button type="button" aria-label={`Move ${department.name} up`} disabled={!canEdit || departmentSiblingTarget(index, -1) < 0} onClick={() => moveDepartment(index, -1)} className="grid h-9 w-9 place-items-center rounded-md border border-dash-border disabled:opacity-30"><ArrowUp size={14} /></button><button type="button" aria-label={`Move ${department.name} down`} disabled={!canEdit || departmentSiblingTarget(index, 1) < 0} onClick={() => moveDepartment(index, 1)} className="grid h-9 w-9 place-items-center rounded-md border border-dash-border disabled:opacity-30"><ArrowDown size={14} /></button></div>)}</div></div>
+      </div>}
+      {tab === 'server' && <div className="space-y-5"><label className="flex items-start gap-3 rounded-lg border border-dash-border p-4"><input type="checkbox" disabled={!canEdit} checked={workspace.profiles.server.quick_menu_enabled} onChange={(event) => setQuickMenuEnabled('server', event.target.checked)} className="mt-1" /><span><strong className="block text-sm">Keep Quick Menu pinned</strong><span className="mt-1 block text-xs text-dash-secondary">Enabled by default and shown above Departments, including when Food is selected.</span></span></label><label className="block max-w-sm text-sm font-semibold">Default server view<select disabled={!canEdit} value={workspace.profiles.server.default_open?.kind === 'department' ? `department:${workspace.profiles.server.default_open.department_id}` : 'shortcuts'} onChange={(event) => updateProfile('server', { ...workspace.profiles.server, default_open: event.target.value === 'shortcuts' ? { kind: 'shortcuts' } : { kind: 'department', department_id: event.target.value.replace(/^department:/, '') } })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-transparent px-3"><option disabled={!workspace.profiles.server.quick_menu_enabled} value="shortcuts">Quick Menu</option>{workspace.departments.map((department) => <option key={department.id} value={`department:${department.id}`}>{department.name}</option>)}</select></label><ShortcutEditor title="Server Quick Menu" description="The existing configured favorites are reused; no items are duplicated." profile={workspace.profiles.server} items={workspace.items} disabled={!canEdit} onChange={(profile) => updateProfile('server', profile)} /></div>}
+      {tab === 'bartender' && <div className="space-y-5"><label className="flex items-start gap-3 rounded-lg border border-dash-border p-4"><input type="checkbox" disabled={!canEdit} checked={workspace.profiles.bartender.quick_menu_enabled} onChange={(event) => setQuickMenuEnabled('bartender', event.target.checked)} className="mt-1" /><span><strong className="block text-sm">Keep ★ FAST pinned</strong><span className="mt-1 block text-xs text-dash-secondary">Enabled by default; it continues to use the existing Fast Bar items.</span></span></label><div className="rounded-lg border border-emerald-400/25 bg-emerald-400/10 p-3 text-sm text-emerald-100">Fast Bar retains search, tab actions, Recent, quantity controls, and every Department.</div><ShortcutEditor title="Fast Bar items" description="Add and rank common pours and food items." profile={workspace.profiles.bartender} items={workspace.items} disabled={!canEdit} onChange={(profile) => updateProfile('bartender', profile)} /></div>}
       {tab === 'homes' && <div><h3 className="text-lg font-semibold">Bartender landing screen</h3><p className="mt-1 text-sm text-dash-secondary">Choose the restaurant default, then override only the bartenders who work differently.</p><label className="mt-5 block max-w-sm text-sm font-semibold">Restaurant default<select disabled={!canEdit} value={workspace.restaurant_bartender_default_home} onChange={(event) => setWorkspace((current) => ({ ...current, restaurant_bartender_default_home: event.target.value }))} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-transparent px-3"><option value="fast_bar">Fast Bar</option><option value="tabs">Tabs / Orders</option></select></label><div className="mt-5 divide-y divide-dash-border rounded-lg border border-dash-border">{workspace.bartenders.map((bartender) => <label key={bartender.id} className="flex flex-wrap items-center gap-3 px-3 py-3"><span className="min-w-[180px] flex-1"><strong className="block text-sm">{bartender.name}</strong><span className="text-xs text-dash-tertiary">Bartender</span></span><select disabled={!canEdit} value={bartender.home_surface || ''} onChange={(event) => setWorkspace((current) => ({ ...current, bartenders: current.bartenders.map((candidate) => candidate.id === bartender.id ? { ...candidate, home_surface: event.target.value || null } : candidate) }))} className="h-10 min-w-[190px] rounded-md border border-dash-border bg-transparent px-3 text-sm"><option value="">Use restaurant default</option><option value="fast_bar">Fast Bar</option><option value="tabs">Tabs / Orders</option></select></label>)}</div></div>}
     </section>
   </div>

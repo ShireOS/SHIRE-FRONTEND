@@ -72,7 +72,18 @@ list must stay in sync.
 - `team.view` / `team.edit_employees` / `team.adjust_timeclock`
 - `payroll.view` / `payroll.run` / `payroll.adjust_tips` / `payroll.export`
 - `reports.view`
+- `operations.close_day`
+- `payments.refund`
 - `settings.edit`
+
+### POS-owned tip domain (2026-07-28)
+
+- Dashboard tip settings, previews, runs, payouts, pay periods, and job-code
+  calls use `shared/api/posClient.ts`, including the Supabase bearer token and
+  `X-Restaurant-Id`. Restaurant ML remains a reporting reader and temporary
+  compatibility proxy only.
+- Tip reads use `payroll.view`; settings/payout edits use
+  `payroll.adjust_tips`; run create/finalize/void uses `payroll.run`.
 
 ### Implementation map (2026-07-08 build)
 - Frontend: `shared/permissions.ts` (keys/presets/merge/can/TAB_PERMISSIONS),

@@ -170,6 +170,7 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
   const [quickMenus, setQuickMenus] = useState({})
   const [savedQuickMenus, setSavedQuickMenus] = useState({})
   const [quickLoading, setQuickLoading] = useState(false)
+  const [menuWorkspacePreview, setMenuWorkspacePreview] = useState(null)
 
   const load = async (ids) => {
     setLoading(true)
@@ -206,6 +207,7 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
       setQuickRestaurantId(ids[0] || '')
       setQuickMenus({})
       setSavedQuickMenus({})
+      setMenuWorkspacePreview(null)
       setPreviewMode('view')
       setComponentSelection(null)
       setPickerOpen(false)
@@ -406,7 +408,7 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
       <section className="space-y-5">
         <div className="rounded-lg border border-dash-border bg-[var(--glass-bg)] p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Real application sandbox</h2><p className="mt-1 text-xs text-dash-tertiary">Uses the service's actual screens and components with isolated in-memory data.</p></div><div className="inline-flex rounded-lg border border-dash-border p-1">{[{ id: 'view', label: 'View', icon: Eye }, { id: 'edit', label: 'Edit', icon: Pencil }, ...(service === 'pos' ? [{ id: 'menu-workspace', label: 'POS Menus', icon: Zap }] : [])].map((item) => <button key={item.id} type="button" onClick={() => setPreviewMode(item.id)} className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold ${previewMode === item.id ? 'bg-shell-cta text-shell-cta-text' : 'text-dash-secondary'}`}><item.icon size={14} />{item.label}</button>)}</div></div>
-          {previewMode === 'menu-workspace' ? <MenuWorkspaceEditor restaurantId={quickRestaurantId} compact canEdit={canEditMenuWorkspace} /> : previewMode === 'quick-menu' ? <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+          {previewMode === 'menu-workspace' ? <div className="grid min-w-0 gap-4 2xl:grid-cols-[minmax(680px,1.1fr)_minmax(620px,1fr)]"><div className="min-w-0"><UiAppPreview service="pos" tokens={previewDrafts.pos} componentOverrides={previewComponents.pos} mode="menu-workspace" menuItems={menuWorkspacePreview?.items} menuWorkspace={menuWorkspacePreview} onComponentSelect={selectComponent} /></div><div className="min-w-0"><MenuWorkspaceEditor restaurantId={quickRestaurantId} compact canEdit={canEditMenuWorkspace} onPreviewChange={setMenuWorkspacePreview} /></div></div> : previewMode === 'quick-menu' ? <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
             <div className="min-w-0"><UiAppPreview service="pos" tokens={previewDrafts.pos} componentOverrides={previewComponents.pos} mode="quick-menu" menuItems={quickDraft?.items} quickMenu={quickDraft} onComponentSelect={selectComponent} /></div>
             <QuickMenuEditor restaurants={restaurants.filter((item) => selectedIds.includes(item.id))} restaurantId={quickRestaurantId} onRestaurantChange={setQuickRestaurantId} draft={quickDraft} loading={quickLoading} onChange={(next) => setQuickMenus((current) => ({ ...current, [quickRestaurantId]: next }))} />
           </div> : <UiAppPreview service={service} tokens={previewDrafts[service]} componentOverrides={previewComponents[service]} mode={previewMode} onComponentSelect={selectComponent} />}

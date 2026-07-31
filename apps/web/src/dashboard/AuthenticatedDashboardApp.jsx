@@ -45,6 +45,7 @@ import { TAB_PERMISSIONS } from '../shared/permissions'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
 import SalesTiles from './components/SalesTiles'
 import CheckLedgerSection from './components/CheckLedgerSection'
+import CloseDayReview from './components/CloseDayReview'
 import HomepageWidgets from './components/HomepageWidgets'
 import { usePersistedPeriod } from './data/analyticsSummary'
 import ResellerApp from '../reseller/ResellerApp'
@@ -555,10 +556,13 @@ function RestaurantHomepageConfigureModal({ visible, saving, onClose, onSave }) 
 }
 
 function LegacyAnalyticsDashboard({ restaurant }) {
+  const auth = useAuth()
   const [period, setPeriod] = usePersistedPeriod('shire_home_period')
   const restaurantId = restaurant?.id
+  const access = useBackOfficeAccess(auth, restaurantId)
   const [visibleWidgets, setVisibleWidgets] = useState(DEFAULT_RESTAURANT_HOMEPAGE_WIDGETS)
   const [configureOpen, setConfigureOpen] = useState(false)
+  const [closeDayOpen, setCloseDayOpen] = useState(false)
   const [savingHomepage, setSavingHomepage] = useState(false)
   const [preferencesReady, setPreferencesReady] = useState(false)
 
@@ -674,7 +678,18 @@ function LegacyAnalyticsDashboard({ restaurant }) {
               </button>
             ))}
           </nav>
-          <button type="button" onClick={() => setConfigureOpen(true)} className="h-10 rounded-xl border border-white/10 px-4 text-sm font-semibold text-dash-secondary hover:text-dash-cream">Configure homepage</button>
+          <div className="flex flex-wrap gap-2">
+            {access.can('operations.close_day') && (
+              <button
+                type="button"
+                onClick={() => setCloseDayOpen(true)}
+                className="h-10 rounded-xl bg-shell-cta px-4 text-sm font-semibold text-shell-cta-text"
+              >
+                Review Close Day
+              </button>
+            )}
+            <button type="button" onClick={() => setConfigureOpen(true)} className="h-10 rounded-xl border border-white/10 px-4 text-sm font-semibold text-dash-secondary hover:text-dash-cream">Configure homepage</button>
+          </div>
         </div>
         {payload?.window && (
           <p className="mt-4 text-xs text-dash-tertiary">
@@ -685,6 +700,10 @@ function LegacyAnalyticsDashboard({ restaurant }) {
         )}
       </section>
 
+      {closeDayOpen ? (
+        <CloseDayReview restaurantId={restaurantId} onBack={() => setCloseDayOpen(false)} />
+      ) : (
+        <>
       {isLoading && <LoadingScreen />}
       {error && <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">{error}</div>}
 
@@ -923,6 +942,8 @@ function LegacyAnalyticsDashboard({ restaurant }) {
       {/* Independent of the analytics payload: reads the POS check ledger
           directly and hides itself when the viewer lacks reports.view. */}
       <CheckLedgerSection restaurantId={restaurantId} />
+        </>
+      )}
 
       {configureOpen && <RestaurantHomepageConfigureModal visible={visibleWidgets} saving={savingHomepage} onClose={() => setConfigureOpen(false)} onSave={saveHomepage} />}
     </div>

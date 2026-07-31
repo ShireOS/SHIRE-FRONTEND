@@ -53,6 +53,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     label: 'Reports & Settings',
     keys: [
       { key: 'reports.view', label: 'View reports', description: 'See analytics and reports' },
+      { key: 'operations.close_day', label: 'Review & close day', description: 'Review close-day exceptions and finalize a business day' },
+      { key: 'payments.refund', label: 'Issue payment refunds', description: 'Request and monitor processor-backed card refunds' },
       { key: 'settings.edit', label: 'Edit restaurant settings', description: 'Change setup, POS settings and devices' },
     ],
   },

@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import {
+  ArrowLeft,
   Ban,
   ChefHat,
   CircleDollarSign,
@@ -9,12 +10,15 @@ import {
   Receipt,
   ReceiptText,
   RotateCcw,
+  Search,
   Tags,
   TrendingUp,
   Users,
   UtensilsCrossed,
 } from 'lucide-react'
-import { fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
+import { posCheckLedgerApi } from '../../shared/api/posClient'
+import { fetchWithSupabaseAuth, queryKeys, STALE_TIMES } from '../../shared/query'
+import { CheckDetail } from './CheckLedgerSection'
 
 const money = (value) =>
   value === null || value === undefined
@@ -33,6 +37,18 @@ const hours = (minutes) =>
 const perBucketAvg = (row) =>
   row.transactions > 0 ? Number(row.net_sales) / Number(row.transactions) : 0
 
+const CHECK_METRIC = {
+  net_sales: 'sales',
+  avg_check: 'sales',
+  avg_cover: 'sales',
+  tax: 'sales',
+  transactions: 'transactions',
+  active_checks: 'active_checks',
+  discounts: 'discounts',
+  refunds: 'refunds',
+  voids: 'voids',
+}
+
 // Each tile: how to read its number, its chart series, and its contributors.
 // `series`: (payload) => [{bucket, value}] | null. `contributors`: (payload) =>
 // {title, rows: [{name, primary, secondary}]} | null. `note` shows when there
@@ -44,7 +60,12 @@ const TILES = [
     series: (p) => p.series.orders.map((r) => ({ bucket: r.bucket, value: Number(r.net_sales) })),
     contributors: (p) => ({
       title: 'By server',
-      rows: p.contributors.servers.map((s) => ({ name: s.name, primary: money(s.net_sales), secondary: `${count(s.transactions)} checks` })),
+      rows: p.contributors.servers.map((s) => ({
+        name: s.name,
+        primary: money(s.net_sales),
+        secondary: `${count(s.transactions)} checks`,
+        filter: { waiter_id: s.waiter_id },
+      })),
     }),
   },
   {
@@ -82,7 +103,12 @@ const TILES = [
     series: (p) => p.series.orders.map((r) => ({ bucket: r.bucket, value: Number(r.transactions) })),
     contributors: (p) => ({
       title: 'By server',
-      rows: p.contributors.servers.map((s) => ({ name: s.name, primary: count(s.transactions), secondary: money(s.net_sales) })),
+      rows: p.contributors.servers.map((s) => ({
+        name: s.name,
+        primary: count(s.transactions),
+        secondary: money(s.net_sales),
+        filter: { waiter_id: s.waiter_id },
+      })),
     }),
   },
   {
@@ -100,7 +126,12 @@ const TILES = [
     series: (p) => p.series.orders.map((r) => ({ bucket: r.bucket, value: Number(r.discounts) })),
     contributors: (p) => ({
       title: 'By reason',
-      rows: p.contributors.discount_reasons.map((d) => ({ name: `${d.reason} · ${d.applied_by}`, primary: money(d.amount), secondary: `${count(d.count)}×` })),
+      rows: p.contributors.discount_reasons.map((d) => ({
+        name: `${d.reason} · ${d.applied_by}`,
+        primary: money(d.amount),
+        secondary: `${count(d.count)}×`,
+        filter: { reason: d.reason },
+      })),
     }),
   },
   {
@@ -110,7 +141,12 @@ const TILES = [
     series: (p) => p.series.refunds.map((r) => ({ bucket: r.bucket, value: Number(r.refund_amount) })),
     contributors: (p) => ({
       title: 'By payment method',
-      rows: p.contributors.refund_methods.map((r) => ({ name: r.payment_method, primary: money(r.amount), secondary: `${count(r.count)}×` })),
+      rows: p.contributors.refund_methods.map((r) => ({
+        name: r.payment_method,
+        primary: money(r.amount),
+        secondary: `${count(r.count)}×`,
+        filter: { payment_method: r.payment_method },
+      })),
     }),
   },
   {
@@ -123,7 +159,12 @@ const TILES = [
       rows: p.contributors.servers
         .filter((s) => Number(s.voids) > 0)
         .sort((a, b) => Number(b.void_amount) - Number(a.void_amount))
-        .map((s) => ({ name: s.name, primary: money(s.void_amount), secondary: `${count(s.voids)} voided` })),
+        .map((s) => ({
+          name: s.name,
+          primary: money(s.void_amount),
+          secondary: `${count(s.voids)} voided`,
+          filter: { waiter_id: s.waiter_id },
+        })),
     }),
   },
   {
@@ -148,15 +189,16 @@ const TILES = [
   },
 ]
 
-function bucketLabel(iso, bucket) {
+function bucketLabel(iso, bucket, timezoneName) {
   const value = new Date(iso)
   if (Number.isNaN(value.getTime())) return ''
-  if (bucket === 'hour') return value.toLocaleTimeString('en-US', { hour: 'numeric' })
-  if (bucket === 'month') return value.toLocaleDateString('en-US', { month: 'short' })
-  return value.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const timeZone = timezoneName || undefined
+  if (bucket === 'hour') return value.toLocaleTimeString('en-US', { hour: 'numeric', timeZone })
+  if (bucket === 'month') return value.toLocaleDateString('en-US', { month: 'short', timeZone })
+  return value.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone })
 }
 
-function BarChart({ points, bucket, format }) {
+function BarChart({ points, bucket, format, onSelect, timezoneName }) {
   if (!points || points.length === 0) {
     return (
       <p className="flex h-40 items-center justify-center text-sm text-dash-tertiary">
@@ -170,22 +212,25 @@ function BarChart({ points, bucket, format }) {
     <div>
       <div className="flex h-40 items-end gap-[3px]">
         {points.map((point, index) => (
-          <div
+          <button
+            type="button"
             key={index}
-            title={`${bucketLabel(point.bucket, bucket)} — ${format(point.value)}`}
-            className="group flex h-full flex-1 flex-col justify-end"
+            title={`${bucketLabel(point.bucket, bucket, timezoneName)} — ${format(point.value)}`}
+            aria-label={`Show checks for ${bucketLabel(point.bucket, bucket, timezoneName)}`}
+            onClick={() => onSelect(point.bucket)}
+            className="group flex h-full flex-1 flex-col justify-end focus:outline-none focus-visible:ring-2 focus-visible:ring-shell-accent"
           >
             <div
               className="min-h-[2px] rounded-t bg-shell-accent/75 transition-colors group-hover:bg-shell-accent"
               style={{ height: max > 0 ? `${Math.max(1.5, (point.value / max) * 100)}%` : '2px' }}
             />
-          </div>
+          </button>
         ))}
       </div>
       <div className="mt-1 flex gap-[3px]">
         {points.map((point, index) => (
           <span key={index} className="flex-1 truncate text-center font-mono text-[9px] text-dash-tertiary">
-            {index % labelEvery === 0 ? bucketLabel(point.bucket, bucket) : ''}
+            {index % labelEvery === 0 ? bucketLabel(point.bucket, bucket, timezoneName) : ''}
           </span>
         ))}
       </div>
@@ -193,7 +238,7 @@ function BarChart({ points, bucket, format }) {
   )
 }
 
-function ContributorList({ breakdown, note }) {
+function ContributorList({ breakdown, note, onSelect }) {
   if (!breakdown || breakdown.rows.length === 0) {
     return <p className="text-xs leading-5 text-dash-tertiary">{note || 'No breakdown for this window.'}</p>
   }
@@ -202,17 +247,276 @@ function ContributorList({ breakdown, note }) {
       <p className="label-mono !text-[10px]">{breakdown.title}</p>
       <ul className="mt-2 space-y-1.5">
         {breakdown.rows.map((row, index) => (
-          <li key={index} className="flex items-baseline justify-between gap-3 text-sm">
-            <span className="min-w-0 truncate text-dash-secondary">{row.name}</span>
-            <span className="flex shrink-0 items-baseline gap-2">
-              <span className="font-mono tabular-nums text-dash-cream">{row.primary}</span>
-              {row.secondary && (
-                <span className="font-mono text-[10px] tabular-nums text-dash-tertiary">{row.secondary}</span>
-              )}
-            </span>
+          <li key={index}>
+            <button
+              type="button"
+              onClick={() => onSelect(row)}
+              className="flex w-full items-baseline justify-between gap-3 rounded-lg px-1 py-0.5 text-left text-sm transition hover:bg-white/[0.04]"
+            >
+              <span className="min-w-0 truncate text-dash-secondary">{row.name}</span>
+              <span className="flex shrink-0 items-baseline gap-2">
+                <span className="font-mono tabular-nums text-dash-cream">{row.primary}</span>
+                {row.secondary && (
+                  <span className="font-mono text-[10px] tabular-nums text-dash-tertiary">{row.secondary}</span>
+                )}
+              </span>
+            </button>
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+function addBucket(iso, bucket) {
+  const value = new Date(iso)
+  if (bucket === 'hour') value.setUTCHours(value.getUTCHours() + 1)
+  else if (bucket === 'month') value.setUTCMonth(value.getUTCMonth() + 1)
+  else value.setUTCDate(value.getUTCDate() + 1)
+  return value.toISOString()
+}
+
+function bucketOptions(payload, points) {
+  const start = payload.window?.start_at
+  const end = payload.window?.end_at
+  const bucket = payload.window?.bucket
+  if (!start || !end || !bucket) return (points || []).map((point) => point.bucket)
+
+  const options = []
+  let cursor = new Date(start).toISOString()
+  const endMs = new Date(end).getTime()
+  while (new Date(cursor).getTime() < endMs && options.length < 400) {
+    options.push(cursor)
+    cursor = addBucket(cursor, bucket)
+  }
+  return options
+}
+
+function rangeLabel(start, bucket, timezoneName) {
+  const end = addBucket(start, bucket)
+  if (bucket === 'hour') {
+    return `${bucketLabel(start, bucket, timezoneName)}–${bucketLabel(end, bucket, timezoneName)}`
+  }
+  return bucketLabel(start, bucket, timezoneName)
+}
+
+function lifecyclePill(item) {
+  if (item.needs_attention) return { text: 'Needs attention', style: 'bg-red-400/10 text-red-300' }
+  if (item.status === 'voided') return { text: 'Voided', style: 'bg-red-400/10 text-red-300' }
+  if (item.payment_status === 'paid' || item.status === 'closed') {
+    return { text: item.payment_status === 'paid' ? 'Paid' : 'Closed', style: 'bg-emerald-400/10 text-emerald-300' }
+  }
+  return { text: 'Open', style: 'bg-shell-accent/15 text-shell-accent' }
+}
+
+function tenderLabel(item) {
+  const cards = (item.card_summaries || [])
+    .map((card) => [card.brand, card.last4 ? `••${card.last4}` : null].filter(Boolean).join(' '))
+    .filter(Boolean)
+  if (cards.length) return cards.join(', ')
+  if (item.payment_methods?.length) return item.payment_methods.join(', ')
+  return item.payment_method || '—'
+}
+
+function BucketRail({ options, bucket, selectedBucket, onSelect, timezoneName }) {
+  const railRef = useRef(null)
+
+  useEffect(() => {
+    const selected = railRef.current?.querySelector('[aria-current="true"]')
+    selected?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+  }, [selectedBucket])
+
+  return (
+    <div
+      ref={railRef}
+      className="flex snap-x gap-2 overflow-x-auto pb-2 [scrollbar-width:thin]"
+      aria-label={`${bucket} check windows`}
+    >
+      <button
+        type="button"
+        aria-current={!selectedBucket}
+        onClick={() => onSelect(null)}
+        className={[
+          'shrink-0 snap-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition',
+          !selectedBucket
+            ? 'border-shell-accent bg-shell-accent text-shell-cta-text'
+            : 'border-white/10 text-dash-secondary hover:text-dash-cream',
+        ].join(' ')}
+      >
+        All
+      </button>
+      {options.map((option) => (
+        <button
+          key={option}
+          type="button"
+          aria-current={selectedBucket === option}
+          onClick={() => onSelect(option)}
+          className={[
+            'shrink-0 snap-center rounded-lg border px-3 py-1.5 font-mono text-xs transition',
+            selectedBucket === option
+              ? 'border-shell-accent bg-shell-accent text-shell-cta-text'
+              : 'border-white/10 text-dash-secondary hover:text-dash-cream',
+          ].join(' ')}
+        >
+          {rangeLabel(option, bucket, timezoneName)}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function AnalyticsChecksView({
+  restaurantId,
+  selected,
+  payload,
+  drilldown,
+  search,
+  onSearch,
+  onBucket,
+  onCheck,
+  onBack,
+}) {
+  const bucket = payload.window?.bucket || 'day'
+  const timezoneName = payload.window?.timezone
+  const points = selected.series(payload) || []
+  const options = useMemo(() => bucketOptions(payload, points), [payload, points])
+  const selectedBucket = drilldown.bucket || null
+  const occurredFrom = selectedBucket || payload.window?.start_at || undefined
+  const occurredTo = selectedBucket
+    ? addBucket(selectedBucket, bucket)
+    : payload.window?.end_at || undefined
+  const query = useMemo(() => ({
+    date_from: occurredFrom ? new Date(occurredFrom).toISOString().slice(0, 10) : undefined,
+    date_to: occurredTo
+      ? new Date(new Date(occurredTo).getTime() - 1).toISOString().slice(0, 10)
+      : undefined,
+    occurred_from: occurredFrom,
+    occurred_to: occurredTo,
+    metric: drilldown.metric,
+    search: search.trim() || undefined,
+    ...drilldown.filter,
+    page: 1,
+    page_size: 100,
+  }), [drilldown.filter, drilldown.metric, occurredFrom, occurredTo, search])
+
+  const checksQuery = useQuery({
+    queryKey: queryKeys.checkLedger(restaurantId, query),
+    queryFn: ({ signal }) => posCheckLedgerApi.list(restaurantId, query, signal),
+    enabled: Boolean(restaurantId),
+    placeholderData: keepPreviousData,
+    staleTime: drilldown.metric === 'active_checks' ? 5000 : 15000,
+    refetchInterval: drilldown.metric === 'active_checks' ? 15000 : false,
+  })
+
+  const checks = checksQuery.data?.items || []
+  const total = checksQuery.data?.total ?? checks.length
+  const scopeLabel = selectedBucket
+    ? rangeLabel(selectedBucket, bucket, timezoneName)
+    : drilldown.label || 'All'
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="label-mono">
+            {selected.label} <span aria-hidden="true">›</span> {scopeLabel}{' '}
+            <span aria-hidden="true">›</span> {count(total)} checks
+          </p>
+          <p className="mt-1 text-sm text-dash-secondary">
+            The chart is replaced by the checks that make up this number.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-dash-secondary transition hover:text-dash-cream"
+        >
+          <ArrowLeft size={13} aria-hidden="true" /> Back to chart
+        </button>
+      </div>
+
+      {drilldown.metric !== 'active_checks' && options.length > 0 && (
+        <div className="mt-4">
+          <p className="mb-2 label-mono !text-[9px]">Move through {bucket === 'hour' ? 'hours' : bucket === 'day' ? 'days' : 'months'}</p>
+          <BucketRail
+            options={options}
+            bucket={bucket}
+            selectedBucket={selectedBucket}
+            onSelect={onBucket}
+            timezoneName={timezoneName}
+          />
+        </div>
+      )}
+
+      <div className="relative mt-3 w-full max-w-sm">
+        <Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-dash-tertiary" aria-hidden="true" />
+        <input
+          type="search"
+          value={search}
+          onChange={(event) => onSearch(event.target.value)}
+          placeholder="Check #, table, server, card…"
+          className="h-9 w-full rounded-lg border border-white/10 bg-transparent pl-8 pr-3 text-sm text-dash-cream placeholder:text-dash-tertiary focus:border-shell-accent focus:outline-none"
+        />
+      </div>
+
+      {checksQuery.isPending && <p className="mt-5 text-sm text-dash-tertiary">Loading matching checks…</p>}
+      {checksQuery.isError && (
+        <p className="mt-5 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">
+          {checksQuery.error instanceof Error ? checksQuery.error.message : 'Could not load matching checks.'}
+        </p>
+      )}
+      {!checksQuery.isPending && !checksQuery.isError && checks.length === 0 && (
+        <p className="mt-5 text-sm text-dash-tertiary">No checks match this bucket and filter.</p>
+      )}
+
+      {checks.length > 0 && (
+        <div className={`mt-4 overflow-x-auto ${checksQuery.isFetching ? 'opacity-75' : ''}`}>
+          <table className="min-w-full text-left text-sm">
+            <thead>
+              <tr className="label-mono !text-[10px]">
+                <th className="px-3 py-2 font-medium">Check</th>
+                <th className="px-3 py-2 font-medium">Time</th>
+                <th className="px-3 py-2 font-medium">Server</th>
+                <th className="px-3 py-2 font-medium">Table</th>
+                <th className="px-3 py-2 font-medium">Lifecycle</th>
+                <th className="px-3 py-2 font-medium">Tender</th>
+                <th className="px-3 py-2 text-right font-medium">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {checks.map((item) => {
+                const lifecycle = lifecyclePill(item)
+                return (
+                  <tr
+                    key={item.order_id}
+                    onClick={() => onCheck(item.order_id)}
+                    className="cursor-pointer transition hover:bg-white/[0.04]"
+                  >
+                    <td className="px-3 py-2.5 font-mono text-dash-cream">
+                      #{item.order_number ?? '—'}
+                      {item.needs_attention && <span className="ml-1.5 text-red-300" title={(item.attention_reasons || []).join(', ')}>●</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-dash-tertiary">
+                      {new Date(item.created_at).toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        timeZone: timezoneName,
+                      })}
+                    </td>
+                    <td className="px-3 py-2.5 text-dash-secondary">{item.waiter_name || '—'}</td>
+                    <td className="px-3 py-2.5 text-dash-secondary">{item.table_number ? `Table ${item.table_number}` : item.guest_name || '—'}</td>
+                    <td className="px-3 py-2.5">
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${lifecycle.style}`}>{lifecycle.text}</span>
+                    </td>
+                    <td className="max-w-[12rem] truncate px-3 py-2.5 text-dash-secondary">{tenderLabel(item)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono tabular-nums text-dash-cream">{money(item.total)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
@@ -224,6 +528,9 @@ function ContributorList({ breakdown, note }) {
  */
 export default function SalesTiles({ restaurantId, period }) {
   const [selectedId, setSelectedId] = useState(null)
+  const [drilldown, setDrilldown] = useState(null)
+  const [selectedOrderId, setSelectedOrderId] = useState(null)
+  const [checkSearch, setCheckSearch] = useState('')
 
   const metricsQuery = useQuery({
     queryKey: ['owner-metrics', restaurantId, period],
@@ -245,6 +552,26 @@ export default function SalesTiles({ restaurantId, period }) {
   const totals = payload?.totals || {}
   const selected = TILES.find((tile) => tile.id === selectedId) || null
 
+  const resetExpandedState = () => {
+    setDrilldown(null)
+    setSelectedOrderId(null)
+    setCheckSearch('')
+  }
+
+  const selectTile = (tile) => {
+    const isSelected = selectedId === tile.id
+    resetExpandedState()
+    setSelectedId(isSelected ? null : tile.id)
+    if (!isSelected && tile.id === 'active_checks') {
+      setDrilldown({
+        metric: CHECK_METRIC.active_checks,
+        bucket: null,
+        filter: {},
+        label: 'Live',
+      })
+    }
+  }
+
   return (
     <div className="space-y-3">
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(168px,1fr))]">
@@ -257,7 +584,7 @@ export default function SalesTiles({ restaurantId, period }) {
               key={tile.id}
               type="button"
               aria-pressed={isSelected}
-              onClick={() => setSelectedId(isSelected ? null : tile.id)}
+              onClick={() => selectTile(tile)}
               className={[
                 'glass-card flex items-center gap-3 rounded-2xl p-3 text-left transition',
                 isSelected
@@ -298,27 +625,70 @@ export default function SalesTiles({ restaurantId, period }) {
             </div>
             <button
               type="button"
-              onClick={() => setSelectedId(null)}
+              onClick={() => {
+                setSelectedId(null)
+                resetExpandedState()
+              }}
               className="text-xs font-semibold text-dash-tertiary transition hover:text-dash-secondary"
             >
               Close
             </button>
           </div>
-          <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_280px]">
-            <div>
-              {selected.series(payload) ? (
-                <BarChart
-                  points={selected.series(payload)}
-                  bucket={payload.window?.bucket}
-                  format={selected.format}
+          <div className="mt-4">
+            {selectedOrderId ? (
+              <CheckDetail
+                restaurantId={restaurantId}
+                orderId={selectedOrderId}
+                backLabel="Back to filtered checks"
+                onBack={() => setSelectedOrderId(null)}
+              />
+            ) : drilldown ? (
+              <AnalyticsChecksView
+                restaurantId={restaurantId}
+                selected={selected}
+                payload={payload}
+                drilldown={drilldown}
+                search={checkSearch}
+                onSearch={setCheckSearch}
+                onBucket={(bucket) => setDrilldown((current) => ({ ...current, bucket }))}
+                onCheck={setSelectedOrderId}
+                onBack={() => {
+                  setDrilldown(null)
+                  setCheckSearch('')
+                }}
+              />
+            ) : (
+              <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
+                <div>
+                  {selected.series(payload) ? (
+                    <BarChart
+                      points={selected.series(payload)}
+                      bucket={payload.window?.bucket}
+                      format={selected.format}
+                      timezoneName={payload.window?.timezone}
+                      onSelect={(bucket) => {
+                        const metric = CHECK_METRIC[selected.id]
+                        if (!metric) return
+                        setDrilldown({ metric, bucket, filter: {}, label: 'All checks' })
+                      }}
+                    />
+                  ) : (
+                    <p className="flex h-40 items-center justify-center text-sm text-dash-tertiary">
+                      {selected.note || 'No time series for this metric.'}
+                    </p>
+                  )}
+                </div>
+                <ContributorList
+                  breakdown={selected.contributors(payload)}
+                  note={selected.note}
+                  onSelect={(row) => {
+                    const metric = CHECK_METRIC[selected.id]
+                    if (!metric) return
+                    setDrilldown({ metric, bucket: null, filter: row.filter || {}, label: row.name })
+                  }}
                 />
-              ) : (
-                <p className="flex h-40 items-center justify-center text-sm text-dash-tertiary">
-                  {selected.note || 'No time series for this metric.'}
-                </p>
-              )}
-            </div>
-            <ContributorList breakdown={selected.contributors(payload)} note={selected.note} />
+              </div>
+            )}
           </div>
         </section>
       )}

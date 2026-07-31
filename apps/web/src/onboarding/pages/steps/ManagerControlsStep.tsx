@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { API_CONFIG } from '../../../shared/api/config'
-import { supabase } from '../../../shared/lib/supabase'
+import { fetchPosApi } from '../../../shared/api/posClient'
 import type { JobCodeData, RolePermissionData, UseOnboardingReturn } from '../../hooks/useOnboarding'
 
 interface ManagerControlsStepProps {
@@ -194,10 +193,6 @@ export function ManagerControlsStep({ onboarding }: ManagerControlsStepProps) {
     setIsSavingRoles(true)
     setRoleError(null)
     try {
-      const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData?.session?.access_token
-      if (!token) throw new Error('Not authenticated')
-
       const saved: JobCodeData[] = []
       for (const draft of roleDrafts) {
         const code = draft.id ? slugRoleCode(draft.code || draft.label) : slugRoleCode(draft.label || draft.code)
@@ -211,21 +206,16 @@ export function ManagerControlsStep({ onboarding }: ManagerControlsStepProps) {
           sort_order: draft.sort_order,
           is_active: draft.is_active !== false,
         }
-        const response = await fetch(
+        saved.push(await fetchPosApi<JobCodeData>(
+          restaurantId,
           draft.id
-            ? `${API_CONFIG.baseUrl}/manager/job-codes/${draft.id}`
-            : `${API_CONFIG.baseUrl}/restaurants/${restaurantId}/job-codes`,
+            ? `/restaurants/${restaurantId}/job-codes/${draft.id}`
+            : `/restaurants/${restaurantId}/job-codes`,
           {
             method: draft.id ? 'PATCH' : 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify(payload),
-          }
-        )
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}))
-          throw new Error(body.detail || body.message || `Saving roles failed (${response.status})`)
-        }
-        saved.push(await response.json() as JobCodeData)
+          },
+        ))
       }
 
       const normalized = saved.map((role, index) => ({

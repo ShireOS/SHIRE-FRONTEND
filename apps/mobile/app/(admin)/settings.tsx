@@ -196,6 +196,7 @@ const TIP_DISTRIBUTION_OPTIONS = [
   ['sales_based', 'Sales-based'],
   ['hours_based', 'Hours-based'],
   ['points_based', 'Point-based'],
+  ['role_shares', 'Role shares'],
 ] as const;
 const CASH_TIP_OPTIONS = [
   ['not_tracked', 'Not tracked'],
@@ -470,6 +471,10 @@ function defaultTipPayrollSettings(jobCodes: JobCode[] = []): TipPayrollSettings
       contributes_to_pool: Boolean(role.is_tipped),
       receives_from_pool: Boolean(role.is_tipped),
       pool_points: role.is_tipped ? '1' : '',
+      pool_contribution_percent: '100',
+      tipout_split_basis: 'hours',
+      pool_share_percent: '',
+      tipouts: [],
       tipout_percent: '',
       tipout_target_role: null,
       notes: '',
@@ -823,6 +828,18 @@ function normalizeTipRules(rows: TipRoleRule[] | undefined, jobCodes: JobCode[])
       contributes_to_pool: row.contributes_to_pool !== false,
       receives_from_pool: row.receives_from_pool !== false,
       pool_points: numberText(row.pool_points),
+      pool_contribution_percent: row.pool_contribution_percent == null ? '100' : numberText(row.pool_contribution_percent),
+      tipout_split_basis: row.tipout_split_basis === 'even' ? 'even' : 'hours',
+      pool_share_percent: numberText(row.pool_share_percent),
+      tipouts: Array.isArray(row.tipouts)
+        ? row.tipouts.map((tipout) => ({
+            target_role: roleCode(tipout.target_role),
+            percent: numberText(tipout.percent),
+            basis: tipout.basis === 'sales' ? 'sales' : 'tips',
+            sales_category: tipout.sales_category || null,
+            basis_scope: tipout.basis_scope === 'restaurant' ? 'restaurant' : 'own',
+          }))
+        : [],
       tipout_percent: numberText(row.tipout_percent),
       tipout_target_role: row.tipout_target_role || null,
       notes: row.notes || '',
@@ -865,6 +882,8 @@ function tipPayrollPayload(row: TipPayrollSettings, jobCodes: JobCode[]): TipPay
     role_tip_rules: settings.role_tip_rules.map((rule) => ({
       ...rule,
       pool_points: rule.pool_points === '' ? null : Number(rule.pool_points),
+      pool_contribution_percent: rule.pool_contribution_percent === '' ? null : Number(rule.pool_contribution_percent),
+      pool_share_percent: rule.pool_share_percent === '' ? null : Number(rule.pool_share_percent),
       tipout_percent: rule.tipout_percent === '' ? null : Number(rule.tipout_percent),
       tipout_target_role: rule.tipout_target_role || null,
       notes: rule.notes || null,
@@ -1469,11 +1488,11 @@ export default function OwnerSettings() {
       };
       if (jobCode.id && await scheduleRestaurantSave(publication, `${jobCode.label || jobCode.code} role`, {
         method: 'PATCH',
-        path: `/manager/job-codes/${jobCode.id}`,
+        path: `/restaurants/${restaurantId}/job-codes/${jobCode.id}`,
         body: payload,
       })) return;
       const saved = jobCode.id
-        ? await updateManagerJobCode(jobCode.id, payload)
+        ? await updateManagerJobCode(restaurantId, jobCode.id, payload)
         : await createManagerJobCode(restaurantId, payload);
       const normalized = normalizeJobCodes(jobCode.id ? jobCodes.map((code) => (code.id === saved.id ? saved : code)) : [...jobCodes, saved]);
       setJobCodes(normalized);
@@ -1490,11 +1509,11 @@ export default function OwnerSettings() {
   };
 
   const removeRoleRate = async (jobCode: JobCode) => {
-    if (!jobCode.id) return;
+    if (!restaurantId || !jobCode.id) return;
     setSavingRateId(jobCode.id);
     setMessage(`Removing ${jobCode.label || jobCode.code} role...`);
     try {
-      await updateManagerJobCode(jobCode.id, {
+      await updateManagerJobCode(restaurantId, jobCode.id, {
         code: roleCode(jobCode.code || jobCode.label),
         label: jobCode.label || jobCode.code,
         permission_tier: jobCode.permission_tier || 'normal',

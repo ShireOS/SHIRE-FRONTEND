@@ -27,6 +27,7 @@ function PreviewFrame({
   mode,
   menuItems,
   quickMenu,
+  menuWorkspace,
   onComponentSelect,
   expanded = false,
 }) {
@@ -57,6 +58,7 @@ function PreviewFrame({
       mode,
       menuItems,
       quickMenu,
+      menuWorkspace,
     }, targetOrigin)
   }
 
@@ -75,7 +77,7 @@ function PreviewFrame({
     return () => window.removeEventListener('message', receive)
   }, [onComponentSelect, service, url])
 
-  useEffect(() => sendState(), [componentOverrides, menuItems, mode, quickMenu, service, tokens, url])
+  useEffect(() => sendState(), [componentOverrides, menuItems, menuWorkspace, mode, quickMenu, service, tokens, url])
 
   useEffect(() => {
     setLoaded(false)
@@ -112,17 +114,18 @@ export default function UiAppPreview({
   mode,
   menuItems,
   quickMenu,
+  menuWorkspace,
   onComponentSelect,
 }) {
   const [expanded, setExpanded] = useState(false)
   const url = useMemo(() => previewUrls(service)[0], [service])
 
   return <>
-    <div className="overflow-x-auto pb-2"><PreviewFrame key={`${service}:${mode === 'quick-menu' ? 'quick-menu' : 'theme'}`} service={service} tokens={tokens} componentOverrides={componentOverrides} mode={mode} menuItems={menuItems} quickMenu={quickMenu} onComponentSelect={onComponentSelect} /></div>
+    <div className="overflow-x-auto pb-2"><PreviewFrame key={`${service}:${mode === 'quick-menu' || mode === 'menu-workspace' ? mode : 'theme'}`} service={service} tokens={tokens} componentOverrides={componentOverrides} mode={mode} menuItems={menuItems} quickMenu={quickMenu} menuWorkspace={menuWorkspace} onComponentSelect={onComponentSelect} /></div>
     <div className="mt-3 flex flex-wrap gap-2">
       <button type="button" title="Open full-screen preview" onClick={() => setExpanded(true)} className="inline-flex items-center gap-2 rounded-md border border-dash-border px-3 py-2 text-xs font-semibold"><Expand size={14} />Open full screen</button>
       <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-md border border-dash-border px-3 py-2 text-xs font-semibold"><ExternalLink size={14} />Open sandbox separately</a>
     </div>
-    {expanded && <div className="fixed inset-0 z-[80] flex flex-col bg-black/95 p-3 sm:p-5"><div className="mx-auto mb-3 flex w-full max-w-[1440px] items-center justify-between text-white"><div><strong>Real {service === 'pos' ? 'POS' : 'Host'} sandbox</strong><p className="text-xs text-white/60">Uses the service's actual components with in-memory preview data.</p></div><button type="button" title="Close full-screen preview" onClick={() => setExpanded(false)} className="grid h-10 w-10 place-items-center rounded-md border border-white/20"><X size={18} /></button></div><div className="mx-auto min-h-0 w-full max-w-[1440px] flex-1"><PreviewFrame service={service} tokens={tokens} componentOverrides={componentOverrides} mode={mode} menuItems={menuItems} quickMenu={quickMenu} onComponentSelect={onComponentSelect} expanded /></div></div>}
+    {expanded && <div className="fixed inset-0 z-[80] flex flex-col bg-black/95 p-3 sm:p-5"><div className="mx-auto mb-3 flex w-full max-w-[1440px] items-center justify-between text-white"><div><strong>Real {service === 'pos' ? 'POS' : 'Host'} sandbox</strong><p className="text-xs text-white/60">Uses the service's actual components with in-memory preview data.</p></div><button type="button" title="Close full-screen preview" onClick={() => setExpanded(false)} className="grid h-10 w-10 place-items-center rounded-md border border-white/20"><X size={18} /></button></div><div className="mx-auto min-h-0 w-full max-w-[1440px] flex-1"><PreviewFrame service={service} tokens={tokens} componentOverrides={componentOverrides} mode={mode} menuItems={menuItems} quickMenu={quickMenu} menuWorkspace={menuWorkspace} onComponentSelect={onComponentSelect} expanded /></div></div>}
   </>
 }

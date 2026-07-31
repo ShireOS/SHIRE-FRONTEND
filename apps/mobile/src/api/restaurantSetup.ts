@@ -1,4 +1,4 @@
-import { apiRequest } from './mobileApi';
+import { apiRequest, posApiRequest } from './mobileApi';
 import { getSBClient } from '../../packages/supabase';
 
 export type RestaurantSection = {
@@ -329,7 +329,7 @@ export type CategoryTipProfile = {
 };
 
 export type TipPayrollSettings = {
-  tip_distribution_mode: 'individual' | 'pooled' | 'role_based' | 'sales_based' | 'hours_based' | 'points_based';
+  tip_distribution_mode: 'individual' | 'pooled' | 'role_based' | 'sales_based' | 'hours_based' | 'points_based' | 'role_shares';
   cash_tip_declaration_mode: 'not_tracked' | 'declared_by_employee' | 'declared_by_manager' | 'required_checkout';
   credit_tip_payout_timing: 'nightly' | 'payroll';
   payroll_provider: string | null;
@@ -353,11 +353,11 @@ export type TipPayrollSettings = {
 };
 
 export async function fetchTipPayrollSettings(restaurantId: string) {
-  return apiRequest<TipPayrollSettings>(`/restaurants/${restaurantId}/tips-payroll-settings`);
+  return posApiRequest<TipPayrollSettings>(restaurantId, `/restaurants/${restaurantId}/tips-payroll-settings`);
 }
 
 export async function saveTipPayrollSettings(restaurantId: string, payload: TipPayrollSettings) {
-  return apiRequest<TipPayrollSettings>(`/restaurants/${restaurantId}/tips-payroll-settings`, {
+  return posApiRequest<TipPayrollSettings>(restaurantId, `/restaurants/${restaurantId}/tips-payroll-settings`, {
     method: 'PUT',
     body: payload,
   });

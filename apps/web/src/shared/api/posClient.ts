@@ -103,6 +103,12 @@ export interface CheckLedgerQuery {
   status?: string
   payment_status?: string
   payment_method?: string
+  occurred_from?: string
+  occurred_to?: string
+  waiter_id?: string
+  metric?: 'sales' | 'transactions' | 'active_checks' | 'voids' | 'refunds' | 'discounts' | 'comps'
+  event_type?: string
+  reason?: string
   page?: number
   page_size?: number
 }
@@ -121,6 +127,45 @@ export const posCheckLedgerApi = {
   },
   detail: (restaurantId: string, orderId: string, signal?: AbortSignal) =>
     fetchPosApi(restaurantId, `/manager/check-ledger/${encodeURIComponent(orderId)}`, { signal }),
+}
+
+export interface CloseDayFinalizeInput {
+  business_date?: string
+  close_attempt_id: string
+  notes?: string
+  discard_print_jobs: boolean
+  opening_bank: number
+  paid_in: number
+  paid_out: number
+  cash_refunds: number
+  counted_cash: number
+  retained_bank: number
+  deposit_amount: number
+  variance_reason?: string
+  decisions: Array<Record<string, unknown>>
+}
+
+export const posCloseDayApi = {
+  preview: (restaurantId: string, businessDate?: string, signal?: AbortSignal) => {
+    const query = businessDate ? `?business_date=${encodeURIComponent(businessDate)}` : ''
+    return fetchPosApi(restaurantId, `/manager/close-day/preview${query}`, { signal })
+  },
+  finalize: (restaurantId: string, input: CloseDayFinalizeInput) =>
+    fetchPosApi(restaurantId, '/manager/close-day', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+}
+
+export const posRefundApi = {
+  request: (
+    restaurantId: string,
+    paymentId: string,
+    input: { request_id: string; amount: number; reason: string; device_id?: string },
+  ) => fetchPosApi(restaurantId, `/manager/payments/${encodeURIComponent(paymentId)}/refund-requests`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }),
 }
 
 export const posTimeClockApi = {

@@ -141,7 +141,7 @@ async function fetchPreviewForInterval(restaurantId, interval) {
     return fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tip-pools/preview?business_date=${interval.start}`)
   }
   try {
-    return await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tip-pools/preview?window_start=${interval.start}&window_end=${interval.end}`)
+    return await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tip-pools/preview?start_date=${interval.start}&end_date=${interval.end}`)
   } catch (err) {
     if (!isRangeUnsupported(err)) throw err
     const days = intervalDays(interval)
@@ -582,7 +582,7 @@ export default function TipPoolingPage({ restaurantId }) {
     try {
       const body = isSingleDay(runInterval)
         ? { business_date: runInterval.start }
-        : isoWindow(runInterval)
+        : { start_date: runInterval.start, end_date: runInterval.end }
       const run = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tip-pools/runs`, {
         method: 'POST',
         body: JSON.stringify(body),

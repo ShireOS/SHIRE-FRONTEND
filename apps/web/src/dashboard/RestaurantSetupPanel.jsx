@@ -3118,7 +3118,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
           timezone: publication.timezone,
           commands: [{
             method: 'PATCH',
-            path: `/manager/job-codes/${jobCode.id}`,
+            path: `/restaurants/${targetId}/job-codes/${jobCode.id}`,
             body: jobCodePayload(jobCode),
             target_type: 'restaurant',
             target_id: restaurantId,
@@ -3128,7 +3128,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         return
       }
       const saved = await fetchWithSupabaseAuth(
-        jobCode.id ? `/manager/job-codes/${jobCode.id}` : `/restaurants/${restaurantId}/job-codes`,
+        jobCode.id ? `/restaurants/${restaurantId}/job-codes/${jobCode.id}` : `/restaurants/${restaurantId}/job-codes`,
         {
           method: jobCode.id ? 'PATCH' : 'POST',
           body: JSON.stringify(jobCodePayload(jobCode)),
@@ -3158,7 +3158,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     setSavingRateId(jobCode.id)
     setSetupError('')
     try {
-      await fetchWithSupabaseAuth(`/manager/job-codes/${jobCode.id}`, {
+      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes/${jobCode.id}`, {
         method: 'PATCH',
         body: JSON.stringify(jobCodePayload({ ...jobCode, is_active: false })),
       })
@@ -3369,7 +3369,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     setSavingRateId(jobCode.id)
     setSetupError('')
     try {
-      const saved = await fetchWithSupabaseAuth(`/manager/job-codes/${jobCode.id}`, {
+      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes/${jobCode.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ default_hourly_rate: parsed.toFixed(2) }),
       })

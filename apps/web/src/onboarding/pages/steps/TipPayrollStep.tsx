@@ -8,7 +8,7 @@ const inputClass = 'w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[
 const labelClass = 'mb-1.5 block text-xs font-medium text-[rgb(var(--text-secondary))]'
 
 const POOL_METHODS: Array<{
-  key: 'individual' | 'pooled' | 'hours_based' | 'points_based' | 'sales_based'
+  key: 'individual' | 'pooled' | 'hours_based' | 'points_based' | 'sales_based' | 'role_shares'
   mode: TipPayrollSettingsData['tip_distribution_mode']
   pooled: boolean
   title: string
@@ -19,6 +19,7 @@ const POOL_METHODS: Array<{
   { key: 'hours_based', mode: 'hours_based', pooled: true, title: 'Pool by hours', description: 'Split the pool based on hours worked. Optional weights can make one role earn more per hour.' },
   { key: 'points_based', mode: 'points_based', pooled: true, title: 'Pool by points', description: 'Split the pool by role weights, such as Server 10 points and Host 5 points.' },
   { key: 'sales_based', mode: 'sales_based', pooled: true, title: 'Pool by sales', description: 'Split the pool based on each employee or role sales.' },
+  { key: 'role_shares', mode: 'role_shares', pooled: true, title: 'Pool by role %', description: 'Give each receiving role a configured percentage of the pool.' },
 ]
 
 const CASH_TIP_MODES: Array<{ value: TipPayrollSettingsData['cash_tip_declaration_mode']; label: string }> = [

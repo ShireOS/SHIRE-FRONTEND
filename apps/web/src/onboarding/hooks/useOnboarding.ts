@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../shared/lib/supabase'
 import { API_CONFIG } from '../../shared/api/config'
+import { fetchPosApi } from '../../shared/api/posClient'
 import { useAuth } from '../../auth'
 import type { Restaurant } from '@shire/db'
 
@@ -302,6 +303,7 @@ export interface TipRoleRuleData {
   receives_from_pool: boolean
   pool_points: string
   pool_contribution_percent: string
+  pool_share_percent: string
   tipout_split_basis: 'hours' | 'even'
   tipouts: Array<{
     target_role: string
@@ -329,7 +331,7 @@ export interface CategoryTipProfileData {
 }
 
 export interface TipPayrollSettingsData {
-  tip_distribution_mode: 'individual' | 'pooled' | 'role_based' | 'sales_based' | 'hours_based' | 'points_based'
+  tip_distribution_mode: 'individual' | 'pooled' | 'role_based' | 'sales_based' | 'hours_based' | 'points_based' | 'role_shares'
   cash_tip_declaration_mode: 'not_tracked' | 'declared_by_employee' | 'declared_by_manager' | 'required_checkout'
   credit_tip_payout_timing: 'nightly' | 'payroll'
   payroll_provider: string
@@ -409,6 +411,7 @@ const defaultTipRoleRules = (jobCodes: JobCodeData[] = defaultJobCodes()): TipRo
     receives_from_pool: code.is_tipped,
     pool_points: code.is_tipped ? '1' : '',
     pool_contribution_percent: '100',
+    pool_share_percent: '',
     tipout_split_basis: 'hours',
     tipouts: [],
     tipout_percent: '',
@@ -711,7 +714,7 @@ const SERVER_REPORT_DELIVERY: CloseoutSettingsData['server_checkout_report_deliv
 const EOD_BATCH_CLOSE_MODES: CloseoutSettingsData['eod_batch_close_mode'][] = ['automatic', 'manual', 'prompt_manager']
 const ORDER_FIRE_MODES: CheckWorkflowSettingsData['default_order_fire_mode'][] = ['manual', 'immediate', 'by_course']
 const PERMISSION_TIERS: JobCodeData['permission_tier'][] = ['owner', 'manager', 'normal', 'limited', 'waiter']
-const TIP_DISTRIBUTION_MODES: TipPayrollSettingsData['tip_distribution_mode'][] = ['individual', 'pooled', 'role_based', 'sales_based', 'hours_based', 'points_based']
+const TIP_DISTRIBUTION_MODES: TipPayrollSettingsData['tip_distribution_mode'][] = ['individual', 'pooled', 'role_based', 'sales_based', 'hours_based', 'points_based', 'role_shares']
 const CASH_TIP_DECLARATION_MODES: TipPayrollSettingsData['cash_tip_declaration_mode'][] = ['not_tracked', 'declared_by_employee', 'declared_by_manager', 'required_checkout']
 const PAYROLL_EXPORT_FREQUENCIES: TipPayrollSettingsData['payroll_export_frequency'][] = ['daily', 'weekly', 'biweekly', 'semimonthly', 'monthly', 'manual']
 const TIP_POOL_RESETS: TipPayrollSettingsData['tip_pool_reset'][] = ['shift', 'day', 'pay_period']
@@ -1114,6 +1117,7 @@ const normalizeTipRoleRules = (value: unknown, jobCodes: JobCodeData[] = default
       receives_from_pool: typeof row.receives_from_pool === 'boolean' ? row.receives_from_pool : true,
       pool_points: asStringNumber(row.pool_points),
       pool_contribution_percent: row.pool_contribution_percent == null ? '100' : asStringNumber(row.pool_contribution_percent),
+      pool_share_percent: asStringNumber(row.pool_share_percent),
       tipout_split_basis: row.tipout_split_basis === 'even' ? 'even' : 'hours',
       tipouts: Array.isArray(row.tipouts)
         ? row.tipouts.filter(isRecord).flatMap(item => {
@@ -1300,6 +1304,7 @@ const tipPayrollToPayload = (data: OnboardingData) => {
     ...rule,
     pool_points: rule.pool_points === '' ? null : Number(rule.pool_points),
     pool_contribution_percent: rule.pool_contribution_percent === '' ? null : Number(rule.pool_contribution_percent),
+    pool_share_percent: rule.pool_share_percent === '' ? null : Number(rule.pool_share_percent),
     tipout_split_basis: rule.tipout_split_basis === 'even' ? 'even' : 'hours',
     tipouts: (rule.tipouts || [])
       .filter(item => item.target_role && item.percent !== '' && Number(item.percent) > 0)
@@ -1782,25 +1787,14 @@ const fetchCheckWorkflowSettings = async (restaurantId: string) => {
 }
 
 const fetchJobCodes = async (restaurantId: string) => {
-  const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/job-codes`, {
-    headers: await getApiHeaders(),
-  })
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}))
-    throw new Error(asString(body.detail) || asString(body.message) || `Loading roles failed (${response.status})`)
-  }
-  return response.json()
+  return fetchPosApi(restaurantId, `/restaurants/${restaurantId}/job-codes`)
 }
 
 const fetchTipPayrollSettings = async (restaurantId: string) => {
-  const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/tips-payroll-settings`, {
-    headers: await getApiHeaders(),
-  })
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}))
-    throw new Error(asString(body.detail) || asString(body.message) || `Loading tips and payroll failed (${response.status})`)
-  }
-  return response.json()
+  return fetchPosApi(
+    restaurantId,
+    `/restaurants/${restaurantId}/tips-payroll-settings`,
+  )
 }
 
 const slugify = (name: string): string =>
@@ -2728,21 +2722,14 @@ export function useOnboarding() {
 
     try {
       const activeRestaurantId = getActiveRestaurantId()
-      const response = await runWithTimeout(
-        async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/tips-payroll-settings`, {
+      const saved = await runWithTimeout(
+        async () => fetchPosApi(activeRestaurantId, `/restaurants/${activeRestaurantId}/tips-payroll-settings`, {
           method: 'PUT',
-          headers: await getApiHeaders(),
           body: JSON.stringify(tipPayrollToPayload(data)),
         }),
         'Saving tips and payroll timed out. Please retry.'
       )
 
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}))
-        throw new Error(asString(body.detail) || asString(body.message) || `Saving tips and payroll failed (${response.status})`)
-      }
-
-      const saved = await response.json().catch(() => ({}))
       setData(prev => mergeOnboardingData(prev, {
         tip_payroll_settings: normalizeTipPayrollSettings(saved, prev.job_codes),
       }))

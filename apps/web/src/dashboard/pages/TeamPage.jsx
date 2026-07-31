@@ -592,7 +592,7 @@ export default function TeamPage({ restaurantId }) {
     act(async () => {
       const parsed = Number(rate)
       if (!Number.isFinite(parsed) || parsed < 0) throw new Error('Enter a valid hourly rate.')
-      const saved = await fetchWithSupabaseAuth(`/manager/job-codes/${jobCode.id}`, {
+      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes/${jobCode.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ default_hourly_rate: parsed.toFixed(2) }),
       })
@@ -603,7 +603,7 @@ export default function TeamPage({ restaurantId }) {
     act(async () => {
       if (!jobCode?.id) throw new Error('This role cannot be removed until it has been saved.')
       if (!window.confirm(`Remove ${jobCode.label || jobCode.code} from new employee role choices? Existing employees keep their assigned role until changed.`)) return
-      await fetchWithSupabaseAuth(`/manager/job-codes/${jobCode.id}`, {
+      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes/${jobCode.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ is_active: false }),
       })

@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-import { apiPatch, apiPost, apiRequest } from './mobileApi';
+import { apiPatch, apiPost, apiRequest, posApiRequest } from './mobileApi';
 
 export type RemoteTimeClockSettings = {
   enabled: boolean;
@@ -207,26 +207,33 @@ export function reviewTimeClockRequest(
   return apiPatch<TimeClockRequest>(`/time-clock/requests/${requestId}`, { status });
 }
 
-export function fetchManagerJobCodes() {
-  return apiRequest<JobCode[]>('/manager/job-codes');
+export function fetchManagerJobCodes(restaurantId: string) {
+  return posApiRequest<JobCode[]>(restaurantId, '/manager/job-codes');
 }
 
 export function fetchRestaurantJobCodes(restaurantId: string) {
-  return apiRequest<JobCode[]>(`/restaurants/${restaurantId}/job-codes`);
+  return posApiRequest<JobCode[]>(restaurantId, `/restaurants/${restaurantId}/job-codes`);
 }
 
 export function updateManagerJobCode(
+  restaurantId: string,
   jobCodeId: string,
   body: Partial<Pick<JobCode, 'code' | 'label' | 'permission_tier' | 'default_hourly_rate' | 'is_tipped' | 'tipout_role' | 'sort_order' | 'is_active'>>,
 ) {
-  return apiPatch<JobCode>(`/manager/job-codes/${jobCodeId}`, body);
+  return posApiRequest<JobCode>(restaurantId, `/restaurants/${restaurantId}/job-codes/${jobCodeId}`, {
+    method: 'PATCH',
+    body,
+  });
 }
 
 export function createManagerJobCode(
   restaurantId: string,
   body: Pick<JobCode, 'code' | 'label'> & Partial<Pick<JobCode, 'permission_tier' | 'default_hourly_rate' | 'is_tipped' | 'tipout_role' | 'sort_order' | 'is_active'>>,
 ) {
-  return apiPost<JobCode>(`/restaurants/${restaurantId}/job-codes`, body);
+  return posApiRequest<JobCode>(restaurantId, `/restaurants/${restaurantId}/job-codes`, {
+    method: 'POST',
+    body,
+  });
 }
 
 export function registerMobilePushToken(body: {

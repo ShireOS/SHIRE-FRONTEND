@@ -12,25 +12,39 @@ export function fetchPosMenuWorkspace(restaurantId) {
 }
 
 export function applyPosMenuWorkspace(restaurantId, workspace, reason) {
+  const navigationNodes = workspace.navigation_nodes || []
+  const departments = navigationNodes.length
+    ? navigationNodes.filter((node) => node.kind === 'department')
+    : workspace.departments
   return fetchPosApi(restaurantId, '/reseller/pos-menu-workspace', {
     mount: 'integration',
     method: 'PUT',
     body: JSON.stringify({
       restaurant_id: restaurantId,
       version: workspace.version,
-      departments: workspace.departments.map(({ id, name, display_order }) => ({
+      departments: departments.map(({ id, name, display_order }) => ({
         id,
         name,
+        display_order,
+      })),
+      navigation: workspace.navigation,
+      navigation_nodes: navigationNodes.map(({ id, name, kind, parent_id, display_order }) => ({
+        id,
+        name,
+        kind,
+        parent_id,
         display_order,
       })),
       profiles: {
         server: {
           shortcut_item_ids: workspace.profiles.server.shortcut_item_ids,
           default_open: workspace.profiles.server.default_open,
+          quick_menu_enabled: workspace.profiles.server.quick_menu_enabled,
         },
         bartender: {
           shortcut_item_ids: workspace.profiles.bartender.shortcut_item_ids,
-          browse_department_ids: workspace.departments.map((department) => department.id),
+          browse_department_ids: departments.map((department) => department.id),
+          quick_menu_enabled: workspace.profiles.bartender.quick_menu_enabled,
         },
       },
       restaurant_bartender_default_home: workspace.restaurant_bartender_default_home,

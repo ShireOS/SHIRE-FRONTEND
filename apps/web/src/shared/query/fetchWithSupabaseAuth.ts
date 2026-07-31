@@ -1,10 +1,18 @@
 import { supabase } from '../lib/supabase'
 import { API_CONFIG } from '../api/config'
+import { fetchPosApi } from '../api/posClient'
+
+const POS_OWNED_RESTAURANT_ROUTE =
+  /^\/restaurants\/([^/]+)\/(?:tips-payroll-settings|pay-periods|tip-pools(?:\/|$)|job-codes(?:\/|$))/
 
 export async function fetchWithSupabaseAuth<T = any>(
   endpoint: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const posRoute = endpoint.match(POS_OWNED_RESTAURANT_ROUTE)
+  if (posRoute) {
+    return fetchPosApi<T>(decodeURIComponent(posRoute[1]), endpoint, options)
+  }
   const { data: sessionData } = await supabase.auth.getSession()
   const token = sessionData?.session?.access_token
   const headers = new Headers(options.headers || {})

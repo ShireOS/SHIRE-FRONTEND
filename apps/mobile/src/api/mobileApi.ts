@@ -17,6 +17,16 @@ export function getReservationsApiBaseUrl() {
   return value.replace(/\/+$/, '');
 }
 
+export function getPosApiBaseUrl() {
+  const value = Constants.expoConfig?.extra?.posApiBaseUrl;
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error('POS_API_BASE_URL is not configured for the mobile app.');
+  }
+  const configured = value.replace(/\/+$/, '').replace(/\/dev-v2$/, '');
+  const apiBase = configured.endsWith('/api/v1') ? configured : `${configured}/api/v1`;
+  return `${apiBase}/dev-v2`;
+}
+
 type ApiAuthMode = 'supabase' | 'none';
 
 type ApiRequestOptions = {
@@ -48,6 +58,21 @@ export async function apiRequest<T>(endpoint: string, options: ApiRequestOptions
 
 export async function reservationsApiRequest<T>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
   return apiRequestFromBase<T>(getReservationsApiBaseUrl(), endpoint, options);
+}
+
+export async function posApiRequest<T>(
+  restaurantId: string,
+  endpoint: string,
+  options: ApiRequestOptions = {},
+): Promise<T> {
+  return apiRequestFromBase<T>(getPosApiBaseUrl(), endpoint, {
+    ...options,
+    headers: {
+      ...options.headers,
+      'X-Restaurant-Id': restaurantId,
+      'X-Client-Version': Constants.expoConfig?.version || 'unknown',
+    },
+  });
 }
 
 async function apiRequestFromBase<T>(baseUrl: string, endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
