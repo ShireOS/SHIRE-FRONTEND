@@ -127,6 +127,7 @@ export const TAB_PERMISSIONS: Record<string, string> = {
   team: 'team.view',
   'time-clock': 'team.view',
   scheduling: 'team.view',
+  alerts: 'team.view',
   messaging: 'team.view',
   payments: 'settings.edit',
 }

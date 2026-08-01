@@ -1,4 +1,5 @@
 import { type AnalyticsPeriod } from '@/api/ownerAnalytics';
+import { fetchManagerInbox } from '@/api/managerInbox';
 import {
   fetchManagerTimeClockRequests,
   reviewTimeClockRequest,
@@ -55,6 +56,7 @@ export default function OwnerOverview() {
   const [period, setPeriod] = useState<AnalyticsPeriod>('day');
   const [date, setDate] = useState(() => new Date());
   const [timeClockRequests, setTimeClockRequests] = useState<TimeClockRequest[]>([]);
+  const [managerAlertCount, setManagerAlertCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isReviewingTime, setIsReviewingTime] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -149,6 +151,22 @@ export default function OwnerOverview() {
     };
   }, [restaurant]);
 
+  useEffect(() => {
+    if (!restaurant?.id) return undefined;
+    let cancelled = false;
+    const refresh = () => fetchManagerInbox(restaurant.id, 'open')
+      .then((response) => {
+        if (!cancelled) setManagerAlertCount(response.open_count);
+      })
+      .catch(() => undefined);
+    void refresh();
+    const timer = setInterval(refresh, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [restaurant?.id]);
+
   const reviewRemoteTime = async (request: TimeClockRequest, status: 'approved' | 'denied') => {
     if (!restaurant?.id) return;
     const requestId = request.request_id || request.id;
@@ -187,9 +205,23 @@ export default function OwnerOverview() {
           <Text style={[typography.eyebrow, styles.eyebrow]}>{restaurant?.name || 'Restaurant'}</Text>
           <Text style={[typography.h2, styles.title]}>Overview</Text>
         </View>
-        <Pressable style={styles.refreshButton} onPress={() => setDate(new Date())}>
-          <Feather name="rotate-cw" size={18} color={color_pallet.ink[700]} />
-        </Pressable>
+        <View style={styles.headingActions}>
+          <Pressable
+            accessibilityLabel={managerAlertCount ? `${managerAlertCount} manager alerts` : 'Manager alerts'}
+            style={styles.refreshButton}
+            onPress={() => router.push('/(admin)/alerts' as never)}
+          >
+            <Feather name="bell" size={18} color={color_pallet.ink[700]} />
+            {managerAlertCount > 0 && (
+              <View style={styles.alertBadge}>
+                <Text style={styles.alertBadgeText}>{managerAlertCount > 99 ? '99+' : managerAlertCount}</Text>
+              </View>
+            )}
+          </Pressable>
+          <Pressable accessibilityLabel="Return to today" style={styles.refreshButton} onPress={() => setDate(new Date())}>
+            <Feather name="rotate-cw" size={18} color={color_pallet.ink[700]} />
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.dateBar}>
@@ -303,6 +335,27 @@ const styles = StyleSheet.create({
     backgroundColor: semanticColors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: semanticColors.border,
+  },
+  headingActions: {
+    flexDirection: 'row',
+    gap: spacing[2],
+  },
+  alertBadge: {
+    position: 'absolute',
+    right: -4,
+    top: -4,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 3,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: statusColors.danger.strong,
+  },
+  alertBadgeText: {
+    color: semanticColors.textInverse,
+    fontSize: 9,
+    fontWeight: '800',
   },
   dateBar: {
     marginTop: spacing[4],

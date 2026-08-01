@@ -51,6 +51,7 @@ import ResellerApp from '../reseller/ResellerApp'
 import ResellerUiEditor from '../reseller/ResellerUiEditor'
 import RestaurantReportsPage from './reports/RestaurantReportsPage'
 import MenuWorkspaceEditor from '../shared/components/MenuWorkspaceEditor'
+import ManagerActionInboxPage from './pages/ManagerActionInboxPage'
 
 function LoadingScreen() {
   return (
@@ -146,6 +147,7 @@ const TABS = [
   { id: 'team', label: 'Team' },
   { id: 'time-clock', label: 'Time Clock' },
   { id: 'scheduling', label: 'Scheduling' },
+  { id: 'alerts', label: 'Alerts' },
   { id: 'messaging', label: 'Messaging' },
   { id: 'payments', label: 'Payments / Plan' },
 ]
@@ -5137,6 +5139,7 @@ export function RestaurantWorkspace({
         {activeTab === 'printing-routing' && <PrintingRoutingPage restaurantId={restaurantId} />}
         {activeTab === 'tip-pooling' && <TipPoolingPage restaurantId={restaurantId} />}
         {activeTab === 'scheduling' && <SchedulingPanel restaurantId={restaurantId} />}
+        {activeTab === 'alerts' && <ManagerActionInboxPage restaurantId={restaurantId} />}
         {activeTab === 'messaging' && <ManagerMessagingPanel restaurantId={restaurantId} />}
         {activeTab === 'payments' && (
           <PlaceholderPanel title="Payments / Plan" eyebrow="Placeholder">
@@ -5165,6 +5168,7 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   'printing-routing': 'Printing & Routing',
   'tip-pooling': 'Payroll & Tips',
   scheduling: 'Scheduling',
+  alerts: 'Alerts',
   messaging: 'Messaging',
   payments: 'Payments / Plan',
 }

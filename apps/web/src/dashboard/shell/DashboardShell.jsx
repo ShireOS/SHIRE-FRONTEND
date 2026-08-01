@@ -37,6 +37,7 @@ import { supabase } from '../../shared/lib/supabase'
 import { queryClient, queryKeys, fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import { TAB_PERMISSIONS } from '../../shared/permissions'
+import { backOfficeApi } from '../../shared/api/backOfficeApi'
 
 const THEME_STORAGE_KEY = 'shire_dashboard_theme'
 
@@ -170,6 +171,7 @@ const STORE_NAV = [
     children: [
       { id: 'team', label: 'Members', icon: Users },
       { id: 'time-clock', label: 'Time Clock', icon: Clock },
+      { id: 'alerts', label: 'Alerts', icon: Bell },
       { id: 'labor-cost', label: 'Labor Cost', icon: BadgeDollarSign },
       // Payroll & Tips sections, flat within the Team group (not nested under
       // a single Payroll item). All render TipPoolingPage ('tip-pooling' tab);
@@ -373,6 +375,7 @@ export default function DashboardShell({
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [theme, setTheme] = useShellTheme()
+  const [alertCount, setAlertCount] = useState(0)
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
@@ -437,6 +440,27 @@ export default function DashboardShell({
   const displayName = [auth.profile?.first_name, auth.profile?.last_name].filter(Boolean).join(' ')
     || auth.user?.email
     || 'Account'
+
+  useEffect(() => {
+    if (!restaurantId || context !== 'store') {
+      setAlertCount(0)
+      return undefined
+    }
+    let cancelled = false
+    const refresh = () => backOfficeApi.managerInbox(restaurantId, 'open')
+      .then((response) => {
+        if (!cancelled) setAlertCount(response.open_count)
+      })
+      .catch(() => {
+        if (!cancelled) setAlertCount(0)
+      })
+    void refresh()
+    const timer = window.setInterval(refresh, 30_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [context, restaurantId, activeItem])
 
   return (
     <div className={`${theme} flex min-h-screen bg-dash-base text-dash-cream transition-colors duration-300`}>
@@ -579,11 +603,18 @@ export default function DashboardShell({
             </button>
             <button
               type="button"
-              title="Notifications — coming soon"
-              aria-disabled="true"
-              className="flex h-9 w-9 items-center justify-center rounded-xl border border-dash-border text-dash-tertiary transition hover:text-dash-secondary"
+              title={restaurantId ? 'Manager alerts' : 'Open a store to view alerts'}
+              aria-label={alertCount ? `Manager alerts, ${alertCount} open` : 'Manager alerts'}
+              disabled={!restaurantId || context !== 'store'}
+              onClick={() => navigate(`${navigation.restaurants}/${restaurantId}/alerts`)}
+              className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-dash-border text-dash-secondary transition hover:border-shell-accent/40 hover:text-dash-cream disabled:cursor-not-allowed disabled:text-dash-tertiary"
             >
               <Bell size={16} strokeWidth={1.75} aria-hidden="true" />
+              {alertCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white">
+                  {alertCount > 99 ? '99+' : alertCount}
+                </span>
+              )}
             </button>
             <div className="glass-panel flex items-center gap-2 rounded-xl border border-dash-border py-1 pl-1 pr-3">
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-shell-accent text-xs font-bold text-shell-cta-text">

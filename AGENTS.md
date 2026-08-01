@@ -74,6 +74,11 @@ list must stay in sync.
 - `reports.view`
 - `settings.edit`
 
+The universal manager action inbox uses `team.view` for visibility,
+`team.edit_employees` for schedule-request and shift-transfer decisions, and
+`team.adjust_timeclock` for missed-clock-out corrections. Owners retain the
+existing bypass; every mutation is also guarded by the ML backend.
+
 ### Implementation map (2026-07-08 build)
 - Frontend: `shared/permissions.ts` (keys/presets/merge/can/TAB_PERMISSIONS),
   `shared/hooks/useBackOfficeAccess.ts` (effective access; owners/admins/resellers
@@ -112,6 +117,10 @@ list must stay in sync.
 - ML backend: `app/api/back_office.py` (members/invites/my-access/accept),
   `app/services/back_office_access.py` (merge + require_back_office_permission),
   guards on tips_payroll + waiters mutations.
+- Manager alerts: the store bell and Alerts page merge existing scheduling
+  requests with durable missed-clock-out alerts. Desktop and mobile call the
+  same ML-backend action API; time corrections write the existing POS
+  time-clock adjustment audit trail.
 - Printer outage protection uses existing `settings.edit`. The Devices page reads
   the POS backend's canonical `/restaurants/:id/printer-failover` surface, makes
   every active printer choose Hold & alert or an explicit backup, and exposes
