@@ -1,10 +1,15 @@
 import {
+  createAdminModifier,
   createAdminMenuItem,
+  fetchAdminModifiers,
   fetchAdminMenuItems,
   fetchMenuItemInsight,
+  replaceAdminModifierItems,
   setMenuItemImageUrl,
   setMenuItemAvailability,
+  updateAdminModifier,
   updateAdminMenuItem,
+  type AdminModifier,
   type AdminMenuItem,
   type MenuItemInsight,
 } from '@/api/menu';
@@ -13,6 +18,7 @@ import { color_pallet, semanticColors, statusColors } from '@/styles/colors';
 import { card, layout, radius, spacing } from '@/styles/tokens';
 import { typography } from '@/styles/typography';
 import { Feather } from '@expo/vector-icons';
+import { rankModifierMatches } from '@shire/menu-search';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -31,7 +37,7 @@ import {
 import { fetchResellerPortfolio, getOwnerRestaurant, type OwnerRestaurant } from '../../packages/supabase';
 
 type AvailabilityFilter = 'all' | 'available' | 'unavailable';
-type MenuWorkspaceMode = 'items' | 'pricing' | 'availability';
+type MenuWorkspaceMode = 'items' | 'modifiers' | 'pricing' | 'availability';
 type AvailabilityMode = NonNullable<AdminMenuItem['availability_mode']>;
 type MenuItemForm = {
   name: string;
@@ -39,6 +45,16 @@ type MenuItemForm = {
   price: string;
   description: string;
   imageUrl: string;
+};
+
+type ModifierForm = {
+  name: string;
+  price: string;
+  category: string;
+  notes: string;
+  isActive: boolean;
+  printsOnKitchenTicket: boolean;
+  itemIds: Set<string>;
 };
 
 const FILTERS: { id: AvailabilityFilter; label: string }[] = [
@@ -125,6 +141,16 @@ const EMPTY_FORM: MenuItemForm = {
   description: '',
   imageUrl: '',
 };
+
+const emptyModifierForm = (name = ''): ModifierForm => ({
+  name,
+  price: '',
+  category: '',
+  notes: '',
+  isActive: true,
+  printsOnKitchenTicket: true,
+  itemIds: new Set(),
+});
 
 export default function AdminMenu() {
   const [restaurant, setRestaurant] = useState<OwnerRestaurant | null>(null);
@@ -365,6 +391,8 @@ export default function AdminMenu() {
     }
   };
 
+  const showsItemWorkspace = workspaceMode === 'items' || workspaceMode === 'availability';
+
   return (
     <ScrollView
       style={styles.screen}
@@ -418,8 +446,9 @@ export default function AdminMenu() {
       <View style={styles.workspaceTabs}>
         {([
           ['items', 'Items'],
+          ['modifiers', 'Modifiers'],
           ['pricing', 'Pricing'],
-          ['availability', 'Item Availability'],
+          ['availability', 'Availability'],
         ] as const).map(([id, label]) => (
           <Pressable key={id} onPress={() => setWorkspaceMode(id)} style={[styles.workspaceTab, workspaceMode === id && styles.workspaceTabActive]}>
             <Text style={[styles.workspaceTabText, workspaceMode === id && styles.workspaceTabTextActive]}>{label}</Text>
@@ -429,13 +458,17 @@ export default function AdminMenu() {
 
       {workspaceMode === 'pricing' && restaurant?.id ? <MobilePricingWorkspace restaurantId={restaurant.id} /> : null}
 
-      {workspaceMode !== 'pricing' && <View style={styles.summaryRow}>
+      {workspaceMode === 'modifiers' && restaurant?.id ? (
+        <MobileModifierWorkspace restaurantId={restaurant.id} menuItems={items} />
+      ) : null}
+
+      {showsItemWorkspace && <View style={styles.summaryRow}>
         <SummaryPill label="Items" value={counts.total} />
         <SummaryPill label="Available" value={counts.available} tone="success" />
         <SummaryPill label="86'd" value={counts.unavailable} tone="warning" />
       </View>}
 
-      {workspaceMode !== 'pricing' && <View style={styles.searchWrap}>
+      {showsItemWorkspace && <View style={styles.searchWrap}>
         <Feather name="search" size={17} color={color_pallet.ink[500]} />
         <TextInput
           value={query}
@@ -452,7 +485,7 @@ export default function AdminMenu() {
         )}
       </View>}
 
-      {workspaceMode !== 'pricing' && <View style={styles.filterRow}>
+      {showsItemWorkspace && <View style={styles.filterRow}>
         {FILTERS.map((item) => (
           <Pressable
             key={item.id}
@@ -466,20 +499,20 @@ export default function AdminMenu() {
         ))}
       </View>}
 
-      {workspaceMode !== 'pricing' && isLoading && (
+      {showsItemWorkspace && isLoading && (
         <View style={styles.stateCard}>
           <Text style={[typography.bodySmall, styles.stateText]}>Loading menu...</Text>
         </View>
       )}
 
-      {workspaceMode !== 'pricing' && error && (
+      {showsItemWorkspace && error && (
         <View style={styles.errorCard}>
           <Text style={[typography.caption, styles.errorTitle]}>Menu sync needs attention</Text>
           <Text style={[typography.bodySmall, styles.errorCopy]}>{error}</Text>
         </View>
       )}
 
-      {workspaceMode !== 'pricing' && !isLoading && groupedItems.length === 0 && (
+      {showsItemWorkspace && !isLoading && groupedItems.length === 0 && (
         <View style={styles.emptyCard}>
           <View style={styles.emptyIcon}>
             <Feather name="coffee" size={22} color={color_pallet.ink[600]} />
@@ -495,7 +528,7 @@ export default function AdminMenu() {
         </View>
       )}
 
-      {workspaceMode !== 'pricing' && !isLoading && groupedItems.map(([category, categoryItems]) => (
+      {showsItemWorkspace && !isLoading && groupedItems.map(([category, categoryItems]) => (
         <View key={category} style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[typography.h3, styles.sectionTitle]}>{category}</Text>
@@ -541,6 +574,364 @@ export default function AdminMenu() {
         }}
       />
     </ScrollView>
+  );
+}
+
+function MobileModifierWorkspace({
+  restaurantId,
+  menuItems,
+}: {
+  restaurantId: string;
+  menuItems: AdminMenuItem[];
+}) {
+  const [modifiers, setModifiers] = useState<AdminModifier[]>([]);
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState<AdminModifier | null>(null);
+  const [form, setForm] = useState<ModifierForm>(() => emptyModifierForm());
+  const [editorVisible, setEditorVisible] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setModifiers(await fetchAdminModifiers(restaurantId));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Could not load modifiers.');
+    } finally {
+      setLoading(false);
+    }
+  }, [restaurantId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const matches = useMemo(() => rankModifierMatches(modifiers, query, {
+    aliases: (modifier) => [modifier.group_name],
+  }), [modifiers, query]);
+
+  const openCreate = (name = '') => {
+    setSelected(null);
+    setForm(emptyModifierForm(name));
+    setError(null);
+    setEditorVisible(true);
+  };
+
+  const openModifier = (modifier: AdminModifier) => {
+    setSelected(modifier);
+    setForm({
+      name: modifier.name,
+      price: String(modifier.price_delta || ''),
+      category: modifier.group_name,
+      notes: modifier.modifier_notes || '',
+      isActive: modifier.is_active,
+      printsOnKitchenTicket: modifier.print_on_kitchen_ticket,
+      itemIds: new Set(modifier.item_ids),
+    });
+    setError(null);
+    setEditorVisible(true);
+  };
+
+  const save = async () => {
+    if (saving) return;
+    const name = form.name.trim();
+    const price = Number(form.price || 0);
+    if (!name) {
+      setError('Modifier name is required.');
+      return;
+    }
+    if (!Number.isFinite(price) || price < 0) {
+      setError('Enter a valid non-negative price.');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      const payload = {
+        name,
+        price_delta: price,
+        group_name: form.category.trim() || 'Add-ons',
+        modifier_notes: form.notes.trim() || null,
+        is_active: form.isActive,
+        print_on_kitchen_ticket: form.printsOnKitchenTicket,
+      };
+      let saved = selected
+        ? await updateAdminModifier(restaurantId, selected.id, payload)
+        : await createAdminModifier(restaurantId, payload);
+      saved = await replaceAdminModifierItems(restaurantId, saved.id, Array.from(form.itemIds));
+      setModifiers((current) => {
+        const next = current.some((modifier) => modifier.id === saved.id)
+          ? current.map((modifier) => (modifier.id === saved.id ? saved : modifier))
+          : [...current, saved];
+        return next.sort((left, right) => (
+          left.group_name.localeCompare(right.group_name) || left.name.localeCompare(right.name)
+        ));
+      });
+      setEditorVisible(false);
+      setSelected(null);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Could not save modifier.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <View style={styles.modifierWorkspace}>
+      <View style={styles.modifierToolbar}>
+        <View>
+          <Text style={[typography.h3, styles.sectionTitle]}>Modifier library</Text>
+          <Text style={[typography.caption, styles.sectionHint]}>{modifiers.length} configured</Text>
+        </View>
+        <Pressable style={styles.addButton} onPress={() => openCreate()}>
+          <Feather name="plus" size={18} color={color_pallet.cream[50]} />
+          <Text style={[typography.caption, styles.addButtonText]}>Add</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.searchWrap}>
+        <Feather name="search" size={17} color={color_pallet.ink[500]} />
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search modifiers or categories"
+          placeholderTextColor={color_pallet.ink[400]}
+          style={styles.searchInput}
+          returnKeyType="search"
+        />
+        {query.length > 0 && (
+          <Pressable accessibilityLabel="Clear modifier search" onPress={() => setQuery('')} style={styles.clearButton}>
+            <Feather name="x" size={16} color={color_pallet.ink[500]} />
+          </Pressable>
+        )}
+      </View>
+
+      {loading ? (
+        <View style={styles.stateCard}>
+          <ActivityIndicator size="small" color={color_pallet.ink[700]} />
+        </View>
+      ) : null}
+      {error && !editorVisible ? (
+        <View style={styles.errorCard}>
+          <Text style={[typography.bodySmall, styles.errorCopy]}>{error}</Text>
+          <Pressable onPress={() => void load()} style={styles.inlineAction}>
+            <Text style={[typography.caption, styles.inlineActionText]}>Try again</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {!loading && modifiers.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Feather name="sliders" size={24} color={color_pallet.ink[600]} />
+          <Text style={[typography.h3, styles.emptyTitle]}>No modifiers yet</Text>
+          <Pressable onPress={() => openCreate()} style={styles.inlineAction}>
+            <Text style={[typography.caption, styles.inlineActionText]}>Add the first modifier</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {!loading && modifiers.length > 0 && matches.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Feather name="search" size={24} color={color_pallet.ink[600]} />
+          <Text style={[typography.h3, styles.emptyTitle]}>No matching modifiers found</Text>
+          <Pressable onPress={() => openCreate(query.trim())} style={styles.inlineAction}>
+            <Text style={[typography.caption, styles.inlineActionText]}>Create “{query.trim()}”</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {!loading && matches.map(({ modifier }) => (
+        <Pressable key={modifier.id} onPress={() => openModifier(modifier)} style={styles.modifierRow}>
+          <View style={styles.modifierIcon}>
+            <Feather name="sliders" size={17} color={color_pallet.ink[700]} />
+          </View>
+          <View style={styles.itemBody}>
+            <View style={styles.itemTitleRow}>
+              <Text numberOfLines={1} style={[typography.title, styles.itemName]}>{modifier.name}</Text>
+              {!modifier.is_active ? (
+                <View style={[styles.statusBadge, styles.statusBadgeUnavailable]}>
+                  <Text style={[typography.eyebrow, styles.statusBadgeText, styles.statusBadgeTextUnavailable]}>Inactive</Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={[typography.caption, styles.itemMeta]}>
+              {modifier.group_name} · {formatCurrency(modifier.price_delta)} · {modifier.item_ids.length} item{modifier.item_ids.length === 1 ? '' : 's'}
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={18} color={color_pallet.ink[500]} />
+        </Pressable>
+      ))}
+
+      <ModifierEditorModal
+        error={editorVisible ? error : null}
+        form={form}
+        isSaving={saving}
+        menuItems={menuItems}
+        title={selected ? 'Edit modifier' : 'New modifier'}
+        visible={editorVisible}
+        onChange={setForm}
+        onClose={() => {
+          if (!saving) setEditorVisible(false);
+        }}
+        onSave={() => void save()}
+      />
+    </View>
+  );
+}
+
+function ModifierEditorModal({
+  error,
+  form,
+  isSaving,
+  menuItems,
+  title,
+  visible,
+  onChange,
+  onClose,
+  onSave,
+}: {
+  error: string | null;
+  form: ModifierForm;
+  isSaving: boolean;
+  menuItems: AdminMenuItem[];
+  title: string;
+  visible: boolean;
+  onChange: (next: ModifierForm) => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const patch = (next: Partial<ModifierForm>) => onChange({ ...form, ...next });
+  const toggleItem = (itemId: string) => {
+    const next = new Set(form.itemIds);
+    if (next.has(itemId)) next.delete(itemId);
+    else next.add(itemId);
+    patch({ itemIds: next });
+  };
+
+  return (
+    <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalBackdrop}>
+        <View style={styles.sheet}>
+          <View style={styles.sheetHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={[typography.eyebrow, styles.eyebrow]}>Menu modifier</Text>
+              <Text style={[typography.h2, styles.sheetTitle]}>{title}</Text>
+            </View>
+            <Pressable style={styles.iconButton} onPress={onClose}>
+              <Feather name="x" size={18} color={color_pallet.ink[700]} />
+            </Pressable>
+          </View>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={styles.sheetScroll}>
+            <FieldLabel label="Name" />
+            <TextInput
+              value={form.name}
+              onChangeText={(value) => patch({ name: value })}
+              placeholder="Extra cheese"
+              placeholderTextColor={color_pallet.ink[400]}
+              style={styles.fieldInput}
+            />
+            <View style={styles.formRow}>
+              <View style={styles.formColumn}>
+                <FieldLabel label="Category" />
+                <TextInput
+                  value={form.category}
+                  onChangeText={(value) => patch({ category: value })}
+                  placeholder="Cheese"
+                  placeholderTextColor={color_pallet.ink[400]}
+                  style={styles.fieldInput}
+                />
+              </View>
+              <View style={styles.priceColumn}>
+                <FieldLabel label="Price +$" />
+                <TextInput
+                  value={form.price}
+                  onChangeText={(value) => patch({ price: value.replace(/[^\d.]/g, '') })}
+                  keyboardType="decimal-pad"
+                  placeholder="0.00"
+                  placeholderTextColor={color_pallet.ink[400]}
+                  style={styles.fieldInput}
+                />
+              </View>
+            </View>
+            <FieldLabel label="Notes" />
+            <TextInput
+              value={form.notes}
+              onChangeText={(value) => patch({ notes: value })}
+              multiline
+              placeholder="Optional preparation note"
+              placeholderTextColor={color_pallet.ink[400]}
+              style={[styles.fieldInput, styles.descriptionInput]}
+            />
+            <View style={styles.modifierToggleRow}>
+              <ToggleSetting
+                active={form.isActive}
+                label="Available"
+                onPress={() => patch({ isActive: !form.isActive })}
+              />
+              <ToggleSetting
+                active={form.printsOnKitchenTicket}
+                label="Prints in kitchen"
+                onPress={() => patch({ printsOnKitchenTicket: !form.printsOnKitchenTicket })}
+              />
+            </View>
+
+            <View style={styles.modifierItemsHeader}>
+              <FieldLabel label={`Applies to (${form.itemIds.size})`} />
+              <Pressable
+                onPress={() => patch({
+                  itemIds: form.itemIds.size === menuItems.length
+                    ? new Set()
+                    : new Set(menuItems.map((item) => item.id)),
+                })}
+              >
+                <Text style={[typography.caption, styles.inlineActionText]}>
+                  {form.itemIds.size === menuItems.length ? 'Clear all' : 'Select all'}
+                </Text>
+              </Pressable>
+            </View>
+            <View style={styles.modifierItemList}>
+              {menuItems.map((item) => {
+                const active = form.itemIds.has(item.id);
+                return (
+                  <Pressable key={item.id} onPress={() => toggleItem(item.id)} style={styles.modifierItemOption}>
+                    <Feather
+                      name={active ? 'check-square' : 'square'}
+                      size={18}
+                      color={active ? color_pallet.elevated.dark : color_pallet.ink[500]}
+                    />
+                    <Text style={[typography.bodySmall, styles.modifierItemName]}>{item.name}</Text>
+                    <Text style={[typography.caption, styles.sectionHint]}>{item.category || 'Other'}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {error ? (
+              <View style={styles.inlineError}>
+                <Text style={[typography.caption, styles.errorCopy]}>{error}</Text>
+              </View>
+            ) : null}
+            <Pressable disabled={isSaving} onPress={onSave} style={[styles.primaryAction, isSaving && styles.disabledButton]}>
+              {isSaving ? <ActivityIndicator size="small" color={color_pallet.cream[50]} /> : <Feather name="save" size={17} color={color_pallet.cream[50]} />}
+              <Text style={[typography.caption, styles.primaryActionText]}>{isSaving ? 'Saving' : 'Save modifier'}</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function ToggleSetting({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={[styles.modifierToggle, active && styles.modifierToggleActive]}>
+      <Feather name={active ? 'check-circle' : 'circle'} size={16} color={active ? color_pallet.cream[50] : color_pallet.ink[600]} />
+      <Text style={[typography.caption, styles.modifierToggleText, active && styles.modifierToggleTextActive]}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -1719,6 +2110,101 @@ const styles = StyleSheet.create({
   },
   choiceTextActive: {
     color: color_pallet.cream[50],
+  },
+  modifierWorkspace: {
+    marginTop: spacing[4],
+  },
+  modifierToolbar: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modifierRow: {
+    alignItems: 'center',
+    backgroundColor: semanticColors.elevated,
+    borderColor: semanticColors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing[3],
+    marginTop: spacing[2],
+    minHeight: 72,
+    padding: spacing[3],
+  },
+  modifierIcon: {
+    alignItems: 'center',
+    backgroundColor: color_pallet.stone[100],
+    borderRadius: radius.md,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  inlineAction: {
+    alignItems: 'center',
+    borderColor: semanticColors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    justifyContent: 'center',
+    marginTop: spacing[3],
+    minHeight: 36,
+    paddingHorizontal: spacing[4],
+  },
+  inlineActionText: {
+    color: color_pallet.elevated.dark,
+    fontFamily: 'Inter_700Bold',
+  },
+  modifierToggleRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[2],
+    marginTop: spacing[4],
+  },
+  modifierToggle: {
+    alignItems: 'center',
+    borderColor: semanticColors.border,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing[2],
+    minHeight: 38,
+    paddingHorizontal: spacing[3],
+  },
+  modifierToggleActive: {
+    backgroundColor: color_pallet.elevated.dark,
+    borderColor: color_pallet.elevated.dark,
+  },
+  modifierToggleText: {
+    color: color_pallet.ink[600],
+  },
+  modifierToggleTextActive: {
+    color: color_pallet.cream[50],
+  },
+  modifierItemsHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing[5],
+  },
+  modifierItemList: {
+    borderColor: semanticColors.border,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginTop: spacing[2],
+    overflow: 'hidden',
+  },
+  modifierItemOption: {
+    alignItems: 'center',
+    backgroundColor: semanticColors.elevated,
+    borderBottomColor: semanticColors.border,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: spacing[2],
+    minHeight: 48,
+    paddingHorizontal: spacing[3],
+  },
+  modifierItemName: {
+    color: color_pallet.ink[800],
+    flex: 1,
   },
   metricsGrid: {
     flexDirection: 'row',

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Search, X } from 'lucide-react'
+import { rankModifierMatches } from '@shire/menu-search'
 import { supabase } from '../shared/lib/supabase'
 import { queryClient, queryKeys, fetchCached, fetchWithSupabaseAuth, STALE_TIMES } from '../shared/query'
 import {
@@ -586,6 +588,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [selectedItemId, setSelectedItemId] = useState(null)
 
   const [itemSearch, setItemSearch] = useState('')
+  const [modifierSearch, setModifierSearch] = useState('')
   const [itemCategoryFilter, setItemCategoryFilter] = useState('all')
   const [itemAvailabilityFilter, setItemAvailabilityFilter] = useState('all')
   // null | { source: item-to-duplicate | null, draft: prefilled draft | null }
@@ -1150,6 +1153,17 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     }
     return map
   }, [groups])
+  const modifierMatches = useMemo(() => rankModifierMatches(modifiers, modifierSearch, {
+    aliases: modifier => [
+      modifierCategoryOf(modifier),
+      ...(groupsByModifierId[modifier.id] || []).map(group => group.name),
+    ],
+  }), [groupsByModifierId, modifierSearch, modifiers])
+  const displayedModifierBuckets = useMemo(() => (
+    modifierSearch.trim()
+      ? [['Search results', modifierMatches.map(match => match.modifier)]]
+      : bucketModifiersByCategory(modifiers)
+  ), [modifierMatches, modifierSearch, modifiers])
   const behaviorByItemId = useMemo(() => {
     const map = {}
     for (const item of mergedItems) {
@@ -2067,6 +2081,28 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
             <span className="text-sm text-dash-tertiary">Price, tax, kitchen printing, the question that asks it, and the items it applies to — all in one panel.</span>
           </div>
 
+          <div className="relative mb-5 max-w-xl">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-dash-tertiary" aria-hidden="true" />
+            <input
+              type="search"
+              value={modifierSearch}
+              onChange={event => setModifierSearch(event.target.value)}
+              placeholder="Search modifiers, categories, or questions"
+              aria-label="Search modifiers"
+              className="min-h-11 w-full rounded-lg border border-white/10 bg-white/[0.04] py-2 pl-10 pr-11 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary focus:border-dash-gold/50"
+            />
+            {modifierSearch && (
+              <button
+                type="button"
+                onClick={() => setModifierSearch('')}
+                aria-label="Clear modifier search"
+                className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-dash-tertiary hover:bg-white/[0.06] hover:text-dash-cream"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
+          </div>
+
           {showModifierDrawer && (
             <>
               <div className="fixed inset-0 z-40 bg-black/60" onClick={() => setShowModifierDrawer(false)} />
@@ -2192,7 +2228,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           )}
 
           <div className="space-y-5">
-            {bucketModifiersByCategory(modifiers).map(([bucketName, bucketModifiers]) => (
+            {displayedModifierBuckets.map(([bucketName, bucketModifiers]) => (
               <div key={bucketName}>
                 <div className="mb-2 flex items-center gap-2">
                   <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-dash-tertiary">{bucketName}</h4>
@@ -2227,6 +2263,22 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
             {modifiers.length === 0 && (
               <MenuEmptyState title="No modifiers yet">
                 Add choices guests make — sides, temps, sauces, add-ons — and attach them to items.
+              </MenuEmptyState>
+            )}
+            {modifiers.length > 0 && modifierSearch.trim() && modifierMatches.length === 0 && (
+              <MenuEmptyState title="No matching modifiers found">
+                <span>Nothing in this restaurant is sufficiently similar to “{modifierSearch.trim()}”.</span>
+                <span className="mt-3 block">
+                  <SmallButton
+                    variant="primary"
+                    onClick={() => {
+                      setModifierDraft(prev => ({ ...prev, name: modifierSearch.trim() }))
+                      setShowModifierDrawer(true)
+                    }}
+                  >
+                    Create “{modifierSearch.trim()}”
+                  </SmallButton>
+                </span>
               </MenuEmptyState>
             )}
           </div>

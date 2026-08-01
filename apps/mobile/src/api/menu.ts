@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './mobileApi';
+import { apiGet, apiPost, apiRequest } from './mobileApi';
 import { getSBClient } from '../../packages/supabase';
 
 export type AdminMenuItem = {
@@ -51,6 +51,67 @@ export type AdminMenuItemCreateInput = {
   kds_display_group?: string | null;
   item_routing_notes?: string | null;
 };
+
+export type AdminModifier = {
+  id: string;
+  restaurant_id: string;
+  name: string;
+  price_delta: number;
+  group_name: string;
+  is_required: boolean;
+  min_selections: number;
+  max_selections: number | null;
+  free_modifier_count: number;
+  allow_quantity: boolean;
+  is_default: boolean;
+  sort_order: number;
+  routing_station_id: string | null;
+  print_on_kitchen_ticket: boolean;
+  modifier_notes: string | null;
+  is_active: boolean;
+  tax_rate_id: string | null;
+  reporting_category_id: string | null;
+  item_ids: string[];
+};
+
+export type AdminModifierInput = Pick<
+  AdminModifier,
+  'name' | 'price_delta' | 'group_name' | 'print_on_kitchen_ticket' | 'modifier_notes' | 'is_active'
+>;
+
+const modifierPath = (restaurantId: string) => (
+  `/restaurants/${encodeURIComponent(restaurantId)}/menu/modifiers`
+);
+
+export function fetchAdminModifiers(restaurantId: string) {
+  return apiGet<AdminModifier[]>(modifierPath(restaurantId));
+}
+
+export function createAdminModifier(restaurantId: string, input: AdminModifierInput) {
+  return apiPost<AdminModifier>(modifierPath(restaurantId), input);
+}
+
+export function updateAdminModifier(
+  restaurantId: string,
+  modifierId: string,
+  patch: Partial<AdminModifierInput>,
+) {
+  return apiRequest<AdminModifier>(
+    `${modifierPath(restaurantId)}/${encodeURIComponent(modifierId)}`,
+    { method: 'PUT', body: patch },
+  );
+}
+
+export function replaceAdminModifierItems(
+  restaurantId: string,
+  modifierId: string,
+  itemIds: string[],
+) {
+  return apiRequest<AdminModifier>(
+    `${modifierPath(restaurantId)}/${encodeURIComponent(modifierId)}/items`,
+    { method: 'PUT', body: { item_ids: itemIds } },
+  );
+}
 
 export type MenuItemInsight = {
   item_id: string;
