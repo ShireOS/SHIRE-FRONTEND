@@ -7,6 +7,7 @@ import {
   Building2,
   Gauge,
   CalendarClock,
+  CalendarCheck,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -146,6 +147,7 @@ function hiddenSurfaces(auth) {
 const STORE_NAV = [
   { id: 'analytics', label: 'Home', icon: Home },
   { id: 'reports', label: 'Reports', icon: LayoutGrid },
+  { id: 'close-day', label: 'Close Day', icon: CalendarCheck },
   { id: 'setup', label: 'Setup', icon: Wrench },
   { id: 'ui', label: 'UI Editor', icon: Palette },
   { id: 'menu-workspace', label: 'POS Menus', icon: SlidersHorizontal },

@@ -13,6 +13,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY,
     apiBaseUrl: process.env.API_BASE_URL,
     reservationsApiBaseUrl: process.env.RESERVATIONS_API_BASE_URL,
+    posApiBaseUrl: process.env.POS_API_BASE_URL || 'https://shire-pos-api-production.up.railway.app/api/v1/dev-v2',
   },
   plugins: [
     'expo-web-browser',

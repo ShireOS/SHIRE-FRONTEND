@@ -52,6 +52,7 @@ import ResellerUiEditor from '../reseller/ResellerUiEditor'
 import RestaurantReportsPage from './reports/RestaurantReportsPage'
 import MenuWorkspaceEditor from '../shared/components/MenuWorkspaceEditor'
 import ManagerActionInboxPage from './pages/ManagerActionInboxPage'
+import CloseDayPage from './pages/CloseDayPage'
 
 function LoadingScreen() {
   return (
@@ -133,6 +134,7 @@ function EnterprisePage({ item, title, children }) {
 const TABS = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'reports', label: 'Reports' },
+  { id: 'close-day', label: 'Close Day' },
   { id: 'setup', label: 'Edit Setup' },
   { id: 'ui', label: 'UI Editor' },
   { id: 'menu', label: 'Menu' },
@@ -5105,6 +5107,7 @@ export function RestaurantWorkspace({
           </>
         )}
         {activeTab === 'reports' && <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurant?.name} />}
+        {activeTab === 'close-day' && <CloseDayPage restaurantId={restaurantId} restaurantName={restaurant?.name} />}
         {activeTab === 'ui' && (
           <ResellerUiEditor
             restaurants={restaurant ? [{
@@ -5154,6 +5157,7 @@ export function RestaurantWorkspace({
 const WORKSPACE_BREADCRUMB_LABELS = {
   analytics: 'Overview',
   reports: 'Reports',
+  'close-day': 'Close Day',
   setup: 'Setup',
   'menu-workspace': 'POS Menus',
   ui: 'UI Editor',

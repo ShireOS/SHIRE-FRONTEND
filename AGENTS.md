@@ -72,6 +72,7 @@ list must stay in sync.
 - `team.view` / `team.edit_employees` / `team.adjust_timeclock`
 - `payroll.view` / `payroll.run` / `payroll.adjust_tips` / `payroll.export`
 - `reports.view`
+- `operations.close_day`
 - `settings.edit`
 
 The universal manager action inbox uses `team.view` for visibility,
@@ -142,6 +143,12 @@ existing bypass; every mutation is also guarded by the ML backend.
 - End-of-day report delivery is configured with `eod_email_on_close` and
   `eod_email_formats` (`pdf` / `xlsx`). Reopening a closed business day requires
   the POS role permission `can_reopen_business_day` and records the acting manager.
+- Back-office Close Day uses the canonical POS close operation. Open checks are
+  never overrideable; clocked-in employees require an explicit confirmation and
+  retain the manager adjustment audit. Owner access uses
+  `operations.close_day`; reseller stores additionally require the owner-granted
+  `reseller_restaurants.permissions.close_day`, and reseller employees require
+  their own `permissions.close_day` plus restaurant/group access.
 - Portfolio email recipient schedules are shared reseller setup: the reseller
   account and its active employees see the same recipient list, and the same
   scope is enforced for edit, delete, test-send, and delivery history. Platform

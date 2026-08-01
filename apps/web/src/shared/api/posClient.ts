@@ -69,8 +69,10 @@ export async function fetchPosApi<T = any>(
       : detail
         ? JSON.stringify(detail)
         : `POS request failed (${response.status})`
-    const error = new Error(message) as Error & { status?: number }
+    const error = new Error(message) as Error & { status?: number; detail?: unknown; responseBody?: unknown }
     error.status = response.status
+    error.detail = detail
+    error.responseBody = body
     throw error
   }
   if (response.status === 204) return null as T
@@ -140,5 +142,89 @@ export const posTimeClockApi = {
     fetchPosApi(restaurantId, `/manager/timeclock/entries/${entryId}/void`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
+    }),
+}
+
+export interface OpenTimeClockEntry {
+  id: string
+  staff_id: string
+  staff_name: string
+  role?: string | null
+  clock_in_at: string
+  worked_minutes?: number
+}
+
+export interface CloseDayPreview {
+  business_date: string
+  active_business_date?: string
+  open_checks: number
+  exception_count?: number
+  exceptions?: Array<Record<string, unknown>>
+  gross_subtotal: number
+  discounts: number
+  tax: number
+  sales_before_tip: number
+  tips: number
+  total_collected: number
+  cash_collected: number
+  card_collected: number
+  payment_count: number
+  closed_checks: number
+  voided_checks: number
+  pending_print_jobs?: number
+  open_timeclock_entries?: OpenTimeClockEntry[]
+  business_day?: {
+    status: 'open' | 'closed' | 'reopened'
+    closed_at?: string | null
+    closed_by_name?: string | null
+  }
+  closeout_settings?: {
+    cash_tracking_mode?: string
+    require_starting_bank?: boolean
+    blind_drawer_close?: boolean
+    cash_variance_threshold?: number
+  }
+  cash_reconciliation?: {
+    opening_bank: number
+    cash_sales: number
+    paid_in: number
+    paid_out: number
+    cash_refunds: number
+    expected_cash: number
+  }
+}
+
+export interface CloseDayInput {
+  business_date: string
+  close_attempt_id: string
+  confirm_auto_clock_out: boolean
+  opening_bank: number
+  paid_in: number
+  paid_out: number
+  cash_refunds: number
+  counted_cash: number
+  retained_bank: number
+  deposit_amount: number
+  variance_reason?: string
+}
+
+export interface CloseDayResult {
+  id: string
+  business_date: string
+  active_business_date: string
+  closed_at: string
+  totals: CloseDayPreview
+  auto_clocked_out: OpenTimeClockEntry[]
+  email_delivery?: { status?: string; recipients?: string[] }
+  idempotent_replay?: boolean
+}
+
+export const posCloseDayApi = {
+  preview: (restaurantId: string, signal?: AbortSignal) =>
+    fetchPosApi<CloseDayPreview>(restaurantId, '/manager/close-day/preview', { signal }),
+  close: (restaurantId: string, input: CloseDayInput) =>
+    fetchPosApi<CloseDayResult>(restaurantId, '/manager/close-day', {
+      method: 'POST',
+      body: JSON.stringify(input),
     }),
 }

@@ -33,6 +33,7 @@ export type ResellerRestaurant = Restaurant & {
   reseller_group_id: string;
   reseller_group_name: string;
   reseller_group_color: string;
+  reseller_permissions: Record<string, boolean>;
 };
 
 export type ResellerProfile = {
@@ -66,6 +67,7 @@ export const DEFAULT_RESELLER_PERMISSIONS = {
   edit_setup: false,
   propagate_changes: false,
   manage_groups: false,
+  close_day: false,
 };
 
 const AUTH_TIMEOUT_MS = 12_000;
@@ -566,7 +568,7 @@ export async function fetchResellerPortfolio(): Promise<{
     Promise.all([
       client
         .from('reseller_restaurants')
-        .select('restaurant:restaurants(*)')
+        .select('permissions, restaurant:restaurants(*)')
         .eq('reseller_id', resellerId)
         .eq('status', 'active'),
       client
@@ -598,18 +600,23 @@ export async function fetchResellerPortfolio(): Promise<{
     });
   }
 
-  const restaurants = ((assignmentResult.data || []) as unknown as { restaurant?: Restaurant | Restaurant[] | null }[])
-    .map((row) => Array.isArray(row.restaurant) ? row.restaurant[0] : row.restaurant)
-    .filter((restaurant): restaurant is Restaurant => Boolean(restaurant))
-    .map((restaurant) => {
+  const assignmentRows = (assignmentResult.data || []) as unknown as {
+    permissions?: Record<string, boolean> | null;
+    restaurant?: Restaurant | Restaurant[] | null;
+  }[];
+  const restaurants = assignmentRows
+    .flatMap((row): ResellerRestaurant[] => {
+      const restaurant = Array.isArray(row.restaurant) ? row.restaurant[0] : row.restaurant;
+      if (!restaurant) return [];
       const groupId = membershipByRestaurant.get(restaurant.id) || RESELLER_UNGROUPED_ID;
       const group = groups.find((item) => item.id === groupId);
-      return {
+      return [{
         ...restaurant,
         reseller_group_id: groupId,
         reseller_group_name: group?.name || 'Ungrouped',
         reseller_group_color: group?.color || '#9CA3AF',
-      };
+        reseller_permissions: row.permissions || {},
+      }];
     })
     .filter((restaurant) => !employeeRestaurantIds || employeeRestaurantIds.has(restaurant.id));
 

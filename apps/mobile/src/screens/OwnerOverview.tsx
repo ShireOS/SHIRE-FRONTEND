@@ -207,6 +207,13 @@ export default function OwnerOverview() {
         </View>
         <View style={styles.headingActions}>
           <Pressable
+            accessibilityLabel="Close business day"
+            style={styles.refreshButton}
+            onPress={() => router.push('/(admin)/close-day' as never)}
+          >
+            <Feather name="calendar" size={18} color={color_pallet.ink[700]} />
+          </Pressable>
+          <Pressable
             accessibilityLabel={managerAlertCount ? `${managerAlertCount} manager alerts` : 'Manager alerts'}
             style={styles.refreshButton}
             onPress={() => router.push('/(admin)/alerts' as never)}

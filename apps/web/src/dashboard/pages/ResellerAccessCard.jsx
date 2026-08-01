@@ -15,6 +15,7 @@ const TAB_LABELS = {
   scheduling: 'Scheduling',
   messaging: 'Messaging',
   payments: 'Payments / Plan',
+  close_day: 'Close Day',
 }
 
 const resellerName = (assignment) => {

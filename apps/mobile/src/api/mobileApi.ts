@@ -17,6 +17,14 @@ export function getReservationsApiBaseUrl() {
   return value.replace(/\/+$/, '');
 }
 
+export function getPosApiBaseUrl() {
+  const value = Constants.expoConfig?.extra?.posApiBaseUrl;
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error('POS_API_BASE_URL is not configured for the mobile app.');
+  }
+  return value.replace(/\/+$/, '');
+}
+
 type ApiAuthMode = 'supabase' | 'none';
 
 type ApiRequestOptions = {
@@ -25,6 +33,18 @@ type ApiRequestOptions = {
   auth?: ApiAuthMode;
   headers?: Record<string, string>;
 };
+
+export class ApiRequestError extends Error {
+  status: number;
+  detail: unknown;
+
+  constructor(message: string, status: number, detail: unknown) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.status = status;
+    this.detail = detail;
+  }
+}
 
 async function resolveAuthorization(auth: ApiAuthMode) {
   if (auth === 'none') return null;
@@ -48,6 +68,16 @@ export async function apiRequest<T>(endpoint: string, options: ApiRequestOptions
 
 export async function reservationsApiRequest<T>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
   return apiRequestFromBase<T>(getReservationsApiBaseUrl(), endpoint, options);
+}
+
+export async function posApiRequest<T>(restaurantId: string, endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
+  return apiRequestFromBase<T>(getPosApiBaseUrl(), endpoint, {
+    ...options,
+    headers: {
+      ...options.headers,
+      'X-Restaurant-Id': restaurantId,
+    },
+  });
 }
 
 async function apiRequestFromBase<T>(baseUrl: string, endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
@@ -80,7 +110,7 @@ async function apiRequestFromBase<T>(baseUrl: string, endpoint: string, options:
         : body.detail
           ? JSON.stringify(body.detail)
           : `Request failed (${response.status})`;
-    throw new Error(detail);
+    throw new ApiRequestError(detail, response.status, body.detail ?? body.message ?? null);
   }
 
   if (response.status === 204) return undefined as T;
