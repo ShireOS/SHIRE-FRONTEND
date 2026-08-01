@@ -39,15 +39,14 @@ const perBucketAvg = (row) =>
 
 const CHECK_METRIC = {
   net_sales: 'sales',
-  avg_check: 'sales',
-  avg_cover: 'sales',
-  tax: 'sales',
   transactions: 'transactions',
   active_checks: 'active_checks',
   discounts: 'discounts',
   refunds: 'refunds',
   voids: 'voids',
 }
+
+const ANALYSIS_METRIC = new Set(['avg_check', 'avg_cover', 'tax', 'covers'])
 
 // Each tile: how to read its number, its chart series, and its contributors.
 // `series`: (payload) => [{bucket, value}] | null. `contributors`: (payload) =>
@@ -86,9 +85,16 @@ const TILES = [
   {
     id: 'avg_cover', label: 'Avg cover', icon: UtensilsCrossed, format: money,
     value: (t) => t.avg_cover,
-    series: (p) => p.series.covers.map((r) => ({ bucket: r.bucket, value: Number(r.covers) })),
+    series: (p) => p.series.covers.map((r) => {
+      const orderBucket = p.series.orders.find((order) => order.bucket === r.bucket)
+      const covers = Number(r.covers)
+      return {
+        bucket: r.bucket,
+        value: covers > 0 ? Number(orderBucket?.net_sales || 0) / covers : 0,
+      }
+    }),
     contributors: () => null,
-    note: 'Net sales ÷ covers. Chart shows covers per bucket.',
+    note: 'Net sales ÷ covers for each period.',
   },
   {
     id: 'tax', label: 'Tax', icon: Receipt, format: money,
@@ -198,7 +204,7 @@ function bucketLabel(iso, bucket, timezoneName) {
   return value.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone })
 }
 
-function BarChart({ points, bucket, format, onSelect, timezoneName }) {
+function BarChart({ points, bucket, format, onSelect, timezoneName, metricLabel }) {
   if (!points || points.length === 0) {
     return (
       <p className="flex h-40 items-center justify-center text-sm text-dash-tertiary">
@@ -216,8 +222,8 @@ function BarChart({ points, bucket, format, onSelect, timezoneName }) {
             type="button"
             key={index}
             title={`${bucketLabel(point.bucket, bucket, timezoneName)} — ${format(point.value)}`}
-            aria-label={`Show checks for ${bucketLabel(point.bucket, bucket, timezoneName)}`}
-            onClick={() => onSelect(point.bucket)}
+            aria-label={`Explore ${metricLabel} for ${bucketLabel(point.bucket, bucket, timezoneName)}`}
+            onClick={() => onSelect(new Date(point.bucket).toISOString())}
             className="group flex h-full flex-1 flex-col justify-end focus:outline-none focus-visible:ring-2 focus-visible:ring-shell-accent"
           >
             <div
@@ -280,7 +286,9 @@ function bucketOptions(payload, points) {
   const start = payload.window?.start_at
   const end = payload.window?.end_at
   const bucket = payload.window?.bucket
-  if (!start || !end || !bucket) return (points || []).map((point) => point.bucket)
+  if (!start || !end || !bucket) {
+    return (points || []).map((point) => new Date(point.bucket).toISOString())
+  }
 
   const options = []
   let cursor = new Date(start).toISOString()
@@ -292,12 +300,30 @@ function bucketOptions(payload, points) {
   return options
 }
 
+function bucketEndBoundary(selected, options, payload, bucket) {
+  if (!selected) return payload.window?.end_at || undefined
+  const selectedTime = new Date(selected).getTime()
+  const index = options.findIndex((option) => new Date(option).getTime() === selectedTime)
+  if (index >= 0 && options[index + 1]) return options[index + 1]
+  if (index === options.length - 1 && payload.window?.end_at) return payload.window.end_at
+  return addBucket(selected, bucket)
+}
+
 function rangeLabel(start, bucket, timezoneName) {
   const end = addBucket(start, bucket)
   if (bucket === 'hour') {
     return `${bucketLabel(start, bucket, timezoneName)}–${bucketLabel(end, bucket, timezoneName)}`
   }
   return bucketLabel(start, bucket, timezoneName)
+}
+
+function rangeWindowLabel(start, end, bucket, timezoneName) {
+  if (!start) return 'All'
+  if (!end || start === end) return rangeLabel(start, bucket, timezoneName)
+  if (bucket === 'hour') {
+    return `${bucketLabel(start, bucket, timezoneName)}–${bucketLabel(addBucket(end, bucket), bucket, timezoneName)}`
+  }
+  return `${bucketLabel(start, bucket, timezoneName)}–${bucketLabel(end, bucket, timezoneName)}`
 }
 
 function lifecyclePill(item) {
@@ -318,13 +344,21 @@ function tenderLabel(item) {
   return item.payment_method || '—'
 }
 
-function BucketRail({ options, bucket, selectedBucket, onSelect, timezoneName }) {
+function BucketRail({
+  options,
+  bucket,
+  selectedStart,
+  selectedEnd,
+  rangePicking,
+  onSelect,
+  timezoneName,
+}) {
   const railRef = useRef(null)
 
   useEffect(() => {
     const selected = railRef.current?.querySelector('[aria-current="true"]')
     selected?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-  }, [selectedBucket])
+  }, [selectedStart, selectedEnd])
 
   return (
     <div
@@ -334,33 +368,255 @@ function BucketRail({ options, bucket, selectedBucket, onSelect, timezoneName })
     >
       <button
         type="button"
-        aria-current={!selectedBucket}
+        aria-current={!selectedStart}
         onClick={() => onSelect(null)}
         className={[
           'shrink-0 snap-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition',
-          !selectedBucket
+          !selectedStart
             ? 'border-shell-accent bg-shell-accent text-shell-cta-text'
             : 'border-white/10 text-dash-secondary hover:text-dash-cream',
         ].join(' ')}
       >
         All
       </button>
-      {options.map((option) => (
+      {options.map((option) => {
+        const optionTime = new Date(option).getTime()
+        const startTime = selectedStart ? new Date(selectedStart).getTime() : null
+        const endTime = selectedEnd ? new Date(selectedEnd).getTime() : startTime
+        const low = startTime === null ? null : Math.min(startTime, endTime)
+        const high = startTime === null ? null : Math.max(startTime, endTime)
+        const isEndpoint = option === selectedStart || option === selectedEnd
+        const isInRange = low !== null && optionTime >= low && optionTime <= high
+        return (
+          <button
+            key={option}
+            type="button"
+            aria-current={isEndpoint}
+            onClick={() => onSelect(option)}
+            className={[
+              'shrink-0 snap-center rounded-lg border px-3 py-1.5 font-mono text-xs transition',
+              isEndpoint
+                ? 'border-shell-accent bg-shell-accent text-shell-cta-text'
+                : isInRange
+                  ? 'border-shell-accent/40 bg-shell-accent/10 text-dash-cream'
+                  : 'border-white/10 text-dash-secondary hover:text-dash-cream',
+            ].join(' ')}
+          >
+            {rangeLabel(option, bucket, timezoneName)}
+          </button>
+        )
+      })}
+      {rangePicking && (
+        <span className="flex shrink-0 items-center px-2 text-xs text-shell-accent">
+          Choose the other end
+        </span>
+      )}
+    </div>
+  )
+}
+
+function useBucketSelection(drilldown, onBucket) {
+  const [rangeMode, setRangeMode] = useState(false)
+  const [rangeAnchor, setRangeAnchor] = useState(null)
+
+  const selectBucket = (option) => {
+    if (!option) {
+      setRangeMode(false)
+      setRangeAnchor(null)
+      onBucket(null, null)
+      return
+    }
+    if (!rangeMode) {
+      onBucket(option, null)
+      return
+    }
+    if (!rangeAnchor) {
+      setRangeAnchor(option)
+      onBucket(option, null)
+      return
+    }
+    const [start, end] = new Date(rangeAnchor) <= new Date(option)
+      ? [rangeAnchor, option]
+      : [option, rangeAnchor]
+    onBucket(start, end)
+    setRangeMode(false)
+    setRangeAnchor(null)
+  }
+
+  const beginRange = () => {
+    if (rangeMode) {
+      setRangeMode(false)
+      setRangeAnchor(null)
+      return
+    }
+    setRangeMode(true)
+    setRangeAnchor(drilldown.bucket || null)
+    if (drilldown.bucket_end) onBucket(drilldown.bucket, null)
+  }
+
+  return {
+    rangeMode,
+    selectBucket,
+    beginRange,
+  }
+}
+
+function rowsInBucketRange(rows, start, end) {
+  if (!start) return rows || []
+  const low = new Date(start).getTime()
+  const high = new Date(end || start).getTime()
+  return (rows || []).filter((row) => {
+    const occurred = new Date(row.bucket).getTime()
+    return occurred >= low && occurred <= high
+  })
+}
+
+function sumRows(rows, field) {
+  return rows.reduce((sum, row) => sum + Number(row[field] || 0), 0)
+}
+
+function metricAnalysis(selected, payload, start, end) {
+  const orders = rowsInBucketRange(payload.series.orders, start, end)
+  const covers = rowsInBucketRange(payload.series.covers, start, end)
+  const netSales = sumRows(orders, 'net_sales')
+  const transactions = sumRows(orders, 'transactions')
+  const tax = sumRows(orders, 'tax')
+  const coverCount = sumRows(covers, 'covers')
+  const windowValue = Number(selected.value(payload.totals) || 0)
+
+  if (selected.id === 'avg_check') {
+    const value = transactions > 0 ? netSales / transactions : 0
+    return {
+      value,
+      explanation: 'Weighted net sales ÷ transactions for this selection.',
+      cards: [
+        { label: 'Average check', value: money(value) },
+        { label: 'Net sales', value: money(netSales) },
+        { label: 'Transactions', value: count(transactions) },
+      ],
+      windowValue,
+    }
+  }
+  if (selected.id === 'avg_cover') {
+    const value = coverCount > 0 ? netSales / coverCount : 0
+    return {
+      value,
+      explanation: 'Net sales ÷ seated covers for this selection.',
+      cards: [
+        { label: 'Average cover', value: money(value) },
+        { label: 'Net sales', value: money(netSales) },
+        { label: 'Covers', value: count(coverCount) },
+      ],
+      windowValue,
+    }
+  }
+  if (selected.id === 'tax') {
+    return {
+      value: tax,
+      explanation: 'Collected tax and its relationship to activity in this selection.',
+      cards: [
+        { label: 'Tax collected', value: money(tax) },
+        { label: 'Tax per transaction', value: money(transactions > 0 ? tax / transactions : 0) },
+        { label: 'Transactions', value: count(transactions) },
+      ],
+      windowValue,
+    }
+  }
+  return {
+    value: coverCount,
+    explanation: 'Seated guest volume from host visits in this selection.',
+    cards: [
+      { label: 'Covers', value: count(coverCount) },
+      { label: 'Selected periods', value: count(covers.length) },
+      { label: 'Window covers', value: count(payload.totals.covers) },
+    ],
+    windowValue,
+  }
+}
+
+function MetricAnalysisView({
+  selected,
+  payload,
+  drilldown,
+  onBucket,
+  onBack,
+}) {
+  const bucket = payload.window?.bucket || 'day'
+  const timezoneName = payload.window?.timezone
+  const points = selected.series(payload) || []
+  const options = useMemo(() => bucketOptions(payload, points), [payload, points])
+  const selectedStart = drilldown.bucket || null
+  const selectedEnd = drilldown.bucket_end || null
+  const { rangeMode, selectBucket, beginRange } = useBucketSelection(drilldown, onBucket)
+  const analysis = metricAnalysis(selected, payload, selectedStart, selectedEnd)
+  const scopeLabel = rangeWindowLabel(selectedStart, selectedEnd, bucket, timezoneName)
+  const delta = analysis.windowValue
+    ? ((analysis.value - analysis.windowValue) / analysis.windowValue) * 100
+    : null
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="label-mono">
+            {selected.label} <span aria-hidden="true">›</span> {scopeLabel}
+          </p>
+          <p className="mt-1 text-sm text-dash-secondary">{analysis.explanation}</p>
+        </div>
         <button
-          key={option}
           type="button"
-          aria-current={selectedBucket === option}
-          onClick={() => onSelect(option)}
-          className={[
-            'shrink-0 snap-center rounded-lg border px-3 py-1.5 font-mono text-xs transition',
-            selectedBucket === option
-              ? 'border-shell-accent bg-shell-accent text-shell-cta-text'
-              : 'border-white/10 text-dash-secondary hover:text-dash-cream',
-          ].join(' ')}
+          onClick={onBack}
+          className="flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-dash-secondary transition hover:text-dash-cream"
         >
-          {rangeLabel(option, bucket, timezoneName)}
+          <ArrowLeft size={13} aria-hidden="true" /> Back to chart
         </button>
-      ))}
+      </div>
+
+      {options.length > 0 && (
+        <div className="mt-4">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="label-mono !text-[9px]">
+              Analyze {bucket === 'hour' ? 'hours' : bucket === 'day' ? 'days' : 'months'}
+            </p>
+            <button
+              type="button"
+              aria-pressed={rangeMode}
+              onClick={beginRange}
+              className={[
+                'rounded-lg border px-3 py-1 text-xs font-semibold transition',
+                rangeMode
+                  ? 'border-shell-accent bg-shell-accent text-shell-cta-text'
+                  : 'border-white/10 text-dash-secondary hover:text-dash-cream',
+              ].join(' ')}
+            >
+              {rangeMode ? 'Cancel range' : selectedEnd ? 'Change range' : 'Select range'}
+            </button>
+          </div>
+          <BucketRail
+            options={options}
+            bucket={bucket}
+            selectedStart={selectedStart}
+            selectedEnd={selectedEnd}
+            rangePicking={rangeMode}
+            onSelect={selectBucket}
+            timezoneName={timezoneName}
+          />
+        </div>
+      )}
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        {analysis.cards.map((card) => (
+          <div key={card.label} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+            <p className="label-mono !text-[9px]">{card.label}</p>
+            <p className="mt-1 font-mono text-xl tabular-nums text-dash-cream">{card.value}</p>
+          </div>
+        ))}
+      </div>
+      {delta !== null && selectedStart && (
+        <p className="mt-3 text-xs text-dash-tertiary">
+          {Math.abs(delta).toFixed(1)}% {delta >= 0 ? 'above' : 'below'} the full selected analytics window.
+        </p>
+      )}
     </div>
   )
 }
@@ -380,10 +636,12 @@ function AnalyticsChecksView({
   const timezoneName = payload.window?.timezone
   const points = selected.series(payload) || []
   const options = useMemo(() => bucketOptions(payload, points), [payload, points])
-  const selectedBucket = drilldown.bucket || null
-  const occurredFrom = selectedBucket || payload.window?.start_at || undefined
-  const occurredTo = selectedBucket
-    ? addBucket(selectedBucket, bucket)
+  const selectedStart = drilldown.bucket || null
+  const selectedEnd = drilldown.bucket_end || null
+  const { rangeMode, selectBucket, beginRange } = useBucketSelection(drilldown, onBucket)
+  const occurredFrom = selectedStart || payload.window?.start_at || undefined
+  const occurredTo = selectedStart
+    ? bucketEndBoundary(selectedEnd || selectedStart, options, payload, bucket)
     : payload.window?.end_at || undefined
   const query = useMemo(() => ({
     date_from: occurredFrom ? new Date(occurredFrom).toISOString().slice(0, 10) : undefined,
@@ -410,8 +668,8 @@ function AnalyticsChecksView({
 
   const checks = checksQuery.data?.items || []
   const total = checksQuery.data?.total ?? checks.length
-  const scopeLabel = selectedBucket
-    ? rangeLabel(selectedBucket, bucket, timezoneName)
+  const scopeLabel = selectedStart
+    ? rangeWindowLabel(selectedStart, selectedEnd, bucket, timezoneName)
     : drilldown.label || 'All'
 
   return (
@@ -437,12 +695,29 @@ function AnalyticsChecksView({
 
       {drilldown.metric !== 'active_checks' && options.length > 0 && (
         <div className="mt-4">
-          <p className="mb-2 label-mono !text-[9px]">Move through {bucket === 'hour' ? 'hours' : bucket === 'day' ? 'days' : 'months'}</p>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="label-mono !text-[9px]">Move through {bucket === 'hour' ? 'hours' : bucket === 'day' ? 'days' : 'months'}</p>
+            <button
+              type="button"
+              aria-pressed={rangeMode}
+              onClick={beginRange}
+              className={[
+                'rounded-lg border px-3 py-1 text-xs font-semibold transition',
+                rangeMode
+                  ? 'border-shell-accent bg-shell-accent text-shell-cta-text'
+                  : 'border-white/10 text-dash-secondary hover:text-dash-cream',
+              ].join(' ')}
+            >
+              {rangeMode ? 'Cancel range' : selectedEnd ? 'Change range' : 'Select range'}
+            </button>
+          </div>
           <BucketRail
             options={options}
             bucket={bucket}
-            selectedBucket={selectedBucket}
-            onSelect={onBucket}
+            selectedStart={selectedStart}
+            selectedEnd={selectedEnd}
+            rangePicking={rangeMode}
+            onSelect={selectBucket}
             timezoneName={timezoneName}
           />
         </div>
@@ -564,8 +839,10 @@ export default function SalesTiles({ restaurantId, period }) {
     setSelectedId(isSelected ? null : tile.id)
     if (!isSelected && tile.id === 'active_checks') {
       setDrilldown({
+        kind: 'checks',
         metric: CHECK_METRIC.active_checks,
         bucket: null,
+        bucket_end: null,
         filter: {},
         label: 'Live',
       })
@@ -642,7 +919,7 @@ export default function SalesTiles({ restaurantId, period }) {
                 backLabel="Back to filtered checks"
                 onBack={() => setSelectedOrderId(null)}
               />
-            ) : drilldown ? (
+            ) : drilldown?.kind === 'checks' ? (
               <AnalyticsChecksView
                 restaurantId={restaurantId}
                 selected={selected}
@@ -650,12 +927,28 @@ export default function SalesTiles({ restaurantId, period }) {
                 drilldown={drilldown}
                 search={checkSearch}
                 onSearch={setCheckSearch}
-                onBucket={(bucket) => setDrilldown((current) => ({ ...current, bucket }))}
+                onBucket={(bucket, bucketEnd) => setDrilldown((current) => ({
+                  ...current,
+                  bucket,
+                  bucket_end: bucketEnd,
+                }))}
                 onCheck={setSelectedOrderId}
                 onBack={() => {
                   setDrilldown(null)
                   setCheckSearch('')
                 }}
+              />
+            ) : drilldown?.kind === 'analysis' ? (
+              <MetricAnalysisView
+                selected={selected}
+                payload={payload}
+                drilldown={drilldown}
+                onBucket={(bucket, bucketEnd) => setDrilldown((current) => ({
+                  ...current,
+                  bucket,
+                  bucket_end: bucketEnd,
+                }))}
+                onBack={() => setDrilldown(null)}
               />
             ) : (
               <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
@@ -665,11 +958,30 @@ export default function SalesTiles({ restaurantId, period }) {
                       points={selected.series(payload)}
                       bucket={payload.window?.bucket}
                       format={selected.format}
+                      metricLabel={selected.label}
                       timezoneName={payload.window?.timezone}
                       onSelect={(bucket) => {
                         const metric = CHECK_METRIC[selected.id]
-                        if (!metric) return
-                        setDrilldown({ metric, bucket, filter: {}, label: 'All checks' })
+                        if (metric) {
+                          setDrilldown({
+                            kind: 'checks',
+                            metric,
+                            bucket,
+                            bucket_end: null,
+                            filter: {},
+                            label: 'All checks',
+                          })
+                          return
+                        }
+                        if (ANALYSIS_METRIC.has(selected.id)) {
+                          setDrilldown({
+                            kind: 'analysis',
+                            bucket,
+                            bucket_end: null,
+                            filter: {},
+                            label: selected.label,
+                          })
+                        }
                       }}
                     />
                   ) : (
@@ -684,7 +996,14 @@ export default function SalesTiles({ restaurantId, period }) {
                   onSelect={(row) => {
                     const metric = CHECK_METRIC[selected.id]
                     if (!metric) return
-                    setDrilldown({ metric, bucket: null, filter: row.filter || {}, label: row.name })
+                    setDrilldown({
+                      kind: 'checks',
+                      metric,
+                      bucket: null,
+                      bucket_end: null,
+                      filter: row.filter || {},
+                      label: row.name,
+                    })
                   }}
                 />
               </div>
