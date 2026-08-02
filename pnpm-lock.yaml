@@ -37,6 +37,9 @@ importers:
       '@shire/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@shire/menu-search':
+        specifier: workspace:*
+        version: link:../../packages/menu-search
       '@supabase/supabase-js':
         specifier: ^2.108.2
         version: 2.108.2
@@ -209,6 +212,9 @@ importers:
       '@shire/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@shire/menu-search':
+        specifier: workspace:*
+        version: link:../../packages/menu-search
       '@supabase/auth-js':
         specifier: 2.108.2
         version: 2.108.2
@@ -297,6 +303,8 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.97.0
         version: 2.108.2
+
+  packages/menu-search: {}
 
 packages:
 

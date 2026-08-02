@@ -36,6 +36,18 @@ type ApiRequestOptions = {
   headers?: Record<string, string>;
 };
 
+export class ApiRequestError extends Error {
+  status: number;
+  detail: unknown;
+
+  constructor(message: string, status: number, detail: unknown) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
 async function resolveAuthorization(auth: ApiAuthMode) {
   if (auth === 'none') return null;
 
@@ -105,7 +117,7 @@ async function apiRequestFromBase<T>(baseUrl: string, endpoint: string, options:
         : body.detail
           ? JSON.stringify(body.detail)
           : `Request failed (${response.status})`;
-    throw new Error(detail);
+    throw new ApiRequestError(detail, response.status, body.detail ?? body.message ?? null);
   }
 
   if (response.status === 204) return undefined as T;

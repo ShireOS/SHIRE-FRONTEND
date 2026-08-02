@@ -53,7 +53,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     label: 'Reports & Settings',
     keys: [
       { key: 'reports.view', label: 'View reports', description: 'See analytics and reports' },
-      { key: 'operations.close_day', label: 'Review & close day', description: 'Review close-day exceptions and finalize a business day' },
+      { key: 'operations.close_day', label: 'Review & close day', description: 'Review close-day exceptions, confirm staff clock-outs and finalize a business day' },
       { key: 'payments.refund', label: 'Issue payment refunds', description: 'Request and monitor processor-backed card refunds' },
       { key: 'settings.edit', label: 'Edit restaurant settings', description: 'Change setup, POS settings and devices' },
     ],
@@ -115,6 +115,7 @@ export function can(permissions: PermissionMap | null | undefined, key: string):
 // always visible (Home). Owners bypass this entirely.
 export const TAB_PERMISSIONS: Record<string, string> = {
   reports: 'reports.view',
+  'close-day': 'operations.close_day',
   setup: 'settings.edit',
   ui: 'settings.edit',
   menu: 'menu.view',
@@ -129,6 +130,7 @@ export const TAB_PERMISSIONS: Record<string, string> = {
   team: 'team.view',
   'time-clock': 'team.view',
   scheduling: 'team.view',
+  alerts: 'team.view',
   messaging: 'team.view',
   payments: 'settings.edit',
 }

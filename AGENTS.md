@@ -88,6 +88,11 @@ list must stay in sync.
   `payroll.view`; assigning a worked recipient or keeping the money with its
   source requires `payroll.adjust_tips`, a manager reason, and a POS audit row.
 
+The universal manager action inbox uses `team.view` for visibility,
+`team.edit_employees` for schedule-request and shift-transfer decisions, and
+`team.adjust_timeclock` for missed-clock-out corrections. Owners retain the
+existing bypass; every mutation is also guarded by the ML backend.
+
 ### Implementation map (2026-07-08 build)
 - Frontend: `shared/permissions.ts` (keys/presets/merge/can/TAB_PERMISSIONS),
   `shared/hooks/useBackOfficeAccess.ts` (effective access; owners/admins/resellers
@@ -126,6 +131,10 @@ list must stay in sync.
 - ML backend: `app/api/back_office.py` (members/invites/my-access/accept),
   `app/services/back_office_access.py` (merge + require_back_office_permission),
   guards on tips_payroll + waiters mutations.
+- Manager alerts: the store bell and Alerts page merge existing scheduling
+  requests with durable missed-clock-out alerts. Desktop and mobile call the
+  same ML-backend action API; time corrections write the existing POS
+  time-clock adjustment audit trail.
 - Printer outage protection uses existing `settings.edit`. The Devices page reads
   the POS backend's canonical `/restaurants/:id/printer-failover` surface, makes
   every active printer choose Hold & alert or an explicit backup, and exposes
@@ -147,6 +156,12 @@ list must stay in sync.
 - End-of-day report delivery is configured with `eod_email_on_close` and
   `eod_email_formats` (`pdf` / `xlsx`). Reopening a closed business day requires
   the POS role permission `can_reopen_business_day` and records the acting manager.
+- Back-office Close Day uses the canonical POS close operation. Open checks are
+  never overrideable; clocked-in employees require an explicit confirmation and
+  retain the manager adjustment audit. Owner access uses
+  `operations.close_day`; reseller stores additionally require the owner-granted
+  `reseller_restaurants.permissions.close_day`, and reseller employees require
+  their own `permissions.close_day` plus restaurant/group access.
 - Portfolio email recipient schedules are shared reseller setup: the reseller
   account and its active employees see the same recipient list, and the same
   scope is enforced for edit, delete, test-send, and delivery history. Platform

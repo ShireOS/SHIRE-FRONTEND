@@ -795,6 +795,7 @@ function ResellerProfileEditor({ onboarding = false }) {
                   ['edit_setup', 'Edit setup'],
                   ['propagate_changes', 'Propagate'],
                   ['manage_groups', 'Manage groups'],
+                  ['close_day', 'Close day'],
                 ].map(([key, label]) => (
                   <SmallButton
                     key={key}

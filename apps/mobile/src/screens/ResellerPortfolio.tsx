@@ -420,10 +420,18 @@ export default function ResellerPortfolio() {
       />
       <RestaurantDetailModal
         restaurant={detailRestaurant}
+        canCloseDay={Boolean(
+          detailRestaurant?.reseller_permissions?.close_day
+          && (!employee || employee.permissions.close_day)
+        )}
         onClose={() => setDetailRestaurant(null)}
         onOpenReports={(restaurant) => {
           setDetailRestaurant(null);
           router.push(`/(reseller)/reports?restaurantId=${encodeURIComponent(restaurant.id)}&restaurantName=${encodeURIComponent(restaurant.name || 'Restaurant')}`);
+        }}
+        onOpenCloseDay={(restaurant) => {
+          setDetailRestaurant(null);
+          router.push(`/(reseller)/close-day?restaurantId=${encodeURIComponent(restaurant.id)}&restaurantName=${encodeURIComponent(restaurant.name || 'Restaurant')}`);
         }}
       />
     </View>
@@ -683,6 +691,7 @@ function ResellerProfilePanel({
               ['edit_setup', 'Edit setup'],
               ['propagate_changes', 'Propagate'],
               ['manage_groups', 'Manage groups'],
+              ['close_day', 'Close day'],
             ].map(([key, label]) => (
               <FilterChip key={key} label={label} selected={Boolean(employeeDraft.permissions[key])} onPress={() => updatePermission(key)} />
             ))}
@@ -922,12 +931,16 @@ function MoveGroupModal({
 
 function RestaurantDetailModal({
   restaurant,
+  canCloseDay,
   onClose,
   onOpenReports,
+  onOpenCloseDay,
 }: {
   restaurant: ResellerRestaurant | null;
+  canCloseDay: boolean;
   onClose: () => void;
   onOpenReports: (restaurant: ResellerRestaurant) => void;
+  onOpenCloseDay: (restaurant: ResellerRestaurant) => void;
 }) {
   return (
     <Modal visible={Boolean(restaurant)} transparent animationType="fade" onRequestClose={onClose}>
@@ -942,6 +955,11 @@ function RestaurantDetailModal({
             <DetailRow label="Type" value={restaurant?.type || 'Not set'} />
           </View>
           <View style={styles.modalActions}>
+            {restaurant && canCloseDay && (
+              <Pressable onPress={() => onOpenCloseDay(restaurant)} style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>Close Day</Text>
+              </Pressable>
+            )}
             {restaurant && (
               <Pressable onPress={() => onOpenReports(restaurant)} style={styles.secondaryButton}>
                 <Text style={styles.secondaryButtonText}>Reports</Text>

@@ -61,6 +61,12 @@ const OWNER_TABS: RoleTab[] = [
     sfSymbol: 'calendar',
   },
   {
+    name: 'alerts',
+    title: 'Alerts',
+    androidIcon: 'notifications',
+    sfSymbol: { default: 'bell', selected: 'bell.fill' },
+  },
+  {
     name: 'messages',
     title: 'Messages',
     androidIcon: 'chatbubbles',
@@ -133,9 +139,9 @@ type RoleTabsLayoutProps = {
 };
 
 const HIDDEN_TABS_BY_VARIANT: Record<RoleTabsLayoutProps['variant'], string[]> = {
-  owner: ['scans'],
+  owner: ['scans', 'close-day'],
   employee: ['analytics', 'menu', 'scans'],
-  reseller: ['reports'],
+  reseller: ['reports', 'close-day'],
 };
 
 export function RoleTabsLayout({ variant }: RoleTabsLayoutProps) {

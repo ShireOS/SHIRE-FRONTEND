@@ -1,0 +1,12 @@
+{
+  "name": "@shire/menu-search",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/modifierSearch.test.ts"
+  }
+}

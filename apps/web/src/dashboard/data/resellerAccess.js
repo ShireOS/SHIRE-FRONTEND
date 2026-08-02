@@ -5,7 +5,7 @@ import { useAuth } from '../../auth'
 // Analytics and rates/payout data remain mandatory. Device and peripheral
 // management is explicitly grantable per store because it can operate live
 // terminals, printers, and drawers.
-export const RESELLER_TOGGLEABLE_TABS = ['devices', 'setup', 'menu', 'feedback', 'team', 'scheduling', 'messaging', 'payments']
+export const RESELLER_TOGGLEABLE_TABS = ['devices', 'setup', 'menu', 'feedback', 'team', 'scheduling', 'messaging', 'payments', 'close_day']
 export const DEFAULT_RESELLER_PERMISSIONS = {
   devices: true,
   setup: true,
@@ -15,6 +15,7 @@ export const DEFAULT_RESELLER_PERMISSIONS = {
   scheduling: false,
   messaging: false,
   payments: false,
+  close_day: false,
 }
 
 const normalizePermissions = (permissions) => ({
@@ -26,7 +27,9 @@ const allowedTabsForResellerPermissions = (permissions) => {
   const normalized = normalizePermissions(permissions)
   const tabs = [
     'analytics',
-    ...RESELLER_TOGGLEABLE_TABS.filter((tab) => normalized[tab]),
+    ...RESELLER_TOGGLEABLE_TABS
+      .filter((tab) => normalized[tab])
+      .map((tab) => tab === 'close_day' ? 'close-day' : tab),
   ]
   // POS Menus uses the existing owner-controlled Menu grant; it is not a
   // separate reseller permission stored on reseller_restaurants.
@@ -109,15 +112,17 @@ export function useAllowedStoreTabs(restaurant) {
     let cancelled = false
     const load = async () => {
       let resellerId = auth.user.id
+      let employeePermissions = null
       if (auth.accountType === 'reseller_employee') {
         const { data: employee, error: employeeError } = await supabase
           .from('reseller_employees')
-          .select('reseller_id')
+          .select('reseller_id, permissions')
           .eq('user_id', auth.user.id)
           .eq('status', 'active')
           .maybeSingle()
         if (employeeError) throw employeeError
         resellerId = employee?.reseller_id
+        employeePermissions = employee?.permissions || {}
       }
       if (!resellerId) throw new Error('Active reseller account not found')
 
@@ -129,13 +134,16 @@ export function useAllowedStoreTabs(restaurant) {
         .eq('status', 'active')
         .maybeSingle()
       if (error) throw error
-      return data
+      return { assignment: data, employeePermissions }
     }
 
     load()
-      .then((data) => {
+      .then(({ assignment, employeePermissions }) => {
         if (cancelled) return
-        setAllowed(allowedTabsForResellerPermissions(data?.permissions))
+        const tabs = allowedTabsForResellerPermissions(assignment?.permissions)
+        setAllowed(employeePermissions?.close_day === false
+          ? tabs.filter((tab) => tab !== 'close-day')
+          : tabs)
       })
       .catch(() => {
         if (!cancelled) setAllowed(['analytics'])

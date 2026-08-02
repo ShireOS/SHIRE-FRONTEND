@@ -35,7 +35,43 @@ export interface BackOfficeInvitation {
   expires_at: string
 }
 
+export type ManagerInboxSource = 'operational' | 'employee_request' | 'shift_trade'
+
+export interface ManagerInboxItem {
+  id: string
+  source: ManagerInboxSource
+  type: string
+  status: string
+  severity: 'info' | 'warning' | 'critical'
+  title: string
+  message: string
+  employee_id: string | null
+  employee_name: string | null
+  occurred_at: string
+  expected_at: string | null
+  details: Record<string, unknown>
+  available_actions: string[]
+}
+
+export interface ManagerInboxResponse {
+  items: ManagerInboxItem[]
+  open_count: number
+}
+
 export const backOfficeApi = {
+  managerInbox: (restaurantId: string, status: 'open' | 'all' = 'open'): Promise<ManagerInboxResponse> =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-action-inbox?status=${status}`),
+
+  actOnManagerInboxItem: (
+    restaurantId: string,
+    item: Pick<ManagerInboxItem, 'id' | 'source'>,
+    input: { action: string; custom_clock_out_at?: string; note?: string },
+  ): Promise<unknown> =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-action-inbox/${item.source}/${item.id}/actions`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
   myAccess: (restaurantId: string): Promise<BackOfficeAccess> =>
     fetchWithSupabaseAuth(`/restaurants/${restaurantId}/back-office/my-access`),
 
