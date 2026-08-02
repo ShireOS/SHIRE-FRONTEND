@@ -84,6 +84,9 @@ list must stay in sync.
   compatibility proxy only.
 - Tip reads use `payroll.view`; settings/payout edits use
   `payroll.adjust_tips`; run create/finalize/void uses `payroll.run`.
+- Unallocated tip-out exceptions render only while open. Listing uses
+  `payroll.view`; assigning a worked recipient or keeping the money with its
+  source requires `payroll.adjust_tips`, a manager reason, and a POS audit row.
 
 ### Implementation map (2026-07-08 build)
 - Frontend: `shared/permissions.ts` (keys/presets/merge/can/TAB_PERMISSIONS),

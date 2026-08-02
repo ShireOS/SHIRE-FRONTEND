@@ -134,6 +134,7 @@ export interface CloseDayFinalizeInput {
   close_attempt_id: string
   notes?: string
   discard_print_jobs: boolean
+  confirm_auto_clock_out?: boolean
   opening_bank: number
   paid_in: number
   paid_out: number

@@ -47,6 +47,7 @@ export default function CloseDayReview({ restaurantId, onBack }) {
   const [varianceReason, setVarianceReason] = useState('')
   const [notes, setNotes] = useState('')
   const [discardPrintJobs, setDiscardPrintJobs] = useState(false)
+  const [confirmedClockOutSignature, setConfirmedClockOutSignature] = useState(null)
   const [closeAttemptId] = useState(() => crypto.randomUUID())
 
   const previewQuery = useQuery({
@@ -68,9 +69,20 @@ export default function CloseDayReview({ restaurantId, onBack }) {
   const needsVarianceReason = Math.abs(variance) > threshold
   const exceptionCount = numberValue(preview?.exception_count)
   const pendingPrintJobs = numberValue(preview?.pending_print_jobs)
+  const openChecks = numberValue(preview?.open_checks)
+  const openClockEntries = preview?.open_timeclock_entries || []
+  const openClockEntrySignature = openClockEntries
+    .map((entry, index) => entry.id || `${entry.staff_id || entry.staff_name || 'staff'}:${index}`)
+    .sort()
+    .join('|')
+  const requiresClockOutConfirmation = openClockEntries.length > 0
+  const clockOutConfirmed = requiresClockOutConfirmation
+    && confirmedClockOutSignature === openClockEntrySignature
   const alreadyClosed = preview?.business_day?.status === 'closed'
-  const hasBlockingWork = exceptionCount > 0
+  const hasBlockingWork = openChecks > 0
+    || exceptionCount > 0
     || (pendingPrintJobs > 0 && !discardPrintJobs)
+    || (requiresClockOutConfirmation && !clockOutConfirmed)
     || (needsVarianceReason && !varianceReason.trim())
     || alreadyClosed
 
@@ -80,6 +92,7 @@ export default function CloseDayReview({ restaurantId, onBack }) {
       close_attempt_id: closeAttemptId,
       notes: notes.trim() || undefined,
       discard_print_jobs: discardPrintJobs,
+      confirm_auto_clock_out: clockOutConfirmed,
       opening_bank: numberValue(openingBank),
       paid_in: numberValue(paidIn),
       paid_out: numberValue(paidOut),
@@ -92,6 +105,7 @@ export default function CloseDayReview({ restaurantId, onBack }) {
         {
           type: 'back_office_close_day_review',
           discarded_print_jobs: discardPrintJobs,
+          employee_clock_out_confirmed: clockOutConfirmed,
         },
       ],
     }),
@@ -138,10 +152,10 @@ export default function CloseDayReview({ restaurantId, onBack }) {
       {preview && (
         <>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <Summary label="Open checks" value={preview.open_checks || 0} warning={numberValue(preview.open_checks) > 0} />
+            <Summary label="Open checks" value={openChecks} warning={openChecks > 0} />
             <Summary label="Exceptions" value={exceptionCount} warning={exceptionCount > 0} />
             <Summary label="Pending print work" value={pendingPrintJobs} warning={pendingPrintJobs > 0} />
-            <Summary label="Open clock entries" value={(preview.open_timeclock_entries || []).length} />
+            <Summary label="Open clock entries" value={openClockEntries.length} warning={requiresClockOutConfirmation} />
             <Summary label="Card collected" value={money(preview.card_collected)} />
           </div>
 
@@ -207,6 +221,24 @@ export default function CloseDayReview({ restaurantId, onBack }) {
                   <span className="mt-0.5 block text-xs text-dash-tertiary">Use only after retry/reroute decisions are exhausted.</span>
                 </span>
               </label>
+              {requiresClockOutConfirmation && (
+                <label className="mt-3 flex gap-2 rounded-xl border border-amber-400/30 bg-amber-400/[0.07] p-3 text-sm text-amber-100">
+                  <input
+                    type="checkbox"
+                    checked={clockOutConfirmed}
+                    onChange={(event) => setConfirmedClockOutSignature(
+                      event.target.checked ? openClockEntrySignature : null,
+                    )}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Clock out {openClockEntries.length} employee{openClockEntries.length === 1 ? '' : 's'} when this day closes
+                    <span className="mt-0.5 block text-xs text-amber-200/80">
+                      This is a manager-confirmed adjustment and remains in the time-clock audit trail.
+                    </span>
+                  </span>
+                </label>
+              )}
               <label className="mt-3 block">
                 <span className="label-mono !text-[9px]">Manager notes</span>
                 <textarea

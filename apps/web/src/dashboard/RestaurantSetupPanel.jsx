@@ -14,6 +14,7 @@ import { scheduleChange } from '../shared/api/scheduledChanges'
 
 const SETUP_TABS = [
   { id: 'basics', label: 'Basics' },
+  { id: 'branding', label: 'Branding' },
   { id: 'legal', label: 'Legal' },
   { id: 'payments', label: 'Payments' },
   { id: 'taxes_charges', label: 'Taxes & Charges' },
@@ -36,6 +37,16 @@ const SETUP_TABS = [
   { id: 'employees', label: 'Employees' },
   { id: 'integrations', label: 'Integrations' },
 ]
+
+const RESTAURANT_ASSET_BUCKET = 'restaurant-assets'
+const MAX_COVER_IMAGE_BYTES = 5 * 1024 * 1024
+const COVER_IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+
+function coverImageExtension(file) {
+  if (file.type === 'image/jpeg') return 'jpg'
+  if (file.type === 'image/webp') return 'webp'
+  return 'png'
+}
 
 const SETUP_PROPAGATION = {
   basics: 'specified',
@@ -2259,6 +2270,9 @@ export function warningCount(warnings) {
 
 export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings = {}, onSetupChanged, propagationContext = null }) {
   const [activeSetupTab, setActiveSetupTab] = useState('basics')
+  const [coverImageUrl, setCoverImageUrl] = useState(restaurant.cover_image_url || '')
+  const [pendingCoverFile, setPendingCoverFile] = useState(null)
+  const [pendingCoverPreviewUrl, setPendingCoverPreviewUrl] = useState('')
   const [profile, setProfile] = useState(() => ({
     name: restaurant.name || '',
     address: restaurant.address || '',
@@ -2321,6 +2335,99 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       .single()
     if (error) throw error
     return data
+  }
+
+  const selectCoverFile = (file) => {
+    setSetupError('')
+    setSaveMessage('')
+    if (!file) return
+    if (!COVER_IMAGE_MIME_TYPES.has(file.type)) {
+      setSetupError('Choose a JPEG, PNG, or WebP image.')
+      return
+    }
+    if (file.size > MAX_COVER_IMAGE_BYTES) {
+      setSetupError('The cover image must be 5 MB or smaller.')
+      return
+    }
+    setPendingCoverFile(file)
+  }
+
+  const requestBrandingTargets = async () => {
+    const requestedTargets = isPropagationEnabled
+      ? await propagationContext.requestTargets({
+          sectionId: 'branding',
+          label: 'POS background image',
+          propagation: 'specified',
+          sourceRestaurantId: restaurantId,
+        })
+      : [restaurantId]
+    if (requestedTargets === null) return null
+    const targetIds = [...new Set((requestedTargets || []).filter(Boolean))]
+    if (targetIds.length === 0) {
+      setSetupError('Select at least one restaurant.')
+      return null
+    }
+    return targetIds
+  }
+
+  const applyCoverImageUrl = async (nextUrl, targetIds, successMessage) => {
+    let sourceResult = null
+    for (const targetId of targetIds) {
+      const updated = await updateRestaurantRow(targetId, { cover_image_url: nextUrl || null })
+      if (targetId === restaurantId) sourceResult = updated
+    }
+    if (sourceResult) auth.seedCurrentRestaurant?.(sourceResult)
+    await auth.refreshRestaurants?.(restaurantId)
+    setCoverImageUrl(nextUrl || '')
+    setPendingCoverFile(null)
+    onSetupChanged?.()
+    setSaveMessage(targetIds.length > 1 ? `${successMessage} Applied to ${targetIds.length} restaurants.` : successMessage)
+  }
+
+  const saveCoverImage = async () => {
+    if (!pendingCoverFile) {
+      setSetupError('Choose an image before saving.')
+      return
+    }
+    const targetIds = await requestBrandingTargets()
+    if (!targetIds) return
+    setIsSaving(true)
+    setSetupError('')
+    setSaveMessage('')
+    try {
+      const extension = coverImageExtension(pendingCoverFile)
+      const objectPath = `${restaurantId}/covers/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extension}`
+      const { error: uploadError } = await supabase.storage
+        .from(RESTAURANT_ASSET_BUCKET)
+        .upload(objectPath, pendingCoverFile, {
+          cacheControl: '31536000',
+          contentType: pendingCoverFile.type,
+          upsert: false,
+        })
+      if (uploadError) throw uploadError
+      const { data } = supabase.storage.from(RESTAURANT_ASSET_BUCKET).getPublicUrl(objectPath)
+      if (!data?.publicUrl) throw new Error('The uploaded image did not return a public URL.')
+      await applyCoverImageUrl(data.publicUrl, targetIds, 'POS background saved.')
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not save the POS background.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const removeCoverImage = async () => {
+    const targetIds = await requestBrandingTargets()
+    if (!targetIds) return
+    setIsSaving(true)
+    setSetupError('')
+    setSaveMessage('')
+    try {
+      await applyCoverImageUrl('', targetIds, 'POS background removed.')
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Could not remove the POS background.')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const mergeRestaurantConfig = async (targetRestaurantId, patch) => {
@@ -2504,8 +2611,20 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     setDailySpecialSettings(normalizeDailySpecialSettings(restaurant.config))
     setServiceModel(initialServiceModel(restaurant))
     setReservationTiming(normalizeReservationTiming(restaurant.config))
+    setCoverImageUrl(restaurant.cover_image_url || '')
+    setPendingCoverFile(null)
     setSaveMessage('')
   }, [restaurant])
+
+  useEffect(() => {
+    if (!pendingCoverFile) {
+      setPendingCoverPreviewUrl('')
+      return undefined
+    }
+    const objectUrl = URL.createObjectURL(pendingCoverFile)
+    setPendingCoverPreviewUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [pendingCoverFile])
 
   const loadMenuItems = async () => {
     const rows = await fetchCached(
@@ -3606,6 +3725,98 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   {GUEST_FLOW_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
                 </SelectInput>
               </Field>
+            </div>
+          </div>
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'branding' && (
+        <SectionShell
+          title="POS Branding"
+          description={`Choose the background shown on ${restaurant.name}'s PIN screen and restaurant-selection card.`}
+          actions={(
+            <SmallButton variant="primary" onClick={() => void saveCoverImage()} disabled={isSaving || !pendingCoverFile}>
+              {isSaving ? 'Saving...' : 'Save background'}
+            </SmallButton>
+          )}
+        >
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
+            <div className="space-y-4">
+              <label
+                className="flex min-h-52 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-white/20 bg-white/[0.025] px-6 py-8 text-center transition hover:border-dash-gold/60 hover:bg-dash-gold/[0.04]"
+                onDragOver={event => event.preventDefault()}
+                onDrop={event => {
+                  event.preventDefault()
+                  selectCoverFile(event.dataTransfer.files?.[0])
+                }}
+              >
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="sr-only"
+                  onChange={event => {
+                    selectCoverFile(event.target.files?.[0])
+                    event.target.value = ''
+                  }}
+                />
+                <span className="text-base font-semibold text-dash-cream">
+                  {pendingCoverFile ? pendingCoverFile.name : 'Drop a restaurant photo here'}
+                </span>
+                <span className="mt-2 text-sm text-dash-secondary">or click to choose a JPEG, PNG, or WebP up to 5 MB</span>
+                <span className="mt-3 text-xs text-dash-tertiary">A landscape 4:3 image works best on the POS.</span>
+              </label>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <SmallButton variant="primary" onClick={() => void saveCoverImage()} disabled={isSaving || !pendingCoverFile}>
+                  {isSaving ? 'Saving...' : coverImageUrl ? 'Replace background' : 'Save background'}
+                </SmallButton>
+                {(coverImageUrl || pendingCoverFile) && (
+                  <SmallButton
+                    onClick={() => {
+                      if (pendingCoverFile) {
+                        setPendingCoverFile(null)
+                        return
+                      }
+                      void removeCoverImage()
+                    }}
+                    disabled={isSaving}
+                  >
+                    {pendingCoverFile ? 'Discard selection' : 'Remove background'}
+                  </SmallButton>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4 text-sm leading-6 text-dash-secondary">
+                <p className="font-semibold text-dash-cream">Currently editing: {restaurant.name}</p>
+                <p className="mt-1">The image is darkened and softly blurred on the live PIN screen so staff names and keypad controls stay readable.</p>
+                <p className="mt-1">A connected POS picks up the change the next time its lock screen opens and refreshes device status.</p>
+              </div>
+            </div>
+
+            <div>
+              <p className="label-mono">POS Preview</p>
+              <div className="relative mt-3 aspect-[4/3] overflow-hidden rounded-2xl border border-white/10 bg-[#14120f] shadow-2xl">
+                {(pendingCoverPreviewUrl || coverImageUrl) && (
+                  <img
+                    src={pendingCoverPreviewUrl || coverImageUrl}
+                    alt=""
+                    className="absolute inset-0 h-full w-full scale-105 object-cover blur-sm"
+                  />
+                )}
+                <div className="absolute inset-0 bg-[rgba(20,18,15,0.62)]" />
+                <div className="relative flex h-full flex-col items-center justify-center px-8 text-center">
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/65">Welcome to</p>
+                  <p className="mt-3 text-3xl font-semibold tracking-tight text-white">{restaurant.display_name || restaurant.name}</p>
+                  <div className="mt-8 grid grid-cols-3 gap-2 opacity-90">
+                    {[1, 2, 3, 4, 5, 6].map(number => (
+                      <span key={number} className="flex h-10 w-14 items-center justify-center rounded-xl border border-white/15 bg-black/20 text-sm font-semibold text-white/80">
+                        {number}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-dash-tertiary">Preview approximates the POS crop, blur, and contrast overlay.</p>
             </div>
           </div>
         </SectionShell>

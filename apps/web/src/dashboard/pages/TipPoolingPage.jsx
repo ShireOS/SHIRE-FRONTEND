@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { fetchWithSupabaseAuth } from '../../shared/query'
 import { useAuth } from '../../auth'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
+import { fetchTipoutExceptions, resolveTipoutException } from '../../shared/api/tipoutExceptions'
 import {
   PayrollSetupFields,
   defaultTipPayrollSettings,
@@ -308,6 +309,98 @@ function StatCard({ label, value, sub, muted }) {
   )
 }
 
+function TipoutExceptionPanel({ data, canAdjust, workingId, error, message, onResolve }) {
+  const [drafts, setDrafts] = useState({})
+  const items = data?.items || []
+  if (!items.length) return null
+
+  const updateDraft = (id, patch) => {
+    setDrafts(current => ({ ...current, [id]: { ...(current[id] || {}), ...patch } }))
+  }
+
+  return (
+    <section className="rounded-2xl border border-amber-400/40 bg-amber-400/[0.06] p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="label-mono text-amber-300">Manager action needed</p>
+          <h2 className="mt-1 text-lg font-semibold text-dash-cream">Tip-out has no eligible recipient</h2>
+          <p className="mt-1 max-w-3xl text-sm text-dash-secondary">
+            Clock-out and Close Day were allowed. {money(data?.summary?.total_amount)} remains assigned to its source until a manager records where it belongs.
+          </p>
+        </div>
+        <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-amber-200">
+          {data?.summary?.count || items.length} open
+        </span>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {error ? <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div> : null}
+        {message ? <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">{message}</div> : null}
+        {items.map((item) => {
+          const draft = drafts[item.id] || {}
+          const candidates = item.candidate_recipients || []
+          const busy = workingId === item.id
+          const reason = String(draft.reason || '').trim()
+          return (
+            <div key={item.id} className="rounded-xl border border-dash-border bg-dash-panel/80 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium text-dash-cream">{item.source_staff_name} · {money(item.amount)}</p>
+                  <p className="mt-1 text-xs text-dash-secondary">
+                    {item.business_date} · {item.source_role || 'source'} → {item.target_role || 'recipient'} · {item.scope_name || 'Restaurant default'}
+                  </p>
+                </div>
+                <span className="font-mono text-xs text-amber-200">PENDING</span>
+              </div>
+              <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(190px,0.8fr)_minmax(260px,1.4fr)_auto]">
+                <select
+                  value={draft.recipient_staff_id || ''}
+                  onChange={event => updateDraft(item.id, { recipient_staff_id: event.target.value })}
+                  disabled={!canAdjust || busy}
+                  className="rounded-lg border border-dash-border bg-dash-bg px-3 py-2 text-sm text-dash-cream disabled:opacity-50"
+                >
+                  <option value="">Choose worked employee…</option>
+                  {candidates.map(candidate => (
+                    <option key={candidate.staff_id} value={candidate.staff_id}>
+                      {candidate.staff_name} · {(candidate.roles || []).join(', ')}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  value={draft.reason || ''}
+                  onChange={event => updateDraft(item.id, { reason: event.target.value })}
+                  disabled={!canAdjust || busy}
+                  placeholder="Required manager reason"
+                  className="rounded-lg border border-dash-border bg-dash-bg px-3 py-2 text-sm text-dash-cream placeholder:text-dash-tertiary disabled:opacity-50"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onResolve(item.id, { action: 'assign_recipient', recipient_staff_id: draft.recipient_staff_id, reason })}
+                    disabled={!canAdjust || busy || !draft.recipient_staff_id || !reason}
+                    className="rounded-lg border border-dash-gold bg-dash-gold/10 px-3 py-2 text-sm font-medium text-dash-gold disabled:opacity-40"
+                  >
+                    Assign
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onResolve(item.id, { action: 'return_to_source', reason })}
+                    disabled={!canAdjust || busy || !reason}
+                    className="rounded-lg border border-dash-border px-3 py-2 text-sm text-dash-cream disabled:opacity-40"
+                  >
+                    Keep with source
+                  </button>
+                </div>
+              </div>
+              {!canAdjust ? <p className="mt-2 text-xs text-dash-tertiary">View only · resolution requires payroll.adjust_tips.</p> : null}
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 export default function TipPoolingPage({ restaurantId }) {
   const auth = useAuth()
   const access = useBackOfficeAccess(auth, restaurantId)
@@ -349,6 +442,10 @@ export default function TipPoolingPage({ restaurantId }) {
   // predates the pay-run routes (needs a restart + migration 0054). Config still
   // works, so we show a clear notice instead of a scary error.
   const [runsUnavailable, setRunsUnavailable] = useState(false)
+  const [tipoutExceptionData, setTipoutExceptionData] = useState(null)
+  const [tipoutExceptionWorkingId, setTipoutExceptionWorkingId] = useState(null)
+  const [tipoutExceptionError, setTipoutExceptionError] = useState('')
+  const [tipoutExceptionMessage, setTipoutExceptionMessage] = useState('')
 
   const restaurantName = 'Payroll'
   const defaultEmailRecipients = useMemo(() => (
@@ -396,6 +493,17 @@ export default function TipPoolingPage({ restaurantId }) {
     }
   }
 
+  const loadTipoutExceptions = async () => {
+    try {
+      const data = await fetchTipoutExceptions(restaurantId)
+      setTipoutExceptionData(data)
+      setTipoutExceptionError('')
+    } catch (err) {
+      setTipoutExceptionData(null)
+      setTipoutExceptionError(err?.message || 'Could not load tip-out review items')
+    }
+  }
+
   const loadTipConfig = async () => {
     setConfigError('')
     setConfigMessage('')
@@ -437,6 +545,7 @@ export default function TipPoolingPage({ restaurantId }) {
     setMenuItems([])
     void loadRuns()
     void loadTipConfig()
+    void loadTipoutExceptions()
   }, [restaurantId])
 
   // Build the weekly labor-cost aggregate by fetching detail for recent runs.
@@ -720,6 +829,23 @@ export default function TipPoolingPage({ restaurantId }) {
 
   const saveDisabled = configSaving || configLoading || !canAdjustTips
 
+  const resolveException = async (alertId, resolution) => {
+    if (!canAdjustTips) return
+    setTipoutExceptionWorkingId(alertId)
+    setTipoutExceptionError('')
+    setTipoutExceptionMessage('')
+    try {
+      await resolveTipoutException(restaurantId, alertId, resolution)
+      await loadTipoutExceptions()
+      if (selectedRun?.id) await openRun(selectedRun.id)
+      setTipoutExceptionMessage('Tip-out exception resolved with an audit record.')
+    } catch (err) {
+      setTipoutExceptionError(err?.message || 'Could not resolve the tip-out exception')
+    } finally {
+      setTipoutExceptionWorkingId(null)
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -738,6 +864,17 @@ export default function TipPoolingPage({ restaurantId }) {
         </div>
         {/* Section navigation lives in the left sidebar (Payroll & Tips sub-items). */}
       </section>
+
+      {tipoutExceptionData?.items?.length ? (
+        <TipoutExceptionPanel
+          data={tipoutExceptionData}
+          canAdjust={canAdjustTips}
+          workingId={tipoutExceptionWorkingId}
+          error={tipoutExceptionError}
+          message={tipoutExceptionMessage}
+          onResolve={resolveException}
+        />
+      ) : null}
 
       {/* ---------- OVERVIEW ---------- */}
       {activeSubTab === 'overview' ? (
