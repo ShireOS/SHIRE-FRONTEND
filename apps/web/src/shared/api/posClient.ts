@@ -148,18 +148,6 @@ export interface CloseDayFinalizeInput {
   decisions: Array<Record<string, unknown>>
 }
 
-export const posCloseDayApi = {
-  preview: (restaurantId: string, businessDate?: string, signal?: AbortSignal) => {
-    const query = businessDate ? `?business_date=${encodeURIComponent(businessDate)}` : ''
-    return fetchPosApi(restaurantId, `/manager/close-day/preview${query}`, { signal })
-  },
-  finalize: (restaurantId: string, input: CloseDayFinalizeInput) =>
-    fetchPosApi(restaurantId, '/manager/close-day', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
-}
-
 export const posRefundApi = {
   request: (
     restaurantId: string,
@@ -266,8 +254,15 @@ export interface CloseDayResult {
 }
 
 export const posCloseDayApi = {
-  preview: (restaurantId: string, signal?: AbortSignal) =>
-    fetchPosApi<CloseDayPreview>(restaurantId, '/manager/close-day/preview', { signal }),
+  preview: (restaurantId: string, businessDate?: string, signal?: AbortSignal) => {
+    const query = businessDate ? `?business_date=${encodeURIComponent(businessDate)}` : ''
+    return fetchPosApi<CloseDayPreview>(restaurantId, `/manager/close-day/preview${query}`, { signal })
+  },
+  finalize: (restaurantId: string, input: CloseDayFinalizeInput) =>
+    fetchPosApi(restaurantId, '/manager/close-day', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
   close: (restaurantId: string, input: CloseDayInput) =>
     fetchPosApi<CloseDayResult>(restaurantId, '/manager/close-day', {
       method: 'POST',
