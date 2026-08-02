@@ -121,6 +121,8 @@ export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All ch
   const [refundPayment, setRefundPayment] = useState(null)
   const [refundAmount, setRefundAmount] = useState('')
   const [refundReason, setRefundReason] = useState('')
+  const [refundPresetId, setRefundPresetId] = useState('')
+  const [managerPasscode, setManagerPasscode] = useState('')
   const [refundRequestId, setRefundRequestId] = useState(null)
   const detailQuery = useQuery({
     queryKey: queryKeys.checkLedgerDetail(restaurantId, orderId),
@@ -134,16 +136,36 @@ export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All ch
   const payments = detail?.payments || []
   const activity = detail?.activity || []
   const canRefund = access.can('payments.refund')
+  const refundReasonsQuery = useQuery({
+    queryKey: ['pos-refund-reason-presets', restaurantId],
+    queryFn: ({ signal }) => posRefundApi.reasonPresets(restaurantId, signal),
+    enabled: Boolean(refundPayment) && canRefund,
+    staleTime: 5 * 60 * 1000,
+  })
+  const refundReasonPresets = refundReasonsQuery.data || []
+  const selectedRefundPreset = refundReasonPresets.find((preset) => preset.id === refundPresetId)
+
+  useEffect(() => {
+    if (refundPayment && !refundPresetId && refundReasonPresets.length > 0) {
+      setRefundPresetId(refundReasonPresets[0].id)
+    }
+  }, [refundPayment, refundPresetId, refundReasonPresets])
+
   const refundMutation = useMutation({
     mutationFn: () => posRefundApi.request(restaurantId, refundPayment.id, {
       request_id: refundRequestId,
       amount: Number(refundAmount),
-      reason: refundReason.trim(),
+      reason: [selectedRefundPreset?.label, refundReason.trim()].filter(Boolean).join(' · '),
+      reason_preset_id: refundPresetId,
+      reason_note: refundReason.trim() || undefined,
+      manager_passcode: managerPasscode,
     }),
     onSuccess: async () => {
       setRefundPayment(null)
       setRefundAmount('')
       setRefundReason('')
+      setRefundPresetId('')
+      setManagerPasscode('')
       setRefundRequestId(null)
       await detailQuery.refetch()
     },
@@ -153,7 +175,19 @@ export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All ch
     setRefundPayment(payment)
     setRefundAmount(Number(payment.total_charged ?? payment.amount ?? 0).toFixed(2))
     setRefundReason('')
+    setRefundPresetId(refundReasonPresets[0]?.id || '')
+    setManagerPasscode('')
     setRefundRequestId(crypto.randomUUID())
+  }
+
+  const closeRefund = () => {
+    setRefundPayment(null)
+    setRefundAmount('')
+    setRefundReason('')
+    setRefundPresetId('')
+    setManagerPasscode('')
+    setRefundRequestId(null)
+    refundMutation.reset()
   }
 
   return (
@@ -296,17 +330,49 @@ export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All ch
                       />
                     </label>
                     <label className="mt-2 block">
-                      <span className="label-mono !text-[9px]">Manager reason</span>
+                      <span className="label-mono !text-[9px]">Reason</span>
+                      <select
+                        value={refundPresetId}
+                        onChange={(event) => setRefundPresetId(event.target.value)}
+                        disabled={refundReasonsQuery.isPending}
+                        className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-dash-base px-3 text-sm text-dash-cream focus:border-shell-accent focus:outline-none disabled:opacity-50"
+                      >
+                        <option value="">{refundReasonsQuery.isPending ? 'Loading reasons…' : 'Select a reason'}</option>
+                        {refundReasonPresets.map((preset) => (
+                          <option key={preset.id} value={preset.id}>{preset.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="mt-2 block">
+                      <span className="label-mono !text-[9px]">Additional note</span>
                       <input
                         value={refundReason}
                         onChange={(event) => setRefundReason(event.target.value)}
                         className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-transparent px-3 text-sm text-dash-cream focus:border-shell-accent focus:outline-none"
                       />
                     </label>
+                    <label className="mt-2 block">
+                      <span className="label-mono !text-[9px]">Manager PIN</span>
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        minLength={4}
+                        maxLength={16}
+                        value={managerPasscode}
+                        onChange={(event) => setManagerPasscode(event.target.value)}
+                        className="mt-1 h-9 w-full rounded-lg border border-white/10 bg-transparent px-3 font-mono text-sm tracking-[0.3em] text-dash-cream focus:border-shell-accent focus:outline-none"
+                      />
+                    </label>
+                    {refundReasonsQuery.isError && (
+                      <p className="mt-2 text-xs text-red-300">
+                        {refundReasonsQuery.error instanceof Error ? refundReasonsQuery.error.message : 'Could not load refund reasons.'}
+                      </p>
+                    )}
                     <div className="mt-3 flex gap-2">
                       <button
                         type="button"
-                        disabled={refundMutation.isPending || Number(refundAmount) <= 0 || refundReason.trim().length < 2}
+                        disabled={refundMutation.isPending || Number(refundAmount) <= 0 || !refundPresetId || managerPasscode.length < 4}
                         onClick={() => refundMutation.mutate()}
                         className="rounded-lg bg-shell-cta px-3 py-2 text-xs font-semibold text-shell-cta-text disabled:opacity-40"
                       >
@@ -315,7 +381,7 @@ export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All ch
                       <button
                         type="button"
                         disabled={refundMutation.isPending}
-                        onClick={() => setRefundPayment(null)}
+                        onClick={closeRefund}
                         className="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-dash-secondary"
                       >
                         Cancel

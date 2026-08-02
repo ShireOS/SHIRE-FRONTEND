@@ -69,8 +69,9 @@ export type CloseDayResult = {
   auto_clocked_out: OpenTimeClockEntry[];
 };
 
-export function fetchCloseDayPreview(restaurantId: string) {
-  return posApiRequest<CloseDayPreview>(restaurantId, '/manager/close-day/preview');
+export function fetchCloseDayPreview(restaurantId: string, businessDate?: string) {
+  const query = businessDate ? `?business_date=${encodeURIComponent(businessDate)}` : '';
+  return posApiRequest<CloseDayPreview>(restaurantId, `/manager/close-day/preview${query}`);
 }
 
 export function closeBusinessDay(restaurantId: string, input: CloseDayInput) {

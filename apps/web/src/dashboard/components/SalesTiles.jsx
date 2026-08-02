@@ -274,12 +274,71 @@ function ContributorList({ breakdown, note, onSelect }) {
   )
 }
 
-function addBucket(iso, bucket) {
+function zonedDateTimeParts(value, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(value)
+  const part = (type) => Number(parts.find((item) => item.type === type)?.value)
+  return {
+    year: part('year'),
+    month: part('month'),
+    day: part('day'),
+    hour: part('hour'),
+    minute: part('minute'),
+    second: part('second'),
+  }
+}
+
+function zonedMidnightIso(year, month, day, timeZone) {
+  const target = Date.UTC(year, month - 1, day)
+  let instant = target
+
+  // Resolve the zone offset at the target local midnight. A second pass covers
+  // offsets that change between the first UTC guess and the resolved instant.
+  for (let pass = 0; pass < 3; pass += 1) {
+    const resolved = zonedDateTimeParts(new Date(instant), timeZone)
+    const displayedAsUtc = Date.UTC(
+      resolved.year,
+      resolved.month - 1,
+      resolved.day,
+      resolved.hour,
+      resolved.minute,
+      resolved.second,
+    )
+    const offset = displayedAsUtc - instant
+    const next = target - offset
+    if (next === instant) break
+    instant = next
+  }
+  return new Date(instant).toISOString()
+}
+
+function addBucket(iso, bucket, timezoneName) {
   const value = new Date(iso)
-  if (bucket === 'hour') value.setUTCHours(value.getUTCHours() + 1)
-  else if (bucket === 'month') value.setUTCMonth(value.getUTCMonth() + 1)
-  else value.setUTCDate(value.getUTCDate() + 1)
-  return value.toISOString()
+  if (bucket === 'hour' || !timezoneName) {
+    if (bucket === 'hour') value.setUTCHours(value.getUTCHours() + 1)
+    else if (bucket === 'month') value.setUTCMonth(value.getUTCMonth() + 1)
+    else value.setUTCDate(value.getUTCDate() + 1)
+    return value.toISOString()
+  }
+
+  const current = zonedDateTimeParts(value, timezoneName)
+  const calendar = new Date(Date.UTC(current.year, current.month - 1, current.day))
+  if (bucket === 'month') calendar.setUTCMonth(calendar.getUTCMonth() + 1)
+  else calendar.setUTCDate(calendar.getUTCDate() + 1)
+  return zonedMidnightIso(
+    calendar.getUTCFullYear(),
+    calendar.getUTCMonth() + 1,
+    calendar.getUTCDate(),
+    timezoneName,
+  )
 }
 
 function bucketOptions(payload, points) {
@@ -295,22 +354,22 @@ function bucketOptions(payload, points) {
   const endMs = new Date(end).getTime()
   while (new Date(cursor).getTime() < endMs && options.length < 400) {
     options.push(cursor)
-    cursor = addBucket(cursor, bucket)
+    cursor = addBucket(cursor, bucket, payload.window?.timezone)
   }
   return options
 }
 
-function bucketEndBoundary(selected, options, payload, bucket) {
+function bucketEndBoundary(selected, options, payload, bucket, timezoneName) {
   if (!selected) return payload.window?.end_at || undefined
   const selectedTime = new Date(selected).getTime()
   const index = options.findIndex((option) => new Date(option).getTime() === selectedTime)
   if (index >= 0 && options[index + 1]) return options[index + 1]
   if (index === options.length - 1 && payload.window?.end_at) return payload.window.end_at
-  return addBucket(selected, bucket)
+  return addBucket(selected, bucket, timezoneName)
 }
 
 function rangeLabel(start, bucket, timezoneName) {
-  const end = addBucket(start, bucket)
+  const end = addBucket(start, bucket, timezoneName)
   if (bucket === 'hour') {
     return `${bucketLabel(start, bucket, timezoneName)}–${bucketLabel(end, bucket, timezoneName)}`
   }
@@ -321,7 +380,7 @@ function rangeWindowLabel(start, end, bucket, timezoneName) {
   if (!start) return 'All'
   if (!end || start === end) return rangeLabel(start, bucket, timezoneName)
   if (bucket === 'hour') {
-    return `${bucketLabel(start, bucket, timezoneName)}–${bucketLabel(addBucket(end, bucket), bucket, timezoneName)}`
+    return `${bucketLabel(start, bucket, timezoneName)}–${bucketLabel(addBucket(end, bucket, timezoneName), bucket, timezoneName)}`
   }
   return `${bucketLabel(start, bucket, timezoneName)}–${bucketLabel(end, bucket, timezoneName)}`
 }
@@ -641,7 +700,7 @@ function AnalyticsChecksView({
   const { rangeMode, selectBucket, beginRange } = useBucketSelection(drilldown, onBucket)
   const occurredFrom = selectedStart || payload.window?.start_at || undefined
   const occurredTo = selectedStart
-    ? bucketEndBoundary(selectedEnd || selectedStart, options, payload, bucket)
+    ? bucketEndBoundary(selectedEnd || selectedStart, options, payload, bucket, timezoneName)
     : payload.window?.end_at || undefined
   const query = useMemo(() => ({
     date_from: occurredFrom ? new Date(occurredFrom).toISOString().slice(0, 10) : undefined,

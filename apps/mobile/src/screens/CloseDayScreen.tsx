@@ -200,13 +200,29 @@ export default function CloseDayScreen() {
         variance_reason: cash.variance_reason.trim() || undefined,
       });
       setResult(closed);
-      setPreview(closed.totals);
+      setPreview({
+        ...closed.totals,
+        business_date: closed.business_date,
+        active_business_date: closed.active_business_date,
+        open_timeclock_entries: [],
+        business_day: {
+          ...closed.totals.business_day,
+          status: 'closed',
+          closed_at: closed.closed_at,
+        },
+      });
       Alert.alert(
         'Day closed',
         closed.auto_clocked_out.length
           ? `${closed.auto_clocked_out.length} employee${closed.auto_clocked_out.length === 1 ? '' : 's'} were clocked out and audited.`
           : 'No employee clock-outs were required.',
       );
+      try {
+        setPreview(await fetchCloseDayPreview(restaurantId, closed.business_date));
+      } catch {
+        // The close already succeeded; keep the normalized closed response if
+        // the follow-up read is temporarily unavailable.
+      }
     } catch (nextError) {
       handleError(nextError);
     } finally {

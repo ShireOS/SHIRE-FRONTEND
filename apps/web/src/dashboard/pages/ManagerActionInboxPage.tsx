@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, ArrowRight, CalendarClock, Check, Clock3, RefreshCw, X } from 'lucide-react'
 
+import { useAuth } from '../../auth'
 import {
   backOfficeApi,
   type ManagerInboxItem,
 } from '../../shared/api/backOfficeApi'
+import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 
 type Props = {
   restaurantId: string
@@ -30,6 +32,8 @@ function defaultCustomValue(item: ManagerInboxItem | null) {
 }
 
 export default function ManagerActionInboxPage({ restaurantId }: Props) {
+  const auth = useAuth()
+  const access = useBackOfficeAccess(auth, restaurantId)
   const [scope, setScope] = useState<'open' | 'all'>('open')
   const [items, setItems] = useState<ManagerInboxItem[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -43,6 +47,9 @@ export default function ManagerActionInboxPage({ restaurantId }: Props) {
     () => items.find((item) => item.id === selectedId) ?? items[0] ?? null,
     [items, selectedId],
   )
+  const canAdjustTimeclock = access.can('team.adjust_timeclock')
+  const canEditEmployees = access.can('team.edit_employees')
+  const canActOnSelected = selected?.source === 'operational' ? canAdjustTimeclock : canEditEmployees
 
   const load = async () => {
     setLoading(true)
@@ -69,6 +76,12 @@ export default function ManagerActionInboxPage({ restaurantId }: Props) {
 
   const act = async (action: string) => {
     if (!selected) return
+    if (!canActOnSelected) {
+      setError(selected.source === 'operational'
+        ? 'Time clock adjustment permission is required for this action.'
+        : 'Employee editing permission is required for this action.')
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -174,7 +187,13 @@ export default function ManagerActionInboxPage({ restaurantId }: Props) {
                 </div>
               </dl>
 
-              {selected.available_actions.length > 0 && selected.source === 'operational' && (
+              {selected.available_actions.length > 0 && !canActOnSelected && (
+                <div className="border-t border-dash-border pt-5 text-sm text-dash-secondary">
+                  You can view this alert, but you do not have permission to resolve it.
+                </div>
+              )}
+
+              {selected.available_actions.length > 0 && selected.source === 'operational' && canAdjustTimeclock && (
                 <div className="space-y-4 border-t border-dash-border pt-5">
                   <div>
                     <label className="label-mono" htmlFor="alert-custom-time">Custom clock-out</label>
@@ -205,7 +224,7 @@ export default function ManagerActionInboxPage({ restaurantId }: Props) {
                 </div>
               )}
 
-              {selected.available_actions.length > 0 && selected.source !== 'operational' && (
+              {selected.available_actions.length > 0 && selected.source !== 'operational' && canEditEmployees && (
                 <div className="flex flex-col gap-2 border-t border-dash-border pt-5 sm:flex-row sm:justify-end">
                   <button type="button" disabled={saving} onClick={() => void act('deny')} className="min-h-11 rounded-lg border border-red-400/40 px-5 text-sm font-semibold text-red-200 disabled:opacity-50">Deny</button>
                   <button type="button" disabled={saving} onClick={() => void act('approve')} className="min-h-11 rounded-lg bg-dash-cream px-5 text-sm font-semibold text-dash-base disabled:opacity-50">Approve</button>

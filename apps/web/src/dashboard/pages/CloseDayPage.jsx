@@ -211,8 +211,24 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         variance_reason: cash.variance_reason.trim() || undefined,
       })
       setResult(closed)
-      setPreview(closed.totals)
+      setPreview({
+        ...closed.totals,
+        business_date: closed.business_date,
+        active_business_date: closed.active_business_date,
+        open_timeclock_entries: [],
+        business_day: {
+          ...closed.totals.business_day,
+          status: 'closed',
+          closed_at: closed.closed_at,
+        },
+      })
       setModal('success')
+      try {
+        setPreview(await posCloseDayApi.preview(restaurantId, closed.business_date))
+      } catch {
+        // The close already succeeded; keep the normalized closed response if
+        // the follow-up read is temporarily unavailable.
+      }
       await queryClient.invalidateQueries({
         predicate: (query) => query.queryKey.some((part) => part === restaurantId),
       })

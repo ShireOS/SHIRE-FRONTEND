@@ -149,10 +149,27 @@ export interface CloseDayFinalizeInput {
 }
 
 export const posRefundApi = {
+  reasonPresets: (restaurantId: string, signal?: AbortSignal) =>
+    fetchPosApi<Array<{
+      id: string
+      label: string
+      code: string
+      action_type: 'payment_refund'
+      sort_order: number
+      is_active: boolean
+    }>>(restaurantId, '/manager/reason-presets?action_type=payment_refund', { signal }),
   request: (
     restaurantId: string,
     paymentId: string,
-    input: { request_id: string; amount: number; reason: string; device_id?: string },
+    input: {
+      request_id: string
+      amount: number
+      reason: string
+      reason_preset_id: string
+      reason_note?: string
+      manager_passcode: string
+      device_id?: string
+    },
   ) => fetchPosApi(restaurantId, `/manager/payments/${encodeURIComponent(paymentId)}/refund-requests`, {
     method: 'POST',
     body: JSON.stringify(input),

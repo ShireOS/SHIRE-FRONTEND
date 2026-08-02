@@ -91,7 +91,8 @@ list must stay in sync.
 The universal manager action inbox uses `team.view` for visibility,
 `team.edit_employees` for schedule-request and shift-transfer decisions, and
 `team.adjust_timeclock` for missed-clock-out corrections. Owners retain the
-existing bypass; every mutation is also guarded by the ML backend.
+existing bypass; the frontend resolves effective access and hides each mutation
+surface independently, while every mutation is also guarded by the ML backend.
 
 ### Implementation map (2026-07-08 build)
 - Frontend: `shared/permissions.ts` (keys/presets/merge/can/TAB_PERMISSIONS),
