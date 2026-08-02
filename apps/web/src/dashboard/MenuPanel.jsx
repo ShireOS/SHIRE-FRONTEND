@@ -1838,6 +1838,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
             {mergedCategories.map((category, index) => {
               const categoryItems = allItemsByCategoryName[category.name] || []
               const isExpanded = Boolean(category.name) && expandedCategoryNames.has(category.name)
+              const productionRouting = categoryProductionRouting(category.name)
               return (
                 <div
                   key={category.id || `${category.name}:${index}`}
@@ -1871,12 +1872,18 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <Field label="Default prep station">
+                    <Field label="Production route">
                       <SelectInput
-                        value={category.routing_station_id || ''}
-                        onChange={event => updateCategory(index, { routing_station_id: event.target.value, routing_station_name: stationsById[event.target.value]?.name || '' })}
+                        value={productionRouting.value}
+                        disabled={!category.id || busy}
+                        onChange={event => {
+                          if (event.target.value === ROUTE_MULTI_VALUE) return
+                          void routeCategory(category.name, event.target.value)
+                        }}
                       >
-                        <option value="">No default station</option>
+                        <option value={ROUTE_INHERIT_VALUE}>Use fallback/no explicit route</option>
+                        <option value={ROUTE_NO_PRODUCTION_VALUE}>No production needed · mark handled</option>
+                        {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
                         {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                       </SelectInput>
                     </Field>
