@@ -7,7 +7,15 @@ import { normalizeFloorPlanTablesForEditor } from '../onboarding/components/Floo
 import { FloorPlanTableSetup } from '../onboarding/components/FloorPlanTableSetup'
 import { MenuEditor } from '../onboarding/components/MenuEditor'
 import { ModifierEditor } from '../onboarding/components/ModifierEditor'
-import { assignedStaffRoles, buildStaffRoleUpdate, primaryStaffRole, roleCodeFromJobCode } from './utils/staffRoles'
+import {
+  assignedStaffRoles,
+  buildStaffRoleUpdate,
+  normalizeRoleCode,
+  normalizeStaffRoleOptions,
+  primaryStaffRole,
+  roleCodeFromJobCode,
+  staffRoleLabel,
+} from './utils/staffRoles'
 import { PublishControls } from '../shared/components/PublishControls'
 import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
 import { scheduleChange } from '../shared/api/scheduledChanges'
@@ -504,7 +512,9 @@ function SelectInput(props) {
 }
 
 function StaffRoleAssignment({ waiter, jobCodes, onChange }) {
-  const availableRoles = jobCodes.length > 0 ? jobCodes : [{ id: 'server', code: 'server', label: 'Server' }]
+  const availableRoles = normalizeStaffRoleOptions(
+    jobCodes.length > 0 ? jobCodes : [{ id: 'server', code: 'server', label: 'Server' }],
+  )
   const assignedRoles = assignedStaffRoles(waiter, availableRoles)
   const primaryRole = primaryStaffRole(waiter, availableRoles)
 
@@ -531,7 +541,7 @@ function StaffRoleAssignment({ waiter, jobCodes, onChange }) {
           commit(role, [role, ...assignedRoles.filter(item => item !== role)])
         }}
       >
-        {availableRoles.map(role => <option key={role.id || role.code} value={roleCodeFromJobCode(role)}>{role.label || role.code}</option>)}
+        {availableRoles.map(role => <option key={role.id || role.code} value={roleCodeFromJobCode(role)}>{staffRoleLabel(role)}</option>)}
         {primaryRole && availableRoles.every(role => roleCodeFromJobCode(role) !== primaryRole) && (
           <option value={primaryRole}>{primaryRole}</option>
         )}
@@ -554,7 +564,7 @@ function StaffRoleAssignment({ waiter, jobCodes, onChange }) {
                   : 'border-white/10 text-dash-tertiary hover:border-dash-gold/60 hover:text-dash-cream',
               ].join(' ')}
             >
-              {code.label || code.code}
+              {staffRoleLabel(code)}
             </button>
           )
         })}
@@ -3230,6 +3240,18 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     setSavingRateId(jobCode.id || 'new')
     setSetupError('')
     try {
+      const payload = jobCodePayload(jobCode)
+      const canonicalCode = normalizeRoleCode(payload.code)
+      const duplicate = jobCodes.find(code => (
+        code.id !== jobCode.id
+        && code.is_active !== false
+        && normalizeRoleCode(code.code) === canonicalCode
+      ))
+      if (duplicate) {
+        throw new Error(canonicalCode === 'server'
+          ? 'Server already exists — Waiter and Server are the same role.'
+          : 'That role already exists.')
+      }
       if (publication?.scheduledFor && jobCode.id) {
         const scheduled = await scheduleChange({
           label: `${jobCode.label || jobCode.code} role`,
@@ -3238,7 +3260,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
           commands: [{
             method: 'PATCH',
             path: `/restaurants/${targetId}/job-codes/${jobCode.id}`,
-            body: jobCodePayload(jobCode),
+            body: payload,
             target_type: 'restaurant',
             target_id: restaurantId,
           }],
@@ -3250,7 +3272,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         jobCode.id ? `/restaurants/${restaurantId}/job-codes/${jobCode.id}` : `/restaurants/${restaurantId}/job-codes`,
         {
           method: jobCode.id ? 'PATCH' : 'POST',
-          body: JSON.stringify(jobCodePayload(jobCode)),
+          body: JSON.stringify(payload),
         }
       )
       const nextCodes = jobCode.id
@@ -5182,7 +5204,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
             <TextInput placeholder="Name" value={staffForm.name} onChange={event => setStaffForm(prev => ({ ...prev, name: event.target.value, employee_login_id: prev.employee_login_id || defaultEmployeeId(event.target.value) }))} />
             <TextInput placeholder="Email optional" value={staffForm.email} onChange={event => setStaffForm(prev => ({ ...prev, email: event.target.value }))} />
             <SelectInput value={staffForm.role} onChange={event => setStaffForm(prev => ({ ...prev, role: event.target.value }))}>
-              {jobCodes.map(role => <option key={role.code} value={role.code}>{role.label}</option>)}
+              {normalizeStaffRoleOptions(jobCodes).map(role => <option key={role.id || role.code} value={roleCodeFromJobCode(role)}>{staffRoleLabel(role)}</option>)}
             </SelectInput>
             <TextInput placeholder="Hrs/week" value={staffForm.suggested_weekly_hours} onChange={event => setStaffForm(prev => ({ ...prev, suggested_weekly_hours: event.target.value.replace(/[^\d.]/g, '').slice(0, 5) }))} />
             <TextInput placeholder="$/hr" value={staffForm.hourly_rate} onChange={event => setStaffForm(prev => ({ ...prev, hourly_rate: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))} />
@@ -5203,7 +5225,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               <p className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-dash-secondary">Role rates are not available yet.</p>
             ) : (
               <div className="grid gap-3">
-                {jobCodes.filter(code => code.is_active !== false).map(code => (
+                {normalizeStaffRoleOptions(jobCodes.filter(code => code.is_active !== false)).map(code => (
                   <div key={code.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto_auto]">
                     <TextInput
                       value={code.label || code.code}

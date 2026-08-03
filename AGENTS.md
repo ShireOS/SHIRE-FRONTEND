@@ -14,6 +14,12 @@
   employee is allowed to work. At clock-in the employee (or manager) picks one of
   their allowed roles; that role is snapshotted onto `pos_time_clock_entries.role`
   and is what payroll/tip-out groups by.
+- **Server and Waiter are one working role.** `waiter` is a legacy alias that the
+  dashboard renders as `Server`; new assignments prefer the active `server` job
+  code while waiter-only restaurants remain compatible. `waiters.pos_role` is a
+  POS permission tier and must never be used as the employee's primary job.
+  Restaurant-defined custom job codes remain distinct and selectable alongside
+  the built-in roles.
 - **POS-side auth:** PIN identify → staff token (`get_current_waiter` →
   `WaiterContext` in Shire_POS_backend). Manager-gated routes check `is_manager(ctx)`.
   Day-close permissions are separate: `can_close_day` closes the current day,

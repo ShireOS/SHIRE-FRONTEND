@@ -1,0 +1,74 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+
+import {
+  assignedStaffRoles,
+  buildStaffRoleUpdate,
+  defaultStaffRole,
+  normalizeRoleCode,
+  normalizeStaffRoleOptions,
+  primaryStaffRole,
+} from './staffRoles.js'
+
+const jobCodes = [
+  { id: 'owner-id', code: 'owner', label: 'Owner' },
+  { id: 'waiter-id', code: 'waiter', label: 'Waiter' },
+  { id: 'server-id', code: 'server', label: 'Server' },
+  { id: 'expo-id', code: 'expo', label: 'Expo' },
+]
+
+test('Waiter and Server normalize to one Server role', () => {
+  assert.equal(normalizeRoleCode('Waiter'), 'server')
+  assert.equal(normalizeRoleCode('server'), 'server')
+
+  const options = normalizeStaffRoleOptions(jobCodes)
+  assert.deepEqual(options.map(option => option.code), ['owner', 'server', 'expo'])
+  assert.equal(options.find(option => option.code === 'server')?.label, 'Server')
+  assert.equal(defaultStaffRole(jobCodes), 'server')
+})
+
+test('the legacy POS permission tier does not become an employee role', () => {
+  const waiter = {
+    pos_role: 'waiter',
+    role: 'owner',
+    roles: ['owner'],
+  }
+
+  assert.deepEqual(assignedStaffRoles(waiter, jobCodes), ['owner'])
+  assert.equal(primaryStaffRole(waiter, jobCodes), 'owner')
+})
+
+test('a selected non-Server role is saved without silently adding Server', () => {
+  assert.deepEqual(buildStaffRoleUpdate('owner', ['owner'], jobCodes), {
+    role: 'owner',
+    roles: ['owner'],
+    job_code_id: 'owner-id',
+  })
+})
+
+test('waiter-only restaurants remain compatible while displaying Server', () => {
+  const waiterOnlyCodes = [{ id: 'waiter-id', code: 'waiter', label: 'Waiter' }]
+
+  assert.equal(defaultStaffRole(waiterOnlyCodes), 'server')
+  assert.deepEqual(buildStaffRoleUpdate('server', ['server'], waiterOnlyCodes), {
+    role: 'waiter',
+    roles: ['waiter'],
+    job_code_id: 'waiter-id',
+  })
+})
+
+test('custom roles remain distinct and can become primary', () => {
+  assert.deepEqual(buildStaffRoleUpdate('expo', ['expo', 'server'], jobCodes), {
+    role: 'expo',
+    roles: ['expo', 'server'],
+    job_code_id: 'expo-id',
+  })
+})
+
+test('removing the current primary promotes the next selected role', () => {
+  assert.deepEqual(buildStaffRoleUpdate('expo', ['expo'], jobCodes), {
+    role: 'expo',
+    roles: ['expo'],
+    job_code_id: 'expo-id',
+  })
+})
