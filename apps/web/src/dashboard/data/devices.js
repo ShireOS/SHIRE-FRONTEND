@@ -12,6 +12,7 @@ export const DEVICE_PRINTER_ROLES = [
 
 export const DEVICE_TYPE_LABELS = {
   android_tablet: 'Android tablet',
+  waiter_handheld: 'Waiter handheld',
   fixed_terminal: 'Fixed terminal',
   desktop: 'Desktop',
 }
@@ -84,7 +85,7 @@ export async function fetchStoreDeviceConfig(restaurantId) {
   const [devices, targets, outputTargets, stations, categories, typePolicies, printerEndpoints, sections] = await Promise.all([
     supabase
       .from('pos_devices')
-      .select('id, restaurant_id, name, device_type, status, last_seen_at, created_at, revenue_center_id, idle_lock_seconds, absolute_ttl_seconds, persist_manager_session, observed_capabilities, hardware_config, capabilities_reported_at, printers:pos_device_printers(role, target_id)')
+      .select('id, restaurant_id, name, device_type, status, last_seen_at, created_at, revenue_center_id, idle_lock_seconds, manager_idle_lock_seconds, absolute_ttl_seconds, lock_after_check_save, persist_manager_session, observed_capabilities, hardware_config, capabilities_reported_at, printers:pos_device_printers(role, target_id)')
       .eq('restaurant_id', restaurantId)
       .order('name'),
     supabase
@@ -112,7 +113,7 @@ export async function fetchStoreDeviceConfig(restaurantId) {
       .order('name'),
     supabase
       .from('pos_device_type_policies')
-      .select('id, device_type, idle_lock_seconds, absolute_ttl_seconds, persist_manager_session')
+      .select('id, device_type, idle_lock_seconds, manager_idle_lock_seconds, absolute_ttl_seconds, lock_after_check_save, persist_manager_session')
       .eq('restaurant_id', restaurantId)
       .order('device_type'),
     supabase
@@ -149,16 +150,18 @@ export async function fetchStoreDeviceConfig(restaurantId) {
   }
 }
 
-// Per-device-type session policy default. Upsert on (restaurant_id, device_type).
-export async function upsertDeviceTypePolicy(restaurantId, deviceType, patch) {
-  const { error } = await supabase
-    .from('pos_device_type_policies')
-    .upsert(
-      { restaurant_id: restaurantId, device_type: deviceType, ...patch, updated_at: new Date().toISOString() },
-      { onConflict: 'restaurant_id,device_type' }
-    )
-  if (error) throw error
-}
+// Session policy mutations use the audited POS-backend device boundary.
+export const saveDeviceTypePolicy = (restaurantId, deviceType, policy, reason) =>
+  fetchPosApi(restaurantId, `/restaurants/${restaurantId}/device-session-policies/${encodeURIComponent(deviceType)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ ...policy, reason }),
+  })
+
+export const saveDeviceSessionPolicyOverride = (restaurantId, deviceId, policy, reason) =>
+  fetchPosApi(restaurantId, `/restaurants/${restaurantId}/devices/${deviceId}/session-policy`, {
+    method: 'PUT',
+    body: JSON.stringify({ ...policy, reason }),
+  })
 
 export async function updateDevice(deviceId, patch) {
   const { error } = await supabase
