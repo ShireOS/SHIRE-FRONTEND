@@ -609,6 +609,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [routingItemSearch, setRoutingItemSearch] = useState('')
 
   const api = (path, init) => fetchWithSupabaseAuth(path, init)
+  const routingApi = (path, init) => fetchPosApi(restaurantId, path, init)
 
   useEffect(() => {
     if (!notice) return
@@ -697,7 +698,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const loadRouting = async (force = false) => {
     const data = await fetchCached(
       queryKeys.kitchenRouting(restaurantId),
-      () => api(`/restaurants/${restaurantId}/kitchen-routing`),
+      () => routingApi(`/restaurants/${restaurantId}/kitchen-routing`),
       force ? 0 : STALE_TIMES.setup,
     )
     setRouting(data)
@@ -770,6 +771,22 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
   const stations = routing?.stations || []
   const stationsById = useMemo(() => Object.fromEntries(stations.map(station => [station.id, station])), [stations])
+  const activeOutputTargetsById = useMemo(
+    () => Object.fromEntries((routing?.targets || [])
+      .filter(target => target?.is_active !== false && !target?.archived_at && ['kitchen', 'both'].includes(target?.usage || 'kitchen'))
+      .map(target => [target.id, target])),
+    [routing],
+  )
+  const routableStationIds = useMemo(
+    () => new Set((routing?.station_targets || [])
+      .filter(assignment => assignment?.is_active !== false && !assignment?.archived_at && activeOutputTargetsById[assignment.target_id])
+      .map(assignment => assignment.station_id)),
+    [routing, activeOutputTargetsById],
+  )
+  const routableStations = useMemo(
+    () => stations.filter(station => routableStationIds.has(station.id)),
+    [stations, routableStationIds],
+  )
   const activeRoutingRules = useMemo(
     () => (routing?.routing_rules || []).filter(rule => rule?.is_active !== false && !rule?.archived_at),
     [routing],
@@ -854,13 +871,56 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     }
   }
 
+  const routingIssueForDraft = (draft, sourceItem = null) => {
+    if (draft.routing === ROUTE_NO_PRODUCTION_VALUE) return ''
+    if (draft.routing === ROUTE_MULTI_VALUE) {
+      const rules = sourceItem ? itemRouteRules(sourceItem) : []
+      if (rules.length > 0 && rules.every(rule => routableStationIds.has(rule.station_id))) return ''
+      return 'The source item has a route without an active kitchen output. Choose a working station.'
+    }
+    if (draft.routing) {
+      return routableStationIds.has(draft.routing)
+        ? ''
+        : 'That station has no active kitchen output. Assign a printer/display or choose another route.'
+    }
+    const inherited = categoryProductionRouting(draft.category || 'Other')
+    if (inherited.exclusions.length > 0) return ''
+    if (inherited.rules.length > 0) {
+      return inherited.rules.every(rule => routableStationIds.has(rule.station_id))
+        ? ''
+        : 'This category route has no active kitchen output. Fix it or choose an item route.'
+    }
+    if (routing?.fallback?.ok) return ''
+    return 'This category has no working route or fallback. Choose a production station or “No production route”.'
+  }
+
   // ── Items ────────────────────────────────────────────────────────────────
 
   const patchItem = (itemId, patch, message) => run(async () => {
-    const updated = await api(`/restaurants/${restaurantId}/menu/items/${itemId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(patch),
-    })
+    const wantsPublish = patch.is_available === true
+    const ordinaryPatch = { ...patch }
+    if (wantsPublish) delete ordinaryPatch.is_available
+    let updated = null
+    if (Object.prototype.hasOwnProperty.call(ordinaryPatch, 'category')) {
+      updated = await routingApi(`/restaurants/${restaurantId}/menu/items/${itemId}/category`, {
+        method: 'PUT',
+        body: JSON.stringify({ category: ordinaryPatch.category }),
+      })
+      delete ordinaryPatch.category
+    }
+    if (Object.keys(ordinaryPatch).length > 0) {
+      const ordinaryUpdate = await api(`/restaurants/${restaurantId}/menu/items/${itemId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(ordinaryPatch),
+      })
+      updated = { ...updated, ...ordinaryUpdate }
+    }
+    if (wantsPublish) {
+      updated = await routingApi(`/restaurants/${restaurantId}/menu/items/publish`, {
+        method: 'POST',
+        body: JSON.stringify({ menu_item_id: itemId }),
+      })
+    }
     setMenuItems(prev => prev.map(item => (item.id === itemId ? { ...item, ...updated } : item)))
     invalidateItems()
   }, message, 'Couldn’t update the item')
@@ -938,61 +998,42 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     }
     const source = creating?.source || null
     return run(async () => {
-      const created = await api(`/restaurants/${restaurantId}/menu/items/single`, {
+      const copiedStationIds = draft.routing === ROUTE_MULTI_VALUE && source
+        ? itemRouteRules(source).map(rule => rule.station_id).filter(Boolean)
+        : []
+      const routingMode = draft.routing === ROUTE_NO_PRODUCTION_VALUE
+        ? 'no_production'
+        : draft.routing === ROUTE_MULTI_VALUE || draft.routing
+          ? 'stations'
+          : 'inherit'
+      const stationIds = draft.routing === ROUTE_MULTI_VALUE
+        ? copiedStationIds
+        : draft.routing && draft.routing !== ROUTE_NO_PRODUCTION_VALUE
+          ? [draft.routing]
+          : []
+      const created = await routingApi(`/restaurants/${restaurantId}/menu/items/draft-with-routing`, {
         method: 'POST',
         body: JSON.stringify({
-          restaurant_id: restaurantId,
           name: draft.name.trim(),
           category: draft.category.trim() || 'Other',
           price: Number(draft.price) || 0,
-          is_available: true,
+          description: draft.description.trim() || null,
+          course_type: draft.course_type || null,
+          prep_time_minutes: draft.prep_time_minutes === '' ? null : Number(draft.prep_time_minutes),
+          availability_mode: draft.availability_mode,
+          availability_days: draft.availability_days,
+          availability_start_time: draft.availability_start_time || null,
+          availability_end_time: draft.availability_end_time || null,
+          availability_start_date: draft.availability_start_date || null,
+          availability_end_date: draft.availability_end_date || null,
+          availability_notes: draft.availability_notes.trim() || null,
+          routing_mode: routingMode,
+          station_ids: stationIds,
         }),
       })
       if (!created?.id) throw new Error('The item was not created.')
       const warnings = []
       let full = created
-      try {
-        const patched = await api(`/restaurants/${restaurantId}/menu/items/${created.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            description: draft.description.trim() || null,
-            course_type: draft.course_type || null,
-            prep_time_minutes: draft.prep_time_minutes === '' ? null : Number(draft.prep_time_minutes),
-            availability_mode: draft.availability_mode,
-            availability_days: draft.availability_days,
-            availability_start_time: draft.availability_start_time || null,
-            availability_end_time: draft.availability_end_time || null,
-            availability_start_date: draft.availability_start_date || null,
-            availability_end_date: draft.availability_end_date || null,
-            availability_notes: draft.availability_notes.trim() || null,
-          }),
-        })
-        full = { ...created, ...patched }
-      } catch {
-        warnings.push('description/availability details')
-      }
-      try {
-        if (draft.routing === ROUTE_NO_PRODUCTION_VALUE) {
-          await api(`/restaurants/${restaurantId}/kitchen-routing/exclusions`, {
-            method: 'POST',
-            body: JSON.stringify({ source_type: 'menu_item', source_id: full.id, reason: 'No production route' }),
-          })
-        } else if (draft.routing === ROUTE_MULTI_VALUE && source) {
-          for (const rule of itemRouteRules(source)) {
-            await api(`/restaurants/${restaurantId}/kitchen-routing/rules`, {
-              method: 'POST',
-              body: JSON.stringify({ source_type: 'menu_item', source_id: full.id, station_id: rule.station_id, target_types: ['printer', 'display'] }),
-            })
-          }
-        } else if (draft.routing) {
-          await api(`/restaurants/${restaurantId}/kitchen-routing/rules`, {
-            method: 'POST',
-            body: JSON.stringify({ source_type: 'menu_item', source_id: full.id, station_id: draft.routing, target_types: ['printer', 'display'] }),
-          })
-        }
-      } catch {
-        warnings.push('printer routing')
-      }
       if (source) {
         warnings.push(...await copyItemConfig({
           restaurantId,
@@ -1037,6 +1078,17 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       } catch {
         warnings.push('questions & modifiers')
       }
+      if (warnings.length === 0) {
+        try {
+          const published = await routingApi(`/restaurants/${restaurantId}/menu/items/publish`, {
+            method: 'POST',
+            body: JSON.stringify({ menu_item_id: full.id }),
+          })
+          full = { ...full, ...published }
+        } catch (err) {
+          warnings.push(`publishing (${describeError(err)})`)
+        }
+      }
       invalidateItems()
       await Promise.allSettled([
         loadItems(true),
@@ -1044,11 +1096,15 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         loadItemModifierOverrides(),
         loadSpecials(),
         loadAllergies(),
-        draft.routing ? loadRouting(true) : Promise.resolve(),
+        loadRouting(true),
       ])
-      const base = duplicate ? `"${full.name}" saved — set up the next one.` : `"${full.name}" added.`
-      setNotice(warnings.length ? `${base} Couldn’t copy: ${[...new Set(warnings)].join(', ')}.` : base)
-      if (duplicate) {
+      const published = full.is_available !== false && warnings.length === 0
+      const base = published
+        ? duplicate ? `"${full.name}" saved — set up the next one.` : `"${full.name}" added.`
+        : `"${full.name}" saved as an unavailable draft.`
+      if (warnings.length) setError(`${base} Needs attention: ${[...new Set(warnings)].join(', ')}.`)
+      else setNotice(base)
+      if (duplicate && published) {
         // Staged picks were just saved onto this item, so they now carry over
         // via the copy path — clear them to avoid double-attaching.
         setCreating({ source: full, draft: { ...draft, name: '', question_ids: [], extra_modifier_ids: [], pending_group_options: [] } })
@@ -1535,52 +1591,30 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
   // ── Printing / routing ───────────────────────────────────────────────────
 
-  const archiveRoutingRule = (ruleId) => api(`/restaurants/${restaurantId}/kitchen-routing/rules/${ruleId}`, { method: 'DELETE' })
-  const archiveRoutingExclusion = (exclusionId) => api(`/restaurants/${restaurantId}/kitchen-routing/exclusions/${exclusionId}`, { method: 'DELETE' })
+  const routeSelectionPayload = (routeValue) => ({
+    mode: routeValue === ROUTE_NO_PRODUCTION_VALUE ? 'no_production' : routeValue ? 'stations' : 'inherit',
+    station_ids: routeValue && routeValue !== ROUTE_NO_PRODUCTION_VALUE ? [routeValue] : [],
+  })
 
   const routeCategory = (categoryName, routeValue) => run(async () => {
-    const routingState = categoryProductionRouting(categoryName)
-    await Promise.all(routingState.rules.map(rule => archiveRoutingRule(rule.id)))
-    if (routeValue === ROUTE_NO_PRODUCTION_VALUE) {
-      await api(`/restaurants/${restaurantId}/kitchen-routing/exclusions`, {
-        method: 'POST',
-        body: JSON.stringify({ source_type: 'category', category: categoryName, reason: 'No production route' }),
-      })
-    } else {
-      await Promise.all(routingState.exclusions.map(rule => archiveRoutingExclusion(rule.id)))
-      if (routeValue) {
-        await api(`/restaurants/${restaurantId}/kitchen-routing/rules`, {
-          method: 'POST',
-          body: JSON.stringify({ source_type: 'category', category: categoryName, station_id: routeValue, target_types: ['printer', 'display'] }),
-        })
-      }
-    }
+    await routingApi(`/restaurants/${restaurantId}/kitchen-routing/categories`, {
+      method: 'PUT',
+      body: JSON.stringify({ category: categoryName, ...routeSelectionPayload(routeValue) }),
+    })
     invalidateCategories()
     await Promise.all([loadRouting(true), loadCategories(true)])
   }, routeValue === ROUTE_NO_PRODUCTION_VALUE ? 'Category set to no production route.' : routeValue ? 'Category routed.' : 'Category now uses fallback/no explicit route.', 'Couldn’t route the category')
 
   const routeItemProduction = (item, routeValue) => run(async () => {
-    const routingState = itemProductionRouting(item)
-    await Promise.all(routingState.rules.map(rule => archiveRoutingRule(rule.id)))
-    if (routeValue === ROUTE_NO_PRODUCTION_VALUE) {
-      await api(`/restaurants/${restaurantId}/kitchen-routing/exclusions`, {
-        method: 'POST',
-        body: JSON.stringify({ source_type: 'menu_item', source_id: item.id, reason: 'No production route' }),
-      })
-    } else {
-      await Promise.all(routingState.exclusions.map(rule => archiveRoutingExclusion(rule.id)))
-      if (routeValue) {
-        await api(`/restaurants/${restaurantId}/kitchen-routing/rules`, {
-          method: 'POST',
-          body: JSON.stringify({ source_type: 'menu_item', source_id: item.id, station_id: routeValue, target_types: ['printer', 'display'] }),
-        })
-      }
-    }
+    await routingApi(`/restaurants/${restaurantId}/kitchen-routing/items/${item.id}`, {
+      method: 'PUT',
+      body: JSON.stringify(routeSelectionPayload(routeValue)),
+    })
     await Promise.all([loadRouting(true), loadItems(true)])
   }, routeValue === ROUTE_NO_PRODUCTION_VALUE ? 'Item set to no production route.' : routeValue ? 'Item route saved.' : 'Item now inherits category/fallback.', 'Couldn’t route the item')
 
   const createStation = (name) => run(async () => {
-    await api(`/restaurants/${restaurantId}/kitchen-routing/stations`, {
+    await routingApi(`/restaurants/${restaurantId}/kitchen-routing/stations`, {
       method: 'POST',
       body: JSON.stringify({ name, is_active: true }),
     })
@@ -1588,7 +1622,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   }, 'Station added.', 'Couldn’t add the station')
 
   const createTarget = (name, host) => run(async () => {
-    await api(`/restaurants/${restaurantId}/kitchen-routing/targets`, {
+    await routingApi(`/restaurants/${restaurantId}/kitchen-routing/targets`, {
       method: 'POST',
       body: JSON.stringify({
         name: name || 'Kitchen Printer',
@@ -1602,7 +1636,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   }, 'Printer target added.', 'Couldn’t add the printer')
 
   const assignTarget = (stationId, targetId) => run(async () => {
-    await api(`/restaurants/${restaurantId}/kitchen-routing/station-targets`, {
+    await routingApi(`/restaurants/${restaurantId}/kitchen-routing/station-targets`, {
       method: 'POST',
       body: JSON.stringify({ station_id: stationId, target_id: targetId, priority: 0, is_active: true }),
     })
@@ -1660,7 +1694,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           key={creating.source?.id || 'new-item'}
           categoryNames={categoryNames}
           categoriesByName={categoriesByName}
-          stations={stations}
+          stations={routableStations}
           groups={groups}
           modifiers={modifiers}
           source={creating.source}
@@ -1678,6 +1712,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           busy={busy}
           onCancel={() => setCreating(null)}
           onSave={saveNewItem}
+          routingIssueForDraft={draft => routingIssueForDraft(draft, creating.source)}
         />
       )}
 
@@ -1688,7 +1723,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           item={selectedItem}
           categories={mergedCategories}
           categoryNames={categoryNames}
-          stations={stations}
+          stations={routableStations}
           groups={groups}
           modifiers={modifiers}
           specials={specials}
@@ -1884,7 +1919,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                         <option value={ROUTE_INHERIT_VALUE}>Use fallback/no explicit route</option>
                         <option value={ROUTE_NO_PRODUCTION_VALUE}>No production needed · mark handled</option>
                         {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
-                        {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
+                        {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                       </SelectInput>
                     </Field>
                     <Field label="Default course">
@@ -2678,7 +2713,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       <option value={ROUTE_INHERIT_VALUE}>Use fallback/no explicit route</option>
                       <option value={ROUTE_NO_PRODUCTION_VALUE}>No production needed · mark handled</option>
                       {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
-                      {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
+                      {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                     </SelectInput>
                   </div>
                 )
@@ -2720,7 +2755,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       <option value={ROUTE_INHERIT_VALUE}>Inherit category/fallback</option>
                       <option value={ROUTE_NO_PRODUCTION_VALUE}>No production needed · mark handled</option>
                       {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
-                      {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
+                      {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                     </SelectInput>
                   </div>
                 )

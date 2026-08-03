@@ -220,6 +220,7 @@ export type CloseoutSettings = {
   server_require_tabs_closed: boolean;
   server_require_cash_tips_declared: boolean;
   server_require_credit_tips_reviewed: boolean;
+  deduct_credit_card_tips_from_cash_due: boolean;
   server_require_tipout_entry: boolean;
   server_require_manager_approval: boolean;
   server_checkout_report_delivery: 'none' | 'print' | 'email' | 'print_and_email';
@@ -301,14 +302,27 @@ export type TipRoleRule = {
   receives_from_pool: boolean;
   pool_points: string | number | null;
   pool_contribution_percent?: string | number | null;
-  tipout_split_basis?: 'hours' | 'even';
+  tipout_split_basis?: 'hours' | 'even' | 'weights';
+  tipout_split_weights?: Array<{ staff_id: string; weight: string | number }>;
   pool_share_percent?: string | number | null;
   tipouts?: Array<{
-    target_role: string;
+    target_role: string | null;
     percent: string | number;
     basis: 'tips' | 'sales';
     sales_category?: string | null;
     basis_scope?: 'own' | 'restaurant';
+    headcount?: {
+      driver_role: string;
+      tiers: Array<{
+        min_count: number;
+        max_count: number | null;
+        allocations: Array<{
+          target_role: string | null;
+          unallocated: boolean;
+          percent: string | number;
+        }>;
+      }>;
+    } | null;
   }>;
   tipout_percent: string | number | null;
   tipout_target_role: string | null;

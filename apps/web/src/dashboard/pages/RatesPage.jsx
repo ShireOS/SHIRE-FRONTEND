@@ -34,8 +34,11 @@ function planToForm(plan) {
     ratePercent: (Number(source.card_rate) * 100).toFixed(2),
     pricing_mode: source.pricing_mode,
     dual_pricing_enabled: Boolean(source.dual_pricing_enabled),
+    listed_price_basis: source.listed_price_basis || 'electronic',
+    display_order: source.display_order || `${source.listed_price_basis || 'electronic'}_first`,
     applies_to: [...(source.applies_to || [])],
     basis: source.basis || 'subtotal_plus_tax',
+    version: Number(source.version) || 0,
   }
 }
 
@@ -44,8 +47,11 @@ function formToPlan(form) {
     card_rate: Math.max(0, Number(form.ratePercent) || 0) / 100,
     pricing_mode: form.pricing_mode,
     dual_pricing_enabled: form.dual_pricing_enabled,
+    listed_price_basis: form.listed_price_basis,
+    display_order: form.display_order,
     applies_to: form.applies_to,
     basis: form.basis,
+    version: form.version,
   }
 }
 
@@ -201,7 +207,7 @@ function RatePlanCard({ restaurant, plan, pendingRequest, userId, onSaved, onReq
                   </span>
                 </label>
                 <label className="block">
-                  <span className="label-mono !text-[10px] normal-nums">Basis</span>
+                  <span className="label-mono !text-[10px] normal-nums">Adjustment basis</span>
                   <span className="relative mt-1 flex h-9 items-center rounded-full border border-dash-border bg-[var(--glass-bg)] pl-3 pr-8">
                     <select
                       value={form.basis}
@@ -216,6 +222,45 @@ function RatePlanCard({ restaurant, plan, pendingRequest, userId, onSaved, onReq
                 </label>
               </div>
 
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="label-mono !text-[10px] normal-nums">Listed prices</span>
+                  <span className="relative mt-1 flex h-9 items-center rounded-full border border-dash-border bg-[var(--glass-bg)] pl-3 pr-8">
+                    <select
+                      value={form.listed_price_basis}
+                      disabled={form.pricing_mode !== 'dual_pricing_posted_electronic'}
+                      onChange={(event) => setForm((prev) => ({
+                        ...prev,
+                        listed_price_basis: event.target.value,
+                        display_order: `${event.target.value}_first`,
+                      }))}
+                      className="appearance-none bg-transparent text-sm text-dash-cream outline-none disabled:opacity-50"
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="electronic">Electronic</option>
+                    </select>
+                    <ChevronDown size={13} strokeWidth={1.75} className="pointer-events-none absolute right-3 text-dash-tertiary" aria-hidden="true" />
+                  </span>
+                </label>
+                <label className="block">
+                  <span className="label-mono !text-[10px] normal-nums">Show first</span>
+                  <span className="relative mt-1 flex h-9 items-center rounded-full border border-dash-border bg-[var(--glass-bg)] pl-3 pr-8">
+                    <select
+                      value={form.display_order}
+                      onChange={(event) => setForm((prev) => ({ ...prev, display_order: event.target.value }))}
+                      className="appearance-none bg-transparent text-sm text-dash-cream outline-none"
+                    >
+                      <option value="cash_first">Cash</option>
+                      <option value="electronic_first">Electronic</option>
+                    </select>
+                    <ChevronDown size={13} strokeWidth={1.75} className="pointer-events-none absolute right-3 text-dash-tertiary" aria-hidden="true" />
+                  </span>
+                </label>
+              </div>
+              <p className="text-xs leading-5 text-dash-tertiary">
+                Listed prices determine the math. Show first changes only POS and receipt ordering.
+              </p>
+
               <div>
                 <p className="label-mono !text-[10px] normal-nums">Pricing mode</p>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -223,7 +268,17 @@ function RatePlanCard({ restaurant, plan, pendingRequest, userId, onSaved, onReq
                     <button
                       key={mode.value}
                       type="button"
-                      onClick={() => setForm((prev) => ({ ...prev, pricing_mode: mode.value }))}
+                      onClick={() => setForm((prev) => {
+                        const listed = mode.value === 'dual_pricing_posted_electronic'
+                          ? prev.listed_price_basis
+                          : ['credit_surcharge', 'none'].includes(mode.value) ? 'cash' : 'electronic'
+                        return {
+                          ...prev,
+                          pricing_mode: mode.value,
+                          listed_price_basis: listed,
+                          display_order: prev.display_order || `${listed}_first`,
+                        }
+                      })}
                       className={[
                         'h-9 rounded-full border px-3.5 text-sm font-medium transition-colors duration-100 active:scale-[0.98]',
                         form.pricing_mode === mode.value

@@ -1,5 +1,5 @@
 import { supabase } from '../../shared/lib/supabase'
-import { DEFAULT_RATE_PLAN, formatRate } from './ratePlans'
+import { DEFAULT_RATE_PLAN, formatRate, upsertRatePlan } from './ratePlans'
 
 export const PENDING_CLAIM_STORAGE_KEY = 'shire_pending_claim_token'
 
@@ -63,21 +63,7 @@ export async function createDraftInvite({ userId, email, draft, ratePlan }) {
     .single()
   if (restaurantError) throw restaurantError
 
-  const { error: planError } = await supabase
-    .from('restaurant_rate_plans')
-    .upsert(
-      {
-        restaurant_id: restaurant.id,
-        card_rate: plan.card_rate,
-        pricing_mode: plan.pricing_mode,
-        dual_pricing_enabled: plan.dual_pricing_enabled,
-        applies_to: plan.applies_to,
-        basis: plan.basis,
-        updated_by: userId,
-      },
-      { onConflict: 'restaurant_id' }
-    )
-  if (planError) throw planError
+  await upsertRatePlan(restaurant.id, { ...plan, version: 0 })
 
   const { data: invite, error: inviteError } = await supabase
     .from('store_invites')

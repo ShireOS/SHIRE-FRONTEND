@@ -5,7 +5,7 @@ import { fetchWithSupabaseAuth, queryClient, queryKeys } from '../../shared/quer
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import { backOfficeApi } from '../../shared/api/backOfficeApi'
 import { mergePermissions } from '../../shared/permissions'
-import { fetchRolePermissions } from '../data/permissions'
+import { fetchCashDrawerPolicy, fetchRolePermissions } from '../data/permissions'
 import {
   assignedStaffRoles,
   buildStaffRoleUpdate,
@@ -21,6 +21,7 @@ import { Modal, ModalFooter } from '../components/shared/Modal'
 import RolePermissionsPanel from '../components/team/RolePermissionsPanel'
 import PermissionEditor, { diffOverrides } from '../components/team/PermissionEditor'
 import { normalizeJobCodes } from '../RestaurantSetupPanel'
+import { cashDrawerRoleSummary } from '../utils/cashDrawerPermissions'
 
 const money = (value) =>
   value === null || value === undefined || value === ''
@@ -441,6 +442,7 @@ export default function TeamPage({ restaurantId }) {
   const [jobCodes, setJobCodes] = useState([])
   const [roleLoadError, setRoleLoadError] = useState(false)
   const [rolePerms, setRolePerms] = useState([])
+  const [cashDrawerPolicy, setCashDrawerPolicy] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [newEmployee, setNewEmployee] = useState({ name: '', role: '', hourly_rate: '', pin: '' })
@@ -468,13 +470,15 @@ export default function TeamPage({ restaurantId }) {
         .then((rows) => ({ rows, failed: false }))
         .catch(() => ({ rows: [], failed: true })),
       fetchRolePermissions(restaurantId).catch(() => []),
+      fetchCashDrawerPolicy(restaurantId).catch(() => null),
     ])
-      .then(([waiterRows, jobCodeResult, roleRows]) => {
+      .then(([waiterRows, jobCodeResult, roleRows, drawerPolicy]) => {
         if (cancelled) return
         setWaiters(Array.isArray(waiterRows) ? waiterRows : [])
         setJobCodes(normalizeJobCodes(jobCodeResult.rows))
         setRoleLoadError(jobCodeResult.failed)
         setRolePerms(Array.isArray(roleRows) ? roleRows : [])
+        setCashDrawerPolicy(drawerPolicy)
       })
       .catch((loadError) => {
         if (!cancelled) setError(loadError?.message || 'Could not load team data.')
@@ -524,6 +528,12 @@ export default function TeamPage({ restaurantId }) {
       .map((code) => ({ id: null, code, label: roleLabel(code) }))
     return normalizeStaffRoleOptions([...jobCodes, ...extras])
   }, [jobCodes, rolePerms, waiters])
+
+  const newEmployeeRole = normalizeRoleCode(newEmployee.role || defaultStaffRole(jobCodes))
+  const newEmployeeRolePermissions = rolePerms.find(
+    (item) => normalizeRoleCode(item.role_key) === newEmployeeRole,
+  ) || {}
+  const newEmployeeCashSummary = cashDrawerRoleSummary(newEmployeeRolePermissions, cashDrawerPolicy || {})
 
   // Role-default back-office permissions for a waiter (by id) via their
   // primary working role's pos_role_permissions.back_office_permissions.
@@ -853,6 +863,14 @@ export default function TeamPage({ restaurantId }) {
               Add
             </button>
           </div>
+          <div className="flex flex-wrap gap-1.5 pl-1 text-[10px] text-dash-tertiary">
+            <span className="font-semibold text-dash-secondary">Inherited cash access:</span>
+            {newEmployeeCashSummary.map((item) => (
+              <span key={item.key} className="rounded-full border border-dash-border px-2 py-0.5">
+                {item.label}: {item.value}
+              </span>
+            ))}
+          </div>
         </div>
       </Pane>
 
@@ -973,7 +991,11 @@ export default function TeamPage({ restaurantId }) {
         )}
       </Pane>
 
-      <RolePermissionsPanel restaurantId={restaurantId} />
+      <RolePermissionsPanel
+        restaurantId={restaurantId}
+        cashDrawerPolicy={cashDrawerPolicy}
+        onRolesChange={setRolePerms}
+      />
 
       {inviteState && (
         <InviteModal

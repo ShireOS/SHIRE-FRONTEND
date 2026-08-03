@@ -64,12 +64,14 @@ export function MenuItemCreate({
   onCancel,
   onSave,
   onCreateModifier = null,
+  routingIssueForDraft = null,
 }) {
   const [draft, setDraft] = useState(initialDraft)
   const [showModifierPicker, setShowModifierPicker] = useState(false)
   const [questionSearch, setQuestionSearch] = useState('')
   const set = (patch) => setDraft(prev => ({ ...prev, ...patch }))
-  const canSave = Boolean(draft.name.trim()) && draft.price !== '' && !busy
+  const routingIssue = routingIssueForDraft?.(draft) || ''
+  const canSave = Boolean(draft.name.trim()) && draft.price !== '' && !routingIssue && !busy
 
   const modifiersById = useMemo(() => Object.fromEntries(modifiers.map(m => [m.id, m])), [modifiers])
 
@@ -177,7 +179,7 @@ export function MenuItemCreate({
       <SmallButton
         variant="primary"
         disabled={!canSave}
-        title={canSave ? 'Save and open the full item editor' : 'Name and price are required'}
+        title={canSave ? 'Save and open the full item editor' : routingIssue || 'Name and price are required'}
         onClick={() => void onSave(draft, { duplicate: false })}
       >
         Save item
@@ -404,6 +406,7 @@ export function MenuItemCreate({
                   )}
                   {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                 </SelectInput>
+                {routingIssue && <p className="mt-1 text-xs text-amber-300">{routingIssue}</p>}
               </Field>
               <Field label="Course">
                 <SelectInput value={draft.course_type} onChange={event => set({ course_type: event.target.value })}>

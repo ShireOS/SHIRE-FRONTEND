@@ -323,9 +323,9 @@ function TipoutExceptionPanel({ data, canAdjust, workingId, error, message, onRe
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="label-mono text-amber-300">Manager action needed</p>
-          <h2 className="mt-1 text-lg font-semibold text-dash-cream">Tip-out has no eligible recipient</h2>
+          <h2 className="mt-1 text-lg font-semibold text-dash-cream">Tip-out audit</h2>
           <p className="mt-1 max-w-3xl text-sm text-dash-secondary">
-            Clock-out and Close Day were allowed. {money(data?.summary?.total_amount)} remains assigned to its source until a manager records where it belongs.
+            Clock-out and Close Day were allowed. {money(data?.summary?.total_amount)} is reserved until a manager records where it belongs.
           </p>
         </div>
         <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-amber-200">
@@ -349,8 +349,15 @@ function TipoutExceptionPanel({ data, canAdjust, workingId, error, message, onRe
                   <p className="mt-1 text-xs text-dash-secondary">
                     {item.business_date} · {item.source_role || 'source'} → {item.target_role || 'recipient'} · {item.scope_name || 'Restaurant default'}
                   </p>
+                  {item.headcount_driver_role ? (
+                    <p className="mt-1 text-xs text-dash-secondary">
+                      Counted {item.headcount_count} {item.headcount_driver_role}; matched {item.headcount_tier_min}{item.headcount_tier_max == null ? '+' : `–${item.headcount_tier_max}`} · {Number(item.allocation_percent || 0)}% allocation
+                    </p>
+                  ) : null}
                 </div>
-                <span className="font-mono text-xs text-amber-200">PENDING</span>
+                <span className="font-mono text-xs text-amber-200">
+                  {item.unallocated_reason === 'configured_unallocated' ? 'DISCRETIONARY' : 'NO RECIPIENT'}
+                </span>
               </div>
               <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(190px,0.8fr)_minmax(260px,1.4fr)_auto]">
                 <select

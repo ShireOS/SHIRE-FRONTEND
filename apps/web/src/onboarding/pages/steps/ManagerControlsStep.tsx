@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchPosApi } from '../../../shared/api/posClient'
 import type { JobCodeData, RolePermissionData, UseOnboardingReturn } from '../../hooks/useOnboarding'
+import { cashDrawerRoleSummary } from '../../../dashboard/utils/cashDrawerPermissions'
 
 interface ManagerControlsStepProps {
   onboarding: UseOnboardingReturn
@@ -408,6 +409,14 @@ export function ManagerControlsStep({ onboarding }: ManagerControlsStepProps) {
                   label={permission.label}
                   onClick={() => updateRolePermission(role.role_key, { [permission.key]: !role[permission.key] } as Partial<RolePermissionData>)}
                 />
+              ))}
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-[rgb(var(--text-tertiary))]">
+              {cashDrawerRoleSummary(role, data.closeout_settings).map(item => (
+                <span key={item.key} className="rounded-full border border-[rgba(255,255,255,0.12)] px-2 py-0.5">
+                  {item.label}: {item.value}
+                </span>
               ))}
             </div>
 

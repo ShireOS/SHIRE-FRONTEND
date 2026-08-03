@@ -5,6 +5,7 @@ import { API_CONFIG } from '../../shared/api/config'
 import { fetchPosApi } from '../../shared/api/posClient'
 import { useAuth } from '../../auth'
 import type { Restaurant } from '@shire/db'
+import { serializeTipRoleRules, serializeWeekdayTipoutOverrides } from '../../shared/tips/tipPayrollPolicy'
 
 const MAX_SPLIT_COUNT = 8
 
@@ -231,6 +232,7 @@ export interface CloseoutSettingsData {
   server_require_tabs_closed: boolean
   server_require_cash_tips_declared: boolean
   server_require_credit_tips_reviewed: boolean
+  deduct_credit_card_tips_from_cash_due: boolean
   server_require_tipout_entry: boolean
   server_require_manager_approval: boolean
   server_checkout_report_delivery: 'none' | 'print' | 'email' | 'print_and_email'
@@ -304,13 +306,22 @@ export interface TipRoleRuleData {
   pool_points: string
   pool_contribution_percent: string
   pool_share_percent: string
-  tipout_split_basis: 'hours' | 'even'
+  tipout_split_basis: 'hours' | 'even' | 'weights'
+  tipout_split_weights: Array<{ staff_id: string; weight: string }>
   tipouts: Array<{
     target_role: string
     percent: string
     basis: 'tips' | 'sales'
     sales_category: string
     basis_scope: 'own' | 'restaurant'
+    headcount: {
+      driver_role: string
+      tiers: Array<{
+        min_count: number
+        max_count: number | null
+        allocations: Array<{ target_role: string; unallocated: boolean; percent: string }>
+      }>
+    } | null
   }>
   tipout_percent: string
   tipout_target_role: string
@@ -351,6 +362,11 @@ export interface TipPayrollSettingsData {
   credit_card_fee_percent: string
   role_tip_rules: TipRoleRuleData[]
   category_tip_profiles: CategoryTipProfileData[]
+  weekday_tipout_overrides: Partial<Record<'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday', {
+    mode: 'disabled' | 'custom'
+    role_tip_rules?: TipRoleRuleData[]
+    category_tip_profiles?: CategoryTipProfileData[]
+  }>>
   notes: string
 }
 
@@ -412,7 +428,8 @@ const defaultTipRoleRules = (jobCodes: JobCodeData[] = defaultJobCodes()): TipRo
     pool_points: code.is_tipped ? '1' : '',
     pool_contribution_percent: '100',
     pool_share_percent: '',
-    tipout_split_basis: 'hours',
+    tipout_split_basis: 'even',
+    tipout_split_weights: [],
     tipouts: [],
     tipout_percent: '',
     tipout_target_role: '',
@@ -440,6 +457,7 @@ const defaultTipPayrollSettings = (): TipPayrollSettingsData => ({
   credit_card_fee_percent: '',
     role_tip_rules: defaultTipRoleRules(),
     category_tip_profiles: [],
+    weekday_tipout_overrides: {},
   notes: '',
 })
 
@@ -513,6 +531,7 @@ const defaultCloseoutSettings = (): CloseoutSettingsData => ({
   server_require_tabs_closed: true,
   server_require_cash_tips_declared: false,
   server_require_credit_tips_reviewed: true,
+  deduct_credit_card_tips_from_cash_due: true,
   server_require_tipout_entry: false,
   server_require_manager_approval: true,
   server_checkout_report_delivery: 'print',
@@ -1021,6 +1040,7 @@ const normalizeCloseoutSettings = (value: unknown): CloseoutSettingsData => {
     server_require_tabs_closed: typeof value.server_require_tabs_closed === 'boolean' ? value.server_require_tabs_closed : fallback.server_require_tabs_closed,
     server_require_cash_tips_declared: false,
     server_require_credit_tips_reviewed: typeof value.server_require_credit_tips_reviewed === 'boolean' ? value.server_require_credit_tips_reviewed : fallback.server_require_credit_tips_reviewed,
+    deduct_credit_card_tips_from_cash_due: typeof value.deduct_credit_card_tips_from_cash_due === 'boolean' ? value.deduct_credit_card_tips_from_cash_due : fallback.deduct_credit_card_tips_from_cash_due,
     server_require_tipout_entry: typeof value.server_require_tipout_entry === 'boolean' ? value.server_require_tipout_entry : fallback.server_require_tipout_entry,
     server_require_manager_approval: typeof value.server_require_manager_approval === 'boolean' ? value.server_require_manager_approval : fallback.server_require_manager_approval,
     server_checkout_report_delivery: asEnum(value.server_checkout_report_delivery, SERVER_REPORT_DELIVERY, fallback.server_checkout_report_delivery),
@@ -1104,6 +1124,27 @@ const normalizeJobCodes = (value: unknown): JobCodeData[] => {
   return normalized.length > 0 ? normalized : defaultJobCodes()
 }
 
+const normalizeHeadcountPolicy = (value: unknown): TipRoleRuleData['tipouts'][number]['headcount'] => {
+  if (!isRecord(value) || !asString(value.driver_role) || !Array.isArray(value.tiers)) return null
+  return {
+    driver_role: slugRoleCode(value.driver_role),
+    tiers: value.tiers.filter(isRecord).map(tier => ({
+      min_count: Math.max(0, Number(tier.min_count) || 0),
+      max_count: tier.max_count == null || tier.max_count === '' ? null : Math.max(0, Number(tier.max_count) || 0),
+      allocations: (Array.isArray(tier.allocations) ? tier.allocations.filter(isRecord) : []).flatMap(allocation => {
+        const unallocated = allocation.unallocated === true
+        const targetRole = asString(allocation.target_role)
+        if (!unallocated && !targetRole) return []
+        return [{
+          target_role: unallocated ? '' : slugRoleCode(targetRole),
+          unallocated,
+          percent: asStringNumber(allocation.percent),
+        }]
+      }),
+    })),
+  }
+}
+
 const normalizeTipRoleRules = (value: unknown, jobCodes: JobCodeData[] = defaultJobCodes()): TipRoleRuleData[] => {
   const fallback = defaultTipRoleRules(jobCodes)
   const rows = Array.isArray(value) ? value.filter(isRecord) : []
@@ -1118,17 +1159,24 @@ const normalizeTipRoleRules = (value: unknown, jobCodes: JobCodeData[] = default
       pool_points: asStringNumber(row.pool_points),
       pool_contribution_percent: row.pool_contribution_percent == null ? '100' : asStringNumber(row.pool_contribution_percent),
       pool_share_percent: asStringNumber(row.pool_share_percent),
-      tipout_split_basis: row.tipout_split_basis === 'even' ? 'even' : 'hours',
+      tipout_split_basis: row.tipout_split_basis === 'hours' || row.tipout_split_basis === 'weights' ? row.tipout_split_basis : 'even',
+      tipout_split_weights: (Array.isArray(row.tipout_split_weights) ? row.tipout_split_weights.filter(isRecord) : []).flatMap(item => {
+        const staffId = asString(item.staff_id)
+        const weight = asStringNumber(item.weight)
+        return staffId && Number(weight) > 0 ? [{ staff_id: staffId, weight }] : []
+      }),
       tipouts: Array.isArray(row.tipouts)
         ? row.tipouts.filter(isRecord).flatMap(item => {
             const target = asString(item.target_role)
-            if (!target) return []
+            const headcount = normalizeHeadcountPolicy(item.headcount)
+            if (!target && !headcount) return []
             return [{
-              target_role: slugRoleCode(target),
+              target_role: target ? slugRoleCode(target) : '',
               percent: asStringNumber(item.percent),
               basis: item.basis === 'sales' ? 'sales' : 'tips',
               sales_category: asString(item.sales_category),
               basis_scope: item.basis_scope === 'restaurant' ? 'restaurant' : 'own',
+              headcount,
             }]
           })
         : [],
@@ -1172,6 +1220,24 @@ const normalizeCategoryTipProfiles = (value: unknown, jobCodes: JobCodeData[]): 
   })
 }
 
+const TIPOUT_WEEKDAYS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])
+
+const normalizeWeekdayTipoutOverrides = (value: unknown, jobCodes: JobCodeData[]): TipPayrollSettingsData['weekday_tipout_overrides'] => {
+  if (!isRecord(value)) return {}
+  const normalized: TipPayrollSettingsData['weekday_tipout_overrides'] = {}
+  Object.entries(value).forEach(([weekday, raw]) => {
+    if (!TIPOUT_WEEKDAYS.has(weekday) || !isRecord(raw)) return
+    const day = weekday as keyof TipPayrollSettingsData['weekday_tipout_overrides']
+    if (raw.mode === 'disabled') normalized[day] = { mode: 'disabled' }
+    if (raw.mode === 'custom') normalized[day] = {
+      mode: 'custom',
+      role_tip_rules: normalizeTipRoleRules(raw.role_tip_rules, jobCodes),
+      category_tip_profiles: normalizeCategoryTipProfiles(raw.category_tip_profiles, jobCodes),
+    }
+  })
+  return normalized
+}
+
 const normalizeTipPayrollSettings = (value: unknown, jobCodes: JobCodeData[] = defaultJobCodes()): TipPayrollSettingsData => {
   const fallback = defaultTipPayrollSettings()
   if (!isRecord(value)) {
@@ -1198,6 +1264,7 @@ const normalizeTipPayrollSettings = (value: unknown, jobCodes: JobCodeData[] = d
     credit_card_fee_percent: asStringNumber(value.credit_card_fee_percent),
     role_tip_rules: normalizeTipRoleRules(value.role_tip_rules, jobCodes),
     category_tip_profiles: normalizeCategoryTipProfiles(value.category_tip_profiles, jobCodes),
+    weekday_tipout_overrides: normalizeWeekdayTipoutOverrides(value.weekday_tipout_overrides, jobCodes),
     notes: asString(value.notes),
   }
 }
@@ -1300,37 +1367,19 @@ const checkWorkflowSettingsToPayload = (data: OnboardingData) => {
 
 const tipPayrollToPayload = (data: OnboardingData) => {
   const settings = normalizeTipPayrollSettings(data.tip_payroll_settings, data.job_codes)
-  const roleRulesPayload = (rules: TipRoleRuleData[]) => rules.map(rule => ({
-    ...rule,
-    pool_points: rule.pool_points === '' ? null : Number(rule.pool_points),
-    pool_contribution_percent: rule.pool_contribution_percent === '' ? null : Number(rule.pool_contribution_percent),
-    pool_share_percent: rule.pool_share_percent === '' ? null : Number(rule.pool_share_percent),
-    tipout_split_basis: rule.tipout_split_basis === 'even' ? 'even' : 'hours',
-    tipouts: (rule.tipouts || [])
-      .filter(item => item.target_role && item.percent !== '' && Number(item.percent) > 0)
-      .map(item => ({
-        target_role: item.target_role,
-        percent: Number(item.percent),
-        basis: item.basis === 'sales' ? 'sales' : 'tips',
-        sales_category: item.sales_category || null,
-        basis_scope: item.basis_scope === 'restaurant' ? 'restaurant' : 'own',
-      })),
-    tipout_percent: rule.tipout_percent === '' ? null : Number(rule.tipout_percent),
-    tipout_target_role: rule.tipout_target_role || null,
-    notes: rule.notes || null,
-  }))
   return {
     ...settings,
     payroll_period_anchor_date: settings.payroll_period_anchor_date || null,
     payroll_period_start_weekday: Number(settings.payroll_period_start_weekday),
     payroll_semimonthly_cutoff_day: Number(settings.payroll_semimonthly_cutoff_day),
     credit_card_fee_percent: settings.credit_card_fee_percent === '' ? null : Number(settings.credit_card_fee_percent),
-    role_tip_rules: roleRulesPayload(settings.role_tip_rules),
+    role_tip_rules: serializeTipRoleRules(settings.role_tip_rules),
     category_tip_profiles: settings.category_tip_profiles.map(profile => ({
       ...profile,
-      role_tip_rules: roleRulesPayload(profile.role_tip_rules),
-      item_overrides: profile.item_overrides.map(override => ({ ...override, role_tip_rules: roleRulesPayload(override.role_tip_rules) })),
+      role_tip_rules: serializeTipRoleRules(profile.role_tip_rules),
+      item_overrides: profile.item_overrides.map(override => ({ ...override, role_tip_rules: serializeTipRoleRules(override.role_tip_rules) })),
     })),
+    weekday_tipout_overrides: serializeWeekdayTipoutOverrides(settings.weekday_tipout_overrides),
   }
 }
 

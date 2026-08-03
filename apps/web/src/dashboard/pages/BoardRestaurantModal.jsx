@@ -10,6 +10,8 @@ const initialRateForm = {
   ratePercent: (DEFAULT_RATE_PLAN.card_rate * 100).toFixed(2),
   pricing_mode: DEFAULT_RATE_PLAN.pricing_mode,
   dual_pricing_enabled: true,
+  listed_price_basis: DEFAULT_RATE_PLAN.listed_price_basis,
+  display_order: DEFAULT_RATE_PLAN.display_order,
   applies_to: [...DEFAULT_RATE_PLAN.applies_to],
   basis: DEFAULT_RATE_PLAN.basis,
 }
@@ -18,6 +20,8 @@ const rateFormToPlan = (form) => ({
   card_rate: Math.max(0, Number(form.ratePercent) || 0) / 100,
   pricing_mode: form.pricing_mode,
   dual_pricing_enabled: form.dual_pricing_enabled,
+  listed_price_basis: form.listed_price_basis,
+  display_order: form.display_order,
   applies_to: form.applies_to,
   basis: form.basis,
 })
@@ -87,7 +91,7 @@ function RatePlanFields({ form, setForm }) {
           />
         </label>
         <label className="block">
-          <FieldLabel>Basis</FieldLabel>
+          <FieldLabel>Adjustment basis</FieldLabel>
           <select
             value={form.basis}
             onChange={(event) => setForm((prev) => ({ ...prev, basis: event.target.value }))}
@@ -97,13 +101,51 @@ function RatePlanFields({ form, setForm }) {
             <option value="subtotal">Subtotal only</option>
           </select>
         </label>
+        <label className="block">
+          <FieldLabel>Listed prices</FieldLabel>
+          <select
+            value={form.listed_price_basis}
+            disabled={form.pricing_mode !== 'dual_pricing_posted_electronic'}
+            onChange={(event) => setForm((prev) => ({
+              ...prev,
+              listed_price_basis: event.target.value,
+              display_order: `${event.target.value}_first`,
+            }))}
+            className="mt-1 rounded-xl border border-dash-border bg-transparent px-3 py-2 text-sm text-dash-cream outline-none disabled:opacity-50"
+          >
+            <option value="cash">Cash</option>
+            <option value="electronic">Electronic</option>
+          </select>
+        </label>
+        <label className="block">
+          <FieldLabel>Show first</FieldLabel>
+          <select
+            value={form.display_order}
+            onChange={(event) => setForm((prev) => ({ ...prev, display_order: event.target.value }))}
+            className="mt-1 rounded-xl border border-dash-border bg-transparent px-3 py-2 text-sm text-dash-cream outline-none"
+          >
+            <option value="cash_first">Cash</option>
+            <option value="electronic_first">Electronic</option>
+          </select>
+        </label>
       </div>
       <div className="flex flex-wrap gap-2">
         {PRICING_MODES.map((mode) => (
           <PillButton
             key={mode.value}
             isActive={form.pricing_mode === mode.value}
-            onClick={() => setForm((prev) => ({ ...prev, pricing_mode: mode.value }))}
+            onClick={() => setForm((prev) => {
+              const listed = mode.value === 'dual_pricing_posted_electronic'
+                ? prev.listed_price_basis
+                : ['credit_surcharge', 'none'].includes(mode.value) ? 'cash' : 'electronic'
+              const followsListedBasis = prev.display_order === `${prev.listed_price_basis}_first`
+              return {
+                ...prev,
+                pricing_mode: mode.value,
+                listed_price_basis: listed,
+                display_order: followsListedBasis ? `${listed}_first` : prev.display_order,
+              }
+            })}
           >
             {mode.label}
           </PillButton>

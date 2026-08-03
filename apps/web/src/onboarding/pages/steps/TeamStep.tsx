@@ -3,6 +3,7 @@ import { supabase } from '../../../shared/lib/supabase'
 import { API_CONFIG } from '../../../shared/api/config'
 import { fetchPosApi } from '../../../shared/api/posClient'
 import type { JobCodeData, RolePermissionData, UseOnboardingReturn } from '../../hooks/useOnboarding'
+import { cashDrawerRoleSummary } from '../../../dashboard/utils/cashDrawerPermissions'
 
 interface TeamStepProps {
   onboarding: UseOnboardingReturn
@@ -96,6 +97,10 @@ export function TeamStep({ onboarding }: TeamStepProps) {
   }
 
   const selectedJobCode = activeJobCodes.find(code => code.code === role)
+  const selectedRoleKey = roleCode(selectedJobCode?.code || selectedJobCode?.label || role)
+  const selectedRolePermission = data.role_permissions.find(row => row.role_key === selectedRoleKey)
+    || (selectedJobCode ? defaultPermissionForRole(selectedJobCode) : {})
+  const selectedRoleCashSummary = cashDrawerRoleSummary(selectedRolePermission, data.closeout_settings)
 
   const updateRoleDraft = (index: number, patch: Partial<JobCodeData>) => {
     setRoleDrafts(current => current.map((row, currentIndex) => currentIndex === index ? { ...row, ...patch } : row))
@@ -185,7 +190,8 @@ export function TeamStep({ onboarding }: TeamStepProps) {
               pool_points: code.is_tipped ? '1' : '',
               pool_contribution_percent: '100',
               pool_share_percent: '',
-              tipout_split_basis: 'hours',
+              tipout_split_basis: 'even',
+              tipout_split_weights: [],
               tipouts: [],
               tipout_percent: '',
               tipout_target_role: '',
@@ -547,6 +553,15 @@ export function TeamStep({ onboarding }: TeamStepProps) {
           <p className="text-xs text-amber-400/70">
             Employees can sign in with email + PIN or employee ID + PIN after selecting the restaurant.
           </p>
+
+          <div className="flex flex-wrap gap-2 text-xs text-[rgb(var(--text-tertiary))]">
+            <span className="font-semibold text-[rgb(var(--text-secondary))]">Inherited cash access:</span>
+            {selectedRoleCashSummary.map(item => (
+              <span key={item.key} className="rounded-full border border-[rgba(255,255,255,0.12)] px-2 py-0.5">
+                {item.label}: {item.value}
+              </span>
+            ))}
+          </div>
 
           <div className="flex gap-2">
             <button

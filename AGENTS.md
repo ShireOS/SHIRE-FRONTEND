@@ -90,6 +90,10 @@ list must stay in sync.
   compatibility proxy only.
 - Tip reads use `payroll.view`; settings/payout edits use
   `payroll.adjust_tips`; run create/finalize/void uses `payroll.run`.
+- Receiving-role tipouts default to an even split. Optional Monday-Sunday
+  exceptions are saved in `weekday_tipout_overrides`: missing days inherit the
+  restaurant default, while a day may disable tipouts or replace only its
+  tipout rules. Weekday exceptions with pooling require a daily pool reset.
 - Unallocated tip-out exceptions render only while open. Listing uses
   `payroll.view`; assigning a worked recipient or keeping the money with its
   source requires `payroll.adjust_tips`, a manager reason, and a POS audit row.
@@ -160,9 +164,32 @@ surface independently, while every mutation is also guarded by the ML backend.
   active assignment rows for restaurants they can already access directly or
   through an assigned group (migration
   `20260718140717_reseller_employee_device_assignment_visibility.sql`).
+- Operational pricing uses one versioned `pos_restaurant_configs.pricing_policy`
+  record per store. Setup and enterprise Rates both read/write it through the ML
+  backend under existing `settings.edit`/reseller authorization; the browser must
+  not write `restaurant_rate_plans` as a parallel current truth. Listed-price
+  basis controls payment math, while display order controls only POS/receipt order.
 - End-of-day report delivery is configured with `eod_email_on_close` and
   `eod_email_formats` (`pdf` / `xlsx`). Reopening a closed business day requires
   the POS role permission `can_reopen_business_day` and records the acting manager.
+- Cash accountability remains POS-owned: paid-in, paid-out, cash-drop, drawer
+  delivery, performer, approver, review, and reversal mutations are audited by
+  the POS backend. Back Office exposes the resulting read-only daily/Z/PDF/XLSX/
+  email reporting under the existing `reports.view` permission; it never writes
+  cash ledger rows directly.
+- Server checkout receipt templates are configured only from Back Office's
+  Server Reports panel. `reports.view` authorizes reading and production-rendered
+  previews, while `settings.edit` authorizes the restaurant-wide template update
+  through the POS backend. Native POS remains view/print only, and the required
+  cash-settlement lines and their existing math are not configurable.
+- Cash drawer access is role-first: No Sale requires `can_no_sale` plus
+  `can_open_cash_drawer`; movements require `can_paid_in_out` plus
+  `can_open_cash_drawer`. The restaurant-wide
+  `require_manager_for_drawer_open` and role-level
+  `require_manager_pin_for_approval` each force manager approval. Paid Out is
+  always manager-approved, while Cash Drop also respects its configured
+  threshold. Employee add/edit surfaces preview inherited behavior; the POS
+  backend remains authoritative and posts movements only after drawer delivery.
 - Back-office Close Day uses the canonical POS close operation. Open checks are
   never overrideable; clocked-in employees require an explicit confirmation and
   retain the manager adjustment audit. Owner access uses

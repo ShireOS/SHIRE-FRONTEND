@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader } from '../shared/Card'
 import { PERMISSION_TOGGLES, fetchRolePermissions, updateRolePermission } from '../../data/permissions'
 import { PERMISSION_KEYS, mergePermissions } from '../../../shared/permissions'
 import PermissionEditor from './PermissionEditor'
+import { cashDrawerRoleSummary } from '../../utils/cashDrawerPermissions'
 
 const roleLabel = (key) =>
   String(key || '')
@@ -30,7 +31,7 @@ function Toggle({ active, disabled, onClick, children }) {
   )
 }
 
-function RoleCard({ role, busy, onPatch }) {
+function RoleCard({ role, busy, onPatch, cashDrawerPolicy }) {
   const [backOfficeOpen, setBackOfficeOpen] = useState(false)
   const backOffice = role.back_office_permissions || {}
   const grantedCount = PERMISSION_KEYS.filter((key) => backOffice[key]).length
@@ -97,6 +98,14 @@ function RoleCard({ role, busy, onPatch }) {
         </Toggle>
       </div>
 
+      <div className="mt-3 flex flex-wrap gap-1.5 text-[10px] text-dash-tertiary">
+        {cashDrawerRoleSummary(role, cashDrawerPolicy || {}).map((item) => (
+          <span key={item.key} className="rounded-full border border-dash-border px-2 py-0.5">
+            {item.label}: {item.value}
+          </span>
+        ))}
+      </div>
+
       {/* Default back-office (dashboard) permissions for members clocked in under
           this role. Saved verbatim as pos_role_permissions.back_office_permissions;
           per-member overrides layer on top (see TeamPage → Back-office access). */}
@@ -135,7 +144,7 @@ function RoleCard({ role, busy, onPatch }) {
   )
 }
 
-export default function RolePermissionsPanel({ restaurantId }) {
+export default function RolePermissionsPanel({ restaurantId, cashDrawerPolicy, onRolesChange }) {
   const [roles, setRoles] = useState([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -144,14 +153,16 @@ export default function RolePermissionsPanel({ restaurantId }) {
   const load = useCallback(async () => {
     if (!restaurantId) return
     try {
-      setRoles(await fetchRolePermissions(restaurantId))
+      const rows = await fetchRolePermissions(restaurantId)
+      setRoles(rows)
+      onRolesChange?.(rows)
       setError(null)
     } catch (err) {
       setError(err.message || 'Could not load role permissions')
     } finally {
       setLoading(false)
     }
-  }, [restaurantId])
+  }, [onRolesChange, restaurantId])
 
   useEffect(() => {
     setLoading(true)
@@ -161,16 +172,20 @@ export default function RolePermissionsPanel({ restaurantId }) {
   // Optimistic: apply locally, persist, roll back on error.
   const patch = useCallback(async (role, changes) => {
     setBusy(true)
-    setRoles((prev) => prev.map((r) => (r.id === role.id ? { ...r, ...changes } : r)))
+    const previous = roles
+    const next = roles.map((r) => (r.id === role.id ? { ...r, ...changes } : r))
+    setRoles(next)
+    onRolesChange?.(next)
     try {
       await updateRolePermission(role.id, changes)
     } catch (err) {
       setError(err.message || 'Change failed')
-      await load()
+      setRoles(previous)
+      onRolesChange?.(previous)
     } finally {
       setBusy(false)
     }
-  }, [load])
+  }, [onRolesChange, roles])
 
   const sorted = useMemo(() => [...roles].sort((a, b) => a.role_key.localeCompare(b.role_key)), [roles])
 
@@ -194,7 +209,7 @@ export default function RolePermissionsPanel({ restaurantId }) {
         ) : sorted.length === 0 ? (
           <p className="text-xs text-dash-tertiary">No POS roles configured for this store yet.</p>
         ) : (
-          sorted.map((role) => <RoleCard key={role.id} role={role} busy={busy} onPatch={patch} />)
+          sorted.map((role) => <RoleCard key={role.id} role={role} busy={busy} onPatch={patch} cashDrawerPolicy={cashDrawerPolicy} />)
         )}
       </CardContent>
     </Card>

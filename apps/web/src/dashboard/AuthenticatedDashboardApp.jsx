@@ -5127,7 +5127,7 @@ export function RestaurantWorkspace({
             <LegacyAnalyticsDashboard restaurant={restaurant} />
           </>
         )}
-        {activeTab === 'reports' && <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurant?.name} />}
+        {activeTab === 'reports' && <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurant?.name} canConfigureServerReceipt={backOfficeAccess.can('settings.edit')} />}
         {activeTab === 'close-day' && <CloseDayPage restaurantId={restaurantId} restaurantName={restaurant?.name} />}
         {activeTab === 'ui' && (
           <ResellerUiEditor

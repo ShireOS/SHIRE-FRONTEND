@@ -19,6 +19,8 @@ import {
 import { PublishControls } from '../shared/components/PublishControls'
 import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
 import { scheduleChange } from '../shared/api/scheduledChanges'
+import { serializeTipRoleRules, serializeWeekdayTipoutOverrides } from '../shared/tips/tipPayrollPolicy'
+import { cashDrawerRoleSummary } from './utils/cashDrawerPermissions'
 
 const SETUP_TABS = [
   { id: 'basics', label: 'Basics' },
@@ -387,6 +389,7 @@ const PRICING_TENDER_OPTIONS = [
   { value: 'terminal', label: 'Terminal' },
   { value: 'gift_card', label: 'Gift card' },
   { value: 'standalone', label: 'Standalone tender' },
+  { value: 'external', label: 'External card terminal' },
 ]
 
 const DEFAULT_PRICING_POLICY = {
@@ -394,7 +397,9 @@ const DEFAULT_PRICING_POLICY = {
   mode: 'dual_pricing_posted_electronic',
   rate: 0.035,
   basis: 'subtotal_plus_tax',
-  applies_to: ['card', 'credit', 'debit', 'terminal', 'gift_card', 'standalone'],
+  listed_price_basis: 'electronic',
+  display_order: 'electronic_first',
+  applies_to: ['card', 'credit', 'debit', 'terminal', 'gift_card', 'standalone', 'external'],
   jurisdiction_state: 'SC',
   label: 'Dual pricing',
   disclosure: 'Cash and electronic prices are shown before payment. The final receipt reflects the selected payment method.',
@@ -421,12 +426,20 @@ const defaultPricingDisclosure = (mode) => DEFAULT_PRICING_DISCLOSURES[mode] ?? 
 const isDefaultPricingCopy = (value, defaults) => Object.values(defaults).includes(value)
 
 const normalizePricingPolicy = (raw = {}) => {
-  const merged = { ...DEFAULT_PRICING_POLICY, ...(raw && typeof raw === 'object' ? raw : {}) }
+  const source = raw && typeof raw === 'object' ? raw : {}
+  const merged = { ...DEFAULT_PRICING_POLICY, ...source }
   const rate = Number(merged.rate)
+  const listedPriceBasis = ['cash', 'electronic'].includes(source.listed_price_basis)
+    ? source.listed_price_basis
+    : ['credit_surcharge', 'service_fee_all', 'none'].includes(merged.mode) ? 'cash' : 'electronic'
   return {
     ...merged,
     enabled: merged.enabled !== false,
     rate: Number.isFinite(rate) ? Math.max(0, rate) : DEFAULT_PRICING_POLICY.rate,
+    listed_price_basis: listedPriceBasis,
+    display_order: ['cash_first', 'electronic_first'].includes(source.display_order)
+      ? source.display_order
+      : `${listedPriceBasis}_first`,
     applies_to: Array.isArray(merged.applies_to) && merged.applies_to.length > 0 ? merged.applies_to : DEFAULT_PRICING_POLICY.applies_to,
     jurisdiction_state: String(merged.jurisdiction_state || 'SC').toUpperCase().slice(0, 2),
     label: merged.label || defaultPricingLabel(merged.mode),
@@ -441,10 +454,13 @@ const pricingPolicyPayload = (policy) => {
     mode: policy.mode || DEFAULT_PRICING_POLICY.mode,
     rate: Number.isFinite(rate) ? Math.max(0, rate) : DEFAULT_PRICING_POLICY.rate,
     basis: policy.basis || DEFAULT_PRICING_POLICY.basis,
+    listed_price_basis: policy.listed_price_basis || DEFAULT_PRICING_POLICY.listed_price_basis,
+    display_order: policy.display_order || `${policy.listed_price_basis || DEFAULT_PRICING_POLICY.listed_price_basis}_first`,
     applies_to: Array.isArray(policy.applies_to) ? policy.applies_to : DEFAULT_PRICING_POLICY.applies_to,
     jurisdiction_state: String(policy.jurisdiction_state || 'SC').toUpperCase().slice(0, 2),
     label: policy.label || defaultPricingLabel(policy.mode),
     disclosure: policy.disclosure || defaultPricingDisclosure(policy.mode),
+    expected_version: Number(policy.version) || 0,
   }
 }
 
@@ -1276,6 +1292,7 @@ function defaultCloseoutSettings() {
     server_require_tabs_closed: true,
     server_require_cash_tips_declared: false,
     server_require_credit_tips_reviewed: true,
+    deduct_credit_card_tips_from_cash_due: true,
     server_require_tipout_entry: false,
     server_require_manager_approval: true,
     server_checkout_report_delivery: 'print',
@@ -1387,9 +1404,9 @@ export function defaultTipPayrollSettings(jobCodes = []) {
       // Percent of this role's post-tipout tips put into the pool (rest kept).
       pool_contribution_percent: '100',
       // How a receiving role divides tipout dollars among its own people:
-      // 'hours' = proportional to hours worked (a double out-earns a single),
-      // 'even' = equal split. Matches the backend engine default of 'hours'.
-      tipout_split_basis: 'hours',
+      // 'even' is the safe default; hours and custom weights are explicit.
+      tipout_split_basis: 'even',
+      tipout_split_weights: [],
       // This role's declared cut of the pool in role_shares mode.
       pool_share_percent: '',
       tipouts: [],
@@ -1400,6 +1417,7 @@ export function defaultTipPayrollSettings(jobCodes = []) {
     // Optional menu-scoped policies. Category rules replace the default
     // tipouts for matching items; item overrides replace their category rule.
     category_tip_profiles: [],
+    weekday_tipout_overrides: {},
     notes: '',
   }
 }
@@ -1420,6 +1438,31 @@ export function normalizeJobCodes(rows) {
     .filter(row => row.label && row.is_active)
 }
 
+function normalizeHeadcountPolicy(value) {
+  if (!value || typeof value !== 'object' || !value.driver_role || !Array.isArray(value.tiers)) return null
+  return {
+    driver_role: slugRoleCode(value.driver_role),
+    tiers: value.tiers.flatMap(tier => {
+      if (!tier || typeof tier !== 'object' || !Array.isArray(tier.allocations)) return []
+      return [{
+        min_count: Math.max(0, Number(tier.min_count) || 0),
+        max_count: tier.max_count == null || tier.max_count === '' ? null : Math.max(0, Number(tier.max_count) || 0),
+        allocations: tier.allocations.flatMap(allocation => {
+          if (!allocation || typeof allocation !== 'object') return []
+          const unallocated = allocation.unallocated === true
+          const targetRole = allocation.target_role ? slugRoleCode(allocation.target_role) : ''
+          if (!unallocated && !targetRole) return []
+          return [{
+            target_role: unallocated ? '' : targetRole,
+            unallocated,
+            percent: allocation.percent == null ? '' : sanitizeNumber(allocation.percent),
+          }]
+        }),
+      }]
+    }),
+  }
+}
+
 function normalizeTipRoleRules(rows, jobCodes) {
   const fallback = defaultTipPayrollSettings(jobCodes).role_tip_rules
   const byRole = new Map()
@@ -1429,9 +1472,9 @@ function normalizeTipRoleRules(rows, jobCodes) {
     // the role's tips. A legacy single tipout_percent/target pair migrates
     // into the list so the editor only has to render one shape.
     let tipouts = (Array.isArray(row?.tipouts) ? row.tipouts : [])
-      .filter(item => item && item.target_role)
+      .filter(item => item && (item.target_role || item.headcount))
       .map(item => ({
-        target_role: slugRoleCode(item.target_role),
+        target_role: item.target_role ? slugRoleCode(item.target_role) : '',
         percent: item.percent == null ? '' : sanitizeNumber(item.percent),
         basis: item.basis === 'sales' ? 'sales' : 'tips',
         // Narrow the basis to one menu category ('' = all). Applies to both
@@ -1439,6 +1482,7 @@ function normalizeTipRoleRules(rows, jobCodes) {
         sales_category: item.sales_category ? String(item.sales_category).trim() : '',
         // 'own' = this waiter's numbers, 'restaurant' = house-wide totals.
         basis_scope: item.basis_scope === 'restaurant' ? 'restaurant' : 'own',
+        headcount: normalizeHeadcountPolicy(item.headcount),
       }))
     if (!tipouts.length && row?.tipout_percent != null && row?.tipout_target_role) {
       tipouts = [{
@@ -1456,7 +1500,12 @@ function normalizeTipRoleRules(rows, jobCodes) {
       receives_from_pool: row?.receives_from_pool !== false,
       pool_points: row?.pool_points == null ? '' : sanitizeNumber(row.pool_points),
       pool_contribution_percent: row?.pool_contribution_percent == null ? '100' : sanitizeNumber(row.pool_contribution_percent),
-      tipout_split_basis: row?.tipout_split_basis === 'even' ? 'even' : 'hours',
+      tipout_split_basis: ['hours', 'weights'].includes(row?.tipout_split_basis) ? row.tipout_split_basis : 'even',
+      tipout_split_weights: (Array.isArray(row?.tipout_split_weights) ? row.tipout_split_weights : []).flatMap(item => {
+        const staffId = String(item?.staff_id || '').trim()
+        const weight = sanitizeNumber(item?.weight)
+        return staffId && Number(weight) > 0 ? [{ staff_id: staffId, weight }] : []
+      }),
       pool_share_percent: row?.pool_share_percent == null ? '' : sanitizeNumber(row.pool_share_percent),
       tipouts,
       tipout_percent: '',
@@ -1503,6 +1552,22 @@ function normalizeScopedTipProfiles(rows, jobCodes) {
   })
 }
 
+const TIPOUT_WEEKDAYS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])
+
+function normalizeWeekdayTipoutOverrides(value, jobCodes) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value).flatMap(([weekday, override]) => {
+    if (!TIPOUT_WEEKDAYS.has(weekday) || !override || typeof override !== 'object') return []
+    if (override.mode === 'disabled') return [[weekday, { mode: 'disabled' }]]
+    if (override.mode !== 'custom') return []
+    return [[weekday, {
+      mode: 'custom',
+      role_tip_rules: normalizeTipRoleRules(override.role_tip_rules, jobCodes),
+      category_tip_profiles: normalizeScopedTipProfiles(override.category_tip_profiles, jobCodes),
+    }]]
+  }))
+}
+
 export function normalizeTipPayrollSettings(row, jobCodes = []) {
   const fallback = defaultTipPayrollSettings(jobCodes)
   const source = row && typeof row === 'object' ? row : {}
@@ -1523,6 +1588,7 @@ export function normalizeTipPayrollSettings(row, jobCodes = []) {
     credit_card_fee_percent: source.credit_card_fee_percent == null ? '' : sanitizeNumber(source.credit_card_fee_percent),
     role_tip_rules: normalizeTipRoleRules(source.role_tip_rules, jobCodes),
     category_tip_profiles: normalizeScopedTipProfiles(source.category_tip_profiles, jobCodes),
+    weekday_tipout_overrides: normalizeWeekdayTipoutOverrides(source.weekday_tipout_overrides, jobCodes),
     notes: source.notes || '',
   }
 }
@@ -1802,40 +1868,22 @@ function checkWorkflowSettingsPayload(checkWorkflowSettings) {
 
 export function tipPayrollPayload(settings, jobCodes) {
   const normalized = normalizeTipPayrollSettings(settings, jobCodes)
-  const roleRulesPayload = (rules) => rules.map(rule => ({
-    ...rule,
-    pool_points: rule.pool_points === '' ? null : Number(rule.pool_points),
-    pool_contribution_percent: rule.pool_contribution_percent === '' ? null : Number(rule.pool_contribution_percent),
-    tipout_split_basis: rule.tipout_split_basis === 'even' ? 'even' : 'hours',
-    pool_share_percent: rule.pool_share_percent === '' || rule.pool_share_percent == null ? null : Number(rule.pool_share_percent),
-    tipouts: (rule.tipouts || [])
-      .filter(item => item.target_role && item.percent !== '' && Number(item.percent) > 0)
-      .map(item => ({
-        target_role: item.target_role,
-        percent: Number(item.percent),
-        basis: item.basis === 'sales' ? 'sales' : 'tips',
-        sales_category: item.sales_category || null,
-        basis_scope: item.basis_scope === 'restaurant' ? 'restaurant' : 'own',
-      })),
-    tipout_percent: rule.tipout_percent === '' ? null : Number(rule.tipout_percent),
-    tipout_target_role: rule.tipout_target_role || null,
-    notes: rule.notes || null,
-  }))
   return {
     ...normalized,
     payroll_period_anchor_date: normalized.payroll_period_anchor_date || null,
     payroll_period_start_weekday: Number(normalized.payroll_period_start_weekday),
     payroll_semimonthly_cutoff_day: Number(normalized.payroll_semimonthly_cutoff_day),
     credit_card_fee_percent: normalized.credit_card_fee_percent === '' ? null : Number(normalized.credit_card_fee_percent),
-    role_tip_rules: roleRulesPayload(normalized.role_tip_rules),
+    role_tip_rules: serializeTipRoleRules(normalized.role_tip_rules),
     category_tip_profiles: normalized.category_tip_profiles.map(profile => ({
       ...profile,
-      role_tip_rules: roleRulesPayload(profile.role_tip_rules),
+      role_tip_rules: serializeTipRoleRules(profile.role_tip_rules),
       item_overrides: profile.item_overrides.map(override => ({
         ...override,
-        role_tip_rules: roleRulesPayload(override.role_tip_rules),
+        role_tip_rules: serializeTipRoleRules(override.role_tip_rules),
       })),
     })),
+    weekday_tipout_overrides: serializeWeekdayTipoutOverrides(normalized.weekday_tipout_overrides),
   }
 }
 
@@ -3013,6 +3061,11 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       if (Object.prototype.hasOwnProperty.call(patch, 'mode')) {
         if (!prev.label || isDefaultPricingCopy(prev.label, DEFAULT_PRICING_LABELS)) normalizedPatch.label = defaultPricingLabel(patch.mode)
         if (!prev.disclosure || isDefaultPricingCopy(prev.disclosure, DEFAULT_PRICING_DISCLOSURES)) normalizedPatch.disclosure = defaultPricingDisclosure(patch.mode)
+        const listed = patch.mode === 'dual_pricing_posted_electronic'
+          ? prev.listed_price_basis
+          : ['credit_surcharge', 'service_fee_all', 'none'].includes(patch.mode) ? 'cash' : 'electronic'
+        normalizedPatch.listed_price_basis = listed
+        if (prev.display_order === `${prev.listed_price_basis}_first`) normalizedPatch.display_order = `${listed}_first`
       }
       const next = normalizePricingPolicy({ ...prev, ...normalizedPatch })
       return next
@@ -3037,7 +3090,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       propagation: SETUP_PROPAGATION.pricing_policy,
       successMessage: 'Saved pricing policy.',
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/pricing-policy', payload),
-      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/pricing-policy', payload),
+      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/pricing-policy', { ...payload, expected_version: undefined }),
       onSourceSaved: (saved) => {
         setPricingPolicy(normalizePricingPolicy(saved))
         queryClient.setQueryData(queryKeys.pricingPolicy(restaurantId), saved)
@@ -3988,9 +4041,28 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   </p>
                 </div>
               </Field>
-              <Field label="Basis">
+              <Field label="Adjustment Basis">
                 <SelectInput value={pricingPolicy.basis} onChange={event => updatePricingPolicy({ basis: event.target.value })}>
                   {PRICING_BASIS_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </SelectInput>
+              </Field>
+              <Field label="Listed Prices">
+                <SelectInput
+                  value={pricingPolicy.listed_price_basis}
+                  disabled={pricingPolicy.mode !== 'dual_pricing_posted_electronic'}
+                  onChange={event => updatePricingPolicy({
+                    listed_price_basis: event.target.value,
+                    display_order: `${event.target.value}_first`,
+                  })}
+                >
+                  <option value="cash">Cash</option>
+                  <option value="electronic">Electronic</option>
+                </SelectInput>
+              </Field>
+              <Field label="Show First">
+                <SelectInput value={pricingPolicy.display_order} onChange={event => updatePricingPolicy({ display_order: event.target.value })}>
+                  <option value="cash_first">Cash</option>
+                  <option value="electronic_first">Electronic</option>
                 </SelectInput>
               </Field>
               <Field label="State">
@@ -4004,6 +4076,10 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                 <TextInput value={pricingPolicy.label} onChange={event => updatePricingPolicy({ label: event.target.value.slice(0, 120) })} placeholder={pricingPolicy.mode === 'cash_discount' ? 'Cash discount' : 'Dual pricing'} />
               </Field>
             </div>
+
+            <p className="mt-3 text-xs leading-5 text-dash-tertiary">
+              Listed prices determine payment math. Show first changes only the order shown on the POS and customer checks.
+            </p>
 
             <div className="mt-5 space-y-3">
               <span className="label-mono">Applies To</span>
@@ -4272,6 +4348,13 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                     </SmallButton>
                   ))}
                 </div>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-dash-tertiary">
+                  {cashDrawerRoleSummary(role, closeoutSettings).map(item => (
+                    <span key={item.key} className="rounded-full border border-white/10 px-2 py-0.5">
+                      {item.label}: {item.value}
+                    </span>
+                  ))}
+                </div>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <TextInput value={role.refund_limit} inputMode="decimal" onChange={event => updateRolePermission(index, { refund_limit: sanitizeNumber(event.target.value) })} placeholder="Refund limit, blank for unlimited" />
                   <TextInput value={role.discount_limit_percent} inputMode="decimal" onChange={event => updateRolePermission(index, { discount_limit_percent: sanitizeNumber(event.target.value) })} placeholder="Discount % limit, blank for unlimited" />
@@ -4303,7 +4386,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   ['require_starting_bank', 'Starting bank required'],
                   ['blind_drawer_close', 'Blind close'],
                   ['allow_paid_in_out', 'Paid in/out'],
-                  ['require_manager_for_drawer_open', 'Manager drawer open'],
+                  ['require_manager_for_drawer_open', 'Always require manager for drawer actions'],
                 ].map(([field, label]) => (
                   <SmallButton key={field} variant={closeoutSettings[field] ? 'primary' : 'secondary'} onClick={() => updateCloseoutSettings({ [field]: !closeoutSettings[field] })}>{label}</SmallButton>
                 ))}
@@ -4320,6 +4403,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   ['server_require_all_checks_closed', 'Checks closed'],
                   ['server_require_tabs_closed', 'Tabs closed'],
                   ['server_require_credit_tips_reviewed', 'Credit tips reviewed'],
+                  ['deduct_credit_card_tips_from_cash_due', 'Deduct card tips from cash due'],
                   ['server_require_tipout_entry', 'Tipout entry'],
                   ['server_require_manager_approval', 'Manager approval'],
                   ['allow_clockout_before_checkout', 'Clockout before checkout'],

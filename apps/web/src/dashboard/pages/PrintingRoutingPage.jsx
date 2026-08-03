@@ -12,12 +12,14 @@ import HardwareChainGuide from '../components/printing/HardwareChainGuide'
 const DEFAULT_CONFIG = {
   receipt_detail: 'clean',
   customer: {
+    size: 'medium',
     header_message: '', footer_message: '', show_server: true, show_table: true,
     show_tab_name: false, show_check_number: true, show_guest_count: true,
     suggested_tips: { enabled: false, percentages: [18, 20, 22], basis: 'subtotal', placement: 'bottom', show_amounts: true },
   },
+  report: { size: 'medium' },
   kitchen: {
-    size: 'standard', print_modifiers: true, print_prices: false,
+    size: 'easy_read', print_modifiers: true, print_prices: false,
     print_seats: true, combine_identical: true, item_name_mode: 'alias',
     modifier_name_mode: 'alias', modifier_color: 'black',
   },
@@ -59,6 +61,9 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const [scope, setScope] = useState('whole')
   const [output, setOutput] = useState('kitchen_ticket')
   const [customerVariant, setCustomerVariant] = useState('open_check')
+  const [selectedTargetId, setSelectedTargetId] = useState('')
+  const [previewCapabilities, setPreviewCapabilities] = useState(null)
+  const [dirtyTargetIds, setDirtyTargetIds] = useState(() => new Set())
   const [preview, setPreview] = useState('Loading preview…')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -93,6 +98,8 @@ export default function PrintingRoutingPage({ restaurantId }) {
             ...clone(DEFAULT_CONFIG.customer), ...(printing?.customer || {}),
             suggested_tips: { ...clone(DEFAULT_CONFIG.customer.suggested_tips), ...(printing?.customer?.suggested_tips || {}) },
           },
+          report: { ...clone(DEFAULT_CONFIG.report), ...(printing?.report || {}) },
+          kitchen: { ...clone(DEFAULT_CONFIG.kitchen), ...(printing?.kitchen || {}) },
         })
         setRouting(routes || { stations: [], targets: [] })
         setCatalog([
@@ -109,6 +116,24 @@ export default function PrintingRoutingPage({ restaurantId }) {
     return () => { current = false }
   }, [restaurantId])
 
+  const eligibleTargets = useMemo(() => (routing.targets || []).filter(target => {
+    if (target.is_active === false || target.target_type !== 'printer') return false
+    const usage = target.usage || 'kitchen'
+    return output === 'kitchen_ticket' ? ['kitchen', 'both'].includes(usage) : ['receipt', 'both'].includes(usage)
+  }), [output, routing.targets])
+
+  useEffect(() => {
+    if (!eligibleTargets.some(target => String(target.id) === selectedTargetId)) {
+      setSelectedTargetId(String(eligibleTargets[0]?.id || ''))
+    }
+  }, [eligibleTargets, selectedTargetId])
+
+  const selectedTarget = eligibleTargets.find(target => String(target.id) === selectedTargetId) || null
+
+  useEffect(() => {
+    setPreviewCapabilities(selectedTarget?.printer_capabilities || null)
+  }, [output, selectedTargetId])
+
   useEffect(() => {
     if (loading || section === 'routing') return undefined
     const requestId = ++previewRequestRef.current
@@ -118,12 +143,22 @@ export default function PrintingRoutingPage({ restaurantId }) {
       try {
         const result = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config/preview`, {
           method: 'POST',
-          body: JSON.stringify({ output, customer_variant: customerVariant, station_id: scope === 'whole' ? null : scope, config }),
+          body: JSON.stringify({
+            output,
+            customer_variant: customerVariant,
+            station_id: scope === 'whole' ? null : scope,
+            target_id: selectedTargetId || null,
+            paper_width_mm: selectedTarget?.config?.paper_width_mm || null,
+            config,
+          }),
           signal: controller.signal,
           cache: 'no-store',
         })
-        if (result.renderer_version !== 'printing-v3') throw new Error('Receipt renderer is updating. Refresh this page in a moment.')
-        if (requestId === previewRequestRef.current) setPreview(result.preview || 'No preview available')
+        if (result.renderer_version !== 'printing-v4') throw new Error('Receipt renderer is updating. Refresh this page in a moment.')
+        if (requestId === previewRequestRef.current) {
+          setPreview(result.preview || 'No preview available')
+          setPreviewCapabilities(result.printer_capabilities || null)
+        }
       } catch (err) {
         if (err?.name !== 'AbortError' && requestId === previewRequestRef.current) {
           setPreview(err?.status === 404
@@ -136,7 +171,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [config, customerVariant, loading, output, restaurantId, scope, section])
+  }, [config, customerVariant, loading, output, restaurantId, scope, section, selectedTarget, selectedTargetId])
 
   const effectiveKitchen = useMemo(() => ({
     ...config.kitchen,
@@ -168,6 +203,22 @@ export default function PrintingRoutingPage({ restaurantId }) {
       },
     },
   }))
+
+  const patchReport = patch => setConfig(current => ({
+    ...current,
+    report: { ...clone(DEFAULT_CONFIG.report), ...(current.report || {}), ...patch },
+  }))
+
+  const patchTargetPaperWidth = value => {
+    const paperWidth = Number(value)
+    setRouting(current => ({
+      ...current,
+      targets: (current.targets || []).map(target => String(target.id) === selectedTargetId
+        ? { ...target, config: { ...(target.config || {}), paper_width_mm: paperWidth } }
+        : target),
+    }))
+    setDirtyTargetIds(current => new Set([...current, selectedTargetId]))
+  }
 
   const setTipPercentage = (index, value) => {
     const percentages = [...(config.customer?.suggested_tips?.percentages || [18, 20, 22])]
@@ -204,6 +255,27 @@ export default function PrintingRoutingPage({ restaurantId }) {
     try {
       const saved = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`, { method: 'PUT', body: JSON.stringify(config) })
       setConfig(saved)
+      for (const targetId of dirtyTargetIds) {
+        const target = (routing.targets || []).find(candidate => String(candidate.id) === String(targetId))
+        if (!target) continue
+        await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing/targets/${targetId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            name: target.name,
+            target_type: target.target_type,
+            connection_type: target.connection_type,
+            config: target.config || {},
+            is_active: target.is_active !== false,
+            usage: target.usage || 'kitchen',
+            pos_device_id: target.pos_device_id || null,
+          }),
+        })
+      }
+      if (dirtyTargetIds.size) {
+        const routes = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing`)
+        setRouting(routes || { stations: [], targets: [] })
+        setDirtyTargetIds(new Set())
+      }
       setMessage('Printing configuration saved and active on POS print jobs.')
     } catch (err) {
       setError(err?.message || 'Could not save printing configuration')
@@ -214,6 +286,10 @@ export default function PrintingRoutingPage({ restaurantId }) {
 
   const filtered = catalog.filter(row => `${row.name} ${row.category || ''} ${row.type}`.toLowerCase().includes(search.trim().toLowerCase()))
   const stations = (routing.stations || []).filter(station => station.is_active !== false)
+  const displayedCapabilities = previewCapabilities || selectedTarget?.printer_capabilities || null
+  const paperWidthOptions = displayedCapabilities?.paper_width_options || []
+  const previewTitle = output === 'kitchen_ticket' ? 'Kitchen ticket' : output === 'server_report' ? 'Server report' : 'Customer receipt'
+  const previewSize = output === 'kitchen_ticket' ? effectiveKitchen.size : output === 'server_report' ? config.report?.size : config.customer?.size
 
   return (
     <div className="space-y-5">
@@ -239,7 +315,11 @@ export default function PrintingRoutingPage({ restaurantId }) {
         <div className="space-y-4">
           <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
             <div className="grid gap-4 md:grid-cols-2">
-              <Select label="Output" value={output} onChange={setOutput}><option value="kitchen_ticket">Kitchen ticket</option><option value="customer_receipt">Customer receipt</option></Select>
+              <Select label="Output" value={output} onChange={setOutput}><option value="kitchen_ticket">Kitchen ticket</option><option value="customer_receipt">Customer receipt</option><option value="server_report">Server report</option></Select>
+              <Select label="Printer" value={selectedTargetId} onChange={setSelectedTargetId}>
+                {!eligibleTargets.length && <option value="">No compatible printer configured</option>}
+                {eligibleTargets.map(target => <option key={target.id} value={target.id}>{target.name}</option>)}
+              </Select>
               {output === 'kitchen_ticket' && <Select label="Apply to" value={scope} onChange={setScope}><option value="whole">Whole Kitchen</option>{stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}</Select>}
               {output === 'customer_receipt' && <Select label="Preview state" value={customerVariant} onChange={setCustomerVariant}><option value="open_check">Open check</option><option value="paid_cash">Paid with cash</option><option value="paid_card">Paid with card</option></Select>}
             </div>
@@ -247,6 +327,11 @@ export default function PrintingRoutingPage({ restaurantId }) {
 
           {output === 'customer_receipt' ? (
             <div className="space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+                <h2 className="text-lg font-semibold">Receipt presentation</h2>
+                <p className="mt-1 text-sm text-dash-tertiary">Medium is the readable default. Compact fits more per line; Large increases line height.</p>
+                <div className="mt-4"><Select label="Text size" value={config.customer?.size || 'medium'} onChange={value => patchCustomer({ size: value })}><option value="compact">Compact</option><option value="medium">Medium</option><option value="large">Large</option></Select></div>
+              </div>
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <h2 className="text-lg font-semibold">Customer receipt detail</h2>
                 <p className="mt-1 text-sm text-dash-tertiary">Clean hides $0 items and ordinary free modifiers. Full prints every line.</p>
@@ -285,12 +370,18 @@ export default function PrintingRoutingPage({ restaurantId }) {
                 <div className="mt-3"><Toggle label="Show table number" checked={config.customer?.show_table ?? true} onChange={value => patchCustomer({ show_table: value })} /><Toggle label="Show bar tab name" checked={config.customer?.show_tab_name ?? false} onChange={value => patchCustomer({ show_tab_name: value })} /><Toggle label="Show check number" checked={config.customer?.show_check_number ?? true} onChange={value => patchCustomer({ show_check_number: value })} /><Toggle label="Show server name" checked={config.customer?.show_server ?? true} onChange={value => patchCustomer({ show_server: value })} /><Toggle label="Show guest count" checked={config.customer?.show_guest_count ?? true} onChange={value => patchCustomer({ show_guest_count: value })} /></div>
               </div>
             </div>
+          ) : output === 'server_report' ? (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+              <h2 className="text-lg font-semibold">Server report presentation</h2>
+              <p className="mt-1 text-sm text-dash-tertiary">The SERVER REPORT heading stays large. This setting controls the report body and calculated column width.</p>
+              <div className="mt-4"><Select label="Body size" value={config.report?.size || 'medium'} onChange={value => patchReport({ size: value })}><option value="compact">Compact</option><option value="medium">Medium</option><option value="large">Large</option></Select></div>
+            </div>
           ) : (
             <>
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <h2 className="text-lg font-semibold">Ticket detail</h2>
                 <div className="mt-4 grid gap-4 md:grid-cols-3">
-                  <Select label="Size" value={effectiveKitchen.size} onChange={value => patchKitchen({ size: value })}><option value="compact">Compact</option><option value="standard">Standard</option><option value="large">Large</option></Select>
+                  <Select label="Size" value={effectiveKitchen.size} onChange={value => patchKitchen({ size: value })}><option value="compact">Compact</option><option value="standard">Standard</option><option value="easy_read">Easy Read (recommended)</option><option value="large">Large</option></Select>
                   <Select label="Item names" value={effectiveKitchen.item_name_mode} onChange={value => patchKitchen({ item_name_mode: value })}><option value="alias">Use aliases</option><option value="full">Use full names</option></Select>
                   <Select label="Modifier names" value={effectiveKitchen.modifier_name_mode} onChange={value => patchKitchen({ modifier_name_mode: value })}><option value="alias">Use aliases</option><option value="full">Use full names</option></Select>
                 </div>
@@ -306,13 +397,26 @@ export default function PrintingRoutingPage({ restaurantId }) {
               </div>
             </>
           )}
+          <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+            <h2 className="text-lg font-semibold">Detected printer layout</h2>
+            {selectedTarget && displayedCapabilities ? <>
+              <p className="mt-1 text-sm text-dash-tertiary">Layout comes from the model already selected for this printer target.</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3"><p className="label-mono">Model</p><p className="mt-1 text-sm font-semibold">{displayedCapabilities.profile || selectedTarget.config?.profile || 'Unknown'}</p></div>
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3"><p className="label-mono">Roll width</p><p className="mt-1 text-sm font-semibold">{displayedCapabilities.paper_width_mm} mm</p></div>
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3"><p className="label-mono">Columns</p><p className="mt-1 text-sm font-semibold">{displayedCapabilities.normal_columns} normal · {displayedCapabilities.condensed_columns} compact</p></div>
+              </div>
+              {!displayedCapabilities.known_profile && <p className="mt-3 text-xs text-amber-200">Unknown model: using the conservative 42-column fallback.</p>}
+              {paperWidthOptions.length > 1 && <div className="mt-4 max-w-xs"><Select label="Installed paper roll" value={String(selectedTarget.config?.paper_width_mm || displayedCapabilities.paper_width_mm)} onChange={patchTargetPaperWidth}>{paperWidthOptions.map(width => <option key={width} value={width}>{width} mm</option>)}</Select></div>}
+            </> : <p className="mt-2 text-sm text-dash-tertiary">Choose a compatible printer to calculate its usable paper width.</p>}
+          </div>
           <button onClick={save} disabled={saving} className="rounded-xl bg-dash-gold px-5 py-3 text-sm font-semibold text-black disabled:opacity-50">{saving ? 'Saving…' : 'Save changes'}</button>
         </div>
 
         <div className="h-fit rounded-2xl border border-white/10 bg-white/[0.035] p-5 xl:sticky xl:top-20">
-          <div className="flex items-center justify-between"><div><p className="label-mono">Live preview</p><h2 className="mt-1 text-lg font-semibold">{output === 'kitchen_ticket' ? 'Kitchen ticket' : 'Customer receipt'}</h2></div><span className="inline-flex items-center gap-1 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" /> Real renderer</span></div>
+          <div className="flex items-center justify-between"><div><p className="label-mono">Live preview</p><h2 className="mt-1 text-lg font-semibold">{previewTitle}</h2></div><span className="inline-flex items-center gap-1 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" /> Real renderer</span></div>
           <div className="mx-auto mt-5 max-w-[430px] bg-[#fffdf6] px-7 py-8 text-black shadow-2xl">
-            <pre className={`whitespace-pre-wrap font-mono leading-relaxed ${effectiveKitchen.size === 'compact' ? 'text-xs' : effectiveKitchen.size === 'large' ? 'text-base' : 'text-sm'}`}>{preview.split('\n').map((line, index) => <span key={index} className={output === 'kitchen_ticket' && effectiveKitchen.modifier_color === 'red' && /^\s*\+/.test(line) ? 'text-red-700' : ''}>{line}{'\n'}</span>)}</pre>
+            <pre className={`whitespace-pre-wrap font-mono leading-relaxed ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{preview.split('\n').map((line, index) => <span key={index} className={output === 'kitchen_ticket' && effectiveKitchen.modifier_color === 'red' && /^\s*\+/.test(line) ? 'text-red-700' : ''}>{line}{'\n'}</span>)}</pre>
           </div>
           <p className="mt-4 text-center text-xs text-dash-tertiary">Uses live menu names and the same ReceiptLine renderer as the printer.</p>
         </div>

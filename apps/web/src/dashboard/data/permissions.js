@@ -37,6 +37,20 @@ export async function fetchRolePermissions(restaurantId) {
   return data || []
 }
 
+export async function fetchCashDrawerPolicy(restaurantId) {
+  const { data, error } = await supabase
+    .from('pos_closeout_settings')
+    .select('require_manager_for_drawer_open,allow_paid_in_out,cash_drop_threshold')
+    .eq('restaurant_id', restaurantId)
+    .maybeSingle()
+  if (error) throw error
+  return data || {
+    require_manager_for_drawer_open: true,
+    allow_paid_in_out: false,
+    cash_drop_threshold: null,
+  }
+}
+
 export async function updateRolePermission(id, patch) {
   const { error } = await supabase
     .from('pos_role_permissions')

@@ -10,6 +10,15 @@ import { useMemo, useState } from 'react'
 // (role_tip_rules et al) that tipPayrollPayload() sends to the backend.
 
 const NBSP = ' '
+const WEEKDAYS = [
+  { key: 'monday', label: 'Monday', short: 'Mon' },
+  { key: 'tuesday', label: 'Tuesday', short: 'Tue' },
+  { key: 'wednesday', label: 'Wednesday', short: 'Wed' },
+  { key: 'thursday', label: 'Thursday', short: 'Thu' },
+  { key: 'friday', label: 'Friday', short: 'Fri' },
+  { key: 'saturday', label: 'Saturday', short: 'Sat' },
+  { key: 'sunday', label: 'Sunday', short: 'Sun' },
+]
 
 function num(value) {
   const n = Number(value)
@@ -33,22 +42,21 @@ function isPooling(settings) {
   return Boolean(settings.tip_pooling_enabled) && settings.tip_distribution_mode !== 'individual'
 }
 
-// ---------------------------------------------------------------------------
-// Basis encoding for the tipout sentence dropdown.
-// value = `${basis}|${scope}|${encodeURIComponent(category)}`
-// ---------------------------------------------------------------------------
-
-function encodeBasis(tipout) {
-  return `${tipout.basis === 'sales' ? 'sales' : 'tips'}|${tipout.basis_scope === 'restaurant' ? 'restaurant' : 'own'}|${encodeURIComponent(tipout.sales_category || '')}`
+function targetRolesForTipout(tipout) {
+  if (!tipout?.headcount) return tipout?.target_role ? [tipout.target_role] : []
+  return [...new Set((tipout.headcount.tiers || []).flatMap(tier =>
+    (tier.allocations || []).filter(item => !item.unallocated && item.target_role).map(item => item.target_role),
+  ))]
 }
 
-function decodeBasis(value) {
-  const [basis, scope, category] = String(value).split('|')
-  return {
-    basis: basis === 'sales' ? 'sales' : 'tips',
-    basis_scope: scope === 'restaurant' ? 'restaurant' : 'own',
-    sales_category: decodeURIComponent(category || ''),
-  }
+// ---------------------------------------------------------------------------
+// Keep the primary basis control short. Category, scope, and allocation details
+// live in the expandable row below it.
+// ---------------------------------------------------------------------------
+
+function compactBasis(tipout) {
+  if (tipout.sales_category) return 'category'
+  return tipout.basis === 'sales' ? 'sales' : 'tips'
 }
 
 function basisPhrase(tipout) {
@@ -108,11 +116,20 @@ function summarySentences(settings, jobCodes) {
   const tipoutParts = []
   rules.forEach(rule => {
     ;(rule.tipouts || []).forEach(t => {
-      if (!t.target_role || !(num(t.percent) > 0)) return
-      tipoutParts.push(`${labelFor(jobCodes, rule.role_key)} tips out ${pct(t.percent)} of ${basisPhrase(t)} to ${labelFor(jobCodes, t.target_role)}`)
+      if (!(num(t.percent) > 0)) return
+      if (t.headcount) {
+        tipoutParts.push(`${labelFor(jobCodes, rule.role_key)} tips out ${pct(t.percent)} of ${basisPhrase(t)} using ${labelFor(jobCodes, t.headcount.driver_role)} headcount brackets`)
+      } else if (t.target_role) {
+        tipoutParts.push(`${labelFor(jobCodes, rule.role_key)} tips out ${pct(t.percent)} of ${basisPhrase(t)} to ${labelFor(jobCodes, t.target_role)}`)
+      }
     })
   })
   if (tipoutParts.length) sentences.push(tipoutParts.join('; ') + '.')
+  const weekdayOverrides = settings.weekday_tipout_overrides || {}
+  const disabledDays = WEEKDAYS.filter(day => weekdayOverrides[day.key]?.mode === 'disabled').map(day => day.short)
+  const customDays = WEEKDAYS.filter(day => weekdayOverrides[day.key]?.mode === 'custom').map(day => day.short)
+  if (disabledDays.length) sentences.push(`No tipouts on ${disabledDays.join(', ')}.`)
+  if (customDays.length) sentences.push(`Custom tipout rules apply on ${customDays.join(', ')}.`)
   return sentences
 }
 
@@ -151,8 +168,8 @@ function buildPreset(kind, settings, jobCodes) {
     if (busser) tipouts.push({ target_role: busser, percent: '2', basis: 'sales', sales_category: '', basis_scope: 'own' })
     if (bar) tipouts.push({ target_role: bar, percent: '1', basis: 'sales', sales_category: '', basis_scope: 'own' })
     mark(server, { tip_eligible: true, tipouts })
-    if (busser) mark(busser, { tip_eligible: true })
-    if (bar) mark(bar, { tip_eligible: true })
+    if (busser) mark(busser, { tip_eligible: true, tipout_split_basis: 'even' })
+    if (bar) mark(bar, { tip_eligible: true, tipout_split_basis: 'even' })
     return { tip_distribution_mode: 'individual', tip_pooling_enabled: false, role_tip_rules: rules }
   }
   if (kind === 'pool_hours') {
@@ -193,12 +210,12 @@ function buildSampleCast(settings, jobCodes) {
   const referencedCategories = new Set()
   const targetRoles = new Set()
   rules.forEach(rule => (rule.tipouts || []).forEach(t => {
-    if (t.target_role && num(t.percent) > 0) targetRoles.add(t.target_role)
+    if (num(t.percent) > 0) targetRolesForTipout(t).forEach(role => targetRoles.add(role))
     if (t.sales_category) referencedCategories.add(t.sales_category)
   }))
 
   const isEarner = rule =>
-    (rule.tipouts || []).some(t => t.target_role && num(t.percent) > 0)
+    (rule.tipouts || []).some(t => (t.target_role || t.headcount) && num(t.percent) > 0)
     || (pooling && rule.tip_eligible && rule.contributes_to_pool)
   const isReceiver = rule =>
     targetRoles.has(rule.role_key)
@@ -278,7 +295,8 @@ export function simulateSampleNight(settings, jobCodes) {
   const notes = []
 
   const splitWeights = members => {
-    if ((members[0]?.rule?.tipout_split_basis || 'hours') === 'even') return members.map(() => 1)
+    const basis = members[0]?.rule?.tipout_split_basis || 'even'
+    if (basis === 'even' || basis === 'weights') return members.map(() => 1)
     const hours = members.map(m => m.hours)
     return hours.some(h => h > 0) ? hours : members.map(() => 1)
   }
@@ -308,20 +326,38 @@ export function simulateSampleNight(settings, jobCodes) {
     if (!plannedByPerson.has(person)) plannedByPerson.set(person, [])
     plannedByPerson.get(person).push({ targets, amount })
   }
+  const previewWarnings = new Set()
+  const destinationsFor = tipout => {
+    if (!tipout.headcount) return [{ target_role: tipout.target_role, percent: 100, unallocated: false }]
+    const count = (byRole.get(tipout.headcount.driver_role) || []).length
+    const tier = (tipout.headcount.tiers || []).find(item => count >= num(item.min_count) && (item.max_count == null || count <= num(item.max_count)))
+    return tier?.allocations || []
+  }
+  const planDestinations = (person, tipout, baseAmount) => {
+    destinationsFor(tipout).forEach(destination => {
+      const amount = baseAmount * num(destination.percent) / 100
+      const targets = destination.unallocated ? [] : byRole.get(destination.target_role)
+      if (!targets?.length) {
+        const label = destination.unallocated ? 'Unallocated' : labelFor(jobCodes, destination.target_role)
+        previewWarnings.add(`${money(amount)} is reserved for ${label} and will enter the SHIRE tip-out audit.`)
+        return
+      }
+      plan(person, targets, amount)
+    })
+  }
   byRole.forEach((members, roleKey) => {
-    const tipouts = (members[0].rule.tipouts || []).filter(t => t.target_role && t.target_role !== roleKey && num(t.percent) > 0)
+    const tipouts = (members[0].rule.tipouts || []).filter(t => (t.target_role || t.headcount) && num(t.percent) > 0)
     tipouts.forEach(t => {
-      const targets = byRole.get(t.target_role)
-      if (!targets) return
       if (t.basis_scope === 'restaurant') {
         const amount = houseBasis(t) * num(t.percent) / 100
         const funding = allocate(amount, members.map(m => Math.max(0, m.tips)))
-        members.forEach((m, i) => plan(m, targets, funding[i]))
+        members.forEach((m, i) => planDestinations(m, t, funding[i]))
       } else {
-        members.forEach(m => plan(m, targets, ownBasis(m, t) * num(t.percent) / 100))
+        members.forEach(m => planDestinations(m, t, ownBasis(m, t) * num(t.percent) / 100))
       }
     })
   })
+  notes.push(...previewWarnings)
   plannedByPerson.forEach((planned, person) => {
     const total = planned.reduce((s, item) => s + item.amount, 0)
     const scale = total > person.tips && total > 0 ? person.tips / total : 1
@@ -438,6 +474,144 @@ function SectionCard({ children }) {
   return <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.02] p-5">{children}</div>
 }
 
+function defaultHeadcountPolicy(targetRole) {
+  return {
+    driver_role: targetRole,
+    tiers: [{
+      min_count: 0,
+      max_count: null,
+      allocations: [{ target_role: targetRole, unallocated: false, percent: '100' }],
+    }],
+  }
+}
+
+function HeadcountEditor({ headcount, sourceRole, jobCodes, onChange }) {
+  if (!headcount) return null
+  const roles = (jobCodes || []).filter(code => code.code !== sourceRole)
+  const updateTier = (index, patch) => onChange({
+    ...headcount,
+    tiers: headcount.tiers.map((tier, current) => current === index ? { ...tier, ...patch } : tier),
+  })
+  const updateAllocation = (tierIndex, allocationIndex, patch) => {
+    const tier = headcount.tiers[tierIndex]
+    updateTier(tierIndex, {
+      allocations: tier.allocations.map((allocation, current) => current === allocationIndex ? { ...allocation, ...patch } : allocation),
+    })
+  }
+  const addTier = () => {
+    const tiers = [...headcount.tiers]
+    const last = tiers[tiers.length - 1]
+    const nextMin = Math.max(Number(last?.min_count) || 0, Number(last?.max_count) || 0) + 1
+    if (last?.max_count == null) tiers[tiers.length - 1] = { ...last, max_count: nextMin - 1 }
+    tiers.push({
+      min_count: nextMin,
+      max_count: null,
+      allocations: [{ target_role: headcount.driver_role, unallocated: false, percent: '100' }],
+    })
+    onChange({ ...headcount, tiers })
+  }
+  const removeTier = index => {
+    const tiers = headcount.tiers.filter((_, current) => current !== index)
+    if (!tiers.length) return
+    tiers[tiers.length - 1] = { ...tiers[tiers.length - 1], max_count: null }
+    onChange({ ...headcount, tiers })
+  }
+  const validation = (() => {
+    const sorted = [...headcount.tiers].sort((a, b) => num(a.min_count) - num(b.min_count))
+    if (!sorted.length || num(sorted[0].min_count) !== 0) return 'Brackets must start at 0.'
+    let expected = 0
+    for (let index = 0; index < sorted.length; index += 1) {
+      const tier = sorted[index]
+      if (num(tier.min_count) !== expected) return 'Brackets must be continuous without gaps or overlaps.'
+      if (Math.abs(tier.allocations.reduce((sum, item) => sum + num(item.percent), 0) - 100) > 0.001) return 'Every bracket must allocate exactly 100%.'
+      if (tier.max_count == null || tier.max_count === '') return index === sorted.length - 1 ? '' : 'Only the last bracket can be open-ended.'
+      if (num(tier.max_count) < num(tier.min_count)) return 'A bracket maximum cannot be below its minimum.'
+      expected = num(tier.max_count) + 1
+    }
+    return 'The final bracket must be open-ended.'
+  })()
+
+  return (
+    <div className="mt-3 space-y-3 rounded-xl border border-dash-gold/30 bg-dash-gold/[0.04] p-3">
+      <div className="flex flex-wrap items-center gap-2 text-sm text-dash-secondary">
+        <span>Choose a bracket by counting</span>
+        <InlineSelect value={headcount.driver_role} onChange={event => onChange({ ...headcount, driver_role: event.target.value })}>
+          {roles.map(code => <option key={code.code} value={code.code}>{code.label}</option>)}
+        </InlineSelect>
+        <span>who worked positive hours in this tip window.</span>
+      </div>
+      <div className="space-y-2">
+        {headcount.tiers.map((tier, tierIndex) => {
+          const total = (tier.allocations || []).reduce((sum, item) => sum + num(item.percent), 0)
+          return (
+            <div key={tierIndex} className="space-y-2 rounded-lg border border-dash-border bg-black/20 p-3">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-dash-secondary">
+                <span>When count is</span>
+                <input value={tier.min_count} inputMode="numeric" onChange={event => updateTier(tierIndex, { min_count: event.target.value.replace(/\D/g, '') })} className="w-14 rounded border border-dash-border bg-black/25 px-2 py-1 text-dash-cream" />
+                <span>to</span>
+                <input value={tier.max_count == null ? '' : tier.max_count} inputMode="numeric" placeholder="∞" onChange={event => updateTier(tierIndex, { max_count: event.target.value === '' ? null : event.target.value.replace(/\D/g, '') })} className="w-14 rounded border border-dash-border bg-black/25 px-2 py-1 text-dash-cream placeholder:text-dash-tertiary" />
+                <span className={`ml-auto font-semibold ${Math.abs(total - 100) < 0.001 ? 'text-emerald-300' : 'text-amber-300'}`}>{+total.toFixed(2)}%</span>
+                {headcount.tiers.length > 1 ? <button type="button" onClick={() => removeTier(tierIndex)} className="text-red-300">Remove bracket</button> : null}
+              </div>
+              {(tier.allocations || []).map((allocation, allocationIndex) => (
+                <div key={allocationIndex} className="flex flex-wrap items-center gap-2 text-sm">
+                  <InlinePct value={allocation.percent} onChange={percent => updateAllocation(tierIndex, allocationIndex, { percent })} />
+                  <span className="text-dash-secondary">to</span>
+                  <InlineSelect
+                    value={allocation.unallocated ? '__unallocated__' : allocation.target_role}
+                    onChange={event => updateAllocation(tierIndex, allocationIndex, event.target.value === '__unallocated__'
+                      ? { target_role: '', unallocated: true }
+                      : { target_role: event.target.value, unallocated: false })}
+                  >
+                    <option value="">choose recipient…</option>
+                    {roles.map(code => <option key={code.code} value={code.code}>{code.label}</option>)}
+                    <option value="__unallocated__">Unallocated — send to audit</option>
+                  </InlineSelect>
+                  {tier.allocations.length > 1 ? (
+                    <button type="button" onClick={() => updateTier(tierIndex, { allocations: tier.allocations.filter((_, current) => current !== allocationIndex) })} className="text-xs text-red-300">Remove</button>
+                  ) : null}
+                </div>
+              ))}
+              <button type="button" onClick={() => updateTier(tierIndex, { allocations: [...tier.allocations, { target_role: '', unallocated: false, percent: '' }] })} className="text-xs text-dash-gold">+ Add recipient</button>
+            </div>
+          )
+        })}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button type="button" onClick={addTier} className="rounded-lg border border-dashed border-dash-gold/50 px-3 py-1.5 text-xs text-dash-gold">+ Add headcount bracket</button>
+        {validation ? <span className="text-xs font-medium text-amber-300">{validation}</span> : <span className="text-xs font-medium text-emerald-300">Valid continuous brackets ✓</span>}
+      </div>
+    </div>
+  )
+}
+
+function CustomWeightEditor({ rule, waiters, onChange }) {
+  const [selectedId, setSelectedId] = useState('')
+  const configured = rule.tipout_split_weights || []
+  const byId = new Map((waiters || []).filter(waiter => waiter?.id).map(waiter => [String(waiter.id), waiter]))
+  const available = (waiters || []).filter(waiter => waiter?.id && !configured.some(item => String(item.staff_id) === String(waiter.id)))
+  return (
+    <div className="mt-2 space-y-2 rounded-lg border border-dash-border bg-black/20 p-3">
+      <p className="text-xs text-dash-secondary">Everyone defaults to weight 1. Add only employees who need a different positive weight.</p>
+      {configured.map((item, index) => (
+        <div key={item.staff_id} className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="min-w-[150px] text-dash-cream">{byId.get(String(item.staff_id))?.name || item.staff_id}</span>
+          <span className="text-dash-tertiary">weight</span>
+          <input value={item.weight} inputMode="decimal" onChange={event => onChange({ tipout_split_weights: configured.map((row, current) => current === index ? { ...row, weight: event.target.value.replace(/[^0-9.]/g, '').slice(0, 8) } : row) })} className="w-20 rounded border border-dash-border bg-black/25 px-2 py-1 text-dash-cream" />
+          <button type="button" onClick={() => onChange({ tipout_split_weights: configured.filter((_, current) => current !== index) })} className="text-red-300">Remove</button>
+        </div>
+      ))}
+      <div className="flex flex-wrap gap-2">
+        <InlineSelect value={selectedId} onChange={event => setSelectedId(event.target.value)}>
+          <option value="">choose employee…</option>
+          {available.map(waiter => <option key={waiter.id} value={waiter.id}>{waiter.name || waiter.id}</option>)}
+        </InlineSelect>
+        <button type="button" disabled={!selectedId} onClick={() => { onChange({ tipout_split_weights: [...configured, { staff_id: selectedId, weight: '1' }] }); setSelectedId('') }} className="rounded-lg border border-dash-border px-2.5 py-1 text-xs text-dash-gold disabled:opacity-40">Add weight override</button>
+      </div>
+    </div>
+  )
+}
+
 function copyScopedRules(rules) {
   return (rules || []).map(rule => ({
     ...rule,
@@ -449,7 +623,7 @@ function copyScopedRules(rules) {
   }))
 }
 
-function ScopedTipoutEditor({ rules, jobCodes, onChange }) {
+function ScopedTipoutEditor({ rules, jobCodes, waiters, onChange }) {
   const rows = []
   ;(rules || []).forEach((rule, ruleIndex) => {
     ;(rule.tipouts || []).forEach((tipout, tipoutIndex) => rows.push({ rule, ruleIndex, tipout, tipoutIndex }))
@@ -482,38 +656,64 @@ function ScopedTipoutEditor({ rules, jobCodes, onChange }) {
       tipouts: [...(rule.tipouts || []), { target_role: '', percent: '', basis: 'sales', sales_category: '', basis_scope: 'own' }],
     } : rule))
   }
-  const receiverKeys = [...new Set(rows.map(row => row.tipout.target_role).filter(Boolean))]
+  const receiverKeys = [...new Set(rows.flatMap(row => targetRolesForTipout(row.tipout)))]
   return (
     <div className="space-y-3">
       {rows.length ? rows.map(({ rule, ruleIndex, tipout, tipoutIndex }) => (
-        <div key={`${rule.role_key}-${tipoutIndex}`} className="flex flex-wrap items-center gap-2 rounded-xl border border-dash-border bg-black/20 px-3 py-2.5 text-sm text-dash-secondary">
-          <InlineSelect value={rule.role_key} onChange={event => move(ruleIndex, tipoutIndex, event.target.value)}>
-            {jobCodes.map(code => <option key={code.code} value={code.code}>{code.label}</option>)}
-          </InlineSelect>
-          <span>tips out</span>
-          <InlinePct value={tipout.percent} onChange={value => update(ruleIndex, tipoutIndex, { percent: value })} />
-          <span>of this group’s</span>
-          <InlineSelect value={tipout.basis} onChange={event => update(ruleIndex, tipoutIndex, { basis: event.target.value })}>
-            <option value="sales">sales</option>
-            <option value="tips">attributed tips</option>
-          </InlineSelect>
-          <span className="text-dash-gold">→</span>
-          <InlineSelect value={tipout.target_role} onChange={event => update(ruleIndex, tipoutIndex, { target_role: event.target.value })}>
-            <option value="">choose recipient…</option>
-            {jobCodes.filter(code => code.code !== rule.role_key).map(code => <option key={code.code} value={code.code}>{code.label}</option>)}
-          </InlineSelect>
-          <button type="button" onClick={() => remove(ruleIndex, tipoutIndex)} className="ml-auto px-1.5 text-dash-tertiary hover:text-red-300" aria-label="Remove scoped tipout">✕</button>
+        <div key={`${rule.role_key}-${tipoutIndex}`} className="rounded-xl border border-dash-border bg-black/20 px-3 py-2.5 text-sm text-dash-secondary">
+          <div className="flex flex-wrap items-center gap-2">
+            <InlineSelect value={rule.role_key} onChange={event => move(ruleIndex, tipoutIndex, event.target.value)}>
+              {jobCodes.map(code => <option key={code.code} value={code.code}>{code.label}</option>)}
+            </InlineSelect>
+            <span>tips out</span>
+            <InlinePct value={tipout.percent} onChange={value => update(ruleIndex, tipoutIndex, { percent: value })} />
+            <span>of this group’s</span>
+            <InlineSelect value={tipout.basis} onChange={event => update(ruleIndex, tipoutIndex, { basis: event.target.value })}>
+              <option value="sales">sales</option>
+              <option value="tips">attributed tips</option>
+            </InlineSelect>
+            <span className="text-dash-gold">→</span>
+            {tipout.headcount ? <span className="font-medium text-dash-gold">headcount brackets</span> : (
+              <InlineSelect value={tipout.target_role} onChange={event => update(ruleIndex, tipoutIndex, { target_role: event.target.value })}>
+                <option value="">choose recipient…</option>
+                {jobCodes.filter(code => code.code !== rule.role_key).map(code => <option key={code.code} value={code.code}>{code.label}</option>)}
+              </InlineSelect>
+            )}
+            <button type="button" onClick={() => {
+              if (tipout.headcount) {
+                const fallback = targetRolesForTipout(tipout)[0] || tipout.headcount.driver_role
+                update(ruleIndex, tipoutIndex, { target_role: fallback, headcount: null })
+              } else if (tipout.target_role) {
+                update(ruleIndex, tipoutIndex, { target_role: '', headcount: defaultHeadcountPolicy(tipout.target_role) })
+              }
+            }} disabled={!tipout.headcount && !tipout.target_role} className="text-xs text-dash-gold disabled:opacity-40">
+              {tipout.headcount ? 'Use one fixed role' : 'Allocate by headcount'}
+            </button>
+            <button type="button" onClick={() => remove(ruleIndex, tipoutIndex)} className="ml-auto px-1.5 text-dash-tertiary hover:text-red-300" aria-label="Remove scoped tipout">✕</button>
+          </div>
+          <HeadcountEditor headcount={tipout.headcount} sourceRole={rule.role_key} jobCodes={jobCodes} onChange={headcount => update(ruleIndex, tipoutIndex, { headcount })} />
         </div>
       )) : <p className="text-sm text-dash-tertiary">No tipout from this menu group.</p>}
       <button type="button" onClick={add} className="rounded-lg border border-dashed border-dash-gold/50 px-3 py-1.5 text-sm text-dash-gold hover:bg-dash-gold/10">+ Add tipout rule</button>
       {receiverKeys.length ? (
-        <div className="flex flex-wrap gap-2 text-xs text-dash-secondary">
+        <div className="space-y-2 text-xs text-dash-secondary">
           <span>Recipients split their share:</span>
           {receiverKeys.map(roleKey => {
             const index = rules.findIndex(rule => rule.role_key === roleKey)
             const rule = rules[index]
             if (!rule) return null
-            return <button key={roleKey} type="button" onClick={() => onChange(rules.map((row, current) => current === index ? { ...row, tipout_split_basis: row.tipout_split_basis === 'even' ? 'hours' : 'even' } : row))} className="text-dash-gold underline decoration-dotted">{labelFor(jobCodes, roleKey)}: {rule.tipout_split_basis === 'even' ? 'evenly' : 'by hours'}</button>
+            const updateRule = patch => onChange(rules.map((row, current) => current === index ? { ...row, ...patch } : row))
+            return (
+              <div key={roleKey} className="rounded-lg border border-dash-border bg-black/15 p-2">
+                <span className="mr-2 text-dash-cream">{labelFor(jobCodes, roleKey)}</span>
+                <InlineSelect value={rule.tipout_split_basis || 'even'} onChange={event => updateRule({ tipout_split_basis: event.target.value })}>
+                  <option value="hours">By role hours</option>
+                  <option value="even">Evenly</option>
+                  <option value="weights">Custom employee weights</option>
+                </InlineSelect>
+                {rule.tipout_split_basis === 'weights' ? <CustomWeightEditor rule={rule} waiters={waiters} onChange={updateRule} /> : null}
+              </div>
+            )
           })}
         </div>
       ) : null}
@@ -521,7 +721,103 @@ function ScopedTipoutEditor({ rules, jobCodes, onChange }) {
   )
 }
 
-function CategoryTipProfiles({ profiles, menuCategories, menuItems, defaultRules, jobCodes, onChange }) {
+function cloneJson(value) {
+  if (globalThis.structuredClone) return globalThis.structuredClone(value)
+  return JSON.parse(JSON.stringify(value))
+}
+
+function WeekdayTipoutExceptions({ settings, jobCodes, waiters, onChange }) {
+  const overrides = settings.weekday_tipout_overrides || {}
+  const configuredDays = WEEKDAYS.filter(day => overrides[day.key])
+  const [selectedDays, setSelectedDays] = useState([])
+  const [mode, setMode] = useState('disabled')
+  const poolAllowsWeekdays = !isPooling(settings) || settings.tip_pool_reset === 'day'
+
+  const toggleDay = key => setSelectedDays(current => current.includes(key)
+    ? current.filter(day => day !== key)
+    : [...current, key])
+  const updateOverride = (key, patch) => onChange({ ...overrides, [key]: { ...overrides[key], ...patch } })
+  const inheritDefault = key => {
+    const next = { ...overrides }
+    delete next[key]
+    onChange(next)
+  }
+  const apply = () => {
+    if (!selectedDays.length || !poolAllowsWeekdays) return
+    const next = { ...overrides }
+    selectedDays.forEach(key => {
+      if (mode === 'inherit') {
+        delete next[key]
+      } else if (mode === 'disabled') {
+        next[key] = { mode: 'disabled' }
+      } else {
+        next[key] = {
+          mode: 'custom',
+          role_tip_rules: cloneJson(settings.role_tip_rules || []),
+          category_tip_profiles: cloneJson(settings.category_tip_profiles || []),
+        }
+      }
+    })
+    onChange(next)
+    setSelectedDays([])
+  }
+  const quickDisableWeekend = () => {
+    if (!poolAllowsWeekdays) return
+    onChange({ ...overrides, saturday: { mode: 'disabled' }, sunday: { mode: 'disabled' } })
+  }
+
+  return (
+    <details className="rounded-xl border border-dash-border bg-black/15">
+      <summary className="cursor-pointer list-none px-3 py-2.5 text-sm text-dash-cream marker:hidden">
+        <span className="font-medium">Different rules by day</span>
+        <span className="ml-2 text-xs text-dash-tertiary">
+          {configuredDays.length
+            ? configuredDays.map(day => `${day.short}: ${overrides[day.key].mode === 'disabled' ? 'none' : 'custom'}`).join(' · ')
+            : 'Optional — every day currently uses the default above'}
+        </span>
+      </summary>
+      <div className="space-y-4 border-t border-dash-border px-3 py-3">
+        {!poolAllowsWeekdays ? (
+          <p className="rounded-lg border border-amber-400/40 bg-amber-400/[0.06] px-3 py-2 text-xs text-amber-200">
+            Weekday exceptions need a daily pool reset. Change “Pool resets every” to day first.
+          </p>
+        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {WEEKDAYS.map(day => <Chip key={day.key} active={selectedDays.includes(day.key)} onClick={() => toggleDay(day.key)}>{day.short}</Chip>)}
+          <InlineSelect value={mode} onChange={event => setMode(event.target.value)}>
+            <option value="disabled">No tipouts</option>
+            <option value="custom">Custom rules</option>
+            <option value="inherit">Use default</option>
+          </InlineSelect>
+          <button type="button" disabled={!selectedDays.length || !poolAllowsWeekdays} onClick={apply} className="rounded-lg border border-dash-gold/60 bg-dash-gold/10 px-3 py-1.5 text-xs font-medium text-dash-gold disabled:opacity-40">Apply</button>
+          <button type="button" disabled={!poolAllowsWeekdays} onClick={quickDisableWeekend} className="text-xs font-medium text-dash-gold disabled:opacity-40">No tipouts Sat–Sun</button>
+        </div>
+        {configuredDays.length ? (
+          <div className="space-y-2">
+            {configuredDays.map(day => {
+              const override = overrides[day.key]
+              if (override.mode === 'disabled') {
+                return <div key={day.key} className="flex items-center justify-between rounded-lg border border-dash-border bg-white/[0.02] px-3 py-2 text-sm"><span className="text-dash-cream">{day.label} <span className="ml-1 text-dash-tertiary">No tipouts</span></span><button type="button" onClick={() => inheritDefault(day.key)} className="text-xs text-dash-gold">Use default</button></div>
+              }
+              return (
+                <details key={day.key} className="rounded-lg border border-dash-border bg-white/[0.02]">
+                  <summary className="cursor-pointer px-3 py-2 text-sm text-dash-cream">{day.label} <span className="ml-1 text-dash-tertiary">Custom rules</span></summary>
+                  <div className="space-y-3 border-t border-dash-border p-3">
+                    <p className="text-xs text-dash-tertiary">These rules replace only the default tipouts for {day.label}. Pool settings stay unchanged.</p>
+                    <ScopedTipoutEditor rules={override.role_tip_rules || []} jobCodes={jobCodes} waiters={waiters} onChange={role_tip_rules => updateOverride(day.key, { role_tip_rules })} />
+                    <button type="button" onClick={() => inheritDefault(day.key)} className="text-xs text-dash-gold">Remove exception and use default</button>
+                  </div>
+                </details>
+              )
+            })}
+          </div>
+        ) : null}
+      </div>
+    </details>
+  )
+}
+
+function CategoryTipProfiles({ profiles, menuCategories, menuItems, defaultRules, jobCodes, waiters, onChange }) {
   const [selectedCategoryIds, setSelectedCategoryIds] = useState([])
   const [openId, setOpenId] = useState(null)
   const [activeOverrideId, setActiveOverrideId] = useState(null)
@@ -611,7 +907,7 @@ function CategoryTipProfiles({ profiles, menuCategories, menuItems, defaultRules
               <button type="button" onClick={() => { setOpenId(null); setActiveOverrideId(null) }} className="rounded-lg border border-dash-border px-3 py-1.5 text-sm text-dash-cream">Done</button>
             </div>
             <div className="space-y-2"><p className="text-xs font-medium uppercase tracking-[0.08em] text-dash-tertiary">Categories in this configuration</p><div className="flex flex-wrap gap-2">{categories.map(category => <Chip key={category.id} active={openProfile.category_ids.includes(String(category.id))} disabled={usedIds.has(String(category.id)) && !openProfile.category_ids.includes(String(category.id))} onClick={() => toggleOpenCategory(category.id)}>{category.name}</Chip>)}</div></div>
-            <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4"><StepHeading title="Category rules" hint="These rules apply to every item below unless that item has an override." /><ScopedTipoutEditor rules={openProfile.role_tip_rules} jobCodes={jobCodes} onChange={role_tip_rules => updateProfile({ role_tip_rules })} /></div>
+            <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4"><StepHeading title="Category rules" hint="These rules apply to every item below unless that item has an override." /><ScopedTipoutEditor rules={openProfile.role_tip_rules} jobCodes={jobCodes} waiters={waiters} onChange={role_tip_rules => updateProfile({ role_tip_rules })} /></div>
             <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
               <StepHeading title="Items" hint="Override only the items that should calculate differently from their category." />
               {!matchingItems.length ? <p className="text-sm text-dash-tertiary">No active menu items are assigned to these categories.</p> : <div className="grid gap-2 sm:grid-cols-2">{matchingItems.map(item => {
@@ -619,7 +915,7 @@ function CategoryTipProfiles({ profiles, menuCategories, menuItems, defaultRules
                 return <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-dash-border bg-black/20 px-3 py-2"><span className="text-sm text-dash-cream">{item.name}</span><button type="button" onClick={() => editOverride(item)} className={`text-xs font-medium ${overridden ? 'text-dash-gold' : 'text-dash-secondary hover:text-dash-gold'}`}>{overridden ? 'Edit override' : 'Override'}</button></div>
               })}</div>}
             </div>
-            {activeOverride ? <div className="space-y-3 rounded-xl border border-dash-gold/35 bg-dash-gold/[0.05] p-4"><div className="flex items-start justify-between gap-3"><StepHeading title={`${activeOverride.menu_item_name} override`} hint="This completely replaces the category rules for this item." /><button type="button" onClick={() => { updateProfile({ item_overrides: openProfile.item_overrides.filter(override => override.menu_item_id !== activeOverride.menu_item_id) }); setActiveOverrideId(null) }} className="text-xs text-red-300">Remove override</button></div><ScopedTipoutEditor rules={activeOverride.role_tip_rules} jobCodes={jobCodes} onChange={role_tip_rules => updateProfile({ item_overrides: openProfile.item_overrides.map(override => override.menu_item_id === activeOverride.menu_item_id ? { ...override, role_tip_rules } : override) })} /></div> : null}
+            {activeOverride ? <div className="space-y-3 rounded-xl border border-dash-gold/35 bg-dash-gold/[0.05] p-4"><div className="flex items-start justify-between gap-3"><StepHeading title={`${activeOverride.menu_item_name} override`} hint="This completely replaces the category rules for this item." /><button type="button" onClick={() => { updateProfile({ item_overrides: openProfile.item_overrides.filter(override => override.menu_item_id !== activeOverride.menu_item_id) }); setActiveOverrideId(null) }} className="text-xs text-red-300">Remove override</button></div><ScopedTipoutEditor rules={activeOverride.role_tip_rules} jobCodes={jobCodes} waiters={waiters} onChange={role_tip_rules => updateProfile({ item_overrides: openProfile.item_overrides.map(override => override.menu_item_id === activeOverride.menu_item_id ? { ...override, role_tip_rules } : override) })} /></div> : null}
             <div className="flex justify-between border-t border-dash-border pt-4"><button type="button" onClick={() => { onChange(profiles.filter(profile => profile.id !== openProfile.id)); setOpenId(null); setActiveOverrideId(null) }} className="text-sm text-red-300">Delete category configuration</button><button type="button" onClick={() => { setOpenId(null); setActiveOverrideId(null) }} className="rounded-lg border border-dash-gold bg-dash-gold/10 px-4 py-2 text-sm font-medium text-dash-gold">Done</button></div>
           </div>
         </div>
@@ -720,7 +1016,7 @@ export default function TipRulesEditor({
   const shareTotal = receivers.reduce((s, { rule }) => s + num(rule.pool_share_percent), 0)
 
   // Roles that receive money (pool or tipout) — for the split-received control.
-  const tipoutTargetKeys = new Set(tipoutRows.map(({ tipout }) => tipout.target_role).filter(Boolean))
+  const tipoutTargetKeys = new Set(tipoutRows.flatMap(({ tipout }) => targetRolesForTipout(tipout)))
   const splitControlRoles = rules
     .map((rule, index) => ({ rule, index }))
     .filter(({ rule }) => tipoutTargetKeys.has(rule.role_key) || (pooling && rule.tip_eligible && rule.receives_from_pool))
@@ -749,8 +1045,8 @@ export default function TipRulesEditor({
     try {
       const data = await onFetchRealPreview()
       const payouts = data?.payouts || []
-      if (!payouts.length) { setRealRows([]); setRealState('empty'); return }
-      setRealRows(payouts)
+      if (!payouts.length) { setRealRows(null); setRealState('empty'); return }
+      setRealRows(data)
       setRealState('ok')
     } catch {
       setRealState('unavailable')
@@ -918,49 +1214,65 @@ export default function TipRulesEditor({
         ) : null}
         <div className="space-y-2">
           {tipoutRows.map(({ rule, ruleIndex, tipout, tipoutIndex }) => (
-            <div key={`${rule.role_key}-${tipoutIndex}`} className="flex flex-wrap items-center gap-2 rounded-xl border border-dash-border bg-white/[0.03] px-3 py-2.5 text-sm text-dash-secondary">
-              <InlineSelect value={rule.role_key} onChange={event => moveTipout(ruleIndex, tipoutIndex, event.target.value)}>
-                {roleOptions}
-              </InlineSelect>
-              <span>tip out</span>
-              <InlinePct value={tipout.percent} onChange={value => updateTipout(ruleIndex, tipoutIndex, { percent: value })} />
-              <span>of</span>
-              <InlineSelect value={encodeBasis(tipout)} onChange={event => updateTipout(ruleIndex, tipoutIndex, decodeBasis(event.target.value))} className="max-w-[240px]">
-                <optgroup label="Each person's own numbers">
-                  <option value="tips|own|">their tips</option>
-                  {categories.map(cat => (
-                    <option key={`own-t-${cat}`} value={`tips|own|${encodeURIComponent(cat)}`}>their tips on {cat} items</option>
-                  ))}
-                  <option value="sales|own|">their total sales</option>
-                  {categories.map(cat => (
-                    <option key={`own-s-${cat}`} value={`sales|own|${encodeURIComponent(cat)}`}>their {cat} sales</option>
-                  ))}
-                </optgroup>
-                <optgroup label="Whole restaurant">
-                  <option value="sales|restaurant|">restaurant total sales</option>
-                  {categories.map(cat => (
-                    <option key={`rest-${cat}`} value={`sales|restaurant|${encodeURIComponent(cat)}`}>restaurant {cat} sales</option>
-                  ))}
-                  <option value="tips|restaurant|">restaurant total tips</option>
-                </optgroup>
-              </InlineSelect>
-              <span className="text-dash-gold">→</span>
-              <span>to</span>
-              <InlineSelect
-                value={tipout.target_role}
-                onChange={event => updateTipout(ruleIndex, tipoutIndex, { target_role: event.target.value })}
-              >
-                <option value="">choose role…</option>
-                {jobCodes.filter(code => code.code !== rule.role_key).map(code => <option key={code.code} value={code.code}>{code.label}</option>)}
-              </InlineSelect>
-              <button
-                type="button"
-                onClick={() => removeTipout(ruleIndex, tipoutIndex)}
-                className="ml-auto rounded px-1.5 text-dash-tertiary transition hover:text-red-300"
-                aria-label="Remove tipout"
-              >
-                ✕
-              </button>
+            <div key={`${rule.role_key}-${tipoutIndex}`} className="rounded-xl border border-dash-border bg-white/[0.03] px-3 py-2.5 text-sm text-dash-secondary">
+              <div className="flex flex-wrap items-center gap-2">
+                <InlineSelect value={rule.role_key} onChange={event => moveTipout(ruleIndex, tipoutIndex, event.target.value)}>
+                  {roleOptions}
+                </InlineSelect>
+                <span>tip out</span>
+                <InlinePct value={tipout.percent} onChange={value => updateTipout(ruleIndex, tipoutIndex, { percent: value })} />
+                <span>of</span>
+                <InlineSelect value={compactBasis(tipout)} onChange={event => {
+                  const next = event.target.value
+                  if (next === 'tips') updateTipout(ruleIndex, tipoutIndex, { basis: 'tips', sales_category: '' })
+                  if (next === 'sales') updateTipout(ruleIndex, tipoutIndex, { basis: 'sales', sales_category: '' })
+                  if (next === 'category') updateTipout(ruleIndex, tipoutIndex, { basis: 'sales', sales_category: tipout.sales_category || categories[0] || '' })
+                }} className="max-w-[190px]">
+                  <option value="tips">their tips</option>
+                  <option value="sales">their total sales</option>
+                  <option value="category" disabled={!categories.length}>a menu category…</option>
+                </InlineSelect>
+                <span className="text-dash-gold">→</span>
+                <span>to</span>
+                {tipout.headcount ? <span className="font-semibold text-dash-gold">headcount brackets</span> : (
+                  <InlineSelect value={tipout.target_role} onChange={event => updateTipout(ruleIndex, tipoutIndex, { target_role: event.target.value })}>
+                    <option value="">choose role…</option>
+                    {jobCodes.filter(code => code.code !== rule.role_key).map(code => <option key={code.code} value={code.code}>{code.label}</option>)}
+                  </InlineSelect>
+                )}
+                <button type="button" onClick={() => removeTipout(ruleIndex, tipoutIndex)} className="ml-auto rounded px-1.5 text-dash-tertiary transition hover:text-red-300" aria-label="Remove tipout">✕</button>
+              </div>
+              <details className="mt-2 rounded-lg border border-dash-border/70 bg-black/10 px-2.5 py-2">
+                <summary className="cursor-pointer text-xs font-medium text-dash-gold">Details</summary>
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-dash-secondary">
+                  <span>Calculate from</span>
+                  <InlineSelect value={tipout.basis === 'sales' ? 'sales' : 'tips'} onChange={event => updateTipout(ruleIndex, tipoutIndex, { basis: event.target.value })}>
+                    <option value="tips">tips</option>
+                    <option value="sales">sales</option>
+                  </InlineSelect>
+                  <span>for</span>
+                  <InlineSelect value={tipout.basis_scope === 'restaurant' ? 'restaurant' : 'own'} onChange={event => updateTipout(ruleIndex, tipoutIndex, { basis_scope: event.target.value })}>
+                    <option value="own">each paying employee</option>
+                    <option value="restaurant">the whole restaurant</option>
+                  </InlineSelect>
+                  <span>on</span>
+                  <InlineSelect value={tipout.sales_category || ''} onChange={event => updateTipout(ruleIndex, tipoutIndex, { sales_category: event.target.value })}>
+                    <option value="">all items</option>
+                    {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                  </InlineSelect>
+                  <button type="button" onClick={() => {
+                    if (tipout.headcount) {
+                      const fallback = targetRolesForTipout(tipout)[0] || tipout.headcount.driver_role
+                      updateTipout(ruleIndex, tipoutIndex, { target_role: fallback, headcount: null })
+                    } else if (tipout.target_role) {
+                      updateTipout(ruleIndex, tipoutIndex, { target_role: '', headcount: defaultHeadcountPolicy(tipout.target_role) })
+                    }
+                  }} disabled={!tipout.headcount && !tipout.target_role} className="font-medium text-dash-gold disabled:opacity-40">
+                    {tipout.headcount ? 'Use one fixed role' : 'Allocate by headcount'}
+                  </button>
+                </div>
+                <HeadcountEditor headcount={tipout.headcount} sourceRole={rule.role_key} jobCodes={jobCodes} onChange={headcount => updateTipout(ruleIndex, tipoutIndex, { headcount })} />
+              </details>
             </div>
           ))}
         </div>
@@ -992,22 +1304,24 @@ export default function TipRulesEditor({
         </button>
 
         {splitControlRoles.length ? (
-          <p className="text-xs leading-relaxed text-dash-tertiary">
-            {splitControlRoles.map(({ rule, index }, i) => (
-              <span key={rule.role_key}>
-                {i > 0 ? ' · ' : ''}
-                <span className="text-dash-secondary">{labelFor(jobCodes, rule.role_key)}</span> split what they receive{' '}
-                <button
-                  type="button"
-                  onClick={() => onUpdateRoleRule(index, { tipout_split_basis: rule.tipout_split_basis === 'even' ? 'hours' : 'even' })}
-                  className="font-semibold text-dash-gold underline decoration-dotted underline-offset-2"
-                >
-                  {rule.tipout_split_basis === 'even' ? 'evenly' : 'by hours worked'}
-                </button>
-              </span>
+          <details className="rounded-xl border border-dash-border bg-black/15">
+            <summary className="cursor-pointer px-3 py-2.5 text-sm text-dash-cream">Recipient split <span className="ml-1 text-xs text-dash-tertiary">Uniform / even by default</span></summary>
+            <div className="space-y-2 border-t border-dash-border p-3 text-xs text-dash-tertiary">
+            {splitControlRoles.map(({ rule, index }) => (
+              <div key={rule.role_key} className="rounded-lg border border-dash-border bg-black/15 p-2">
+                <span className="mr-2 text-dash-secondary">{labelFor(jobCodes, rule.role_key)}</span>
+                <InlineSelect value={rule.tipout_split_basis || 'even'} onChange={event => onUpdateRoleRule(index, { tipout_split_basis: event.target.value })}>
+                  <option value="hours">By role hours</option>
+                  <option value="even">Uniform / even</option>
+                  <option value="weights">Custom employee weights</option>
+                </InlineSelect>
+                {rule.tipout_split_basis === 'weights' ? <CustomWeightEditor rule={rule} waiters={waiters} onChange={patch => onUpdateRoleRule(index, patch)} /> : null}
+              </div>
             ))}
-          </p>
+            </div>
+          </details>
         ) : null}
+        <WeekdayTipoutExceptions settings={settings} jobCodes={jobCodes} waiters={waiters} onChange={weekday_tipout_overrides => onUpdateSettings({ weekday_tipout_overrides })} />
       </SectionCard>
 
       <CategoryTipProfiles
@@ -1016,6 +1330,7 @@ export default function TipRulesEditor({
         menuItems={menuItems}
         defaultRules={rules}
         jobCodes={jobCodes}
+        waiters={waiters}
         onChange={category_tip_profiles => onUpdateSettings({ category_tip_profiles })}
       />
 
@@ -1042,7 +1357,7 @@ export default function TipRulesEditor({
         ) : null}
         {(() => {
           const rows = realState === 'ok' && realRows
-            ? realRows.map(p => ({
+            ? (realRows.payouts || []).map(p => ({
                 name: p.staff_name || '—', role: p.role_key,
                 detail: `${num(p.hours_worked).toFixed(1)}h · ${money(p.sales_total)} sales`,
                 tips: num(p.tips_collected),
@@ -1089,6 +1404,22 @@ export default function TipRulesEditor({
             </div>
           )
         })()}
+        {realState === 'ok' && realRows ? (() => {
+          const matched = (realRows.payouts || []).flatMap(payout => payout.tipout_breakdown || []).filter(item => item.headcount_driver_role)
+          const unique = [...new Map(matched.map(item => [`${item.scope_type}:${item.scope_id}:${item.target_role}:${item.headcount_tier_min}`, item])).values()]
+          const pending = realRows.unallocated_tipouts || []
+          if (!unique.length && !pending.length) return null
+          return (
+            <div className="space-y-1 rounded-lg border border-dash-border bg-black/15 p-3 text-xs text-dash-secondary">
+              {unique.map((item, index) => (
+                <p key={index}>
+                  Counted <span className="font-semibold text-dash-cream">{item.headcount_count} {labelFor(jobCodes, item.headcount_driver_role)}</span>; matched {item.headcount_tier_min}{item.headcount_tier_max == null ? '+' : `–${item.headcount_tier_max}`} and sent {pct(item.allocation_percent)} to {labelFor(jobCodes, item.target_role)}.
+                </p>
+              ))}
+              {pending.length ? <p className="font-medium text-amber-300">{money(realRows.totals?.total_unallocated_tipout)} is reserved in the SHIRE tip-out audit.</p> : null}
+            </div>
+          )
+        })() : null}
         {realState !== 'ok' && sample.notes.length ? (
           <p className="text-xs text-dash-tertiary">{sample.notes.join(' ')}</p>
         ) : null}
