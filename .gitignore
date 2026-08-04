@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+.vite/
 
 # Environment
 .env*
@@ -26,10 +27,7 @@ npm-debug.log*
 *.tsbuildinfo
 
 # Expo local state
-apps/mobile/.expo/cache/
-apps/mobile/.expo/devices.json
-apps/mobile/.expo/prebuild/cached-packages.json
-apps/mobile/.expo/types/
+apps/mobile/.expo/
 
 CLAUDE.md
 claude.md
