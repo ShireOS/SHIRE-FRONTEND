@@ -12,8 +12,9 @@ const DEFAULT_CONFIG = {
   receipt_detail: 'clean',
   customer: {
     size: 'medium',
-    show_restaurant_name: true, restaurant_name: '', restaurant_name_size: 'large',
-    address_lines: [], address_size: 'standard', phone: '', phone_size: 'standard',
+    show_restaurant_name: true, restaurant_name: '', restaurant_name_size: 'standard',
+    show_address: true, address_lines: [], address_size: 'standard',
+    show_phone: true, phone: '', phone_size: 'standard',
     header_message: '', footer_message: '', show_server: true, show_table: true, table_size: 'standard',
     show_tab_name: false, show_check_number: true, check_number_size: 'standard', show_date_time: true, show_guest_count: true,
     suggested_tips: { enabled: false, percentages: [18, 20, 22], basis: 'subtotal', placement: 'bottom', show_amounts: true },
@@ -171,7 +172,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
           signal: controller.signal,
           cache: 'no-store',
         })
-        if (!['printing-v5', 'printing-v6'].includes(result.renderer_version)) {
+        if (!['printing-v5', 'printing-v6', 'printing-v7'].includes(result.renderer_version)) {
           throw new Error('Receipt preview version is not supported. Refresh this page after the POS backend finishes updating.')
         }
         if (requestId === previewRequestRef.current) {
@@ -368,14 +369,16 @@ export default function PrintingRoutingPage({ restaurantId }) {
                 <div className="mt-3"><Toggle label="Show restaurant name" checked={config.customer?.show_restaurant_name ?? true} onChange={value => patchCustomer({ show_restaurant_name: value })} /></div>
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
                   <label className="block"><span className="label-mono">Printed restaurant name</span><input maxLength={80} value={config.customer?.restaurant_name || ''} onChange={event => patchCustomer({ restaurant_name: event.target.value })} placeholder="Blank uses the restaurant record" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></label>
-                  <Select label="Name size" value={config.customer?.restaurant_name_size || 'large'} onChange={value => patchCustomer({ restaurant_name_size: value })}><option value="standard">Standard</option><option value="large">Large</option></Select>
+                  <Select label="Name size" value={config.customer?.restaurant_name_size || 'standard'} onChange={value => patchCustomer({ restaurant_name_size: value })}><option value="standard">Standard · bold</option><option value="large">Large · stretched</option></Select>
                 </div>
+                <div className="mt-3"><Toggle label="Show address" checked={config.customer?.show_address ?? true} onChange={value => patchCustomer({ show_address: value })} /></div>
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <label className="block"><span className="label-mono">Address (one line per row)</span><textarea maxLength={242} rows={3} value={(config.customer?.address_lines || []).join('\n')} onChange={event => patchCustomer({ address_lines: event.target.value.split(/\r?\n/).slice(0, 3) })} placeholder={'1585 Hwy 17\nLittle River, SC 29566'} className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></label>
+                  <label className="block"><span className="label-mono">Address override (one line per row)</span><textarea maxLength={242} rows={3} value={(config.customer?.address_lines || []).join('\n')} onChange={event => patchCustomer({ address_lines: event.target.value.split(/\r?\n/).slice(0, 3) })} placeholder="Blank uses the restaurant record" className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></label>
                   <Select label="Address size" value={config.customer?.address_size || 'standard'} onChange={value => patchCustomer({ address_size: value })}><option value="standard">Standard</option><option value="large">Large</option></Select>
                 </div>
+                <div className="mt-3"><Toggle label="Show phone number" checked={config.customer?.show_phone ?? true} onChange={value => patchCustomer({ show_phone: value })} /></div>
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <label className="block"><span className="label-mono">Phone number</span><input maxLength={40} value={config.customer?.phone || ''} onChange={event => patchCustomer({ phone: event.target.value })} placeholder="843-249-5550" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></label>
+                  <label className="block"><span className="label-mono">Phone override</span><input maxLength={40} value={config.customer?.phone || ''} onChange={event => patchCustomer({ phone: event.target.value })} placeholder="Blank uses the restaurant record" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></label>
                   <Select label="Phone size" value={config.customer?.phone_size || 'standard'} onChange={value => patchCustomer({ phone_size: value })}><option value="standard">Standard</option><option value="large">Large</option></Select>
                 </div>
               </div>
