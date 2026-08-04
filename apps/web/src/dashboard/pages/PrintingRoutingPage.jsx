@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { CheckCircle2, Printer, ReceiptText, Route, Search } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader2, Printer, ReceiptText, Route, Search } from 'lucide-react'
 import { supabase } from '../../shared/lib/supabase'
 import { fetchPosApi } from '../../shared/api/posClient'
 import { fetchWithSupabaseAuth } from '../../shared/query'
@@ -21,7 +21,7 @@ const DEFAULT_CONFIG = {
   kitchen: {
     size: 'easy_read', print_modifiers: true, print_prices: false,
     print_seats: true, combine_identical: true, item_name_mode: 'alias',
-    modifier_name_mode: 'alias', modifier_color: 'black',
+    modifier_name_mode: 'alias', modifier_color: 'black', modifier_bold: true,
   },
   aliases: { items: {}, modifiers: {} },
   stations: {},
@@ -65,6 +65,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const [previewCapabilities, setPreviewCapabilities] = useState(null)
   const [dirtyTargetIds, setDirtyTargetIds] = useState(() => new Set())
   const [preview, setPreview] = useState('Loading preview…')
+  const [previewStatus, setPreviewStatus] = useState('loading')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -139,6 +140,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
     const requestId = ++previewRequestRef.current
     const controller = new AbortController()
     setPreview('Rendering preview…')
+    setPreviewStatus('loading')
     const timer = setTimeout(async () => {
       try {
         const result = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config/preview`, {
@@ -154,16 +156,18 @@ export default function PrintingRoutingPage({ restaurantId }) {
           signal: controller.signal,
           cache: 'no-store',
         })
-        if (result.renderer_version !== 'printing-v4') throw new Error('Receipt renderer is updating. Refresh this page in a moment.')
+        if (result.renderer_version !== 'printing-v5') throw new Error('Receipt renderer is updating. Refresh this page in a moment.')
         if (requestId === previewRequestRef.current) {
           setPreview(result.preview || 'No preview available')
           setPreviewCapabilities(result.printer_capabilities || null)
+          setPreviewStatus('ready')
         }
       } catch (err) {
         if (err?.name !== 'AbortError' && requestId === previewRequestRef.current) {
           setPreview(err?.status === 404
             ? 'Receipt preview needs the latest POS backend deployment.'
             : (err?.message || 'Preview unavailable'))
+          setPreviewStatus('error')
         }
       }
     }, 250)
@@ -287,6 +291,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const filtered = catalog.filter(row => `${row.name} ${row.category || ''} ${row.type}`.toLowerCase().includes(search.trim().toLowerCase()))
   const stations = (routing.stations || []).filter(station => station.is_active !== false)
   const displayedCapabilities = previewCapabilities || selectedTarget?.printer_capabilities || null
+  const supportsRed = displayedCapabilities ? displayedCapabilities.family === 'impact' : null
   const paperWidthOptions = displayedCapabilities?.paper_width_options || []
   const previewTitle = output === 'kitchen_ticket' ? 'Kitchen ticket' : output === 'server_report' ? 'Server report' : 'Customer receipt'
   const previewSize = output === 'kitchen_ticket' ? effectiveKitchen.size : output === 'server_report' ? config.report?.size : config.customer?.size
@@ -385,8 +390,17 @@ export default function PrintingRoutingPage({ restaurantId }) {
                   <Select label="Item names" value={effectiveKitchen.item_name_mode} onChange={value => patchKitchen({ item_name_mode: value })}><option value="alias">Use aliases</option><option value="full">Use full names</option></Select>
                   <Select label="Modifier names" value={effectiveKitchen.modifier_name_mode} onChange={value => patchKitchen({ modifier_name_mode: value })}><option value="alias">Use aliases</option><option value="full">Use full names</option></Select>
                 </div>
-                <div className="mt-4"><Select label="Modifier color" value={effectiveKitchen.modifier_color} onChange={value => patchKitchen({ modifier_color: value })}><option value="black">Black</option><option value="red">Red on compatible impact printers</option></Select></div>
-                <div className="mt-4"><Toggle label="Print modifiers" checked={effectiveKitchen.print_modifiers} onChange={value => patchKitchen({ print_modifiers: value })} /><Toggle label="Print prices" checked={effectiveKitchen.print_prices} onChange={value => patchKitchen({ print_prices: value })} /><Toggle label="Print seats" checked={effectiveKitchen.print_seats} onChange={value => patchKitchen({ print_seats: value })} /><Toggle label="Combine identical items" checked={effectiveKitchen.combine_identical} onChange={value => patchKitchen({ combine_identical: value })} /></div>
+                <div className="mt-4">
+                  <Select label="Modifier color" value={effectiveKitchen.modifier_color} onChange={value => patchKitchen({ modifier_color: value })}><option value="black">Black</option><option value="red" disabled={supportsRed === false}>Red — impact printer ribbon</option></Select>
+                  <p className={`mt-2 text-xs ${supportsRed === false ? 'text-amber-200' : 'text-dash-tertiary'}`}>
+                    {supportsRed === true
+                      ? 'This impact printer can use its red ribbon for modifiers.'
+                      : supportsRed === false
+                        ? 'This printer cannot produce red. Choose an impact printer with a two-color ribbon to enable it.'
+                        : 'Choose a printer so its color capability can be verified.'}
+                  </p>
+                </div>
+                <div className="mt-4"><Toggle label="Print modifiers" checked={effectiveKitchen.print_modifiers} onChange={value => patchKitchen({ print_modifiers: value })} /><Toggle label="Bold modifiers (darker)" checked={effectiveKitchen.modifier_bold ?? true} onChange={value => patchKitchen({ modifier_bold: value })} /><Toggle label="Print prices" checked={effectiveKitchen.print_prices} onChange={value => patchKitchen({ print_prices: value })} /><Toggle label="Print seats" checked={effectiveKitchen.print_seats} onChange={value => patchKitchen({ print_seats: value })} /><Toggle label="Combine identical items" checked={effectiveKitchen.combine_identical} onChange={value => patchKitchen({ combine_identical: value })} /></div>
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
@@ -414,9 +428,16 @@ export default function PrintingRoutingPage({ restaurantId }) {
         </div>
 
         <div className="h-fit rounded-2xl border border-white/10 bg-white/[0.035] p-5 xl:sticky xl:top-20">
-          <div className="flex items-center justify-between"><div><p className="label-mono">Live preview</p><h2 className="mt-1 text-lg font-semibold">{previewTitle}</h2></div><span className="inline-flex items-center gap-1 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" /> Real renderer</span></div>
+          <div className="flex items-center justify-between"><div><p className="label-mono">Live preview</p><h2 className="mt-1 text-lg font-semibold">{previewTitle}</h2></div>{previewStatus === 'ready' ? <span className="inline-flex items-center gap-1 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" /> Real renderer</span> : previewStatus === 'error' ? <span className="inline-flex items-center gap-1 text-xs text-amber-200"><AlertCircle className="h-4 w-4" /> Renderer unavailable</span> : <span className="inline-flex items-center gap-1 text-xs text-dash-tertiary"><Loader2 className="h-4 w-4 animate-spin" /> Rendering</span>}</div>
           <div className="mx-auto mt-5 max-w-[430px] bg-[#fffdf6] px-7 py-8 text-black shadow-2xl">
-            <pre className={`whitespace-pre-wrap font-mono leading-relaxed ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{preview.split('\n').map((line, index) => <span key={index} className={output === 'kitchen_ticket' && effectiveKitchen.modifier_color === 'red' && /^\s*\+/.test(line) ? 'text-red-700' : ''}>{line}{'\n'}</span>)}</pre>
+            <pre className={`whitespace-pre-wrap font-mono leading-relaxed ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{preview.split('\n').map((line, index) => {
+              const isModifier = output === 'kitchen_ticket' && /^\s*\+/.test(line)
+              const className = [
+                isModifier && effectiveKitchen.modifier_color === 'red' && supportsRed === true ? 'text-red-700' : '',
+                isModifier && (effectiveKitchen.modifier_bold ?? true) ? 'font-bold' : '',
+              ].filter(Boolean).join(' ')
+              return <span key={index} className={className}>{line}{'\n'}</span>
+            })}</pre>
           </div>
           <p className="mt-4 text-center text-xs text-dash-tertiary">Uses live menu names and the same ReceiptLine renderer as the printer.</p>
         </div>
