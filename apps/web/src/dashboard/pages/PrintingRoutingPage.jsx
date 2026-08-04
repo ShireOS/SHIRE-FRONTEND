@@ -20,8 +20,8 @@ const DEFAULT_CONFIG = {
   kitchen: {
     size: 'easy_read', print_modifiers: true, print_prices: false,
     print_seats: true, combine_identical: true, item_name_mode: 'alias',
-    modifier_name_mode: 'alias', modifier_color: 'black', modifier_bold: true,
-    note_color: 'red', note_bold: true,
+    modifier_name_mode: 'alias', modifier_size: 'large', modifier_color: 'black', modifier_bold: true,
+    note_size: 'large', note_color: 'red', note_bold: true,
   },
   aliases: { items: {}, modifiers: {} },
   stations: {},
@@ -394,6 +394,8 @@ export default function PrintingRoutingPage({ restaurantId }) {
                 </div>
                 <div className="mt-4">
                   <div className="grid gap-3 md:grid-cols-2">
+                    <Select label="Modifier size" value={effectiveKitchen.modifier_size ?? 'large'} onChange={value => patchKitchen({ modifier_size: value })}><option value="standard">Standard</option><option value="large">Large (recommended)</option></Select>
+                    <Select label="Note size" value={effectiveKitchen.note_size ?? 'large'} onChange={value => patchKitchen({ note_size: value })}><option value="standard">Standard</option><option value="large">Large (recommended)</option></Select>
                     <Select label="Modifier color" value={effectiveKitchen.modifier_color} onChange={value => patchKitchen({ modifier_color: value })}><option value="black">Black</option><option value="red">Red — impact printer ribbon</option></Select>
                     <Select label="Note color" value={effectiveKitchen.note_color ?? 'red'} onChange={value => patchKitchen({ note_color: value })}><option value="black">Black</option><option value="red">Red — impact printer ribbon</option></Select>
                   </div>
@@ -444,10 +446,13 @@ export default function PrintingRoutingPage({ restaurantId }) {
               )
               const requestedColor = isNote ? (effectiveKitchen.note_color ?? 'red') : effectiveKitchen.modifier_color
               const requestedBold = isNote ? (effectiveKitchen.note_bold ?? true) : (effectiveKitchen.modifier_bold ?? true)
+              const requestedSize = isNote ? (effectiveKitchen.note_size ?? 'large') : (effectiveKitchen.modifier_size ?? 'large')
               const fallbackBold = requestedColor === 'red' && supportsRed === false
               const className = [
                 (isModifier || isNote) && requestedColor === 'red' && supportsRed === true ? 'text-red-700' : '',
                 (isModifier || isNote) && (requestedBold || fallbackBold) ? 'font-bold' : '',
+                (isModifier || isNote) && requestedSize === 'standard' ? 'text-[0.86em]' : '',
+                (isModifier || isNote) && requestedSize === 'large' ? 'text-[1em]' : '',
               ].filter(Boolean).join(' ')
               return <span key={index} className={className}>{line}{'\n'}</span>
             })}</pre>
