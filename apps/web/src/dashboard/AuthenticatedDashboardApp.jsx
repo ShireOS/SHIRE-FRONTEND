@@ -23,7 +23,6 @@ import DashboardShell from './shell/DashboardShell'
 import StoresPage from './pages/StoresPage'
 import RatesPage from './pages/RatesPage'
 import UsersPage from './pages/UsersPage'
-import RateApprovalBanner from './pages/RateApprovalBanner'
 import ResellerAccessCard from './pages/ResellerAccessCard'
 import OverviewPage from './pages/OverviewPage'
 import SettingsPage from './pages/SettingsPage'
@@ -5122,7 +5121,6 @@ export function RestaurantWorkspace({
       >
         {activeTab === 'analytics' && (
           <>
-            <RateApprovalBanner restaurant={restaurant} />
             <ResellerAccessCard restaurant={restaurant} />
             <LegacyAnalyticsDashboard restaurant={restaurant} />
           </>

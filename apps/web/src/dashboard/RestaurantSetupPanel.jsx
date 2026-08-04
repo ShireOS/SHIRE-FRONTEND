@@ -1282,7 +1282,11 @@ function defaultRolePermissions(jobCodes = []) {
 function defaultCloseoutSettings() {
   return {
     cash_tracking_mode: 'shared_drawer',
-    require_starting_bank: true,
+    // The drawer starts empty unless a restaurant says otherwise; the float is
+    // configured rather than typed by the manager every night.
+    require_starting_bank: false,
+    opening_bank_default: '',
+    track_deposit_at_close: false,
     blind_drawer_close: true,
     allow_paid_in_out: true,
     require_manager_for_drawer_open: true,
@@ -1720,6 +1724,9 @@ function normalizeCloseoutSettings(row) {
     cash_tracking_mode: CASH_TRACKING_OPTIONS.some(option => option.value === source.cash_tracking_mode) ? source.cash_tracking_mode : fallback.cash_tracking_mode,
     cash_drop_threshold: source.cash_drop_threshold == null ? '' : sanitizeNumber(source.cash_drop_threshold),
     cash_variance_threshold: source.cash_variance_threshold == null ? '' : sanitizeNumber(source.cash_variance_threshold),
+    opening_bank_default: source.opening_bank_default == null ? '' : sanitizeNumber(source.opening_bank_default),
+    require_starting_bank: source.require_starting_bank === true,
+    track_deposit_at_close: source.track_deposit_at_close === true,
     server_checkout_report_delivery: CHECKOUT_REPORT_OPTIONS.some(option => option.value === source.server_checkout_report_delivery) ? source.server_checkout_report_delivery : fallback.server_checkout_report_delivery,
     eod_batch_close_mode: EOD_BATCH_OPTIONS.some(option => option.value === source.eod_batch_close_mode) ? source.eod_batch_close_mode : fallback.eod_batch_close_mode,
     server_require_cash_tips_declared: false,
@@ -1849,6 +1856,7 @@ function closeoutSettingsPayload(closeoutSettings) {
     ...settings,
     cash_drop_threshold: settings.cash_drop_threshold === '' ? null : Number(settings.cash_drop_threshold),
     cash_variance_threshold: settings.cash_variance_threshold === '' ? null : Number(settings.cash_variance_threshold),
+    opening_bank_default: settings.opening_bank_default === '' ? 0 : Number(settings.opening_bank_default),
   }
 }
 
@@ -4380,10 +4388,12 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                 </SelectInput>
                 <TextInput value={closeoutSettings.cash_drop_threshold} inputMode="decimal" onChange={event => updateCloseoutSettings({ cash_drop_threshold: sanitizeNumber(event.target.value) })} placeholder="Cash drop threshold" />
                 <TextInput value={closeoutSettings.cash_variance_threshold} inputMode="decimal" onChange={event => updateCloseoutSettings({ cash_variance_threshold: sanitizeNumber(event.target.value) })} placeholder="Variance approval threshold" />
+                <TextInput value={closeoutSettings.opening_bank_default} inputMode="decimal" onChange={event => updateCloseoutSettings({ opening_bank_default: sanitizeNumber(event.target.value) })} placeholder="Starting float, blank for none" />
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {[
-                  ['require_starting_bank', 'Starting bank required'],
+                  ['require_starting_bank', 'Manager counts float at close'],
+                  ['track_deposit_at_close', 'Deposit & float left in drawer'],
                   ['blind_drawer_close', 'Blind close'],
                   ['allow_paid_in_out', 'Paid in/out'],
                   ['require_manager_for_drawer_open', 'Always require manager for drawer actions'],

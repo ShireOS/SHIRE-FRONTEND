@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { posCloseDayApi } from '../../shared/api/posClient'
 import { queryClient } from '../../shared/query'
+import CashCloseDaySettings from '../components/CashCloseDaySettings'
 
 const INITIAL_CASH = {
   opening_bank: '0.00',
@@ -151,13 +152,23 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     void loadPreview()
   }, [loadPreview])
 
+  // Same cash policy the iPad reads. `require_starting_bank` decides who
+  // supplies the float; when nobody is asked, the configured amount is used and
+  // it is 0 by default, so this arithmetic is unchanged for a store without one.
+  const closeoutSettings = preview?.closeout_settings
+  const configuredFloat = numberValue(closeoutSettings?.opening_bank_default)
+  const managerCountsFloat = Boolean(closeoutSettings?.require_starting_bank)
+  const showFloat = managerCountsFloat || configuredFloat > 0
+  const trackDeposit = Boolean(closeoutSettings?.track_deposit_at_close)
+  const effectiveOpeningBank = managerCountsFloat ? numberValue(cash.opening_bank) : configuredFloat
+
   const expectedCash = useMemo(() => (
-    numberValue(cash.opening_bank)
+    effectiveOpeningBank
     + numberValue(preview?.cash_reconciliation?.cash_sales ?? preview?.cash_collected)
     + numberValue(cash.paid_in)
     - numberValue(cash.paid_out)
     - numberValue(cash.cash_refunds)
-  ), [cash, preview])
+  ), [cash, preview, effectiveOpeningBank])
   const variance = numberValue(cash.counted_cash) - expectedCash
   const threshold = Number(preview?.closeout_settings?.cash_variance_threshold || 0)
   const openEmployees = preview?.open_timeclock_entries || []
@@ -201,7 +212,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         business_date: preview.business_date,
         close_attempt_id: attemptId.current,
         confirm_auto_clock_out: confirmAutoClockOut,
-        opening_bank: numberValue(cash.opening_bank),
+        opening_bank: effectiveOpeningBank,
         paid_in: numberValue(cash.paid_in),
         paid_out: numberValue(cash.paid_out),
         cash_refunds: numberValue(cash.cash_refunds),
@@ -309,13 +320,26 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             </div>
             <p className="mt-1 text-sm text-dash-secondary">Enter the actual drawer values. These become the finalized close record.</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              <CashInput label="Opening bank" value={cash.opening_bank} onChange={(value) => updateCash('opening_bank', value)} />
+              {managerCountsFloat && (
+                <CashInput label="Starting float" value={cash.opening_bank} onChange={(value) => updateCash('opening_bank', value)} />
+              )}
+              {showFloat && !managerCountsFloat && (
+                <div>
+                  <p className="label-mono">Starting float</p>
+                  <p className="mt-1.5 flex min-h-[42px] items-center border border-dash-border bg-[var(--glass-bg)] px-3 font-semibold text-dash-cream">{money(configuredFloat)}</p>
+                  <p className="mt-1 text-xs text-dash-tertiary">Set in back office</p>
+                </div>
+              )}
               <CashInput label="Paid in" value={cash.paid_in} onChange={(value) => updateCash('paid_in', value)} />
               <CashInput label="Paid out" value={cash.paid_out} onChange={(value) => updateCash('paid_out', value)} />
               <CashInput label="Cash refunds" value={cash.cash_refunds} onChange={(value) => updateCash('cash_refunds', value)} />
               <CashInput label="Counted cash" value={cash.counted_cash} onChange={(value) => updateCash('counted_cash', value)} />
-              <CashInput label="Retained bank" value={cash.retained_bank} onChange={(value) => updateCash('retained_bank', value)} />
-              <CashInput label="Deposit amount" value={cash.deposit_amount} onChange={(value) => updateCash('deposit_amount', value)} />
+              {trackDeposit && (
+                <>
+                  <CashInput label="Float left in drawer" value={cash.retained_bank} onChange={(value) => updateCash('retained_bank', value)} />
+                  <CashInput label="Deposit amount" value={cash.deposit_amount} onChange={(value) => updateCash('deposit_amount', value)} />
+                </>
+              )}
             </div>
             <div className="mt-5 grid gap-3 border-y border-dash-border py-4 sm:grid-cols-3">
               <div><p className="label-mono">Cash sales</p><p className="mt-1 font-semibold text-dash-cream">{money(preview?.cash_reconciliation?.cash_sales ?? preview?.cash_collected)}</p></div>
@@ -353,6 +377,8 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
           </section>
         </div>
       )}
+
+      <CashCloseDaySettings restaurantId={restaurantId} />
 
       {modal === 'open-checks' && (
         <ActionModal

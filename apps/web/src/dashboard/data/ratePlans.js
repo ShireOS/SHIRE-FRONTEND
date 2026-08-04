@@ -1,4 +1,3 @@
-import { supabase } from '../../shared/lib/supabase'
 import { queryClient, queryKeys, fetchWithSupabaseAuth } from '../../shared/query'
 
 export const PRICING_MODES = [
@@ -103,18 +102,6 @@ export async function fetchRatePlans(restaurantIds) {
   return Object.fromEntries(entries)
 }
 
-export async function fetchPendingRateRequests(restaurantIds) {
-  if (!restaurantIds?.length) return []
-  const { data, error } = await supabase
-    .from('rate_change_requests')
-    .select('*')
-    .in('restaurant_id', restaurantIds)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false })
-  if (error) throw error
-  return data || []
-}
-
 export async function upsertRatePlan(restaurantId, plan) {
   const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pricing-policy`, {
     method: 'PUT',
@@ -122,40 +109,4 @@ export async function upsertRatePlan(restaurantId, plan) {
   })
   queryClient.setQueryData(queryKeys.pricingPolicy(restaurantId), saved)
   return pricingPolicyToRatePlan(restaurantId, saved)
-}
-
-export async function createRateChangeRequest({ restaurantId, currentRate, proposedPlan, userId, message }) {
-  const { data, error } = await supabase
-    .from('rate_change_requests')
-    .insert({
-      restaurant_id: restaurantId,
-      requested_by: userId,
-      current_rate: currentRate,
-      proposed_rate: proposedPlan.card_rate,
-      proposed_changes: proposedPlan,
-      message: message || null,
-    })
-    .select()
-    .single()
-  if (error) throw error
-  return data
-}
-
-export async function resolveRateChangeRequest(request, status) {
-  const result = await fetchWithSupabaseAuth(
-    `/restaurants/${request.restaurant_id}/pricing-policy/rate-change-requests/${request.id}/resolve`,
-    { method: 'POST', body: JSON.stringify({ status }) },
-  )
-  if (result?.pricing_policy) {
-    queryClient.setQueryData(queryKeys.pricingPolicy(request.restaurant_id), result.pricing_policy)
-  }
-  return result
-}
-
-export async function cancelRateChangeRequest(requestId) {
-  const { error } = await supabase
-    .from('rate_change_requests')
-    .update({ status: 'cancelled', resolved_at: new Date().toISOString() })
-    .eq('id', requestId)
-  if (error) throw error
 }

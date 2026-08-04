@@ -521,7 +521,9 @@ const defaultRolePermissions = (jobCodes: JobCodeData[] = defaultJobCodes()): Ro
 
 const defaultCloseoutSettings = (): CloseoutSettingsData => ({
   cash_tracking_mode: 'shared_drawer',
-  require_starting_bank: true,
+  // The drawer starts empty unless a restaurant configures a float. Onboarding
+  // must not opt a new store into typing an opening bank every night.
+  require_starting_bank: false,
   blind_drawer_close: true,
   allow_paid_in_out: true,
   require_manager_for_drawer_open: true,

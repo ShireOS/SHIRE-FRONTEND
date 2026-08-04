@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { AlertCircle, Banknote, Check, ChevronDown, Clock } from 'lucide-react'
+import { AlertCircle, Banknote, Check, ChevronDown } from 'lucide-react'
 import { useAuth } from '../../auth'
 import {
   PRICING_MODES,
@@ -8,10 +8,7 @@ import {
   DEFAULT_RATE_PLAN,
   formatRate,
   fetchRatePlans,
-  fetchPendingRateRequests,
   upsertRatePlan,
-  createRateChangeRequest,
-  cancelRateChangeRequest,
 } from '../data/ratePlans'
 
 const maskAccount = (value) => (value ? `···${String(value).slice(-4)}` : null)
@@ -81,7 +78,7 @@ function TogglePill({ checked, onChange, label }) {
   )
 }
 
-function RatePlanCard({ restaurant, plan, pendingRequest, userId, onSaved, onRequestChange, restaurantBase }) {
+function RatePlanCard({ restaurant, plan, userId, onSaved, restaurantBase }) {
   const navigate = useNavigate()
   const [expanded, setExpanded] = useState(false)
   const [form, setForm] = useState(() => planToForm(plan))
@@ -109,41 +106,11 @@ function RatePlanCard({ restaurant, plan, pendingRequest, userId, onSaved, onReq
     setSaving(true)
     setFeedback(null)
     try {
-      const proposed = formToPlan(form)
-      const isRaise = currentRate !== null && proposed.card_rate > currentRate
-
-      if (isRaise) {
-        // Raising the effective rate requires owner sign-off; everything else
-        // in the proposal rides along in the request snapshot.
-        const request = await createRateChangeRequest({
-          restaurantId: restaurant.id,
-          currentRate,
-          proposedPlan: proposed,
-          userId,
-        })
-        onRequestChange(request)
-        setFeedback({ tone: 'pending', text: 'Rate raise sent to the owner for approval.' })
-      } else {
-        const saved = await upsertRatePlan(restaurant.id, proposed, userId)
-        onSaved(saved)
-        setFeedback({ tone: 'success', text: 'Rate plan saved.' })
-      }
+      const saved = await upsertRatePlan(restaurant.id, formToPlan(form), userId)
+      onSaved(saved)
+      setFeedback({ tone: 'success', text: 'Rate plan saved.' })
     } catch (error) {
       setFeedback({ tone: 'error', text: error?.message || 'Could not save the rate plan.' })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const cancelPending = async () => {
-    if (!pendingRequest) return
-    setSaving(true)
-    try {
-      await cancelRateChangeRequest(pendingRequest.id)
-      onRequestChange(null)
-      setFeedback({ tone: 'success', text: 'Pending request cancelled.' })
-    } catch (error) {
-      setFeedback({ tone: 'error', text: error?.message || 'Could not cancel the request.' })
     } finally {
       setSaving(false)
     }
@@ -163,12 +130,6 @@ function RatePlanCard({ restaurant, plan, pendingRequest, userId, onSaved, onReq
             {plan ? `${formatRate(plan.card_rate)} · ${modeLabel}` : 'No rate plan yet'}
           </p>
         </div>
-        {pendingRequest && (
-          <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-dash-warning/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-eyebrow text-dash-warning">
-            <Clock size={11} strokeWidth={2} aria-hidden="true" />
-            {formatRate(pendingRequest.current_rate)} → {formatRate(pendingRequest.proposed_rate)} pending
-          </span>
-        )}
         {!payout.ready && (
           <span
             title="Payout details incomplete"
@@ -340,23 +301,6 @@ function RatePlanCard({ restaurant, plan, pendingRequest, userId, onSaved, onReq
             </aside>
           </div>
 
-          {pendingRequest && (
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dash-warning/30 bg-dash-warning/10 px-3 py-2 text-sm text-dash-secondary">
-              <Clock size={14} strokeWidth={1.75} className="text-dash-warning" aria-hidden="true" />
-              <span>
-                Raise to <strong className="font-mono tabular-nums">{formatRate(pendingRequest.proposed_rate)}</strong> is waiting on the owner.
-              </span>
-              <button
-                type="button"
-                onClick={() => void cancelPending()}
-                disabled={saving}
-                className="ml-auto text-xs font-semibold text-dash-danger hover:underline disabled:opacity-50"
-              >
-                Cancel request
-              </button>
-            </div>
-          )}
-
           {feedback && (
             <p
               className={[
@@ -375,8 +319,7 @@ function RatePlanCard({ restaurant, plan, pendingRequest, userId, onSaved, onReq
             <button
               type="button"
               onClick={() => void save()}
-              disabled={saving || Boolean(pendingRequest)}
-              title={pendingRequest ? 'Resolve the pending request before making more changes' : undefined}
+              disabled={saving}
               className="h-9 rounded-xl bg-shell-cta px-5 text-sm font-medium text-shell-cta-text transition hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? 'Saving…' : 'Save changes'}
@@ -392,7 +335,6 @@ export default function RatesPage({ restaurantBase = '/restaurants', fallbackPat
   const auth = useAuth()
   const restaurants = auth.restaurant.restaurants || []
   const [plans, setPlans] = useState({})
-  const [pending, setPending] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
 
@@ -405,11 +347,10 @@ export default function RatesPage({ restaurantBase = '/restaurants', fallbackPat
     }
     let cancelled = false
     setLoading(true)
-    Promise.all([fetchRatePlans(restaurantIds), fetchPendingRateRequests(restaurantIds)])
-      .then(([planMap, pendingRequests]) => {
+    fetchRatePlans(restaurantIds)
+      .then((planMap) => {
         if (cancelled) return
         setPlans(planMap)
-        setPending(pendingRequests)
         setLoadError(null)
       })
       .catch((error) => {
@@ -434,7 +375,7 @@ export default function RatesPage({ restaurantBase = '/restaurants', fallbackPat
         <h1 className="mt-1 text-4xl font-semibold tracking-tight text-dash-cream">Rates & Pricing</h1>
         <p className="mt-1 max-w-2xl text-sm text-dash-secondary">
           Set each store's effective card rate, the tenders it applies to, and its pricing mode.
-          Raising a rate sends the owner an approval request; lowering applies immediately.
+          Changes apply immediately and update the store's guest checks and receipts.
         </p>
       </header>
 
@@ -462,15 +403,8 @@ export default function RatesPage({ restaurantBase = '/restaurants', fallbackPat
               key={restaurant.id}
               restaurant={restaurant}
               plan={plans[restaurant.id] || null}
-              pendingRequest={pending.find((request) => request.restaurant_id === restaurant.id) || null}
               userId={auth.user?.id}
               onSaved={(saved) => setPlans((prev) => ({ ...prev, [restaurant.id]: saved }))}
-              onRequestChange={(request) =>
-                setPending((prev) => {
-                  const withoutStore = prev.filter((item) => item.restaurant_id !== restaurant.id)
-                  return request ? [request, ...withoutStore] : withoutStore
-                })
-              }
               restaurantBase={restaurantBase}
             />
           ))}
