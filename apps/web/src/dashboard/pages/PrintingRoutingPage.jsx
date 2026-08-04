@@ -22,7 +22,7 @@ const DEFAULT_CONFIG = {
   report: { size: 'medium' },
   kitchen: {
     size: 'easy_read', print_modifiers: true, print_prices: false,
-    print_seats: true, combine_identical: true, item_name_mode: 'alias',
+    print_seats: true, combine_identical: true, item_bold: true, item_name_mode: 'alias',
     modifier_name_mode: 'alias', modifier_size: 'large', modifier_color: 'black', modifier_bold: true,
     note_size: 'large', note_color: 'red', note_bold: true,
   },
@@ -458,7 +458,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
                         : 'Choose a printer to verify color. Requested red safely falls back to bold black.'}
                   </p>
                 </div>
-                <div className="mt-4"><Toggle label="Print modifiers" checked={effectiveKitchen.print_modifiers} onChange={value => patchKitchen({ print_modifiers: value })} /><Toggle label="Bold modifiers (darker)" checked={effectiveKitchen.modifier_bold ?? true} onChange={value => patchKitchen({ modifier_bold: value })} /><Toggle label="Bold notes (darker)" checked={effectiveKitchen.note_bold ?? true} onChange={value => patchKitchen({ note_bold: value })} /><Toggle label="Print prices" checked={effectiveKitchen.print_prices} onChange={value => patchKitchen({ print_prices: value })} /><Toggle label="Print seats" checked={effectiveKitchen.print_seats} onChange={value => patchKitchen({ print_seats: value })} /><Toggle label="Combine identical items" checked={effectiveKitchen.combine_identical} onChange={value => patchKitchen({ combine_identical: value })} /></div>
+                <div className="mt-4"><Toggle label="Bold items (darker)" checked={effectiveKitchen.item_bold ?? true} onChange={value => patchKitchen({ item_bold: value })} /><Toggle label="Print modifiers" checked={effectiveKitchen.print_modifiers} onChange={value => patchKitchen({ print_modifiers: value })} /><Toggle label="Bold modifiers (darker)" checked={effectiveKitchen.modifier_bold ?? true} onChange={value => patchKitchen({ modifier_bold: value })} /><Toggle label="Bold notes (darker)" checked={effectiveKitchen.note_bold ?? true} onChange={value => patchKitchen({ note_bold: value })} /><Toggle label="Print prices" checked={effectiveKitchen.print_prices} onChange={value => patchKitchen({ print_prices: value })} /><Toggle label="Print seats" checked={effectiveKitchen.print_seats} onChange={value => patchKitchen({ print_seats: value })} /><Toggle label="Combine identical items" checked={effectiveKitchen.combine_identical} onChange={value => patchKitchen({ combine_identical: value })} /></div>
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
@@ -490,18 +490,19 @@ export default function PrintingRoutingPage({ restaurantId }) {
           <div className="mx-auto mt-5 max-w-[430px] bg-[#fffdf6] px-7 py-8 text-black shadow-2xl">
             <pre className={`whitespace-pre-wrap font-mono leading-relaxed ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{preview.split('\n').map((line, index, lines) => {
               const isModifier = output === 'kitchen_ticket' && /^\s*\+/.test(line)
+              const isItem = output === 'kitchen_ticket' && /^\d+(?:\.\d+)?\s{2}\S/.test(line)
               const isNote = output === 'kitchen_ticket' && (
                 /^\s*NOTE:/.test(line)
                 || line.trim() === 'ORDER NOTE'
                 || (index > 0 && lines[index - 1].trim() === 'ORDER NOTE')
               )
               const requestedColor = isNote ? (effectiveKitchen.note_color ?? 'red') : effectiveKitchen.modifier_color
-              const requestedBold = isNote ? (effectiveKitchen.note_bold ?? true) : (effectiveKitchen.modifier_bold ?? true)
+              const requestedBold = isItem ? (effectiveKitchen.item_bold ?? true) : isNote ? (effectiveKitchen.note_bold ?? true) : (effectiveKitchen.modifier_bold ?? true)
               const requestedSize = isNote ? (effectiveKitchen.note_size ?? 'large') : (effectiveKitchen.modifier_size ?? 'large')
               const fallbackBold = requestedColor === 'red' && supportsRed === false
               const className = [
                 (isModifier || isNote) && requestedColor === 'red' && supportsRed === true ? 'text-red-700' : '',
-                (isModifier || isNote) && (requestedBold || fallbackBold) ? 'font-bold' : '',
+                (isModifier || isNote || isItem) && (requestedBold || fallbackBold) ? 'font-bold' : '',
                 (isModifier || isNote) && requestedSize === 'standard' ? 'text-[0.86em]' : '',
                 (isModifier || isNote) && requestedSize === 'large' ? 'text-[1em]' : '',
               ].filter(Boolean).join(' ')
