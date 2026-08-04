@@ -3,7 +3,6 @@ import { useLocation } from 'react-router-dom'
 import { AlertCircle, CheckCircle2, Loader2, Printer, ReceiptText, Route, Search } from 'lucide-react'
 import { supabase } from '../../shared/lib/supabase'
 import { fetchPosApi } from '../../shared/api/posClient'
-import { fetchWithSupabaseAuth } from '../../shared/query'
 import MenuPanel from '../MenuPanel'
 import ResilientPrintingCard from '../components/printing/ResilientPrintingCard'
 import ProductionWorkflowCard from '../components/printing/ProductionWorkflowCard'
@@ -86,7 +85,11 @@ export default function PrintingRoutingPage({ restaurantId }) {
               if (err?.status === 404) return null
               throw err
             }),
-          fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing`),
+          // Printer IDs, usage, and capabilities must come from the same POS
+          // backend that validates and renders the preview. The general back
+          // office API still exposes legacy pos_routing_targets IDs, which are
+          // not valid kitchen_output_targets IDs.
+          fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing`),
           supabase.from('menu_items').select('id,name,category').eq('restaurant_id', restaurantId).is('archived_at', null).order('name'),
           supabase.from('menu_modifiers').select('id,name,group_name').eq('restaurant_id', restaurantId).is('archived_at', null).order('name'),
         ])
@@ -164,9 +167,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
         }
       } catch (err) {
         if (err?.name !== 'AbortError' && requestId === previewRequestRef.current) {
-          setPreview(err?.status === 404
-            ? 'Receipt preview needs the latest POS backend deployment.'
-            : (err?.message || 'Preview unavailable'))
+          setPreview(err?.message || 'Preview unavailable')
           setPreviewStatus('error')
         }
       }
@@ -262,7 +263,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
       for (const targetId of dirtyTargetIds) {
         const target = (routing.targets || []).find(candidate => String(candidate.id) === String(targetId))
         if (!target) continue
-        await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing/targets/${targetId}`, {
+        await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing/targets/${targetId}`, {
           method: 'PATCH',
           body: JSON.stringify({
             name: target.name,
@@ -276,7 +277,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
         })
       }
       if (dirtyTargetIds.size) {
-        const routes = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing`)
+        const routes = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing`)
         setRouting(routes || { stations: [], targets: [] })
         setDirtyTargetIds(new Set())
       }
