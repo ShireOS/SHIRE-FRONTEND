@@ -21,6 +21,7 @@ const DEFAULT_CONFIG = {
     size: 'easy_read', print_modifiers: true, print_prices: false,
     print_seats: true, combine_identical: true, item_name_mode: 'alias',
     modifier_name_mode: 'alias', modifier_color: 'black', modifier_bold: true,
+    note_color: 'red', note_bold: true,
   },
   aliases: { items: {}, modifiers: {} },
   stations: {},
@@ -392,16 +393,19 @@ export default function PrintingRoutingPage({ restaurantId }) {
                   <Select label="Modifier names" value={effectiveKitchen.modifier_name_mode} onChange={value => patchKitchen({ modifier_name_mode: value })}><option value="alias">Use aliases</option><option value="full">Use full names</option></Select>
                 </div>
                 <div className="mt-4">
-                  <Select label="Modifier color" value={effectiveKitchen.modifier_color} onChange={value => patchKitchen({ modifier_color: value })}><option value="black">Black</option><option value="red" disabled={supportsRed === false}>Red — impact printer ribbon</option></Select>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <Select label="Modifier color" value={effectiveKitchen.modifier_color} onChange={value => patchKitchen({ modifier_color: value })}><option value="black">Black</option><option value="red">Red — impact printer ribbon</option></Select>
+                    <Select label="Note color" value={effectiveKitchen.note_color ?? 'red'} onChange={value => patchKitchen({ note_color: value })}><option value="black">Black</option><option value="red">Red — impact printer ribbon</option></Select>
+                  </div>
                   <p className={`mt-2 text-xs ${supportsRed === false ? 'text-amber-200' : 'text-dash-tertiary'}`}>
                     {supportsRed === true
-                      ? 'This impact printer can use its red ribbon for modifiers.'
+                      ? 'This impact printer can use its red ribbon for modifiers and notes.'
                       : supportsRed === false
-                        ? 'This printer cannot produce red. Choose an impact printer with a two-color ribbon to enable it.'
-                        : 'Choose a printer so its color capability can be verified.'}
+                        ? 'This printer cannot produce red. Requested red emphasis prints bold black instead.'
+                        : 'Choose a printer to verify color. Requested red safely falls back to bold black.'}
                   </p>
                 </div>
-                <div className="mt-4"><Toggle label="Print modifiers" checked={effectiveKitchen.print_modifiers} onChange={value => patchKitchen({ print_modifiers: value })} /><Toggle label="Bold modifiers (darker)" checked={effectiveKitchen.modifier_bold ?? true} onChange={value => patchKitchen({ modifier_bold: value })} /><Toggle label="Print prices" checked={effectiveKitchen.print_prices} onChange={value => patchKitchen({ print_prices: value })} /><Toggle label="Print seats" checked={effectiveKitchen.print_seats} onChange={value => patchKitchen({ print_seats: value })} /><Toggle label="Combine identical items" checked={effectiveKitchen.combine_identical} onChange={value => patchKitchen({ combine_identical: value })} /></div>
+                <div className="mt-4"><Toggle label="Print modifiers" checked={effectiveKitchen.print_modifiers} onChange={value => patchKitchen({ print_modifiers: value })} /><Toggle label="Bold modifiers (darker)" checked={effectiveKitchen.modifier_bold ?? true} onChange={value => patchKitchen({ modifier_bold: value })} /><Toggle label="Bold notes (darker)" checked={effectiveKitchen.note_bold ?? true} onChange={value => patchKitchen({ note_bold: value })} /><Toggle label="Print prices" checked={effectiveKitchen.print_prices} onChange={value => patchKitchen({ print_prices: value })} /><Toggle label="Print seats" checked={effectiveKitchen.print_seats} onChange={value => patchKitchen({ print_seats: value })} /><Toggle label="Combine identical items" checked={effectiveKitchen.combine_identical} onChange={value => patchKitchen({ combine_identical: value })} /></div>
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
@@ -431,11 +435,19 @@ export default function PrintingRoutingPage({ restaurantId }) {
         <div className="h-fit rounded-2xl border border-white/10 bg-white/[0.035] p-5 xl:sticky xl:top-20">
           <div className="flex items-center justify-between"><div><p className="label-mono">Live preview</p><h2 className="mt-1 text-lg font-semibold">{previewTitle}</h2></div>{previewStatus === 'ready' ? <span className="inline-flex items-center gap-1 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" /> Real renderer</span> : previewStatus === 'error' ? <span className="inline-flex items-center gap-1 text-xs text-amber-200"><AlertCircle className="h-4 w-4" /> Renderer unavailable</span> : <span className="inline-flex items-center gap-1 text-xs text-dash-tertiary"><Loader2 className="h-4 w-4 animate-spin" /> Rendering</span>}</div>
           <div className="mx-auto mt-5 max-w-[430px] bg-[#fffdf6] px-7 py-8 text-black shadow-2xl">
-            <pre className={`whitespace-pre-wrap font-mono leading-relaxed ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{preview.split('\n').map((line, index) => {
+            <pre className={`whitespace-pre-wrap font-mono leading-relaxed ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{preview.split('\n').map((line, index, lines) => {
               const isModifier = output === 'kitchen_ticket' && /^\s*\+/.test(line)
+              const isNote = output === 'kitchen_ticket' && (
+                /^\s*NOTE:/.test(line)
+                || line.trim() === 'ORDER NOTE'
+                || (index > 0 && lines[index - 1].trim() === 'ORDER NOTE')
+              )
+              const requestedColor = isNote ? (effectiveKitchen.note_color ?? 'red') : effectiveKitchen.modifier_color
+              const requestedBold = isNote ? (effectiveKitchen.note_bold ?? true) : (effectiveKitchen.modifier_bold ?? true)
+              const fallbackBold = requestedColor === 'red' && supportsRed === false
               const className = [
-                isModifier && effectiveKitchen.modifier_color === 'red' && supportsRed === true ? 'text-red-700' : '',
-                isModifier && (effectiveKitchen.modifier_bold ?? true) ? 'font-bold' : '',
+                (isModifier || isNote) && requestedColor === 'red' && supportsRed === true ? 'text-red-700' : '',
+                (isModifier || isNote) && (requestedBold || fallbackBold) ? 'font-bold' : '',
               ].filter(Boolean).join(' ')
               return <span key={index} className={className}>{line}{'\n'}</span>
             })}</pre>
