@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Check, Copy, Layers, Monitor, Plus, Printer, RefreshCw, Send, ShieldCheck, Trash2 } from 'lucide-react'
+import { AlertTriangle, Check, Copy, Layers, Monitor, Pencil, Plus, Printer, RefreshCw, Send, ShieldCheck, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '../shared/Card'
 import { Button } from '../shared/Button'
 import { Badge } from '../shared/Badge'
 import { Modal } from '../shared/Modal'
 import DeviceSessionPolicySection from './DeviceSessionPolicySection'
 import HardwareChainGuide from '../printing/HardwareChainGuide'
+import PrinterEndpointEditModal from '../printing/PrinterEndpointEditModal'
 import {
   CONNECTION_TYPES,
   DEVICE_TYPE_LABELS,
@@ -510,6 +511,7 @@ export default function StoreDevicesPanel({ restaurantId }) {
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [pairingOpen, setPairingOpen] = useState(false)
+  const [editingPrinterEndpoint, setEditingPrinterEndpoint] = useState(null)
   const [printerDraft, setPrinterDraft] = useState({ name: '', target_type: 'printer', connection_type: 'network', host: '', port: '' })
   const [groupDraft, setGroupDraft] = useState('')
   const [testStates, setTestStates] = useState({})
@@ -594,6 +596,14 @@ export default function StoreDevicesPanel({ restaurantId }) {
   const physicalPrinterTargets = useMemo(
     () => (failoverStatus?.targets || []).filter((target) => target.is_active && target.target_type === 'printer'),
     [failoverStatus?.targets]
+  )
+  const networkPrinterEndpoints = useMemo(
+    () => (config?.printerEndpoints || []).filter((endpoint) => endpoint.connection_type === 'network'),
+    [config?.printerEndpoints]
+  )
+  const physicalPrinterNames = useMemo(
+    () => new Map((config?.outputTargets || []).map((target) => [target.id, target.name])),
+    [config?.outputTargets]
   )
   const cashDrawerTargetIds = useMemo(() => new Set(
     (config?.devices || []).flatMap((device) => (device.printers || [])
@@ -727,6 +737,30 @@ export default function StoreDevicesPanel({ restaurantId }) {
           <SectionTitle icon={Printer} title="Printers & screens" count={targets.length} />
         </CardHeader>
         <CardContent className="space-y-3">
+          {networkPrinterEndpoints.length > 0 && (
+            <div className="rounded-xl border border-dash-border bg-[var(--glass-bg)] p-4">
+              <p className="label-mono">Network printer IPs</p>
+              <div className="mt-3 space-y-2">
+                {networkPrinterEndpoints.map((endpoint) => (
+                  <div key={endpoint.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-dash-border px-3 py-2">
+                    <span className="text-sm font-semibold text-dash-cream">{physicalPrinterNames.get(endpoint.target_id) || endpoint.name}</span>
+                    <span className="text-xs text-dash-tertiary">{endpoint.config?.host || 'No IP'}:{endpoint.config?.port || 9100}</span>
+                    {!endpoint.is_active && <Badge variant="neutral">Inactive path</Badge>}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto"
+                      disabled={busy}
+                      onClick={() => setEditingPrinterEndpoint(endpoint)}
+                      icon={<Pencil size={13} aria-hidden="true" />}
+                    >
+                      Edit IP
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {targets.map((target) => {
             const test = testStates[target.id]
             const canTest = target.is_active && target.target_type === 'printer' && Boolean(target.config?.host)
@@ -985,6 +1019,12 @@ export default function StoreDevicesPanel({ restaurantId }) {
         restaurantId={restaurantId}
         isOpen={pairingOpen}
         onClose={() => { setPairingOpen(false); load() }}
+      />
+      <PrinterEndpointEditModal
+        restaurantId={restaurantId}
+        endpoint={editingPrinterEndpoint}
+        onClose={() => setEditingPrinterEndpoint(null)}
+        onSaved={load}
       />
     </div>
   )

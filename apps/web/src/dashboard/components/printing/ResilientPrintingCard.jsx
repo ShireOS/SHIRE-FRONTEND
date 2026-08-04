@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Cable, Network, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Cable, Network, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { fetchPosApi } from '../../../shared/api/posClient'
+import PrinterEndpointEditModal from './PrinterEndpointEditModal'
 
 const emptyForm = { target_id: '', name: '', connection_type: 'usb', priority: 2, agent_device_id: '', agent_host: '', host: '', port: 9100, vendor_id: '', product_id: '', reason: '' }
 
@@ -10,6 +11,7 @@ export default function ResilientPrintingCard({ restaurantId }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [editingEndpoint, setEditingEndpoint] = useState(null)
 
   const load = async () => {
     setLoading(true); setError('')
@@ -65,6 +67,11 @@ export default function ResilientPrintingCard({ restaurantId }) {
     } catch (err) { setError(err?.message || 'Could not remove printer path') }
   }
 
+  const startEndpointEdit = endpoint => {
+    setError('')
+    setEditingEndpoint(endpoint)
+  }
+
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
       <div className="flex items-start justify-between gap-4">
@@ -78,7 +85,8 @@ export default function ResilientPrintingCard({ restaurantId }) {
           <div className="mt-3 space-y-2">{target.endpoints.map(endpoint => <div key={endpoint.id} className="flex items-center gap-3 rounded-lg border border-white/10 px-3 py-2">
             {endpoint.connection_type === 'usb' ? <Cable className="h-4 w-4 text-dash-gold" /> : <Network className="h-4 w-4 text-sky-300" />}
             <div className="min-w-0 flex-1"><p className="truncate text-sm">{endpoint.priority}. {endpoint.name}</p><p className="truncate text-xs text-dash-tertiary">{endpoint.connection_type === 'usb' ? `Agent: ${endpoint.agent_device_name || 'not assigned'}` : `${endpoint.config?.host || 'No host'}:${endpoint.config?.port || 9100}`}</p></div>
-            <button type="button" onClick={() => removeEndpoint(endpoint)} className="p-1 text-dash-tertiary hover:text-red-300"><Trash2 className="h-4 w-4" /></button>
+            {endpoint.connection_type === 'network' && <button type="button" onClick={() => startEndpointEdit(endpoint)} aria-label={`Edit printer IP for ${endpoint.name}`} title="Edit printer IP" className="p-1 text-dash-tertiary hover:text-sky-200"><Pencil className="h-4 w-4" /></button>}
+            <button type="button" onClick={() => removeEndpoint(endpoint)} aria-label={`Remove ${endpoint.name}`} title="Remove printer path" className="p-1 text-dash-tertiary hover:text-red-300"><Trash2 className="h-4 w-4" /></button>
           </div>)}{!target.endpoints.length && <p className="text-sm text-amber-200">No delivery path configured.</p>}</div>
         </div>)}
       </div>
@@ -102,6 +110,13 @@ export default function ResilientPrintingCard({ restaurantId }) {
         <button disabled={saving || !form.target_id} className="mt-4 rounded-lg bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">{saving ? 'Saving…' : 'Add path'}</button>
       </form>
       <p className="mt-4 text-xs text-dash-tertiary">Internet can be down while Ethernet printing still works if the local switch/AP and printer remain powered. USB protects against the printer Ethernet path failing; it does not protect against printer power, paper, or mechanical failure.</p>
+
+      <PrinterEndpointEditModal
+        restaurantId={restaurantId}
+        endpoint={editingEndpoint}
+        onClose={() => setEditingEndpoint(null)}
+        onSaved={load}
+      />
     </div>
   )
 }
