@@ -7,6 +7,7 @@ import MenuPanel from '../MenuPanel'
 import ResilientPrintingCard from '../components/printing/ResilientPrintingCard'
 import ProductionWorkflowCard from '../components/printing/ProductionWorkflowCard'
 import HardwareChainGuide from '../components/printing/HardwareChainGuide'
+import TicketTopBuilder from '../components/printing/TicketTopBuilder'
 
 const DEFAULT_CONFIG = {
   receipt_detail: 'clean',
@@ -70,6 +71,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const [scope, setScope] = useState('whole')
   const [output, setOutput] = useState('kitchen_ticket')
   const [customerVariant, setCustomerVariant] = useState('open_check')
+  const [kitchenVariant, setKitchenVariant] = useState('dine_in')
   const [selectedTargetId, setSelectedTargetId] = useState('')
   const [previewCapabilities, setPreviewCapabilities] = useState(null)
   const [dirtyTargetIds, setDirtyTargetIds] = useState(() => new Set())
@@ -164,6 +166,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
           body: JSON.stringify({
             output,
             customer_variant: customerVariant,
+            kitchen_variant: kitchenVariant,
             station_id: scope === 'whole' ? null : scope,
             target_id: selectedTargetId || null,
             paper_width_mm: selectedTarget?.config?.paper_width_mm || null,
@@ -193,7 +196,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [config, customerVariant, loading, output, restaurantId, scope, section, selectedTarget, selectedTargetId])
+  }, [config, customerVariant, kitchenVariant, loading, output, restaurantId, scope, section, selectedTarget, selectedTargetId])
 
   const effectiveKitchen = useMemo(() => ({
     ...config.kitchen,
@@ -215,6 +218,26 @@ export default function PrintingRoutingPage({ restaurantId }) {
     }
     return next
   })
+
+  // Removes the ticket-top spec so the POS prints its legacy hardcoded top
+  // again (station scope falls back to the whole-kitchen spec, if any).
+  // patchKitchen can't do this — merging never deletes keys. The counter
+  // remounts the builder so it re-reads the post-reset effective rows.
+  const [ticketTopResetKey, setTicketTopResetKey] = useState(0)
+  const resetTicketTop = () => {
+    setConfig(current => {
+      const next = clone(current)
+      if (scope === 'whole') {
+        delete next.kitchen.header
+        delete next.kitchen.info
+      } else if (next.stations?.[scope]?.kitchen) {
+        delete next.stations[scope].kitchen.header
+        delete next.stations[scope].kitchen.info
+      }
+      return next
+    })
+    setTicketTopResetKey(current => current + 1)
+  }
 
   const patchCustomer = (patch, tipPatch = null) => setConfig(current => ({
     ...current,
@@ -344,6 +367,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
                 {eligibleTargets.map(target => <option key={target.id} value={target.id}>{target.name}</option>)}
               </Select>
               {output === 'kitchen_ticket' && <Select label="Apply to" value={scope} onChange={setScope}><option value="whole">Whole Kitchen</option>{stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}</Select>}
+              {output === 'kitchen_ticket' && <Select label="Preview order method" value={kitchenVariant} onChange={setKitchenVariant}><option value="dine_in">Dine-in</option><option value="togo">To-Go</option><option value="delivery">Delivery</option></Select>}
               {output === 'customer_receipt' && <Select label="Preview state" value={customerVariant} onChange={setCustomerVariant}><option value="open_check">Open check</option><option value="paid_cash">Paid with cash</option><option value="paid_card">Paid with credit card</option><option value="paid_debit">Paid with debit / prepaid</option></Select>}
             </div>
           </div>
@@ -436,6 +460,15 @@ export default function PrintingRoutingPage({ restaurantId }) {
             </div>
           ) : (
             <>
+              <TicketTopBuilder
+                key={`${scope}:${ticketTopResetKey}`}
+                header={effectiveKitchen.header}
+                info={effectiveKitchen.info}
+                configured={Array.isArray(effectiveKitchen.header) || Array.isArray(effectiveKitchen.info)}
+                supportsRed={supportsRed}
+                onChange={(headerRows, infoRows) => patchKitchen({ header: headerRows, info: infoRows })}
+                onReset={resetTicketTop}
+              />
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <h2 className="text-lg font-semibold">Ticket detail</h2>
                 <div className="mt-4 grid gap-4 md:grid-cols-3">
