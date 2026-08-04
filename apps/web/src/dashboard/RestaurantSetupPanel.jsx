@@ -1285,6 +1285,7 @@ function defaultCloseoutSettings() {
     // The drawer starts empty unless a restaurant says otherwise; the float is
     // configured rather than typed by the manager every night.
     require_starting_bank: false,
+    opening_bank_source: 'none',
     opening_bank_default: '',
     track_deposit_at_close: false,
     blind_drawer_close: true,
@@ -1725,7 +1726,12 @@ function normalizeCloseoutSettings(row) {
     cash_drop_threshold: source.cash_drop_threshold == null ? '' : sanitizeNumber(source.cash_drop_threshold),
     cash_variance_threshold: source.cash_variance_threshold == null ? '' : sanitizeNumber(source.cash_variance_threshold),
     opening_bank_default: source.opening_bank_default == null ? '' : sanitizeNumber(source.opening_bank_default),
-    require_starting_bank: source.require_starting_bank === true,
+    require_starting_bank: false,
+    opening_bank_source: ['none', 'fixed', 'previous_retained'].includes(source.opening_bank_source)
+      ? source.opening_bank_source
+      : source.require_starting_bank === true
+        ? 'previous_retained'
+        : Number(source.opening_bank_default || 0) > 0 ? 'fixed' : 'none',
     track_deposit_at_close: source.track_deposit_at_close === true,
     server_checkout_report_delivery: CHECKOUT_REPORT_OPTIONS.some(option => option.value === source.server_checkout_report_delivery) ? source.server_checkout_report_delivery : fallback.server_checkout_report_delivery,
     eod_batch_close_mode: EOD_BATCH_OPTIONS.some(option => option.value === source.eod_batch_close_mode) ? source.eod_batch_close_mode : fallback.eod_batch_close_mode,
@@ -1854,9 +1860,10 @@ function closeoutSettingsPayload(closeoutSettings) {
   const settings = normalizeCloseoutSettings(closeoutSettings)
   return {
     ...settings,
+    require_starting_bank: false,
     cash_drop_threshold: settings.cash_drop_threshold === '' ? null : Number(settings.cash_drop_threshold),
     cash_variance_threshold: settings.cash_variance_threshold === '' ? null : Number(settings.cash_variance_threshold),
-    opening_bank_default: settings.opening_bank_default === '' ? 0 : Number(settings.opening_bank_default),
+    opening_bank_default: settings.opening_bank_source === 'none' || settings.opening_bank_default === '' ? 0 : Number(settings.opening_bank_default),
   }
 }
 
@@ -4388,11 +4395,22 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                 </SelectInput>
                 <TextInput value={closeoutSettings.cash_drop_threshold} inputMode="decimal" onChange={event => updateCloseoutSettings({ cash_drop_threshold: sanitizeNumber(event.target.value) })} placeholder="Cash drop threshold" />
                 <TextInput value={closeoutSettings.cash_variance_threshold} inputMode="decimal" onChange={event => updateCloseoutSettings({ cash_variance_threshold: sanitizeNumber(event.target.value) })} placeholder="Variance approval threshold" />
-                <TextInput value={closeoutSettings.opening_bank_default} inputMode="decimal" onChange={event => updateCloseoutSettings({ opening_bank_default: sanitizeNumber(event.target.value) })} placeholder="Starting float, blank for none" />
+                <SelectInput value={closeoutSettings.opening_bank_source} onChange={event => updateCloseoutSettings({ opening_bank_source: event.target.value, require_starting_bank: false })}>
+                  <option value="none">Opening bank: $0 automatically</option>
+                  <option value="fixed">Opening bank: fixed amount</option>
+                  <option value="previous_retained">Opening bank: prior retained cash</option>
+                </SelectInput>
+                {closeoutSettings.opening_bank_source !== 'none' && (
+                  <TextInput
+                    value={closeoutSettings.opening_bank_default}
+                    inputMode="decimal"
+                    onChange={event => updateCloseoutSettings({ opening_bank_default: sanitizeNumber(event.target.value) })}
+                    placeholder={closeoutSettings.opening_bank_source === 'fixed' ? 'Fixed opening bank' : 'Fallback if no prior close exists'}
+                  />
+                )}
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {[
-                  ['require_starting_bank', 'Manager counts float at close'],
                   ['track_deposit_at_close', 'Deposit & float left in drawer'],
                   ['blind_drawer_close', 'Blind close'],
                   ['allow_paid_in_out', 'Paid in/out'],

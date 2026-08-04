@@ -223,6 +223,9 @@ export interface RolePermissionData {
 export interface CloseoutSettingsData {
   cash_tracking_mode: 'shared_drawer' | 'per_terminal' | 'per_employee' | 'no_cash'
   require_starting_bank: boolean
+  opening_bank_source: 'none' | 'fixed' | 'previous_retained'
+  opening_bank_default: string
+  track_deposit_at_close: boolean
   blind_drawer_close: boolean
   allow_paid_in_out: boolean
   require_manager_for_drawer_open: boolean
@@ -524,6 +527,9 @@ const defaultCloseoutSettings = (): CloseoutSettingsData => ({
   // The drawer starts empty unless a restaurant configures a float. Onboarding
   // must not opt a new store into typing an opening bank every night.
   require_starting_bank: false,
+  opening_bank_source: 'none',
+  opening_bank_default: '',
+  track_deposit_at_close: false,
   blind_drawer_close: true,
   allow_paid_in_out: true,
   require_manager_for_drawer_open: true,
@@ -1032,7 +1038,16 @@ const normalizeCloseoutSettings = (value: unknown): CloseoutSettingsData => {
   if (!isRecord(value)) return fallback
   return {
     cash_tracking_mode: asEnum(value.cash_tracking_mode, CASH_TRACKING_MODES, fallback.cash_tracking_mode),
-    require_starting_bank: typeof value.require_starting_bank === 'boolean' ? value.require_starting_bank : fallback.require_starting_bank,
+    require_starting_bank: false,
+    opening_bank_source: asEnum(
+      value.opening_bank_source,
+      ['none', 'fixed', 'previous_retained'] as const,
+      value.require_starting_bank === true
+        ? 'previous_retained'
+        : Number(asStringNumber(value.opening_bank_default) || 0) > 0 ? 'fixed' : fallback.opening_bank_source,
+    ),
+    opening_bank_default: asStringNumber(value.opening_bank_default),
+    track_deposit_at_close: typeof value.track_deposit_at_close === 'boolean' ? value.track_deposit_at_close : fallback.track_deposit_at_close,
     blind_drawer_close: typeof value.blind_drawer_close === 'boolean' ? value.blind_drawer_close : fallback.blind_drawer_close,
     allow_paid_in_out: typeof value.allow_paid_in_out === 'boolean' ? value.allow_paid_in_out : fallback.allow_paid_in_out,
     require_manager_for_drawer_open: typeof value.require_manager_for_drawer_open === 'boolean' ? value.require_manager_for_drawer_open : fallback.require_manager_for_drawer_open,
@@ -1328,6 +1343,8 @@ const closeoutSettingsToPayload = (data: OnboardingData) => {
   const settings = normalizeCloseoutSettings(data.closeout_settings)
   return {
     ...settings,
+    require_starting_bank: false,
+    opening_bank_default: settings.opening_bank_source === 'none' || settings.opening_bank_default === '' ? 0 : Number(settings.opening_bank_default),
     cash_drop_threshold: settings.cash_drop_threshold === '' ? null : Number(settings.cash_drop_threshold),
     cash_variance_threshold: settings.cash_variance_threshold === '' ? null : Number(settings.cash_variance_threshold),
   }

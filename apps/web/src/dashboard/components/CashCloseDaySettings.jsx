@@ -29,11 +29,12 @@ const sanitizeMoney = (value) => String(value ?? '')
 const FLOAT_MODES = {
   none: 'none',
   fixed: 'fixed',
-  counted: 'counted',
+  previousRetained: 'previous_retained',
 }
 
 function floatModeFrom(settings) {
-  if (settings?.require_starting_bank) return FLOAT_MODES.counted
+  if (settings?.opening_bank_source === FLOAT_MODES.previousRetained || settings?.require_starting_bank) return FLOAT_MODES.previousRetained
+  if (settings?.opening_bank_source === FLOAT_MODES.fixed) return FLOAT_MODES.fixed
   if (Number(settings?.opening_bank_default || 0) > 0) return FLOAT_MODES.fixed
   return FLOAT_MODES.none
 }
@@ -100,7 +101,7 @@ function ManagerPreview({ floatMode, floatAmount, blindClose, trackDeposit }) {
         <p className="label-mono">What the manager will see</p>
         <span className="label-mono flex items-center gap-1.5 text-emerald-300">
           <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-          Live
+          Preview
         </span>
       </div>
       <div className="mt-3 border border-dash-border bg-black/25 p-3">
@@ -111,6 +112,7 @@ function ManagerPreview({ floatMode, floatAmount, blindClose, trackDeposit }) {
               <p className="label-mono">Starting float</p>
               <p className="mt-1 text-sm font-semibold tabular-nums text-dash-cream">{money(floatAmount)}</p>
               {floatMode === FLOAT_MODES.fixed && <p className="mt-0.5 text-[10px] text-dash-tertiary">Set in back office</p>}
+              {floatMode === FLOAT_MODES.previousRetained && <p className="mt-0.5 text-[10px] text-dash-tertiary">Prior close; fallback shown</p>}
             </div>
           )}
           <div className="border border-dash-border bg-white/[0.04] px-2.5 py-2">
@@ -182,7 +184,7 @@ export default function CashCloseDaySettings({ restaurantId }) {
 
   const dirty = useMemo(() => {
     if (!settings) return false
-    const amount = floatMode === FLOAT_MODES.fixed ? Number(floatAmount || 0) : 0
+    const amount = floatMode === FLOAT_MODES.none ? 0 : Number(floatAmount || 0)
     return floatMode !== floatModeFrom(settings)
       || amount !== Number(settings.opening_bank_default || 0)
       || blindClose !== (settings.blind_drawer_close !== false)
@@ -200,10 +202,11 @@ export default function CashCloseDaySettings({ restaurantId }) {
         method: 'PUT',
         body: JSON.stringify({
           ...settings,
-          require_starting_bank: floatMode === FLOAT_MODES.counted,
-          // A fixed float is the only mode that stores an amount. "Counted"
-          // means the manager supplies it nightly, "none" means there isn't one.
-          opening_bank_default: floatMode === FLOAT_MODES.fixed ? Number(floatAmount || 0) : 0,
+          // Legacy clients still understand this field, but opening cash is no
+          // longer a cashier-entered prerequisite in any policy mode.
+          require_starting_bank: false,
+          opening_bank_source: floatMode,
+          opening_bank_default: floatMode === FLOAT_MODES.none ? 0 : Number(floatAmount || 0),
           track_deposit_at_close: trackDeposit,
           blind_drawer_close: blindClose,
           cash_variance_threshold: varianceThreshold === '' ? null : Number(varianceThreshold),
@@ -269,11 +272,20 @@ export default function CashCloseDaySettings({ restaurantId }) {
                 )}
               </Choice>
               <Choice
-                selected={floatMode === FLOAT_MODES.counted}
-                onSelect={() => setFloatMode(FLOAT_MODES.counted)}
-                title="Yes, and it changes night to night"
-                detail="The manager confirms the float at close. Use this only if the amount really varies."
-              />
+                selected={floatMode === FLOAT_MODES.previousRetained}
+                onSelect={() => setFloatMode(FLOAT_MODES.previousRetained)}
+                title="Use what was left at the prior close"
+                detail="The POS automatically carries forward the prior finalized retained amount. No cashier confirmation is required."
+              >
+                {floatMode === FLOAT_MODES.previousRetained && (
+                  <MoneyField
+                    label="Fallback if no prior close exists"
+                    value={floatAmount}
+                    onChange={setFloatAmount}
+                    hint="The manager is warned when this fallback is used, but cash sales are never blocked."
+                  />
+                )}
+              </Choice>
             </div>
           </div>
 
@@ -334,7 +346,7 @@ export default function CashCloseDaySettings({ restaurantId }) {
         <div className="space-y-4">
           <ManagerPreview
             floatMode={floatMode}
-            floatAmount={floatMode === FLOAT_MODES.fixed ? floatAmount : ''}
+            floatAmount={floatMode === FLOAT_MODES.none ? '' : floatAmount}
             blindClose={blindClose}
             trackDeposit={trackDeposit}
           />

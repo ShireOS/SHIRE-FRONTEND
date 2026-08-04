@@ -162,7 +162,20 @@ export function CloseoutSettingsStep({ onboarding }: CloseoutSettingsStepProps) 
         <select value={settings.cash_tracking_mode} onChange={(event) => update({ cash_tracking_mode: event.target.value as CloseoutSettingsData['cash_tracking_mode'] })} className={inputClass}>
           {CASH_MODES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
+        <select value={settings.opening_bank_source} onChange={(event) => update({ opening_bank_source: event.target.value as CloseoutSettingsData['opening_bank_source'], require_starting_bank: false })} className={`${inputClass} mt-3`}>
+          <option value="none">Opening bank: $0 automatically</option>
+          <option value="fixed">Opening bank: fixed amount</option>
+          <option value="previous_retained">Opening bank: prior retained cash</option>
+        </select>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          {settings.opening_bank_source !== 'none' && (
+            <MoneyField
+              label={settings.opening_bank_source === 'fixed' ? 'Fixed opening bank' : 'Opening bank fallback'}
+              value={settings.opening_bank_default}
+              onChange={(value) => update({ opening_bank_default: value })}
+              help={settings.opening_bank_source === 'fixed' ? 'Applied automatically; staff never confirms it.' : 'Used only when no prior finalized retained amount exists.'}
+            />
+          )}
           <MoneyField
             label="Cash drop threshold"
             value={settings.cash_drop_threshold}
@@ -177,7 +190,7 @@ export function CloseoutSettingsStep({ onboarding }: CloseoutSettingsStepProps) 
           />
         </div>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <Toggle active={settings.require_starting_bank} help="Require an opening cash amount before the drawer starts." onClick={() => update({ require_starting_bank: !settings.require_starting_bank })}>Require starting bank</Toggle>
+          <Toggle active={settings.track_deposit_at_close} help="Record the deposit and float left in the drawer at Close Day." onClick={() => update({ track_deposit_at_close: !settings.track_deposit_at_close })}>Track deposit at close</Toggle>
           <Toggle active={settings.blind_drawer_close} help="Cashiers enter counts without seeing expected cash first." onClick={() => update({ blind_drawer_close: !settings.blind_drawer_close })}>Use blind drawer close</Toggle>
           <Toggle active={settings.allow_paid_in_out} help="Allow cash to be added or removed for non-sale reasons." onClick={() => update({ allow_paid_in_out: !settings.allow_paid_in_out })}>Allow paid in/out</Toggle>
           <Toggle active={settings.require_manager_for_drawer_open} help="Override role access and require a manager PIN for every No Sale, Paid In, and Cash Drop." onClick={() => update({ require_manager_for_drawer_open: !settings.require_manager_for_drawer_open })}>Always require manager for drawer actions</Toggle>

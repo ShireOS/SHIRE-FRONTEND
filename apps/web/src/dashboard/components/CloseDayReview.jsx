@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ArrowLeft, CheckCircle2, LockKeyhole, RefreshCw, TriangleAlert } from 'lucide-react'
 import { posCloseDayApi } from '../../shared/api/posClient'
@@ -37,11 +37,7 @@ function MoneyInput({ label, value, onChange }) {
 }
 
 export default function CloseDayReview({ restaurantId, onBack }) {
-  const [openingBank, setOpeningBank] = useState('0')
-  const [paidIn, setPaidIn] = useState('0')
-  const [paidOut, setPaidOut] = useState('0')
-  const [cashRefunds, setCashRefunds] = useState('0')
-  const [countedCash, setCountedCash] = useState('0')
+  const [countedCash, setCountedCash] = useState('')
   const [retainedBank, setRetainedBank] = useState('0')
   const [depositAmount, setDepositAmount] = useState('0')
   const [varianceReason, setVarianceReason] = useState('')
@@ -59,14 +55,15 @@ export default function CloseDayReview({ restaurantId, onBack }) {
   })
   const preview = previewQuery.data
   const cash = preview?.cash_reconciliation || {}
-  const expectedCash = useMemo(
-    () => numberValue(openingBank) + numberValue(cash.cash_sales)
-      + numberValue(paidIn) - numberValue(paidOut) - numberValue(cashRefunds),
-    [cash.cash_sales, cashRefunds, openingBank, paidIn, paidOut],
-  )
+  const openingBankPolicy = cash.opening_bank_policy
+  const expectedCash = numberValue(cash.expected_cash)
+  const cashCountEntered = String(countedCash).trim() !== ''
+  const revealExpected = !preview?.closeout_settings?.blind_drawer_close || cashCountEntered
+  const trackDeposit = Boolean(preview?.closeout_settings?.track_deposit_at_close)
+  const showRetainedBank = trackDeposit || openingBankPolicy?.source === 'previous_retained'
   const variance = numberValue(countedCash) - expectedCash
   const threshold = numberValue(preview?.closeout_settings?.cash_variance_threshold)
-  const needsVarianceReason = Math.abs(variance) > threshold
+  const needsVarianceReason = cashCountEntered && Math.abs(variance) > threshold
   const exceptionCount = numberValue(preview?.exception_count)
   const pendingPrintJobs = numberValue(preview?.pending_print_jobs)
   const openChecks = numberValue(preview?.open_checks)
@@ -83,6 +80,7 @@ export default function CloseDayReview({ restaurantId, onBack }) {
     || exceptionCount > 0
     || (pendingPrintJobs > 0 && !discardPrintJobs)
     || (requiresClockOutConfirmation && !clockOutConfirmed)
+    || !cashCountEntered
     || (needsVarianceReason && !varianceReason.trim())
     || alreadyClosed
 
@@ -93,10 +91,10 @@ export default function CloseDayReview({ restaurantId, onBack }) {
       notes: notes.trim() || undefined,
       discard_print_jobs: discardPrintJobs,
       confirm_auto_clock_out: clockOutConfirmed,
-      opening_bank: numberValue(openingBank),
-      paid_in: numberValue(paidIn),
-      paid_out: numberValue(paidOut),
-      cash_refunds: numberValue(cashRefunds),
+      opening_bank: numberValue(cash.opening_bank),
+      paid_in: numberValue(cash.paid_in),
+      paid_out: numberValue(cash.paid_out),
+      cash_refunds: numberValue(cash.cash_refunds),
       counted_cash: numberValue(countedCash),
       retained_bank: numberValue(retainedBank),
       deposit_amount: numberValue(depositAmount),
@@ -180,19 +178,25 @@ export default function CloseDayReview({ restaurantId, onBack }) {
           <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_340px]">
             <div>
               <p className="label-mono">Cash reconciliation</p>
+              {openingBankPolicy?.warning && (
+                <p className="mt-3 rounded-xl border border-amber-400/25 bg-amber-400/10 p-3 text-sm text-amber-100">{openingBankPolicy.warning.message}</p>
+              )}
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <Summary label="Opening bank" value={money(cash.opening_bank)} />
+                <Summary label="Cash sales" value={money(cash.cash_sales)} />
+                <Summary label="Paid in" value={money(cash.paid_in)} />
+                <Summary label="Paid out" value={money(cash.paid_out)} />
+                <Summary label="Cash refunds" value={money(cash.cash_refunds)} />
+              </div>
               <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <MoneyInput label="Opening bank" value={openingBank} onChange={setOpeningBank} />
-                <MoneyInput label="Paid in" value={paidIn} onChange={setPaidIn} />
-                <MoneyInput label="Paid out" value={paidOut} onChange={setPaidOut} />
-                <MoneyInput label="Cash refunds" value={cashRefunds} onChange={setCashRefunds} />
                 <MoneyInput label="Counted cash" value={countedCash} onChange={setCountedCash} />
-                <MoneyInput label="Retained bank" value={retainedBank} onChange={setRetainedBank} />
-                <MoneyInput label="Deposit amount" value={depositAmount} onChange={setDepositAmount} />
+                {showRetainedBank && <MoneyInput label="Retained bank" value={retainedBank} onChange={setRetainedBank} />}
+                {trackDeposit && <MoneyInput label="Deposit amount" value={depositAmount} onChange={setDepositAmount} />}
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-sm">
-                <span className="rounded-lg bg-white/[0.04] px-3 py-2 text-dash-secondary">Expected {money(expectedCash)}</span>
+                <span className="rounded-lg bg-white/[0.04] px-3 py-2 text-dash-secondary">Expected {revealExpected ? money(expectedCash) : 'hidden until counted'}</span>
                 <span className={`rounded-lg px-3 py-2 ${needsVarianceReason ? 'bg-red-400/10 text-red-200' : 'bg-emerald-400/10 text-emerald-200'}`}>
-                  Variance {money(variance)}
+                  Variance {revealExpected ? money(variance) : 'hidden until counted'}
                 </span>
               </div>
               {needsVarianceReason && (

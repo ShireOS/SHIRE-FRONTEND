@@ -272,7 +272,18 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
         </button>
         <div className="flex gap-2">
           <SmallButton onClick={() => setExpanded(current => !current)}>{expanded ? 'Close' : 'Edit'}</SmallButton>
-          <SmallButton variant="danger" onClick={() => onArchive(group.id)} disabled={busy}>Archive</SmallButton>
+          <SmallButton
+            variant="danger"
+            onClick={() => {
+              const confirmed = window.confirm(
+                `Delete “${group.name}”?\n\nThis question will be removed from all menu items and will no longer appear on the POS. Past orders will not be changed.`,
+              )
+              if (confirmed) onArchive(group.id)
+            }}
+            disabled={busy}
+          >
+            Delete
+          </SmallButton>
         </div>
       </div>
 
@@ -1510,7 +1521,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const archiveGroup = (groupId) => run(async () => {
     await archiveModifierGroup(groupId)
     await loadGroups()
-  }, 'Group archived.', 'Couldn’t archive the question')
+  }, 'Question deleted.', 'Couldn’t delete the question')
 
   const runGroupLink = (work) => run(async () => {
     await work()

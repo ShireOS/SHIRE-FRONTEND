@@ -20,3 +20,5 @@ interface TipRoleRuleLike {
 export function serializeHeadcountPolicy(headcount: unknown): unknown
 export function serializeTipRoleRules<T extends TipRoleRuleLike>(rules: T[]): Array<T & Record<string, unknown>>
 export function serializeWeekdayTipoutOverrides(overrides: Record<string, unknown>): Record<string, unknown>
+export function validateTipoutPolicy(settings: Record<string, any>): string[]
+export function tipoutPolicyFingerprint(settings: Record<string, any>): string

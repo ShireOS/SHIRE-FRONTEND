@@ -177,6 +177,11 @@ surface independently, while every mutation is also guarded by the ML backend.
   the POS backend. Back Office exposes the resulting read-only daily/Z/PDF/XLSX/
   email reporting under the existing `reports.view` permission; it never writes
   cash ledger rows directly.
+- Opening cash is a `settings.edit` restaurant policy on the existing
+  `pos_closeout_settings` row: zero, fixed, or the latest finalized
+  `pos_cash_reconciliations.retained_bank` with a configured fallback. Staff are
+  never asked to confirm an opening amount before taking cash. Close Day displays
+  backend-resolved lineage and keeps ledger-derived cash totals read-only.
 - Server checkout receipt templates are configured only from Back Office's
   Server Reports panel. `reports.view` authorizes reading and production-rendered
   previews, while `settings.edit` authorizes the restaurant-wide template update

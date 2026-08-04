@@ -232,11 +232,22 @@ export interface CloseDayPreview {
   closeout_settings?: {
     cash_tracking_mode?: string
     require_starting_bank?: boolean
+    opening_bank_source?: 'none' | 'fixed' | 'previous_retained'
+    opening_bank_default?: number
+    track_deposit_at_close?: boolean
     blind_drawer_close?: boolean
     cash_variance_threshold?: number
   }
   cash_reconciliation?: {
     opening_bank: number
+    opening_bank_policy?: {
+      source: 'none' | 'fixed' | 'previous_retained'
+      amount: number
+      fallback_amount: number
+      fallback_used: boolean
+      source_business_date?: string | null
+      warning?: { code: string; message: string } | null
+    }
     cash_sales: number
     paid_in: number
     paid_out: number

@@ -12,8 +12,10 @@ const DEFAULT_CONFIG = {
   receipt_detail: 'clean',
   customer: {
     size: 'medium',
-    header_message: '', footer_message: '', show_server: true, show_table: true,
-    show_tab_name: false, show_check_number: true, show_guest_count: true,
+    show_restaurant_name: true, restaurant_name: '', restaurant_name_size: 'large',
+    address_lines: [], address_size: 'standard', phone: '', phone_size: 'standard',
+    header_message: '', footer_message: '', show_server: true, show_table: true, table_size: 'standard',
+    show_tab_name: false, show_check_number: true, check_number_size: 'standard', show_date_time: true, show_guest_count: true,
     suggested_tips: { enabled: false, percentages: [18, 20, 22], basis: 'subtotal', placement: 'bottom', show_amounts: true },
   },
   report: { size: 'medium' },
@@ -29,6 +31,12 @@ const DEFAULT_CONFIG = {
 
 const clone = value => JSON.parse(JSON.stringify(value))
 const sectionFromHash = hash => ['overview', 'routing', 'receipts'].includes(hash.replace('#', '')) ? hash.replace('#', '') : 'overview'
+const PRICING_PROGRAM_LABELS = {
+  standard: 'Standard pricing receipt',
+  dual_pricing_posted_electronic: 'Dual posted prices · Cash / Card columns',
+  credit_surcharge: 'Credit-card surcharge · separate surcharge row',
+  cash_discount: 'Cash discount · standard price minus discount',
+}
 
 function Toggle({ label, checked, onChange }) {
   return (
@@ -66,6 +74,8 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const [dirtyTargetIds, setDirtyTargetIds] = useState(() => new Set())
   const [preview, setPreview] = useState('Loading preview…')
   const [previewStatus, setPreviewStatus] = useState('loading')
+  const [previewPricingProgram, setPreviewPricingProgram] = useState('standard')
+  const [previewPricingWarnings, setPreviewPricingWarnings] = useState([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -145,6 +155,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
     const controller = new AbortController()
     setPreview('Rendering preview…')
     setPreviewStatus('loading')
+    setPreviewPricingWarnings([])
     const timer = setTimeout(async () => {
       try {
         const result = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config/preview`, {
@@ -160,10 +171,14 @@ export default function PrintingRoutingPage({ restaurantId }) {
           signal: controller.signal,
           cache: 'no-store',
         })
-        if (result.renderer_version !== 'printing-v5') throw new Error('Receipt renderer is updating. Refresh this page in a moment.')
+        if (!['printing-v5', 'printing-v6'].includes(result.renderer_version)) {
+          throw new Error('Receipt preview version is not supported. Refresh this page after the POS backend finishes updating.')
+        }
         if (requestId === previewRequestRef.current) {
           setPreview(result.preview || 'No preview available')
           setPreviewCapabilities(result.printer_capabilities || null)
+          setPreviewPricingProgram(result.pricing_program || 'standard')
+          setPreviewPricingWarnings(result.pricing_warnings || [])
           setPreviewStatus('ready')
         }
       } catch (err) {
@@ -328,16 +343,41 @@ export default function PrintingRoutingPage({ restaurantId }) {
                 {eligibleTargets.map(target => <option key={target.id} value={target.id}>{target.name}</option>)}
               </Select>
               {output === 'kitchen_ticket' && <Select label="Apply to" value={scope} onChange={setScope}><option value="whole">Whole Kitchen</option>{stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}</Select>}
-              {output === 'customer_receipt' && <Select label="Preview state" value={customerVariant} onChange={setCustomerVariant}><option value="open_check">Open check</option><option value="paid_cash">Paid with cash</option><option value="paid_card">Paid with card</option></Select>}
+              {output === 'customer_receipt' && <Select label="Preview state" value={customerVariant} onChange={setCustomerVariant}><option value="open_check">Open check</option><option value="paid_cash">Paid with cash</option><option value="paid_card">Paid with credit card</option><option value="paid_debit">Paid with debit / prepaid</option></Select>}
             </div>
           </div>
 
           {output === 'customer_receipt' ? (
             <div className="space-y-4">
+              <div className="rounded-2xl border border-dash-gold/30 bg-dash-gold/[0.07] p-5">
+                <p className="label-mono">Active pricing receipt</p>
+                <h2 className="mt-2 text-lg font-semibold">{PRICING_PROGRAM_LABELS[previewPricingProgram] || PRICING_PROGRAM_LABELS.standard}</h2>
+                <p className="mt-1 text-sm text-dash-tertiary">This is chosen from the restaurant's financial pricing mode. Custom wording cannot change the receipt math.</p>
+                {previewPricingWarnings.length > 0 && <div className="mt-4 space-y-2">{previewPricingWarnings.map(warning => <div key={warning} className="flex gap-2 rounded-xl border border-amber-300/25 bg-amber-300/10 p-3 text-sm text-amber-100"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{warning}</span></div>)}</div>}
+              </div>
+
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <h2 className="text-lg font-semibold">Receipt presentation</h2>
                 <p className="mt-1 text-sm text-dash-tertiary">Medium is the readable default. Compact fits more per line; Large increases line height.</p>
                 <div className="mt-4"><Select label="Text size" value={config.customer?.size || 'medium'} onChange={value => patchCustomer({ size: value })}><option value="compact">Compact</option><option value="medium">Medium</option><option value="large">Large</option></Select></div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+                <h2 className="text-lg font-semibold">Receipt identity</h2>
+                <p className="mt-1 text-sm text-dash-tertiary">Add the restaurant name, up to three address lines, and a phone number at the top.</p>
+                <div className="mt-3"><Toggle label="Show restaurant name" checked={config.customer?.show_restaurant_name ?? true} onChange={value => patchCustomer({ show_restaurant_name: value })} /></div>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <label className="block"><span className="label-mono">Printed restaurant name</span><input maxLength={80} value={config.customer?.restaurant_name || ''} onChange={event => patchCustomer({ restaurant_name: event.target.value })} placeholder="Blank uses the restaurant record" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></label>
+                  <Select label="Name size" value={config.customer?.restaurant_name_size || 'large'} onChange={value => patchCustomer({ restaurant_name_size: value })}><option value="standard">Standard</option><option value="large">Large</option></Select>
+                </div>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <label className="block"><span className="label-mono">Address (one line per row)</span><textarea maxLength={242} rows={3} value={(config.customer?.address_lines || []).join('\n')} onChange={event => patchCustomer({ address_lines: event.target.value.split(/\r?\n/).slice(0, 3) })} placeholder={'1585 Hwy 17\nLittle River, SC 29566'} className="mt-2 w-full resize-none rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></label>
+                  <Select label="Address size" value={config.customer?.address_size || 'standard'} onChange={value => patchCustomer({ address_size: value })}><option value="standard">Standard</option><option value="large">Large</option></Select>
+                </div>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <label className="block"><span className="label-mono">Phone number</span><input maxLength={40} value={config.customer?.phone || ''} onChange={event => patchCustomer({ phone: event.target.value })} placeholder="843-249-5550" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></label>
+                  <Select label="Phone size" value={config.customer?.phone_size || 'standard'} onChange={value => patchCustomer({ phone_size: value })}><option value="standard">Standard</option><option value="large">Large</option></Select>
+                </div>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <h2 className="text-lg font-semibold">Customer receipt detail</h2>
@@ -374,7 +414,15 @@ export default function PrintingRoutingPage({ restaurantId }) {
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <h2 className="text-lg font-semibold">Check information</h2>
                 <p className="mt-1 text-sm text-dash-tertiary">Table numbers and bar-tab names are separate so customer-facing tab names remain optional.</p>
-                <div className="mt-3"><Toggle label="Show table number" checked={config.customer?.show_table ?? true} onChange={value => patchCustomer({ show_table: value })} /><Toggle label="Show bar tab name" checked={config.customer?.show_tab_name ?? false} onChange={value => patchCustomer({ show_tab_name: value })} /><Toggle label="Show check number" checked={config.customer?.show_check_number ?? true} onChange={value => patchCustomer({ show_check_number: value })} /><Toggle label="Show server name" checked={config.customer?.show_server ?? true} onChange={value => patchCustomer({ show_server: value })} /><Toggle label="Show guest count" checked={config.customer?.show_guest_count ?? true} onChange={value => patchCustomer({ show_guest_count: value })} /></div>
+                <div className="mt-3"><Toggle label="Show table number" checked={config.customer?.show_table ?? true} onChange={value => patchCustomer({ show_table: value })} />
+                  {config.customer?.show_table !== false && <div className="pb-3"><Select label="Table row size" value={config.customer?.table_size || 'standard'} onChange={value => patchCustomer({ table_size: value })}><option value="standard">Standard · inline</option><option value="large">Large · own row</option></Select></div>}
+                  <Toggle label="Show bar tab name" checked={config.customer?.show_tab_name ?? false} onChange={value => patchCustomer({ show_tab_name: value })} />
+                  <Toggle label="Show check number" checked={config.customer?.show_check_number ?? true} onChange={value => patchCustomer({ show_check_number: value })} />
+                  {config.customer?.show_check_number !== false && <div className="pb-3"><Select label="Check number size" value={config.customer?.check_number_size || 'standard'} onChange={value => patchCustomer({ check_number_size: value })}><option value="standard">Standard · inline</option><option value="large">Large · own row</option></Select></div>}
+                  <Toggle label="Show date and time" checked={config.customer?.show_date_time ?? true} onChange={value => patchCustomer({ show_date_time: value })} />
+                  <Toggle label="Show server name" checked={config.customer?.show_server ?? true} onChange={value => patchCustomer({ show_server: value })} />
+                  <Toggle label="Show guest count" checked={config.customer?.show_guest_count ?? true} onChange={value => patchCustomer({ show_guest_count: value })} />
+                </div>
               </div>
             </div>
           ) : output === 'server_report' ? (

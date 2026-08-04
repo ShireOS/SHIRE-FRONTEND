@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -13,6 +13,8 @@ import {
 } from 'lucide-react'
 import { posCloseDayApi } from '../../shared/api/posClient'
 import { queryClient } from '../../shared/query'
+import { useAuth } from '../../auth'
+import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import CashCloseDaySettings from '../components/CashCloseDaySettings'
 
 const INITIAL_CASH = {
@@ -20,7 +22,7 @@ const INITIAL_CASH = {
   paid_in: '0.00',
   paid_out: '0.00',
   cash_refunds: '0.00',
-  counted_cash: '0.00',
+  counted_cash: '',
   retained_bank: '0.00',
   deposit_amount: '0.00',
   variance_reason: '',
@@ -110,6 +112,8 @@ function ActionModal({ title, children, onClose, footer }) {
 
 export default function CloseDayPage({ restaurantId, restaurantName }) {
   const navigate = useNavigate()
+  const auth = useAuth()
+  const access = useBackOfficeAccess(auth, restaurantId)
   const [preview, setPreview] = useState(null)
   const [cash, setCash] = useState(INITIAL_CASH)
   const [loading, setLoading] = useState(true)
@@ -152,23 +156,15 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     void loadPreview()
   }, [loadPreview])
 
-  // Same cash policy the iPad reads. `require_starting_bank` decides who
-  // supplies the float; when nobody is asked, the configured amount is used and
-  // it is 0 by default, so this arithmetic is unchanged for a store without one.
   const closeoutSettings = preview?.closeout_settings
-  const configuredFloat = numberValue(closeoutSettings?.opening_bank_default)
-  const managerCountsFloat = Boolean(closeoutSettings?.require_starting_bank)
-  const showFloat = managerCountsFloat || configuredFloat > 0
+  const openingBankPolicy = preview?.cash_reconciliation?.opening_bank_policy
+  const effectiveOpeningBank = numberValue(preview?.cash_reconciliation?.opening_bank)
+  const showFloat = effectiveOpeningBank > 0 || openingBankPolicy?.source === 'previous_retained'
   const trackDeposit = Boolean(closeoutSettings?.track_deposit_at_close)
-  const effectiveOpeningBank = managerCountsFloat ? numberValue(cash.opening_bank) : configuredFloat
-
-  const expectedCash = useMemo(() => (
-    effectiveOpeningBank
-    + numberValue(preview?.cash_reconciliation?.cash_sales ?? preview?.cash_collected)
-    + numberValue(cash.paid_in)
-    - numberValue(cash.paid_out)
-    - numberValue(cash.cash_refunds)
-  ), [cash, preview, effectiveOpeningBank])
+  const showRetainedBank = trackDeposit || openingBankPolicy?.source === 'previous_retained'
+  const expectedCash = numberValue(preview?.cash_reconciliation?.expected_cash)
+  const cashCountEntered = String(cash.counted_cash).trim() !== ''
+  const revealExpected = !closeoutSettings?.blind_drawer_close || cashCountEntered
   const variance = numberValue(cash.counted_cash) - expectedCash
   const threshold = Number(preview?.closeout_settings?.cash_variance_threshold || 0)
   const openEmployees = preview?.open_timeclock_entries || []
@@ -200,6 +196,11 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
 
   const submitClose = async (confirmAutoClockOut) => {
     if (!preview) return
+    if (!cashCountEntered) {
+      setError('Count the physical cash in the drawer before closing the day.')
+      setModal(null)
+      return
+    }
     if (Math.abs(variance) > threshold && !cash.variance_reason.trim()) {
       setError(`Explain the ${money(variance)} cash variance before closing.`)
       setModal(null)
@@ -213,9 +214,6 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         close_attempt_id: attemptId.current,
         confirm_auto_clock_out: confirmAutoClockOut,
         opening_bank: effectiveOpeningBank,
-        paid_in: numberValue(cash.paid_in),
-        paid_out: numberValue(cash.paid_out),
-        cash_refunds: numberValue(cash.cash_refunds),
         counted_cash: numberValue(cash.counted_cash),
         retained_bank: numberValue(cash.retained_bank),
         deposit_amount: numberValue(cash.deposit_amount),
@@ -319,32 +317,46 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
               <h2 className="text-lg font-semibold text-dash-cream">Cash reconciliation</h2>
             </div>
             <p className="mt-1 text-sm text-dash-secondary">Enter the actual drawer values. These become the finalized close record.</p>
+            {openingBankPolicy?.warning && (
+              <div className="mt-4 flex items-start gap-3 border border-amber-400/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                <AlertTriangle size={17} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <p>{openingBankPolicy.warning.message}</p>
+              </div>
+            )}
             <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {managerCountsFloat && (
-                <CashInput label="Starting float" value={cash.opening_bank} onChange={(value) => updateCash('opening_bank', value)} />
-              )}
-              {showFloat && !managerCountsFloat && (
+              {showFloat && (
                 <div>
                   <p className="label-mono">Starting float</p>
-                  <p className="mt-1.5 flex min-h-[42px] items-center border border-dash-border bg-[var(--glass-bg)] px-3 font-semibold text-dash-cream">{money(configuredFloat)}</p>
-                  <p className="mt-1 text-xs text-dash-tertiary">Set in back office</p>
+                  <p className="mt-1.5 flex min-h-[42px] items-center border border-dash-border bg-[var(--glass-bg)] px-3 font-semibold text-dash-cream">{money(effectiveOpeningBank)}</p>
+                  <p className="mt-1 text-xs text-dash-tertiary">
+                    {openingBankPolicy?.source === 'previous_retained'
+                      ? openingBankPolicy?.source_business_date
+                        ? `Carried from ${openingBankPolicy.source_business_date}`
+                        : 'Configured fallback'
+                      : 'Set by restaurant policy'}
+                  </p>
                 </div>
               )}
-              <CashInput label="Paid in" value={cash.paid_in} onChange={(value) => updateCash('paid_in', value)} />
-              <CashInput label="Paid out" value={cash.paid_out} onChange={(value) => updateCash('paid_out', value)} />
-              <CashInput label="Cash refunds" value={cash.cash_refunds} onChange={(value) => updateCash('cash_refunds', value)} />
               <CashInput label="Counted cash" value={cash.counted_cash} onChange={(value) => updateCash('counted_cash', value)} />
+              {showRetainedBank && (
+                <CashInput label="Float left in drawer" value={cash.retained_bank} onChange={(value) => updateCash('retained_bank', value)} />
+              )}
               {trackDeposit && (
                 <>
-                  <CashInput label="Float left in drawer" value={cash.retained_bank} onChange={(value) => updateCash('retained_bank', value)} />
                   <CashInput label="Deposit amount" value={cash.deposit_amount} onChange={(value) => updateCash('deposit_amount', value)} />
                 </>
               )}
             </div>
-            <div className="mt-5 grid gap-3 border-y border-dash-border py-4 sm:grid-cols-3">
+            <div className="mt-5 grid gap-3 border-y border-dash-border py-4 sm:grid-cols-3 xl:grid-cols-5">
               <div><p className="label-mono">Cash sales</p><p className="mt-1 font-semibold text-dash-cream">{money(preview?.cash_reconciliation?.cash_sales ?? preview?.cash_collected)}</p></div>
-              <div><p className="label-mono">Expected cash</p><p className="mt-1 font-semibold text-dash-cream">{preview?.closeout_settings?.blind_drawer_close ? 'Hidden by policy' : money(expectedCash)}</p></div>
-              <div><p className="label-mono">Variance</p><p className={`mt-1 font-semibold ${Math.abs(variance) > threshold ? 'text-amber-300' : 'text-dash-cream'}`}>{money(variance)}</p></div>
+              <div><p className="label-mono">Paid in</p><p className="mt-1 font-semibold text-dash-cream">{money(preview?.cash_reconciliation?.paid_in)}</p></div>
+              <div><p className="label-mono">Paid out</p><p className="mt-1 font-semibold text-dash-cream">{money(preview?.cash_reconciliation?.paid_out)}</p></div>
+              <div><p className="label-mono">Cash drops</p><p className="mt-1 font-semibold text-dash-cream">{money(preview?.cash_reconciliation?.cash_drop)}</p></div>
+              <div><p className="label-mono">Cash refunds</p><p className="mt-1 font-semibold text-dash-cream">{money(preview?.cash_reconciliation?.cash_refunds)}</p></div>
+            </div>
+            <div className="grid gap-3 border-b border-dash-border py-4 sm:grid-cols-2">
+              <div><p className="label-mono">Expected cash</p><p className="mt-1 font-semibold text-dash-cream">{revealExpected ? money(expectedCash) : 'Hidden until count is entered'}</p></div>
+              <div><p className="label-mono">Variance</p><p className={`mt-1 font-semibold ${revealExpected && Math.abs(variance) > threshold ? 'text-amber-300' : 'text-dash-cream'}`}>{revealExpected ? money(variance) : 'Hidden until count is entered'}</p></div>
             </div>
             <label className="mt-4 block">
               <span className="label-mono">Variance reason</span>
@@ -378,7 +390,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         </div>
       )}
 
-      <CashCloseDaySettings restaurantId={restaurantId} />
+      {access.can('settings.edit') && <CashCloseDaySettings restaurantId={restaurantId} />}
 
       {modal === 'open-checks' && (
         <ActionModal

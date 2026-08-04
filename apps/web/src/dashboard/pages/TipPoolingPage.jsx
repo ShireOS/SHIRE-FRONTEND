@@ -4,6 +4,7 @@ import { fetchWithSupabaseAuth } from '../../shared/query'
 import { useAuth } from '../../auth'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import { fetchTipoutExceptions, resolveTipoutException } from '../../shared/api/tipoutExceptions'
+import { tipoutPolicyFingerprint, validateTipoutPolicy } from '../../shared/tips/tipPayrollPolicy'
 import {
   PayrollSetupFields,
   defaultTipPayrollSettings,
@@ -75,6 +76,15 @@ function isRangeUnsupported(err) {
 function isRunsUnprovisioned(err) {
   const msg = err?.message || ''
   return err?.status === 404 || /not found/i.test(msg) || /404/.test(msg)
+}
+
+function tipConfigErrorMessage(err) {
+  const detail = err?.detail ?? err?.responseBody?.detail
+  if (Array.isArray(detail)) {
+    const messages = detail.map(item => item?.msg).filter(Boolean)
+    if (messages.length) return messages.join(' ')
+  }
+  return typeof detail === 'string' ? detail : err?.message || 'Could not save configuration'
 }
 
 // Classify a role into a labor-cost category using its job code.
@@ -438,6 +448,7 @@ export default function TipPoolingPage({ restaurantId }) {
   const [overviewLoading, setOverviewLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [configLoading, setConfigLoading] = useState(true)
+  const [configReady, setConfigReady] = useState(false)
   const [working, setWorking] = useState(false)
   const [configSaving, setConfigSaving] = useState(false)
   const [message, setMessage] = useState('')
@@ -516,8 +527,8 @@ export default function TipPoolingPage({ restaurantId }) {
     setConfigMessage('')
     try {
       const [jobCodeRows, tipPayrollData, waiterRows, menuCategoryData, menuItemData, closeoutSettings, resolvedPeriods] = await Promise.all([
-        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`).catch(() => []),
-        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`).catch(() => null),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`),
+        fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=true`).catch(() => []),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/categories`).catch(() => null),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`).catch(() => null),
@@ -535,7 +546,9 @@ export default function TipPoolingPage({ restaurantId }) {
       setRunPreset('pay_period')
       setRunInterval(intervalFromPayPeriodCalendar(resolvedPeriods, normalizedTipPayroll.payroll_export_frequency))
       setCloseoutRecipients(Array.isArray(closeoutSettings?.eod_report_recipients) ? closeoutSettings.eod_report_recipients.map(String).filter(Boolean) : [])
+      setConfigReady(true)
     } catch (err) {
+      setConfigReady(false)
       setConfigError(err?.message || 'Could not load tipout configuration')
     } finally {
       setConfigLoading(false)
@@ -545,6 +558,7 @@ export default function TipPoolingPage({ restaurantId }) {
   useEffect(() => {
     setLoading(true)
     setConfigLoading(true)
+    setConfigReady(false)
     setSelectedRun(null)
     setPreview(null)
     setOverview(null)
@@ -632,27 +646,40 @@ export default function TipPoolingPage({ restaurantId }) {
     fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tip-pools/preview?business_date=${yesterdayISO()}`)
 
   const saveTipConfig = async () => {
+    const validationErrors = validateTipoutPolicy(tipPayrollSettings)
+    if (validationErrors.length) {
+      setConfigMessage('')
+      setConfigError(validationErrors.slice(0, 3).join(' '))
+      return
+    }
     setConfigSaving(true)
     setConfigMessage('')
     setConfigError('')
     try {
-      const saved = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`, {
+      const payload = tipPayrollPayload(tipPayrollSettings, jobCodes)
+      const expectedFingerprint = tipoutPolicyFingerprint(payload)
+      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`, {
         method: 'PUT',
-        body: JSON.stringify(tipPayrollPayload(tipPayrollSettings, jobCodes)),
+        body: JSON.stringify(payload),
       })
-      setTipPayrollSettings(normalizeTipPayrollSettings(saved, jobCodes))
+      const confirmed = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`)
+      const confirmedSettings = normalizeTipPayrollSettings(confirmed, jobCodes)
+      if (tipoutPolicyFingerprint(confirmedSettings) !== expectedFingerprint) {
+        throw new Error('The server responded, but the saved tipout rules did not match what you entered. Nothing was marked saved.')
+      }
+      setTipPayrollSettings(confirmedSettings)
       const resolvedPeriods = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pay-periods`).catch(() => null)
       setPayPeriodCalendar(resolvedPeriods)
       if (resolvedPeriods?.available) {
         setRunPreset('pay_period')
-        setRunInterval(intervalFromPayPeriodCalendar(resolvedPeriods, saved.payroll_export_frequency))
+        setRunInterval(intervalFromPayPeriodCalendar(resolvedPeriods, confirmedSettings.payroll_export_frequency))
       }
       setConfigMessage('Saved configuration')
       const list = await loadRuns()
       setOverview(null) // recompute next time Overview is opened
       void list
     } catch (err) {
-      setConfigError(err?.message || 'Could not save configuration')
+      setConfigError(tipConfigErrorMessage(err))
     } finally {
       setConfigSaving(false)
     }
@@ -834,7 +861,7 @@ export default function TipPoolingPage({ restaurantId }) {
     }
   }
 
-  const saveDisabled = configSaving || configLoading || !canAdjustTips
+  const saveDisabled = configSaving || configLoading || !configReady || !canAdjustTips
 
   const resolveException = async (alertId, resolution) => {
     if (!canAdjustTips) return

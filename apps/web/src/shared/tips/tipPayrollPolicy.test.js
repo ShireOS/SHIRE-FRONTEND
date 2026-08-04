@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { serializeTipRoleRules, serializeWeekdayTipoutOverrides } from './tipPayrollPolicy.js'
+import {
+  serializeTipRoleRules,
+  serializeWeekdayTipoutOverrides,
+  tipoutPolicyFingerprint,
+  validateTipoutPolicy,
+} from './tipPayrollPolicy.js'
 
 const rule = {
   role_key: 'server',
@@ -63,4 +68,92 @@ test('weekday exceptions serialize as JSON objects without inheriting invalid fi
   assert.deepEqual(serialized.saturday, { mode: 'disabled' })
   assert.equal(serialized.sunday.role_tip_rules[0].tipout_split_basis, 'even')
   assert.equal(Object.hasOwn(serialized, 'monday'), false)
+})
+
+test('incomplete rules are rejected instead of disappearing during serialization', () => {
+  const errors = validateTipoutPolicy({
+    role_tip_rules: [{
+      role_key: 'server',
+      tipouts: [{ target_role: '', percent: '', basis: 'tips' }],
+    }],
+  })
+
+  assert.ok(errors.some(message => message.includes('percentage')))
+  assert.ok(errors.some(message => message.includes('recipient role')))
+})
+
+test('a self-target created by changing the paying role is rejected', () => {
+  const errors = validateTipoutPolicy({
+    role_tip_rules: [{
+      role_key: 'busser',
+      tipouts: [{ target_role: 'busser', percent: '2', basis: 'sales' }],
+    }],
+  })
+
+  assert.ok(errors.some(message => message.includes('same role')))
+})
+
+test('a complete fixed-role tipout is valid', () => {
+  assert.deepEqual(validateTipoutPolicy({
+    role_tip_rules: [{
+      role_key: 'server',
+      tipouts: [{ target_role: 'busser', percent: '2', basis: 'sales' }],
+    }],
+  }), [])
+})
+
+test('a complete headcount tipout is valid before save', () => {
+  assert.deepEqual(validateTipoutPolicy({
+    role_tip_rules: [rule],
+  }), [])
+})
+
+test('headcount allocations that do not total 100 are rejected before save', () => {
+  const invalidRule = {
+    ...rule,
+    tipouts: [{
+      ...rule.tipouts[0],
+      headcount: {
+        ...rule.tipouts[0].headcount,
+        tiers: [{
+          min_count: 0,
+          max_count: null,
+          allocations: [{ target_role: 'busser', unallocated: false, percent: '90' }],
+        }],
+      },
+    }],
+  }
+
+  const errors = validateTipoutPolicy({ role_tip_rules: [invalidRule] })
+
+  assert.ok(errors.some(message => message.includes('exactly 100%')))
+})
+
+test('saved decimal strings have the same policy fingerprint as numeric drafts', () => {
+  const draft = {
+    role_tip_rules: [{ ...rule, tipouts: [{ target_role: 'busser', percent: 2, basis: 'sales' }] }],
+    category_tip_profiles: [],
+    weekday_tipout_overrides: { saturday: { mode: 'disabled' } },
+  }
+  const saved = {
+    ...draft,
+    role_tip_rules: [{ ...rule, tipouts: [{ target_role: 'busser', percent: '2.0', basis: 'sales' }] }],
+  }
+
+  assert.equal(tipoutPolicyFingerprint(saved), tipoutPolicyFingerprint(draft))
+})
+
+test('policy serialization keeps nullable percentages null', () => {
+  const serialized = serializeTipRoleRules([{
+    ...rule,
+    pool_points: null,
+    pool_contribution_percent: null,
+    pool_share_percent: null,
+    tipout_percent: null,
+  }])[0]
+
+  assert.equal(serialized.pool_points, null)
+  assert.equal(serialized.pool_contribution_percent, null)
+  assert.equal(serialized.pool_share_percent, null)
+  assert.equal(serialized.tipout_percent, null)
 })
