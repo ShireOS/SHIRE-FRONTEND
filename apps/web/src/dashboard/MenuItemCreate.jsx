@@ -12,6 +12,7 @@ import {
   groupRulesSummary,
   money,
 } from './components/menuUi'
+import { excludeQuestionId, restoreQuestionId } from './data/menuDuplicatePolicy'
 
 const ROUTE_INHERIT_VALUE = ''
 const ROUTE_NO_PRODUCTION_VALUE = '__no_production_route__'
@@ -81,6 +82,12 @@ export function MenuItemCreate({
     () => sourceGroupIds.map(id => groups.find(group => group.id === id)).filter(Boolean),
     [sourceGroupIds, groups],
   )
+  const excludedSourceQuestionIds = useMemo(
+    () => new Set(draft.excluded_source_question_ids || []),
+    [draft.excluded_source_question_ids],
+  )
+  const carriedSourceGroups = sourceGroups.filter(group => !excludedSourceQuestionIds.has(group.id))
+  const excludedSourceGroups = sourceGroups.filter(group => excludedSourceQuestionIds.has(group.id))
   const category = categoriesByName[draft.category || ''] || null
   const inheritedGroups = useMemo(
     () => (category
@@ -104,7 +111,7 @@ export function MenuItemCreate({
   const extrasModifiers = (draft.extra_modifier_ids || []).map(id => modifiersById[id]).filter(Boolean)
   const excludeModifierIds = new Set([
     ...(draft.extra_modifier_ids || []),
-    ...[...selectedGroups, ...inheritedGroups, ...sourceGroups].flatMap(group => (group.options || []).map(option => option.modifier_id)),
+    ...[...selectedGroups, ...inheritedGroups, ...carriedSourceGroups].flatMap(group => (group.options || []).map(option => option.modifier_id)),
   ])
 
   const addQuestion = (groupId) => setDraft(prev => ({
@@ -115,6 +122,15 @@ export function MenuItemCreate({
     ...prev,
     question_ids: (prev.question_ids || []).filter(id => id !== groupId),
     pending_group_options: (prev.pending_group_options || []).filter(pending => pending.group_id !== groupId),
+  }))
+  const excludeCopiedQuestion = (groupId) => setDraft(prev => ({
+    ...prev,
+    excluded_source_question_ids: excludeQuestionId(prev.excluded_source_question_ids, groupId),
+    pending_group_options: (prev.pending_group_options || []).filter(pending => pending.group_id !== groupId),
+  }))
+  const restoreCopiedQuestion = (groupId) => setDraft(prev => ({
+    ...prev,
+    excluded_source_question_ids: restoreQuestionId(prev.excluded_source_question_ids, groupId),
   }))
   const addExtras = (modifierIds) => setDraft(prev => ({
     ...prev,
@@ -137,12 +153,17 @@ export function MenuItemCreate({
     const match = needle ? groups.find(group => group.name.trim().toLowerCase() === needle) : null
     if (match) {
       setDraft(prev => {
+        const sourceWasExcluded = sourceGroupIds.includes(match.id)
+          && (prev.excluded_source_question_ids || []).includes(match.id)
         const alreadyAsked = (prev.question_ids || []).includes(match.id)
           || inheritedGroups.some(group => group.id === match.id)
-          || sourceGroupIds.includes(match.id)
+          || (sourceGroupIds.includes(match.id) && !sourceWasExcluded)
         return {
           ...prev,
-          question_ids: alreadyAsked ? (prev.question_ids || []) : [...(prev.question_ids || []), match.id],
+          excluded_source_question_ids: sourceWasExcluded
+            ? restoreQuestionId(prev.excluded_source_question_ids, match.id)
+            : (prev.excluded_source_question_ids || []),
+          question_ids: alreadyAsked || sourceWasExcluded ? (prev.question_ids || []) : [...(prev.question_ids || []), match.id],
           pending_group_options: [...(prev.pending_group_options || []), { group_id: match.id, modifier_id: created.id }],
         }
       })
@@ -151,11 +172,20 @@ export function MenuItemCreate({
     }
   }
 
-  const questionCount = sourceGroups.length + inheritedGroups.length + selectedGroups.length + (extrasModifiers.length > 0 ? 1 : 0)
+  const questionCount = new Set([
+    ...carriedSourceGroups.map(group => group.id),
+    ...inheritedGroups.map(group => group.id),
+    ...selectedGroups.map(group => group.id),
+  ]).size + (extrasModifiers.length > 0 ? 1 : 0)
+
+  const carriedQuestionCount = new Set([
+    ...carriedSourceGroups.map(group => group.id),
+    ...inheritedGroups.map(group => group.id),
+  ]).size
 
   const carryoverBits = source ? [
     'category & price',
-    carryover?.questions ? `${carryover.questions} question${carryover.questions === 1 ? '' : 's'} & their mods` : null,
+    carriedQuestionCount ? `${carriedQuestionCount} question${carriedQuestionCount === 1 ? '' : 's'} & their mods` : null,
     carryover?.modOverrides ? 'modifier price/print overrides' : null,
     'printer routing',
     'availability schedule',
@@ -258,19 +288,41 @@ export function MenuItemCreate({
             <div className="space-y-4">
               {sourceGroups.length > 0 && (
                 <div>
-                  <p className="label-mono mb-2">Copied from “{source.name}”</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {sourceGroups.map(group => (
-                      <span
-                        key={group.id}
-                        title={`${groupRulesSummary(group)} — carries over with its per-item settings; adjust on the item screen after saving`}
-                        className="rounded-full border border-dash-gold/30 bg-dash-gold/10 px-3 py-1.5 text-sm text-dash-gold"
-                      >
-                        {group.name}
-                        <span className="ml-1.5 text-xs opacity-70">{group.options.length} option{group.options.length === 1 ? '' : 's'}</span>
-                      </span>
-                    ))}
-                  </div>
+                  <p className="label-mono mb-2">Copied from “{source.name}” — click to leave one out</p>
+                  {carriedSourceGroups.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {carriedSourceGroups.map(group => (
+                        <button
+                          key={group.id}
+                          type="button"
+                          disabled={busy}
+                          title={`${groupRulesSummary(group)} — click to leave this question out of the duplicate`}
+                          onClick={() => excludeCopiedQuestion(group.id)}
+                          className="rounded-full border border-dash-gold/30 bg-dash-gold/10 px-3 py-1.5 text-sm text-dash-gold transition hover:border-red-400/60 hover:bg-red-400/10 hover:text-red-100 disabled:opacity-50"
+                        >
+                          ✓ {group.name}
+                          <span className="ml-1.5 text-xs opacity-70">{group.options.length} option{group.options.length === 1 ? '' : 's'} · ×</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {excludedSourceGroups.length > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className="text-xs font-semibold uppercase tracking-[0.08em] text-dash-tertiary">Not copied</span>
+                      {excludedSourceGroups.map(group => (
+                        <button
+                          key={group.id}
+                          type="button"
+                          disabled={busy}
+                          title="Restore this question to the duplicate"
+                          onClick={() => restoreCopiedQuestion(group.id)}
+                          className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm text-dash-tertiary line-through transition hover:border-dash-gold/60 hover:text-dash-cream hover:no-underline disabled:opacity-50"
+                        >
+                          {group.name} — restore
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

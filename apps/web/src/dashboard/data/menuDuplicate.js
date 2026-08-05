@@ -1,15 +1,17 @@
 import { supabase } from '../../shared/lib/supabase'
 import { attachGroupToItem, setItemGroupOverride, setItemModifierOverride } from './menuGroups'
 import { setItemPillExcluded } from './menuAllergies'
+import { buildDuplicateQuestionCopyPlan } from './menuDuplicatePolicy'
 
 // "Save & duplicate": after the new item row exists, re-key everything that
 // hangs off the source item's id onto the new one — question links (with
 // order), per-item question overrides (defaults / opt-outs / prompt mode),
 // per-item modifier price & print overrides, allergen narrowing, the tax
 // split, specials, and happy-hour price rules. The photo is deliberately not
-// copied. Each section fails soft (pre-migration tables, missing permission)
-// and reports itself in the returned warnings list instead of sinking the
-// whole duplicate.
+// copied. Questions explicitly excluded in the duplicate draft skip both the
+// direct link and their per-item question override. Each section fails soft
+// (pre-migration tables, missing permission) and reports itself in the returned
+// warnings list instead of sinking the whole duplicate.
 export async function copyItemConfig({
   restaurantId,
   api,
@@ -19,13 +21,14 @@ export async function copyItemConfig({
   sourceModifierOverrides = {},
   sourceAllergyExclusions = [],
   sourceSpecials = [],
+  excludedQuestionIds = [],
 }) {
   const warnings = []
+  const questionCopyPlan = buildDuplicateQuestionCopyPlan(groups, sourceItem.id, excludedQuestionIds)
 
   try {
-    for (const group of groups) {
-      if (!group.item_ids.includes(sourceItem.id)) continue
-      await attachGroupToItem(group.id, targetItem.id, group.item_display_orders?.[sourceItem.id] ?? 0)
+    for (const link of questionCopyPlan.links) {
+      await attachGroupToItem(link.groupId, targetItem.id, link.displayOrder)
     }
   } catch {
     warnings.push('questions')
@@ -34,10 +37,8 @@ export async function copyItemConfig({
   // Overrides matter for inherited questions too, so scan every group — a row
   // pointing at a question the new item doesn't ask is inert.
   try {
-    for (const group of groups) {
-      const override = group.item_overrides?.[sourceItem.id]
-      if (!override) continue
-      await setItemGroupOverride(group.id, targetItem.id, override)
+    for (const entry of questionCopyPlan.overrides) {
+      await setItemGroupOverride(entry.groupId, targetItem.id, entry.override)
     }
   } catch {
     warnings.push('per-item question settings')

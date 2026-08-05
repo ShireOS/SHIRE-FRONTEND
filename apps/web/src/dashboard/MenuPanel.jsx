@@ -87,6 +87,19 @@ const ROUTE_MULTI_VALUE = '__multiple_production_routes__'
 
 const routeCategoryKey = (value) => String(value || '').trim().toLowerCase()
 
+const createCategoryDraft = (name = '') => ({
+  _clientId: globalThis.crypto?.randomUUID?.() || `category-${Date.now()}-${Math.random()}`,
+  name,
+  tax_rate_id: '',
+  routing_station_id: '',
+  routing_station_name: '',
+  default_course_type: '',
+  default_fire_mode: 'inherit',
+  prep_time_minutes: '',
+  kds_display_group: '',
+  is_active: true,
+})
+
 const COURSE_OPTIONS = [
   { value: '', label: 'Course default' },
   { value: 'appetizer', label: 'Appetizer' },
@@ -955,7 +968,10 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     // question_ids attach existing questions; extra_modifier_ids land in a new
     // "Extras" question; pending_group_options add a just-created modifier as
     // an option of an existing question (picker "category" matched its name).
+    // excluded_source_question_ids leaves selected source questions behind
+    // when this draft is duplicating another item.
     question_ids: [],
+    excluded_source_question_ids: [],
     extra_modifier_ids: [],
     pending_group_options: [],
   })
@@ -1055,6 +1071,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           sourceModifierOverrides: itemModifierOverrides[source.id] || {},
           sourceAllergyExclusions: allergyExclusions.filter(row => row.item_id === source.id),
           sourceSpecials: specials.filter(special => special.menu_item_id === source.id),
+          excludedQuestionIds: draft.excluded_source_question_ids || [],
         }))
       }
       // Staged question/modifier picks from the create screen.
@@ -1118,7 +1135,17 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       if (duplicate && published) {
         // Staged picks were just saved onto this item, so they now carry over
         // via the copy path — clear them to avoid double-attaching.
-        setCreating({ source: full, draft: { ...draft, name: '', question_ids: [], extra_modifier_ids: [], pending_group_options: [] } })
+        setCreating({
+          source: full,
+          draft: {
+            ...draft,
+            name: '',
+            question_ids: [],
+            excluded_source_question_ids: [],
+            extra_modifier_ids: [],
+            pending_group_options: [],
+          },
+        })
       } else {
         setCreating(null)
         setSelectedItemId(full.id)
@@ -1267,6 +1294,11 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
   const updateCategory = (index, patch) => {
     setCategories(prev => prev.map((category, currentIndex) => (currentIndex === index ? { ...category, ...patch } : category)))
+  }
+
+  const addCategory = (name = '') => {
+    setCategories(prev => [...prev, createCategoryDraft(name)])
+    if (name) setExpandedCategoryNames(prev => new Set(prev).add(name))
   }
 
   // True inheritance: link a question to the CATEGORY. Every item in it asks
@@ -1714,7 +1746,6 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
             : []}
           onCreateModifier={createModifierForDraft}
           carryover={creating.source ? {
-            questions: behaviorByItemId[creating.source.id]?.questions?.length || 0,
             modOverrides: Object.keys(itemModifierOverrides[creating.source.id] || {}).length,
             specials: specials.filter(special => special.menu_item_id === creating.source.id).length,
             allergens: allergyExclusions.filter(row => row.item_id === creating.source.id).length,
@@ -1878,7 +1909,12 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         <SectionShell
           title="Categories"
           description="How the menu is organized on the POS. Each category card shows exactly how its button will look on the device, and sets the tax rate, prep station, and course its items inherit. Click an item count to see what's inside."
-          actions={<SmallButton variant="primary" onClick={() => void saveCategories(categories)} disabled={busy}>{busy ? 'Saving...' : 'Save categories'}</SmallButton>}
+          actions={(
+            <>
+              <SmallButton onClick={() => addCategory()} disabled={busy}>Add category</SmallButton>
+              <SmallButton variant="primary" onClick={() => void saveCategories(categories)} disabled={busy}>{busy ? 'Saving...' : 'Save categories'}</SmallButton>
+            </>
+          )}
         >
           <div className="space-y-3">
             {mergedCategories.map((category, index) => {
@@ -1887,7 +1923,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
               const productionRouting = categoryProductionRouting(category.name)
               return (
                 <div
-                  key={category.id || `${category.name}:${index}`}
+                  key={category.id || category._clientId || `category-${index}`}
                   id={`category-card-${encodeURIComponent(category.name || `new-${index}`)}`}
                   className="rounded-xl border border-white/10 bg-white/[0.025] p-4"
                 >
@@ -2097,10 +2133,8 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                     <span className="text-sm text-dash-tertiary">{orphanItems.length} item{orphanItems.length === 1 ? '' : 's'} · {orphanItems.slice(0, 4).map(item => item.name).join(', ')}{orphanItems.length > 4 ? '…' : ''}</span>
                     <span className="flex-1" />
                     <SmallButton
-                      onClick={() => {
-                        setCategories(prev => [...prev, { name, tax_rate_id: '', routing_station_id: '', routing_station_name: '', default_course_type: '', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: '', is_active: true }])
-                        setExpandedCategoryNames(prev => new Set(prev).add(name))
-                      }}
+                      onClick={() => addCategory(name)}
+                      disabled={busy}
                     >
                       Create "{name}" category
                     </SmallButton>
@@ -2110,10 +2144,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
             </div>
           )}
 
-          <div className="mt-4">
-            <SmallButton onClick={() => setCategories(prev => [...prev, { name: '', tax_rate_id: '', routing_station_id: '', routing_station_name: '', default_course_type: '', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: '', is_active: true }])}>
-              Add category
-            </SmallButton>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <SmallButton onClick={() => addCategory()} disabled={busy}>Add category</SmallButton>
+            <SmallButton variant="primary" onClick={() => void saveCategories(categories)} disabled={busy}>{busy ? 'Saving...' : 'Save categories'}</SmallButton>
           </div>
         </SectionShell>
       )}

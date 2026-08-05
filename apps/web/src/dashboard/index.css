@@ -144,6 +144,20 @@
     --shell-cta-bg: 26 22 21;
     --shell-cta-text: 255 255 255;
   }
+
+  /* Windows/Chromium can render native option popups with the system's white
+     background while inheriting our light dashboard text. Give every native
+     select its active theme and explicit option colors so the list remains
+     readable in both dashboard themes. */
+  select {
+    color-scheme: var(--color-scheme);
+  }
+
+  select option,
+  select optgroup {
+    background-color: rgb(var(--dash-surface));
+    color: rgb(var(--dash-cream));
+  }
 }
 
 /* Force all borders transparent by default */
