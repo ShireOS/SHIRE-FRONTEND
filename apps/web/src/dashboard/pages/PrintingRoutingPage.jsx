@@ -81,6 +81,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const [previewPricingWarnings, setPreviewPricingWarnings] = useState([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
+  const [loadedRestaurantId, setLoadedRestaurantId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -119,6 +120,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
           report: { ...clone(DEFAULT_CONFIG.report), ...(printing?.report || {}) },
           kitchen: { ...clone(DEFAULT_CONFIG.kitchen), ...(printing?.kitchen || {}) },
         })
+        setLoadedRestaurantId(String(restaurantId))
         setRouting(routes || { stations: [], targets: [] })
         setCatalog([
           ...(itemsResult.data || []).map(row => ({ ...row, kind: 'items', type: 'Item' })),
@@ -202,6 +204,11 @@ export default function PrintingRoutingPage({ restaurantId }) {
     ...config.kitchen,
     ...(scope === 'whole' ? {} : config.stations?.[scope]?.kitchen || {}),
   }), [config, scope])
+  const stationKitchen = scope === 'whole' ? null : config.stations?.[scope]?.kitchen
+  const ticketTopConfigured = Array.isArray(effectiveKitchen.header) || Array.isArray(effectiveKitchen.info)
+  const ticketTopOverridden = scope === 'whole'
+    ? ticketTopConfigured
+    : Array.isArray(stationKitchen?.header) || Array.isArray(stationKitchen?.info)
 
   const effectiveAliases = kind => ({
     ...(config.aliases?.[kind] || {}),
@@ -460,15 +467,24 @@ export default function PrintingRoutingPage({ restaurantId }) {
             </div>
           ) : (
             <>
-              <TicketTopBuilder
-                key={`${scope}:${ticketTopResetKey}`}
-                header={effectiveKitchen.header}
-                info={effectiveKitchen.info}
-                configured={Array.isArray(effectiveKitchen.header) || Array.isArray(effectiveKitchen.info)}
-                supportsRed={supportsRed}
-                onChange={(headerRows, infoRows) => patchKitchen({ header: headerRows, info: infoRows })}
-                onReset={resetTicketTop}
-              />
+              {loadedRestaurantId === String(restaurantId) ? (
+                <TicketTopBuilder
+                  key={`${restaurantId}:${scope}:${ticketTopResetKey}`}
+                  header={effectiveKitchen.header}
+                  info={effectiveKitchen.info}
+                  configured={ticketTopConfigured}
+                  inherited={scope !== 'whole' && ticketTopConfigured && !ticketTopOverridden}
+                  stationScoped={scope !== 'whole'}
+                  canReset={ticketTopOverridden}
+                  supportsRed={supportsRed}
+                  onChange={patchKitchen}
+                  onReset={resetTicketTop}
+                />
+              ) : (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 text-sm text-dash-tertiary">
+                  Loading ticket configuration…
+                </div>
+              )}
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <h2 className="text-lg font-semibold">Ticket detail</h2>
                 <div className="mt-4 grid gap-4 md:grid-cols-3">
@@ -515,7 +531,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
               {paperWidthOptions.length > 1 && <div className="mt-4 max-w-xs"><Select label="Installed paper roll" value={String(selectedTarget.config?.paper_width_mm || displayedCapabilities.paper_width_mm)} onChange={patchTargetPaperWidth}>{paperWidthOptions.map(width => <option key={width} value={width}>{width} mm</option>)}</Select></div>}
             </> : <p className="mt-2 text-sm text-dash-tertiary">Choose a compatible printer to calculate its usable paper width.</p>}
           </div>
-          <button onClick={save} disabled={saving} className="rounded-xl bg-dash-gold px-5 py-3 text-sm font-semibold text-black disabled:opacity-50">{saving ? 'Saving…' : 'Save changes'}</button>
+          <button onClick={save} disabled={saving || loading || loadedRestaurantId !== String(restaurantId)} className="rounded-xl bg-dash-gold px-5 py-3 text-sm font-semibold text-black disabled:opacity-50">{saving ? 'Saving…' : 'Save changes'}</button>
         </div>
 
         <div className="h-fit rounded-2xl border border-white/10 bg-white/[0.035] p-5 xl:sticky xl:top-20">

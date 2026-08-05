@@ -1,12 +1,17 @@
-import { useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDownUp, RotateCcw } from 'lucide-react'
 import { SortableRows, DragHandle } from '../shared/SortableRows'
+import {
+  buildTicketTopPatch,
+  ticketTopEditorRows,
+  ticketTopRowsMatch,
+} from './ticketTopPolicy'
 
 // Ticket-top builder: two editable zones (big centered header + compact info
 // lines) stored as kitchen.header / kitchen.info in the printing config. When
-// neither key exists the POS prints its legacy hardcoded ticket top, so the
-// builder shows DEFAULT_TICKET_TOP (a mirror of that legacy layout) and only
-// materializes rows into the config on the first real edit.
+// neither key exists the POS prints its legacy hardcoded ticket top. Replacing
+// that block with editable rows is an explicit action so a small row edit can
+// never silently opt a restaurant into a different ticket structure.
 
 export const TICKET_TOP_FIELDS = {
   order_type: { label: 'Order method', hint: 'DINE IN / TO GO / DELIVERY' },
@@ -28,25 +33,9 @@ const METHODS = [
   { id: 'delivery', chip: 'DL', label: 'Delivery' },
 ]
 
-// Mirrors the legacy hardcoded ticket top the POS prints today, so saving
-// without further edits keeps tickets looking the same.
-export const DEFAULT_TICKET_TOP = {
-  header: [
-    { type: 'field', field: 'order_type', size: 'double', bold: true },
-    { type: 'field', field: 'station_name', size: 'standard' },
-  ],
-  info: [
-    { type: 'field', field: 'table' },
-    { type: 'field', field: 'server' },
-    { type: 'field', field: 'course' },
-    { type: 'field', field: 'time' },
-  ],
-}
-
 let rowIdCounter = 0
 const nextRowId = () => `ttrow-${++rowIdCounter}`
 const withIds = rows => (rows || []).map(row => ({ id: nextRowId(), ...row }))
-const stripIds = rows => rows.map(({ id: _id, ...row }) => row)
 
 function MiniSelect({ value, onChange, title, children }) {
   return (
@@ -77,20 +66,36 @@ function Chip({ on, tone = 'gold', title, onClick, children }) {
   )
 }
 
-export default function TicketTopBuilder({ header, info, configured, supportsRed, onChange, onReset }) {
+export default function TicketTopBuilder({ header, info, configured, inherited, stationScoped, canReset, supportsRed, onChange, onReset }) {
   const [advanced, setAdvanced] = useState(false)
-  // Local rows carry stable ids for drag-and-drop; edits are pushed up as
-  // plain config rows. Parent remounts this component (key) on scope switches.
+  const externalRows = useMemo(
+    () => ticketTopEditorRows(header, info, configured),
+    [configured, header, info],
+  )
+  // Local rows carry stable ids for drag-and-drop. Prop changes after an async
+  // load/save or restaurant switch are reconciled below without churning ids
+  // after ordinary local edits.
   const [zones, setZones] = useState(() => ({
-    header: withIds(Array.isArray(header) ? header : DEFAULT_TICKET_TOP.header),
-    info: withIds(Array.isArray(info) ? info : DEFAULT_TICKET_TOP.info),
+    header: withIds(externalRows.header),
+    info: withIds(externalRows.info),
   }))
   const zonesRef = useRef(zones)
   zonesRef.current = zones
 
-  const commit = next => {
+  useLayoutEffect(() => {
+    if (ticketTopRowsMatch(zonesRef.current, externalRows)) return
+    const next = {
+      header: withIds(externalRows.header),
+      info: withIds(externalRows.info),
+    }
+    zonesRef.current = next
     setZones(next)
-    onChange(stripIds(next.header), stripIds(next.info))
+  }, [externalRows])
+
+  const commit = (next, changedZones) => {
+    zonesRef.current = next
+    setZones(next)
+    onChange(buildTicketTopPatch(next, changedZones))
   }
 
   const updateRow = (zone, id, patch) => {
@@ -98,11 +103,11 @@ export default function TicketTopBuilder({ header, info, configured, supportsRed
       ...zonesRef.current,
       [zone]: zonesRef.current[zone].map(row => (row.id === id ? { ...row, ...patch } : row)),
     }
-    commit(next)
+    commit(next, [zone])
   }
 
   const removeRow = (zone, id) => {
-    commit({ ...zonesRef.current, [zone]: zonesRef.current[zone].filter(row => row.id !== id) })
+    commit({ ...zonesRef.current, [zone]: zonesRef.current[zone].filter(row => row.id !== id) }, [zone])
   }
 
   const moveRow = (zone, id) => {
@@ -113,21 +118,22 @@ export default function TicketTopBuilder({ header, info, configured, supportsRed
       ...zonesRef.current,
       [zone]: zonesRef.current[zone].filter(candidate => candidate.id !== id),
       [other]: [...zonesRef.current[other], row],
-    })
+    }, [zone, other])
   }
 
   const addRow = (zone, row) => {
-    commit({ ...zonesRef.current, [zone]: [...zonesRef.current[zone], { id: nextRowId(), ...row }] })
+    commit({ ...zonesRef.current, [zone]: [...zonesRef.current[zone], { id: nextRowId(), ...row }] }, [zone])
   }
 
   const reorderZone = (zone, orderedIds) => {
     const byId = new Map(zonesRef.current[zone].map(row => [row.id, row]))
-    commit({ ...zonesRef.current, [zone]: orderedIds.map(id => byId.get(id)).filter(Boolean) })
+    commit({ ...zonesRef.current, [zone]: orderedIds.map(id => byId.get(id)).filter(Boolean) }, [zone])
   }
 
   // The parent removes the spec keys and remounts this component, which then
-  // re-reads the post-reset effective rows (whole-kitchen spec or the default).
+  // re-reads the post-reset effective rows (whole-kitchen spec or legacy mode).
   const resetToDefault = () => onReset()
+  const startCustomizing = () => commit(zonesRef.current, ['header', 'info'])
 
   const usedFields = useMemo(() => ({
     header: new Set(zones.header.filter(row => row.type === 'field').map(row => row.field)),
@@ -247,26 +253,47 @@ export default function TicketTopBuilder({ header, info, configured, supportsRed
     </div>
   )
 
+  if (!configured) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+        <h2 className="text-lg font-semibold">Ticket header &amp; info</h2>
+        <p className="mt-1 text-sm text-dash-tertiary">
+          The legacy POS ticket top is active. Its combined table, order, and time row remains unchanged until you explicitly replace it with editable rows.
+        </p>
+        <button
+          type="button"
+          onClick={startCustomizing}
+          className="mt-4 rounded-xl border border-dash-gold/50 bg-dash-gold/10 px-4 py-2.5 text-sm font-semibold text-dash-gold transition hover:bg-dash-gold/15"
+        >
+          Customize ticket top
+        </button>
+        <p className="mt-2 text-xs text-dash-tertiary">
+          The starter keeps order method, course, table or tab, check number, sent time, and server. Review the live preview before saving.
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Ticket header &amp; info</h2>
           <p className="mt-1 text-sm text-dash-tertiary">
-            {configured
-              ? 'Customized ticket top. Rows print in this order; empty fields skip automatically.'
-              : 'Standard ticket top (what prints today). Any edit starts customizing; nothing changes until you save.'}
+            {inherited
+              ? 'Inherited from Whole Kitchen. Editing a row creates a station override only for that zone.'
+              : 'Customized ticket top. Rows print in this order; empty fields skip automatically.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {configured && (
+          {canReset && (
             <button
               type="button"
               onClick={resetToDefault}
-              title="Remove customization — tickets print the standard top again"
+              title={stationScoped ? 'Remove station overrides and use the Whole Kitchen ticket top' : 'Remove customization and restore the legacy POS ticket top'}
               className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-gold"
             >
-              <RotateCcw className="h-3 w-3" /> Reset to standard
+              <RotateCcw className="h-3 w-3" /> {stationScoped ? 'Use Whole Kitchen' : 'Reset to legacy'}
             </button>
           )}
           <button
