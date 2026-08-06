@@ -40,6 +40,7 @@ import {
 } from './data/menuAllergies'
 import { MenuItemDetail } from './MenuItemDetail'
 import { MenuItemCreate } from './MenuItemCreate'
+import { MenuEditor } from '../onboarding/components/MenuEditor'
 import { copyItemConfig } from './data/menuDuplicate'
 import BulkPricingPanel from './BulkPricingPanel'
 import {
@@ -97,6 +98,43 @@ const COURSE_OPTIONS = [
   { value: 'other', label: 'Other' },
   { value: 'none', label: 'None' },
 ]
+
+// Location-level specials behavior, stored on restaurants.config.daily_specials
+// (moved here from the old Setup → Specials tab).
+const DEFAULT_DAILY_SPECIAL_SETTINGS = {
+  enabled: true,
+  show_specials_lane: true,
+  show_in_source_categories: true,
+  manager_quick_pin_enabled: true,
+}
+
+const SPECIAL_SETTING_LABELS = [
+  ['enabled', 'Enable location specials'],
+  ['show_specials_lane', 'Show Specials lane first'],
+  ['show_in_source_categories', 'Also show in source categories'],
+  ['manager_quick_pin_enabled', 'Allow manager quick pin'],
+]
+
+// API row → the onboarding MenuEditor's row shape, for the import/bulk table.
+const editorItemFromApi = (item) => ({
+  id: item.id,
+  name: item.name || '',
+  category: item.category || '',
+  menu_category_id: item.menu_category_id || undefined,
+  price: item.price != null ? String(item.price) : '',
+  description: item.description || '',
+  is_available: item.is_available !== false,
+  availability_mode: item.availability_mode || 'always',
+  availability_days: Array.isArray(item.availability_days) && item.availability_days.length > 0 ? item.availability_days : [0, 1, 2, 3, 4, 5, 6],
+  availability_start_time: item.availability_start_time ? String(item.availability_start_time).slice(0, 5) : '',
+  availability_end_time: item.availability_end_time ? String(item.availability_end_time).slice(0, 5) : '',
+  availability_service_modes: item.availability_service_modes || [],
+  availability_start_date: item.availability_start_date || '',
+  availability_end_date: item.availability_end_date || '',
+  availability_notes: item.availability_notes || '',
+  fire_mode: item.fire_mode || '',
+  kds_display_group: item.kds_display_group || '',
+})
 
 const defaultSpecialDraft = () => ({
   menu_item_id: '',
@@ -604,6 +642,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [itemAvailabilityFilter, setItemAvailabilityFilter] = useState('all')
   // null | { source: item-to-duplicate | null, draft: prefilled draft | null }
   const [creating, setCreating] = useState(null)
+  // null | 'upload' (AI photo extraction) | 'manual' (bulk table editing)
+  const [importing, setImporting] = useState(null)
+  const [dailySpecialSettings, setDailySpecialSettings] = useState(null)
   const [expandedCategoryNames, setExpandedCategoryNames] = useState(() => new Set())
   const [categoryScrollTarget, setCategoryScrollTarget] = useState(null)
 
@@ -715,6 +756,28 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     setRouting(data)
   }
 
+  const loadSpecialSettings = async () => {
+    const { data, error } = await supabase.from('restaurants').select('config').eq('id', restaurantId).single()
+    if (error) throw error
+    const raw = data?.config?.daily_specials
+    setDailySpecialSettings({ ...DEFAULT_DAILY_SPECIAL_SETTINGS, ...(raw && typeof raw === 'object' ? raw : {}) })
+  }
+
+  // Read-merge-write on restaurants.config so unrelated config keys survive.
+  const saveSpecialSettings = (patch) => run(async () => {
+    const { data, error } = await supabase.from('restaurants').select('config').eq('id', restaurantId).single()
+    if (error) throw error
+    const config = data?.config && typeof data.config === 'object' ? data.config : {}
+    const current = config.daily_specials && typeof config.daily_specials === 'object' ? config.daily_specials : {}
+    const next = { ...DEFAULT_DAILY_SPECIAL_SETTINGS, ...current, ...patch }
+    const update = await supabase
+      .from('restaurants')
+      .update({ config: { ...config, daily_specials: next } })
+      .eq('id', restaurantId)
+    if (update.error) throw update.error
+    setDailySpecialSettings(next)
+  }, 'Specials settings saved.', 'Couldn’t save specials settings')
+
   const loadPrintingConfig = async () => {
     try {
       const data = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`)
@@ -742,6 +805,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       ['modifier overrides', loadItemModifierOverrides],
       ['allergies', loadAllergies],
       ['specials', () => loadSpecials({ soft: true })],
+      ['specials settings', loadSpecialSettings],
       ['kitchen routing', loadRouting],
       ['printing config', loadPrintingConfig],
     ]
@@ -1689,6 +1753,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
               setActiveTab(tab.id)
               setSelectedItemId(null)
               setCreating(null)
+              setImporting(null)
             }}
           >
             {tab.label}
@@ -1700,7 +1765,30 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       {notice && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">{notice}</div>}
       {loading && <div className="text-sm text-dash-tertiary">Loading menu...</div>}
 
-      {!loading && activeTab === 'items' && creating && (
+      {!loading && activeTab === 'items' && importing && (
+        <SectionShell
+          title={importing === 'upload' ? 'Import menu from a photo' : 'Bulk edit menu'}
+          description="Rows keep their identity: saving updates existing items in place and adds new ones. Photos, questions, specials, and routing on existing items are untouched. Nothing is removed unless you delete its row here."
+        >
+          <MenuEditor
+            restaurantId={restaurantId}
+            mode={importing}
+            initialItems={mergedItems.map(editorItemFromApi)}
+            categories={mergedCategories}
+            onBack={() => setImporting(null)}
+            onSave={() => {
+              setImporting(null)
+              void run(async () => {
+                invalidateItems()
+                invalidateCategories()
+                await Promise.allSettled([loadItems(true), loadCategories(true), loadRouting(true)])
+              }, 'Menu saved.')
+            }}
+          />
+        </SectionShell>
+      )}
+
+      {!loading && activeTab === 'items' && !importing && creating && (
         <MenuItemCreate
           key={creating.source?.id || 'new-item'}
           categoryNames={categoryNames}
@@ -1727,7 +1815,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         />
       )}
 
-      {!loading && activeTab === 'items' && !creating && selectedItem && (
+      {!loading && activeTab === 'items' && !importing && !creating && selectedItem && (
         <MenuItemDetail
           key={selectedItem.id}
           restaurantId={restaurantId}
@@ -1756,11 +1844,17 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         />
       )}
 
-      {!loading && activeTab === 'items' && !creating && !selectedItem && (
+      {!loading && activeTab === 'items' && !importing && !creating && !selectedItem && (
         <SectionShell
           title="Items"
           description="Click an item to open its full editor. Quick-86 on every row."
-          actions={<SmallButton variant="primary" onClick={() => startCreateItem()} disabled={busy}>+ Add item</SmallButton>}
+          actions={(
+            <>
+              <SmallButton onClick={() => { setSelectedItemId(null); setCreating(null); setImporting('upload') }} disabled={busy}>Import from photo</SmallButton>
+              <SmallButton onClick={() => { setSelectedItemId(null); setCreating(null); setImporting('manual') }} disabled={busy}>Bulk edit table</SmallButton>
+              <SmallButton variant="primary" onClick={() => startCreateItem()} disabled={busy}>+ Add item</SmallButton>
+            </>
+          )}
         >
           <div className="mb-4 grid gap-3 md:grid-cols-[1.6fr_1fr_1fr]">
             <TextInput value={itemSearch} onChange={event => setItemSearch(event.target.value)} placeholder="Search items, descriptions, categories..." />
@@ -1956,6 +2050,28 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                           <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
                         ))}
                       </SelectInput>
+                    </Field>
+                    <Field label="Fire timing">
+                      <SelectInput
+                        title="Default kitchen fire timing for new items in this category — individual items can override it"
+                        value={category.default_fire_mode || ''}
+                        onChange={event => updateCategory(index, { default_fire_mode: event.target.value || null })}
+                      >
+                        <option value="">Use order default</option>
+                        <option value="inherit">Use order default</option>
+                        <option value="immediate">Immediate</option>
+                        <option value="hold">Hold</option>
+                        <option value="manual">Manual</option>
+                        <option value="by_course">By course</option>
+                      </SelectInput>
+                    </Field>
+                    <Field label="KDS group">
+                      <TextInput
+                        title="Kitchen display grouping label for this category's tickets"
+                        value={category.kds_display_group || ''}
+                        onChange={event => updateCategory(index, { kds_display_group: event.target.value })}
+                        placeholder="Apps, Entrees, Bar…"
+                      />
                     </Field>
                   </div>
 
@@ -2467,6 +2583,25 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
             title="Specials"
             description="Overlay a special name, price, and note on a real menu item — the base item keeps its tax, modifiers, and routing. Schedule weekly, by date window, on an N-day cycle, or pin manually."
           >
+            {dailySpecialSettings && (
+              <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {SPECIAL_SETTING_LABELS.map(([field, label]) => (
+                  <button
+                    key={field}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void saveSpecialSettings({ [field]: !dailySpecialSettings[field] })}
+                    className={[
+                      'rounded-xl border p-4 text-left transition disabled:opacity-50',
+                      dailySpecialSettings[field] ? 'border-dash-gold/60 bg-dash-gold/10' : 'border-white/10 bg-white/[0.025] hover:border-white/20',
+                    ].join(' ')}
+                  >
+                    <span className="text-sm font-semibold">{label}</span>
+                    <span className="mt-1 block text-xs text-dash-tertiary">{dailySpecialSettings[field] ? 'On' : 'Off'}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px]">
 	              <div className="space-y-3">
 	                <p className="label-mono">Current specials</p>

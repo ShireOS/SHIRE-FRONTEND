@@ -5,8 +5,6 @@ import { queryClient, queryKeys, fetchCached, fetchWithSupabaseAuth, STALE_TIMES
 import { FloorPlanEditor } from '../onboarding/components/FloorPlanEditor'
 import { normalizeFloorPlanTablesForEditor } from '../onboarding/components/FloorPlanCanvas'
 import { FloorPlanTableSetup } from '../onboarding/components/FloorPlanTableSetup'
-import { MenuEditor } from '../onboarding/components/MenuEditor'
-import { ModifierEditor } from '../onboarding/components/ModifierEditor'
 import {
   assignedStaffRoles,
   buildStaffRoleUpdate,
@@ -39,10 +37,10 @@ const SETUP_TABS = [
   { id: 'hours', label: 'Hours' },
   { id: 'reservation_timing', label: 'Reservations' },
   { id: 'capacity', label: 'Capacity / Floor Plan' },
-  { id: 'menu_categories', label: 'Menu Categories' },
-  { id: 'specials', label: 'Specials' },
+  // Menu data (items, categories, modifiers/questions, specials) lives in the
+  // dedicated Menu workspace — the single source of truth. The tab below only
+  // links there so setup can never overwrite menu-editor configuration.
   { id: 'menu', label: 'Menu' },
-  { id: 'modifiers', label: 'Modifiers' },
   { id: 'routing', label: 'Kitchen Routing' },
   { id: 'employees', label: 'Employees' },
   { id: 'integrations', label: 'Integrations' },
@@ -74,7 +72,6 @@ const SETUP_PROPAGATION = {
   hours: 'specified',
   reservation_timing: 'specified',
   capacity: 'specified',
-  menu_categories: 'general',
 }
 
 const RESTAURANT_TYPES = [
@@ -103,31 +100,6 @@ const CAPACITY_OPTIONS = [
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MAX_SPLIT_COUNT = 8
-const DEFAULT_DAILY_SPECIAL_SETTINGS = {
-  enabled: true,
-  show_specials_lane: true,
-  show_in_source_categories: true,
-  manager_quick_pin_enabled: true,
-}
-const defaultSpecialDraft = () => ({
-  menu_item_id: '',
-  display_name: '',
-  note: '',
-  special_price: '',
-  schedule_kind: 'manual',
-  days_of_week: [1, 2, 3, 4, 5],
-  start_time: '11:00',
-  end_time: '',
-  start_date: '',
-  end_date: '',
-  cycle_anchor_date: '',
-  cycle_length_days: '',
-  cycle_day_number: '',
-  expires_at: '',
-  sort_order: 0,
-  is_active: true,
-  suggested_tip_basis: 'after_discount',
-})
 const DEFAULT_HOURS = [
   { day_of_week: 0, open_time: '11:00', close_time: '22:00', is_closed: true },
   { day_of_week: 1, open_time: '11:00', close_time: '22:00', is_closed: false },
@@ -1338,20 +1310,6 @@ function defaultCloseoutSettings() {
   }
 }
 
-function defaultMenuCategories() {
-  return [
-    { name: 'Appetizers', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'by_course', kds_display_group: 'Apps', is_active: true },
-    { name: 'Entrees', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'by_course', kds_display_group: 'Entrees', is_active: true },
-    { name: 'Desserts', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'by_course', kds_display_group: 'Desserts', is_active: true },
-    { name: 'Sides', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'inherit', kds_display_group: 'Sides', is_active: true },
-    { name: 'Drinks', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_fire_mode: 'immediate', kds_display_group: 'Drinks', is_active: true },
-    { name: 'Cocktails', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_fire_mode: 'immediate', kds_display_group: 'Bar', is_active: true },
-    { name: 'Beer & Wine', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_fire_mode: 'immediate', kds_display_group: 'Bar', is_active: true },
-    { name: 'Specials', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'inherit', kds_display_group: 'Specials', is_active: true },
-    { name: 'Other', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Expo', default_fire_mode: 'inherit', kds_display_group: 'Other', is_active: true },
-  ]
-}
-
 function defaultCheckWorkflowSettings() {
   return {
     seat_numbers_enabled: true,
@@ -1669,29 +1627,6 @@ function normalizeServiceCharges(rows) {
     .filter(row => row.name && row.is_active)
 }
 
-function normalizeMenuCategories(rows) {
-  const normalized = (Array.isArray(rows) ? rows : [])
-    .map(row => ({
-      id: row?.id || null,
-      name: String(row?.name || '').trim(),
-      tax_rate_id: row?.tax_rate_id || '',
-      routing_station_id: row?.routing_station_id || '',
-      routing_station_name: row?.routing_station_name || '',
-      default_fire_mode: row?.default_fire_mode || '',
-      kds_display_group: row?.kds_display_group || '',
-      is_active: row?.is_active !== false,
-    }))
-    .filter(row => row.is_active)
-  return normalized.length > 0 ? normalized : defaultMenuCategories()
-}
-
-function validateMenuCategories(rows) {
-  const blankIndex = normalizeMenuCategories(rows).findIndex(row => !row.name.trim())
-  if (blankIndex >= 0) {
-    throw new Error(`Menu category ${blankIndex + 1} needs a name. Use Remove to delete it.`)
-  }
-}
-
 function normalizeDiscountRules(rows) {
   return (Array.isArray(rows) ? rows : [])
     .map(row => ({
@@ -1815,21 +1750,6 @@ function taxesChargesPayload(taxRates, serviceCharges, autoGratuity) {
       taxable: row.taxable,
       auto_apply: row.auto_apply,
       is_tip: row.is_tip,
-      is_active: true,
-    })),
-  }
-}
-
-function menuCategoriesPayload(menuCategories) {
-  return {
-    categories: normalizeMenuCategories(menuCategories).map(row => ({
-      id: row.id || undefined,
-      name: row.name,
-      tax_rate_id: row.tax_rate_id || null,
-      routing_station_id: row.routing_station_id || null,
-      routing_station_name: row.routing_station_name || null,
-      default_fire_mode: row.default_fire_mode || null,
-      kds_display_group: row.kds_display_group || null,
       is_active: true,
     })),
   }
@@ -2274,52 +2194,6 @@ function jobCodePayload(jobCode) {
   }
 }
 
-function mapMenuItems(items) {
-  return (Array.isArray(items) ? items : []).map(item => ({
-    id: item.id ?? crypto.randomUUID(),
-    name: item.name ?? '',
-    category: item.category ?? '',
-    price: item.price != null ? String(item.price) : '',
-    description: item.description ?? '',
-  }))
-}
-
-function normalizeDailySpecialSettings(config) {
-  const raw = config?.daily_specials && typeof config.daily_specials === 'object' ? config.daily_specials : {}
-  return { ...DEFAULT_DAILY_SPECIAL_SETTINGS, ...raw }
-}
-
-function mapDailySpecials(rows) {
-  return (Array.isArray(rows) ? rows : []).map(row => ({
-    ...row,
-    id: row.id,
-    menu_item_id: row.menu_item_id,
-    display_name: row.display_name || '',
-    note: row.note || '',
-    special_price: row.special_price == null ? '' : String(row.special_price),
-    schedule_kind: row.schedule_kind || 'manual',
-    days_of_week: Array.isArray(row.days_of_week) ? row.days_of_week : [0, 1, 2, 3, 4, 5, 6],
-    start_time: row.start_time ? String(row.start_time).slice(0, 5) : '',
-    end_time: row.end_time ? String(row.end_time).slice(0, 5) : '',
-    start_date: row.start_date || '',
-    end_date: row.end_date || '',
-    cycle_anchor_date: row.cycle_anchor_date || '',
-    cycle_length_days: row.cycle_length_days == null ? '' : String(row.cycle_length_days),
-    cycle_day_number: row.cycle_day_number == null ? '' : String(row.cycle_day_number),
-    expires_at: row.expires_at || '',
-    sort_order: Number(row.sort_order || 0),
-    is_active: row.is_active !== false,
-  }))
-}
-
-function isDailySpecialActiveNow(special) {
-  if (!special?.is_active) return false
-  if (special.expires_at && new Date(special.expires_at).getTime() <= Date.now()) return false
-  const today = new Date().getDay()
-  if (special.schedule_kind === 'weekly' && !special.days_of_week.includes(today)) return false
-  return true
-}
-
 export function buildSetupWarnings(restaurant, waiterCount = null, floorPlanStatus = null, jobCodeCount = null) {
   const warnings = {
     basics: [],
@@ -2391,7 +2265,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [taxRates, setTaxRates] = useState([defaultTaxRate()])
   const [serviceCharges, setServiceCharges] = useState([])
   const [autoGratuity, setAutoGratuity] = useState(defaultAutoGratuity())
-  const [menuCategories, setMenuCategories] = useState(defaultMenuCategories())
   const [discountRules, setDiscountRules] = useState([])
   const [rolePermissions, setRolePermissions] = useState(defaultRolePermissions())
   const [closeoutSettings, setCloseoutSettings] = useState(defaultCloseoutSettings())
@@ -2404,12 +2277,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [reservationTiming, setReservationTiming] = useState(() => normalizeReservationTiming(restaurant.config))
   const [floorTables, setFloorTables] = useState([])
   const [floorPlanMode, setFloorPlanMode] = useState(null)
-  const [menuItems, setMenuItems] = useState([])
-  const [menuMode, setMenuMode] = useState(null)
-  const [specialsTab, setSpecialsTab] = useState('today')
-  const [dailySpecials, setDailySpecials] = useState([])
-  const [dailySpecialSettings, setDailySpecialSettings] = useState(() => normalizeDailySpecialSettings(restaurant.config))
-  const [specialDraft, setSpecialDraft] = useState(() => defaultSpecialDraft())
   const [waiters, setWaiters] = useState([])
   const [jobCodes, setJobCodes] = useState([])
   const [jobCodeDraft, setJobCodeDraft] = useState({ code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 100, is_active: true })
@@ -2707,7 +2574,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     setLegal(initialLegal(restaurant))
     setPayments(initialPayments(restaurant))
     setPricingPolicy(prev => normalizePricingPolicy({ ...prev, jurisdiction_state: prev.jurisdiction_state || restaurant.state || 'SC' }))
-    setDailySpecialSettings(normalizeDailySpecialSettings(restaurant.config))
     setServiceModel(initialServiceModel(restaurant))
     setReservationTiming(normalizeReservationTiming(restaurant.config))
     setCoverImageUrl(restaurant.cover_image_url || '')
@@ -2725,164 +2591,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     return () => URL.revokeObjectURL(objectUrl)
   }, [pendingCoverFile])
 
-  const loadMenuItems = async () => {
-    const rows = await fetchCached(
-      queryKeys.menuItems(restaurantId),
-      () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`),
-      0,
-    )
-    setMenuItems(mapMenuItems(rows))
-  }
-
-  const loadDailySpecials = async () => {
-    if (!restaurantId) return
-    const [specialResult, restaurantResult] = await Promise.all([
-      supabase
-        .from('pos_daily_specials')
-        .select('*')
-        .eq('restaurant_id', restaurantId)
-        .is('archived_at', null)
-        .order('sort_order', { ascending: true }),
-      supabase
-        .from('restaurants')
-        .select('config')
-        .eq('id', restaurantId)
-        .single(),
-    ])
-    if (specialResult.error) throw specialResult.error
-    if (restaurantResult.error) throw restaurantResult.error
-    setDailySpecials(mapDailySpecials(specialResult.data))
-    setDailySpecialSettings(normalizeDailySpecialSettings(restaurantResult.data?.config))
-  }
-
-  const auditDailySpecial = async (eventType, specialId, beforeData, afterData) => {
-    try {
-      await supabase.from('pos_daily_special_events').insert({
-        restaurant_id: restaurantId,
-        daily_special_id: specialId || null,
-        actor_name: auth?.user?.email || 'Owner dashboard',
-        event_type: eventType,
-        before_data: beforeData || null,
-        after_data: afterData || null,
-      })
-    } catch {
-      // Audit rows are helpful, but the saved special/settings row is the source of truth.
-    }
-  }
-
-  const saveDailySpecialSettings = async (patch) => {
-    if (!restaurantId) return
-    setIsSaving(true)
-    setSetupError('')
-    try {
-      const { data, error } = await supabase.from('restaurants').select('config').eq('id', restaurantId).single()
-      if (error) throw error
-      const currentConfig = data?.config && typeof data.config === 'object' ? data.config : {}
-      const beforeSettings = normalizeDailySpecialSettings(currentConfig)
-      const nextSettings = { ...beforeSettings, ...patch }
-      const nextConfig = { ...currentConfig, daily_specials: nextSettings }
-      const update = await supabase.from('restaurants').update({ config: nextConfig }).eq('id', restaurantId).select('config').single()
-      if (update.error) throw update.error
-      setDailySpecialSettings(nextSettings)
-      await auditDailySpecial('settings_updated', null, beforeSettings, nextSettings)
-      setSaveMessage('Daily Specials settings saved.')
-      onSetupChanged?.()
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : 'Could not save Daily Specials settings.')
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  const specialPayload = (draft) => ({
-    restaurant_id: restaurantId,
-    menu_item_id: draft.menu_item_id || null,
-    display_name: draft.display_name.trim() || null,
-    note: draft.note.trim() || null,
-    special_price: draft.special_price === '' ? null : Number(draft.special_price),
-    schedule_kind: draft.schedule_kind || 'manual',
-    days_of_week: draft.days_of_week,
-    start_time: draft.start_time || null,
-    end_time: draft.end_time || null,
-    start_date: draft.start_date || null,
-    end_date: draft.end_date || null,
-    cycle_anchor_date: draft.cycle_anchor_date || null,
-    cycle_length_days: draft.cycle_length_days === '' ? null : Number(draft.cycle_length_days),
-    cycle_day_number: draft.cycle_day_number === '' ? null : Number(draft.cycle_day_number),
-    expires_at: draft.expires_at ? new Date(draft.expires_at).toISOString() : null,
-    sort_order: Number(draft.sort_order || 0),
-    is_active: draft.is_active !== false,
-    created_by_name: auth?.user?.email || 'Owner dashboard',
-    suggested_tip_basis: draft.suggested_tip_basis || 'after_discount',
-  })
-
-  const createDailySpecial = async () => {
-    if (!specialDraft.menu_item_id) {
-      setSetupError('Choose a base menu item first.')
-      return
-    }
-    setIsSaving(true)
-    setSetupError('')
-    try {
-      const payload = specialPayload(specialDraft)
-      const { data, error } = await supabase.from('pos_daily_specials').insert(payload).select('*').single()
-      if (error) throw error
-      await auditDailySpecial('created', data.id, null, data)
-      setSpecialDraft(defaultSpecialDraft())
-      await loadDailySpecials()
-      setSaveMessage('Daily special saved.')
-      onSetupChanged?.()
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : 'Could not save daily special.')
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  const updateDailySpecial = async (special, patch) => {
-    setIsSaving(true)
-    setSetupError('')
-    try {
-      const { data, error } = await supabase
-        .from('pos_daily_specials')
-        .update({ ...patch, updated_at: new Date().toISOString() })
-        .eq('id', special.id)
-        .eq('restaurant_id', restaurantId)
-        .select('*')
-        .single()
-      if (error) throw error
-      await auditDailySpecial('updated', special.id, special, data)
-      await loadDailySpecials()
-      setSaveMessage('Daily special updated.')
-      onSetupChanged?.()
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : 'Could not update daily special.')
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  const archiveDailySpecial = async (special) => {
-    setIsSaving(true)
-    setSetupError('')
-    try {
-      const { error } = await supabase
-        .from('pos_daily_specials')
-        .update({ is_active: false, archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-        .eq('id', special.id)
-        .eq('restaurant_id', restaurantId)
-      if (error) throw error
-      await auditDailySpecial('archived', special.id, special, null)
-      await loadDailySpecials()
-      setSaveMessage('Daily special archived.')
-      onSetupChanged?.()
-    } catch (err) {
-      setSetupError(err instanceof Error ? err.message : 'Could not archive daily special.')
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
   // Reads go through the shared query cache: returning to this tab within the
   // stale window renders instantly from memory with zero network requests.
   const loadSetupData = async () => {
@@ -2899,7 +2607,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     try {
       const results = await Promise.all([
         scoped('Employees', () => fetchCached(queryKeys.waiters(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`), 0), []),
-        scoped('Menu items', () => cached(queryKeys.menuItems(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/items`)), []),
         scoped('Roles', () => fetchCached(queryKeys.jobCodes(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`), 0), []),
         scoped('Hours', () => cached(queryKeys.operatingHours(restaurantId), async () => {
           const { data, error } = await supabase
@@ -2913,7 +2620,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         scoped('Sections', () => cached(queryKeys.sections(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`)), []),
         scoped('Floor plan', () => cached(queryKeys.floorPlan(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`)), null),
         scoped('Taxes and charges', () => cached(queryKeys.taxesCharges(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/taxes-charges`)), null),
-        scoped('Menu categories', () => cached(queryKeys.menuCategories(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/categories`)), null),
         scoped('Discounts', () => cached(queryKeys.discountRules(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/discount-rules`)), null),
         scoped('Manager controls', () => cached(queryKeys.managerControls(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-controls`)), null),
         scoped('Closeout', () => cached(queryKeys.closeoutSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`)), null),
@@ -2924,13 +2630,11 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       ])
       const [
         staffRows,
-        menuRows,
         jobCodeRows,
         hoursRows,
         sectionRows,
         floorPlan,
         taxesCharges,
-        menuCategoryData,
         discountData,
         managerControls,
         closeoutData,
@@ -2947,7 +2651,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       const normalizedJobCodes = normalizeJobCodes(jobCodeRows)
       setJobCodes(normalizedJobCodes)
       setRateEdits(Object.fromEntries(normalizedJobCodes.map(code => [code.id, String(code.default_hourly_rate ?? '')])))
-      setMenuItems(mapMenuItems(menuRows))
       const sectionNames = normalizeSectionNames((Array.isArray(sectionRows) ? sectionRows : []).map(section => section.name))
       setSections(sectionNames)
       setSectionProfiles(normalizeSectionProfiles(sectionRows, sectionNames))
@@ -2955,7 +2658,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setTaxRates(normalizeTaxRates(taxesCharges?.tax_rates))
       setServiceCharges(normalizeServiceCharges(taxesCharges?.service_charges))
       setAutoGratuity(normalizeAutoGratuity(taxesCharges?.auto_gratuity))
-      setMenuCategories(normalizeMenuCategories(menuCategoryData?.categories))
       setDiscountRules(normalizeDiscountRules(discountData?.discount_rules))
       setRolePermissions(normalizeRolePermissions(managerControls?.role_permissions, normalizedJobCodes))
       setCloseoutSettings(normalizeCloseoutSettings(closeoutData))
@@ -2968,8 +2670,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         setReservationTiming(serviceReservationTiming ? { ...configReservationTiming, ...serviceReservationTiming } : configReservationTiming)
       }
       const failedLabels = results.filter(result => result.error).map(result => result.label)
-      const specialsResult = await scoped('Daily specials', loadDailySpecials, null)
-      if (specialsResult.error) failedLabels.push(specialsResult.label)
       if (failedLabels.length > 0) {
         setSetupError(`${failedLabels.join(', ')} failed to load. Other setup sections are still editable.`)
       }
@@ -3177,29 +2877,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       },
       publication,
       buildCommand: (targetId) => ({ method: 'PUT', path: `/restaurants/${targetId}/taxes-charges`, body: payload, target_type: 'restaurant', target_id: targetId }),
-    })
-  }
-
-  const updateMenuCategory = (index, patch) => {
-    setMenuCategories(prev => normalizeMenuCategories(prev).map((row, currentIndex) => currentIndex === index ? { ...row, ...patch } : row))
-  }
-
-  const saveMenuCategories = async (publication) => {
-    validateMenuCategories(menuCategories)
-    const payload = menuCategoriesPayload(menuCategories)
-    await saveWithPropagation({
-      sectionId: 'menu_categories',
-      label: 'Menu Categories',
-      propagation: SETUP_PROPAGATION.menu_categories,
-      successMessage: 'Saved menu categories.',
-      saveSource: (targetId) => putRestaurantEndpoint(targetId, '/menu/categories', payload),
-      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/menu/categories', payload),
-      onSourceSaved: (saved) => {
-        setMenuCategories(normalizeMenuCategories(saved?.categories))
-        queryClient.setQueryData(queryKeys.menuCategories(restaurantId), saved)
-      },
-      publication,
-      buildCommand: (targetId) => ({ method: 'PUT', path: `/restaurants/${targetId}/menu/categories`, body: payload, target_type: 'restaurant', target_id: targetId }),
     })
   }
 
@@ -3664,29 +3341,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       </section>
     )
   }
-
-  if (menuMode) {
-    return (
-      <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-        <MenuEditor
-          restaurantId={restaurantId}
-          mode={menuMode}
-          initialItems={menuItems}
-          categories={normalizeMenuCategories(menuCategories)}
-          onBack={() => setMenuMode(null)}
-          onSave={(items) => {
-            setMenuItems(items)
-            setMenuMode(null)
-            void queryClient.invalidateQueries({ queryKey: queryKeys.menuItems(restaurantId) })
-            onSetupChanged?.()
-          }}
-        />
-      </section>
-    )
-  }
-
-  const activeDailySpecials = dailySpecials.filter(isDailySpecialActiveNow)
-  const selectedDraftMenuItem = menuItems.find(item => item.id === specialDraft.menu_item_id)
 
   return (
     <div className="space-y-6">
@@ -4999,329 +4653,34 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         </SectionShell>
       )}
 
-      {activeSetupTab === 'menu_categories' && (
-        <SectionShell
-          title="Menu Categories"
-          description="Define appetizer, entree, dessert, drink, and custom menu groups. Tax overrides are optional; routing stations are logical prep destinations."
-          actions={publishControls('Save categories', saveMenuCategories)}
-        >
-          <datalist id="desktop-menu-category-stations">
-            {['Kitchen', 'Bar', 'Expo', 'Dessert', 'Coffee'].map(station => <option key={station} value={station} />)}
-          </datalist>
-          <div className="space-y-3">
-            {normalizeMenuCategories(menuCategories).map((category, index) => (
-              <div key={category.id || `menu-category-${index}`} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[1.2fr_1fr_1fr_0.9fr_1fr_auto]">
-                <TextInput value={category.name} onChange={event => updateMenuCategory(index, { name: event.target.value })} placeholder="Appetizers" />
-                <SelectInput value={category.tax_rate_id} onChange={event => updateMenuCategory(index, { tax_rate_id: event.target.value })}>
-                  <option value="">Use default tax</option>
-                  {normalizeTaxRates(taxRates).map(rate => (
-                    <option key={rate.id || rate.name} value={rate.id || ''}>{rate.name}{rate.rate ? ` · ${rate.rate}%` : ''}</option>
-                  ))}
-                </SelectInput>
-                <TextInput
-                  value={category.routing_station_name}
-                  list="desktop-menu-category-stations"
-                  onChange={event => updateMenuCategory(index, { routing_station_name: event.target.value, routing_station_id: '' })}
-                  placeholder="Kitchen, Bar, Expo"
-                />
-                <SelectInput value={category.default_fire_mode} onChange={event => updateMenuCategory(index, { default_fire_mode: event.target.value })}>
-                  <option value="">Use order default</option>
-                  <option value="inherit">Use order default</option>
-                  <option value="immediate">Immediate</option>
-                  <option value="hold">Hold</option>
-                  <option value="manual">Manual</option>
-                  <option value="by_course">By course</option>
-                </SelectInput>
-                <TextInput value={category.kds_display_group} onChange={event => updateMenuCategory(index, { kds_display_group: event.target.value })} placeholder="KDS group" />
-                <SmallButton variant="danger" onClick={() => setMenuCategories(prev => normalizeMenuCategories(prev).filter((_, currentIndex) => currentIndex !== index))}>Remove</SmallButton>
-                <div className="text-xs text-dash-tertiary lg:col-span-6">
-                  Fire timing is the default for new items in this category. Individual items can override it.
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4">
-            <SmallButton
-              onClick={() => setMenuCategories(prev => [...normalizeMenuCategories(prev), { name: `Custom Category ${prev.length + 1}`, tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'inherit', kds_display_group: '', is_active: true }])}
-            >
-              Add category
-            </SmallButton>
-          </div>
-        </SectionShell>
-      )}
-
-      {activeSetupTab === 'specials' && (
-        <SectionShell
-          title="Specials"
-          description="Configure daily specials as overlays on real menu items. The base item still carries tax, modifiers, kitchen routing, availability, and reporting."
-          actions={<SmallButton onClick={() => void loadDailySpecials()} disabled={isSaving}>Refresh</SmallButton>}
-        >
-          <div className="mb-5 flex flex-wrap gap-2">
-            {['today', 'schedule', 'settings'].map(tab => (
-              <SmallButton key={tab} variant={specialsTab === tab ? 'primary' : 'secondary'} onClick={() => setSpecialsTab(tab)}>
-                {tab === 'today' ? 'Today' : tab === 'schedule' ? 'Schedule' : 'Settings'}
-              </SmallButton>
-            ))}
-          </div>
-
-          {specialsTab === 'today' && (
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-              <div className="space-y-3">
-                <h4 className="text-sm font-semibold">Active service set</h4>
-                {activeDailySpecials.length > 0 ? activeDailySpecials.map(special => {
-                  const baseItem = menuItems.find(item => item.id === special.menu_item_id)
-                  return (
-                    <div key={special.id} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-900">Special</span>
-                            <h4 className="font-semibold">{special.display_name || baseItem?.name || 'Daily special'}</h4>
-                          </div>
-                          <p className="mt-1 text-sm text-dash-secondary">{baseItem?.name || 'Base menu item'} · {baseItem?.category || 'Menu'}</p>
-                          {special.note && <p className="mt-2 text-sm text-dash-tertiary">{special.note}</p>}
-                        </div>
-                        <div className="text-right">
-                          <div className="text-lg font-semibold">${special.special_price || baseItem?.price || '0.00'}</div>
-                          <SelectInput
-                            value={special.suggested_tip_basis || 'after_discount'}
-                            onChange={event => void updateDailySpecial(special, { suggested_tip_basis: event.target.value })}
-                          >
-                            <option value="after_discount">Tips after special price</option>
-                            <option value="before_discount">Tips before special price</option>
-                          </SelectInput>
-                          <SmallButton variant={special.is_active ? 'primary' : 'secondary'} onClick={() => void updateDailySpecial(special, { is_active: !special.is_active })}>
-                            {special.is_active ? 'Active' : 'Paused'}
-                          </SmallButton>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                }) : (
-                  <SetupEmptyState title="No active specials">
-                    Quick-pin a menu item for today or activate a scheduled special.
-                  </SetupEmptyState>
-                )}
-              </div>
-
-              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-                <h4 className="text-sm font-semibold">Quick pin</h4>
-                <div className="mt-4 space-y-3">
-                  <Field label="Base menu item">
-                    <SelectInput
-                      value={specialDraft.menu_item_id}
-                      onChange={event => {
-                        const item = menuItems.find(row => row.id === event.target.value)
-                        setSpecialDraft(prev => ({
-                          ...prev,
-                          menu_item_id: event.target.value,
-                          display_name: prev.display_name || item?.name || '',
-                          special_price: prev.special_price || item?.price || '',
-                        }))
-                      }}
-                    >
-                      <option value="">Choose item...</option>
-                      {menuItems.map(item => <option key={item.id} value={item.id}>{item.name} · {item.category}</option>)}
-                    </SelectInput>
-                  </Field>
-                  <Field label="Display name">
-                    <TextInput value={specialDraft.display_name} onChange={event => setSpecialDraft(prev => ({ ...prev, display_name: event.target.value }))} placeholder={selectedDraftMenuItem?.name || 'Catch of the Day'} />
-                  </Field>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="Special price">
-                      <TextInput inputMode="decimal" value={specialDraft.special_price} onChange={event => setSpecialDraft(prev => ({ ...prev, special_price: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))} placeholder="16.00" />
-                    </Field>
-                    <Field label="Expires">
-                      <TextInput type="datetime-local" value={specialDraft.expires_at} onChange={event => setSpecialDraft(prev => ({ ...prev, expires_at: event.target.value }))} />
-                    </Field>
-                  </div>
-                  <Field label="Note">
-                    <TextInput value={specialDraft.note} onChange={event => setSpecialDraft(prev => ({ ...prev, note: event.target.value }))} placeholder="Blackened mahi, lemon slaw" />
-                  </Field>
-                  <Field label="Suggested tips">
-                    <SelectInput value={specialDraft.suggested_tip_basis} onChange={event => setSpecialDraft(prev => ({ ...prev, suggested_tip_basis: event.target.value }))}>
-                      <option value="after_discount">Use special price</option>
-                      <option value="before_discount">Use regular price</option>
-                    </SelectInput>
-                  </Field>
-                  <SmallButton variant="primary" onClick={() => void createDailySpecial()} disabled={isSaving || !dailySpecialSettings.enabled}>
-                    Pin special
-                  </SmallButton>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {specialsTab === 'schedule' && (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-                <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr_120px_140px]">
-                  <Field label="Base item">
-                    <SelectInput value={specialDraft.menu_item_id} onChange={event => setSpecialDraft(prev => ({ ...prev, menu_item_id: event.target.value }))}>
-                      <option value="">Choose item...</option>
-                      {menuItems.map(item => <option key={item.id} value={item.id}>{item.name} · {item.category}</option>)}
-                    </SelectInput>
-                  </Field>
-                  <Field label="Special label">
-                    <TextInput value={specialDraft.display_name} onChange={event => setSpecialDraft(prev => ({ ...prev, display_name: event.target.value }))} placeholder="Tuesday Burger" />
-                  </Field>
-                  <Field label="Price">
-                    <TextInput inputMode="decimal" value={specialDraft.special_price} onChange={event => setSpecialDraft(prev => ({ ...prev, special_price: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))} />
-                  </Field>
-                  <Field label="Schedule">
-                    <SelectInput value={specialDraft.schedule_kind} onChange={event => setSpecialDraft(prev => ({ ...prev, schedule_kind: event.target.value }))}>
-                      <option value="manual">Manual</option>
-                      <option value="weekly">Weekly</option>
-                      <option value="date_window">Date window</option>
-                      <option value="cycle">N-day cycle</option>
-                    </SelectInput>
-                  </Field>
-                </div>
-                {specialDraft.schedule_kind === 'weekly' && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {DAYS_SHORT.map((day, index) => (
-                      <SmallButton
-                        key={day}
-                        variant={specialDraft.days_of_week.includes(index) ? 'primary' : 'secondary'}
-                        onClick={() => setSpecialDraft(prev => ({
-                          ...prev,
-                          days_of_week: prev.days_of_week.includes(index)
-                            ? prev.days_of_week.filter(value => value !== index)
-                            : [...prev.days_of_week, index].sort(),
-                        }))}
-                      >
-                        {day}
-                      </SmallButton>
-                    ))}
-                  </div>
-                )}
-                {specialDraft.schedule_kind === 'date_window' && (
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <Field label="Start date"><TextInput type="date" value={specialDraft.start_date} onChange={event => setSpecialDraft(prev => ({ ...prev, start_date: event.target.value }))} /></Field>
-                    <Field label="End date"><TextInput type="date" value={specialDraft.end_date} onChange={event => setSpecialDraft(prev => ({ ...prev, end_date: event.target.value }))} /></Field>
-                  </div>
-                )}
-                {specialDraft.schedule_kind === 'cycle' && (
-                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                    <Field label="Anchor date"><TextInput type="date" value={specialDraft.cycle_anchor_date} onChange={event => setSpecialDraft(prev => ({ ...prev, cycle_anchor_date: event.target.value }))} /></Field>
-                    <Field label="Cycle days"><TextInput inputMode="numeric" value={specialDraft.cycle_length_days} onChange={event => setSpecialDraft(prev => ({ ...prev, cycle_length_days: event.target.value.replace(/\D/g, '').slice(0, 3) }))} /></Field>
-                    <Field label="Special day"><TextInput inputMode="numeric" value={specialDraft.cycle_day_number} onChange={event => setSpecialDraft(prev => ({ ...prev, cycle_day_number: event.target.value.replace(/\D/g, '').slice(0, 3) }))} /></Field>
-                  </div>
-                )}
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <Field label="Start time"><TextInput type="time" value={specialDraft.start_time} onChange={event => setSpecialDraft(prev => ({ ...prev, start_time: event.target.value }))} /></Field>
-                  <Field label="End time"><TextInput type="time" value={specialDraft.end_time} onChange={event => setSpecialDraft(prev => ({ ...prev, end_time: event.target.value }))} /></Field>
-                </div>
-                <div className="mt-3">
-                  <Field label="Suggested tips">
-                    <SelectInput value={specialDraft.suggested_tip_basis} onChange={event => setSpecialDraft(prev => ({ ...prev, suggested_tip_basis: event.target.value }))}>
-                      <option value="after_discount">Use scheduled special price</option>
-                      <option value="before_discount">Use regular price</option>
-                    </SelectInput>
-                  </Field>
-                </div>
-                <div className="mt-3">
-                  <SmallButton variant="primary" onClick={() => void createDailySpecial()} disabled={isSaving || !specialDraft.menu_item_id}>Add scheduled special</SmallButton>
-                </div>
-              </div>
-
-              {dailySpecials.map(special => {
-                const baseItem = menuItems.find(item => item.id === special.menu_item_id)
-                return (
-                  <div key={special.id} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <h4 className="font-semibold">{special.display_name || baseItem?.name || 'Daily special'}</h4>
-                        <p className="mt-1 text-sm text-dash-secondary">{baseItem?.name || 'Base item'} · {special.schedule_kind}</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <SelectInput
-                          value={special.suggested_tip_basis || 'after_discount'}
-                          onChange={event => void updateDailySpecial(special, { suggested_tip_basis: event.target.value })}
-                        >
-                          <option value="after_discount">Tips after special</option>
-                          <option value="before_discount">Tips before special</option>
-                        </SelectInput>
-                        <SmallButton variant={special.is_active ? 'primary' : 'secondary'} onClick={() => void updateDailySpecial(special, { is_active: !special.is_active })}>{special.is_active ? 'Active' : 'Paused'}</SmallButton>
-                        <SmallButton variant="danger" onClick={() => void archiveDailySpecial(special)}>Archive</SmallButton>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {specialsTab === 'settings' && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {[
-                ['enabled', 'Enable location specials'],
-                ['show_specials_lane', 'Show Specials lane first'],
-                ['show_in_source_categories', 'Also show in source categories'],
-                ['manager_quick_pin_enabled', 'Allow manager quick pin'],
-              ].map(([field, label]) => (
-                <button
-                  key={field}
-                  type="button"
-                  onClick={() => void saveDailySpecialSettings({ [field]: !dailySpecialSettings[field] })}
-                  className={[
-                    'rounded-xl border p-4 text-left transition',
-                    dailySpecialSettings[field] ? 'border-dash-gold/60 bg-dash-gold/10' : 'border-white/10 bg-white/[0.025] hover:border-white/20',
-                  ].join(' ')}
-                >
-                  <span className="text-sm font-semibold">{label}</span>
-                  <span className="mt-1 block text-xs text-dash-tertiary">{dailySpecialSettings[field] ? 'On' : 'Off'}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </SectionShell>
-      )}
-
       {activeSetupTab === 'menu' && (
         <SectionShell
           title="Menu"
-          description="Use the original menu editor to upload, extract, add, edit, and save menu items."
+          description="Menu items, categories, modifiers & questions, specials, and pricing all live in the Menu workspace — the single place that edits them, so setup can never overwrite menu configuration."
         >
-          {menuItems.length > 0 ? (
-            <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">
-              Menu saved · {menuItems.length} item{menuItems.length !== 1 ? 's' : ''}
-              <button
-                type="button"
-                onClick={() => setMenuMode('manual')}
-                className="ml-auto text-xs font-semibold text-dash-gold hover:opacity-80"
-              >
-                Edit menu
-              </button>
-            </div>
-          ) : (
-            <SetupEmptyState title="No menu items yet" actionLabel="Add menu manually" onAction={() => setMenuMode('manual')}>
-              Add menu items manually or upload a menu image for extraction.
-            </SetupEmptyState>
-          )}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <OptionCard title="Upload Menu" description="Upload an image of your menu. AI extracts items automatically." onClick={() => setMenuMode('upload')} badge="Recommended" />
-            <OptionCard title="Add Manually" description="Open the menu table editor and enter items one by one." onClick={() => setMenuMode('manual')} />
-            <OptionCard title="Import from Toast" description="Connect POS menu import later." disabled badge="Coming soon" />
-            <OptionCard title="Import from Website" description="Extract menu data from a website later." disabled badge="Coming soon" />
+            <Link to="../menu" relative="path" className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left transition hover:border-white/20 hover:bg-white/[0.055]">
+              <h3 className="text-sm font-semibold text-dash-cream">Items &amp; categories</h3>
+              <p className="mt-2 text-sm leading-5 text-dash-tertiary">Add, edit, 86, photograph, and organize everything guests can order.</p>
+            </Link>
+            <Link to="../menu" relative="path" className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left transition hover:border-white/20 hover:bg-white/[0.055]">
+              <h3 className="text-sm font-semibold text-dash-cream">Modifiers &amp; questions</h3>
+              <p className="mt-2 text-sm leading-5 text-dash-tertiary">Choices the POS asks — sides, temperatures, add-ons, follow-ups.</p>
+            </Link>
+            <Link to="../menu" relative="path" className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-left transition hover:border-white/20 hover:bg-white/[0.055]">
+              <h3 className="text-sm font-semibold text-dash-cream">Specials &amp; pricing</h3>
+              <p className="mt-2 text-sm leading-5 text-dash-tertiary">Daily specials, scheduled price rules, and bulk price changes.</p>
+            </Link>
           </div>
-        </SectionShell>
-      )}
-
-      {activeSetupTab === 'modifiers' && (
-        <SectionShell
-          title="Modifiers"
-          description="Modifier groups and add-on pricing from the original onboarding modifier editor."
-        >
-          <ModifierEditor
-            restaurantId={restaurantId}
-            menuItems={menuItems}
-            onBack={() => setActiveSetupTab('menu')}
-            onDone={() => {
-              setSaveMessage('Saved modifiers.')
-              void loadMenuItems()
-            }}
-          />
+          <div className="mt-4">
+            <Link
+              to="../menu"
+              relative="path"
+              className="inline-flex items-center justify-center rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90"
+            >
+              Open Menu workspace →
+            </Link>
+          </div>
         </SectionShell>
       )}
 
