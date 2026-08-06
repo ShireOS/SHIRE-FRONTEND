@@ -12,13 +12,16 @@ test('legacy-to-custom starter retains every operational legacy field', () => {
   const fields = [...TICKET_TOP_STARTER.header, ...TICKET_TOP_STARTER.info]
     .map(row => row.field)
   assert.deepEqual(fields, [
+    'check_number',
     'order_type',
     'course',
     'table',
-    'check_number',
-    'time',
     'server',
+    'time',
   ])
+  // The check number leads, at double height rather than double width — the
+  // latter spaces characters out and wraps a long number across lines.
+  assert.equal(TICKET_TOP_STARTER.header[0].field, 'check_number')
   assert.equal(TICKET_TOP_STARTER.header[0].size, 'large')
 })
 
