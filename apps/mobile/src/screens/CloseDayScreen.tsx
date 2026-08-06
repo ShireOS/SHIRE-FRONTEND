@@ -177,7 +177,7 @@ export default function CloseDayScreen() {
     setError(nextError instanceof Error ? nextError.message : 'Could not close the business day.');
   };
 
-  const submitClose = async (confirmAutoClockOut: boolean) => {
+  const submitClose = async (confirmAutoClockOut: boolean, clockOutMode: 'all' | 'none' = 'all', confirmRecentActivity = false) => {
     if (!restaurantId || !preview) return;
     if (Math.abs(variance) > threshold && !cash.variance_reason.trim()) {
       setError(`Explain the ${money(variance)} cash variance before closing.`);
@@ -190,6 +190,9 @@ export default function CloseDayScreen() {
         business_date: preview.business_date,
         close_attempt_id: attemptId.current,
         confirm_auto_clock_out: confirmAutoClockOut,
+        clock_out_mode: clockOutMode,
+        clock_out_entry_ids: clockOutMode === 'all' ? employees.map((entry) => entry.id) : [],
+        confirm_recent_activity: confirmRecentActivity,
         opening_bank: numberValue(cash.opening_bank),
         paid_in: numberValue(cash.paid_in),
         paid_out: numberValue(cash.paid_out),
@@ -230,7 +233,7 @@ export default function CloseDayScreen() {
     }
   };
 
-  const beginClose = () => {
+  const beginClose = (confirmRecentActivity = false) => {
     if (!preview) return;
     setError('');
     if (preview.open_checks > 0) {
@@ -248,16 +251,34 @@ export default function CloseDayScreen() {
       setError('Resolve pending print work on the POS before closing remotely.');
       return;
     }
+    if (preview.close_period?.recent_activity && !confirmRecentActivity) {
+      Alert.alert(
+        'Restaurant activity is still recent',
+        `An order, payment, or cash action occurred within the last ${preview.close_period.quiet_minutes} minutes. Review the floor before closing.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Continue', onPress: () => beginClose(true) },
+        ],
+      );
+      return;
+    }
     if (employees.length > 0) {
       const names = employees.slice(0, 4).map((entry) => entry.staff_name).join(', ');
       const more = employees.length > 4 ? ` and ${employees.length - 4} more` : '';
+      const choices = preview.closeout_settings?.show_clockout_options_at_close
+        ? [
+            { text: 'Cancel', style: 'cancel' as const },
+            { text: 'Leave clocked in', onPress: () => void submitClose(true, 'none', confirmRecentActivity) },
+            { text: 'Clock out all', style: 'destructive' as const, onPress: () => void submitClose(true, 'all', confirmRecentActivity) },
+          ]
+        : [
+            { text: 'Cancel', style: 'cancel' as const },
+            { text: 'Clock out & close', style: 'destructive' as const, onPress: () => void submitClose(true, 'all', confirmRecentActivity) },
+          ];
       Alert.alert(
         'Employees are still clocked in',
         `${names}${more}. Continuing clocks everyone out now and records this override.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Clock out & close', style: 'destructive', onPress: () => void submitClose(true) },
-        ],
+        choices,
       );
       return;
     }
@@ -266,7 +287,7 @@ export default function CloseDayScreen() {
       `Finalize ${preview.business_date} using these reconciliation values?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Close day now', style: 'destructive', onPress: () => void submitClose(false) },
+        { text: 'Close day now', style: 'destructive', onPress: () => void submitClose(false, 'all', confirmRecentActivity) },
       ],
     );
   };
@@ -293,7 +314,7 @@ export default function CloseDayScreen() {
       ) : preview ? (
         <>
           <View style={styles.metricGrid}>
-            <Metric label="Business date" value={preview.business_date} />
+            <Metric label={`Business date · Close ${preview.close_period?.sequence || 1}`} value={preview.business_date} />
             <Metric label="Open checks" value={String(preview.open_checks)} alert={preview.open_checks > 0} />
             <Metric label="Clocked in" value={String(employees.length)} warning={employees.length > 0} />
             <Metric label="Collected" value={money(preview.total_collected)} />
@@ -339,7 +360,7 @@ export default function CloseDayScreen() {
                 <TextInput multiline value={cash.variance_reason} onChangeText={(value) => updateCash('variance_reason', value)} placeholder="Required when outside the configured threshold" placeholderTextColor={semanticColors.textSubtle} style={[styles.input, styles.reasonInput]} />
               </View>
 
-              <Pressable disabled={closing} onPress={beginClose} style={[styles.closeButton, closing && styles.disabled]}>
+              <Pressable disabled={closing} onPress={() => beginClose(false)} style={[styles.closeButton, closing && styles.disabled]}>
                 {closing ? <ActivityIndicator color={semanticColors.textInverse} /> : <Feather name="calendar" size={18} color={semanticColors.textInverse} />}
                 <Text style={styles.closeButtonText}>{closing ? 'Closing day...' : 'Close business day'}</Text>
               </Pressable>

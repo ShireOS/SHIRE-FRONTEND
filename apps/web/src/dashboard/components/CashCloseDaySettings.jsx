@@ -157,6 +157,7 @@ export default function CashCloseDaySettings({ restaurantId }) {
   const [floatAmount, setFloatAmount] = useState('')
   const [blindClose, setBlindClose] = useState(true)
   const [trackDeposit, setTrackDeposit] = useState(false)
+  const [showClockoutOptions, setShowClockoutOptions] = useState(false)
   const [varianceThreshold, setVarianceThreshold] = useState('')
 
   const hydrate = useCallback((row) => {
@@ -165,6 +166,7 @@ export default function CashCloseDaySettings({ restaurantId }) {
     setFloatAmount(row?.opening_bank_default == null ? '' : sanitizeMoney(row.opening_bank_default))
     setBlindClose(row?.blind_drawer_close !== false)
     setTrackDeposit(row?.track_deposit_at_close === true)
+    setShowClockoutOptions(row?.show_clockout_options_at_close === true)
     setVarianceThreshold(row?.cash_variance_threshold == null ? '' : sanitizeMoney(row.cash_variance_threshold))
   }, [])
 
@@ -189,8 +191,9 @@ export default function CashCloseDaySettings({ restaurantId }) {
       || amount !== Number(settings.opening_bank_default || 0)
       || blindClose !== (settings.blind_drawer_close !== false)
       || trackDeposit !== (settings.track_deposit_at_close === true)
+      || showClockoutOptions !== (settings.show_clockout_options_at_close === true)
       || (varianceThreshold === '' ? null : Number(varianceThreshold)) !== (settings.cash_variance_threshold == null ? null : Number(settings.cash_variance_threshold))
-  }, [settings, floatMode, floatAmount, blindClose, trackDeposit, varianceThreshold])
+  }, [settings, floatMode, floatAmount, blindClose, trackDeposit, showClockoutOptions, varianceThreshold])
 
   const save = async () => {
     if (!settings || saving) return
@@ -209,6 +212,7 @@ export default function CashCloseDaySettings({ restaurantId }) {
           opening_bank_default: floatMode === FLOAT_MODES.none ? 0 : Number(floatAmount || 0),
           track_deposit_at_close: trackDeposit,
           blind_drawer_close: blindClose,
+          show_clockout_options_at_close: showClockoutOptions,
           cash_variance_threshold: varianceThreshold === '' ? null : Number(varianceThreshold),
         }),
       })
@@ -250,6 +254,15 @@ export default function CashCloseDaySettings({ restaurantId }) {
 
       <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.85fr)]">
         <div className="space-y-6">
+          <div>
+            <h3 className="text-sm font-semibold text-dash-cream">Show employee clock-out choices at every close?</h3>
+            <p className="mt-1 text-xs leading-5 text-dash-tertiary">Everyone remains selected by default. Turning this on lets the manager select employees or leave everyone clocked in.</p>
+            <div className="mt-3 space-y-2">
+              <Choice selected={!showClockoutOptions} onSelect={() => setShowClockoutOptions(false)} title="No — clock everyone out" badge="Default" detail="Matches the standard once-per-day restaurant close." />
+              <Choice selected={showClockoutOptions} onSelect={() => setShowClockoutOptions(true)} title="Yes — show choices" detail="Managers can clock out everyone, selected employees, or nobody." />
+            </div>
+          </div>
+
           <div>
             <h3 className="text-sm font-semibold text-dash-cream">Does the drawer start the night with cash in it?</h3>
             <p className="mt-1 text-xs leading-5 text-dash-tertiary">A starting float is money that isn&apos;t from sales — it&apos;s there to make change.</p>

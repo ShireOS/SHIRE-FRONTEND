@@ -121,6 +121,8 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const [error, setError] = useState('')
   const [modal, setModal] = useState(null)
   const [result, setResult] = useState(null)
+  const [clockOutEntryIds, setClockOutEntryIds] = useState([])
+  const [recentActivityConfirmed, setRecentActivityConfirmed] = useState(false)
   const attemptId = useRef(newAttemptId())
   const initializedCash = useRef(false)
 
@@ -130,6 +132,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     try {
       const next = await posCloseDayApi.preview(restaurantId)
       setPreview(next)
+      setClockOutEntryIds((next.open_timeclock_entries || []).map((entry) => entry.id))
       if (!initializedCash.current) {
         const reconciliation = next.cash_reconciliation || {}
         setCash((current) => ({
@@ -213,6 +216,13 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         business_date: preview.business_date,
         close_attempt_id: attemptId.current,
         confirm_auto_clock_out: confirmAutoClockOut,
+        clock_out_mode: !preview.closeout_settings?.show_clockout_options_at_close
+          ? 'all'
+          : openEmployees.length === 0 || clockOutEntryIds.length === openEmployees.length
+            ? 'all'
+            : clockOutEntryIds.length === 0 ? 'none' : 'selected',
+        clock_out_entry_ids: clockOutEntryIds,
+        confirm_recent_activity: recentActivityConfirmed,
         opening_bank: effectiveOpeningBank,
         counted_cash: numberValue(cash.counted_cash),
         retained_bank: numberValue(cash.retained_bank),
@@ -262,6 +272,10 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       setError('Resolve pending print work on the POS before closing remotely.')
       return
     }
+    if (preview?.close_period?.recent_activity && !recentActivityConfirmed) {
+      setModal('recent-activity')
+      return
+    }
     setModal(openEmployees.length ? 'employees' : 'confirm')
   }
 
@@ -293,7 +307,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       )}
 
       <section className="border-y border-dash-border sm:grid sm:grid-cols-4">
-        <Metric icon={CalendarCheck} label="Business date" value={preview?.business_date || '—'} />
+        <Metric icon={CalendarCheck} label={`Business date · Close ${preview?.close_period?.sequence || 1}`} value={preview?.business_date || '—'} />
         <Metric icon={ReceiptText} label="Open checks" value={preview?.open_checks || 0} tone={preview?.open_checks ? 'danger' : 'default'} />
         <Metric icon={Users} label="Clocked in" value={openEmployees.length} tone={openEmployees.length ? 'warning' : 'default'} />
         <Metric icon={Banknote} label="Collected" value={money(preview?.total_collected)} />
@@ -411,13 +425,14 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
           onClose={() => setModal(null)}
           footer={<><button type="button" onClick={() => setModal(null)} disabled={closing} className="min-h-[40px] border border-dash-border px-4 text-sm font-semibold text-dash-secondary">Cancel</button><button type="button" onClick={() => void submitClose(true)} disabled={closing} className="min-h-[40px] bg-amber-300 px-4 text-sm font-bold text-black disabled:opacity-50">{closing ? 'Closing...' : 'Clock out employees & close'}</button></>}
         >
-          <p className="text-sm text-dash-secondary">Continuing clocks these employees out at the current time and records you as the approving operator.</p>
+          <p className="text-sm text-dash-secondary">Everyone is selected by default. This choice affects payroll only; it does not change the saved financial close.</p>
+          {preview?.closeout_settings?.show_clockout_options_at_close && <div className="mt-3 flex gap-2"><button type="button" onClick={() => setClockOutEntryIds(openEmployees.map((entry) => entry.id))} className="border border-dash-border px-3 py-2 text-xs font-semibold text-dash-cream">Everyone</button><button type="button" onClick={() => setClockOutEntryIds([])} className="border border-dash-border px-3 py-2 text-xs font-semibold text-dash-secondary">Nobody</button></div>}
           <div className="mt-4 divide-y divide-dash-border border-y border-dash-border">
             {openEmployees.map((entry) => (
-              <div key={entry.id} className="flex items-center justify-between gap-4 py-3">
-                <div><p className="font-semibold text-dash-cream">{entry.staff_name}</p><p className="mt-0.5 text-xs text-dash-tertiary">Clocked in {clockLabel(entry.clock_in_at)}</p></div>
+              <button type="button" key={entry.id} disabled={!preview?.closeout_settings?.show_clockout_options_at_close} onClick={() => setClockOutEntryIds((current) => current.includes(entry.id) ? current.filter((id) => id !== entry.id) : [...current, entry.id])} className="flex w-full items-center justify-between gap-4 py-3 text-left disabled:cursor-default">
+                <div><p className="font-semibold text-dash-cream">{clockOutEntryIds.includes(entry.id) ? '✓ ' : '○ '}{entry.staff_name}</p><p className="mt-0.5 text-xs text-dash-tertiary">Clocked in {clockLabel(entry.clock_in_at)}{entry.last_activity_at ? ` · last POS activity ${clockLabel(entry.last_activity_at)}` : ''}</p></div>
                 <span className="text-sm font-semibold text-amber-200">{durationLabel(entry.worked_minutes)}</span>
-              </div>
+              </button>
             ))}
           </div>
         </ActionModal>
@@ -429,7 +444,13 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
           onClose={() => setModal(null)}
           footer={<><button type="button" onClick={() => setModal(null)} disabled={closing} className="min-h-[40px] border border-dash-border px-4 text-sm font-semibold text-dash-secondary">Cancel</button><button type="button" onClick={() => void submitClose(false)} disabled={closing} className="min-h-[40px] bg-dash-cream px-4 text-sm font-bold text-dash-base disabled:opacity-50">{closing ? 'Closing...' : 'Close day now'}</button></>}
         >
-          <p className="text-sm text-dash-secondary">This finalizes {preview?.business_date}, saves the reconciliation, and advances the next operational activity to a new business day.</p>
+          <p className="text-sm text-dash-secondary">This saves Close {preview?.close_period?.sequence || 1} for {preview?.business_date}. Same-date activity starts another numbered close; it does not advance the calendar.</p>
+        </ActionModal>
+      )}
+
+      {modal === 'recent-activity' && (
+        <ActionModal title="Restaurant activity is still recent" onClose={() => setModal(null)} footer={<><button type="button" onClick={() => setModal(null)} className="min-h-[40px] border border-dash-border px-4 text-sm font-semibold text-dash-secondary">Cancel</button><button type="button" onClick={() => { setRecentActivityConfirmed(true); setModal(openEmployees.length ? 'employees' : 'confirm') }} className="min-h-[40px] bg-amber-300 px-4 text-sm font-bold text-black">Review complete — continue</button></>}>
+          <p className="text-sm text-dash-secondary">An order, payment, or cash action occurred within the last {preview?.close_period?.quiet_minutes || 10} minutes. Confirm the floor is ready before closing.</p>
         </ActionModal>
       )}
 

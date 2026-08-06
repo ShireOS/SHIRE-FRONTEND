@@ -203,6 +203,7 @@ export interface OpenTimeClockEntry {
   role?: string | null
   clock_in_at: string
   worked_minutes?: number
+  last_activity_at?: string | null
 }
 
 export interface CloseDayPreview {
@@ -237,6 +238,17 @@ export interface CloseDayPreview {
     track_deposit_at_close?: boolean
     blind_drawer_close?: boolean
     cash_variance_threshold?: number
+    show_clockout_options_at_close?: boolean
+    close_day_activity_quiet_minutes?: number
+  }
+  close_period?: {
+    id?: string
+    sequence: number
+    opened_at?: string | null
+    last_activity_at?: string | null
+    activity_count: number
+    recent_activity: boolean
+    quiet_minutes: number
   }
   cash_reconciliation?: {
     opening_bank: number
@@ -260,6 +272,9 @@ export interface CloseDayInput {
   business_date: string
   close_attempt_id: string
   confirm_auto_clock_out: boolean
+  clock_out_mode?: 'all' | 'selected' | 'none'
+  clock_out_entry_ids?: string[]
+  confirm_recent_activity?: boolean
   opening_bank: number
   paid_in: number
   paid_out: number
@@ -272,6 +287,9 @@ export interface CloseDayInput {
 
 export interface CloseDayResult {
   id: string
+  close_id: string
+  close_sequence: number
+  opened_at: string
   business_date: string
   active_business_date: string
   closed_at: string
