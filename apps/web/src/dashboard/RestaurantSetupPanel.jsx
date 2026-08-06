@@ -1822,8 +1822,11 @@ function discountRulesPayload(discountRules, { includeIds = true } = {}) {
       value_type: row.value_type,
       default_value: row.default_value === '' ? null : Number(row.default_value),
       editable_by_employee: row.editable_by_employee,
-      min_value: row.editable_by_employee && row.min_value !== '' ? Number(row.min_value) : null,
-      max_value: row.editable_by_employee && row.max_value !== '' ? Number(row.max_value) : null,
+      // Bounds are sent whenever they are set. Gating them on
+      // editable_by_employee silently dropped the ceiling on a manager-only
+      // custom-amount rule, which is exactly the rule that most needs one.
+      min_value: row.min_value !== '' && row.min_value != null ? Number(row.min_value) : null,
+      max_value: row.max_value !== '' && row.max_value != null ? Number(row.max_value) : null,
       allowed_roles: row.allowed_roles,
       requires_manager_approval: row.requires_manager_approval,
       tax_behavior: row.tax_behavior,
