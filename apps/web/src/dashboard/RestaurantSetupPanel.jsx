@@ -221,10 +221,32 @@ const DISCOUNT_APPLIES_TO_OPTIONS = [
 ]
 
 const DISCOUNT_VALUE_TYPE_OPTIONS = [
-  { value: 'percent', label: 'Percent' },
+  { value: 'percent', label: 'Percent %' },
   { value: 'fixed', label: 'Fixed $' },
-  { value: 'open', label: 'Open' },
+  // The custom-amount key: the POS shows a keypad instead of a preset tile and
+  // staff type the figure, capped by the maximum below.
+  { value: 'open', label: 'Custom — staff enters amount' },
 ]
+
+/** An open rule is an unbounded discount without a ceiling; the API requires one. */
+const discountRuleNeedsBounds = rule => rule.value_type === 'open' || rule.editable_by_employee
+
+/** Mirrors the API validation so it surfaces before the save round-trip. */
+const discountRuleWarning = rule => {
+  if (rule.value_type === 'open' && !String(rule.max_value ?? '').trim()) {
+    return 'Staff enter this amount, so it needs a maximum.'
+  }
+  if (rule.value_type !== 'open' && !String(rule.default_value ?? '').trim()) {
+    return 'Set a default value, or switch it to a custom amount.'
+  }
+  const min = String(rule.min_value ?? '').trim()
+  const max = String(rule.max_value ?? '').trim()
+  if (min && max && Number(min) > Number(max)) return 'Minimum cannot exceed maximum.'
+  if (rule.value_type === 'percent' && Number(rule.default_value || 0) > 100) {
+    return 'A percent discount cannot exceed 100%.'
+  }
+  return ''
+}
 
 const DISCOUNT_TAX_BEHAVIOR_OPTIONS = [
   { value: 'reduce_taxable_amount', label: 'Reduce taxable amount' },
@@ -4245,7 +4267,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                     disabled={rule.value_type === 'open'}
                     value={rule.default_value}
                     onChange={event => updateDiscountRule(index, { default_value: sanitizeNumber(event.target.value) })}
-                    placeholder={rule.value_type === 'fixed' ? 'Default $' : 'Default %'}
+                    placeholder={rule.value_type === 'open' ? 'Staff enters the amount' : rule.value_type === 'fixed' ? 'Default $' : 'Default %'}
                   />
                   <SelectInput value={rule.tax_behavior} onChange={event => updateDiscountRule(index, { tax_behavior: event.target.value })}>
                     {DISCOUNT_TAX_BEHAVIOR_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -4268,11 +4290,15 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   <SmallButton variant="danger" onClick={() => setDiscountRules(prev => prev.filter((_, currentIndex) => currentIndex !== index))}>Remove</SmallButton>
                 </div>
 
-                {rule.editable_by_employee && (
+                {discountRuleNeedsBounds(rule) && (
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <TextInput inputMode="decimal" value={rule.min_value} onChange={event => updateDiscountRule(index, { min_value: sanitizeNumber(event.target.value) })} placeholder="Minimum" />
-                    <TextInput inputMode="decimal" value={rule.max_value} onChange={event => updateDiscountRule(index, { max_value: sanitizeNumber(event.target.value) })} placeholder="Maximum" />
+                    <TextInput inputMode="decimal" value={rule.min_value} onChange={event => updateDiscountRule(index, { min_value: sanitizeNumber(event.target.value) })} placeholder={rule.value_type === 'fixed' ? 'Minimum $' : 'Minimum %'} />
+                    <TextInput inputMode="decimal" value={rule.max_value} onChange={event => updateDiscountRule(index, { max_value: sanitizeNumber(event.target.value) })} placeholder={`${rule.value_type === 'fixed' ? 'Maximum $' : 'Maximum %'}${rule.value_type === 'open' ? ' (required)' : ''}`} />
                   </div>
+                )}
+
+                {discountRuleWarning(rule) && (
+                  <p className="mt-3 text-xs font-semibold text-amber-300">{discountRuleWarning(rule)}</p>
                 )}
 
                 <div className="mt-4 space-y-4 border-t border-white/10 pt-4">
@@ -4324,6 +4350,8 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               <SmallButton onClick={() => setDiscountRules(prev => [...prev, defaultDiscountRule(prev.length)])}>Add discount</SmallButton>
               {[
                 { ...defaultDiscountRule(discountRules.length), name: 'Manager Comp', discount_type: 'comp', applies_to: 'both', value_type: 'open', editable_by_employee: true, max_value: '100', reason_required: true },
+                { ...defaultDiscountRule(discountRules.length), name: 'Custom Amount', discount_type: 'discount', applies_to: 'both', value_type: 'open', default_value: '', editable_by_employee: true, max_value: '50', requires_manager_approval: true, reason_required: true },
+                { ...defaultDiscountRule(discountRules.length), name: 'Item Comp', discount_type: 'comp', applies_to: 'item', value_type: 'percent', default_value: '100', requires_manager_approval: true, reason_required: true },
                 { ...defaultDiscountRule(discountRules.length), name: 'Employee Meal', discount_type: 'employee_meal', applies_to: 'item', value_type: 'percent', default_value: '50' },
                 { ...defaultDiscountRule(discountRules.length), name: 'Service Recovery', discount_type: 'service_recovery', applies_to: 'check', value_type: 'fixed', default_value: '20', reason_required: true },
               ].filter(template => !discountRules.some(rule => rule.name.toLowerCase() === template.name.toLowerCase())).map(template => (

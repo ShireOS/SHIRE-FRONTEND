@@ -113,9 +113,11 @@ const DISCOUNT_APPLIES_TO_OPTIONS = [
   ['both', 'Both'],
 ] as const;
 const DISCOUNT_VALUE_TYPE_OPTIONS = [
-  ['percent', 'Percent'],
+  ['percent', 'Percent %'],
   ['fixed', 'Fixed $'],
-  ['open', 'Open'],
+  // The custom-amount key: no preset value, staff type the figure on the POS,
+  // capped by max_value.
+  ['open', 'Custom'],
 ] as const;
 const DISCOUNT_TAX_BEHAVIOR_OPTIONS = [
   ['reduce_taxable_amount', 'Pre-tax'],

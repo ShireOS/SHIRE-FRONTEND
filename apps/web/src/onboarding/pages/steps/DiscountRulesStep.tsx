@@ -19,10 +19,32 @@ const APPLIES_TO: Array<{ value: DiscountRuleData['applies_to']; label: string }
 ]
 
 const VALUE_TYPES: Array<{ value: DiscountRuleData['value_type']; label: string }> = [
-  { value: 'percent', label: 'Percent' },
+  { value: 'percent', label: 'Percent %' },
   { value: 'fixed', label: 'Fixed $' },
-  { value: 'open', label: 'Open' },
+  // The custom-amount key. The POS shows a keypad instead of a preset tile and
+  // staff type the figure, bounded by min/max.
+  { value: 'open', label: 'Custom — staff enters amount' },
 ]
+
+/** An open rule is unbounded without a ceiling, so the API requires a maximum. */
+const needsBounds = (rule: DiscountRuleData) => rule.value_type === 'open' || rule.editable_by_employee
+
+/** Mirrors the server-side validation so the operator sees it before saving. */
+const ruleWarning = (rule: DiscountRuleData): string => {
+  if (rule.value_type === 'open' && !rule.max_value.trim()) {
+    return 'Staff enter this amount, so it needs a maximum.'
+  }
+  if (rule.value_type !== 'open' && !rule.default_value.trim()) {
+    return 'Set a default value, or switch it to a custom amount.'
+  }
+  if (rule.min_value.trim() && rule.max_value.trim() && Number(rule.min_value) > Number(rule.max_value)) {
+    return 'Minimum cannot exceed maximum.'
+  }
+  if (rule.value_type === 'percent' && Number(rule.default_value || 0) > 100) {
+    return 'A percent discount cannot exceed 100%.'
+  }
+  return ''
+}
 
 const TAX_BEHAVIORS: Array<{ value: DiscountRuleData['tax_behavior']; label: string }> = [
   { value: 'reduce_taxable_amount', label: 'Reduce taxable amount' },
@@ -49,7 +71,8 @@ const newRule = (index: number, template?: Partial<DiscountRuleData>): DiscountR
   discount_type: template?.discount_type || 'discount',
   applies_to: template?.applies_to || 'check',
   value_type: template?.value_type || 'percent',
-  default_value: template?.default_value || '',
+  // Prefilled so a freshly added rule is savable; an empty default is rejected.
+  default_value: template?.default_value ?? '10',
   editable_by_employee: template?.editable_by_employee || false,
   min_value: template?.min_value || '',
   max_value: template?.max_value || '',
@@ -120,7 +143,13 @@ export function DiscountRulesStep({ onboarding }: DiscountRulesStepProps) {
 
       <div className="rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] p-4">
         <p className="text-sm leading-6 text-[rgb(var(--text-secondary))]">
-          Add POS discount rules for comps, promos, employee meals, or service recovery. Leave this empty if the restaurant does not want preset discounts yet.
+          Add POS discount rules for comps, promos, employee meals, or service recovery. These become the buttons staff see on the discount screen.
+        </p>
+        <p className="mt-2 text-sm leading-6 text-[rgb(var(--text-tertiary))]">
+          A <strong className="text-[rgb(var(--text-secondary))]">preset</strong> carries a fixed value — &ldquo;Employee Meal, 50%&rdquo; — and applies in one tap.
+          A <strong className="text-[rgb(var(--text-secondary))]">custom</strong> rule (value type &ldquo;Custom&rdquo;) has no set value: the POS shows a keypad and
+          staff type the amount, capped by the maximum you set. Use <em>Applies to</em> to decide whether a rule can be
+          used on the whole check, on individual items, or both.
         </p>
       </div>
 
@@ -170,7 +199,7 @@ export function DiscountRulesStep({ onboarding }: DiscountRulesStepProps) {
                 disabled={rule.value_type === 'open'}
                 onChange={(event) => updateRule(index, { default_value: sanitizeNumber(event.target.value) })}
                 className={inputClass}
-                placeholder={rule.value_type === 'fixed' ? 'Default $' : 'Default %'}
+                placeholder={rule.value_type === 'open' ? 'Staff enters the amount' : rule.value_type === 'fixed' ? 'Default $' : 'Default %'}
               />
               <select
                 value={rule.tax_behavior}
@@ -194,23 +223,27 @@ export function DiscountRulesStep({ onboarding }: DiscountRulesStepProps) {
               </button>
             </div>
 
-            {rule.editable_by_employee && (
+            {needsBounds(rule) && (
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <input
                   inputMode="decimal"
                   value={rule.min_value}
                   onChange={(event) => updateRule(index, { min_value: sanitizeNumber(event.target.value) })}
                   className={inputClass}
-                  placeholder="Minimum"
+                  placeholder={rule.value_type === 'fixed' ? 'Minimum $' : 'Minimum %'}
                 />
                 <input
                   inputMode="decimal"
                   value={rule.max_value}
                   onChange={(event) => updateRule(index, { max_value: sanitizeNumber(event.target.value) })}
                   className={inputClass}
-                  placeholder="Maximum"
+                  placeholder={`${rule.value_type === 'fixed' ? 'Maximum $' : 'Maximum %'}${rule.value_type === 'open' ? ' (required)' : ''}`}
                 />
               </div>
+            )}
+
+            {ruleWarning(rule) && (
+              <p className="mt-3 text-xs font-semibold text-amber-300">{ruleWarning(rule)}</p>
             )}
 
             <div className="mt-4 space-y-3">
@@ -259,6 +292,8 @@ export function DiscountRulesStep({ onboarding }: DiscountRulesStepProps) {
           newRule(rules.length, { name: 'Manager Comp', discount_type: 'comp', applies_to: 'both', value_type: 'open', editable_by_employee: true, max_value: '100', reason_required: true }),
           newRule(rules.length, { name: 'Employee Meal', discount_type: 'employee_meal', applies_to: 'item', value_type: 'percent', default_value: '50' }),
           newRule(rules.length, { name: 'Service Recovery', discount_type: 'service_recovery', applies_to: 'check', value_type: 'fixed', default_value: '20', reason_required: true }),
+          newRule(rules.length, { name: 'Custom Amount', discount_type: 'discount', applies_to: 'both', value_type: 'open', default_value: '', editable_by_employee: true, max_value: '50', requires_manager_approval: true, reason_required: true }),
+          newRule(rules.length, { name: 'Item Comp', discount_type: 'comp', applies_to: 'item', value_type: 'percent', default_value: '100', requires_manager_approval: true, reason_required: true }),
         ].filter(template => !rules.some(rule => rule.name.toLowerCase() === template.name.toLowerCase())).map(template => (
           <button
             key={template.name}
