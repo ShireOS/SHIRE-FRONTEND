@@ -279,7 +279,7 @@ export default function OwnerOverview() {
                 <View style={{ flex: 1 }}>
                   <Text style={[typography.eyebrow, styles.cardEyebrow]}>Admin alerts</Text>
                   <Text style={[typography.h3, styles.timeAlertTitle]}>
-                    {timeClockRequests.length} remote time request{timeClockRequests.length === 1 ? '' : 's'}
+                    {timeClockRequests.length} pending employee request{timeClockRequests.length === 1 ? '' : 's'}
                   </Text>
                 </View>
                 <Feather name="bell" size={20} color={color_pallet.sky[700]} />
