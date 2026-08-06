@@ -81,25 +81,25 @@ export function fetchPortfolioReport(period: PortfolioPeriod, groupIds: string[]
   const query = new URLSearchParams({ period });
   if (groupIds.length) query.set('group_ids', groupIds.join(','));
   if (includeUngrouped) query.set('include_ungrouped', 'true');
-  return apiGet<PortfolioReport>(`/api/v1/portfolio-reports?${query.toString()}`);
+  return apiGet<PortfolioReport>(`/portfolio-reports?${query.toString()}`);
 }
 
 export function fetchPortfolioPreferences() {
-  return apiGet<{ visible_modules: PortfolioModule[] }>('/api/v1/portfolio-reports/preferences');
+  return apiGet<{ visible_modules: PortfolioModule[] }>('/portfolio-reports/preferences');
 }
 
 export function savePortfolioPreferences(visible_modules: PortfolioModule[]) {
-  return apiRequest<{ visible_modules: PortfolioModule[] }>('/api/v1/portfolio-reports/preferences', {
+  return apiRequest<{ visible_modules: PortfolioModule[] }>('/portfolio-reports/preferences', {
     method: 'PUT', body: { visible_modules },
   });
 }
 
 export function fetchPortfolioViewPreferences() {
-  return apiGet<{ settings: { overview?: PortfolioOverviewViewSettings } }>('/api/v1/portfolio-reports/view-preferences');
+  return apiGet<{ settings: { overview?: PortfolioOverviewViewSettings } }>('/portfolio-reports/view-preferences');
 }
 
 export function savePortfolioViewPreferences(settings: PortfolioOverviewViewSettings) {
-  return apiRequest<{ settings: { overview: PortfolioOverviewViewSettings } }>('/api/v1/portfolio-reports/view-preferences/overview', {
+  return apiRequest<{ settings: { overview: PortfolioOverviewViewSettings } }>('/portfolio-reports/view-preferences/overview', {
     method: 'PUT', body: { settings },
   });
 }
@@ -111,19 +111,19 @@ export function fetchPortfolioRecipients() {
     can_manage: boolean;
     delivery_enabled: boolean;
     delivery_disabled_reason?: string | null;
-  }>('/api/v1/portfolio-reports/recipients');
+  }>('/portfolio-reports/recipients');
 }
 
 export function savePortfolioRecipient(payload: PortfolioRecipientPayload, id?: string) {
-  return apiRequest<PortfolioRecipient>(id ? `/api/v1/portfolio-reports/recipients/${id}` : '/api/v1/portfolio-reports/recipients', {
+  return apiRequest<PortfolioRecipient>(id ? `/portfolio-reports/recipients/${id}` : '/portfolio-reports/recipients', {
     method: id ? 'PUT' : 'POST', body: payload,
   });
 }
 
 export function deletePortfolioRecipient(id: string) {
-  return apiRequest<void>(`/api/v1/portfolio-reports/recipients/${id}`, { method: 'DELETE' });
+  return apiRequest<void>(`/portfolio-reports/recipients/${id}`, { method: 'DELETE' });
 }
 
 export function sendPortfolioTest(id: string) {
-  return apiRequest<{ message: string }>(`/api/v1/portfolio-reports/recipients/${id}/test`, { method: 'POST' });
+  return apiRequest<{ message: string }>(`/portfolio-reports/recipients/${id}/test`, { method: 'POST' });
 }
