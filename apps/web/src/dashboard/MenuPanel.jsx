@@ -41,6 +41,12 @@ import {
 import { MenuItemDetail } from './MenuItemDetail'
 import { MenuItemCreate } from './MenuItemCreate'
 import { MenuEditor } from '../onboarding/components/MenuEditor'
+import { useAuth } from '../auth'
+import { PublishControls } from '../shared/components/PublishControls'
+import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
+import { PropagationModal } from '../shared/components/PropagationModal'
+import { scheduleChange } from '../shared/api/scheduledChanges'
+import { fetchResellerPortfolioForUser } from '../reseller/data/resellerPortfolio'
 import { copyItemConfig } from './data/menuDuplicate'
 import BulkPricingPanel from './BulkPricingPanel'
 import {
@@ -645,6 +651,10 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   // null | 'upload' (AI photo extraction) | 'manual' (bulk table editing)
   const [importing, setImporting] = useState(null)
   const [dailySpecialSettings, setDailySpecialSettings] = useState(null)
+  // Multi-store propagation (reseller accounts): portfolio + pending modal request.
+  const auth = useAuth()
+  const [portfolio, setPortfolio] = useState(null)
+  const [propagationRequest, setPropagationRequest] = useState(null)
   const [expandedCategoryNames, setExpandedCategoryNames] = useState(() => new Set())
   const [categoryScrollTarget, setCategoryScrollTarget] = useState(null)
 
@@ -754,6 +764,45 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       force ? 0 : STALE_TIMES.setup,
     )
     setRouting(data)
+  }
+
+  const propagationEligible = ['reseller', 'reseller_employee', 'admin'].includes(auth?.accountType || '')
+
+  useEffect(() => {
+    if (!propagationEligible || !auth?.user?.id) return
+    let cancelled = false
+    fetchResellerPortfolioForUser({
+      userId: auth.user.id,
+      accountType: auth.accountType,
+      restaurants: auth.restaurant?.restaurants || [],
+    })
+      .then(data => {
+        if (!cancelled) setPortfolio(data)
+      })
+      .catch(() => {
+        if (!cancelled) setPortfolio(null) // propagation UI simply stays hidden
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propagationEligible, auth?.user?.id, auth?.accountType])
+
+  // Resellers/admins always; reseller employees need the propagate permission.
+  const propagationReady = Boolean(
+    portfolio &&
+    (['reseller', 'admin'].includes(auth?.accountType) || portfolio.employee?.permissions?.propagate_changes),
+  )
+
+  const requestPropagationTargets = (descriptor) => new Promise(resolve => {
+    setPropagationRequest({ descriptor, resolve })
+  })
+
+  const closePropagationModal = (restaurantIds = null) => {
+    setPropagationRequest(current => {
+      current?.resolve(restaurantIds)
+      return null
+    })
   }
 
   const loadSpecialSettings = async () => {
@@ -1304,30 +1353,73 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   }, [mergedItems, groups, categoriesByName, modifiersById])
   // ── Categories ───────────────────────────────────────────────────────────
 
-  const saveCategories = (nextCategories) => run(async () => {
-    const payload = {
-      categories: nextCategories
-        .filter(category => category.name && category.name.trim())
-        .map(category => ({
-          id: category.id || undefined,
-          name: category.name.trim(),
-          tax_rate_id: category.tax_rate_id || null,
-          routing_station_id: category.routing_station_id || null,
-          routing_station_name: category.routing_station_name || stationsById[category.routing_station_id]?.name || null,
-          default_course_type: category.default_course_type || null,
-          default_fire_mode: category.default_fire_mode || null,
-          prep_time_minutes: category.prep_time_minutes === '' || category.prep_time_minutes == null ? null : Number(category.prep_time_minutes),
-          kds_display_group: category.kds_display_group || null,
-          is_active: true,
-        })),
+  // Per-store ids (category, tax rate, station) never travel to OTHER stores —
+  // they'd reference rows that don't exist there. Names do; the target backend
+  // re-links stations by name and leaves tax overrides unset.
+  const categoriesBodyFor = (targetId, nextCategories) => ({
+    categories: nextCategories
+      .filter(category => category.name && category.name.trim())
+      .map(category => ({
+        id: targetId === restaurantId ? (category.id || undefined) : undefined,
+        name: category.name.trim(),
+        tax_rate_id: targetId === restaurantId ? (category.tax_rate_id || null) : null,
+        routing_station_id: targetId === restaurantId ? (category.routing_station_id || null) : null,
+        routing_station_name: category.routing_station_name || stationsById[category.routing_station_id]?.name || null,
+        default_course_type: category.default_course_type || null,
+        default_fire_mode: category.default_fire_mode || null,
+        prep_time_minutes: category.prep_time_minutes === '' || category.prep_time_minutes == null ? null : Number(category.prep_time_minutes),
+        kds_display_group: category.kds_display_group || null,
+        is_active: true,
+      })),
+  })
+
+  // Save now or later, to this store or (for resellers) a picked set of stores.
+  const publishCategories = async (publication = null) => {
+    const targets = propagationReady
+      ? await requestPropagationTargets({
+          sectionId: 'menu_categories',
+          label: 'Menu categories',
+          propagation: 'general',
+          sourceRestaurantId: restaurantId,
+        })
+      : [restaurantId]
+    if (targets === null) return // modal cancelled
+    const targetIds = [...new Set((targets || []).filter(Boolean))]
+      .sort((a, b) => (a === restaurantId ? -1 : b === restaurantId ? 1 : 0))
+    if (targetIds.length === 0) {
+      setError('Select at least one restaurant.')
+      return
     }
-    const saved = await api(`/restaurants/${restaurantId}/menu/categories`, {
-      method: 'PUT',
-      body: JSON.stringify(payload),
-    })
-    setCategories(Array.isArray(saved) ? saved : (saved?.categories || []))
-    invalidateCategories()
-  }, 'Categories saved.', 'Couldn’t save categories')
+    await run(async () => {
+      if (publication?.scheduledFor) {
+        const scheduled = await scheduleChange({
+          label: 'Menu categories',
+          scheduledFor: publication.scheduledFor,
+          timezone: publication.timezone,
+          commands: targetIds.map(targetId => ({
+            method: 'PUT',
+            path: `/restaurants/${targetId}/menu/categories`,
+            body: categoriesBodyFor(targetId, categories),
+            target_type: 'restaurant',
+            target_id: targetId,
+          })),
+        })
+        setNotice(`Menu categories scheduled for ${new Date(scheduled.scheduled_for).toLocaleString()}.`)
+        return
+      }
+      for (const targetId of targetIds) {
+        const saved = await api(`/restaurants/${targetId}/menu/categories`, {
+          method: 'PUT',
+          body: JSON.stringify(categoriesBodyFor(targetId, categories)),
+        })
+        if (targetId === restaurantId) {
+          setCategories(Array.isArray(saved) ? saved : (saved?.categories || []))
+          invalidateCategories()
+        }
+      }
+      setNotice(targetIds.length > 1 ? `Categories saved to ${targetIds.length} restaurants.` : 'Categories saved.')
+    }, undefined, 'Couldn’t save categories')
+  }
 
   const updateCategory = (index, patch) => {
     setCategories(prev => prev.map((category, currentIndex) => (currentIndex === index ? { ...category, ...patch } : category)))
@@ -1972,8 +2064,17 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         <SectionShell
           title="Categories"
           description="How the menu is organized on the POS. Each category card shows exactly how its button will look on the device, and sets the tax rate, prep station, and course its items inherit. Click an item count to see what's inside."
-          actions={<SmallButton variant="primary" onClick={() => void saveCategories(categories)} disabled={busy}>{busy ? 'Saving...' : 'Save categories'}</SmallButton>}
+          actions={(
+            <PublishControls
+              label={propagationReady ? 'Save categories…' : 'Save categories'}
+              busy={busy}
+              disabled={busy}
+              onPublishNow={() => void publishCategories()}
+              onSchedule={(scheduledFor, timezone) => void publishCategories({ scheduledFor, timezone })}
+            />
+          )}
         >
+          <div className="mb-4"><ScheduledChangesPanel /></div>
           <div className="space-y-3">
             {mergedCategories.map((category, index) => {
               const categoryItems = allItemsByCategoryName[category.name] || []
@@ -2813,6 +2914,17 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           </SectionShell>
           )}
         </div>
+      )}
+
+      {propagationRequest && portfolio && (
+        <PropagationModal
+          request={propagationRequest}
+          restaurants={portfolio.restaurants}
+          groups={portfolio.groups}
+          sourceRestaurantId={restaurantId}
+          onCancel={() => closePropagationModal(null)}
+          onApply={closePropagationModal}
+        />
       )}
 
       {!loading && activeTab === 'printing' && (
