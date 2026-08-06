@@ -357,6 +357,7 @@ const TIPOUT_BASIS_OPTIONS = [
 const PERMISSION_TIER_OPTIONS = [
   { value: 'owner', label: 'Owner' },
   { value: 'manager', label: 'Manager' },
+  { value: 'waiter', label: 'Waiter' },
   { value: 'normal', label: 'Normal' },
   { value: 'limited', label: 'Limited' },
 ]

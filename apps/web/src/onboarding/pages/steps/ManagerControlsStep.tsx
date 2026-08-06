@@ -304,6 +304,7 @@ export function ManagerControlsStep({ onboarding }: ManagerControlsStepProps) {
                 >
                   <option value="owner" className="bg-[#1a1a1a]">Owner</option>
                   <option value="manager" className="bg-[#1a1a1a]">Manager</option>
+                  <option value="waiter" className="bg-[#1a1a1a]">Waiter</option>
                   <option value="normal" className="bg-[#1a1a1a]">Normal</option>
                   <option value="limited" className="bg-[#1a1a1a]">Limited</option>
                 </select>
