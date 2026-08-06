@@ -3,24 +3,45 @@ import type { ReactNode } from 'react'
 import { supabase } from '../../shared/lib/supabase'
 import { API_CONFIG } from '../../shared/api/config'
 import type { MenuEditorItem } from './MenuItemsTable'
+import {
+  addGroupOption,
+  archiveModifierGroup,
+  createModifierGroup,
+  fetchModifierGroups,
+  removeGroupOption,
+  replaceGroupItems,
+  updateGroupOption,
+  updateModifierGroup,
+} from '../../dashboard/data/menuGroups'
 
 // ── Types ──────────────────────────────────────────────────────────────────
+//
+// This editor writes the "questions" model the POS actually prompts from:
+// menu_modifier_groups (rules) + menu_modifier_group_options (answers) +
+// menu_modifier_group_items (which items ask). Modifiers themselves are just
+// answer rows (name + price) created through the ML API.
 
-interface LocalModifier {
-  localId: string       // stable client-side key
-  savedId: string | null
-  groupName: string
+interface EditorOption {
+  localId: string
+  modifierId: string | null   // saved menu_modifiers id
   name: string
-  priceDelta: string    // string for controlled input, parsed on save
+  priceDelta: string          // controlled input, parsed on save
+  isDefault: boolean
+  printOnKitchenTicket: boolean
+}
+
+interface EditorQuestion {
+  localId: string
+  groupId: string | null      // saved menu_modifier_groups id
+  name: string
   isRequired: boolean
   minSelections: string
   maxSelections: string
-  freeModifierCount: string
-  allowQuantity: boolean
-  isDefault: boolean
-  printOnKitchenTicket: boolean
-  modifierNotes: string
-  itemIds: Set<string>  // menu item UUIDs
+  includedCount: string       // first N selections free
+  overagePrice: string        // $ per selection past the free count
+  options: EditorOption[]
+  removedOptionIds: string[]  // saved modifier ids detached on save
+  itemIds: Set<string>
 }
 
 interface ModifierEditorProps {
@@ -37,47 +58,90 @@ const getToken = async () => {
   return session?.access_token ? `Bearer ${session.access_token}` : ''
 }
 
-const base = (restaurantId: string) =>
+const modifiersBase = (restaurantId: string) =>
   `${API_CONFIG.baseUrl}/restaurants/${restaurantId}/menu/modifiers`
+
+const blankOption = (): EditorOption => ({
+  localId: crypto.randomUUID(),
+  modifierId: null,
+  name: '',
+  priceDelta: '',
+  isDefault: false,
+  printOnKitchenTicket: true,
+})
+
+const blankQuestion = (): EditorQuestion => ({
+  localId: crypto.randomUUID(),
+  groupId: null,
+  name: '',
+  isRequired: false,
+  minSelections: '0',
+  maxSelections: '',
+  includedCount: '0',
+  overagePrice: '',
+  options: [blankOption()],
+  removedOptionIds: [],
+  itemIds: new Set(),
+})
+
+const digits = (value: string) => value.replace(/\D/g, '').slice(0, 2)
+const decimal = (value: string) => {
+  const cleaned = value.replace(/[^\d.]/g, '')
+  const [whole, ...rest] = cleaned.split('.')
+  return rest.length ? `${whole}.${rest.join('').slice(0, 2)}` : whole
+}
 
 // ── Main component ─────────────────────────────────────────────────────────
 
 export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: ModifierEditorProps) {
-  const [modifiers, setModifiers] = useState<LocalModifier[]>([])
-  const [deletedModifierIds, setDeletedModifierIds] = useState<Set<string>>(new Set())
+  const [questions, setQuestions] = useState<EditorQuestion[]>([])
+  const [removedGroupIds, setRemovedGroupIds] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [popupFor, setPopupFor] = useState<string | null>(null) // localId of open popup
 
-  // Load existing modifiers on mount (survive back-navigation)
+  // Load existing questions + their answers on mount (survive back-navigation)
   useEffect(() => {
     const load = async () => {
       setLoading(true)
       try {
         const token = await getToken()
-        const res = await fetch(base(restaurantId), { headers: { Authorization: token } })
-        if (!res.ok) return
-        const data: any[] = await res.json()
-        setModifiers(data.map(m => ({
-          localId: m.id,
-          savedId: m.id,
-          groupName: m.group_name || 'Add-ons',
-          name: m.name,
-          priceDelta: m.price_delta > 0 ? String(m.price_delta) : '',
-          isRequired: Boolean(m.is_required),
-          minSelections: m.min_selections != null ? String(m.min_selections) : '0',
-          maxSelections: m.max_selections != null ? String(m.max_selections) : '',
-          freeModifierCount: m.free_modifier_count != null ? String(m.free_modifier_count) : '0',
-          allowQuantity: Boolean(m.allow_quantity),
-          isDefault: Boolean(m.is_default),
-          printOnKitchenTicket: m.print_on_kitchen_ticket !== false,
-          modifierNotes: m.modifier_notes || '',
-          itemIds: new Set(m.item_ids),
-        })))
-        setDeletedModifierIds(new Set())
+        const [groups, modifiersRes] = await Promise.all([
+          fetchModifierGroups(restaurantId),
+          fetch(modifiersBase(restaurantId), { headers: { Authorization: token } }),
+        ])
+        const modifierRows: any[] = modifiersRes.ok ? await modifiersRes.json() : []
+        const modifiersById = new Map(modifierRows.map(row => [String(row.id), row]))
+        setQuestions(groups
+          // Allergy questions are managed by their own surface, not here.
+          .filter(group => group.type !== 'allergy')
+          .map(group => ({
+            localId: group.id,
+            groupId: group.id,
+            name: group.name,
+            isRequired: Boolean(group.is_required),
+            minSelections: String(group.min_selections ?? 0),
+            maxSelections: group.max_selections == null ? '' : String(group.max_selections),
+            includedCount: String(group.included_count ?? 0),
+            overagePrice: group.overage_price == null ? '' : String(group.overage_price),
+            options: group.options.map(option => {
+              const modifier = modifiersById.get(String(option.modifier_id))
+              return {
+                localId: option.modifier_id,
+                modifierId: option.modifier_id,
+                name: modifier?.name ?? 'Modifier',
+                priceDelta: modifier && Number(modifier.price_delta) > 0 ? String(modifier.price_delta) : '',
+                isDefault: Boolean(option.is_default),
+                printOnKitchenTicket: modifier ? modifier.print_on_kitchen_ticket !== false : true,
+              }
+            }),
+            removedOptionIds: [],
+            itemIds: new Set(group.item_ids),
+          })))
+        setRemovedGroupIds(new Set())
       } catch {
-        // silently fall through — start with empty list
+        // start with an empty list — the save path creates everything fresh
       } finally {
         setLoading(false)
       }
@@ -85,93 +149,127 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
     void load()
   }, [restaurantId])
 
-  const addRow = () => {
-    setModifiers(prev => [
-      ...prev,
-      {
-        localId: crypto.randomUUID(),
-        savedId: null,
-        groupName: 'Add-ons',
-        name: '',
-        priceDelta: '',
-        isRequired: false,
-        minSelections: '0',
-        maxSelections: '',
-        freeModifierCount: '0',
-        allowQuantity: false,
-        isDefault: false,
-        printOnKitchenTicket: true,
-        modifierNotes: '',
-        itemIds: new Set(),
-      },
-    ])
-  }
-
-  const updateRow = useCallback((localId: string, patch: Partial<Omit<LocalModifier, 'localId' | 'savedId' | 'itemIds'>>) => {
-    setModifiers(prev => prev.map(m => m.localId === localId ? { ...m, ...patch } : m))
+  const updateQuestion = useCallback((localId: string, patch: Partial<Omit<EditorQuestion, 'localId' | 'groupId' | 'options' | 'itemIds'>>) => {
+    setQuestions(prev => prev.map(q => q.localId === localId ? { ...q, ...patch } : q))
   }, [])
 
-  const removeRow = useCallback((localId: string) => {
-    const removed = modifiers.find(m => m.localId === localId)
-    if (removed?.savedId) {
-      setDeletedModifierIds(ids => new Set(ids).add(removed.savedId!))
+  const updateOption = useCallback((questionId: string, optionId: string, patch: Partial<Omit<EditorOption, 'localId' | 'modifierId'>>) => {
+    setQuestions(prev => prev.map(q => q.localId === questionId
+      ? { ...q, options: q.options.map(o => o.localId === optionId ? { ...o, ...patch } : o) }
+      : q))
+  }, [])
+
+  const addOption = (questionId: string) => {
+    setQuestions(prev => prev.map(q => q.localId === questionId ? { ...q, options: [...q.options, blankOption()] } : q))
+  }
+
+  const removeOption = (questionId: string, optionId: string) => {
+    setQuestions(prev => prev.map(q => {
+      if (q.localId !== questionId) return q
+      const option = q.options.find(o => o.localId === optionId)
+      return {
+        ...q,
+        options: q.options.filter(o => o.localId !== optionId),
+        removedOptionIds: option?.modifierId ? [...q.removedOptionIds, option.modifierId] : q.removedOptionIds,
+      }
+    }))
+  }
+
+  const removeQuestion = (localId: string) => {
+    const question = questions.find(q => q.localId === localId)
+    if (question?.groupId) {
+      setRemovedGroupIds(ids => new Set(ids).add(question.groupId as string))
     }
-    setModifiers(prev => prev.filter(m => m.localId !== localId))
-  }, [modifiers])
+    setQuestions(prev => prev.filter(q => q.localId !== localId))
+  }
 
   const setItemIds = useCallback((localId: string, ids: Set<string>) => {
-    setModifiers(prev => prev.map(m => m.localId === localId ? { ...m, itemIds: new Set(ids) } : m))
+    setQuestions(prev => prev.map(q => q.localId === localId ? { ...q, itemIds: new Set(ids) } : q))
   }, [])
 
   const handleSave = async () => {
-    const valid = modifiers.filter(m => m.name.trim() !== '')
-    if (valid.length === 0 && deletedModifierIds.size === 0) { onDone(); return }
-
+    const valid = questions.filter(q => q.name.trim() !== '' && q.options.some(o => o.name.trim() !== ''))
     setSaving(true)
     setError(null)
     try {
       const token = await getToken()
+      const headers = { 'Content-Type': 'application/json', Authorization: token }
 
-      for (const mod of valid) {
-        const delta = parseFloat(mod.priceDelta) || 0
-        let savedId = mod.savedId
+      for (const [index, question] of valid.entries()) {
+        const minSelections = Math.max(question.isRequired ? 1 : 0, Number(question.minSelections) || 0)
+        const groupDraft = {
+          name: question.name.trim(),
+          min_selections: minSelections,
+          max_selections: question.maxSelections === '' ? null : Math.max(minSelections, Number(question.maxSelections) || 0),
+          is_required: question.isRequired,
+          prompt_on_order: true,
+          included_count: Number(question.includedCount) || 0,
+          overage_price: question.overagePrice === '' ? null : Number(question.overagePrice),
+          display_order: index,
+        }
+        const group = question.groupId
+          ? await updateModifierGroup(question.groupId, groupDraft)
+          : await createModifierGroup(restaurantId, groupDraft)
 
-        if (!savedId) {
-          // Create
-          const res = await fetch(base(restaurantId), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: token },
-            body: JSON.stringify(modifierPayload(mod, delta)),
-          })
-          if (!res.ok) throw new Error(`Failed to create modifier "${mod.name}"`)
-          const created: { id: string } = await res.json()
-          savedId = created.id
-        } else {
-          // Update name/price
-          await fetch(`${base(restaurantId)}/${savedId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', Authorization: token },
-            body: JSON.stringify(modifierPayload(mod, delta)),
-          })
+        const existingOptionIds = new Set(
+          question.groupId
+            ? question.options.filter(o => o.modifierId).map(o => o.modifierId as string)
+            : [],
+        )
+        let optionOrder = 0
+        for (const option of question.options) {
+          if (option.name.trim() === '') continue
+          const priceDelta = parseFloat(option.priceDelta) || 0
+          if (!option.modifierId) {
+            // New answer: create the modifier, then add it to the question.
+            const res = await fetch(modifiersBase(restaurantId), {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                name: option.name.trim(),
+                price_delta: priceDelta,
+                group_name: question.name.trim() || 'Add-ons',
+                print_on_kitchen_ticket: option.printOnKitchenTicket,
+                is_active: true,
+              }),
+            })
+            if (!res.ok) throw new Error(`Failed to create "${option.name}"`)
+            const created: { id: string } = await res.json()
+            await addGroupOption(group.id, created.id, { is_default: option.isDefault, display_order: optionOrder })
+          } else {
+            await fetch(`${modifiersBase(restaurantId)}/${option.modifierId}`, {
+              method: 'PUT',
+              headers,
+              body: JSON.stringify({
+                name: option.name.trim(),
+                price_delta: priceDelta,
+                group_name: question.name.trim() || 'Add-ons',
+                print_on_kitchen_ticket: option.printOnKitchenTicket,
+              }),
+            })
+            if (existingOptionIds.has(option.modifierId)) {
+              await updateGroupOption(group.id, option.modifierId, { is_default: option.isDefault, display_order: optionOrder })
+            } else {
+              await addGroupOption(group.id, option.modifierId, { is_default: option.isDefault, display_order: optionOrder })
+            }
+          }
+          optionOrder += 1
         }
 
-        // Replace item assignments
-        await fetch(`${base(restaurantId)}/${savedId}/items`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', Authorization: token },
-          body: JSON.stringify({ item_ids: Array.from(mod.itemIds) }),
-        })
+        // Answers removed with the ✕ leave the question; the modifier row
+        // stays in the library for reuse.
+        for (const modifierId of question.removedOptionIds) {
+          await removeGroupOption(group.id, modifierId)
+        }
+
+        await replaceGroupItems(group.id, Array.from(question.itemIds))
       }
 
-      for (const modifierId of deletedModifierIds) {
-        const res = await fetch(`${base(restaurantId)}/${modifierId}`, {
-          method: 'DELETE',
-          headers: { Authorization: token },
-        })
-        if (!res.ok) throw new Error('Failed to delete removed modifier')
+      for (const groupId of removedGroupIds) {
+        await archiveModifierGroup(groupId)
       }
 
-      setDeletedModifierIds(new Set())
+      setRemovedGroupIds(new Set())
       onDone()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
@@ -180,8 +278,8 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
     }
   }
 
-  const validCount = modifiers.filter(m => m.name.trim() !== '').length
-  const popupModifier = modifiers.find(m => m.localId === popupFor) ?? null
+  const validCount = questions.filter(q => q.name.trim() !== '' && q.options.some(o => o.name.trim() !== '')).length
+  const popupQuestion = questions.find(q => q.localId === popupFor) ?? null
 
   if (loading) {
     return (
@@ -207,9 +305,9 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
         </button>
 
         <div className="text-center">
-          <h2 className="text-[rgb(var(--text-primary))] font-semibold text-sm">Menu Modifiers</h2>
+          <h2 className="text-[rgb(var(--text-primary))] font-semibold text-sm">Modifier Questions</h2>
           <p className="text-[rgb(var(--text-tertiary))] text-xs mt-0.5">
-            Add-ons like "Extra Cheese" or "Gluten Free" — then assign which items offer them
+            Questions the POS asks — "Choose a side", "Temperature?" — with the answers guests pick from
           </p>
         </div>
 
@@ -218,7 +316,7 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
           disabled={saving}
           className="px-4 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-gray-100 disabled:opacity-40 transition-colors"
         >
-          {saving ? 'Saving…' : validCount > 0 ? `Save & Continue` : 'Skip'}
+          {saving ? 'Saving…' : validCount > 0 || removedGroupIds.size > 0 ? 'Save & Continue' : 'Skip'}
         </button>
       </div>
 
@@ -228,61 +326,143 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
         </div>
       )}
 
-      {/* Table */}
-      <div className="flex-1 rounded-xl border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.02)] overflow-hidden">
-        {/* Column headers */}
-        <div className="hidden gap-3 border-b border-[rgba(255,255,255,0.06)] px-4 py-2.5 text-[10px] uppercase tracking-wider text-[rgb(var(--text-tertiary))] lg:grid lg:grid-cols-[1fr_1fr_110px_150px_150px_32px]">
-          <span>Group</span>
-          <span>Option</span>
-          <span>Price Add-on</span>
-          <span>Rules</span>
-          <span>Flags</span>
-          <span>Applies To</span>
-          <span />
+      {questions.length === 0 && (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.02)] py-16 text-[rgb(var(--text-tertiary))]">
+          <svg className="w-8 h-8 mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          </svg>
+          <p className="text-sm">No questions yet — add one below</p>
         </div>
+      )}
 
-        {modifiers.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-[rgb(var(--text-tertiary))]">
-            <svg className="w-8 h-8 mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            <p className="text-sm">No modifiers yet — add one below</p>
-          </div>
-        )}
+      {/* Question cards */}
+      <div className="flex-1 space-y-4">
+        {questions.map(question => {
+          const assignedCount = question.itemIds.size
+          return (
+            <div key={question.localId} className="rounded-xl border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.02)] p-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  type="text"
+                  value={question.name}
+                  onChange={e => updateQuestion(question.localId, { name: e.target.value })}
+                  disabled={saving}
+                  placeholder='Question, e.g. "Choose a side"'
+                  className="min-w-56 flex-1 px-3 py-2 rounded-lg bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] text-sm text-[rgb(var(--text-primary))] placeholder:text-[rgb(var(--text-tertiary))] focus:outline-none focus:border-[rgba(201,169,98,0.4)] transition-colors disabled:opacity-50"
+                />
+                <ToggleChip active={question.isRequired} disabled={saving} onClick={() => updateQuestion(question.localId, { isRequired: !question.isRequired })}>
+                  Required
+                </ToggleChip>
+                <button
+                  onClick={() => setPopupFor(question.localId)}
+                  disabled={saving}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                    assignedCount > 0
+                      ? 'bg-green-500/10 border-green-500/30 text-green-400 hover:bg-green-500/20'
+                      : 'bg-[rgba(255,255,255,0.04)] border-[rgba(255,255,255,0.1)] text-[rgb(var(--text-tertiary))] hover:border-[rgba(201,169,98,0.3)] hover:text-[rgb(var(--gold))]'
+                  } disabled:opacity-50`}
+                >
+                  {assignedCount > 0 ? `Asked on ${assignedCount} item${assignedCount !== 1 ? 's' : ''}` : 'Assign items'}
+                </button>
+                <button
+                  onClick={() => removeQuestion(question.localId)}
+                  disabled={saving}
+                  aria-label="Delete question"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg text-[rgb(var(--text-tertiary))] hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-40"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
 
-        <div className="divide-y divide-[rgba(255,255,255,0.04)]">
-          {modifiers.map(mod => (
-            <ModifierRow
-              key={mod.localId}
-              modifier={mod}
-              menuItemCount={menuItems.length}
-              onUpdate={(patch) => updateRow(mod.localId, patch)}
-              onRemove={() => removeRow(mod.localId)}
-              onOpenPopup={() => setPopupFor(mod.localId)}
-              disabled={saving}
-            />
-          ))}
-        </div>
+              <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-2 text-xs text-[rgb(var(--text-secondary))]">
+                <span>Guest picks at least</span>
+                <input value={question.minSelections} onChange={e => updateQuestion(question.localId, { minSelections: digits(e.target.value) })} disabled={saving} className="w-12 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-center text-xs text-white" />
+                <span>and at most</span>
+                <input value={question.maxSelections} onChange={e => updateQuestion(question.localId, { maxSelections: digits(e.target.value) })} disabled={saving} placeholder="∞" className="w-12 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-center text-xs text-white" />
+                <span className="text-[rgb(var(--text-tertiary))]">·</span>
+                <span>first</span>
+                <input value={question.includedCount} onChange={e => updateQuestion(question.localId, { includedCount: digits(e.target.value) })} disabled={saving} className="w-12 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-center text-xs text-white" />
+                <span>free, then $</span>
+                <input value={question.overagePrice} onChange={e => updateQuestion(question.localId, { overagePrice: decimal(e.target.value) })} disabled={saving} placeholder="0.00" className="w-16 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-center text-xs text-white" />
+                <span>each extra</span>
+              </div>
+
+              {/* Answers */}
+              <div className="mt-3 space-y-2">
+                {question.options.map(option => (
+                  <div key={option.localId} className="grid grid-cols-1 gap-2 lg:grid-cols-[1fr_120px_auto_auto_32px] lg:items-center">
+                    <input
+                      type="text"
+                      value={option.name}
+                      onChange={e => updateOption(question.localId, option.localId, { name: e.target.value })}
+                      disabled={saving}
+                      placeholder="Answer, e.g. Fries"
+                      className="w-full px-3 py-1.5 rounded-lg bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] text-sm text-[rgb(var(--text-primary))] placeholder:text-[rgb(var(--text-tertiary))] focus:outline-none focus:border-[rgba(201,169,98,0.4)] transition-colors disabled:opacity-50"
+                    />
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[rgb(var(--text-tertiary))]">+$</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={option.priceDelta}
+                        onChange={e => updateOption(question.localId, option.localId, { priceDelta: decimal(e.target.value) })}
+                        disabled={saving}
+                        placeholder="0.00"
+                        className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] text-sm text-[rgb(var(--text-primary))] placeholder:text-[rgb(var(--text-tertiary))] focus:outline-none focus:border-[rgba(201,169,98,0.4)] transition-colors disabled:opacity-50"
+                      />
+                    </div>
+                    <ToggleChip active={option.isDefault} disabled={saving} onClick={() => updateOption(question.localId, option.localId, { isDefault: !option.isDefault })}>
+                      Default
+                    </ToggleChip>
+                    <ToggleChip active={option.printOnKitchenTicket} disabled={saving} onClick={() => updateOption(question.localId, option.localId, { printOnKitchenTicket: !option.printOnKitchenTicket })}>
+                      Ticket
+                    </ToggleChip>
+                    <button
+                      onClick={() => removeOption(question.localId, option.localId)}
+                      disabled={saving}
+                      aria-label="Remove answer"
+                      className="w-8 h-8 flex items-center justify-center rounded-lg text-[rgb(var(--text-tertiary))] hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-40"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={() => addOption(question.localId)}
+                  disabled={saving}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-[rgb(var(--text-secondary))] border border-[rgba(255,255,255,0.1)] rounded-lg hover:bg-[rgba(255,255,255,0.05)] hover:text-[rgb(var(--text-primary))] disabled:opacity-40 transition-all"
+                >
+                  + Add answer
+                </button>
+              </div>
+            </div>
+          )
+        })}
       </div>
 
-      {/* Add row button */}
-      <div className="mt-3">
+      {/* Add question */}
+      <div className="mt-4">
         <button
-          onClick={addRow}
+          onClick={() => setQuestions(prev => [...prev, blankQuestion()])}
           disabled={saving}
           className="flex items-center gap-2 px-3 py-2 text-sm text-[rgb(var(--text-secondary))] border border-[rgba(255,255,255,0.1)] rounded-lg hover:bg-[rgba(255,255,255,0.05)] hover:text-[rgb(var(--text-primary))] disabled:opacity-40 transition-all"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Add Modifier
+          Add Question
         </button>
       </div>
 
       {/* Item assignment popup */}
-      {popupFor && popupModifier && (
+      {popupFor && popupQuestion && (
         <ItemAssignmentPopup
-          modifier={popupModifier}
+          title={`"${popupQuestion.name || 'Question'}" is asked on…`}
+          selectedIds={popupQuestion.itemIds}
           menuItems={menuItems}
           onConfirm={(ids) => {
             setItemIds(popupFor, ids)
@@ -290,110 +470,6 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
           }}
         />
       )}
-    </div>
-  )
-}
-
-function modifierPayload(mod: LocalModifier, priceDelta: number) {
-  return {
-    group_name: mod.groupName.trim() || 'Add-ons',
-    name: mod.name.trim(),
-    price_delta: priceDelta,
-    is_required: mod.isRequired,
-    min_selections: Number(mod.minSelections || 0),
-    max_selections: mod.maxSelections === '' ? null : Number(mod.maxSelections),
-    free_modifier_count: Number(mod.freeModifierCount || 0),
-    allow_quantity: mod.allowQuantity,
-    is_default: mod.isDefault,
-    print_on_kitchen_ticket: mod.printOnKitchenTicket,
-    modifier_notes: mod.modifierNotes.trim() || null,
-    is_active: true,
-  }
-}
-
-// ── Modifier Row ───────────────────────────────────────────────────────────
-
-interface ModifierRowProps {
-  modifier: LocalModifier
-  menuItemCount: number
-  onUpdate: (patch: Partial<Omit<LocalModifier, 'localId' | 'savedId' | 'itemIds'>>) => void
-  onRemove: () => void
-  onOpenPopup: () => void
-  disabled: boolean
-}
-
-function ModifierRow({ modifier, menuItemCount: _menuItemCount, onUpdate, onRemove, onOpenPopup, disabled }: ModifierRowProps) {
-  const count = modifier.itemIds.size
-  const assigned = count > 0
-
-  return (
-    <div className="grid grid-cols-1 gap-3 px-4 py-3 lg:grid-cols-[1fr_1fr_110px_150px_150px_32px] lg:items-center">
-      <input type="text" value={modifier.groupName} onChange={e => onUpdate({ groupName: e.target.value })} disabled={disabled} placeholder="Group, e.g. Cheese" className="w-full px-3 py-1.5 rounded-lg bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] text-sm text-[rgb(var(--text-primary))] placeholder:text-[rgb(var(--text-tertiary))] focus:outline-none focus:border-[rgba(201,169,98,0.4)] transition-colors disabled:opacity-50" />
-
-      <input type="text" value={modifier.name} onChange={e => onUpdate({ name: e.target.value })} disabled={disabled} placeholder="Option, e.g. Extra Cheese" className="w-full px-3 py-1.5 rounded-lg bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] text-sm text-[rgb(var(--text-primary))] placeholder:text-[rgb(var(--text-tertiary))] focus:outline-none focus:border-[rgba(201,169,98,0.4)] transition-colors disabled:opacity-50" />
-
-      {/* Price delta */}
-      <div className="relative">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[rgb(var(--text-tertiary))]">+$</span>
-        <input
-          type="number"
-          min="0"
-          step="0.25"
-          value={modifier.priceDelta}
-          onChange={e => onUpdate({ priceDelta: e.target.value })}
-          disabled={disabled}
-          placeholder="0.00"
-          className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[rgba(255,255,255,0.04)] border border-[rgba(255,255,255,0.08)] text-sm text-[rgb(var(--text-primary))] placeholder:text-[rgb(var(--text-tertiary))] focus:outline-none focus:border-[rgba(201,169,98,0.4)] transition-colors disabled:opacity-50"
-        />
-      </div>
-
-      <div className="grid grid-cols-3 gap-1">
-        <input value={modifier.minSelections} onChange={e => onUpdate({ minSelections: e.target.value.replace(/\D/g, '').slice(0, 2) })} disabled={disabled} placeholder="Min" className="min-w-0 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-white" />
-        <input value={modifier.maxSelections} onChange={e => onUpdate({ maxSelections: e.target.value.replace(/\D/g, '').slice(0, 2) })} disabled={disabled} placeholder="Max" className="min-w-0 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-white" />
-        <input value={modifier.freeModifierCount} onChange={e => onUpdate({ freeModifierCount: e.target.value.replace(/\D/g, '').slice(0, 2) })} disabled={disabled} placeholder="Free" className="min-w-0 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-white" />
-      </div>
-
-      <div className="flex flex-wrap gap-1">
-        <ToggleChip active={modifier.isRequired} onClick={() => onUpdate({ isRequired: !modifier.isRequired })} disabled={disabled}>Req</ToggleChip>
-        <ToggleChip active={modifier.isDefault} onClick={() => onUpdate({ isDefault: !modifier.isDefault })} disabled={disabled}>Default</ToggleChip>
-        <ToggleChip active={modifier.allowQuantity} onClick={() => onUpdate({ allowQuantity: !modifier.allowQuantity })} disabled={disabled}>Qty</ToggleChip>
-        <ToggleChip active={modifier.printOnKitchenTicket} onClick={() => onUpdate({ printOnKitchenTicket: !modifier.printOnKitchenTicket })} disabled={disabled}>Ticket</ToggleChip>
-      </div>
-
-      <button
-        onClick={onOpenPopup}
-        disabled={disabled}
-        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-          assigned
-            ? 'bg-green-500/10 border-green-500/30 text-green-400 hover:bg-green-500/20'
-            : 'bg-[rgba(255,255,255,0.04)] border-[rgba(255,255,255,0.1)] text-[rgb(var(--text-tertiary))] hover:border-[rgba(201,169,98,0.3)] hover:text-[rgb(var(--gold))]'
-        } disabled:opacity-50`}
-      >
-        {assigned ? (
-          <>
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-            </svg>
-            {count} item{count !== 1 ? 's' : ''}
-          </>
-        ) : (
-          <>
-            <span className="w-2 h-2 rounded-full bg-[rgba(255,255,255,0.2)]" />
-            Assign items
-          </>
-        )}
-      </button>
-
-      {/* Delete */}
-      <button
-        onClick={onRemove}
-        disabled={disabled}
-        className="w-8 h-8 flex items-center justify-center rounded-lg text-[rgb(var(--text-tertiary))] hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-40"
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
     </div>
   )
 }
@@ -414,13 +490,14 @@ function ToggleChip({ active, disabled, onClick, children }: { active: boolean; 
 // ── Item Assignment Popup ──────────────────────────────────────────────────
 
 interface ItemAssignmentPopupProps {
-  modifier: LocalModifier
+  title: string
+  selectedIds: Set<string>
   menuItems: MenuEditorItem[]
   onConfirm: (ids: Set<string>) => void
 }
 
-function ItemAssignmentPopup({ modifier, menuItems, onConfirm }: ItemAssignmentPopupProps) {
-  const [selected, setSelected] = useState<Set<string>>(new Set(modifier.itemIds))
+function ItemAssignmentPopup({ title, selectedIds, menuItems, onConfirm }: ItemAssignmentPopupProps) {
+  const [selected, setSelected] = useState<Set<string>>(new Set(selectedIds))
 
   const toggle = (id: string) => {
     setSelected(prev => {
@@ -455,9 +532,7 @@ function ItemAssignmentPopup({ modifier, menuItems, onConfirm }: ItemAssignmentP
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[rgba(255,255,255,0.07)] flex-shrink-0">
           <div>
-            <p className="text-[rgb(var(--text-primary))] font-semibold text-sm">
-              "{modifier.name || 'Modifier'}" applies to…
-            </p>
+            <p className="text-[rgb(var(--text-primary))] font-semibold text-sm">{title}</p>
             <p className="text-[rgb(var(--text-tertiary))] text-xs mt-0.5">
               {selected.size} of {menuItems.length} item{menuItems.length !== 1 ? 's' : ''} selected
             </p>
