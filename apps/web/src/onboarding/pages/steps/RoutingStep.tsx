@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
 import { supabase } from '../../../shared/lib/supabase'
 import { API_CONFIG } from '../../../shared/api/config'
+import { fetchPosApi } from '../../../shared/api/posClient'
 
 interface RoutingStepProps {
   onboarding: UseOnboardingReturn
@@ -26,18 +27,10 @@ type MenuCategoryRoute = {
   is_active?: boolean
 }
 
-async function routingFetch(restaurantId: string, path = '', options: RequestInit = {}) {
-  const { data: { session } } = await supabase.auth.getSession()
-  const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/kitchen-routing${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      ...(options.headers || {}),
-    },
-  })
-  if (!response.ok) throw new Error(await response.text())
-  return response.json()
+// Kitchen routing is owned by the POS backend; stations, targets, fallback,
+// and category routes all go through it so ticket printing sees the setup.
+function routingFetch(restaurantId: string, path = '', options: RequestInit = {}) {
+  return fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing${path}`, options)
 }
 
 async function menuCategoriesFetch(restaurantId: string, options: RequestInit = {}) {
@@ -77,6 +70,7 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [workingAction, setWorkingAction] = useState<string | null>(null)
+  const loadedRoutesRef = useRef<Map<string, string | null>>(new Map())
 
   const load = async () => {
     if (!restaurantId) return
@@ -88,7 +82,11 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
         menuCategoriesFetch(restaurantId),
       ])
       setConfig(routingData)
-      setCategories(Array.isArray(categoryData?.categories) ? categoryData.categories : [])
+      const loadedCategories = Array.isArray(categoryData?.categories) ? categoryData.categories : []
+      setCategories(loadedCategories)
+      loadedRoutesRef.current = new Map(
+        loadedCategories.map((category: MenuCategoryRoute) => [category.name, category.routing_station_id || null]),
+      )
     } catch {
       setError('Could not load kitchen routing setup.')
     } finally {
@@ -153,27 +151,22 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
     setActionMessage(null)
     setWorkingAction('categoryRoutes')
     try {
-      const stationNamesById = new Map((config?.stations || []).map(station => [station.id, station.name]))
-      const payload = {
-        categories: categories.map(category => {
-          const stationId = category.routing_station_id || null
-          return {
-            id: category.id || undefined,
-            name: category.name,
-            tax_rate_id: category.tax_rate_id || null,
-            routing_station_id: stationId,
-            routing_station_name: stationId ? stationNamesById.get(stationId) || category.routing_station_name || null : null,
-            default_fire_mode: category.default_fire_mode || null,
-            kds_display_group: category.kds_display_group || null,
-            is_active: category.is_active !== false,
-          }
-        }),
+      // Only send categories whose station changed; each save writes an
+      // authoritative kitchen_routing_rules row on the POS backend (the old
+      // menu-categories PUT only set a projection column that ticket routing
+      // ignored).
+      const changed = categories.filter(category =>
+        (category.routing_station_id || null) !== (loadedRoutesRef.current.get(category.name) ?? null),
+      )
+      for (const category of changed) {
+        await routingFetch(restaurantId, '/categories', {
+          method: 'PUT',
+          body: JSON.stringify(category.routing_station_id
+            ? { category: category.name, mode: 'stations', station_ids: [category.routing_station_id] }
+            : { category: category.name, mode: 'inherit', station_ids: [] }),
+        })
       }
-      await menuCategoriesFetch(restaurantId, {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      })
-      setActionMessage('Saved category station routes.')
+      setActionMessage(changed.length ? 'Saved category station routes.' : 'Category routes are already up to date.')
       await load()
     } catch (err) {
       setError(toActionError(err, 'Could not save category routes.'))
@@ -222,10 +215,14 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
     setActionMessage(null)
     setWorkingAction('fallback')
     try {
-      await routingFetch(restaurantId, '/fallback', {
-        method: 'PUT',
-        body: JSON.stringify({ station_id: stationId || null }),
-      })
+      if (stationId) {
+        await routingFetch(restaurantId, '/fallback', {
+          method: 'PUT',
+          body: JSON.stringify({ station_id: stationId }),
+        })
+      } else {
+        await routingFetch(restaurantId, '/fallback', { method: 'DELETE' })
+      }
       const stationNameForId = config?.stations.find(station => station.id === stationId)?.name
       setActionMessage(stationNameForId ? `Fallback station set to ${stationNameForId}.` : 'Fallback station cleared.')
       await load()
