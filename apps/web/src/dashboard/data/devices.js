@@ -17,17 +17,18 @@ export const DEVICE_TYPE_LABELS = {
   desktop: 'Desktop',
 }
 
+// Vocabulary of the consolidated registry (kitchen_output_targets): screens
+// are target_type 'display'; USB/Bluetooth paths live on pos_printer_endpoints
+// rather than the target's connection_type.
 export const TARGET_TYPES = [
   { id: 'printer', label: 'Printer' },
-  { id: 'kds', label: 'KDS screen' },
-  { id: 'expo_screen', label: 'Expo screen' },
+  { id: 'display', label: 'KDS / Expo screen' },
 ]
 
 export const CONNECTION_TYPES = [
   { id: 'network', label: 'Network (IP)' },
-  { id: 'usb', label: 'USB' },
-  { id: 'bluetooth', label: 'Bluetooth' },
-  { id: 'cloud', label: 'Cloud' },
+  { id: 'system', label: 'System queue' },
+  { id: 'display_queue', label: 'Display queue' },
   { id: 'dummy', label: 'Dummy (testing)' },
 ]
 
@@ -82,27 +83,29 @@ export async function fetchPortfolioDevices(restaurantIds) {
 // assignments, the printer registry, print groups (kitchen_stations) with
 // their subscribed targets, and menu categories with their group assignment.
 export async function fetchStoreDeviceConfig(restaurantId) {
-  const [devices, targets, outputTargets, stations, categories, typePolicies, printerEndpoints, sections] = await Promise.all([
+  const [devices, legacyShims, outputTargets, stations, categories, typePolicies, printerEndpoints, sections] = await Promise.all([
     supabase
       .from('pos_devices')
       .select('id, restaurant_id, name, device_type, status, last_seen_at, created_at, revenue_center_id, idle_lock_seconds, manager_idle_lock_seconds, absolute_ttl_seconds, lock_after_check_save, persist_manager_session, observed_capabilities, hardware_config, capabilities_reported_at, printers:pos_device_printers(role, target_id)')
       .eq('restaurant_id', restaurantId)
       .order('name'),
+    // Transitional, read-only: assignments written before the registry
+    // consolidation store a legacy pos_routing_targets shim id whose
+    // config.physical_target_id points at the kitchen_output_targets row.
+    // Remove together with the deploy-gated remap migration.
     supabase
       .from('pos_routing_targets')
-      .select('id, name, target_type, connection_type, config, is_active')
-      .eq('restaurant_id', restaurantId)
-      .order('name'),
+      .select('id, name, config')
+      .eq('restaurant_id', restaurantId),
     supabase
       .from('kitchen_output_targets')
       .select('id, name, target_type, connection_type, config, is_active, usage, pos_device_id, archived_at, created_at')
       .eq('restaurant_id', restaurantId)
-      .eq('target_type', 'printer')
       .is('archived_at', null)
       .order('name'),
     supabase
       .from('kitchen_stations')
-      .select('id, name, is_active, kds_enabled, station_type, subscriptions:pos_station_targets(target_id, priority, is_active)')
+      .select('id, name, is_active, kds_enabled, station_type, subscriptions:kitchen_station_targets(id, target_id, priority, is_active, archived_at)')
       .eq('restaurant_id', restaurantId)
       .is('archived_at', null)
       .order('name'),
@@ -128,21 +131,30 @@ export async function fetchStoreDeviceConfig(restaurantId) {
       .eq('is_active', true)
       .order('name'),
   ])
-  const firstError = devices.error || targets.error || outputTargets.error || stations.error || categories.error || typePolicies.error || printerEndpoints.error || sections.error
+  const firstError = devices.error || legacyShims.error || outputTargets.error || stations.error || categories.error || typePolicies.error || printerEndpoints.error || sections.error
   if (firstError) throw firstError
-  const compatibilityTargets = new Map((targets.data || []).map((target) => [target.id, target]))
+  const kitchenTargets = outputTargets.data || []
+  const kitchenIds = new Set(kitchenTargets.map((target) => target.id))
+  const shims = new Map((legacyShims.data || []).map((target) => [target.id, target]))
   return {
     devices: (devices.data || []).map((device) => ({
       ...device,
       printers: (device.printers || []).map((assignment) => ({
         ...assignment,
-        physical_target_id: compatibilityTargets.get(assignment.target_id)?.config?.physical_target_id || null,
-        legacy_target_name: compatibilityTargets.get(assignment.target_id)?.name || null,
+        // New assignments store the kitchen target id directly; legacy rows
+        // resolve through the shim's physical_target_id.
+        physical_target_id: kitchenIds.has(assignment.target_id)
+          ? assignment.target_id
+          : shims.get(assignment.target_id)?.config?.physical_target_id || null,
+        legacy_target_name: shims.get(assignment.target_id)?.name || null,
       })),
     })),
-    targets: targets.data || [],
-    outputTargets: outputTargets.data || [],
-    stations: stations.data || [],
+    targets: kitchenTargets,
+    outputTargets: kitchenTargets,
+    stations: (stations.data || []).map((station) => ({
+      ...station,
+      subscriptions: (station.subscriptions || []).filter((link) => !link.archived_at),
+    })),
     categories: categories.data || [],
     typePolicies: typePolicies.data || [],
     printerEndpoints: printerEndpoints.data || [],
@@ -171,70 +183,68 @@ export async function updateDevice(deviceId, patch) {
   if (error) throw error
 }
 
-export async function createPrinterTarget(restaurantId, { name, target_type, connection_type, host, port }) {
+// Printer/screen registry writes go through the POS kitchen-routing API — the
+// single owner of kitchen_output_targets / kitchen_station_targets /
+// kitchen_routing_rules — so ticket printing sees every change.
+export function createPrinterTarget(restaurantId, { name, target_type, connection_type, host, port, usage }) {
   const config = {}
   if (host) config.host = host
   if (port) config.port = Number(port) || port
-  const { data, error } = await supabase
-    .from('pos_routing_targets')
-    .insert({
-      restaurant_id: restaurantId,
+  return fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing/targets`, {
+    method: 'POST',
+    body: JSON.stringify({
       name,
       target_type: target_type || 'printer',
       connection_type: connection_type || (host ? 'network' : 'dummy'),
       config,
       is_active: true,
-    })
-    .select()
-    .single()
-  if (error) throw error
-  return data
+      // Panel-created printers are usable for both kitchen tickets and
+      // receipts, matching how the pre-consolidation registry behaved.
+      usage: usage || 'both',
+    }),
+  })
 }
 
-export async function updatePrinterTarget(targetId, patch) {
-  const { error } = await supabase
-    .from('pos_routing_targets')
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('id', targetId)
-  if (error) throw error
+export function updatePrinterTarget(restaurantId, target, patch) {
+  return fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing/targets/${target.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      name: target.name,
+      target_type: target.target_type || 'printer',
+      connection_type: target.connection_type || 'network',
+      config: target.config || {},
+      usage: target.usage || 'kitchen',
+      pos_device_id: target.pos_device_id || null,
+      is_active: target.is_active,
+      ...patch,
+    }),
+  })
 }
 
-const slugify = (name) =>
-  name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60)
-
-export async function createPrintGroup(restaurantId, name) {
-  const { data, error } = await supabase
-    .from('kitchen_stations')
-    .insert({ restaurant_id: restaurantId, name, slug: slugify(name), is_active: true })
-    .select()
-    .single()
-  if (error) throw error
-  return data
+export function createPrintGroup(restaurantId, name) {
+  return fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing/stations`, {
+    method: 'POST',
+    body: JSON.stringify({ name, is_active: true }),
+  })
 }
 
-export async function setGroupPrinter(stationId, targetId, subscribed) {
-  if (subscribed) {
-    const { error } = await supabase
-      .from('pos_station_targets')
-      .upsert({ station_id: stationId, target_id: targetId, priority: 0, is_active: true }, { onConflict: 'station_id,target_id' })
-    if (error) throw error
-  } else {
-    const { error } = await supabase
-      .from('pos_station_targets')
-      .delete()
-      .eq('station_id', stationId)
-      .eq('target_id', targetId)
-    if (error) throw error
-  }
+export function setGroupPrinter(restaurantId, stationId, targetId, subscribed) {
+  return fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing/station-targets`, {
+    method: 'POST',
+    body: JSON.stringify({ station_id: stationId, target_id: targetId, priority: 0, is_active: subscribed }),
+  })
 }
 
-// stationId null unassigns the category from any print group.
-export async function setCategoryPrintGroup(categoryId, stationId) {
-  const { error } = await supabase
-    .from('menu_categories')
-    .update({ routing_station_id: stationId })
-    .eq('id', categoryId)
-  if (error) throw error
+// stationId null unassigns the category from any print group. Writes an
+// authoritative routing rule (the old direct routing_station_id update was a
+// projection ticket printing ignored).
+export function setCategoryPrintGroup(restaurantId, categoryName, stationId) {
+  return fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing/categories`, {
+    method: 'PUT',
+    body: JSON.stringify(stationId
+      ? { category: categoryName, mode: 'stations', station_ids: [stationId] }
+      : { category: categoryName, mode: 'inherit', station_ids: [] }),
+  })
 }
 
 // The portal can't reach a LAN printer itself; it queues a request that an

@@ -115,6 +115,7 @@ export function can(permissions: PermissionMap | null | undefined, key: string):
 // always visible (Home). Owners bypass this entirely.
 export const TAB_PERMISSIONS: Record<string, string> = {
   reports: 'reports.view',
+  checks: 'reports.view',
   'close-day': 'operations.close_day',
   setup: 'settings.edit',
   ui: 'settings.edit',

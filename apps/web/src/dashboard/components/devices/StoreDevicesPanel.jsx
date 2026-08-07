@@ -608,7 +608,7 @@ export default function StoreDevicesPanel({ restaurantId }) {
   const cashDrawerTargetIds = useMemo(() => new Set(
     (config?.devices || []).flatMap((device) => (device.printers || [])
       .filter((assignment) => assignment.role === 'cash_drawer')
-      .map((assignment) => assignment.target_id))
+      .map((assignment) => assignment.physical_target_id || assignment.target_id))
   ), [config?.devices])
 
   // Test tickets print via an online POS device's LAN bridge, so the request
@@ -840,7 +840,7 @@ export default function StoreDevicesPanel({ restaurantId }) {
                     variant="ghost"
                     size="sm"
                     disabled={busy}
-                    onClick={() => mutate(() => updatePrinterTarget(target.id, { is_active: !target.is_active }))}
+                    onClick={() => mutate(() => updatePrinterTarget(restaurantId, target, { is_active: !target.is_active }))}
                   >
                     {target.is_active ? 'Disable' : 'Enable'}
                   </Button>
@@ -955,7 +955,7 @@ export default function StoreDevicesPanel({ restaurantId }) {
                           type="checkbox"
                           checked={subscribed.has(target.id)}
                           disabled={busy}
-                          onChange={(e) => mutate(() => setGroupPrinter(station.id, target.id, e.target.checked))}
+                          onChange={(e) => mutate(() => setGroupPrinter(restaurantId, station.id, target.id, e.target.checked))}
                           className="h-3.5 w-3.5 accent-[var(--shell-accent)]"
                         />
                         <span>{target.name}</span>
@@ -999,7 +999,7 @@ export default function StoreDevicesPanel({ restaurantId }) {
                     <select
                       value={category.routing_station_id || ''}
                       disabled={busy}
-                      onChange={(e) => mutate(() => setCategoryPrintGroup(category.id, e.target.value || null))}
+                      onChange={(e) => mutate(() => setCategoryPrintGroup(restaurantId, category.name, e.target.value || null))}
                       className="min-h-[30px] rounded-lg border border-dash-border bg-[var(--glass-bg)] px-2 text-xs text-dash-cream outline-none transition focus:border-shell-accent/60"
                     >
                       <option value="">— unrouted —</option>

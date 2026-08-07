@@ -13,6 +13,7 @@ import { useAuth } from '../../auth'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import { posCheckLedgerApi, posRefundApi } from '../../shared/api/posClient'
 import { queryKeys } from '../../shared/query'
+import { activityTitle, activityWho, groupActivityIntoSessions } from './checkActivity'
 
 const LIVE_REFRESH_MS = 15000
 
@@ -124,6 +125,9 @@ export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All ch
   const [refundPresetId, setRefundPresetId] = useState('')
   const [managerPasscode, setManagerPasscode] = useState('')
   const [refundRequestId, setRefundRequestId] = useState(null)
+  // 'receipt' shows the check like a printed receipt; 'log' shows every
+  // action it underwent, grouped into a section per (re)open.
+  const [view, setView] = useState('receipt')
   const detailQuery = useQuery({
     queryKey: queryKeys.checkLedgerDetail(restaurantId, orderId),
     queryFn: ({ signal }) => posCheckLedgerApi.detail(restaurantId, orderId, signal),
@@ -135,6 +139,7 @@ export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All ch
   const items = check.items || []
   const payments = detail?.payments || []
   const activity = detail?.activity || []
+  const sessions = useMemo(() => groupActivityIntoSessions(activity), [activity])
   const canRefund = access.can('payments.refund')
   const refundReasonsQuery = useQuery({
     queryKey: ['pos-refund-reason-presets', restaurantId],
@@ -239,6 +244,53 @@ export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All ch
             <Metric title="Total" value={money(check.total)} />
           </div>
 
+          <div className="mt-4 flex w-fit gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1">
+            {[['receipt', 'Receipt'], ['log', `Activity log${activity.length ? ` (${activity.length})` : ''}`]].map(([id, text]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setView(id)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${view === id ? 'bg-white text-black' : 'text-dash-secondary hover:text-dash-cream'}`}
+              >
+                {text}
+              </button>
+            ))}
+          </div>
+
+          {view === 'log' && (
+            <div className="mt-5">
+              {sessions.length === 0 ? (
+                <p className="text-sm text-dash-tertiary">No activity recorded for this check yet.</p>
+              ) : sessions.map((session, index) => (
+                <div key={`${session.label}-${index}`} className={index > 0 ? 'mt-6' : ''}>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full border border-dash-gold/40 bg-dash-gold/10 px-2.5 py-0.5 text-[11px] font-semibold text-dash-gold">
+                      {session.label}{sessions.length > 1 ? ` · ${index + 1} of ${sessions.length}` : ''}
+                    </span>
+                    {session.startedAt && <span className="text-xs text-dash-tertiary">{shortDateTime(session.startedAt)}</span>}
+                  </div>
+                  <ul className="mt-2 space-y-1.5">
+                    {session.entries.map((entry) => (
+                      <li key={`${entry.source}-${entry.id}`} className="rounded-xl bg-white/[0.04] px-3 py-2 text-xs">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <span className="font-semibold text-dash-cream">{activityTitle(entry)}</span>
+                          <span className="shrink-0 text-dash-tertiary">{shortDateTime(entry.action_occurred_at || entry.created_at)}</span>
+                        </div>
+                        {(activityWho(entry) || entry.reason) && (
+                          <p className="mt-0.5 text-dash-tertiary">
+                            {activityWho(entry)}
+                            {entry.reason ? `${activityWho(entry) ? ' · ' : ''}${entry.reason}` : ''}
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {view === 'receipt' && (
           <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_360px]">
             <div>
               <p className="label-mono">Items</p>
@@ -396,29 +448,9 @@ export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All ch
                 )}
               </div>
 
-              <div>
-                <p className="label-mono">Activity</p>
-                {activity.length === 0 ? (
-                  <p className="mt-2 text-sm text-dash-tertiary">No audit activity for this check.</p>
-                ) : (
-                  <ul className="mt-2 max-h-72 space-y-2 overflow-y-auto pr-1">
-                    {activity.map((entry) => (
-                      <li key={`${entry.source}-${entry.id}`} className="rounded-xl bg-white/[0.04] p-3 text-xs">
-                        <p className="text-dash-secondary">
-                          <span className="font-semibold text-dash-cream">{label(entry.action || entry.source)}</span>
-                          {entry.actor_name ? ` · ${entry.actor_name}` : ''}
-                        </p>
-                        <p className="mt-0.5 text-dash-tertiary">
-                          {shortDateTime(entry.created_at)}
-                          {entry.reason ? ` · ${entry.reason}` : ''}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
             </div>
           </div>
+          )}
         </>
       )}
     </div>

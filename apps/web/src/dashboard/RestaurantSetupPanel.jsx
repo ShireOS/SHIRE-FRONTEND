@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../shared/lib/supabase'
 import { queryClient, queryKeys, fetchCached, fetchWithSupabaseAuth, STALE_TIMES } from '../shared/query'
+import { fetchPosApi } from '../shared/api/posClient'
 import { FloorPlanEditor } from '../onboarding/components/FloorPlanEditor'
 import { normalizeFloorPlanTablesForEditor } from '../onboarding/components/FloorPlanCanvas'
 import { FloorPlanTableSetup } from '../onboarding/components/FloorPlanTableSetup'
@@ -771,7 +772,7 @@ function KitchenRoutingSetup({ restaurantId }) {
     try {
       const next = await fetchCached(
         queryKeys.kitchenRouting(restaurantId),
-        () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing`),
+        () => fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing`),
         force ? 0 : STALE_TIMES.setup,
       )
       setConfig(next)
@@ -789,7 +790,7 @@ function KitchenRoutingSetup({ restaurantId }) {
 
   const createStation = async () => {
     if (!stationName.trim()) return
-    await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing/stations`, {
+    await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing/stations`, {
       method: 'POST',
       body: JSON.stringify({ name: stationName.trim(), is_active: true }),
     })
@@ -798,7 +799,7 @@ function KitchenRoutingSetup({ restaurantId }) {
   }
 
   const createTarget = async () => {
-    await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing/targets`, {
+    await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing/targets`, {
       method: 'POST',
       body: JSON.stringify({
         name: targetName.trim() || 'Kitchen Printer',
@@ -813,7 +814,7 @@ function KitchenRoutingSetup({ restaurantId }) {
   }
 
   const assignTarget = async (stationId, targetId) => {
-    await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing/station-targets`, {
+    await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing/station-targets`, {
       method: 'POST',
       body: JSON.stringify({ station_id: stationId, target_id: targetId, priority: 0, is_active: true }),
     })
@@ -822,7 +823,7 @@ function KitchenRoutingSetup({ restaurantId }) {
 
   const setFallback = async (stationId) => {
     try {
-      await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing/fallback`, {
+      await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing/fallback`, {
         method: 'PUT',
         body: JSON.stringify({ station_id: stationId }),
       })
@@ -834,11 +835,15 @@ function KitchenRoutingSetup({ restaurantId }) {
 
   const routeCategory = async (category) => {
     if (!selectedStationId) return
-    await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/kitchen-routing/rules`, {
-      method: 'POST',
-      body: JSON.stringify({ source_type: 'category', category, station_id: selectedStationId, target_types: ['printer', 'display'] }),
-    })
-    await load(true)
+    try {
+      await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing/categories`, {
+        method: 'PUT',
+        body: JSON.stringify({ category, mode: 'stations', station_ids: [selectedStationId] }),
+      })
+      await load(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the category route.')
+    }
   }
 
   return (

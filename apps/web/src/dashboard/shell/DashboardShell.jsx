@@ -24,6 +24,7 @@ import {
   Palette,
   Percent,
   Printer,
+  ReceiptText,
   Search,
   Settings,
   ShoppingCart,
@@ -147,6 +148,7 @@ function hiddenSurfaces(auth) {
 const STORE_NAV = [
   { id: 'analytics', label: 'Home', icon: Home },
   { id: 'reports', label: 'Reports', icon: LayoutGrid },
+  { id: 'checks', label: 'Checks', icon: ReceiptText },
   { id: 'close-day', label: 'Close Day', icon: CalendarCheck },
   { id: 'setup', label: 'Setup', icon: Wrench },
   { id: 'ui', label: 'UI Editor', icon: Palette },
