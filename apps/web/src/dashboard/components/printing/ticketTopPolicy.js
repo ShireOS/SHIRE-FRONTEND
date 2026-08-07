@@ -1,17 +1,28 @@
-// The editable schema cannot reproduce the legacy combined table/order/time
-// row byte-for-byte. This starter preserves every piece of operational ticket
-// information and is materialized only after the user explicitly chooses to
-// replace the legacy block with editable rows.
+// The editable schema cannot reproduce the legacy heading byte-for-byte: that
+// one is a two-column row, and this schema renders one field per line. What
+// the starter can do is preserve every operational field and put them in the
+// same priority order, so a restaurant that opens the builder does not quietly
+// lose the identification a cook works from.
+//
+// The check number leads. It is the one thing anyone says out loud, and in the
+// legacy heading it is the first and largest thing on the ticket. It sits at
+// 'large' rather than 'double' deliberately — 'double' is double *width*, which
+// spaces the characters out ("C H K  4 1 8") and wraps a long number across
+// lines; 'large' is double height at full width, which is what reads from
+// across a kitchen.
+//
+// Materialized only when the user explicitly chooses to replace the legacy
+// block with editable rows.
 export const TICKET_TOP_STARTER = {
   header: [
+    { type: 'field', field: 'check_number', size: 'large', bold: true },
     { type: 'field', field: 'order_type', size: 'large', bold: true },
     { type: 'field', field: 'course', size: 'large', bold: true },
   ],
   info: [
     { type: 'field', field: 'table' },
-    { type: 'field', field: 'check_number' },
-    { type: 'field', field: 'time' },
     { type: 'field', field: 'server' },
+    { type: 'field', field: 'time' },
   ],
 }
 
