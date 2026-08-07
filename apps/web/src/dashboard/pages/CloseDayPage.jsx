@@ -13,6 +13,12 @@ import {
 } from 'lucide-react'
 import { posCloseDayApi } from '../../shared/api/posClient'
 import { queryClient } from '../../shared/query'
+import {
+  ReconciliationBanner,
+  acknowledgeReconciliation,
+  failedChecks,
+  fetchReconciliation,
+} from '../../shared/components/ReconciliationBanner'
 import { useAuth } from '../../auth'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import CashCloseDaySettings from '../components/CashCloseDaySettings'
@@ -123,6 +129,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const [result, setResult] = useState(null)
   const [clockOutEntryIds, setClockOutEntryIds] = useState([])
   const [recentActivityConfirmed, setRecentActivityConfirmed] = useState(false)
+  const [recon, setRecon] = useState(null)
   const attemptId = useRef(newAttemptId())
   const initializedCash = useRef(false)
 
@@ -132,6 +139,13 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     try {
       const next = await posCloseDayApi.preview(restaurantId)
       setPreview(next)
+      // Independent verification of the preview's money totals — advisory
+      // only; the preview numbers stay authoritative either way.
+      if (next?.business_date) {
+        fetchReconciliation(restaurantId, next.business_date, next.business_date)
+          .then(setRecon)
+          .catch(() => setRecon(null))
+      }
       setClockOutEntryIds((next.open_timeclock_entries || []).map((entry) => entry.id))
       if (!initializedCash.current) {
         const reconciliation = next.cash_reconciliation || {}
@@ -177,6 +191,35 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
 
   const updateCash = (key, value) => setCash((current) => ({ ...current, [key]: value }))
 
+  // Close-day preview totals vs the independent recompute (client-side diff:
+  // the preview is POS-computed, the recompute comes from raw rows).
+  const reconExtraChecks = (() => {
+    if (!recon?.recomputed || !preview || isClosed) return []
+    const pairs = [
+      ['closeday_total_collected', 'Collected (close-day preview vs transactions)', preview.total_collected, recon.recomputed.total_collected],
+      ['closeday_tips', 'Tips (close-day preview vs payments)', preview.tips, recon.recomputed.tips_total],
+      ['closeday_cash_collected', 'Cash collected (close-day preview vs payments)', preview.cash_collected, recon.recomputed.cash_collected],
+      ['closeday_card_collected', 'Card collected (close-day preview vs payments)', preview.card_collected, recon.recomputed.card_collected],
+    ]
+    return pairs
+      .filter(([, , previewValue]) => previewValue != null)
+      .map(([id, label, previewValue, recomputed]) => {
+        const delta = Math.round((Number(previewValue) - Number(recomputed)) * 100) / 100
+        return {
+          id,
+          label,
+          report_value: Number(previewValue),
+          recomputed_value: Number(recomputed),
+          delta,
+          ok: Math.abs(delta) <= 0.011,
+          severity: 'warning',
+          order_ids: [],
+          note: null,
+        }
+      })
+  })()
+  const reconMismatches = failedChecks(recon, reconExtraChecks)
+
   const handleConflict = (nextError) => {
     const detail = nextError?.detail
     if (detail && typeof detail === 'object') {
@@ -208,6 +251,21 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       setError(`Explain the ${money(variance)} cash variance before closing.`)
       setModal(null)
       return
+    }
+    // Verification mismatches never block the close — but finalizing over
+    // them is an explicit, logged decision.
+    if (reconMismatches.length > 0) {
+      const proceed = window.confirm(
+        `Verification found ${reconMismatches.length} mismatch${reconMismatches.length === 1 ? '' : 'es'} between this close-out and the raw transactions ` +
+        `(e.g. ${reconMismatches[0].label}). The close will use the numbers shown. Finalize anyway?`,
+      )
+      if (!proceed) return
+      acknowledgeReconciliation(restaurantId, {
+        context: 'close_day',
+        start_date: preview.business_date,
+        end_date: preview.business_date,
+        mismatches: reconMismatches.slice(0, 20),
+      }).catch(() => {}) // audit logging must never block the close
     }
     setClosing(true)
     setError('')
@@ -312,6 +370,14 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         <Metric icon={Users} label="Clocked in" value={openEmployees.length} tone={openEmployees.length ? 'warning' : 'default'} />
         <Metric icon={Banknote} label="Collected" value={money(preview?.total_collected)} />
       </section>
+
+      {!isClosed && recon && (
+        <ReconciliationBanner
+          recon={recon}
+          extraChecks={reconExtraChecks}
+          filename={`close-day-verification-${preview?.business_date || 'today'}.csv`}
+        />
+      )}
 
       {isClosed ? (
         <section className="flex items-start gap-4 border border-emerald-400/35 bg-emerald-500/10 p-5">
