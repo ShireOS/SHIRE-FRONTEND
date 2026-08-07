@@ -78,8 +78,21 @@ const ALL_PRICE_RULE_DAYS = [0, 1, 2, 3, 4, 5, 6]
 
 function DetailCard({ title, hint, children, actions, handleProps = null, collapsed = false, onToggleCollapse = null }) {
   return (
-    <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="relative rounded-xl border border-white/10 bg-white/[0.03] p-5">
+      {/* Pinned top-right so it never moves when the hint/actions collapse
+          away — only the triangle's orientation changes. */}
+      {onToggleCollapse && (
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          title={collapsed ? 'Expand this section' : 'Collapse this section — saved for this item'}
+          onClick={onToggleCollapse}
+          className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-lg border border-white/15 bg-white/[0.05] text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream"
+        >
+          <span aria-hidden="true" className={`text-lg leading-none transition-transform duration-150 ${collapsed ? '-rotate-90' : ''}`}>▾</span>
+        </button>
+      )}
+      <div className={`flex flex-wrap items-start justify-between gap-3 ${onToggleCollapse ? 'pr-12' : ''}`}>
         <div className="flex min-w-0 items-start gap-2">
           {handleProps && <DragHandle handleProps={handleProps} title="Drag to move this section up or down" />}
           <div>
@@ -87,20 +100,7 @@ function DetailCard({ title, hint, children, actions, handleProps = null, collap
             {!collapsed && hint && <p className="mt-1 text-sm text-dash-tertiary">{hint}</p>}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {!collapsed && actions}
-          {onToggleCollapse && (
-            <button
-              type="button"
-              aria-expanded={!collapsed}
-              title={collapsed ? 'Expand this section' : 'Collapse this section — saved for this item'}
-              onClick={onToggleCollapse}
-              className="grid h-8 w-8 place-items-center rounded-lg border border-white/10 text-dash-tertiary transition hover:border-dash-gold/60 hover:text-dash-cream"
-            >
-              {collapsed ? '▸' : '▾'}
-            </button>
-          )}
-        </div>
+        {!collapsed && actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
       {!collapsed && <div className="mt-4">{children}</div>}
     </section>
@@ -388,11 +388,26 @@ function QuestionEditor({
   const effectiveMode = depth === 0 ? effectivePromptMode(group, itemOverride) : null
 
   return (
-    <div className={depth > 0 ? 'mt-2 rounded-xl border border-dash-gold/20 bg-white/[0.02] p-3' : 'rounded-xl border border-white/10 bg-white/[0.025] p-4'}>
+    <div className={depth > 0 ? 'mt-2 rounded-xl border border-dash-gold/20 bg-white/[0.02] p-3' : 'relative rounded-xl border border-white/10 bg-white/[0.025] p-4'}>
+      {/* Pinned top-right like every widget's collapse control. */}
+      {depth === 0 && onToggleCollapse && (
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          title={collapsed
+            ? `Expand — ${group.options.length} option${group.options.length === 1 ? '' : 's'} hidden`
+            : 'Collapse this question to its header — saved for this item'}
+          onClick={onToggleCollapse}
+          className="absolute right-3 top-3 flex h-9 w-16 items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.05] text-xs font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream"
+        >
+          <span aria-hidden="true" className={`text-base leading-none transition-transform duration-150 ${collapsed ? '-rotate-90' : ''}`}>▾</span>
+          {group.options.length}
+        </button>
+      )}
       {parentModifierName && (
         <p className="label-mono mb-2">Asked when “{parentModifierName}” is picked</p>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className={`flex flex-wrap items-center justify-between gap-2 ${depth === 0 && onToggleCollapse ? 'pr-16' : ''}`}>
         <div className="flex min-w-64 flex-1 items-center gap-2">
           {depth === 0 && positionLabel != null && (
             <div className="flex flex-col items-center gap-1">
@@ -412,30 +427,17 @@ function QuestionEditor({
               Inherited · {inheritedFromName}
             </span>
           )}
-          {sharedElsewhere && source !== 'category' && (
-            <span className="whitespace-nowrap rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-1 text-[11px] font-semibold text-amber-200" title="Edits here change this question everywhere it is used.">
-              Used by {usedByCount} item{usedByCount === 1 ? '' : 's'}
-            </span>
-          )}
           {group.no_print && (
             <span className="whitespace-nowrap rounded-full border border-white/15 bg-white/[0.06] px-2 py-1 text-[11px] font-semibold text-dash-tertiary" title="Nothing in this question prints on kitchen tickets">
               No print
             </span>
           )}
         </div>
-        <div className="flex flex-wrap gap-2">
-          {depth === 0 && onToggleCollapse && (
-            <button
-              type="button"
-              aria-expanded={!collapsed}
-              title={collapsed
-                ? `Expand — ${group.options.length} option${group.options.length === 1 ? '' : 's'} hidden`
-                : 'Collapse this question to its header — saved for this item'}
-              onClick={onToggleCollapse}
-              className="grid h-8 min-w-8 place-items-center rounded-lg border border-white/10 px-1.5 text-xs font-semibold text-dash-tertiary transition hover:border-dash-gold/60 hover:text-dash-cream"
-            >
-              {collapsed ? `▸ ${group.options.length}` : '▾'}
-            </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {sharedElsewhere && source !== 'category' && (
+            <span className="whitespace-nowrap rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-1 text-[11px] font-semibold text-amber-200" title="Edits here change this question everywhere it is used.">
+              Used by {usedByCount} item{usedByCount === 1 ? '' : 's'}
+            </span>
           )}
           {depth === 0 && itemId && (
             <SelectInput

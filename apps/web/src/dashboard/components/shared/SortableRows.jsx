@@ -3,6 +3,7 @@ import { DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, us
 import { restrictToVerticalAxis, restrictToParentElement } from '@dnd-kit/modifiers'
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { autoScrollVelocity, findScrollableAncestor } from './autoScroll'
 
 const sameOrder = (a, b) => a.length === b.length && a.every((id, index) => id === b[index])
 const sameMembers = (a, b) => a.length === b.length && a.every(id => b.includes(id))
@@ -40,6 +41,53 @@ export function SortableRows({ ids, onReorder, disabled = false, className, rend
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
+
+  // Pointer-edge auto-scroll (dnd-kit's built-in scroller is disabled below —
+  // it keys off the clamped drag rect, which restrictToParentElement can pin
+  // away from the viewport edge, so long lists never scrolled). While a drag
+  // is active, holding the pointer near the top/bottom of the scroll viewport
+  // scrolls the nearest scrollable ancestor — or the page — under the drag.
+  const containerRef = useRef(null)
+  const autoScrollStateRef = useRef(null)
+
+  const stopAutoScroll = () => {
+    const state = autoScrollStateRef.current
+    if (!state) return
+    cancelAnimationFrame(state.raf)
+    window.removeEventListener('pointermove', state.onPointerMove)
+    autoScrollStateRef.current = null
+  }
+
+  const startAutoScroll = () => {
+    stopAutoScroll()
+    const target = findScrollableAncestor(containerRef.current)
+    const state = {
+      pointerY: NaN,
+      raf: 0,
+      onPointerMove: (event) => { state.pointerY = event.clientY },
+    }
+    const step = () => {
+      let top = 0
+      let bottom = window.innerHeight
+      if (target) {
+        const rect = target.getBoundingClientRect()
+        top = Math.max(0, rect.top)
+        bottom = Math.min(window.innerHeight, rect.bottom)
+      }
+      const velocity = autoScrollVelocity(state.pointerY, top, bottom)
+      if (velocity !== 0) {
+        if (target) target.scrollTop += velocity
+        else window.scrollBy(0, velocity)
+      }
+      state.raf = requestAnimationFrame(step)
+    }
+    window.addEventListener('pointermove', state.onPointerMove)
+    state.raf = requestAnimationFrame(step)
+    autoScrollStateRef.current = state
+  }
+
+  useEffect(() => stopAutoScroll, [])
+
   const handleDragEnd = (event) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
@@ -68,10 +116,16 @@ export function SortableRows({ ids, onReorder, disabled = false, className, rend
       sensors={sensors}
       collisionDetection={closestCenter}
       modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-      onDragEnd={handleDragEnd}
+      autoScroll={false}
+      onDragStart={startAutoScroll}
+      onDragCancel={stopAutoScroll}
+      onDragEnd={(event) => {
+        stopAutoScroll()
+        handleDragEnd(event)
+      }}
     >
       <SortableContext items={localIds} strategy={verticalListSortingStrategy}>
-        <div className={className}>
+        <div ref={containerRef} className={className}>
           {localIds.map(id => (
             <SortableRow key={id} id={id} disabled={disabled} renderRow={renderRow} />
           ))}
