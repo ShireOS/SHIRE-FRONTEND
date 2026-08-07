@@ -134,6 +134,7 @@ function EnterprisePage({ item, title, children }) {
 const TABS = [
   { id: 'analytics', label: 'Analytics' },
   { id: 'reports', label: 'Reports' },
+  { id: 'checks', label: 'Checks' },
   { id: 'close-day', label: 'Close Day' },
   { id: 'setup', label: 'Edit Setup' },
   { id: 'ui', label: 'UI Editor' },
@@ -942,9 +943,19 @@ function LegacyAnalyticsDashboard({ restaurant }) {
         </>
       )}
 
-      {/* Independent of the analytics payload: reads the POS check ledger
-          directly and hides itself when the viewer lacks reports.view. */}
-      <CheckLedgerSection restaurantId={restaurantId} />
+      {/* The full check ledger lives on its own Checks tab now — this is
+          just the pointer so Home stays scannable. */}
+      <Link
+        to="../checks"
+        relative="path"
+        className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-4 transition hover:border-dash-gold/40 hover:bg-white/[0.05]"
+      >
+        <div>
+          <p className="text-sm font-semibold text-dash-cream">Check ledger</p>
+          <p className="mt-0.5 text-xs text-dash-tertiary">Active and closed checks, receipts, and per-check activity logs.</p>
+        </div>
+        <span className="text-dash-gold">→</span>
+      </Link>
         </>
       )}
 
@@ -5125,6 +5136,7 @@ export function RestaurantWorkspace({
             <LegacyAnalyticsDashboard restaurant={restaurant} />
           </>
         )}
+        {activeTab === 'checks' && <CheckLedgerSection restaurantId={restaurantId} />}
         {activeTab === 'reports' && <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurant?.name} canConfigureServerReceipt={backOfficeAccess.can('settings.edit')} />}
         {activeTab === 'close-day' && <CloseDayPage restaurantId={restaurantId} restaurantName={restaurant?.name} />}
         {activeTab === 'ui' && (
@@ -5176,6 +5188,7 @@ export function RestaurantWorkspace({
 const WORKSPACE_BREADCRUMB_LABELS = {
   analytics: 'Overview',
   reports: 'Reports',
+  checks: 'Checks',
   'close-day': 'Close Day',
   setup: 'Setup',
   'menu-workspace': 'POS Menus',
