@@ -1419,6 +1419,12 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         prep_time_minutes: category.prep_time_minutes === '' || category.prep_time_minutes == null ? null : Number(category.prep_time_minutes),
         kds_display_group: category.kds_display_group || null,
         is_active: true,
+        // Visible hours — always sent explicitly so clearing works; the
+        // backend preserves windows only for callers that omit the mode.
+        availability_mode: category.availability_mode === 'schedule' ? 'schedule' : 'always',
+        availability_days: Array.isArray(category.availability_days) && category.availability_days.length > 0 ? category.availability_days : [0, 1, 2, 3, 4, 5, 6],
+        availability_start_time: category.availability_start_time ? String(category.availability_start_time).slice(0, 5) : null,
+        availability_end_time: category.availability_end_time ? String(category.availability_end_time).slice(0, 5) : null,
       })),
   })
 
@@ -2228,6 +2234,58 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                   </div>
 
                   <div className="mt-4">
+                    <p className="label-mono mb-2">Visible hours</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <SelectInput
+                        className="!w-auto"
+                        title="Outside these hours the category hides on the POS and its items can't be rung in"
+                        value={category.availability_mode === 'schedule' ? 'schedule' : 'always'}
+                        onChange={event => updateCategory(index, { availability_mode: event.target.value })}
+                      >
+                        <option value="always">Always visible</option>
+                        <option value="schedule">Visible during set hours</option>
+                      </SelectInput>
+                      {category.availability_mode === 'schedule' && (
+                        <>
+                          {DAYS_SHORT.map((day, dayIndex) => {
+                            const days = Array.isArray(category.availability_days) && category.availability_days.length > 0 ? category.availability_days : [0, 1, 2, 3, 4, 5, 6]
+                            const selected = days.includes(dayIndex)
+                            return (
+                              <SmallButton
+                                key={day}
+                                variant={selected ? 'primary' : 'secondary'}
+                                onClick={() => updateCategory(index, {
+                                  availability_days: selected ? days.filter(value => value !== dayIndex) : [...days, dayIndex].sort((a, b) => a - b),
+                                })}
+                              >
+                                {day}
+                              </SmallButton>
+                            )
+                          })}
+                          <TextInput
+                            type="time"
+                            className="!w-auto"
+                            value={category.availability_start_time ? String(category.availability_start_time).slice(0, 5) : ''}
+                            onChange={event => updateCategory(index, { availability_start_time: event.target.value })}
+                          />
+                          <span className="text-xs text-dash-tertiary">to</span>
+                          <TextInput
+                            type="time"
+                            className="!w-auto"
+                            value={category.availability_end_time ? String(category.availability_end_time).slice(0, 5) : ''}
+                            onChange={event => updateCategory(index, { availability_end_time: event.target.value })}
+                          />
+                        </>
+                      )}
+                    </div>
+                    {category.availability_mode === 'schedule' && (
+                      <p className="mt-1.5 text-xs text-dash-tertiary">
+                        Outside this window the category hides on the POS and its items can't be rung in or re-ordered. Overnight windows (e.g. 22:00 to 02:00) belong to the day they start.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="mt-4">
                     <p className="label-mono mb-2">Button color</p>
                     <ColorSwatchPicker
                       value={category.color}
@@ -2918,6 +2976,25 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
             title="Item Availability Schedule"
             description="Limit when regular items appear on the POS — brunch-only dishes, seasonal plates, late-night menus. Full editor lives inside each item."
           >
+            {mergedCategories.some(category => category.availability_mode === 'schedule') && (
+              <div className="mb-5 space-y-2">
+                <p className="label-mono">Categories with visible hours</p>
+                {mergedCategories.filter(category => category.availability_mode === 'schedule').map(category => (
+                  <div key={category.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 text-sm">
+                    <div>
+                      <span className="font-medium text-dash-cream">{category.name}</span>
+                      <span className="ml-2 text-dash-tertiary">
+                        {(Array.isArray(category.availability_days) && category.availability_days.length > 0 && category.availability_days.length < 7
+                          ? category.availability_days.map(day => DAYS_SHORT[day]).join(', ')
+                          : 'Every day')}
+                        {category.availability_start_time ? ` · ${String(category.availability_start_time).slice(0, 5)}–${category.availability_end_time ? String(category.availability_end_time).slice(0, 5) : 'close'}` : ''}
+                      </span>
+                    </div>
+                    <SmallButton onClick={() => jumpToCategory(category.name)}>Edit category →</SmallButton>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
               <div className="space-y-2">
                 <p className="label-mono">Items with schedules</p>
