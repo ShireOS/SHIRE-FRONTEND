@@ -64,20 +64,45 @@ const AVAILABILITY_MODES = [
   { value: 'manual', label: 'Manual only' },
 ]
 
+// Card ids for the item editor's two columns; saved orders are filtered to
+// these, so renamed/removed cards can never make a section disappear.
+const MAIN_CARDS = ['basics', 'questions', 'specials', 'happy_hour', 'tax_split']
+const SIDE_CARDS = ['photo', 'availability', 'kitchen']
+const resolveCardOrder = (saved, defaults) => {
+  const known = (Array.isArray(saved) ? saved : []).filter(id => defaults.includes(id))
+  return [...known, ...defaults.filter(id => !known.includes(id))]
+}
+
 const WEEKDAY_PRICE_RULE_DAYS = [1, 2, 3, 4, 5]
 const ALL_PRICE_RULE_DAYS = [0, 1, 2, 3, 4, 5, 6]
 
-function DetailCard({ title, hint, children, actions }) {
+function DetailCard({ title, hint, children, actions, handleProps = null, collapsed = false, onToggleCollapse = null }) {
   return (
-    <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h4 className="text-lg font-semibold">{title}</h4>
-          {hint && <p className="mt-1 text-sm text-dash-tertiary">{hint}</p>}
+    <section className="relative rounded-xl border border-white/10 bg-white/[0.03] p-5">
+      {/* Pinned top-right so it never moves when the hint/actions collapse
+          away — only the triangle's orientation changes. */}
+      {onToggleCollapse && (
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          title={collapsed ? 'Expand this section' : 'Collapse this section — saved for this item'}
+          onClick={onToggleCollapse}
+          className="absolute right-4 top-4 grid h-9 w-9 place-items-center rounded-lg border border-white/15 bg-white/[0.05] text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream"
+        >
+          <span aria-hidden="true" className={`text-lg leading-none transition-transform duration-150 ${collapsed ? '-rotate-90' : ''}`}>▾</span>
+        </button>
+      )}
+      <div className={`flex flex-wrap items-start justify-between gap-3 ${onToggleCollapse ? 'pr-12' : ''}`}>
+        <div className="flex min-w-0 items-start gap-2">
+          {handleProps && <DragHandle handleProps={handleProps} title="Drag to move this section up or down" />}
+          <div>
+            <h4 className="text-lg font-semibold">{title}</h4>
+            {!collapsed && hint && <p className="mt-1 text-sm text-dash-tertiary">{hint}</p>}
+          </div>
         </div>
-        {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+        {!collapsed && actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
-      <div className="mt-4">{children}</div>
+      {!collapsed && <div className="mt-4">{children}</div>}
     </section>
   )
 }
@@ -86,7 +111,7 @@ function DetailCard({ title, hint, children, actions }) {
 // so each portion is taxed and reported under that category. The remainder
 // stays in the item's own category, so repricing never breaks the split.
 // Example: $12 Jack & Coke in Cocktails with $2.50 carved out to Food.
-function PriceAllocationCard({ restaurantId, item, categories, run, busy, canEditPrices }) {
+function PriceAllocationCard({ restaurantId, item, categories, run, busy, canEditPrices, cardControls = null }) {
   const [rows, setRows] = useState([])
   const [rosterEntry, setRosterEntry] = useState(null)
   const [loaded, setLoaded] = useState(false)
@@ -159,6 +184,7 @@ function PriceAllocationCard({ restaurantId, item, categories, run, busy, canEdi
 
   return (
     <DetailCard
+      {...(cardControls || {})}
       title="Tax split (price allocation)"
       hint="Carve part of this item's price into another sales category so that portion gets that category's tax — e.g. the Coke in a Jack & Coke reports as Food at the food rate. The remainder floats with this item's price, so repricing never breaks the split."
     >
@@ -253,6 +279,7 @@ function QuestionEditor({
   source = 'item', itemOverride = null, inheritedFromName = null,
   positionLabel = null, dragHandleProps = null,
   itemModOverrides = {}, saveItemModOverride = null,
+  collapsed = false, onToggleCollapse = null,
 }) {
   const group = groups.find(candidate => candidate.id === groupId)
   const [expandedChild, setExpandedChild] = useState(null)
@@ -361,11 +388,26 @@ function QuestionEditor({
   const effectiveMode = depth === 0 ? effectivePromptMode(group, itemOverride) : null
 
   return (
-    <div className={depth > 0 ? 'mt-2 rounded-xl border border-dash-gold/20 bg-white/[0.02] p-3' : 'rounded-xl border border-white/10 bg-white/[0.025] p-4'}>
+    <div className={depth > 0 ? 'mt-2 rounded-xl border border-dash-gold/20 bg-white/[0.02] p-3' : 'relative rounded-xl border border-white/10 bg-white/[0.025] p-4'}>
+      {/* Pinned top-right like every widget's collapse control. */}
+      {depth === 0 && onToggleCollapse && (
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          title={collapsed
+            ? `Expand — ${group.options.length} option${group.options.length === 1 ? '' : 's'} hidden`
+            : 'Collapse this question to its header — saved for this item'}
+          onClick={onToggleCollapse}
+          className="absolute right-3 top-3 flex h-9 w-16 items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-white/[0.05] text-xs font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream"
+        >
+          <span aria-hidden="true" className={`text-base leading-none transition-transform duration-150 ${collapsed ? '-rotate-90' : ''}`}>▾</span>
+          {group.options.length}
+        </button>
+      )}
       {parentModifierName && (
         <p className="label-mono mb-2">Asked when “{parentModifierName}” is picked</p>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className={`flex flex-wrap items-center justify-between gap-2 ${depth === 0 && onToggleCollapse ? 'pr-16' : ''}`}>
         <div className="flex min-w-64 flex-1 items-center gap-2">
           {depth === 0 && positionLabel != null && (
             <div className="flex flex-col items-center gap-1">
@@ -385,18 +427,18 @@ function QuestionEditor({
               Inherited · {inheritedFromName}
             </span>
           )}
-          {sharedElsewhere && source !== 'category' && (
-            <span className="whitespace-nowrap rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-1 text-[11px] font-semibold text-amber-200" title="Edits here change this question everywhere it is used.">
-              Used by {usedByCount} item{usedByCount === 1 ? '' : 's'}
-            </span>
-          )}
           {group.no_print && (
             <span className="whitespace-nowrap rounded-full border border-white/15 bg-white/[0.06] px-2 py-1 text-[11px] font-semibold text-dash-tertiary" title="Nothing in this question prints on kitchen tickets">
               No print
             </span>
           )}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {sharedElsewhere && source !== 'category' && (
+            <span className="whitespace-nowrap rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-1 text-[11px] font-semibold text-amber-200" title="Edits here change this question everywhere it is used.">
+              Used by {usedByCount} item{usedByCount === 1 ? '' : 's'}
+            </span>
+          )}
           {depth === 0 && itemId && (
             <SelectInput
               className="!w-auto !py-1.5"
@@ -470,6 +512,7 @@ function QuestionEditor({
         </div>
       </div>
 
+      {!collapsed && <>
       <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-2 text-sm text-dash-secondary">
         <span>Guest picks at least</span>
         <TextInput
@@ -725,6 +768,7 @@ function QuestionEditor({
           <SmallButton variant="primary" onClick={() => setShowPicker(true)}>+ Add modifiers</SmallButton>
         )}
       </div>
+      </>}
     </div>
   )
 }
@@ -736,6 +780,7 @@ export function MenuItemDetail({
   reloadGroups, reloadModifiers, reloadSpecials, reloadImages,
   itemModifierOverrides = {}, reloadItemModifierOverrides = null,
   canEditPrices = false, onDuplicate = null,
+  editorPrefs = null, onSaveEditorPrefs = null,
 }) {
   const fileInputRef = useRef(null)
   const [newQuestion, setNewQuestion] = useState('')
@@ -1060,42 +1105,50 @@ export function MenuItemDetail({
     await reloadPriceRules()
   }, 'Price rule archived.')
 
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <SmallButton onClick={onBack}>← All items</SmallButton>
-          <div title={category?.color ? 'How this button looks on the POS (color comes from the category)' : 'This item’s category has no button color yet — set one on the Categories tab'}>
-            <PosTilePreview color={category?.color} label={item.name} sublabel={money(item.price)} size="sm" />
-          </div>
-          <div>
-            <h3 className="text-2xl font-semibold tracking-tight">{item.name}</h3>
-            <p className="text-sm text-dash-tertiary">{item.category || 'Uncategorized'} · {money(item.price)}</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {onDuplicate && (
-            <SmallButton
-              title="Start a new item with this item's category, price, printers, mods, specials, and schedule — you just type the name (edits here save as you go, so nothing is lost)"
-              onClick={() => onDuplicate(item)}
-              disabled={busy}
-            >
-              Save & duplicate
-            </SmallButton>
-          )}
-          <SmallButton
-            variant={item.is_available === false ? 'danger' : 'secondary'}
-            onClick={() => void patchItem(item.id, { is_available: item.is_available === false }, item.is_available === false ? 'Item restored.' : "Item 86'd.")}
-          >
-            {item.is_available === false ? "86'd — tap to restore" : 'Available'}
-          </SmallButton>
-          <SmallButton variant="danger" onClick={() => { void deleteItem(item.id); onBack() }} disabled={busy}>Remove item</SmallButton>
-        </div>
-      </div>
+  // ── Editor layout: card order per column + collapse state per item, saved
+  // per user through reports/view-preferences (context menu_item_editor). ──
+  const collapsedCards = editorPrefs?.collapsed_cards?.[item.id] || []
+  const collapsedQuestions = editorPrefs?.collapsed_questions?.[item.id] || []
+  const mainCardOrder = resolveCardOrder(editorPrefs?.main_order, MAIN_CARDS)
+  const sideCardOrder = resolveCardOrder(editorPrefs?.side_order, SIDE_CARDS)
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="space-y-5">
-          <DetailCard title="Basics" hint="Changes save when you click away.">
+  const toggleCardCollapsed = (cardId) => {
+    const next = collapsedCards.includes(cardId)
+      ? collapsedCards.filter(id => id !== cardId)
+      : [...collapsedCards, cardId]
+    onSaveEditorPrefs?.({ collapsed_cards: { ...(editorPrefs?.collapsed_cards || {}), [item.id]: next } })
+  }
+
+  const toggleQuestionCollapsed = (groupId) => {
+    const next = collapsedQuestions.includes(groupId)
+      ? collapsedQuestions.filter(id => id !== groupId)
+      : [...collapsedQuestions, groupId]
+    onSaveEditorPrefs?.({ collapsed_questions: { ...(editorPrefs?.collapsed_questions || {}), [item.id]: next } })
+  }
+
+  const setAllQuestionsCollapsed = (collapse) => {
+    const next = collapse ? questionRows.map(row => row.group.id) : []
+    onSaveEditorPrefs?.({ collapsed_questions: { ...(editorPrefs?.collapsed_questions || {}), [item.id]: next } })
+  }
+
+  const questionCollapseActions = onSaveEditorPrefs && questionRows.length > 1 ? (
+    <SmallButton
+      title="Collapse or expand every question at once — saved for this item"
+      onClick={() => setAllQuestionsCollapsed(collapsedQuestions.length < questionRows.length)}
+    >
+      {collapsedQuestions.length < questionRows.length ? 'Collapse all' : 'Expand all'}
+    </SmallButton>
+  ) : null
+
+  const renderCard = (cardId, cardHandleProps) => {
+    const controls = {
+      handleProps: onSaveEditorPrefs ? cardHandleProps : null,
+      collapsed: collapsedCards.includes(cardId),
+      onToggleCollapse: onSaveEditorPrefs ? () => toggleCardCollapsed(cardId) : null,
+    }
+    switch (cardId) {
+      case 'basics': return (
+          <DetailCard {...controls} title="Basics" hint="Changes save when you click away.">
             <div className="grid gap-3 md:grid-cols-[1.4fr_120px_1fr]">
               <Field label="Name">
                 <TextInput
@@ -1136,8 +1189,11 @@ export function MenuItemDetail({
               </Field>
             </div>
           </DetailCard>
-
+      )
+      case 'questions': return (
           <DetailCard
+            {...controls}
+            actions={questionCollapseActions}
             title={`Questions & modifiers (${questionRows.length})`}
             hint="Asked top to bottom when this item is ordered — drag the ⠿ grip to change the order. Questions inherited from the category apply to every item in it; opt out to skip one here."
           >
@@ -1200,6 +1256,8 @@ export function MenuItemDetail({
                     inheritedFromName={row.source === 'category' ? (item.category || 'category') : null}
                     positionLabel={index + 1}
                     dragHandleProps={handleProps}
+                    collapsed={collapsedQuestions.includes(row.group.id)}
+                    onToggleCollapse={onSaveEditorPrefs ? () => toggleQuestionCollapsed(row.group.id) : null}
                     itemModOverrides={itemModifierOverrides}
                     saveItemModOverride={saveItemModOverride}
                   />
@@ -1314,8 +1372,9 @@ export function MenuItemDetail({
               )}
             </div>
           </DetailCard>
-
-          <DetailCard title="Specials" hint="Overlay a special name/price on this item. Full scheduling lives in the Specials & Schedule tab.">
+      )
+      case 'specials': return (
+          <DetailCard {...controls} title="Specials" hint="Overlay a special name/price on this item. Full scheduling lives in the Specials & Schedule tab.">
             <div className="space-y-2">
               {itemSpecials.map(special => (
                 <div key={special.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-sm">
@@ -1349,8 +1408,9 @@ export function MenuItemDetail({
               <SmallButton variant="primary" onClick={() => void pinSpecial()} disabled={busy}>Pin special</SmallButton>
             </div>
           </DetailCard>
-
-          <DetailCard title="Happy hour & price rules" hint="Recurring price change for this item during a daily window. % off / $ off follow the base price; flat sets an absolute price. Leave times empty for always-on.">
+      )
+      case 'happy_hour': return (
+          <DetailCard {...controls} title="Happy hour & price rules" hint="Recurring price change for this item during a daily window. % off / $ off follow the base price; flat sets an absolute price. Leave times empty for always-on.">
             <div className="space-y-2">
               {itemPriceRules.map(rule => (
                 <div key={rule.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-sm">
@@ -1417,8 +1477,10 @@ export function MenuItemDetail({
               </div>
             )}
           </DetailCard>
-
+      )
+      case 'tax_split': return (
           <PriceAllocationCard
+            cardControls={controls}
             restaurantId={restaurantId}
             item={item}
             categories={categories}
@@ -1426,10 +1488,9 @@ export function MenuItemDetail({
             busy={busy}
             canEditPrices={canEditPrices}
           />
-        </div>
-
-        <div className="space-y-5">
-          <DetailCard title="Photo" hint="Shown on the POS tile and online ordering.">
+      )
+      case 'photo': return (
+          <DetailCard {...controls} title="Photo" hint="Shown on the POS tile and online ordering.">
             <div className="space-y-3">
               {item.image_url ? (
                 <img src={item.image_url} alt={item.name} className="h-44 w-full rounded-xl object-cover" />
@@ -1466,8 +1527,9 @@ export function MenuItemDetail({
               </div>
             </div>
           </DetailCard>
-
-          <DetailCard title="Availability schedule">
+      )
+      case 'availability': return (
+          <DetailCard {...controls} title="Availability schedule">
             <div className="space-y-3">
               <SelectInput value={schedule.availability_mode} onChange={event => setSchedule(prev => ({ ...prev, availability_mode: event.target.value }))}>
                 {AVAILABILITY_MODES.map(mode => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
@@ -1506,8 +1568,9 @@ export function MenuItemDetail({
               <SmallButton variant="primary" onClick={() => void saveSchedule()} disabled={busy}>Save availability</SmallButton>
             </div>
           </DetailCard>
-
-          <DetailCard title="Kitchen" hint={productionRouting?.categoryRouting?.description || (category?.routing_station_id ? `Category default: ${stationName(category.routing_station_id) || 'station'}` : 'No category default station set.')}>
+      )
+      case 'kitchen': return (
+          <DetailCard {...controls} title="Kitchen" hint={productionRouting?.categoryRouting?.description || (category?.routing_station_id ? `Category default: ${stationName(category.routing_station_id) || 'station'}` : 'No category default station set.')}>
             <div className="space-y-3">
               <Field label="Production route">
                 <SelectInput
@@ -1549,7 +1612,59 @@ export function MenuItemDetail({
               </Field>
             </div>
           </DetailCard>
+      )
+      default: return null
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <SmallButton onClick={onBack}>← All items</SmallButton>
+          <div title={category?.color ? 'How this button looks on the POS (color comes from the category)' : 'This item’s category has no button color yet — set one on the Categories tab'}>
+            <PosTilePreview color={category?.color} label={item.name} sublabel={money(item.price)} size="sm" />
+          </div>
+          <div>
+            <h3 className="text-2xl font-semibold tracking-tight">{item.name}</h3>
+            <p className="text-sm text-dash-tertiary">{item.category || 'Uncategorized'} · {money(item.price)}</p>
+          </div>
         </div>
+        <div className="flex flex-wrap gap-2">
+          {onDuplicate && (
+            <SmallButton
+              title="Start a new item with this item's category, price, printers, mods, specials, and schedule — you just type the name (edits here save as you go, so nothing is lost)"
+              onClick={() => onDuplicate(item)}
+              disabled={busy}
+            >
+              Save & duplicate
+            </SmallButton>
+          )}
+          <SmallButton
+            variant={item.is_available === false ? 'danger' : 'secondary'}
+            onClick={() => void patchItem(item.id, { is_available: item.is_available === false }, item.is_available === false ? 'Item restored.' : "Item 86'd.")}
+          >
+            {item.is_available === false ? "86'd — tap to restore" : 'Available'}
+          </SmallButton>
+          <SmallButton variant="danger" onClick={() => { void deleteItem(item.id); onBack() }} disabled={busy}>Remove item</SmallButton>
+        </div>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <SortableRows
+          ids={mainCardOrder}
+          className="space-y-5"
+          disabled={!onSaveEditorPrefs}
+          onReorder={ids => onSaveEditorPrefs?.({ main_order: ids })}
+          renderRow={(cardId, { handleProps }) => renderCard(cardId, handleProps)}
+        />
+        <SortableRows
+          ids={sideCardOrder}
+          className="space-y-5"
+          disabled={!onSaveEditorPrefs}
+          onReorder={ids => onSaveEditorPrefs?.({ side_order: ids })}
+          renderRow={(cardId, { handleProps }) => renderCard(cardId, handleProps)}
+        />
       </div>
     </div>
   )

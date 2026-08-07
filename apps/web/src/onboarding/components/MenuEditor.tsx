@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import type { MutableRefObject } from 'react'
 import { supabase } from '../../shared/lib/supabase'
 import { API_CONFIG } from '../../shared/api/config'
 import { MenuItemsTable } from './MenuItemsTable'
@@ -49,12 +50,37 @@ const newBlankItem = (): MenuEditorItem => ({
   kds_display_group: '',
 })
 
+// API row → editor row (price as string, empty strings for blanks).
+const normalizeApiItem = (item: any): MenuEditorItem => ({
+  id: item.id ?? crypto.randomUUID(),
+  name: item.name ?? '',
+  category: item.category ?? '',
+  menu_category_id: item.menu_category_id ?? undefined,
+  price: priceString(item.price),
+  description: item.description ?? '',
+  is_available: item.is_available !== false,
+  availability_mode: item.availability_mode || 'always',
+  availability_days: item.availability_days?.length ? item.availability_days : [0, 1, 2, 3, 4, 5, 6],
+  availability_start_time: item.availability_start_time || '',
+  availability_end_time: item.availability_end_time || '',
+  availability_service_modes: item.availability_service_modes || [],
+  availability_start_date: item.availability_start_date || '',
+  availability_end_date: item.availability_end_date || '',
+  availability_notes: item.availability_notes || '',
+  fire_mode: item.fire_mode || '',
+  kds_display_group: item.kds_display_group || '',
+})
+
 export function MenuEditor({ restaurantId, mode, initialItems, categories, onBack, onSave }: MenuEditorProps) {
   const [items, setItems] = useState<MenuEditorItem[]>(initialItems ?? [])
   const [phase, setPhase] = useState<Phase>(mode === 'manual' ? 'editing' : 'idle')
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dropZoneRef = useRef<HTMLDivElement>(null)
+  // Ids the user explicitly deleted with the row's trash button. Only these
+  // are removed server-side — clearing the table or re-uploading never
+  // deletes anything from the database.
+  const removedIdsRef: MutableRefObject<Set<string>> = useRef(new Set())
 
   const processFile = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -125,7 +151,9 @@ export function MenuEditor({ restaurantId, mode, initialItems, categories, onBac
         }
       })
 
-      setItems(extracted)
+      // Append: an upload adds to whatever is already on the menu instead of
+      // replacing it — existing rows stay visible and untouched.
+      setItems(prev => [...prev, ...extracted])
       setPhase('editing')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
@@ -159,38 +187,52 @@ export function MenuEditor({ restaurantId, mode, initialItems, categories, onBac
     try {
       const token = await getToken()
       const validItems = items.filter(item => item.name.trim() !== '')
+      // Rows keep their id: the server updates ids it knows and inserts the
+      // rest. Managed fields are sent as explicit nulls when blank so clearing
+      // sticks; fields this editor doesn't manage (course, prep, routing,
+      // photos, questions, specials...) are never sent and stay untouched.
       const payload = validItems.map(item => ({
+        id: item.id,
         name: item.name.trim(),
-        restaurant_id: restaurantId,
-        category: item.category || undefined,
-        menu_category_id: item.menu_category_id || undefined,
-        price: item.price ? parseFloat(item.price) : undefined,
-        description: item.description.trim() || undefined,
+        category: item.category || null,
+        menu_category_id: item.menu_category_id || null,
+        price: item.price ? parseFloat(item.price) : null,
+        description: item.description.trim() || null,
         is_available: item.is_available !== false,
         availability_mode: item.availability_mode || 'always',
         availability_days: item.availability_days?.length ? item.availability_days : [0, 1, 2, 3, 4, 5, 6],
-        availability_start_time: item.availability_start_time || undefined,
-        availability_end_time: item.availability_end_time || undefined,
+        availability_start_time: item.availability_start_time || null,
+        availability_end_time: item.availability_end_time || null,
         availability_service_modes: item.availability_service_modes || [],
-        availability_start_date: item.availability_start_date || undefined,
-        availability_end_date: item.availability_end_date || undefined,
-        availability_notes: item.availability_notes || undefined,
-        fire_mode: item.fire_mode || undefined,
-        kds_display_group: item.kds_display_group || undefined,
+        availability_start_date: item.availability_start_date || null,
+        availability_end_date: item.availability_end_date || null,
+        availability_notes: item.availability_notes || null,
+        fire_mode: item.fire_mode || null,
+        kds_display_group: item.kds_display_group || null,
       }))
 
       const res = await fetch(`${baseUrl(restaurantId)}/items`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: token },
-        body: JSON.stringify({ items: payload }),
+        body: JSON.stringify({
+          items: payload,
+          removed_ids: Array.from(removedIdsRef.current),
+        }),
       })
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error(err.detail || `Save failed (${res.status})`)
       }
+      removedIdsRef.current = new Set()
 
-      onSave(validItems)
+      // Hand the caller the restaurant's full, fresh menu (with real server
+      // ids) — not just the rows that happened to be in this table.
+      const freshRes = await fetch(`${baseUrl(restaurantId)}/items`, {
+        headers: { Authorization: token },
+      })
+      const fresh = freshRes.ok ? await freshRes.json() : null
+      onSave(Array.isArray(fresh) ? fresh.map(normalizeApiItem) : validItems)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed')
       setPhase('editing')
@@ -293,6 +335,7 @@ export function MenuEditor({ restaurantId, mode, initialItems, categories, onBac
             <MenuItemsTable
               items={items}
               onItemsChange={setItems}
+              onRemove={id => removedIdsRef.current.add(id)}
               disabled={phase === 'saving'}
               categories={categories}
             />

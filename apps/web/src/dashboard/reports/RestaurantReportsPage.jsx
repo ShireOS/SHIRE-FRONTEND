@@ -22,6 +22,7 @@ import {
 import { fetchWithSupabaseAuth } from '../../shared/query'
 import { fetchPosApi } from '../../shared/api/posClient'
 import ServerReceiptTemplateModal from './ServerReceiptTemplateModal'
+import { ReconciliationBanner, fetchReconciliation } from '../../shared/components/ReconciliationBanner'
 
 const SECTION_META = [
   ['sales_revenue', 'Sales & revenue'],
@@ -515,6 +516,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   const [reportingScope, setReportingScope] = useState({ scope_dimension: 'none', scope_mode: 'cumulative', scope_ids: [] })
   const [dimensions, setDimensions] = useState({ sections: [], devices: [], coverage: {} })
   const [report, setReport] = useState(null)
+  const [recon, setRecon] = useState(null)
   const [preference, setPreference] = useState({ visible_sections: SECTION_META.map(([id]) => id), section_order: SECTION_META.map(([id]) => id), section_settings: {} })
   const [recipients, setRecipients] = useState([])
   const [canManageRecipients, setCanManageRecipients] = useState(false)
@@ -653,13 +655,16 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     query.set('scope_mode', reportingScope.scope_mode)
     if (reportingScope.scope_ids.length) query.set('scope_ids', reportingScope.scope_ids.join(','))
     try {
-      const [nextReport, nextPreference, emailConfig, nextDimensions] = await Promise.all([
+      const [nextReport, nextPreference, emailConfig, nextDimensions, nextRecon] = await Promise.all([
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports?${query}`),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/preferences`),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/recipients`),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/dimensions`),
+        // Verification is advisory — a failure here never blocks the report.
+        fetchReconciliation(restaurantId, dates.start, dates.end).catch(() => null),
       ])
       setReport(nextReport)
+      setRecon(nextRecon)
       setPreference(nextPreference)
       setRecipients(emailConfig.recipients || [])
       setCanManageRecipients(Boolean(emailConfig.can_manage))
@@ -808,6 +813,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       {serverMessage && <div className="my-4 rounded-md border border-white/10 bg-white/[0.035] p-3 text-sm text-dash-secondary">{serverMessage}</div>}
       {hubTab === 'reports' && <>
         {loading && !report && <div className="flex min-h-64 items-center justify-center"><RefreshCw className="h-6 w-6 animate-spin text-dash-gold" /></div>}
+        {report && <div className="my-4"><ReconciliationBanner recon={recon} filename={`verification-${dates.start}-${dates.end}.csv`} /></div>}
         {report && orderedSections.map((id) => <div key={id}>{sectionRenderers[id]?.()}</div>)}
         <ServerReportsPanel roster={serverRoster} detail={serverDetail} selectedServerId={selectedServerId} onSelect={setSelectedServerId} loading={serverLoading} onPrintReceipt={printServerReceipt} canConfigureReceipt={canConfigureServerReceipt} onConfigureReceipt={() => setServerReceiptConfigOpen(true)} />
       </>}

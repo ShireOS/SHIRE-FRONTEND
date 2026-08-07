@@ -9,15 +9,6 @@ import {
   type StaffContact,
 } from '@/api/employeeOps';
 import {
-  DEFAULT_REMOTE_TIME_CLOCK_POLICY,
-  fetchEmployeeAdmins,
-  fetchEmployeeTimeClockPolicy,
-  submitManualTimeEntry,
-  type AdminContact,
-  type RemoteTimeClockPolicy,
-} from '@/api/timeClock';
-import { staleWhileRevalidate } from '@/cache/staleWhileRevalidate';
-import {
   ContactRow,
   PageHeader,
   RequestRow,
@@ -32,19 +23,15 @@ import { radius, spacing } from '@/styles/tokens';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
-type MoreTab = 'availability' | 'time_off' | 'manual_hours' | 'contacts';
+type MoreTab = 'availability' | 'time_off' | 'contacts';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const POLICY_CACHE_TTL_MS = 60_000;
-const POLICY_MAX_STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export default function EmployeeMore() {
   const [tab, setTab] = useState<MoreTab>('availability');
   const [availability, setAvailability] = useState<AvailabilityEntry[]>([]);
   const [requests, setRequests] = useState<EmployeeRequest[]>([]);
   const [contacts, setContacts] = useState<StaffContact[]>([]);
-  const [timeClockPolicy, setTimeClockPolicy] = useState<RemoteTimeClockPolicy | null>(null);
-  const [admins, setAdmins] = useState<AdminContact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -63,20 +50,9 @@ export default function EmployeeMore() {
     notes: '',
     priority: 'normal',
   });
-  const [manualForm, setManualForm] = useState({
-    work_date: '',
-    start_time: '09:00',
-    end_time: '17:00',
-    reason: '',
-    mentioned_manager_id: '',
-  });
-
-  const remoteSettings = timeClockPolicy?.remote_time_clock || DEFAULT_REMOTE_TIME_CLOCK_POLICY.remote_time_clock;
-  const canSubmitManualHours = Boolean(timeClockPolicy && remoteSettings.enabled && remoteSettings.allow_manual_entries);
   const tabs: { id: MoreTab; label: string }[] = [
     { id: 'availability', label: 'Availability' },
     { id: 'time_off', label: 'Time off' },
-    ...(canSubmitManualHours ? [{ id: 'manual_hours' as MoreTab, label: 'Manual hours' }] : []),
     { id: 'contacts', label: 'Contacts' },
   ];
 
@@ -104,33 +80,6 @@ export default function EmployeeMore() {
       .finally(() => {
         if (!cancelled) setIsLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    Promise.allSettled([
-      staleWhileRevalidate<RemoteTimeClockPolicy>({
-        namespace: 'employee-time-clock-policy',
-        version: 1,
-        ttlMs: POLICY_CACHE_TTL_MS,
-        maxStaleMs: POLICY_MAX_STALE_MS,
-        fetcher: fetchEmployeeTimeClockPolicy,
-        onRevalidate: setTimeClockPolicy,
-      }),
-      fetchEmployeeAdmins(),
-    ]).then(([policyResult, adminResult]) => {
-      if (cancelled) return;
-      if (policyResult.status === 'fulfilled') setTimeClockPolicy(policyResult.value.data);
-      if (adminResult.status === 'fulfilled') {
-        setAdmins(adminResult.value);
-        setManualForm((current) => current.mentioned_manager_id || !adminResult.value[0]?.id
-          ? current
-          : { ...current, mentioned_manager_id: adminResult.value[0].id });
-      }
-    }).catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -183,49 +132,6 @@ export default function EmployeeMore() {
       setMessage('Request submitted.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not submit request.');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const submitManualHours = async () => {
-    if (!manualForm.work_date) {
-      setMessage('Choose the work date first.');
-      return;
-    }
-    if (!/^\d{2}:\d{2}$/.test(manualForm.start_time) || !/^\d{2}:\d{2}$/.test(manualForm.end_time)) {
-      setMessage('Use HH:MM time for manual hours.');
-      return;
-    }
-    if (manualForm.reason.trim().length < 4) {
-      setMessage('Add a short reason for the manual hours.');
-      return;
-    }
-    if (remoteSettings.require_manager_mention && !manualForm.mentioned_manager_id) {
-      setMessage('Choose a manager to notify.');
-      return;
-    }
-    setIsSaving(true);
-    setMessage('');
-    try {
-      const created = await submitManualTimeEntry({
-        work_date: manualForm.work_date,
-        start_time: manualForm.start_time,
-        end_time: manualForm.end_time,
-        reason: manualForm.reason.trim(),
-        mentioned_manager_id: manualForm.mentioned_manager_id || null,
-      });
-      setRequests((current) => [created as EmployeeRequest, ...current]);
-      setManualForm({
-        work_date: '',
-        start_time: '09:00',
-        end_time: '17:00',
-        reason: '',
-        mentioned_manager_id: admins[0]?.id || '',
-      });
-      setMessage('Manual hours sent for manager review.');
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not submit manual hours.');
     } finally {
       setIsSaving(false);
     }
@@ -336,61 +242,6 @@ export default function EmployeeMore() {
             </>
           )}
 
-          {tab === 'manual_hours' && canSubmitManualHours && (
-            <>
-              <View style={styles.formCard}>
-                <UiText variant="title">Submit manual hours</UiText>
-                <UiText variant="bodySmall" tone="muted">
-                  Use this for work that already happened. Your manager approves it before it counts.
-                </UiText>
-                <TextField
-                  value={manualForm.work_date}
-                  onChangeText={(work_date) => setManualForm((current) => ({ ...current, work_date }))}
-                  placeholder="YYYY-MM-DD"
-                />
-                <View style={styles.twoCol}>
-                  <TextField
-                    value={manualForm.start_time}
-                    onChangeText={(start_time) => setManualForm((current) => ({ ...current, start_time }))}
-                    placeholder="Start HH:MM"
-                  />
-                  <TextField
-                    value={manualForm.end_time}
-                    onChangeText={(end_time) => setManualForm((current) => ({ ...current, end_time }))}
-                    placeholder="End HH:MM"
-                  />
-                </View>
-                <TextField
-                  value={manualForm.reason}
-                  onChangeText={(reason) => setManualForm((current) => ({ ...current, reason }))}
-                  placeholder="Reason"
-                  multiline
-                />
-                <UiText variant="title">Notify manager</UiText>
-                <View style={styles.managerPicker}>
-                  {admins.length === 0 ? (
-                    <UiText variant="bodySmall" tone="muted">No admins returned yet.</UiText>
-                  ) : admins.map((admin) => {
-                    const active = manualForm.mentioned_manager_id === admin.id;
-                    return (
-                      <UiButton
-                        key={admin.id}
-                        label={admin.name || admin.email || 'Manager'}
-                        size="small"
-                        variant={active ? 'primary' : 'secondary'}
-                        onPress={() => setManualForm((current) => ({ ...current, mentioned_manager_id: admin.id }))}
-                      />
-                    );
-                  })}
-                </View>
-                <UiButton label={isSaving ? 'Submitting...' : 'Submit manual hours'} disabled={isSaving} onPress={submitManualHours} />
-              </View>
-              <View style={styles.listGap}>
-                {requests.map((request) => <RequestRow key={request.id} request={request} />)}
-              </View>
-            </>
-          )}
-
           {tab === 'contacts' && (
             <View style={styles.listGap}>
               {contacts.length === 0 ? (
@@ -452,11 +303,6 @@ const styles = StyleSheet.create({
   twoCol: {
     flexDirection: 'row',
     gap: spacing[3],
-  },
-  managerPicker: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing[2],
   },
   listGap: {
     gap: spacing[3],

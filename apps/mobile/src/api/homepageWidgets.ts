@@ -92,9 +92,9 @@ export type ReportingDimensions = {
 };
 
 function prefix(scope: WidgetScope, restaurantId?: string) {
-  if (scope === 'portfolio') return '/api/v1/portfolio-reports/homepage';
+  if (scope === 'portfolio') return '/portfolio-reports/homepage';
   if (!restaurantId) throw new Error('Restaurant is required for homepage widgets.');
-  return `/api/v1/restaurants/${restaurantId}/reports/homepage`;
+  return `/restaurants/${restaurantId}/reports/homepage`;
 }
 
 export function fetchHomepagePreferences(scope: WidgetScope, restaurantId?: string) {
@@ -136,8 +136,8 @@ export function fetchReportingDimensions(scope: WidgetScope, restaurantId?: stri
     const query = new URLSearchParams();
     if (groupIds?.length) query.set('group_ids', groupIds.join(','));
     query.set('include_ungrouped', String(includeUngrouped));
-    return apiGet<ReportingDimensions>(`/api/v1/portfolio-reports/dimensions?${query.toString()}`);
+    return apiGet<ReportingDimensions>(`/portfolio-reports/dimensions?${query.toString()}`);
   }
   if (!restaurantId) throw new Error('Restaurant is required for reporting dimensions.');
-  return apiGet<ReportingDimensions>(`/api/v1/restaurants/${restaurantId}/reports/dimensions`);
+  return apiGet<ReportingDimensions>(`/restaurants/${restaurantId}/reports/dimensions`);
 }

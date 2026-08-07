@@ -355,6 +355,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
                 className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))]"
               >
                 <option value="normal" className="bg-[#1a1a1a]">Normal</option>
+                <option value="waiter" className="bg-[#1a1a1a]">Waiter</option>
                 <option value="manager" className="bg-[#1a1a1a]">Manager</option>
                 <option value="limited" className="bg-[#1a1a1a]">Limited</option>
                 <option value="owner" className="bg-[#1a1a1a]">Owner</option>

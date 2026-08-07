@@ -414,8 +414,8 @@ const EOD_REPORT_OPTIONS = ['sales_summary', 'labor_summary', 'cash_drawer_summa
 const defaultJobCodes = (): JobCodeData[] => [
   { code: 'owner', label: 'Owner', permission_tier: 'owner', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 10, is_active: true },
   { code: 'manager', label: 'Manager', permission_tier: 'manager', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 20, is_active: true },
-  { code: 'server', label: 'Server', permission_tier: 'normal', default_hourly_rate: '', is_tipped: true, tipout_role: 'server', sort_order: 30, is_active: true },
-  { code: 'bartender', label: 'Bartender', permission_tier: 'normal', default_hourly_rate: '', is_tipped: true, tipout_role: 'bartender', sort_order: 40, is_active: true },
+  { code: 'server', label: 'Server', permission_tier: 'waiter', default_hourly_rate: '', is_tipped: true, tipout_role: 'server', sort_order: 30, is_active: true },
+  { code: 'bartender', label: 'Bartender', permission_tier: 'waiter', default_hourly_rate: '', is_tipped: true, tipout_role: 'bartender', sort_order: 40, is_active: true },
   { code: 'host', label: 'Host', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: 'host', sort_order: 50, is_active: true },
   { code: 'runner', label: 'Runner', permission_tier: 'normal', default_hourly_rate: '', is_tipped: true, tipout_role: 'runner', sort_order: 60, is_active: true },
   { code: 'busser', label: 'Busser', permission_tier: 'normal', default_hourly_rate: '', is_tipped: true, tipout_role: 'busser', sort_order: 70, is_active: true },

@@ -1,13 +1,8 @@
 import {
-  DEFAULT_REMOTE_TIME_CLOCK_POLICY,
   createManagerJobCode,
   fetchRestaurantJobCodes,
-  fetchManagerTimeClockPolicy,
   updateManagerJobCode,
   type JobCode,
-  saveManagerTimeClockPolicy,
-  type RemoteTimeClockPolicy,
-  type RemoteTimeClockSettings,
 } from '@/api/timeClock';
 import {
   fetchManagerStaff,
@@ -51,7 +46,6 @@ import {
   type TipPayrollSettings,
   type TipRoleRule,
 } from '@/api/restaurantSetup';
-import { staleWhileRevalidate, writeCacheRecord } from '@/cache/staleWhileRevalidate';
 import ScanCatalog from '@/screens/ScanCatalog';
 import { UiButton } from '@/components/ui/Button';
 import { PublishControls } from '@/components/ui/PublishControls';
@@ -63,11 +57,9 @@ import { palette, semanticColors, statusColors } from '@/styles/colors';
 import { radius, spacing } from '@/styles/tokens';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { getOwnerRestaurant, type OwnerRestaurant } from '../../packages/supabase';
 
-const POLICY_CACHE_TTL_MS = 60_000;
-const POLICY_MAX_STALE_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_SPLIT_COUNT = 8;
 const FALLBACK_ROLE_OPTIONS = ['manager', 'server', 'bartender', 'host', 'busser', 'runner', 'chef'];
 const SERVICE_MODE_OPTIONS = [
@@ -959,7 +951,6 @@ function buildSignatureDataUrl(name: string) {
 export default function OwnerSettings() {
   const router = useRouter();
   const [restaurant, setRestaurant] = useState<OwnerRestaurant | null>(null);
-  const [policy, setPolicy] = useState<RemoteTimeClockPolicy | null>(null);
   const [jobCodes, setJobCodes] = useState<JobCode[]>([]);
   const [staff, setStaff] = useState<StaffContact[]>([]);
   const [sectionEdits, setSectionEdits] = useState<string[]>(['Table']);
@@ -983,7 +974,6 @@ export default function OwnerSettings() {
   const [staffRoleEdits, setStaffRoleEdits] = useState<Record<string, string>>({});
   const [savingRateId, setSavingRateId] = useState<string | null>(null);
   const [savingStaffId, setSavingStaffId] = useState<string | null>(null);
-  const [freshness, setFreshness] = useState<'fresh' | 'stale' | 'miss' | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isRegisteringNotifications, setIsRegisteringNotifications] = useState(false);
@@ -1035,7 +1025,6 @@ export default function OwnerSettings() {
     onScheduled(message);
     return true;
   };
-  const settings = policy?.remote_time_clock || DEFAULT_REMOTE_TIME_CLOCK_POLICY.remote_time_clock;
   const roleOptions = Array.from(new Set([
     ...jobCodes.map((code) => code.code || code.label).filter(Boolean),
     ...staff.map((person) => person.role).filter(Boolean),
@@ -1050,18 +1039,6 @@ export default function OwnerSettings() {
         if (cancelled) return;
         setRestaurant(ownerRestaurant);
         if (!ownerRestaurant?.id) return;
-        const result = await staleWhileRevalidate<RemoteTimeClockPolicy>({
-          namespace: 'manager-time-clock-policy',
-          version: 1,
-          parts: [ownerRestaurant.id],
-          ttlMs: POLICY_CACHE_TTL_MS,
-          maxStaleMs: POLICY_MAX_STALE_MS,
-          fetcher: () => fetchManagerTimeClockPolicy(ownerRestaurant.id),
-          onRevalidate: setPolicy,
-        });
-        if (cancelled) return;
-        setPolicy(result.data);
-        setFreshness(result.freshness);
         const [codes, staffRows, sectionRows, floorPlan, setupConfig, taxesCharges, menuCategoryData, discountData, managerControls, closeoutSettings, checkWorkflowSettings, tipPayrollSettings] = await Promise.all([
           fetchRestaurantJobCodes(ownerRestaurant.id).catch(() => []),
           fetchManagerStaff(ownerRestaurant.id),
@@ -1110,43 +1087,6 @@ export default function OwnerSettings() {
       cancelled = true;
     };
   }, []);
-
-  const updateSetting = (patch: Partial<RemoteTimeClockSettings>) => {
-    setPolicy((current) => {
-      const base = current || DEFAULT_REMOTE_TIME_CLOCK_POLICY;
-      const nextSettings = {
-        ...base.remote_time_clock,
-        ...patch,
-      };
-      if (!nextSettings.enabled) nextSettings.allow_manual_entries = false;
-      return {
-        ...base,
-        restaurant_id: restaurantId || base.restaurant_id,
-        remote_time_clock: nextSettings,
-      };
-    });
-  };
-
-  const savePolicy = async () => {
-    if (!restaurantId) return;
-    setIsSaving(true);
-    setMessage('Saving remote clock settings...');
-    try {
-      const saved = await saveManagerTimeClockPolicy(restaurantId, settings);
-      setPolicy(saved);
-      setFreshness('fresh');
-      await writeCacheRecord(
-        { namespace: 'manager-time-clock-policy', version: 1, parts: [restaurantId] },
-        saved,
-        POLICY_CACHE_TTL_MS,
-      ).catch(() => undefined);
-      setMessage('Remote clock settings saved.');
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not save remote clock settings.');
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   const saveSections = async (publication?: Publication) => {
     if (!restaurantId) return;
@@ -2380,52 +2320,11 @@ export default function OwnerSettings() {
         ) : null}
       </View>
 
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <View style={{ flex: 1 }}>
-            <UiText variant="title">Remote clock-in</UiText>
-            <UiText variant="bodySmall" tone="muted" style={{ marginTop: spacing[1] }}>
-              Disabled restaurants hide remote clock controls from employees.
-            </UiText>
-          </View>
-          <Switch
-            value={settings.enabled}
-            onValueChange={(enabled) => updateSetting({ enabled, allow_manual_entries: enabled && settings.allow_manual_entries })}
-            disabled={isLoading || isSaving}
-          />
+      {message ? (
+        <View style={styles.messageCard}>
+          <UiText variant="bodySmall" tone="muted">{message}</UiText>
         </View>
-
-        <SettingRow
-          title="Manual hours"
-          body="Allow employees to submit past work hours for manager approval."
-          value={settings.enabled && settings.allow_manual_entries}
-          disabled={!settings.enabled || isSaving}
-          onValueChange={(allow_manual_entries) => updateSetting({ allow_manual_entries })}
-        />
-        <SettingRow
-          title="Manager mention required"
-          body="Employees choose one admin to notify; all admins can still review."
-          value={settings.require_manager_mention}
-          disabled={!settings.enabled || isSaving}
-          onValueChange={(require_manager_mention) => updateSetting({ require_manager_mention })}
-        />
-
-        {freshness === 'stale' && (
-          <View style={styles.warningCard}>
-            <UiText variant="bodySmall" tone="warning">Showing cached settings while syncing.</UiText>
-          </View>
-        )}
-        {message ? (
-          <View style={styles.messageCard}>
-            <UiText variant="bodySmall" tone="muted">{message}</UiText>
-          </View>
-        ) : null}
-        <UiButton
-          label={isSaving ? 'Saving...' : 'Save remote clock settings'}
-          disabled={isSaving || isLoading || !restaurantId}
-          onPress={savePolicy}
-        />
-      </View>
+      ) : null}
 
       <View style={styles.card}>
         <View style={styles.cardHeader}>
@@ -3188,33 +3087,6 @@ export default function OwnerSettings() {
   );
 }
 
-function SettingRow({
-  title,
-  body,
-  value,
-  disabled,
-  onValueChange,
-}: {
-  title: string;
-  body: string;
-  value: boolean;
-  disabled?: boolean;
-  onValueChange: (value: boolean) => void;
-}) {
-  return (
-    <Pressable
-      onPress={() => !disabled && onValueChange(!value)}
-      style={[styles.settingRow, disabled && styles.settingRowDisabled]}
-    >
-      <View style={{ flex: 1 }}>
-        <UiText variant="body" style={styles.settingTitle}>{title}</UiText>
-        <UiText variant="bodySmall" tone="muted" style={{ marginTop: spacing[1] }}>{body}</UiText>
-      </View>
-      <Switch value={value} disabled={disabled} onValueChange={onValueChange} />
-    </Pressable>
-  );
-}
-
 function ChoiceGroup({
   label,
   value,
@@ -3282,18 +3154,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing[3],
-  },
-  settingRow: {
-    alignItems: 'center',
-    borderColor: semanticColors.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: spacing[3],
-    padding: spacing[3],
-  },
-  settingRowDisabled: {
-    opacity: 0.55,
   },
   settingTitle: {
     color: palette.ink[900],
@@ -3460,13 +3320,6 @@ const styles = StyleSheet.create({
   },
   sectionActionButton: {
     flexGrow: 1,
-  },
-  warningCard: {
-    backgroundColor: statusColors.warning.bg,
-    borderColor: statusColors.warning.border,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    padding: spacing[3],
   },
   messageCard: {
     backgroundColor: semanticColors.surface,

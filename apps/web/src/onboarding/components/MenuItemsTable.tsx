@@ -37,6 +37,9 @@ const CATEGORIES = [
 interface MenuItemsTableProps {
   items: MenuEditorItem[]
   onItemsChange: (items: MenuEditorItem[]) => void
+  // Fired only for the explicit per-row delete button, so callers can tell a
+  // deliberate removal apart from rows merely leaving the table state.
+  onRemove?: (id: string) => void
   disabled?: boolean
   categories?: Array<{ id?: string | null; name: string; default_fire_mode?: string; kds_display_group?: string }>
 }
@@ -69,7 +72,7 @@ const sanitizePriceInput = (value: string) => {
   return rest.length ? `${whole}.${rest.join('').slice(0, 2)}` : whole
 }
 
-export function MenuItemsTable({ items, onItemsChange, disabled, categories }: MenuItemsTableProps) {
+export function MenuItemsTable({ items, onItemsChange, onRemove, disabled, categories }: MenuItemsTableProps) {
   const categoryOptions = categories?.length ? [{ id: null, name: '' }, ...categories] : CATEGORIES.map(name => ({ id: null, name }))
 
   const update = (id: string, field: keyof MenuEditorItem, value: unknown) => {
@@ -98,6 +101,7 @@ export function MenuItemsTable({ items, onItemsChange, disabled, categories }: M
   }
 
   const remove = (id: string) => {
+    onRemove?.(id)
     onItemsChange(items.filter(item => item.id !== id))
   }
 
