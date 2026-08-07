@@ -1,17 +1,51 @@
-// The editable schema cannot reproduce the legacy combined table/order/time
-// row byte-for-byte. This starter preserves every piece of operational ticket
-// information and is materialized only after the user explicitly chooses to
-// replace the legacy block with editable rows.
+// The starter is the ticket the POS already prints, written in the grammar the
+// builder edits — it mirrors DEFAULT_KITCHEN_TICKET_TOP in the backend's
+// printing_policy.py.
+//
+// It used to be a best-effort approximation, because the editable schema could
+// not express the two-column heading the POS actually printed. Opening the
+// builder therefore replaced a two-line ticket with six one-field-per-line rows:
+// doing the thing the page invited you to do made your tickets worse. The `pair`
+// row type closed that gap, so customizing now starts from exactly what was on
+// paper and every edit from there is a real choice.
+//
+//     CHK 418                  DINE IN
+//     Table 12 · Marcus          3:14P
+//     --------------------------------
 export const TICKET_TOP_STARTER = {
   header: [
-    { type: 'field', field: 'order_type', size: 'large', bold: true },
-    { type: 'field', field: 'course', size: 'large', bold: true },
+    {
+      type: 'pair',
+      // `first` is a fallback chain: an offline ticket has no check number yet
+      // and falls back to the table rather than printing a blank column.
+      left: {
+        parts: [{ field: 'check_number' }, { field: 'location' }],
+        mode: 'first',
+        size: 'large',
+        bold: true,
+      },
+      right: { parts: [{ field: 'order_type' }], size: 'large', bold: true },
+      right_width: 10,
+    },
   ],
   info: [
-    { type: 'field', field: 'table' },
-    { type: 'field', field: 'check_number' },
-    { type: 'field', field: 'time' },
-    { type: 'field', field: 'server' },
+    {
+      type: 'pair',
+      // `hide_if_duplicate`: when the header already fell back to the table,
+      // printing it again here would say Table 7 twice.
+      left: {
+        parts: [
+          { field: 'location', hide_if_duplicate: true },
+          { field: 'server_name' },
+        ],
+        join: ' · ',
+      },
+      right: { parts: [{ field: 'time_only' }] },
+      right_width: 7,
+    },
+    { type: 'divider' },
+    { type: 'field', field: 'course_banner', align: 'center', bold: true, requires: 'course_banner' },
+    { type: 'divider', requires: 'course_banner' },
   ],
 }
 
@@ -38,4 +72,19 @@ export function buildTicketTopPatch(zones, changedZones) {
     patch[zone] = stripTicketTopRowIds(zones[zone])
   }
   return patch
+}
+
+// A column resolves to one line of text. `first` takes the first part that
+// resolves to anything; `join` concatenates every part that survives.
+export function ticketTopSideParts(side) {
+  if (!side) return []
+  if (Array.isArray(side.parts)) return side.parts
+  return side.field || side.text ? [side] : []
+}
+
+export function ticketTopSideLabel(side, fieldLabel) {
+  const parts = ticketTopSideParts(side)
+  if (!parts.length) return '—'
+  const names = parts.map(part => (part.text ? `"${part.text}"` : fieldLabel(part.field)))
+  return side.mode === 'first' ? names.join(' or ') : names.join(side.join ?? ' · ')
 }

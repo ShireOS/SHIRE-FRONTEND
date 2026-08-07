@@ -5,26 +5,61 @@ import {
   buildTicketTopPatch,
   ticketTopEditorRows,
   ticketTopRowsMatch,
+  ticketTopSideLabel,
+  ticketTopSideParts,
 } from './ticketTopPolicy'
 
-// Ticket-top builder: two editable zones (big centered header + compact info
-// lines) stored as kitchen.header / kitchen.info in the printing config. When
-// neither key exists the POS prints its legacy hardcoded ticket top. Replacing
-// that block with editable rows is an explicit action so a small row edit can
-// never silently opt a restaurant into a different ticket structure.
+// Ticket-top builder: two editable zones (header + compact info lines) stored as
+// kitchen.header / kitchen.info in the printing config. When neither key exists
+// the POS resolves the shipped default at print time — it is never written into
+// a restaurant's config, so an unconfigured restaurant keeps tracking
+// improvements to the default instead of freezing a copy of it. Replacing it
+// with your own rows is an explicit action, and starts from a faithful copy of
+// what was already printing.
 
+// Fields come in two flavours: a labelled one that reads as its own line
+// ("Server: Marcus") and a bare one for composing inside a two-column row
+// ("Marcus"). Bare fields are marked `bare` — they are offered inside the column
+// editor rather than as standalone rows, where an unlabelled value reads as
+// orphaned text.
 export const TICKET_TOP_FIELDS = {
   order_type: { label: 'Order method', hint: 'DINE IN / TO GO / DELIVERY' },
   station_name: { label: 'Station name', hint: 'e.g. GRILL — per routed station' },
   table: { label: 'Table / tab', hint: 'Table: 12 or Tab: name' },
-  check_number: { label: 'Check number', hint: 'Order 1042' },
+  check_number: { label: 'Check number', hint: 'Follows the check number format' },
   server: { label: 'Server', hint: 'Server: name' },
   course: { label: 'Course', hint: 'Prints only on coursed orders' },
-  time: { label: 'Sent time', hint: 'Sent: 6:42 PM' },
+  time: { label: 'Sent time', hint: 'Sent: 6:42P' },
   guest_count: { label: 'Guest count', hint: 'Guests: 3' },
   restaurant_name: { label: 'Restaurant name', hint: 'From the restaurant record' },
   address: { label: 'Address', hint: 'From the restaurant record' },
   phone: { label: 'Phone', hint: 'From the restaurant record' },
+  location: { label: 'Table / tab (bare)', hint: 'Table 12 — no label', bare: true },
+  check_number_only: { label: 'Check number (bare)', hint: '418 — digits only', bare: true },
+  server_name: { label: 'Server name (bare)', hint: 'Marcus — no label', bare: true },
+  time_only: { label: 'Sent time (bare)', hint: '6:42P — no label', bare: true },
+  course_banner: { label: 'Course banner', hint: 'COURSE: DESSERT', bare: true },
+  guest_count_only: { label: 'Guest count (bare)', hint: '3 — digits only', bare: true },
+}
+
+const fieldLabel = field => TICKET_TOP_FIELDS[field]?.label || field
+const STANDALONE_FIELDS = Object.entries(TICKET_TOP_FIELDS).filter(([, meta]) => !meta.bare)
+
+const ROW_TYPE_LABELS = {
+  field: 'Field',
+  text: 'Custom text',
+  pair: 'Two columns',
+  divider: 'Divider',
+  spacer: 'Spacer',
+}
+
+// A fresh two-column row: the shape most people want first is "something on the
+// left, something on the right", so it starts filled rather than empty.
+const NEW_PAIR_ROW = {
+  type: 'pair',
+  left: { parts: [{ field: 'location' }], size: 'standard', bold: false },
+  right: { parts: [{ field: 'time_only' }], size: 'standard', bold: false },
+  right_width: 10,
 }
 
 const METHODS = [
@@ -47,6 +82,94 @@ function MiniSelect({ value, onChange, title, children }) {
     >
       {children}
     </select>
+  )
+}
+
+// One column of a two-column row. A column is a list of parts plus a rule for
+// combining them: "join" prints every part that resolves (Table 12 · Marcus),
+// "first" prints the first that resolves, which is how a column expresses a
+// fallback (the check number, or the table when a ticket has no number yet).
+function ColumnEditor({ side, label, onChange }) {
+  const parts = ticketTopSideParts(side)
+  const mode = side?.mode === 'first' ? 'first' : 'join'
+
+  const patch = next => onChange({ ...(side || {}), parts, ...next })
+  const patchPart = (index, next) => patch({
+    parts: parts.map((part, position) => (position === index ? { ...part, ...next } : part)),
+  })
+
+  return (
+    <div className="min-w-[190px] flex-1 rounded-lg border border-white/10 bg-black/15 p-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-mono text-[9px] uppercase tracking-wider text-dash-tertiary">{label}</span>
+        <span className="flex items-center gap-1">
+          <MiniSelect value={side?.size || 'standard'} onChange={value => patch({ size: value })} title="Column size">
+            <option value="standard">Standard</option>
+            <option value="large">Large · tall</option>
+            <option value="double">Double · wide</option>
+          </MiniSelect>
+          <Chip on={side?.bold === true} title="Bold" onClick={() => patch({ bold: !side?.bold })}>B</Chip>
+        </span>
+      </div>
+      {parts.map((part, index) => (
+        <div key={index} className="mt-1.5 flex items-center gap-1">
+          <MiniSelect
+            value={part.field || ''}
+            onChange={value => patchPart(index, { field: value, text: undefined })}
+            title="What prints here"
+          >
+            {Object.entries(TICKET_TOP_FIELDS).map(([field, meta]) => (
+              <option key={field} value={field}>{meta.label}</option>
+            ))}
+          </MiniSelect>
+          {index > 0 && (
+            <Chip
+              on={part.hide_if_duplicate === true}
+              title="Skip this when the same text already printed higher up the ticket"
+              onClick={() => patchPart(index, { hide_if_duplicate: !part.hide_if_duplicate || undefined })}
+            >
+              No repeat
+            </Chip>
+          )}
+          {parts.length > 1 && (
+            <button
+              type="button"
+              title="Remove"
+              onClick={() => patch({ parts: parts.filter((_, position) => position !== index) })}
+              className="px-1 text-sm leading-none text-dash-tertiary transition hover:text-red-300"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      ))}
+      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+        {parts.length < 4 && (
+          <button
+            type="button"
+            onClick={() => patch({ parts: [...parts, { field: 'server_name' }] })}
+            className="rounded-full border border-dashed border-white/15 px-2 py-0.5 text-[11px] text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-gold"
+          >
+            + Field
+          </button>
+        )}
+        {parts.length > 1 && (
+          <MiniSelect value={mode} onChange={value => patch({ mode: value })} title="How the fields combine">
+            <option value="join">Combine all</option>
+            <option value="first">First that has a value</option>
+          </MiniSelect>
+        )}
+        {parts.length > 1 && mode === 'join' && (
+          <input
+            value={side?.join ?? ' · '}
+            maxLength={8}
+            onChange={event => patch({ join: event.target.value })}
+            title="Text between the fields"
+            className="w-14 rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-center font-mono text-xs text-dash-cream outline-none focus:border-dash-gold/60"
+          />
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -131,7 +254,8 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
   }
 
   // The parent removes the spec keys and remounts this component, which then
-  // re-reads the post-reset effective rows (whole-kitchen spec or legacy mode).
+  // re-reads the post-reset effective rows (whole-kitchen spec, or the shipped
+  // default resolved at print time).
   const resetToDefault = () => onReset()
   const startCustomizing = () => commit(zonesRef.current, ['header', 'info'])
 
@@ -144,15 +268,21 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
     const row = zones[zone].find(candidate => candidate.id === id)
     if (!row) return null
     const structural = row.type === 'divider' || row.type === 'spacer'
+    const isPair = row.type === 'pair'
     const onlyWhen = Array.isArray(row.only_when) && row.only_when.length ? row.only_when : null
     return (
       <div className={`mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 ${structural ? 'opacity-80' : ''}`}>
         <DragHandle handleProps={handleProps} />
         <span className="min-w-[92px] text-xs font-semibold text-dash-cream">
           <span className="block font-mono text-[9px] uppercase tracking-wider text-dash-tertiary">
-            {row.type === 'field' ? 'Field' : row.type === 'text' ? 'Custom text' : row.type === 'divider' ? 'Divider' : 'Spacer'}
+            {ROW_TYPE_LABELS[row.type] || row.type}
           </span>
-          {row.type === 'field' ? (TICKET_TOP_FIELDS[row.field]?.label || row.field) : ''}
+          {row.type === 'field' ? fieldLabel(row.field) : ''}
+          {isPair && (
+            <span className="block font-normal text-[11px] text-dash-tertiary">
+              {ticketTopSideLabel(row.left, fieldLabel)} → {ticketTopSideLabel(row.right, fieldLabel)}
+            </span>
+          )}
         </span>
         {row.type === 'text' && (
           <input
@@ -163,9 +293,26 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
             className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 font-mono text-xs uppercase text-dash-cream outline-none focus:border-dash-gold/60"
           />
         )}
+        {isPair && (
+          <div className="flex w-full flex-wrap items-start gap-2">
+            <ColumnEditor side={row.left} label="Left" onChange={next => updateRow(zone, id, { left: next })} />
+            <ColumnEditor side={row.right} label="Right" onChange={next => updateRow(zone, id, { right: next })} />
+            <label className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/15 px-2 py-1.5" title="How many columns the right side reserves. Narrower leaves more room for the left.">
+              <span className="font-mono text-[9px] uppercase tracking-wider text-dash-tertiary">Right width</span>
+              <input
+                type="number"
+                min={3}
+                max={20}
+                value={row.right_width ?? 10}
+                onChange={event => updateRow(zone, id, { right_width: Number(event.target.value) })}
+                className="w-14 rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-center text-xs text-dash-cream outline-none focus:border-dash-gold/60"
+              />
+            </label>
+          </div>
+        )}
         {row.type === 'divider' && <span className="min-w-[60px] flex-1 border-t border-dashed border-white/20" />}
         <span className="ml-auto flex flex-wrap items-center gap-1.5">
-          {!structural && (
+          {!structural && !isPair && (
             <>
               <MiniSelect value={row.size || 'standard'} onChange={value => updateRow(zone, id, { size: value })} title="Row size">
                 <option value="standard">Standard</option>
@@ -175,6 +322,15 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
               <Chip on={row.bold === true} title="Bold" onClick={() => updateRow(zone, id, { bold: !row.bold })}>B</Chip>
               {advanced && (
                 <>
+                  <MiniSelect
+                    value={row.align || (zone === 'header' ? 'center' : 'left')}
+                    onChange={value => updateRow(zone, id, { align: value })}
+                    title="Alignment — header rows centre by default, info rows run left"
+                  >
+                    <option value="left">Left</option>
+                    <option value="center">Centre</option>
+                    <option value="right">Right</option>
+                  </MiniSelect>
                   <Chip
                     on={row.color === 'red'}
                     tone="red"
@@ -183,30 +339,44 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
                   >
                     Red
                   </Chip>
-                  <span className="flex gap-0.5 rounded-lg border border-white/10 p-0.5" title="Which order methods print this row">
-                    {METHODS.map(method => {
-                      const active = !onlyWhen || onlyWhen.includes(method.id)
-                      return (
-                        <Chip
-                          key={method.id}
-                          on={active}
-                          title={`${method.label}${active ? ' — prints' : ' — hidden'}`}
-                          onClick={() => {
-                            const current = onlyWhen ? [...onlyWhen] : METHODS.map(item => item.id)
-                            const index = current.indexOf(method.id)
-                            if (index !== -1) { if (current.length > 1) current.splice(index, 1) }
-                            else current.push(method.id)
-                            updateRow(zone, id, { only_when: current.length === METHODS.length ? undefined : current })
-                          }}
-                        >
-                          {method.chip}
-                        </Chip>
-                      )
-                    })}
-                  </span>
                 </>
               )}
             </>
+          )}
+          {!structural && advanced && (
+            <span className="flex gap-0.5 rounded-lg border border-white/10 p-0.5" title="Which order methods print this row">
+              {METHODS.map(method => {
+                const active = !onlyWhen || onlyWhen.includes(method.id)
+                return (
+                  <Chip
+                    key={method.id}
+                    on={active}
+                    title={`${method.label}${active ? ' — prints' : ' — hidden'}`}
+                    onClick={() => {
+                      const current = onlyWhen ? [...onlyWhen] : METHODS.map(item => item.id)
+                      const index = current.indexOf(method.id)
+                      if (index !== -1) { if (current.length > 1) current.splice(index, 1) }
+                      else current.push(method.id)
+                      updateRow(zone, id, { only_when: current.length === METHODS.length ? undefined : current })
+                    }}
+                  >
+                    {method.chip}
+                  </Chip>
+                )
+              })}
+            </span>
+          )}
+          {advanced && (
+            <MiniSelect
+              value={row.requires || ''}
+              onChange={value => updateRow(zone, id, { requires: value || undefined })}
+              title="Only print this row when a field has a value — e.g. a rule under the course banner should vanish on an uncoursed ticket"
+            >
+              <option value="">Always print</option>
+              {Object.entries(TICKET_TOP_FIELDS).map(([field, meta]) => (
+                <option key={field} value={field}>Only if: {meta.label}</option>
+              ))}
+            </MiniSelect>
           )}
           {advanced && (
             <button
@@ -235,7 +405,7 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
     <div className="mt-1 rounded-xl border border-dashed border-white/10 p-3">
       <span className="label-mono">Optional rows</span>
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {Object.entries(TICKET_TOP_FIELDS).map(([field, meta]) => (
+        {STANDALONE_FIELDS.map(([field, meta]) => (
           <button
             key={field}
             type="button"
@@ -246,6 +416,14 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
             + {meta.label}
           </button>
         ))}
+        <button
+          type="button"
+          title="Two fields side by side on one line — the shape the printed heading uses"
+          onClick={() => addRow(zone, structuredClone(NEW_PAIR_ROW))}
+          className="rounded-full border border-dashed border-white/15 px-3 py-1 text-xs font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-gold"
+        >
+          + Two columns
+        </button>
         <button type="button" onClick={() => addRow(zone, { type: 'text', text: '' })} className="rounded-full border border-dashed border-white/15 px-3 py-1 text-xs font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-gold">+ Custom text</button>
         <button type="button" onClick={() => addRow(zone, { type: 'divider' })} className="rounded-full border border-dashed border-white/15 px-3 py-1 text-xs font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-gold">+ Divider</button>
         <button type="button" onClick={() => addRow(zone, { type: 'spacer' })} className="rounded-full border border-dashed border-white/15 px-3 py-1 text-xs font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-gold">+ Spacer</button>
@@ -258,8 +436,13 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
       <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
         <h2 className="text-lg font-semibold">Ticket header &amp; info</h2>
         <p className="mt-1 text-sm text-dash-tertiary">
-          The legacy POS ticket top is active. Its combined table, order, and time row remains unchanged until you explicitly replace it with editable rows.
+          Using the standard ticket top — the check number and order method on one line, table, server and sent time on the next. Improvements to it reach you automatically until you customize.
         </p>
+        <pre className="mt-3 overflow-x-auto rounded-xl border border-white/10 bg-black/25 px-3 py-2 font-mono text-[11px] leading-5 text-dash-secondary">
+{`CHK 418                  DINE IN
+Table 12 · Marcus          3:14P
+--------------------------------`}
+        </pre>
         <button
           type="button"
           onClick={startCustomizing}
@@ -268,7 +451,7 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
           Customize ticket top
         </button>
         <p className="mt-2 text-xs text-dash-tertiary">
-          The starter keeps order method, course, table or tab, check number, sent time, and server. Review the live preview before saving.
+          Customizing starts from an exact copy of the ticket above, so nothing changes until you change it. You stop receiving updates to the standard layout. Review the live preview before saving.
         </p>
       </div>
     )
@@ -290,10 +473,10 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
             <button
               type="button"
               onClick={resetToDefault}
-              title={stationScoped ? 'Remove station overrides and use the Whole Kitchen ticket top' : 'Remove customization and restore the legacy POS ticket top'}
+              title={stationScoped ? 'Remove station overrides and use the Whole Kitchen ticket top' : 'Remove customization and go back to the standard ticket top, updates included'}
               className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-gold"
             >
-              <RotateCcw className="h-3 w-3" /> {stationScoped ? 'Use Whole Kitchen' : 'Reset to legacy'}
+              <RotateCcw className="h-3 w-3" /> {stationScoped ? 'Use Whole Kitchen' : 'Use the standard'}
             </button>
           )}
           <button
@@ -309,7 +492,7 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
       <div className="mt-4">
         <div className="flex items-baseline gap-2">
           <span className="label-mono">Header</span>
-          <span className="text-xs text-dash-tertiary">big &amp; centered</span>
+          <span className="text-xs text-dash-tertiary">the line a cook reads first</span>
         </div>
         <div className="mt-2">
           <SortableRows ids={zones.header.map(row => row.id)} onReorder={ids => reorderZone('header', ids)} renderRow={renderRow('header')} />

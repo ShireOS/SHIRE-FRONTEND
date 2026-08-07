@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, Clock3, FileText, ListChecks, Phone, Plus, Printer, ReceiptText, Trash2, UserRoundCheck, Utensils } from 'lucide-react'
+import { CalendarDays, Clock3, FileText, ListChecks, Phone, Plus, Printer, ReceiptText, ShieldCheck, Trash2, UserRoundCheck, Utensils } from 'lucide-react'
 import { fetchPosApi } from '../../shared/api/posClient'
 
 const ACTION_LABELS = {
@@ -372,6 +372,126 @@ function TerminalHomeDesigner({ restaurantId }) {
   )
 }
 
+const DEFAULT_MANAGER_APPROVAL_POLICY = {
+  enabled: false,
+  item_void_enabled: true,
+  require_manager_on_duty: true,
+  offline_lan_enabled: true,
+  request_ttl_seconds: 90,
+}
+
+function ManagerApprovalSettings({ restaurantId }) {
+  const [policy, setPolicy] = useState(DEFAULT_MANAGER_APPROVAL_POLICY)
+  const [changeReason, setChangeReason] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError('')
+    void fetchPosApi(restaurantId, `/restaurants/${restaurantId}/manager-approval-policy`)
+      .then((data) => {
+        if (!cancelled) setPolicy({ ...DEFAULT_MANAGER_APPROVAL_POLICY, ...(data || {}) })
+      })
+      .catch((err) => { if (!cancelled) setError(err?.message || 'Could not load manager approval settings') })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [restaurantId])
+
+  const toggle = (key) => setPolicy((current) => ({ ...current, [key]: !current[key] }))
+
+  const save = async () => {
+    if (changeReason.trim().length < 2) {
+      setError('Add a brief reason for this policy change')
+      return
+    }
+    setSaving(true)
+    setMessage('')
+    setError('')
+    try {
+      const saved = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/manager-approval-policy`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          enabled: policy.enabled,
+          item_void_enabled: policy.item_void_enabled,
+          require_manager_on_duty: policy.require_manager_on_duty,
+          offline_lan_enabled: policy.offline_lan_enabled,
+          request_ttl_seconds: Number(policy.request_ttl_seconds),
+          change_reason: changeReason.trim(),
+        }),
+      })
+      setPolicy({ ...DEFAULT_MANAGER_APPROVAL_POLICY, ...saved })
+      setChangeReason('')
+      setMessage('Manager approval policy saved and audited')
+    } catch (err) {
+      setError(err?.message || 'Could not save manager approval settings')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const rows = [
+    { key: 'enabled', label: 'Ping manager', caption: 'Show the remote approval pill beneath eligible POS manager PIN pads.' },
+    { key: 'item_void_enabled', label: 'Sent-item voids', caption: 'First supported action. The existing correction audit remains authoritative.' },
+    { key: 'require_manager_on_duty', label: 'Require manager on duty', caption: 'Only offer a ping when at least one active manager is clocked in.' },
+    { key: 'offline_lan_enabled', label: 'Temporary-outage delivery', caption: 'Allow signed local-network delivery; execution still waits for backend verification.' },
+  ]
+
+  return (
+    <section className="rounded-2xl border border-dash-border bg-dash-panel p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex gap-3">
+          <div className="mt-1 rounded-xl bg-shell-accent/10 p-2 text-shell-accent"><ShieldCheck size={20} /></div>
+          <div>
+            <p className="label-mono text-dash-tertiary">Manager workflow</p>
+            <h2 className="mt-1 text-2xl font-semibold text-dash-cream">Remote approval</h2>
+            <p className="mt-2 max-w-2xl text-sm text-dash-secondary">
+              Keep the normal manager PIN flow and add an immediate ping to manager terminals. Requester, reason, decision, and resulting void share the normal audit path.
+            </p>
+          </div>
+        </div>
+        <button type="button" onClick={save} disabled={saving || loading} className="rounded-xl bg-shell-accent px-5 py-2 text-sm font-semibold text-dash-base disabled:opacity-50">
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+
+      {loading ? <div className="mt-4 text-sm text-dash-secondary">Loading manager approval policy...</div> : null}
+      {error ? <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div> : null}
+      {message ? <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">{message}</div> : null}
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-2">
+        {rows.map((row) => (
+          <button key={row.key} type="button" onClick={() => toggle(row.key)} className="flex items-center justify-between gap-4 rounded-xl border border-dash-border bg-dash-surface p-4 text-left">
+            <span>
+              <span className="block text-sm font-semibold text-dash-cream">{row.label}</span>
+              <span className="mt-1 block text-xs leading-5 text-dash-secondary">{row.caption}</span>
+            </span>
+            <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${policy[row.key] ? 'bg-shell-accent' : 'bg-white/15'}`}>
+              <span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${policy[row.key] ? 'left-6' : 'left-1'}`} />
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-[220px_1fr]">
+        <label className="text-sm font-semibold text-dash-secondary">
+          Request expires after
+          <select value={policy.request_ttl_seconds} onChange={(event) => setPolicy((current) => ({ ...current, request_ttl_seconds: Number(event.target.value) }))} className="mt-2 w-full rounded-xl border border-dash-border bg-dash-surface px-3 py-2 text-dash-cream outline-none">
+            {[60, 90, 120, 180].map((seconds) => <option key={seconds} value={seconds}>{seconds} seconds</option>)}
+          </select>
+        </label>
+        <label className="text-sm font-semibold text-dash-secondary">
+          Change reason
+          <input value={changeReason} onChange={(event) => setChangeReason(event.target.value)} placeholder="Why is this policy changing?" className="mt-2 w-full rounded-xl border border-dash-border bg-dash-surface px-3 py-2 text-dash-cream placeholder:text-dash-tertiary outline-none" />
+        </label>
+      </div>
+    </section>
+  )
+}
+
 export default function PosSettingsPage({ restaurantId }) {
   const [presets, setPresets] = useState([])
   const [actionType, setActionType] = useState('discount')
@@ -481,6 +601,8 @@ export default function PosSettingsPage({ restaurantId }) {
       {message ? <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{message}</div> : null}
 
       <TerminalHomeDesigner restaurantId={restaurantId} />
+
+      <ManagerApprovalSettings restaurantId={restaurantId} />
 
       <section className="rounded-2xl border border-dash-border bg-dash-panel p-5">
         <div className="grid gap-3 md:grid-cols-[180px_1fr_auto]">

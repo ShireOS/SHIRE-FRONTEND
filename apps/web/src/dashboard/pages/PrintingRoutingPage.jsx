@@ -26,6 +26,8 @@ const DEFAULT_CONFIG = {
     print_seats: true, combine_identical: true, item_bold: true, item_name_mode: 'alias',
     modifier_name_mode: 'alias', modifier_size: 'large', modifier_color: 'black', modifier_bold: true,
     note_size: 'large', note_color: 'red', note_bold: true,
+    check_number_format: 'chk', time_format: 'compact', seat_format: 'short',
+    note_style: 'stars', item_separator: 'dots',
   },
   aliases: { items: {}, modifiers: {} },
   stations: {},
@@ -507,6 +509,49 @@ export default function PrintingRoutingPage({ restaurantId }) {
                         : 'Choose a printer to verify color. Requested red safely falls back to bold black.'}
                   </p>
                 </div>
+                {/* The shared vocabulary. Each of these renders a concept that appears in
+                    more than one place on a ticket, so the choice is made once here rather
+                    than per row — a check number cannot read CHK 418 in the heading and
+                    ORD-2026-000418 in a row someone added in the builder. */}
+                <div className="mt-4">
+                  <span className="label-mono">How things read</span>
+                  <p className="mt-1 text-xs text-dash-tertiary">Applies everywhere it appears — the heading, the builder rows, and the item lines.</p>
+                  <div className="mt-2 grid gap-3 md:grid-cols-2">
+                    <Select label="Check number" value={effectiveKitchen.check_number_format ?? 'chk'} onChange={value => patchKitchen({ check_number_format: value })}>
+                      <option value="chk">CHK 418 (recommended)</option>
+                      <option value="short">418</option>
+                      <option value="hash">#418</option>
+                      <option value="full">ORD-2026-000418</option>
+                      <option value="labeled">Order ORD-2026-000418</option>
+                    </Select>
+                    <Select label="Sent time" value={effectiveKitchen.time_format ?? 'compact'} onChange={value => patchKitchen({ time_format: value })}>
+                      <option value="compact">3:14P (recommended)</option>
+                      <option value="meridiem">3:14 PM</option>
+                      <option value="h24">15:14</option>
+                    </Select>
+                    <Select label="Seats" value={effectiveKitchen.seat_format ?? 'short'} onChange={value => patchKitchen({ seat_format: value })}>
+                      <option value="short">S1 (recommended)</option>
+                      <option value="labeled">Seat 1</option>
+                      <option value="paren">(Seat 1)</option>
+                      <option value="number">1</option>
+                    </Select>
+                    <Select label="Guest notes" value={effectiveKitchen.note_style ?? 'stars'} onChange={value => patchKitchen({ note_style: value })}>
+                      <option value="stars">** NO ONION ** (recommended)</option>
+                      <option value="labeled">NOTE: NO ONION</option>
+                      <option value="bracket">[NO ONION]</option>
+                      <option value="plain">NO ONION</option>
+                    </Select>
+                    <Select label="Between items" value={effectiveKitchen.item_separator ?? 'dots'} onChange={value => patchKitchen({ item_separator: value })}>
+                      <option value="dots">Dotted rule (recommended)</option>
+                      <option value="dashes">Solid rule</option>
+                      <option value="blank">Blank line</option>
+                      <option value="none">Nothing</option>
+                    </Select>
+                  </div>
+                  <p className="mt-2 text-xs text-dash-tertiary">
+                    A seat label with no number ("Window") always prints as written — there is nothing to shorten.
+                  </p>
+                </div>
                 <div className="mt-4"><Toggle label="Bold items (darker)" checked={effectiveKitchen.item_bold ?? true} onChange={value => patchKitchen({ item_bold: value })} /><Toggle label="Print modifiers" checked={effectiveKitchen.print_modifiers} onChange={value => patchKitchen({ print_modifiers: value })} /><Toggle label="Bold modifiers (darker)" checked={effectiveKitchen.modifier_bold ?? true} onChange={value => patchKitchen({ modifier_bold: value })} /><Toggle label="Bold notes (darker)" checked={effectiveKitchen.note_bold ?? true} onChange={value => patchKitchen({ note_bold: value })} /><Toggle label="Print prices" checked={effectiveKitchen.print_prices} onChange={value => patchKitchen({ print_prices: value })} /><Toggle label="Print seats" checked={effectiveKitchen.print_seats} onChange={value => patchKitchen({ print_seats: value })} /><Toggle label="Combine identical items" checked={effectiveKitchen.combine_identical} onChange={value => patchKitchen({ combine_identical: value })} /></div>
               </div>
 
@@ -540,8 +585,11 @@ export default function PrintingRoutingPage({ restaurantId }) {
             <pre className={`whitespace-pre-wrap font-mono leading-relaxed ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{preview.split('\n').map((line, index, lines) => {
               const isModifier = output === 'kitchen_ticket' && /^\s*\+/.test(line)
               const isItem = output === 'kitchen_ticket' && /^\d+(?:\.\d+)?\s{2}\S/.test(line)
+              // Guest notes carry whichever marker the note style configures, so
+              // matching only the old "NOTE:" prefix left them unstyled in the
+              // preview under every other choice.
               const isNote = output === 'kitchen_ticket' && (
-                /^\s*NOTE:/.test(line)
+                /^\s*(NOTE:|\*\* .* \*\*\s*$|\[.*\]\s*$)/.test(line)
                 || line.trim() === 'ORDER NOTE'
                 || (index > 0 && lines[index - 1].trim() === 'ORDER NOTE')
               )
