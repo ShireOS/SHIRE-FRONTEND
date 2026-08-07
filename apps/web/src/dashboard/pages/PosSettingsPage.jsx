@@ -373,7 +373,7 @@ function TerminalHomeDesigner({ restaurantId }) {
 }
 
 const DEFAULT_MANAGER_APPROVAL_POLICY = {
-  enabled: false,
+  enabled: true,
   item_void_enabled: true,
   require_manager_on_duty: true,
   offline_lan_enabled: true,
