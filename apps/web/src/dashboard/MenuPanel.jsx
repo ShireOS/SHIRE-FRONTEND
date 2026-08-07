@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import { rankModifierMatches } from '@shire/menu-search'
 import { supabase } from '../shared/lib/supabase'
@@ -655,6 +655,11 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const auth = useAuth()
   const [portfolio, setPortfolio] = useState(null)
   const [propagationRequest, setPropagationRequest] = useState(null)
+  // Item-editor layout prefs (card order + collapse), per user via
+  // reports/view-preferences context "menu_item_editor".
+  const [editorPrefs, setEditorPrefs] = useState(null)
+  const editorPrefsRef = useRef(null)
+  const editorPrefsTimerRef = useRef(null)
   const [expandedCategoryNames, setExpandedCategoryNames] = useState(() => new Set())
   const [categoryScrollTarget, setCategoryScrollTarget] = useState(null)
 
@@ -805,6 +810,49 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     })
   }
 
+  const loadEditorPrefs = async () => {
+    // Layout prefs are cosmetic — swallow failures so they never block the menu.
+    try {
+      const data = await api(`/restaurants/${restaurantId}/reports/view-preferences`)
+      const saved = data?.settings?.menu_item_editor
+      const next = saved && typeof saved === 'object' ? saved : {}
+      editorPrefsRef.current = next
+      setEditorPrefs(next)
+    } catch {
+      editorPrefsRef.current = {}
+      setEditorPrefs({})
+    }
+  }
+
+  // Optimistic local merge; the PUT is debounced so drag/collapse bursts
+  // coalesce into one write.
+  const saveEditorPrefs = (patch) => {
+    const next = { ...(editorPrefsRef.current || {}), ...patch }
+    editorPrefsRef.current = next
+    setEditorPrefs(next)
+    if (editorPrefsTimerRef.current) clearTimeout(editorPrefsTimerRef.current)
+    editorPrefsTimerRef.current = setTimeout(() => {
+      editorPrefsTimerRef.current = null
+      void api(`/restaurants/${restaurantId}/reports/view-preferences/menu_item_editor`, {
+        method: 'PUT',
+        body: JSON.stringify({ settings: editorPrefsRef.current }),
+      }).catch(() => {})
+    }, 450)
+  }
+
+  useEffect(() => () => {
+    // Flush a pending layout save on unmount so the last change isn't lost.
+    if (editorPrefsTimerRef.current) {
+      clearTimeout(editorPrefsTimerRef.current)
+      editorPrefsTimerRef.current = null
+      void api(`/restaurants/${restaurantId}/reports/view-preferences/menu_item_editor`, {
+        method: 'PUT',
+        body: JSON.stringify({ settings: editorPrefsRef.current || {} }),
+      }).catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const loadSpecialSettings = async () => {
     const { data, error } = await supabase.from('restaurants').select('config').eq('id', restaurantId).single()
     if (error) throw error
@@ -855,6 +903,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       ['allergies', loadAllergies],
       ['specials', () => loadSpecials({ soft: true })],
       ['specials settings', loadSpecialSettings],
+      ['editor layout', loadEditorPrefs],
       ['kitchen routing', loadRouting],
       ['printing config', loadPrintingConfig],
     ]
@@ -1933,6 +1982,8 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           reloadItemModifierOverrides={loadItemModifierOverrides}
           canEditPrices={canEditPrices}
           onDuplicate={item => startCreateItem(item)}
+          editorPrefs={editorPrefs}
+          onSaveEditorPrefs={saveEditorPrefs}
         />
       )}
 
