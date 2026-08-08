@@ -60,7 +60,6 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { getOwnerRestaurant, type OwnerRestaurant } from '../../packages/supabase';
 
-const MAX_SPLIT_COUNT = 8;
 const FALLBACK_ROLE_OPTIONS = ['manager', 'server', 'bartender', 'host', 'busser', 'runner', 'chef'];
 const SERVICE_MODE_OPTIONS = [
   { id: 'dine_in', label: 'Dine-in' },
@@ -403,26 +402,13 @@ const DEFAULT_CHECK_WORKFLOW_SETTINGS: CheckWorkflowSettings = {
   seat_numbers_enabled: true,
   seat_number_required: false,
   course_required: false,
-  allow_split_checks: true,
   split_by_seat_enabled: true,
   split_by_item_enabled: true,
-  split_evenly_enabled: true,
-  max_split_count: '8',
-  allow_partial_payments: true,
-  require_manager_for_split_after_payment: true,
-  allow_check_merge: true,
-  allow_table_transfer: true,
-  allow_server_transfer: true,
-  require_manager_for_transfer: false,
   allow_bar_tabs: true,
   tab_name_required: true,
   card_preauth_required: false,
   default_preauth_amount: '',
-  allow_tabs_without_table: true,
-  auto_close_paid_tabs: true,
-  allow_reopen_closed_checks: false,
   require_manager_for_reopen: true,
-  allow_send_before_required_modifiers: false,
   allow_hold_and_fire: true,
   default_order_fire_mode: 'immediate',
   default_hold_minutes: '10',
@@ -431,8 +417,6 @@ const DEFAULT_CHECK_WORKFLOW_SETTINGS: CheckWorkflowSettings = {
   allow_item_seat_move: true,
   allow_multi_item_seat_move: true,
   require_manager_for_item_move_after_send: false,
-  print_guest_check_by_default: true,
-  notes: '',
 };
 
 function defaultTipPayrollSettings(jobCodes: JobCode[] = []): TipPayrollSettings {
@@ -754,19 +738,19 @@ function closeoutPayload(row: CloseoutSettings): CloseoutSettings {
 
 function normalizeCheckWorkflowSettings(row: CheckWorkflowSettings | undefined): CheckWorkflowSettings {
   const source = row || DEFAULT_CHECK_WORKFLOW_SETTINGS;
-  const maxSplitCount = Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(numberText(source.max_split_count) || DEFAULT_CHECK_WORKFLOW_SETTINGS.max_split_count)));
   const presets = Array.isArray(source.hold_preset_minutes)
     ? Array.from(new Set(source.hold_preset_minutes.map(Number).filter((value) => Number.isFinite(value) && value > 0))).slice(0, 8)
     : DEFAULT_CHECK_WORKFLOW_SETTINGS.hold_preset_minutes;
+  const normalized = {} as CheckWorkflowSettings;
+  for (const key of Object.keys(DEFAULT_CHECK_WORKFLOW_SETTINGS) as (keyof CheckWorkflowSettings)[]) {
+    (normalized as Record<string, unknown>)[key] = source[key] ?? DEFAULT_CHECK_WORKFLOW_SETTINGS[key];
+  }
   return {
-    ...DEFAULT_CHECK_WORKFLOW_SETTINGS,
-    ...source,
-    max_split_count: String(maxSplitCount),
+    ...normalized,
     default_preauth_amount: numberText(source.default_preauth_amount),
     default_order_fire_mode: ORDER_FIRE_MODE_OPTIONS.some(([value]) => value === source.default_order_fire_mode) ? source.default_order_fire_mode : 'immediate',
     default_hold_minutes: numberText(source.default_hold_minutes) || '10',
     hold_preset_minutes: presets.length > 0 ? presets : DEFAULT_CHECK_WORKFLOW_SETTINGS.hold_preset_minutes,
-    notes: source.notes || '',
   };
 }
 
@@ -774,13 +758,11 @@ function checkWorkflowPayload(row: CheckWorkflowSettings): CheckWorkflowSettings
   const settings = normalizeCheckWorkflowSettings(row);
   return {
     ...settings,
-    max_split_count: Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(settings.max_split_count || MAX_SPLIT_COUNT))),
     default_preauth_amount: settings.default_preauth_amount === '' ? null : Number(settings.default_preauth_amount),
     default_hold_minutes: Math.max(1, Math.min(360, Number(settings.default_hold_minutes || 10))),
     hold_preset_minutes: (Array.from(new Set(settings.hold_preset_minutes.map(Number).filter((value) => Number.isFinite(value) && value > 0))).slice(0, 8).length > 0
       ? Array.from(new Set(settings.hold_preset_minutes.map(Number).filter((value) => Number.isFinite(value) && value > 0))).slice(0, 8)
       : DEFAULT_CHECK_WORKFLOW_SETTINGS.hold_preset_minutes),
-    notes: settings.notes?.trim() || null,
   };
 }
 
@@ -2048,14 +2030,6 @@ export default function OwnerSettings() {
             style={[styles.setupInput, styles.twoColumnInput]}
           />
           <TextInput
-            value={String(checkWorkflowEdits.max_split_count ?? '')}
-            onChangeText={(value) => updateCheckWorkflow({ max_split_count: String(Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(value.replace(/[^\d]/g, '') || 1)))) })}
-            placeholder="Max splits"
-            keyboardType="number-pad"
-            placeholderTextColor={palette.ink[400]}
-            style={[styles.setupInput, styles.twoColumnInput]}
-          />
-          <TextInput
             value={String(checkWorkflowEdits.default_preauth_amount ?? '')}
             onChangeText={(value) => updateCheckWorkflow({ default_preauth_amount: sanitizeMoney(value).slice(0, 10) })}
             placeholder="Preauth amount"
@@ -2075,30 +2049,8 @@ export default function OwnerSettings() {
             ['allow_item_seat_move', 'Move item seat'],
             ['allow_multi_item_seat_move', 'Multi-move items'],
             ['require_manager_for_item_move_after_send', 'Manager after send'],
-            ['allow_send_before_required_modifiers', 'Send w/o modifiers'],
-            ['print_guest_check_by_default', 'Print guest check'],
-          ].map(([field, label]) => {
-            const active = Boolean(checkWorkflowEdits[field as keyof CheckWorkflowSettings]);
-            return (
-              <Pressable
-                key={field}
-                onPress={() => updateCheckWorkflow({ [field]: !active } as Partial<CheckWorkflowSettings>)}
-                style={[styles.choicePill, active && styles.choicePillActive]}
-              >
-                <UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{label}</UiText>
-              </Pressable>
-            );
-          })}
-        </View>
-        <UiText variant="caption" tone="muted">Split checks & payments</UiText>
-        <View style={styles.choiceWrap}>
-          {[
-            ['allow_split_checks', 'Split checks'],
-            ['split_by_seat_enabled', 'By seat'],
-            ['split_by_item_enabled', 'By item'],
-            ['split_evenly_enabled', 'Even split'],
-            ['allow_partial_payments', 'Partial payments'],
-            ['require_manager_for_split_after_payment', 'Approval after payment'],
+            ['split_by_seat_enabled', 'Split by seat'],
+            ['split_by_item_enabled', 'Split by item'],
           ].map(([field, label]) => {
             const active = Boolean(checkWorkflowEdits[field as keyof CheckWorkflowSettings]);
             return (
@@ -2118,29 +2070,6 @@ export default function OwnerSettings() {
             ['allow_bar_tabs', 'Bar tabs'],
             ['tab_name_required', 'Tab name'],
             ['card_preauth_required', 'Card preauth'],
-            ['allow_tabs_without_table', 'No table tabs'],
-            ['auto_close_paid_tabs', 'Auto-close tabs'],
-          ].map(([field, label]) => {
-            const active = Boolean(checkWorkflowEdits[field as keyof CheckWorkflowSettings]);
-            return (
-              <Pressable
-                key={field}
-                onPress={() => updateCheckWorkflow({ [field]: !active } as Partial<CheckWorkflowSettings>)}
-                style={[styles.choicePill, active && styles.choicePillActive]}
-              >
-                <UiText variant="caption" style={active ? styles.choiceTextActive : styles.choiceText}>{label}</UiText>
-              </Pressable>
-            );
-          })}
-        </View>
-        <UiText variant="caption" tone="muted">Transfers & reopening</UiText>
-        <View style={styles.choiceWrap}>
-          {[
-            ['allow_check_merge', 'Merge checks'],
-            ['allow_table_transfer', 'Table transfer'],
-            ['allow_server_transfer', 'Server transfer'],
-            ['require_manager_for_transfer', 'Transfer approval'],
-            ['allow_reopen_closed_checks', 'Reopen checks'],
             ['require_manager_for_reopen', 'Reopen approval'],
           ].map(([field, label]) => {
             const active = Boolean(checkWorkflowEdits[field as keyof CheckWorkflowSettings]);
@@ -2155,14 +2084,6 @@ export default function OwnerSettings() {
             );
           })}
         </View>
-        <TextInput
-          value={checkWorkflowEdits.notes || ''}
-          onChangeText={(value) => updateCheckWorkflow({ notes: value })}
-          placeholder="Workflow notes"
-          placeholderTextColor={palette.ink[400]}
-          multiline
-          style={[styles.setupInput, styles.notesInput]}
-        />
         <PublishControls label="Save check workflow" busy={isSavingCheckWorkflow} disabled={!restaurantId} onPublishNow={() => saveCheckWorkflow()} onSchedule={(scheduledFor, timezone) => saveCheckWorkflow({ scheduledFor, timezone })} />
         {checkWorkflowMessage ? (
           <View style={styles.messageCard}>

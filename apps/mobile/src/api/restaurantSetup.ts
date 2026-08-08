@@ -248,30 +248,19 @@ export async function saveCloseoutSettings(restaurantId: string, payload: Closeo
   });
 }
 
+// Only fields the POS enforces; the old split/merge/transfer/tab-close
+// toggles were never read by any POS code path and were removed.
 export type CheckWorkflowSettings = {
   seat_numbers_enabled: boolean;
   seat_number_required: boolean;
   course_required: boolean;
-  allow_split_checks: boolean;
   split_by_seat_enabled: boolean;
   split_by_item_enabled: boolean;
-  split_evenly_enabled: boolean;
-  max_split_count: string | number;
-  allow_partial_payments: boolean;
-  require_manager_for_split_after_payment: boolean;
-  allow_check_merge: boolean;
-  allow_table_transfer: boolean;
-  allow_server_transfer: boolean;
-  require_manager_for_transfer: boolean;
   allow_bar_tabs: boolean;
   tab_name_required: boolean;
   card_preauth_required: boolean;
   default_preauth_amount: string | number | null;
-  allow_tabs_without_table: boolean;
-  auto_close_paid_tabs: boolean;
-  allow_reopen_closed_checks: boolean;
   require_manager_for_reopen: boolean;
-  allow_send_before_required_modifiers: boolean;
   allow_hold_and_fire: boolean;
   default_order_fire_mode: 'manual' | 'immediate' | 'by_course';
   default_hold_minutes: string | number;
@@ -280,8 +269,6 @@ export type CheckWorkflowSettings = {
   allow_item_seat_move: boolean;
   allow_multi_item_seat_move: boolean;
   require_manager_for_item_move_after_send: boolean;
-  print_guest_check_by_default: boolean;
-  notes?: string | null;
 };
 
 export async function fetchCheckWorkflowSettings(restaurantId: string) {
