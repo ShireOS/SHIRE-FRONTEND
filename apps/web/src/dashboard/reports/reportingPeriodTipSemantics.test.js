@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
+import { cashSettlementDisplay } from './reportDisplay.js'
+
 const reportsPage = await readFile(new URL('./RestaurantReportsPage.jsx', import.meta.url), 'utf8')
 const reconciliationBanner = await readFile(new URL('../../shared/components/ReconciliationBanner.jsx', import.meta.url), 'utf8')
 const setupPanel = await readFile(new URL('../RestaurantSetupPanel.jsx', import.meta.url), 'utf8')
@@ -34,7 +36,6 @@ test('money reports keep accounting dates and employee gratuity explicit', () =>
   assert.match(reportsPage, /Voluntary tips needing attribution/)
   assert.match(reportsPage, /remains unpaid until a manager attributes it/)
   assert.match(reportsPage, /Unclassified legacy charges/)
-  assert.match(reportsPage, /Server owes restaurant/)
   assert.match(reportsPage, /Gratuity owed through payroll/)
   assert.match(reportsPage, /Total tip earnings/)
   assert.match(reportsPage, /Independent transaction verification is unavailable/)
@@ -42,4 +43,20 @@ test('money reports keep accounting dates and employee gratuity explicit', () =>
   assert.match(reportsPage, /reconciliationCoversCurrentView \? <ReconciliationBanner/)
   assert.match(reconciliationBanner, /recon\.status === 'verified' && recon\.complete === true/)
   assert.doesNotMatch(reportsPage, /Stat label="Tips"/)
+})
+
+test('server cash settlement labels follow the signed authoritative amount', () => {
+  assert.deepEqual(cashSettlementDisplay(42.5), {
+    label: 'Server owes restaurant',
+    amount: 42.5,
+  })
+  assert.deepEqual(cashSettlementDisplay(-42.5), {
+    label: 'Restaurant owes server',
+    amount: 42.5,
+  })
+  assert.deepEqual(cashSettlementDisplay(0), {
+    label: 'Server owes restaurant',
+    amount: 0,
+  })
+  assert.equal(cashSettlementDisplay(null), null)
 })

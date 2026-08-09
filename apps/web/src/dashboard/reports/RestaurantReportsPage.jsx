@@ -23,6 +23,7 @@ import { fetchWithSupabaseAuth } from '../../shared/query'
 import { fetchPosApi } from '../../shared/api/posClient'
 import ServerReceiptTemplateModal from './ServerReceiptTemplateModal'
 import { ReconciliationBanner, fetchReconciliation } from '../../shared/components/ReconciliationBanner'
+import { cashSettlementDisplay } from './reportDisplay'
 import { effectivePreference } from './reportPreferences'
 
 const SECTION_META = [
@@ -286,7 +287,12 @@ function ConfigModal({ preference, onClose, onSave }) {
   const save = async () => {
     setSaving(true)
     try {
-      await onSave({ ...preference, visible_sections: visible, section_order: resolved.order })
+      await onSave({
+        ...preference,
+        visible_sections: visible,
+        section_order: resolved.order,
+        section_settings: resolved.sectionSettings,
+      })
       onClose()
     } finally {
       setSaving(false)
@@ -451,7 +457,7 @@ function ServerReportsPanel({ roster, detail, selectedServerId, onSelect, loadin
   const totalTipEarnings = Number(detail?.total_tip_earnings ?? voluntaryTips + employeeGratuity)
   const voluntaryTakeHome = Number(detail?.voluntary_take_home ?? detail?.take_home ?? 0)
   const totalTakeHomeEarnings = Number(detail?.total_take_home_earnings ?? voluntaryTakeHome + employeeGratuity)
-  const cashDueToRestaurant = detail?.cash_due_to_restaurant ?? detail?.cash_due
+  const cashSettlement = cashSettlementDisplay(detail?.cash_due_to_restaurant ?? detail?.cash_due)
   const warningLabel = (warning) => typeof warning === 'string'
     ? warning
     : warning?.message || warning?.detail || warning?.code || 'This report is incomplete.'
@@ -471,7 +477,7 @@ function ServerReportsPanel({ roster, detail, selectedServerId, onSelect, loadin
           {!loading && detail && <>
             <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-xl font-semibold">{detail.staff_name}</h3><p className="mt-1 text-sm capitalize text-dash-secondary">{detail.role} · {detail.business_date}</p></div><button type="button" onClick={onPrintReceipt} className="inline-flex items-center gap-2 rounded-md border border-white/10 px-3 py-2 text-sm font-semibold"><Printer className="h-4 w-4" />Receipt print</button></div>
             {(detail.warnings || []).map((warning, index) => <p key={`${warning?.code || 'warning'}-${index}`} className="mt-3 rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{warningLabel(warning)}</p>)}
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><Stat label="Sales" value={money(detail.sales)} /><Stat label="Voluntary tips" value={money(voluntaryTips)} /><Stat label="Employee gratuity" value={money(employeeGratuity)} />{restaurantServiceCharges !== 0 && <Stat label="Restaurant service charges" value={money(restaurantServiceCharges)} />}{unclassifiedServiceCharges !== 0 && <Stat label="Unclassified legacy charges" value={money(unclassifiedServiceCharges)} />}<Stat label="Total tip earnings" value={money(totalTipEarnings)} /><Stat label="Voluntary tips after tip-out" value={money(voluntaryTakeHome)} /><Stat label="Total earnings after tip-out" value={money(totalTakeHomeEarnings)} />{cashDueToRestaurant != null && <Stat label="Server owes restaurant" value={money(cashDueToRestaurant)} />}<Stat label="Top sold item" value={detail.top_item?.name || '—'} /></div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><Stat label="Sales" value={money(detail.sales)} /><Stat label="Voluntary tips" value={money(voluntaryTips)} /><Stat label="Employee gratuity" value={money(employeeGratuity)} />{restaurantServiceCharges !== 0 && <Stat label="Restaurant service charges" value={money(restaurantServiceCharges)} />}{unclassifiedServiceCharges !== 0 && <Stat label="Unclassified legacy charges" value={money(unclassifiedServiceCharges)} />}<Stat label="Total tip earnings" value={money(totalTipEarnings)} /><Stat label="Voluntary tips after tip-out" value={money(voluntaryTakeHome)} /><Stat label="Total earnings after tip-out" value={money(totalTakeHomeEarnings)} />{cashSettlement && <Stat label={cashSettlement.label} value={money(cashSettlement.amount)} />}<Stat label="Top sold item" value={detail.top_item?.name || '—'} /></div>
             <div className="mt-5 flex items-end justify-between gap-3"><div><h4 className="font-semibold">Checks</h4><p className="text-xs text-dash-tertiary">{number(detail.check_count)} checks · {number(detail.open_check_count)} open</p></div><input aria-label="Search server checks" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search check or table" className="h-10 w-64 rounded-md border border-white/10 bg-white/[0.04] px-3 text-sm" /></div>
             <div className="mt-2"><Table rows={checks} columns={[{ key: 'order_number', label: 'Check' }, { key: 'table_number', label: 'Table' }, { key: 'payment_status', label: 'Status' }, { key: 'payment_method', label: 'Tender' }, { key: 'total', label: 'Total', render: money }, { key: 'voluntary_tips', label: 'Voluntary tips', render: (value, row) => money(value ?? row.tip_amount) }, { key: 'employee_gratuity', label: 'Employee gratuity', render: money }, { key: 'restaurant_service_charges', label: 'Restaurant charges', render: money }, { key: 'unclassified_service_charges', label: 'Unclassified charges', render: (value, row) => money(value ?? row.unclassified_gratuity) }, { key: 'total_tip_earnings', label: 'Total tip earnings', render: (value, row) => money(value ?? Number(row.voluntary_tips ?? row.tip_amount ?? 0) + Number(row.employee_gratuity ?? 0)) }]} /></div>
           </>}

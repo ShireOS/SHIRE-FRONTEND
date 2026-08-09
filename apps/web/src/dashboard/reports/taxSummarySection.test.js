@@ -3,7 +3,11 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { effectivePreference } from './reportPreferences.js'
+import {
+  REPORT_CATALOG_VERSION,
+  REPORT_CATALOG_VERSION_KEY,
+  effectivePreference,
+} from './reportPreferences.js'
 
 const read = (relative) => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8')
 const reportsPage = read('./RestaurantReportsPage.jsx')
@@ -59,14 +63,33 @@ test('the config modal and the page agree, so an untouched save cannot hide a ne
   assert.deepEqual(first.visible, ['sales_revenue', 'z_report', 'daily_summary', 'tax_summary'])
 
   // Save with nothing toggled: the backend echoes back what the modal posted.
-  const afterSave = { visible_sections: first.visible, section_order: first.order }
+  const afterSave = {
+    visible_sections: first.visible,
+    section_order: first.order,
+    section_settings: first.sectionSettings,
+  }
   assert.deepEqual(effectivePreference(afterSave, ALL).visible, first.visible)
   assert.match(reportsPage, /const resolved = resolvePreference\(preference\)/)
   assert.match(reportsPage, /useState\(resolved\.visible\)/)
 })
 
+test('an older client cannot hide a newly introduced section when the backend backfills order', () => {
+  const backendBackfilled = {
+    visible_sections: OLD,
+    section_order: ALL,
+    section_settings: {},
+  }
+  const resolved = effectivePreference(backendBackfilled, ALL)
+  assert.ok(resolved.visible.includes('tax_summary'))
+  assert.equal(resolved.sectionSettings[REPORT_CATALOG_VERSION_KEY], REPORT_CATALOG_VERSION)
+})
+
 test('a section the user actually unchecked stays hidden across reloads', () => {
-  const saved = { visible_sections: ['sales_revenue', 'tax_summary'], section_order: ALL }
+  const saved = {
+    visible_sections: ['sales_revenue', 'tax_summary'],
+    section_order: ALL,
+    section_settings: { [REPORT_CATALOG_VERSION_KEY]: REPORT_CATALOG_VERSION },
+  }
   const { visible } = effectivePreference(saved, ALL)
   assert.deepEqual(visible, ['sales_revenue', 'tax_summary'])
 })
@@ -74,7 +97,11 @@ test('a section the user actually unchecked stays hidden across reloads', () => 
 test('an empty saved order does not leak sections the user hid', () => {
   // `[]` is truthy, so the old `preference.section_order || ALL` kept the empty array and
   // then force-added every id as "new", revealing sections the user had switched off.
-  const { visible } = effectivePreference({ visible_sections: ['sales_revenue'], section_order: [] }, ALL)
+  const { visible } = effectivePreference({
+    visible_sections: ['sales_revenue'],
+    section_order: [],
+    section_settings: { [REPORT_CATALOG_VERSION_KEY]: REPORT_CATALOG_VERSION },
+  }, ALL)
   assert.deepEqual(visible, ['sales_revenue'])
 })
 
