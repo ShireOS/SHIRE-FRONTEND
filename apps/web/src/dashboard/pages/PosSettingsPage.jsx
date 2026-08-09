@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, Clock3, FileText, ListChecks, Phone, Plus, Printer, ReceiptText, ShieldCheck, Trash2, UserRoundCheck, Utensils } from 'lucide-react'
+import { BarChart3, CalendarDays, Clock3, FileText, ListChecks, Phone, Plus, Printer, ReceiptText, ShieldCheck, Trash2, UserRoundCheck, Utensils } from 'lucide-react'
 import { fetchPosApi } from '../../shared/api/posClient'
 
 const ACTION_LABELS = {
@@ -23,6 +23,18 @@ const ACCESS_RANK = {
   manager_pin: 2,
 }
 
+const REPORT_SECTIONS = [
+  ['sales_revenue', 'Sales & revenue'],
+  ['top_bottom_sellers', 'Top & bottom sellers'],
+  ['average_check', 'Average check'],
+  ['employee_reports', 'Employee reports'],
+  ['payroll_support', 'Payroll support'],
+  ['punch_log', 'Punch log'],
+  ['z_report', 'Z report'],
+  ['daily_summary', 'Daily summary'],
+]
+const REPORT_SECTION_IDS = new Set(REPORT_SECTIONS.map(([id]) => id))
+
 const WIDGETS = [
   { id: 'daily_specials', label: 'Daily Specials', caption: 'View active specials for today.', defaultAccess: 'none', minimumAccess: 'none', icon: Utensils },
   { id: 'eighty_six', label: '86 List', caption: 'See items unavailable right now.', defaultAccess: 'none', minimumAccess: 'none', icon: ListChecks },
@@ -33,19 +45,22 @@ const WIDGETS = [
   { id: 'bar_tabs', label: 'Bar Tabs', caption: 'Open the bar tab workflow after staff PIN.', defaultAccess: 'staff_pin', minimumAccess: 'staff_pin', icon: UserRoundCheck },
   { id: 'delivery_pickup', label: 'Delivery', caption: 'Open delivery and pickup work after staff PIN.', defaultAccess: 'staff_pin', minimumAccess: 'staff_pin', icon: FileText },
   { id: 'print_specials', label: 'Print Specials', caption: 'Print today specials once the print source is connected.', defaultAccess: 'manager_pin', minimumAccess: 'manager_pin', icon: Printer },
+  { id: 'today_sales', label: "Today's Sales", caption: 'PIN-free paired-terminal snapshot: net sales, checks, average check, and open-check count.', defaultAccess: 'none', minimumAccess: 'none', icon: BarChart3 },
+  { id: 'custom_report', label: 'Custom Report', caption: 'Open one existing canonical report section after manager PIN.', defaultAccess: 'manager_pin', minimumAccess: 'manager_pin', icon: FileText },
 ]
 
 const WIDGET_BY_ID = Object.fromEntries(WIDGETS.map((widget) => [widget.id, widget]))
 
 const DEFAULT_TERMINAL_HOME = {
   maxSlots: 6,
+  bottomClock: true,
   tiles: [
-    { id: 'daily_specials-0', widget: 'daily_specials', label: 'Daily Specials', accessMode: 'none', slot: 0 },
-    { id: 'eighty_six-1', widget: 'eighty_six', label: '86 List', accessMode: 'none', slot: 1 },
-    { id: 'reservations-2', widget: 'reservations', label: 'Reservations', accessMode: 'none', slot: 2 },
-    { id: 'phone_order-3', widget: 'phone_order', label: 'Phone Order', accessMode: 'staff_pin', slot: 3 },
-    { id: 'time_clock-4', widget: 'time_clock', label: 'Time Clock', accessMode: 'none', slot: 4 },
-    { id: 'my_shift_report-5', widget: 'my_shift_report', label: 'My Shift Report', accessMode: 'staff_pin', slot: 5 },
+    { id: 'daily_specials-0', widget: 'daily_specials', label: 'Daily Specials', accessMode: 'none', slot: 0, placement: 'left' },
+    { id: 'eighty_six-1', widget: 'eighty_six', label: '86 List', accessMode: 'none', slot: 1, placement: 'left' },
+    { id: 'reservations-2', widget: 'reservations', label: 'Reservations', accessMode: 'none', slot: 2, placement: 'left' },
+    { id: 'phone_order-3', widget: 'phone_order', label: 'Phone Order', accessMode: 'staff_pin', slot: 3, placement: 'right' },
+    { id: 'my_shift_report-4', widget: 'my_shift_report', label: 'My Shift Report', accessMode: 'staff_pin', slot: 4, placement: 'right' },
+    { id: 'today_sales-5', widget: 'today_sales', label: "Today's Sales", accessMode: 'none', slot: 5, placement: 'right' },
   ],
 }
 
@@ -65,19 +80,27 @@ function normalizeTerminalHomeConfig(value) {
           const accessMode = ACCESS_RANK[requestedAccess] >= ACCESS_RANK[widget.minimumAccess]
             ? requestedAccess
             : widget.minimumAccess
-          return {
+          const placement = tile.placement === 'right' ? 'right' : tile.placement === 'left'
+            ? 'left'
+            : slot < Math.ceil(maxSlots / 2) ? 'left' : 'right'
+          const normalized = {
             id: String(tile.id || `${widget.id}-${slot}`),
             widget: widget.id,
             label: String(tile.label || widget.label).slice(0, 48),
             accessMode,
             slot,
+            placement,
           }
+          if (widget.id === 'custom_report') {
+            normalized.reportSection = REPORT_SECTION_IDS.has(tile.reportSection) ? tile.reportSection : 'sales_revenue'
+          }
+          return normalized
         })
         .filter(Boolean)
         .sort((a, b) => a.slot - b.slot)
         .slice(0, maxSlots)
     : []
-  return { maxSlots, tiles: tiles.length ? tiles : DEFAULT_TERMINAL_HOME.tiles.slice(0, maxSlots) }
+  return { maxSlots, bottomClock: true, tiles: tiles.length ? tiles : DEFAULT_TERMINAL_HOME.tiles.slice(0, maxSlots) }
 }
 
 function nextEmptySlot(config) {
@@ -88,7 +111,7 @@ function nextEmptySlot(config) {
   return null
 }
 
-function createTile(widgetId, slot) {
+function createTile(widgetId, slot, placement) {
   const widget = WIDGET_BY_ID[widgetId]
   return {
     id: `${widgetId}-${slot}-${Date.now()}`,
@@ -96,6 +119,8 @@ function createTile(widgetId, slot) {
     label: widget.label,
     accessMode: widget.defaultAccess,
     slot,
+    placement,
+    ...(widgetId === 'custom_report' ? { reportSection: 'sales_revenue' } : {}),
   }
 }
 
@@ -143,6 +168,8 @@ function TerminalHomeDesigner({ restaurantId }) {
         if (patch.widget) {
           next.label = widget.label
           next.accessMode = ACCESS_RANK[next.accessMode] >= ACCESS_RANK[widget.minimumAccess] ? next.accessMode : widget.defaultAccess
+          if (widget.id === 'custom_report') next.reportSection = REPORT_SECTION_IDS.has(next.reportSection) ? next.reportSection : 'sales_revenue'
+          else delete next.reportSection
         }
         if (ACCESS_RANK[next.accessMode] < ACCESS_RANK[widget.minimumAccess]) next.accessMode = widget.minimumAccess
         return next
@@ -165,10 +192,15 @@ function TerminalHomeDesigner({ restaurantId }) {
     setMessage('')
   }
 
-  const addTile = () => {
+  const addTile = (preferredPlacement) => {
     const slot = nextEmptySlot(config)
     if (slot == null) return
-    const tile = createTile('daily_specials', slot)
+    const leftCount = config.tiles.filter((tile) => tile.placement === 'left').length
+    const rightCount = config.tiles.length - leftCount
+    const placement = preferredPlacement === 'left' || preferredPlacement === 'right'
+      ? preferredPlacement
+      : leftCount <= rightCount ? 'left' : 'right'
+    const tile = createTile('daily_specials', slot, placement)
     setConfig((current) => normalizeTerminalHomeConfig({ ...current, tiles: [...current.tiles, tile] }))
     setSelectedId(tile.id)
     setMessage('')
@@ -210,7 +242,7 @@ function TerminalHomeDesigner({ restaurantId }) {
           <p className="label-mono text-dash-tertiary">Terminal home</p>
           <h2 className="mt-1 text-2xl font-semibold text-dash-cream">Quick access defaults</h2>
           <p className="mt-2 max-w-2xl text-sm text-dash-secondary">
-            Restaurant-wide shortcuts for fixed POS terminals. A terminal can still keep its own override from the PIN screen.
+            Restaurant-wide left and right shortcuts for fixed POS terminals. Time Clock always remains at the bottom, and a terminal can still keep its own override from the PIN screen.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -238,20 +270,29 @@ function TerminalHomeDesigner({ restaurantId }) {
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_380px]">
         <div className="rounded-2xl border border-dash-border bg-dash-surface p-4">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div className="text-sm font-semibold text-dash-secondary">Terminal preview</div>
-            <button
-              type="button"
-              onClick={addTile}
-              disabled={isFull}
-              className="inline-flex items-center gap-2 rounded-xl border border-dash-border px-3 py-2 text-sm font-semibold text-dash-cream disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Plus size={16} />
-              Add
-            </button>
+            <div className="flex gap-2">
+              {['left', 'right'].map((placement) => (
+                <button
+                  key={placement}
+                  type="button"
+                  onClick={() => addTile(placement)}
+                  disabled={isFull}
+                  className="inline-flex items-center gap-2 rounded-xl border border-dash-border px-3 py-2 text-sm font-semibold capitalize text-dash-cream disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Plus size={16} />
+                  {placement}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            {config.tiles.map((tile) => {
+          <div className="grid gap-4 md:grid-cols-2">
+            {['left', 'right'].map((placement) => (
+              <div key={placement} className="rounded-xl border border-dash-border bg-dash-panel/60 p-3">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-dash-tertiary">{placement} rail</div>
+                <div className="space-y-2">
+            {config.tiles.filter((tile) => tile.placement === placement).map((tile) => {
               const widget = WIDGET_BY_ID[tile.widget]
               const Icon = widget.icon
               const selected = tile.id === selectedTile?.id
@@ -260,7 +301,7 @@ function TerminalHomeDesigner({ restaurantId }) {
                   key={tile.id}
                   type="button"
                   onClick={() => setSelectedId(tile.id)}
-                  className={`min-h-[118px] rounded-xl border p-4 text-left transition ${
+                  className={`w-full rounded-xl border p-3 text-left transition ${
                     selected
                       ? 'border-shell-accent bg-shell-accent/10'
                       : 'border-dash-border bg-dash-panel hover:border-white/25'
@@ -274,11 +315,18 @@ function TerminalHomeDesigner({ restaurantId }) {
                       {ACCESS_LABELS[tile.accessMode]}
                     </span>
                   </div>
-                  <div className="mt-5 font-semibold text-dash-cream">{tile.label}</div>
+                  <div className="mt-3 font-semibold text-dash-cream">{tile.label}</div>
                   <div className="mt-1 truncate text-sm text-dash-tertiary">{widget.caption}</div>
                 </button>
               )
             })}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center justify-center gap-2 rounded-xl border border-dash-border bg-dash-panel px-4 py-3 text-sm font-semibold text-dash-cream">
+            <Clock3 size={17} />
+            Time Clock stays fixed at the bottom
           </div>
         </div>
 
@@ -319,6 +367,39 @@ function TerminalHomeDesigner({ restaurantId }) {
                   className="mt-2 w-full rounded-xl border border-dash-border bg-dash-panel px-3 py-2 text-sm font-semibold text-dash-cream outline-none"
                 />
               </label>
+
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-dash-tertiary">Side</span>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {['left', 'right'].map((placement) => (
+                    <button
+                      key={placement}
+                      type="button"
+                      onClick={() => patchTile(selectedTile.id, { placement })}
+                      className={`rounded-xl border px-3 py-3 text-sm font-semibold capitalize ${
+                        selectedTile.placement === placement
+                          ? 'border-shell-accent bg-shell-accent/10 text-shell-accent'
+                          : 'border-dash-border text-dash-secondary hover:bg-white/5'
+                      }`}
+                    >
+                      {placement}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {selectedTile.widget === 'custom_report' ? (
+                <label className="block">
+                  <span className="text-xs font-semibold uppercase tracking-[0.08em] text-dash-tertiary">Report</span>
+                  <select
+                    value={selectedTile.reportSection || 'sales_revenue'}
+                    onChange={(event) => patchTile(selectedTile.id, { reportSection: event.target.value })}
+                    className="mt-2 w-full rounded-xl border border-dash-border bg-dash-panel px-3 py-2 text-sm font-semibold text-dash-cream outline-none"
+                  >
+                    {REPORT_SECTIONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                  </select>
+                </label>
+              ) : null}
 
               <label className="block">
                 <span className="text-xs font-semibold uppercase tracking-[0.08em] text-dash-tertiary">Slot</span>
@@ -361,6 +442,7 @@ function TerminalHomeDesigner({ restaurantId }) {
 
               <div className="rounded-xl border border-dash-border bg-dash-panel p-3 text-sm text-dash-secondary">
                 {WIDGET_BY_ID[selectedTile.widget]?.caption}
+                {selectedTile.widget === 'custom_report' ? ' Manager PIN is mandatory and cannot be lowered.' : null}
               </div>
             </div>
           ) : (
