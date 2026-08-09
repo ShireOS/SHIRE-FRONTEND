@@ -16,10 +16,12 @@ import {
   SegmentedControl,
   TextField,
 } from '@/components/scheduling/ScheduleKit';
+import { SmartTimeField } from '@/components/scheduling/SmartTimeField';
 import { UiButton } from '@/components/ui/Button';
 import { UiText } from '@/components/ui/Text';
 import { semanticColors } from '@/styles/colors';
 import { radius, spacing } from '@/styles/tokens';
+import { formatTimeLabel } from '@/utils/timeInput';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
@@ -46,6 +48,8 @@ export default function EmployeeMore() {
   const [timeOffForm, setTimeOffForm] = useState({
     start_date: '',
     end_date: '',
+    start_time: '',
+    end_time: '',
     title: 'Time off',
     notes: '',
     priority: 'normal',
@@ -115,6 +119,10 @@ export default function EmployeeMore() {
       setMessage('Choose a start date first.');
       return;
     }
+    if (Boolean(timeOffForm.start_time) !== Boolean(timeOffForm.end_time)) {
+      setMessage('Choose both times for a partial-day request.');
+      return;
+    }
     setIsSaving(true);
     setMessage('');
     try {
@@ -123,12 +131,14 @@ export default function EmployeeMore() {
         priority: timeOffForm.priority,
         start_date: timeOffForm.start_date,
         end_date: timeOffForm.end_date || timeOffForm.start_date,
+        start_time: timeOffForm.start_time || null,
+        end_time: timeOffForm.end_time || null,
         title: timeOffForm.title || 'Time off',
         notes: timeOffForm.notes || null,
         structured_payload: { source: 'mobile_employee_time_off' },
       });
       setRequests((current) => [created, ...current]);
-      setTimeOffForm({ start_date: '', end_date: '', title: 'Time off', notes: '', priority: 'normal' });
+      setTimeOffForm({ start_date: '', end_date: '', start_time: '', end_time: '', title: 'Time off', notes: '', priority: 'normal' });
       setMessage('Request submitted.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not submit request.');
@@ -186,15 +196,15 @@ export default function EmployeeMore() {
                   ))}
                 </View>
                 <View style={styles.twoCol}>
-                  <TextField
+                  <SmartTimeField
                     value={availabilityForm.start_time}
-                    onChangeText={(start_time) => setAvailabilityForm((current) => ({ ...current, start_time }))}
-                    placeholder="09:00"
+                    onChange={(start_time) => setAvailabilityForm((current) => ({ ...current, start_time }))}
+                    minuteStep={15}
                   />
-                  <TextField
+                  <SmartTimeField
                     value={availabilityForm.end_time}
-                    onChangeText={(end_time) => setAvailabilityForm((current) => ({ ...current, end_time }))}
-                    placeholder="17:00"
+                    onChange={(end_time) => setAvailabilityForm((current) => ({ ...current, end_time }))}
+                    minuteStep={15}
                   />
                 </View>
                 <SegmentedControl
@@ -216,7 +226,7 @@ export default function EmployeeMore() {
               <View style={styles.listGap}>
                 {availability.map((entry, index) => (
                   <View key={entry.id || `${entry.day_of_week}-${index}`} style={styles.simpleRow}>
-                    <UiText variant="body">{DAYS[entry.day_of_week]} · {entry.start_time}-{entry.end_time}</UiText>
+                    <UiText variant="body">{DAYS[entry.day_of_week]} · {formatTimeLabel(entry.start_time)}-{formatTimeLabel(entry.end_time)}</UiText>
                     <UiText variant="bodySmall" tone="muted">{entry.availability_type}</UiText>
                   </View>
                 ))}
@@ -231,6 +241,11 @@ export default function EmployeeMore() {
                 <View style={styles.twoCol}>
                   <TextField value={timeOffForm.start_date} onChangeText={(start_date) => setTimeOffForm((current) => ({ ...current, start_date }))} placeholder="YYYY-MM-DD" />
                   <TextField value={timeOffForm.end_date} onChangeText={(end_date) => setTimeOffForm((current) => ({ ...current, end_date }))} placeholder="End date" />
+                </View>
+                <UiText variant="bodySmall" tone="muted">Optional partial-day window</UiText>
+                <View style={styles.twoCol}>
+                  <SmartTimeField value={timeOffForm.start_time} onChange={(start_time) => setTimeOffForm((current) => ({ ...current, start_time }))} minuteStep={1} allowEmpty placeholder="Starts" />
+                  <SmartTimeField value={timeOffForm.end_time} onChange={(end_time) => setTimeOffForm((current) => ({ ...current, end_time }))} minuteStep={1} allowEmpty placeholder="Ends" />
                 </View>
                 <TextField value={timeOffForm.title} onChangeText={(title) => setTimeOffForm((current) => ({ ...current, title }))} placeholder="Title" />
                 <TextField value={timeOffForm.notes} onChangeText={(notes) => setTimeOffForm((current) => ({ ...current, notes }))} placeholder="Optional note" multiline />

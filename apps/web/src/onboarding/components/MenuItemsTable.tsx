@@ -1,3 +1,5 @@
+import { SmartTimeInput } from '../../shared/components/SmartTimeInput'
+
 export interface MenuEditorItem {
   id: string
   name: string
@@ -228,8 +230,8 @@ export function MenuItemsTable({ items, onItemsChange, onRemove, disabled, categ
                     })}
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <input type="time" value={item.availability_start_time || ''} disabled={disabled} onChange={(e) => update(item.id, 'availability_start_time', e.target.value)} className={compactFieldClass} />
-                    <input type="time" value={item.availability_end_time || ''} disabled={disabled} onChange={(e) => update(item.id, 'availability_end_time', e.target.value)} className={compactFieldClass} />
+                    <SmartTimeInput ariaLabel={`${item.name} available from`} value={item.availability_start_time || ''} disabled={disabled} onChange={(value) => update(item.id, 'availability_start_time', value)} inputClassName="!rounded-lg !py-2 !pr-2 !text-xs" />
+                    <SmartTimeInput ariaLabel={`${item.name} available until`} value={item.availability_end_time || ''} disabled={disabled} onChange={(value) => update(item.id, 'availability_end_time', value)} inputClassName="!rounded-lg !py-2 !pr-2 !text-xs" />
                   </div>
                 </>
               )}

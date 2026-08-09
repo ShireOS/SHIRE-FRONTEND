@@ -5,6 +5,8 @@ import {
   previewPricingChange,
   updatePricingBatch,
 } from '../shared/api/menuPricing'
+import { SmartTimeInput } from '../shared/components/SmartTimeInput'
+import { formatTimeLabel } from '../shared/utils/timeInput.js'
 import {
   DAYS_SHORT,
   Field,
@@ -42,8 +44,9 @@ const adjustmentLabel = rule => ({
 
 const scheduleLabel = rule => {
   if (rule.rule_kind === 'scheduled') return `Starts ${new Date(rule.starts_at).toLocaleString()}`
-  if (rule.rule_kind === 'recurring') return `${(rule.days_of_week || []).map(day => DAYS_SHORT[day]).join(', ')} · ${rule.start_time || 'open'}–${rule.end_time || 'close'}`
-  return `${rule.start_date || 'Now'} → ${rule.end_date || 'No end'}`
+  if (rule.rule_kind === 'recurring') return `${(rule.days_of_week || []).map(day => DAYS_SHORT[day]).join(', ')} · ${formatTimeLabel(rule.start_time) || 'open'}–${formatTimeLabel(rule.end_time) || 'close'}`
+  const window = `${rule.start_date || 'Now'} → ${rule.end_date || 'No end'}`
+  return rule.start_time ? `${window} · ${formatTimeLabel(rule.start_time)}–${formatTimeLabel(rule.end_time) || 'close'}` : window
 }
 
 function TargetPicker({ restaurants, groups, selected, onChange, onClose }) {
@@ -254,9 +257,9 @@ export default function BulkPricingPanel({ restaurantId, canEditPrices }) {
                 <span>Calculate gratuity using the regular price</span>
               </label>
             )}
-            {draft.timing === 'scheduled' && <div className="grid grid-cols-2 gap-3"><Field label="Start date"><TextInput type="date" value={draft.start_date} onChange={event => setDraft(current => ({ ...current, start_date: event.target.value }))} /></Field><Field label="Start time"><TextInput type="time" value={draft.start_time} onChange={event => setDraft(current => ({ ...current, start_time: event.target.value }))} /></Field></div>}
-            {draft.timing === 'window' && <><div className="grid grid-cols-2 gap-3"><Field label="Start date"><TextInput type="date" value={draft.start_date} onChange={event => setDraft(current => ({ ...current, start_date: event.target.value }))} /></Field><Field label="End date"><TextInput type="date" value={draft.end_date} onChange={event => setDraft(current => ({ ...current, end_date: event.target.value }))} /></Field></div><div className="grid grid-cols-2 gap-3"><Field label="Daily start"><TextInput type="time" value={draft.start_time} onChange={event => setDraft(current => ({ ...current, start_time: event.target.value }))} /></Field><Field label="Daily end"><TextInput type="time" value={draft.end_time} onChange={event => setDraft(current => ({ ...current, end_time: event.target.value }))} /></Field></div></>}
-            {draft.timing === 'weekly' && <><div className="flex flex-wrap gap-1.5">{DAYS_SHORT.map((label, day) => <SmallButton key={label} variant={draft.days_of_week.includes(day) ? 'primary' : 'secondary'} onClick={() => setDraft(current => ({ ...current, days_of_week: current.days_of_week.includes(day) ? current.days_of_week.filter(value => value !== day) : [...current.days_of_week, day] }))}>{label}</SmallButton>)}</div><div className="grid grid-cols-2 gap-3"><Field label="Starts"><TextInput type="time" value={draft.start_time} onChange={event => setDraft(current => ({ ...current, start_time: event.target.value }))} /></Field><Field label="Ends"><TextInput type="time" value={draft.end_time} onChange={event => setDraft(current => ({ ...current, end_time: event.target.value }))} /></Field></div></>}
+            {draft.timing === 'scheduled' && <div className="grid grid-cols-2 gap-3"><Field label="Start date"><TextInput type="date" value={draft.start_date} onChange={event => setDraft(current => ({ ...current, start_date: event.target.value }))} /></Field><Field label="Start time"><SmartTimeInput ariaLabel="Scheduled pricing start time" value={draft.start_time} onChange={value => setDraft(current => ({ ...current, start_time: value }))} /></Field></div>}
+            {draft.timing === 'window' && <><div className="grid grid-cols-2 gap-3"><Field label="Start date"><TextInput type="date" value={draft.start_date} onChange={event => setDraft(current => ({ ...current, start_date: event.target.value }))} /></Field><Field label="End date"><TextInput type="date" value={draft.end_date} onChange={event => setDraft(current => ({ ...current, end_date: event.target.value }))} /></Field></div><div className="grid grid-cols-2 gap-3"><Field label="Daily start"><SmartTimeInput ariaLabel="Pricing window start time" value={draft.start_time} onChange={value => setDraft(current => ({ ...current, start_time: value }))} /></Field><Field label="Daily end"><SmartTimeInput ariaLabel="Pricing window end time" value={draft.end_time} onChange={value => setDraft(current => ({ ...current, end_time: value }))} /></Field></div></>}
+            {draft.timing === 'weekly' && <><div className="flex flex-wrap gap-1.5">{DAYS_SHORT.map((label, day) => <SmallButton key={label} variant={draft.days_of_week.includes(day) ? 'primary' : 'secondary'} onClick={() => setDraft(current => ({ ...current, days_of_week: current.days_of_week.includes(day) ? current.days_of_week.filter(value => value !== day) : [...current.days_of_week, day] }))}>{label}</SmallButton>)}</div><div className="grid grid-cols-2 gap-3"><Field label="Starts"><SmartTimeInput ariaLabel="Recurring pricing start time" value={draft.start_time} onChange={value => setDraft(current => ({ ...current, start_time: value }))} /></Field><Field label="Ends"><SmartTimeInput ariaLabel="Recurring pricing end time" value={draft.end_time} onChange={value => setDraft(current => ({ ...current, end_time: value }))} /></Field></div></>}
             <SmallButton variant="primary" disabled={!canEditPrices || busy} onClick={() => void review()}>{busy ? 'Checking...' : 'Review prices'}</SmallButton>
             {!canEditPrices && <p className="text-xs text-dash-tertiary">Your role does not include menu price editing.</p>}
           </div>

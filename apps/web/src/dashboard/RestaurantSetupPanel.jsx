@@ -16,6 +16,7 @@ import {
   staffRoleLabel,
 } from './utils/staffRoles'
 import { PublishControls } from '../shared/components/PublishControls'
+import { SmartTimeInput } from '../shared/components/SmartTimeInput'
 import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
 import { scheduleChange } from '../shared/api/scheduledChanges'
 import { serializeTipRoleRules, serializeWeekdayTipoutOverrides } from '../shared/tips/tipPayrollPolicy'
@@ -131,16 +132,6 @@ const RESERVATIONS_API_BASE_URL = (
   'http://localhost:4100/api/v1'
 ).replace(/\/+$/, '')
 
-const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
-  const hours = Math.floor(i / 2)
-  const minutes = i % 2 === 0 ? '00' : '30'
-  const period = hours >= 12 ? 'PM' : 'AM'
-  const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
-  return {
-    value: `${hours.toString().padStart(2, '0')}:${minutes}`,
-    label: `${displayHours}:${minutes} ${period}`,
-  }
-})
 
 const ROLE_OPTIONS = ['server', 'bartender', 'host', 'manager', 'busser', 'runner']
 
@@ -3687,7 +3678,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               </SelectInput>
             </Field>
             <Field label="Batch Close Time">
-              <TextInput type="time" value={payments.batch_close_time} onChange={event => setPayments(prev => ({ ...prev, batch_close_time: event.target.value }))} />
+              <SmartTimeInput ariaLabel="Automatic batch close time" minuteStep={5} value={payments.batch_close_time} onChange={value => setPayments(prev => ({ ...prev, batch_close_time: value }))} />
             </Field>
             <Field label="Credit Card Tips Paid">
               <SelectInput value={payments.credit_card_tip_payout} onChange={event => setPayments(prev => ({ ...prev, credit_card_tip_payout: event.target.value }))}>
@@ -4359,15 +4350,11 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               <h4 className="text-sm font-semibold">Opening Hours</h4>
               <div className="grid gap-4 md:grid-cols-[1fr_auto_1fr] md:items-end">
                 <Field label="Opens">
-                  <SelectInput value={referenceHours.open_time} onChange={event => updateDayHours(1, 'open_time', event.target.value)}>
-                    {TIME_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </SelectInput>
+                  <SmartTimeInput ariaLabel="Restaurant opens" value={referenceHours.open_time} onChange={value => updateDayHours(1, 'open_time', value)} />
                 </Field>
                 <span className="pb-3 text-sm text-dash-tertiary">to</span>
                 <Field label="Closes">
-                  <SelectInput value={referenceHours.close_time} onChange={event => updateDayHours(1, 'close_time', event.target.value)}>
-                    {TIME_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </SelectInput>
+                  <SmartTimeInput ariaLabel="Restaurant closes" value={referenceHours.close_time} onChange={value => updateDayHours(1, 'close_time', value)} />
                 </Field>
               </div>
               <div className="border-t border-white/10 pt-4">
@@ -4409,12 +4396,8 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                       <span className="md:col-span-2 text-sm text-dash-tertiary">Closed</span>
                     ) : (
                       <>
-                        <SelectInput value={dayHours.open_time} onChange={event => updateDayHours(index, 'open_time', event.target.value)}>
-                          {TIME_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                        </SelectInput>
-                        <SelectInput value={dayHours.close_time} onChange={event => updateDayHours(index, 'close_time', event.target.value)}>
-                          {TIME_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                        </SelectInput>
+                        <SmartTimeInput ariaLabel={`${day} opens`} value={dayHours.open_time} onChange={value => updateDayHours(index, 'open_time', value)} />
+                        <SmartTimeInput ariaLabel={`${day} closes`} value={dayHours.close_time} onChange={value => updateDayHours(index, 'close_time', value)} />
                       </>
                     )}
                   </div>

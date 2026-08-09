@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { SmartTimeInput } from '../shared/components/SmartTimeInput'
 import {
   DAYS_SHORT,
   Field,
@@ -449,8 +450,8 @@ export function MenuItemCreate({
                     ))}
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="From"><TextInput type="time" value={draft.availability_start_time} onChange={event => set({ availability_start_time: event.target.value })} /></Field>
-                    <Field label="Until"><TextInput type="time" value={draft.availability_end_time} onChange={event => set({ availability_end_time: event.target.value })} /></Field>
+                    <Field label="From"><SmartTimeInput ariaLabel="Item available from" value={draft.availability_start_time} onChange={value => set({ availability_start_time: value })} /></Field>
+                    <Field label="Until"><SmartTimeInput ariaLabel="Item available until" value={draft.availability_end_time} onChange={value => set({ availability_end_time: value })} /></Field>
                   </div>
                 </>
               )}

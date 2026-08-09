@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { Modal, ModalFooter } from '../shared/Modal'
 import { Button } from '../shared/Button'
 import { posTimeClockApi } from '../../../shared/api/posClient'
+import { SmartTimeInput } from '../../../shared/components/SmartTimeInput'
 
 const pad = (n) => String(n).padStart(2, '0')
 const isoToDateInput = (iso) => {
@@ -263,7 +264,7 @@ export default function TimeEventModal({ restaurantId, mode, entry, waiters, pre
             <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.08em] text-dash-tertiary">Check-in</p>
             <div className="flex gap-2">
               <input type="date" value={form.inDate} onChange={(e) => patch({ inDate: e.target.value })} className={inputCls} />
-              <input type="time" value={form.inTime} onChange={(e) => patch({ inTime: e.target.value })} className={inputCls} />
+              <SmartTimeInput minuteStep={1} ariaLabel="Check-in time" value={form.inTime} onChange={(value) => patch({ inTime: value })} inputClassName="!rounded-lg !py-1.5 !pr-2.5" />
             </div>
           </div>
           <div className="rounded-xl border border-dash-border p-3">
@@ -283,7 +284,7 @@ export default function TimeEventModal({ restaurantId, mode, entry, waiters, pre
             </div>
             <div className="flex gap-2">
               <input type="date" value={form.outDate} onChange={(e) => patch({ outDate: e.target.value })} className={inputCls} />
-              <input type="time" value={form.outTime} onChange={(e) => patch({ outTime: e.target.value })} className={inputCls} />
+              <SmartTimeInput minuteStep={1} ariaLabel="Check-out time" value={form.outTime} onChange={(value) => patch({ outTime: value })} inputClassName="!rounded-lg !py-1.5 !pr-2.5" />
             </div>
           </div>
         </div>
@@ -317,11 +318,11 @@ export default function TimeEventModal({ restaurantId, mode, entry, waiters, pre
                   </select>
                   <div className="flex gap-1.5">
                     <input type="date" value={b.inDate} onChange={(e) => patchBreak(b.rowKey, { inDate: e.target.value })} className={inputCls} />
-                    <input type="time" value={b.inTime} onChange={(e) => patchBreak(b.rowKey, { inTime: e.target.value })} className={inputCls} />
+                    <SmartTimeInput minuteStep={1} ariaLabel={`${b.break_name} start time`} value={b.inTime} onChange={(value) => patchBreak(b.rowKey, { inTime: value })} inputClassName="!rounded-lg !py-1.5 !pr-2.5" />
                   </div>
                   <div className="flex gap-1.5">
                     <input type="date" value={b.outDate} onChange={(e) => patchBreak(b.rowKey, { outDate: e.target.value })} className={inputCls} />
-                    <input type="time" value={b.outTime} onChange={(e) => patchBreak(b.rowKey, { outTime: e.target.value })} className={inputCls} />
+                    <SmartTimeInput minuteStep={1} ariaLabel={`${b.break_name} end time`} value={b.outTime} onChange={(value) => patchBreak(b.rowKey, { outTime: value })} inputClassName="!rounded-lg !py-1.5 !pr-2.5" />
                   </div>
                   <button
                     type="button"

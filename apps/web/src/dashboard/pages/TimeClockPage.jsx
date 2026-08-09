@@ -17,6 +17,7 @@ import { Badge } from '../components/shared/Badge'
 import { Button } from '../components/shared/Button'
 import { Modal, ModalFooter } from '../components/shared/Modal'
 import TimeEventModal from '../components/timeclock/TimeEventModal'
+import { SmartTimeInput } from '../../shared/components/SmartTimeInput'
 
 // ---------- date helpers (everything displayed in the browser's local tz) ----------
 
@@ -114,11 +115,6 @@ function InlineTimeCell({ iso, baseIso, disabled, onCommit }) {
     setValue(iso ? timeInputValue(iso) : '')
     setEditing(true)
   }
-  const stage = () => {
-    setEditing(false)
-    if (!value || (iso && value === timeInputValue(iso))) return reset()
-    setPendingIso(combineIsoTime(iso || baseIso, value))
-  }
   const save = async () => {
     setSaving(true)
     await onCommit(pendingIso, reason.trim() || 'time correction')
@@ -129,20 +125,20 @@ function InlineTimeCell({ iso, baseIso, disabled, onCommit }) {
   return (
     <div className="relative inline-block">
       {editing ? (
-        <input
-          type="time"
+        <SmartTimeInput
+          minuteStep={1}
+          ariaLabel="Corrected clock time"
           autoFocus
           value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onBlur={stage}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur()
-            if (e.key === 'Escape') {
-              e.preventDefault()
-              reset()
-            }
+          onChange={(nextValue) => {
+            setValue(nextValue)
+            setEditing(false)
+            if (!nextValue || (iso && nextValue === timeInputValue(iso))) return reset()
+            setPendingIso(combineIsoTime(iso || baseIso, nextValue))
           }}
-          className="w-24 rounded-lg border border-dash-gold/60 bg-[var(--glass-bg)] px-2 py-0.5 font-mono text-xs text-dash-cream outline-none"
+          onClose={() => setEditing(false)}
+          className="w-32"
+          inputClassName="!rounded-lg !border-dash-gold/60 !px-8 !py-0.5 !font-mono !text-xs"
         />
       ) : (
         <button

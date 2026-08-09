@@ -9,6 +9,7 @@ import {
   updateManagerStaff,
   type StaffContact,
 } from '@/api/employeeOps';
+import { SmartTimeField } from '@/components/scheduling/SmartTimeField';
 import {
   fetchDiscountRules,
   fetchCheckWorkflowSettings,
@@ -2398,12 +2399,12 @@ export default function OwnerSettings() {
           onChange={(value) => setPaymentEdits((current) => ({ ...current, batch_close_mode: value as typeof paymentEdits.batch_close_mode }))}
         />
         <View style={styles.twoColumnFields}>
-          <TextInput
+          <SmartTimeField
             value={paymentEdits.batch_close_time}
-            onChangeText={(value) => setPaymentEdits((current) => ({ ...current, batch_close_time: value.slice(0, 5) }))}
+            onChange={(value) => setPaymentEdits((current) => ({ ...current, batch_close_time: value }))}
+            minuteStep={5}
             placeholder="Batch close time"
-            placeholderTextColor={palette.ink[400]}
-            style={[styles.setupInput, styles.twoColumnInput]}
+            style={styles.twoColumnInput}
           />
           <TextInput
             value={paymentEdits.refund_approval_threshold}

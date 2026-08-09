@@ -25,6 +25,8 @@ import ServerReceiptTemplateModal from './ServerReceiptTemplateModal'
 import { ReconciliationBanner, fetchReconciliation } from '../../shared/components/ReconciliationBanner'
 import { cashSettlementDisplay } from './reportDisplay'
 import { effectivePreference } from './reportPreferences'
+import { SmartTimeInput } from '../../shared/components/SmartTimeInput'
+import { formatTimeLabel } from '../../shared/utils/timeInput.js'
 
 const SECTION_META = [
   ['sales_revenue', 'Sales & revenue'],
@@ -369,7 +371,7 @@ function EmailModal({ recipients, canManage, deliveryEnabled, disabledReason, de
               <div key={recipient.id} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="font-semibold">{recipient.name || recipient.email}</p>
-                  <p className="text-sm text-dash-secondary">{recipient.email} · {recipient.frequency} · {String(recipient.send_time).slice(0, 5)} · {recipient.timezone}</p>
+                  <p className="text-sm text-dash-secondary">{recipient.email} · {recipient.frequency} · {formatTimeLabel(recipient.send_time)} · {recipient.timezone}</p>
                   <p className="mt-1 text-xs text-dash-tertiary">{recipient.sections.map((section) => SECTION_LABELS[section]).join(', ')}</p>
                   <p className="mt-1 text-xs text-dash-tertiary">{recipient.last_delivery_status ? `Last delivery: ${recipient.last_delivery_status}${recipient.last_delivery_at ? ` · ${new Date(recipient.last_delivery_at).toLocaleString()}` : ''}` : 'No deliveries yet'}</p>
                 </div>
@@ -386,7 +388,7 @@ function EmailModal({ recipients, canManage, deliveryEnabled, disabledReason, de
             <Field label="Recipient name"><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></Field>
             <Field label="Email"><input type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} /></Field>
             <Field label="Frequency"><select value={draft.frequency} onChange={(event) => setDraft({ ...draft, frequency: event.target.value })}><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></Field>
-            <Field label="Send time"><input type="time" value={draft.send_time} onChange={(event) => setDraft({ ...draft, send_time: event.target.value })} /></Field>
+            <Field label="Send time"><SmartTimeInput ariaLabel="Report send time" value={draft.send_time} onChange={(value) => setDraft({ ...draft, send_time: value })} /></Field>
             <Field label="Timezone"><input value={draft.timezone} onChange={(event) => setDraft({ ...draft, timezone: event.target.value })} placeholder="America/Chicago" /></Field>
             {draft.frequency === 'weekly' && <Field label="Day"><select value={draft.weekday ?? 1} onChange={(event) => setDraft({ ...draft, weekday: Number(event.target.value) })}>{DAY_LABELS.map((label, index) => <option key={label} value={index}>{label}</option>)}</select></Field>}
             {draft.frequency === 'monthly' && <Field label="Day of month"><input type="number" min="1" max="28" value={draft.month_day ?? 1} onChange={(event) => setDraft({ ...draft, month_day: Number(event.target.value) })} /></Field>}
@@ -524,7 +526,7 @@ function PacketPanel({ restaurantId, dates, businessDate, selectedServerId, emai
 }
 
 function AutomationPanel({ recipients, canManage, emailDelivery, onConfigure }) {
-  return <div className="py-6"><section className="rounded-md border border-white/10 bg-white/[0.025] p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">Report automation</h2><p className="mt-1 text-sm text-dash-secondary">Back-office-only schedules send generated attachments. Daily schedules may include the worked-server roster, never every server’s check detail.</p></div>{canManage && <IconButton label="Manage schedules" icon={Settings2} onClick={onConfigure} primary />}</div>{!emailDelivery.enabled && <p className="mt-4 rounded-md border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">{emailDelivery.reason || 'Email delivery is not configured.'}</p>}<div className="mt-5 divide-y divide-white/10 border-y border-white/10">{recipients.map((recipient) => <div key={recipient.id} className="flex flex-wrap items-center justify-between gap-3 py-4"><div><p className="font-semibold">{recipient.name || recipient.email}</p><p className="mt-1 text-sm text-dash-secondary">{recipient.email} · {recipient.frequency} at {String(recipient.send_time).slice(0, 5)}</p><p className="mt-1 text-xs text-dash-tertiary">Attachments: {(recipient.attachment_formats || ['pdf']).join(', ').toUpperCase()}{recipient.frequency === 'daily' && recipient.include_server_summary !== false ? ' · server roster included' : ''}</p></div><span className="rounded-full border border-white/10 px-3 py-1 text-xs capitalize text-dash-secondary">{recipient.last_delivery_status || 'not sent'}</span></div>)}{!recipients.length && <p className="py-8 text-center text-sm text-dash-tertiary">No automated report schedules yet.</p>}</div></section></div>
+  return <div className="py-6"><section className="rounded-md border border-white/10 bg-white/[0.025] p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">Report automation</h2><p className="mt-1 text-sm text-dash-secondary">Back-office-only schedules send generated attachments. Daily schedules may include the worked-server roster, never every server’s check detail.</p></div>{canManage && <IconButton label="Manage schedules" icon={Settings2} onClick={onConfigure} primary />}</div>{!emailDelivery.enabled && <p className="mt-4 rounded-md border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">{emailDelivery.reason || 'Email delivery is not configured.'}</p>}<div className="mt-5 divide-y divide-white/10 border-y border-white/10">{recipients.map((recipient) => <div key={recipient.id} className="flex flex-wrap items-center justify-between gap-3 py-4"><div><p className="font-semibold">{recipient.name || recipient.email}</p><p className="mt-1 text-sm text-dash-secondary">{recipient.email} · {recipient.frequency} at {formatTimeLabel(recipient.send_time)}</p><p className="mt-1 text-xs text-dash-tertiary">Attachments: {(recipient.attachment_formats || ['pdf']).join(', ').toUpperCase()}{recipient.frequency === 'daily' && recipient.include_server_summary !== false ? ' · server roster included' : ''}</p></div><span className="rounded-full border border-white/10 px-3 py-1 text-xs capitalize text-dash-secondary">{recipient.last_delivery_status || 'not sent'}</span></div>)}{!recipients.length && <p className="py-8 text-center text-sm text-dash-tertiary">No automated report schedules yet.</p>}</div></section></div>
 }
 
 export default function RestaurantReportsPage({ restaurantId, canConfigureServerReceipt = false }) {

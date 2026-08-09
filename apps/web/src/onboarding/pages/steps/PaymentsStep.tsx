@@ -1,4 +1,5 @@
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
+import { SmartTimeInput } from '../../../shared/components/SmartTimeInput'
 
 interface PaymentsStepProps {
   onboarding: UseOnboardingReturn
@@ -93,7 +94,7 @@ export function PaymentsStep({ onboarding }: PaymentsStepProps) {
             </select>
           </Field>
           <Field label="Batch Close Time">
-            <input type="time" value={data.batch_close_time} onChange={(event) => updateData({ batch_close_time: event.target.value })} className={inputClass} />
+            <SmartTimeInput ariaLabel="Automatic batch close time" minuteStep={5} value={data.batch_close_time} onChange={(value) => updateData({ batch_close_time: value })} inputClassName="!rounded-lg" />
           </Field>
           <Field label="Credit Card Tips Paid">
             <select value={data.credit_card_tip_payout} onChange={(event) => updateData({ credit_card_tip_payout: event.target.value as typeof data.credit_card_tip_payout })} className={inputClass}>
