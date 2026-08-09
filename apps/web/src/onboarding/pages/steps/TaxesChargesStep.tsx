@@ -183,7 +183,7 @@ export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
         <div>
           <p className="label-mono text-[rgb(var(--gold))]">Service Charges</p>
           <p className="mt-2 text-sm leading-6 text-[rgb(var(--text-secondary))]">
-            Configure automatic gratuity, delivery, catering, large-party, or house service fees.
+            Configure automatic gratuity, delivery, catering, large-party, or house service fees. Employee-owned charges become gratuity earnings; restaurant-owned charges remain service-charge revenue.
           </p>
         </div>
 
@@ -229,7 +229,7 @@ export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
               <div className="mt-3 flex flex-wrap gap-2">
                 <ToggleButton active={charge.taxable} onClick={() => updateCharge(index, { taxable: !charge.taxable })}>Taxable</ToggleButton>
                 <ToggleButton active={charge.auto_apply} onClick={() => updateCharge(index, { auto_apply: !charge.auto_apply })}>Auto apply</ToggleButton>
-                <ToggleButton active={charge.is_tip} onClick={() => updateCharge(index, { is_tip: !charge.is_tip })}>Counts as gratuity</ToggleButton>
+                <ToggleButton active={charge.is_tip} onClick={() => updateCharge(index, { is_tip: !charge.is_tip })}>{charge.is_tip ? 'Employee receives charge' : 'Restaurant keeps charge'}</ToggleButton>
                 <button
                   type="button"
                   onClick={() => updateData({ service_charges: serviceCharges.filter((_, currentIndex) => currentIndex !== index) })}

@@ -301,10 +301,10 @@ const TIP_DISTRIBUTION_OPTIONS = [
   { value: 'role_shares', label: 'Role shares' },
 ]
 const CASH_TIP_OPTIONS = [
-  { value: 'not_tracked', label: 'Not tracked' },
-  { value: 'declared_by_employee', label: 'Employee declares' },
+  { value: 'not_tracked', label: 'Not tracked — no declaration' },
+  { value: 'declared_by_employee', label: 'Optional — employee may declare' },
   { value: 'declared_by_manager', label: 'Manager declares' },
-  { value: 'required_checkout', label: 'Required at checkout' },
+  { value: 'required_checkout', label: 'Required before checkout' },
 ]
 const PAYROLL_EXPORT_OPTIONS = [
   { value: 'daily', label: 'Daily' },
@@ -1003,6 +1003,7 @@ function defaultSectionProfile(name) {
     auto_gratuity_value: '18',
     auto_gratuity_label: key === 'hibachi' ? 'Hibachi Service Charge' : `${name} Service Charge`,
     auto_gratuity_taxable: false,
+    assigned_to_employee: true,
     minimum_party_size: '',
     tip_prompt_mode: 'additional',
   }
@@ -1021,6 +1022,7 @@ function normalizeSectionProfiles(rows, names = []) {
       ...row,
       name,
       auto_gratuity_value: String(row.auto_gratuity_value ?? 18),
+      assigned_to_employee: typeof row.assigned_to_employee === 'boolean' ? row.assigned_to_employee : fallback.assigned_to_employee,
       minimum_party_size: row.minimum_party_size == null ? '' : String(row.minimum_party_size),
     }
   })
@@ -1602,7 +1604,7 @@ function normalizeTaxRates(rows) {
 }
 
 function defaultAutoGratuity() {
-  return { enabled: true, party_threshold: '6', percent: '18', label: 'Gratuity' }
+  return { enabled: true, party_threshold: '6', percent: '18', label: 'Gratuity', assigned_to_employee: true }
 }
 
 function normalizeAutoGratuity(row) {
@@ -1613,6 +1615,11 @@ function normalizeAutoGratuity(row) {
     party_threshold: row.party_threshold == null ? fallback.party_threshold : String(row.party_threshold).replace(/\D/g, '') || fallback.party_threshold,
     percent: row.percent == null ? fallback.percent : sanitizeNumber(row.percent),
     label: String(row.label || '').trim() || fallback.label,
+    assigned_to_employee: typeof row.assigned_to_employee === 'boolean'
+      ? row.assigned_to_employee
+      : typeof row.auto_gratuity_assigned_to_employee === 'boolean'
+        ? row.auto_gratuity_assigned_to_employee
+        : fallback.assigned_to_employee,
   }
 }
 
@@ -1736,6 +1743,7 @@ function taxesChargesPayload(taxRates, serviceCharges, autoGratuity) {
       party_threshold: Math.max(1, Number(gratuity.party_threshold) || 6),
       percent: Math.min(100, Number(gratuity.percent) || 0),
       label: gratuity.label,
+      assigned_to_employee: gratuity.assigned_to_employee,
     },
     tax_rates: normalizeTaxRates(taxRates).map(row => ({
       id: row.id || undefined,
@@ -2110,11 +2118,14 @@ export function PayrollSetupFields({ settings, onUpdateSettings, payPeriodCalend
         <Field label="Card Fee %">
           <TextInput value={settings.credit_card_fee_percent} inputMode="decimal" onChange={event => onUpdateSettings({ credit_card_fee_percent: sanitizeNumber(event.target.value).slice(0, 6) })} placeholder="Optional" />
         </Field>
-        <Field label="Cash Tips">
-          <SelectInput value={settings.cash_tip_declaration_mode} onChange={event => onUpdateSettings({ cash_tip_declaration_mode: event.target.value })}>
-            {CASH_TIP_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </SelectInput>
-        </Field>
+        <div>
+          <Field label="Cash Tips">
+            <SelectInput value={settings.cash_tip_declaration_mode} onChange={event => onUpdateSettings({ cash_tip_declaration_mode: event.target.value })}>
+              {CASH_TIP_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </SelectInput>
+          </Field>
+          <p className="mt-2 text-xs text-dash-tertiary">Optional means Skip records no declaration. It never turns an unknown amount into $0. Only required mode blocks Server Checkout.</p>
+        </div>
         <Field label="Credit Tips Paid">
           <SelectInput value={settings.credit_tip_payout_timing} onChange={event => onUpdateSettings({ credit_tip_payout_timing: event.target.value })}>
             <option value="nightly">Nightly</option>
@@ -3864,7 +3875,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   <div className="mt-3 flex flex-wrap gap-2">
                     <SmallButton variant={charge.taxable ? 'primary' : 'secondary'} onClick={() => updateServiceCharge(index, { taxable: !charge.taxable })}>Taxable</SmallButton>
                     <SmallButton variant={charge.auto_apply ? 'primary' : 'secondary'} onClick={() => updateServiceCharge(index, { auto_apply: !charge.auto_apply })}>Auto apply</SmallButton>
-                    <SmallButton variant={charge.is_tip ? 'primary' : 'secondary'} onClick={() => updateServiceCharge(index, { is_tip: !charge.is_tip })}>Counts as gratuity</SmallButton>
+                    <SmallButton variant={charge.is_tip ? 'primary' : 'secondary'} onClick={() => updateServiceCharge(index, { is_tip: !charge.is_tip })}>{charge.is_tip ? 'Employee receives charge' : 'Restaurant keeps charge'}</SmallButton>
                     <SmallButton variant="danger" onClick={() => setServiceCharges(prev => prev.filter((_, currentIndex) => currentIndex !== index))}>Remove</SmallButton>
                   </div>
                 </div>
@@ -3882,10 +3893,12 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   <input type="checkbox" checked={autoGratuity.enabled} onChange={event => setAutoGratuity(prev => ({ ...prev, enabled: event.target.checked }))} className="h-4 w-4 accent-dash-gold" />
                   Automatically apply gratuity to large parties
                 </label>
-                {autoGratuity.enabled && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 md:grid-cols-3">
+                {autoGratuity.enabled && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 md:grid-cols-2 xl:grid-cols-4">
                   <Field label="Minimum party size"><TextInput inputMode="numeric" value={autoGratuity.party_threshold} onChange={event => setAutoGratuity(prev => ({ ...prev, party_threshold: event.target.value.replace(/\D/g, '') }))} placeholder="6" /></Field>
                   <Field label="Gratuity rate %"><TextInput inputMode="decimal" value={autoGratuity.percent} onChange={event => setAutoGratuity(prev => ({ ...prev, percent: sanitizeNumber(event.target.value) }))} placeholder="18" /></Field>
                   <Field label="Receipt label"><TextInput value={autoGratuity.label} maxLength={40} onChange={event => setAutoGratuity(prev => ({ ...prev, label: event.target.value }))} placeholder="Gratuity" /></Field>
+                  <Field label="Who receives it"><SelectInput value={autoGratuity.assigned_to_employee ? 'employee' : 'restaurant'} onChange={event => setAutoGratuity(prev => ({ ...prev, assigned_to_employee: event.target.value === 'employee' }))}><option value="employee">Employee — tip earnings</option><option value="restaurant">Restaurant — service-charge revenue</option></SelectInput></Field>
+                  <p className="text-xs text-dash-tertiary md:col-span-2 xl:col-span-4">Employee-owned gratuity is shown separately from voluntary tips and is included exactly once in the employee settlement. Restaurant-owned charges never increase employee tip earnings.</p>
                 </div>}
               </div>
             </div>
@@ -4373,7 +4386,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   <Field label="Receipt label"><TextInput value={profile.auto_gratuity_label} onChange={event => patchProfile({ auto_gratuity_label: event.target.value })} /></Field>
                   <Field label="Minimum party size"><TextInput inputMode="numeric" placeholder="Any party size" value={profile.minimum_party_size} onChange={event => patchProfile({ minimum_party_size: event.target.value.replace(/\D/g, '') })} /></Field>
                   <Field label="Tip prompt"><SelectInput value={profile.tip_prompt_mode} onChange={event => patchProfile({ tip_prompt_mode: event.target.value })}><option value="additional">Offer additional tip</option><option value="normal">Standard tip prompt</option><option value="disabled">No tip prompt</option></SelectInput></Field>
+                  <Field label="Who receives it"><SelectInput value={profile.assigned_to_employee ? 'employee' : 'restaurant'} onChange={event => patchProfile({ assigned_to_employee: event.target.value === 'employee' })}><option value="employee">Employee — tip earnings</option><option value="restaurant">Restaurant — service-charge revenue</option></SelectInput></Field>
                   <label className="flex items-center gap-3 self-end px-1 py-3 text-sm text-dash-primary"><input type="checkbox" checked={Boolean(profile.auto_gratuity_taxable)} onChange={event => patchProfile({ auto_gratuity_taxable: event.target.checked })} className="h-4 w-4 accent-dash-gold" />Charge is taxable</label>
+                  <p className="text-xs text-dash-tertiary md:col-span-2 lg:col-span-3">Employee-owned gratuity remains separate from voluntary tips and is included once in the employee settlement.</p>
                 </div>}
               </div>
               )

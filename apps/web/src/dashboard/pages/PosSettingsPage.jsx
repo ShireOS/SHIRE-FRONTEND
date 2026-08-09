@@ -31,6 +31,7 @@ const REPORT_SECTIONS = [
   ['payroll_support', 'Payroll support'],
   ['punch_log', 'Punch log'],
   ['z_report', 'Z report'],
+  ['tax_summary', 'Tax'],
   ['daily_summary', 'Daily summary'],
 ]
 const REPORT_SECTION_IDS = new Set(REPORT_SECTIONS.map(([id]) => id))

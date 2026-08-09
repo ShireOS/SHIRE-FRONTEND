@@ -23,6 +23,7 @@ import { fetchWithSupabaseAuth } from '../../shared/query'
 import { fetchPosApi } from '../../shared/api/posClient'
 import ServerReceiptTemplateModal from './ServerReceiptTemplateModal'
 import { ReconciliationBanner, fetchReconciliation } from '../../shared/components/ReconciliationBanner'
+import { effectivePreference } from './reportPreferences'
 
 const SECTION_META = [
   ['sales_revenue', 'Sales & revenue'],
@@ -32,9 +33,12 @@ const SECTION_META = [
   ['payroll_support', 'Payroll support'],
   ['punch_log', 'Punch log'],
   ['z_report', 'End-of-day Z report'],
+  ['tax_summary', 'Tax'],
   ['daily_summary', 'Daily summary'],
 ]
 const SECTION_LABELS = Object.fromEntries(SECTION_META)
+const ALL_SECTION_IDS = SECTION_META.map(([id]) => id)
+const resolvePreference = (preference) => effectivePreference(preference, ALL_SECTION_IDS)
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const PERIOD_OPTIONS = [
   { id: 'week', label: 'This week' },
@@ -276,12 +280,13 @@ function Modal({ title, onClose, children, maxWidth = 'max-w-2xl' }) {
 }
 
 function ConfigModal({ preference, onClose, onSave }) {
-  const [visible, setVisible] = useState(preference.visible_sections || [])
+  const resolved = resolvePreference(preference)
+  const [visible, setVisible] = useState(resolved.visible)
   const [saving, setSaving] = useState(false)
   const save = async () => {
     setSaving(true)
     try {
-      await onSave({ ...preference, visible_sections: visible })
+      await onSave({ ...preference, visible_sections: visible, section_order: resolved.order })
       onClose()
     } finally {
       setSaving(false)
@@ -439,10 +444,21 @@ function ServerReportsPanel({ roster, detail, selectedServerId, onSelect, loadin
     const needle = search.trim().toLowerCase()
     return !needle || [check.order_number, check.table_number, check.payment_method, check.payment_status].some((value) => String(value || '').toLowerCase().includes(needle))
   })
+  const voluntaryTips = Number(detail?.voluntary_tips ?? detail?.tips ?? 0)
+  const employeeGratuity = Number(detail?.employee_gratuity ?? 0)
+  const restaurantServiceCharges = Number(detail?.restaurant_service_charges ?? 0)
+  const unclassifiedServiceCharges = Number(detail?.unclassified_service_charges ?? detail?.unclassified_gratuity ?? 0)
+  const totalTipEarnings = Number(detail?.total_tip_earnings ?? voluntaryTips + employeeGratuity)
+  const voluntaryTakeHome = Number(detail?.voluntary_take_home ?? detail?.take_home ?? 0)
+  const totalTakeHomeEarnings = Number(detail?.total_take_home_earnings ?? voluntaryTakeHome + employeeGratuity)
+  const cashDueToRestaurant = detail?.cash_due_to_restaurant ?? detail?.cash_due
+  const warningLabel = (warning) => typeof warning === 'string'
+    ? warning
+    : warning?.message || warning?.detail || warning?.code || 'This report is incomplete.'
   return (
     <section className="mt-6 overflow-hidden rounded-md border border-white/10 bg-white/[0.025]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-4">
-        <div><h2 className="flex items-center gap-2 text-lg font-semibold"><Users className="h-5 w-5 text-dash-gold" />Server reports</h2><p className="mt-1 text-xs text-dash-tertiary">People who worked this business day, with full selected-server detail and searchable checks.</p></div>
+        <div><h2 className="flex items-center gap-2 text-lg font-semibold"><Users className="h-5 w-5 text-dash-gold" />Server reports</h2><p className="mt-1 text-xs text-dash-tertiary">Accounting business date {roster?.business_date || detail?.business_date || '—'} · people who worked that day, with full selected-server detail and searchable checks.</p></div>
         <div className="flex items-center gap-2">{canConfigureReceipt && <button type="button" onClick={onConfigureReceipt} className="inline-flex min-h-10 items-center gap-2 rounded-md border border-white/10 bg-white/[0.035] px-3 text-sm font-semibold text-dash-secondary hover:bg-white/[0.07] hover:text-dash-cream"><Settings2 className="h-4 w-4" />Configure receipt</button>}<span className="rounded-full border border-white/10 px-3 py-1 text-xs text-dash-secondary">{number(roster?.count)} worked</span></div>
       </div>
       <div className="grid min-h-72 lg:grid-cols-[300px_1fr]">
@@ -454,9 +470,10 @@ function ServerReportsPanel({ roster, detail, selectedServerId, onSelect, loadin
           {loading && <div className="flex min-h-52 items-center justify-center"><RefreshCw className="h-5 w-5 animate-spin text-dash-gold" /></div>}
           {!loading && detail && <>
             <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-xl font-semibold">{detail.staff_name}</h3><p className="mt-1 text-sm capitalize text-dash-secondary">{detail.role} · {detail.business_date}</p></div><button type="button" onClick={onPrintReceipt} className="inline-flex items-center gap-2 rounded-md border border-white/10 px-3 py-2 text-sm font-semibold"><Printer className="h-4 w-4" />Receipt print</button></div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat label="Sales" value={money(detail.sales)} /><Stat label="Tips" value={money(detail.tips)} /><Stat label="Take-home" value={money(detail.take_home)} /><Stat label="Top sold item" value={detail.top_item?.name || '—'} /></div>
+            {(detail.warnings || []).map((warning, index) => <p key={`${warning?.code || 'warning'}-${index}`} className="mt-3 rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{warningLabel(warning)}</p>)}
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3"><Stat label="Sales" value={money(detail.sales)} /><Stat label="Voluntary tips" value={money(voluntaryTips)} /><Stat label="Employee gratuity" value={money(employeeGratuity)} />{restaurantServiceCharges !== 0 && <Stat label="Restaurant service charges" value={money(restaurantServiceCharges)} />}{unclassifiedServiceCharges !== 0 && <Stat label="Unclassified legacy charges" value={money(unclassifiedServiceCharges)} />}<Stat label="Total tip earnings" value={money(totalTipEarnings)} /><Stat label="Voluntary tips after tip-out" value={money(voluntaryTakeHome)} /><Stat label="Total earnings after tip-out" value={money(totalTakeHomeEarnings)} />{cashDueToRestaurant != null && <Stat label="Server owes restaurant" value={money(cashDueToRestaurant)} />}<Stat label="Top sold item" value={detail.top_item?.name || '—'} /></div>
             <div className="mt-5 flex items-end justify-between gap-3"><div><h4 className="font-semibold">Checks</h4><p className="text-xs text-dash-tertiary">{number(detail.check_count)} checks · {number(detail.open_check_count)} open</p></div><input aria-label="Search server checks" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search check or table" className="h-10 w-64 rounded-md border border-white/10 bg-white/[0.04] px-3 text-sm" /></div>
-            <div className="mt-2"><Table rows={checks} columns={[{ key: 'order_number', label: 'Check' }, { key: 'table_number', label: 'Table' }, { key: 'payment_status', label: 'Status' }, { key: 'payment_method', label: 'Tender' }, { key: 'total', label: 'Total', render: money }, { key: 'tip_amount', label: 'Tip', render: money }]} /></div>
+            <div className="mt-2"><Table rows={checks} columns={[{ key: 'order_number', label: 'Check' }, { key: 'table_number', label: 'Table' }, { key: 'payment_status', label: 'Status' }, { key: 'payment_method', label: 'Tender' }, { key: 'total', label: 'Total', render: money }, { key: 'voluntary_tips', label: 'Voluntary tips', render: (value, row) => money(value ?? row.tip_amount) }, { key: 'employee_gratuity', label: 'Employee gratuity', render: money }, { key: 'restaurant_service_charges', label: 'Restaurant charges', render: money }, { key: 'unclassified_service_charges', label: 'Unclassified charges', render: (value, row) => money(value ?? row.unclassified_gratuity) }, { key: 'total_tip_earnings', label: 'Total tip earnings', render: (value, row) => money(value ?? Number(row.voluntary_tips ?? row.tip_amount ?? 0) + Number(row.employee_gratuity ?? 0)) }]} /></div>
           </>}
           {!loading && !detail && <div className="flex min-h-52 items-center justify-center text-sm text-dash-tertiary">Choose a server to see the full day report.</div>}
         </div>
@@ -517,6 +534,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   const [dimensions, setDimensions] = useState({ sections: [], devices: [], coverage: {} })
   const [report, setReport] = useState(null)
   const [recon, setRecon] = useState(null)
+  const [reconError, setReconError] = useState('')
   const [preference, setPreference] = useState({ visible_sections: SECTION_META.map(([id]) => id), section_order: SECTION_META.map(([id]) => id), section_settings: {} })
   const [recipients, setRecipients] = useState([])
   const [canManageRecipients, setCanManageRecipients] = useState(false)
@@ -638,6 +656,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     if (!restaurantId) return
     setLoading(true)
     setError('')
+    setReconError('')
     const query = new URLSearchParams({
       start_date: dates.start, end_date: dates.end,
       include_comparison: String(comparisonEnabled),
@@ -660,11 +679,15 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/preferences`),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/recipients`),
         fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/dimensions`),
-        // Verification is advisory — a failure here never blocks the report.
-        fetchReconciliation(restaurantId, dates.start, dates.end).catch(() => null),
+        // Verification is advisory — a failure here never blocks the report,
+        // but it must remain visible rather than looking like a verified result.
+        fetchReconciliation(restaurantId, dates.start, dates.end)
+          .then((data) => ({ data, error: '' }))
+          .catch((reconciliationError) => ({ data: null, error: reconciliationError instanceof Error ? reconciliationError.message : 'Independent verification is unavailable.' })),
       ])
       setReport(nextReport)
-      setRecon(nextRecon)
+      setRecon(nextRecon.data)
+      setReconError(nextRecon.error)
       setPreference(nextPreference)
       setRecipients(emailConfig.recipients || [])
       setCanManageRecipients(Boolean(emailConfig.can_manage))
@@ -716,8 +739,12 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   }
 
   const sections = report?.sections || {}
-  const visible = new Set(preference.visible_sections || SECTION_META.map(([id]) => id))
-  const orderedSections = (preference.section_order || SECTION_META.map(([id]) => id)).filter((id) => visible.has(id))
+  const reconciliationCoversCurrentView = !filters.category
+    && !filters.daypart
+    && filters.dayOfWeek === ''
+    && filters.hour === ''
+    && reportingScope.scope_dimension === 'none'
+  const orderedSections = resolvePreference(preference).visible
   const categories = sections.sales_revenue?.categories?.map((row) => row.label).filter(Boolean) || []
   const comparisonLabel = `${dates.comparisonStart} through ${dates.comparisonEnd}`
 
@@ -760,6 +787,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     payroll_support: () => <Payroll section={sections.payroll_support} comparisonEnabled={comparisonEnabled} />,
     punch_log: () => <PunchLog section={sections.punch_log} />,
     z_report: () => <ZReport section={sections.z_report} />,
+    tax_summary: () => <TaxSummary section={sections.tax_summary} comparisonEnabled={comparisonEnabled} />,
     daily_summary: () => <DailySummary section={sections.daily_summary} comparisonEnabled={comparisonEnabled} />,
   }
 
@@ -770,7 +798,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 flex-1">
               <h1 className="mt-1 truncate text-2xl font-semibold">Restaurant reports</h1>
-              <p className="mt-1 text-xs text-dash-tertiary">{dates.start} through {dates.end}</p>
+              <p className="mt-1 text-xs text-dash-tertiary">Accounting business dates {dates.start} through {dates.end}</p>
             </div>
             <div className="flex shrink-0 flex-wrap justify-end gap-2 sm:ml-auto">
               <IconButton label="Set comparison" icon={CalendarRange} onClick={() => { setCompareDraft({ ...dates, mode: comparisonMode, enabled: comparisonEnabled }); setModal('compare') }} />
@@ -813,7 +841,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       {serverMessage && <div className="my-4 rounded-md border border-white/10 bg-white/[0.035] p-3 text-sm text-dash-secondary">{serverMessage}</div>}
       {hubTab === 'reports' && <>
         {loading && !report && <div className="flex min-h-64 items-center justify-center"><RefreshCw className="h-6 w-6 animate-spin text-dash-gold" /></div>}
-        {report && <div className="my-4"><ReconciliationBanner recon={recon} filename={`verification-${dates.start}-${dates.end}.csv`} /></div>}
+        {report && <div className="my-4">{reconciliationCoversCurrentView ? <ReconciliationBanner recon={recon} filename={`verification-${dates.start}-${dates.end}.csv`} /> : <p className="rounded-md border border-sky-400/20 bg-sky-400/5 px-3 py-2 text-sm text-sky-100">Independent verification covers the whole restaurant and selected accounting dates. It is hidden for this filtered or scoped view so a whole-restaurant green result cannot be mistaken as verification of the visible subset.</p>}{reconError && reconciliationCoversCurrentView && <p className="rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">Independent transaction verification is unavailable: {reconError}</p>}</div>}
         {report && orderedSections.map((id) => <div key={id}>{sectionRenderers[id]?.()}</div>)}
         <ServerReportsPanel roster={serverRoster} detail={serverDetail} selectedServerId={selectedServerId} onSelect={setSelectedServerId} loading={serverLoading} onPrintReceipt={printServerReceipt} canConfigureReceipt={canConfigureServerReceipt} onConfigureReceipt={() => setServerReceiptConfigOpen(true)} />
       </>}
@@ -855,7 +883,46 @@ function SalesRevenue({ section = {}, filters, setFilters, categories, compariso
     ? [{ key: 'name', label: 'Item' }, { key: 'category', label: 'Category' }, { key: 'units', label: 'Units', render: number }, { key: 'revenue', label: 'Revenue', render: money }, { key: 'revenue_share_pct', label: '% revenue', render: percent }, { key: 'cost', label: 'Cost', render: money }, { key: 'margin', label: 'Margin', render: money }]
     : [{ key: 'label', label: view === 'days_of_week' ? 'Day' : view.slice(0, -1) }, { key: 'units', label: 'Units', render: number }, { key: 'revenue', label: 'Revenue', render: money }, { key: 'cost', label: 'Cost', render: money }, { key: 'margin', label: 'Margin', render: money }]
   const displayRows = rows.map((row) => view === 'days_of_week' ? { ...row, label: DAY_LABELS[Number(row.label)] || row.label } : view === 'hours' ? { ...row, label: `${String(row.label).padStart(2, '0')}:00` } : row)
-  return <Section id="sales-revenue" title="Sales & revenue" subtitle={summary.labor_cost == null ? 'Sales are scoped. Labor remains restaurant-wide, so scoped profit is intentionally omitted.' : 'Labor-adjusted profit is net revenue minus recorded wages; other operating costs are not included yet.'} exportRows={displayRows}><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat label="Net revenue" value={money(summary.net_revenue)} comparison={comparison.net_revenue} comparisonFormat={money} /><Stat label="Employee cost" value={summary.labor_cost == null ? '—' : money(summary.labor_cost)} comparison={comparison.labor_cost} comparisonFormat={money} invertDelta /><Stat label="Profit after labor" value={summary.labor_adjusted_profit == null ? '—' : money(summary.labor_adjusted_profit)} comparison={comparison.labor_adjusted_profit} comparisonFormat={money} /><Stat label="Gross revenue" value={money(summary.gross_revenue)} comparison={comparison.gross_revenue} comparisonFormat={money} /><Stat label="Units sold" value={number(summary.units_sold)} comparison={comparison.units_sold} /><Stat label="Item margin" value={money(summary.item_margin)} comparison={comparison.item_margin} comparisonFormat={money} /><Stat label="Tickets" value={number(summary.ticket_count)} comparison={comparison.ticket_count} /></div>{section.scope_breakdown?.length > 0 && <div className="mt-5"><h3 className="mb-2 text-sm font-semibold">Section / device performance</h3><Table columns={[{ key: 'name', label: 'Area or device' }, { key: 'ticket_count', label: 'Tickets', render: number }, { key: 'net_revenue', label: 'Net revenue', render: money }, { key: 'tips', label: 'Tips', render: money }, { key: 'discounts', label: 'Discounts', render: money }, { key: 'average_check', label: 'Average check', render: money }]} rows={section.scope_breakdown} /></div>}<div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"><Segmented value={view} onChange={setView} options={[{ id: 'items', label: 'Items' }, { id: 'categories', label: 'Category' }, { id: 'dayparts', label: 'Daypart' }, { id: 'days_of_week', label: 'Day' }, { id: 'hours', label: 'Hour' }]} /><div className="grid grid-cols-2 gap-2 sm:flex"><select aria-label="Category filter" value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })} className="h-10 rounded-md border border-white/10 bg-dash-surface px-3 text-sm"><option value="">All categories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select><select aria-label="Daypart filter" value={filters.daypart} onChange={(event) => setFilters({ ...filters, daypart: event.target.value })} className="h-10 rounded-md border border-white/10 bg-dash-surface px-3 text-sm"><option value="">All dayparts</option><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner">Dinner</option><option value="late_night">Late night</option></select></div></div><div className="mt-4"><Table columns={columns} rows={displayRows} /></div></Section>
+  const chargeRows = section.service_charges?.by_charge || []
+  const chargeSections = section.service_charges?.by_section || []
+  const allServiceCharges = Number(summary.service_charges || 0)
+  const voluntaryTips = Number(summary.voluntary_tips ?? summary.tips ?? 0)
+  const unattributedVoluntaryTips = Number(summary.unattributed_voluntary_tips || 0)
+  const employeeGratuity = Number(summary.employee_gratuity || 0)
+  const unattributedEmployeeGratuity = Number(summary.unattributed_employee_gratuity || 0)
+  const totalTipEarnings = Number(summary.total_tip_earnings ?? voluntaryTips + employeeGratuity)
+  const unclassifiedServiceCharges = Number(summary.unclassified_service_charges ?? 0)
+  const restaurantServiceCharges = Number(summary.restaurant_service_charges ?? allServiceCharges - employeeGratuity - unclassifiedServiceCharges)
+  const revenueWithRestaurantCharges = Number(summary.net_revenue_with_restaurant_service_charges ?? Number(summary.net_revenue || 0) + restaurantServiceCharges)
+  const hasEmployeeGratuity = employeeGratuity !== 0 || chargeRows.some((row) => Boolean(row.assigned_to_employee ?? row.is_tip))
+  const hasRestaurantCharges = restaurantServiceCharges !== 0 || chargeRows.some((row) => (row.assigned_to_employee ?? row.is_tip) === false)
+  const hasUnclassifiedCharges = unclassifiedServiceCharges !== 0 || chargeRows.some((row) => row.ownership_classification === 'unclassified' || (row.assigned_to_employee == null && row.is_tip == null))
+  const hasServiceCharges = allServiceCharges !== 0 || hasEmployeeGratuity || hasRestaurantCharges || hasUnclassifiedCharges
+  return (
+    <Section id="sales-revenue" title="Sales & revenue" subtitle={summary.labor_cost == null ? 'Sales are scoped. Labor remains restaurant-wide, so scoped profit is intentionally omitted.' : 'Labor-adjusted profit is net revenue minus recorded wages; other operating costs are not included yet.'} exportRows={displayRows}>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat label="Net revenue" value={money(summary.net_revenue)} comparison={comparison.net_revenue} comparisonFormat={money} />
+        <Stat label="Employee cost" value={summary.labor_cost == null ? '—' : money(summary.labor_cost)} comparison={comparison.labor_cost} comparisonFormat={money} invertDelta />
+        <Stat label="Profit after labor" value={summary.labor_adjusted_profit == null ? '—' : money(summary.labor_adjusted_profit)} comparison={comparison.labor_adjusted_profit} comparisonFormat={money} />
+        <Stat label="Gross revenue" value={money(summary.gross_revenue)} comparison={comparison.gross_revenue} comparisonFormat={money} />
+        <Stat label="Units sold" value={number(summary.units_sold)} comparison={comparison.units_sold} />
+        <Stat label="Item margin" value={money(summary.item_margin)} comparison={comparison.item_margin} comparisonFormat={money} />
+        <Stat label="Tickets" value={number(summary.ticket_count)} comparison={comparison.ticket_count} />
+        <Stat label="Voluntary tips" value={money(voluntaryTips)} comparison={comparison.voluntary_tips || comparison.tips} comparisonFormat={money} />
+        {unattributedVoluntaryTips !== 0 && <Stat label="Voluntary tips needing attribution" value={money(unattributedVoluntaryTips)} comparison={comparison.unattributed_voluntary_tips} comparisonFormat={money} />}
+        <Stat label="Employee gratuity" value={money(employeeGratuity)} comparison={comparison.employee_gratuity} comparisonFormat={money} />
+        {unattributedEmployeeGratuity !== 0 && <Stat label="Employee gratuity needing attribution" value={money(unattributedEmployeeGratuity)} comparison={comparison.unattributed_employee_gratuity} comparisonFormat={money} />}
+        <Stat label="Total tip earnings" value={money(totalTipEarnings)} comparison={comparison.total_tip_earnings} comparisonFormat={money} />
+        {hasRestaurantCharges && <Stat label="Restaurant service charges" value={money(restaurantServiceCharges)} comparison={comparison.restaurant_service_charges} comparisonFormat={money} />}
+        {hasRestaurantCharges && <Stat label="Net revenue + restaurant charges" value={money(revenueWithRestaurantCharges)} comparison={comparison.net_revenue_with_restaurant_service_charges} comparisonFormat={money} />}
+        {hasUnclassifiedCharges && <Stat label="Unclassified legacy charges" value={money(unclassifiedServiceCharges)} comparison={comparison.unclassified_service_charges} comparisonFormat={money} />}
+      </div>
+      {section.scope_breakdown?.length > 0 && <div className="mt-5"><h3 className="mb-2 text-sm font-semibold">Section / device performance</h3><Table columns={[{ key: 'name', label: 'Area or device' }, { key: 'ticket_count', label: 'Tickets', render: number }, { key: 'net_revenue', label: 'Net revenue', render: money }, { key: 'voluntary_tips', label: 'Voluntary tips', render: (value, row) => money(value ?? row.tips) }, { key: 'employee_gratuity', label: 'Employee gratuity', render: money }, { key: 'restaurant_service_charges', label: 'Restaurant charges', render: money }, { key: 'unclassified_service_charges', label: 'Unclassified charges', render: money }, { key: 'total_tip_earnings', label: 'Total tip earnings', render: (value, row) => money(value ?? Number(row.voluntary_tips ?? row.tips ?? 0) + Number(row.employee_gratuity ?? 0)) }, { key: 'discounts', label: 'Discounts', render: money }, { key: 'average_check', label: 'Average check', render: money }]} rows={section.scope_breakdown} /></div>}
+      {hasServiceCharges && <div className="mt-5"><h3 className="mb-2 text-sm font-semibold">Charges &amp; gratuity</h3><p className="mb-2 text-sm text-dash-secondary">Employee-owned gratuity is tip earnings and is not restaurant revenue. Restaurant-owned service charges remain revenue. Both are billed on top of the check and stay separate from voluntary tips. Tax on taxable charges ({money(summary.service_charge_tax)}) is already included in the tax summary.</p>{unattributedEmployeeGratuity !== 0 && <p className="mb-3 rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{money(unattributedEmployeeGratuity)} is employee-owned gratuity on checks without an employee. It remains unpaid until a manager attributes it.</p>}{hasUnclassifiedCharges && <p className="mb-3 rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{money(unclassifiedServiceCharges)} belongs to legacy checks that did not save charge ownership. It remains unclassified instead of being guessed from current settings.</p>}<Table columns={[{ key: 'name', label: 'Charge' }, { key: 'source', label: 'Applied by' }, { key: 'assigned_to_employee', label: 'Ownership', render: (value, row) => row.ownership_classification === 'unclassified' || (value == null && row.is_tip == null) ? 'Unclassified legacy charge' : Boolean(value ?? row.is_tip) ? 'Employee gratuity' : 'Restaurant revenue' }, { key: 'charge_type', label: 'Type' }, { key: 'taxable', label: 'Tax', render: (value) => value ? 'Taxable' : 'Not taxable' }, { key: 'ticket_count', label: 'Checks', render: number }, { key: 'charge_basis', label: 'Charged on', render: money }, { key: 'effective_rate_percent', label: 'Effective rate', render: percent }, { key: 'service_charges', label: 'Amount', render: money }, { key: 'service_charge_tax', label: 'Tax on charge', render: money }]} rows={chargeRows} empty="No service charges or gratuity in this period." />{chargeSections.length > 1 && <div className="mt-4"><h4 className="mb-2 text-sm font-semibold text-dash-secondary">All charges by section</h4><Table columns={[{ key: 'name', label: 'Section' }, { key: 'ticket_count', label: 'Checks', render: number }, { key: 'charge_basis', label: 'Charged on', render: money }, { key: 'employee_gratuity', label: 'Employee gratuity', render: money }, { key: 'restaurant_service_charges', label: 'Restaurant charges', render: money }, { key: 'unclassified_service_charges', label: 'Unclassified charges', render: money }, { key: 'service_charges', label: 'All charges', render: money }]} rows={chargeSections} /></div>}</div>}
+      <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"><Segmented value={view} onChange={setView} options={[{ id: 'items', label: 'Items' }, { id: 'categories', label: 'Category' }, { id: 'dayparts', label: 'Daypart' }, { id: 'days_of_week', label: 'Day' }, { id: 'hours', label: 'Hour' }]} /><div className="grid grid-cols-2 gap-2 sm:flex"><select aria-label="Category filter" value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })} className="h-10 rounded-md border border-white/10 bg-dash-surface px-3 text-sm"><option value="">All categories</option>{categories.map((category) => <option key={category}>{category}</option>)}</select><select aria-label="Daypart filter" value={filters.daypart} onChange={(event) => setFilters({ ...filters, daypart: event.target.value })} className="h-10 rounded-md border border-white/10 bg-dash-surface px-3 text-sm"><option value="">All dayparts</option><option value="breakfast">Breakfast</option><option value="lunch">Lunch</option><option value="dinner">Dinner</option><option value="late_night">Late night</option></select></div></div>
+      <div className="mt-4"><Table columns={columns} rows={displayRows} /></div>
+    </Section>
+  )
 }
 
 function TopBottom({ section = {}, filters, setFilters }) {
@@ -921,7 +988,48 @@ function EmployeeReports({ section = {}, insights, onInsight }) {
 function Payroll({ section = {}, comparisonEnabled }) {
   const totals = section.totals || {}
   const comparison = comparisonEnabled ? section.comparison || {} : {}
-  return <Section id="payroll-support" title="Payroll support" subtitle={section.overtime_rule} exportRows={section.employees || []}><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat label="Regular hours" value={number(totals.regular_hours, 1)} comparison={comparison.regular_hours} comparisonFormat={(value) => number(value, 1)} invertDelta /><Stat label="Overtime" value={number(totals.overtime_hours, 1)} comparison={comparison.overtime_hours} comparisonFormat={(value) => number(value, 1)} invertDelta /><Stat label="Wages owed" value={money(totals.wages_owed)} comparison={comparison.wages_owed} comparisonFormat={money} invertDelta /><Stat label="Tips earned" value={money(totals.tips_earned)} comparison={comparison.tips_earned} comparisonFormat={money} /></div><div className="mt-4"><Table columns={[{ key: 'staff_name', label: 'Employee' }, { key: 'role', label: 'Role' }, { key: 'regular_hours', label: 'Regular', render: (v) => number(v, 1) }, { key: 'overtime_hours', label: 'OT', render: (v) => number(v, 1) }, { key: 'wages_owed', label: 'Wages', render: money }, { key: 'tips_earned', label: 'Tips', render: money }, { key: 'tips_declared', label: 'Declared', render: (v) => v == null ? 'Not recorded' : money(v) }]} rows={section.employees || []} /></div></Section>
+  const voluntaryTips = Number(totals.voluntary_tips ?? 0)
+  const unattributedVoluntaryTips = totals.unattributed_voluntary_tips == null ? null : Number(totals.unattributed_voluntary_tips)
+  const employeeGratuity = totals.employee_gratuity == null ? null : Number(totals.employee_gratuity)
+  const unattributedEmployeeGratuity = totals.unattributed_employee_gratuity == null ? null : Number(totals.unattributed_employee_gratuity)
+  const totalTipEarnings = totals.total_tip_earnings == null
+    ? (employeeGratuity == null ? null : voluntaryTips + employeeGratuity)
+    : Number(totals.total_tip_earnings)
+  const gratuityPayrollOwed = totals.gratuity_payroll_owed == null ? null : Number(totals.gratuity_payroll_owed)
+  const unclassifiedServiceCharges = Number(totals.unclassified_service_charges ?? 0)
+  return (
+    <Section id="payroll-support" title="Payroll support" subtitle={section.overtime_rule} exportRows={section.employees || []}>
+      <p className="mb-3 text-sm text-dash-secondary">Final allocated tips are reportable earnings and may include declared cash the employee already kept. They are not automatically a new payroll disbursement. “Gratuity owed through payroll” is the explicit unpaid gratuity liability.</p>
+      {(section.warnings || []).map((warning, index) => <p key={`${warning?.code || 'warning'}-${index}`} className="mb-3 rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{typeof warning === 'string' ? warning : warning.message || warning.code}</p>)}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <Stat label="Regular hours" value={number(totals.regular_hours, 1)} comparison={comparison.regular_hours} comparisonFormat={(value) => number(value, 1)} invertDelta />
+        <Stat label="Overtime" value={number(totals.overtime_hours, 1)} comparison={comparison.overtime_hours} comparisonFormat={(value) => number(value, 1)} invertDelta />
+        <Stat label="Wages owed" value={money(totals.wages_owed)} comparison={comparison.wages_owed} comparisonFormat={money} invertDelta />
+        <Stat label="Voluntary tips" value={money(voluntaryTips)} comparison={comparison.voluntary_tips} comparisonFormat={money} />
+        {unattributedVoluntaryTips !== null && unattributedVoluntaryTips !== 0 && <Stat label="Voluntary tips needing attribution" value={money(unattributedVoluntaryTips)} comparison={comparison.unattributed_voluntary_tips} comparisonFormat={money} />}
+        <Stat label="Employee gratuity" value={employeeGratuity == null ? 'Unavailable' : money(employeeGratuity)} comparison={comparison.employee_gratuity} comparisonFormat={money} />
+        {unattributedEmployeeGratuity !== null && unattributedEmployeeGratuity !== 0 && <Stat label="Employee gratuity needing attribution" value={money(unattributedEmployeeGratuity)} comparison={comparison.unattributed_employee_gratuity} comparisonFormat={money} />}
+        <Stat label="Total tip earnings" value={totalTipEarnings == null ? 'Unavailable' : money(totalTipEarnings)} comparison={comparison.total_tip_earnings} comparisonFormat={money} />
+        <Stat label="Gratuity owed through payroll" value={gratuityPayrollOwed == null ? 'Unavailable' : money(gratuityPayrollOwed)} comparison={comparison.gratuity_payroll_owed} comparisonFormat={money} />
+        {unclassifiedServiceCharges !== 0 && <Stat label="Unclassified legacy charges" value={money(unclassifiedServiceCharges)} comparison={comparison.unclassified_service_charges} comparisonFormat={money} />}
+      </div>
+      <div className="mt-4">
+        <Table columns={[
+          { key: 'staff_name', label: 'Employee' },
+          { key: 'role', label: 'Role' },
+          { key: 'regular_hours', label: 'Regular', render: (value) => number(value, 1) },
+          { key: 'overtime_hours', label: 'OT', render: (value) => number(value, 1) },
+          { key: 'wages_owed', label: 'Wages', render: money },
+          { key: 'voluntary_tips', label: 'Voluntary tips', render: money },
+          { key: 'employee_gratuity', label: 'Employee gratuity', render: (value) => value == null ? 'Unavailable' : money(value) },
+          { key: 'total_tip_earnings', label: 'Total tip earnings', render: (value) => value == null ? 'Unavailable' : money(value) },
+          { key: 'gratuity_payroll_owed', label: 'Gratuity owed in payroll', render: (value) => value == null ? 'Unavailable' : money(value) },
+          { key: 'tips_earned', label: 'Final allocated tips', render: (value, row) => `${money(value)}${row.finalized === false || row.payout_source === 'live_estimate' ? ' estimate' : ''}` },
+          { key: 'tips_declared', label: 'Declared cash tips', render: (value) => value == null ? 'Not recorded' : money(value) },
+        ]} rows={section.employees || []} />
+      </div>
+    </Section>
+  )
 }
 
 function PunchLog({ section = {} }) {
@@ -933,16 +1041,52 @@ function PunchLog({ section = {} }) {
 function ZReport({ section = {} }) {
   const transactions = section.transactions || []
   const cash = section.cash_accountability || {}
+  const tips = section.tip_summary || {}
   const movements = [
     ...(section.cash_movements || []),
     ...(section.cash_drawer_events || []).filter((event) => event.event_type === 'no_sale').map((event) => ({ ...event, movement_type: 'no_sale', performed_by_name: event.staff_name, reason_preset_label: event.reason })),
   ]
-  return <Section id="z-report" title="End-of-day Z report" exportRows={movements.length ? movements : transactions}><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat label="Paid in" value={money(cash.paid_in)} /><Stat label="Paid out" value={money(cash.paid_out)} /><Stat label="Cash drops" value={money(cash.cash_drop)} /><Stat label="Cash variance" value={cash.variance_available ? money(cash.variance) : 'Not closed'} /></div>{Number(cash.pending_count || 0) > 0 && <p className="mt-4 rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{cash.pending_count} cash movement exception(s) require reconciliation.</p>}{Number(cash.unreviewed_paid_out_count || 0) > 0 && <p className="mt-2 rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{cash.unreviewed_paid_out_count} paid-out movement(s) remain unreviewed.</p>}<div className="mt-6"><Disclosure title="Cash accountability" count={movements.length} defaultOpen><Table columns={[{ key: 'business_date', label: 'Date' }, { key: 'movement_type', label: 'Movement' }, { key: 'amount', label: 'Amount', render: money }, { key: 'performed_by_name', label: 'Performed by' }, { key: 'approved_by_name', label: 'Approved by' }, { key: 'reviewed_by_name', label: 'Reviewed by' }, { key: 'reason_preset_label', label: 'Reason' }, { key: 'status', label: 'Status' }]} rows={movements} /></Disclosure></div><div className="mt-6 grid gap-6 xl:grid-cols-2"><div><h3 className="mb-2 text-sm font-semibold">Daily closes</h3><Table columns={[{ key: 'business_date', label: 'Date' }, { key: 'closed_by_name', label: 'Closed by' }, { key: 'closed_at', label: 'Closed at', render: (v) => new Date(v).toLocaleString() }, { key: 'totals', label: 'Collected', render: (v) => money(v?.total_collected) }]} rows={section.daily_closes || []} /></div><div><h3 className="mb-2 text-sm font-semibold">Payment mix</h3><Table columns={[{ key: 'business_date', label: 'Date' }, { key: 'payment_method', label: 'Method' }, { key: 'payments', label: 'Count', render: number }, { key: 'amount', label: 'Amount', render: money }, { key: 'expected_deposit', label: 'Deposit', render: money }]} rows={section.payment_mix || []} /></div></div><div className="mt-6"><Disclosure title="Transactions" count={transactions.length}><Table columns={[{ key: 'order_number', label: 'Check' }, { key: 'completed_at', label: 'Completed', render: (v) => new Date(v).toLocaleString() }, { key: 'waiter_name', label: 'Server' }, { key: 'payment_method', label: 'Method' }, { key: 'amount', label: 'Amount', render: money }, { key: 'tip_amount', label: 'Tip', render: money }, { key: 'refunded_at', label: 'Refund', render: (v) => v ? new Date(v).toLocaleDateString() : '—' }, { key: 'deposit_status', label: 'Deposit' }]} rows={transactions} /></Disclosure></div></Section>
+  const dateBasis = section.date_basis === 'captured_at'
+    ? 'Captured during the selected calendar period by payment completion time.'
+    : 'Accounting business date from the locked check; payment completion time is shown separately.'
+  return (
+    <Section id="z-report" title="End-of-day Z report" subtitle={dateBasis} exportRows={movements.length ? movements : transactions}>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat label="Paid in" value={money(cash.paid_in)} /><Stat label="Paid out" value={money(cash.paid_out)} /><Stat label="Cash drops" value={money(cash.cash_drop)} /><Stat label="Cash variance" value={cash.variance_available ? money(cash.variance) : 'Not closed'} /><Stat label="Voluntary tips" value={tips.voluntary_tips == null ? 'Unavailable' : money(tips.voluntary_tips)} />{Number(tips.unattributed_voluntary_tips || 0) !== 0 && <Stat label="Voluntary tips needing attribution" value={money(tips.unattributed_voluntary_tips)} />}<Stat label="Employee gratuity" value={tips.employee_gratuity == null ? 'Unavailable' : money(tips.employee_gratuity)} />{Number(tips.unattributed_employee_gratuity || 0) !== 0 && <Stat label="Employee gratuity needing attribution" value={money(tips.unattributed_employee_gratuity)} />}<Stat label="Total tip earnings" value={tips.total_tip_earnings == null ? 'Unavailable' : money(tips.total_tip_earnings)} /></div>
+      {Number(cash.pending_count || 0) > 0 && <p className="mt-4 rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{cash.pending_count} cash movement exception(s) require reconciliation.</p>}
+      {Number(cash.unreviewed_paid_out_count || 0) > 0 && <p className="mt-2 rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{cash.unreviewed_paid_out_count} paid-out movement(s) remain unreviewed.</p>}
+      <div className="mt-6"><Disclosure title="Cash accountability" count={movements.length} defaultOpen><Table columns={[{ key: 'business_date', label: 'Business date' }, { key: 'movement_type', label: 'Movement' }, { key: 'amount', label: 'Amount', render: money }, { key: 'performed_by_name', label: 'Performed by' }, { key: 'approved_by_name', label: 'Approved by' }, { key: 'reviewed_by_name', label: 'Reviewed by' }, { key: 'reason_preset_label', label: 'Reason' }, { key: 'status', label: 'Status' }]} rows={movements} /></Disclosure></div>
+      <div className="mt-6 grid gap-6 xl:grid-cols-2">
+        <div><h3 className="mb-2 text-sm font-semibold">Daily closes</h3><Table columns={[{ key: 'business_date', label: 'Business date' }, { key: 'closed_by_name', label: 'Closed by' }, { key: 'closed_at', label: 'Closed at', render: (value) => new Date(value).toLocaleString() }, { key: 'totals', label: 'Collected', render: (value) => money(value?.total_collected) }]} rows={section.daily_closes || []} /></div>
+        <div><h3 className="mb-2 text-sm font-semibold">Payment mix</h3><Table columns={[{ key: 'business_date', label: 'Business date' }, { key: 'payment_method', label: 'Method' }, { key: 'payments', label: 'Count', render: number }, { key: 'amount', label: 'Amount', render: money }, { key: 'voluntary_tips', label: 'Voluntary tips', render: (value, row) => money(value ?? row.tips) }, { key: 'employee_gratuity', label: 'Employee gratuity', render: money }, { key: 'restaurant_service_charges', label: 'Restaurant charges', render: money }, { key: 'unclassified_service_charges', label: 'Unclassified charges', render: money }, { key: 'total_tip_earnings', label: 'Total tip earnings', render: (value, row) => money(value ?? Number(row.voluntary_tips ?? row.tips ?? 0) + Number(row.employee_gratuity ?? 0)) }, { key: 'expected_deposit', label: 'Deposit', render: money }]} rows={section.payment_mix || []} /></div>
+      </div>
+      <div className="mt-6"><Disclosure title="Transactions" count={transactions.length}><Table columns={[{ key: 'order_number', label: 'Check' }, { key: 'business_date', label: 'Business date' }, { key: 'completed_at', label: 'Payment completed', render: (value) => new Date(value).toLocaleString() }, { key: 'waiter_name', label: 'Server' }, { key: 'payment_method', label: 'Method' }, { key: 'amount', label: 'Amount', render: money }, { key: 'voluntary_tips', label: 'Voluntary tips', render: (value, row) => money(value ?? row.tip_amount) }, { key: 'employee_gratuity', label: 'Employee gratuity', render: money }, { key: 'restaurant_service_charges', label: 'Restaurant charges', render: money }, { key: 'unclassified_service_charges', label: 'Unclassified charges', render: money }, { key: 'total_tip_earnings', label: 'Total tip earnings', render: (value, row) => money(value ?? Number(row.voluntary_tips ?? row.tip_amount ?? 0) + Number(row.employee_gratuity ?? 0)) }, { key: 'refunded_at', label: 'Refund', render: (value) => value ? new Date(value).toLocaleDateString() : '—' }, { key: 'deposit_status', label: 'Deposit' }]} rows={transactions} /></Disclosure></div>
+    </Section>
+  )
+}
+
+function TaxSummary({ section = {}, comparisonEnabled }) {
+  const totals = section.totals || {}
+  const comparison = comparisonEnabled ? section.comparison || {} : {}
+  const recon = section.reconciliation || {}
+  const inclusive = Number(totals.inclusive_tax || 0)
+  const unattributed = Number(recon.unattributed_tax_added || 0) + Number(recon.unattributed_tax_included || 0)
+  const rateColumns = [{ key: 'name', label: 'Tax rate' }, { key: 'rate_percent', label: 'Rate', render: (v) => v == null ? '—' : `${number(v, 4)}%` }, { key: 'is_inclusive', label: 'Pricing', render: (v, row) => row.rate_source === 'unattributed' ? '—' : v ? 'Included in price' : 'Added at checkout' }, { key: 'taxable_sales', label: 'Taxable sales', render: (v) => v == null ? '—' : money(v) }, { key: 'tax_added', label: 'Tax added', render: money }, { key: 'tax_included', label: 'Tax in prices', render: money }, { key: 'tax_collected', label: 'Total tax', render: money }, { key: 'ticket_count', label: 'Checks', render: (v) => v == null ? '—' : number(v) }]
+  return <Section id="tax-summary" title="Tax" subtitle="Tax added at checkout and tax already inside menu prices are tracked separately and never overlap, so the liability is their sum. Per-rate and per-category attribution is re-derived from today's category and rate setup; anything it cannot reproduce is shown as unattributed rather than reassigned." exportRows={section.by_rate || []}><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat label="Taxable sales" value={money(totals.taxable_sales)} comparison={comparison.taxable_sales} comparisonFormat={money} /><Stat label="Non-taxable sales" value={money(totals.non_taxable_sales)} comparison={comparison.non_taxable_sales} comparisonFormat={money} /><Stat label="Tax collected" value={money(totals.tax_collected)} comparison={comparison.tax_collected} comparisonFormat={money} />{inclusive !== 0 && <Stat label="Tax included in prices" value={money(totals.inclusive_tax)} comparison={comparison.inclusive_tax} comparisonFormat={money} />}{inclusive !== 0 && <Stat label="Total tax liability" value={money(totals.total_tax_liability)} comparison={comparison.total_tax_liability} comparisonFormat={money} />}<Stat label="Service charge tax" value={money(totals.service_charge_tax)} /><Stat label="Checks" value={number(totals.ticket_count)} /><Stat label="Tax-exempt checks" value={number(totals.tax_exempt_tickets)} /></div>{Math.abs(unattributed) >= 0.01 && <p className="mt-4 rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{money(unattributed)} of tax could not be attributed to a current rate — usually a rate, category assignment, or category name that changed after these checks closed. It is listed as its own row so the breakdown still reconciles to {money(totals.tax_collected)} collected.</p>}<div className="mt-6"><h3 className="mb-2 text-sm font-semibold">By tax rate</h3><Table columns={rateColumns} rows={section.by_rate || []} empty="No taxed sales in this period." /></div><div className="mt-6 grid gap-6 xl:grid-cols-2"><div><h3 className="mb-2 text-sm font-semibold">By category</h3><Table columns={[{ key: 'name', label: 'Category' }, { key: 'tax_rate_name', label: 'Rate' }, { key: 'rate_percent', label: '%', render: (v) => v == null ? '—' : `${number(v, 4)}%` }, { key: 'taxable_sales', label: 'Taxable', render: money }, { key: 'non_taxable_sales', label: 'Non-taxable', render: money }, { key: 'tax_collected', label: 'Tax', render: money }]} rows={section.by_category || []} /></div><div><h3 className="mb-2 text-sm font-semibold">By business date</h3><Table columns={[{ key: 'business_date', label: 'Date' }, { key: 'taxable_sales', label: 'Taxable', render: money }, { key: 'non_taxable_sales', label: 'Non-taxable', render: money }, { key: 'tax_collected', label: 'Tax added', render: money }, { key: 'inclusive_tax', label: 'In prices', render: money }, { key: 'total_tax_liability', label: 'Liability', render: money }]} rows={section.by_date || []} /></div></div></Section>
 }
 
 function DailySummary({ section = {}, comparisonEnabled }) {
   const summary = section.summary || {}
   const comparison = comparisonEnabled ? section.comparison || {} : {}
   const cash = section.cash_accountability || {}
-  return <Section id="daily-summary" title={`Daily summary · ${section.business_date || ''}`} subtitle="Profit after labor excludes food and other operating costs." exportRows={section.cash_movements?.length ? section.cash_movements : section.top_items || []}><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat label="Net sales" value={money(summary.net_revenue)} comparison={comparison.net_revenue} comparisonFormat={money} /><Stat label="Employee cost" value={money(summary.labor_cost)} comparison={comparison.labor_cost} comparisonFormat={money} invertDelta /><Stat label="Profit after labor" value={money(summary.labor_adjusted_profit)} comparison={comparison.labor_adjusted_profit} comparisonFormat={money} /><Stat label="Tickets" value={number(summary.ticket_count)} comparison={comparison.ticket_count} /><Stat label="Expected cash" value={cash.variance_available ? money(cash.expected_cash) : 'Not closed'} /><Stat label="Counted cash" value={cash.variance_available ? money(cash.counted_cash) : 'Not closed'} /><Stat label="Cash variance" value={cash.variance_available ? money(cash.variance) : 'Not closed'} /></div>{section.flags?.length > 0 && <div className="mt-4 grid gap-2">{section.flags.map((flag, index) => <div key={`${flag.message}-${index}`} className="rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{flag.message}</div>)}</div>}<div className="mt-6"><Disclosure title="Cash movements" count={(section.cash_movements || []).length}><Table columns={[{ key: 'movement_type', label: 'Movement' }, { key: 'amount', label: 'Amount', render: money }, { key: 'performed_by_name', label: 'Performed by' }, { key: 'approved_by_name', label: 'Approved by' }, { key: 'status', label: 'Status' }]} rows={section.cash_movements || []} /></Disclosure></div><div className="mt-6 grid gap-6 xl:grid-cols-2"><div><h3 className="mb-2 text-sm font-semibold">Payment mix</h3><Table columns={[{ key: 'payment_method', label: 'Method' }, { key: 'payments', label: 'Count', render: number }, { key: 'amount', label: 'Amount', render: money }, { key: 'tips', label: 'Tips', render: money }]} rows={section.payment_mix || []} /></div><div><h3 className="mb-2 text-sm font-semibold">Top five items</h3><Table columns={[{ key: 'name', label: 'Item' }, { key: 'units', label: 'Units', render: number }, { key: 'revenue', label: 'Revenue', render: money }, { key: 'margin', label: 'Margin', render: money }]} rows={section.top_items || []} /></div></div></Section>
+  return (
+    <Section id="daily-summary" title={`Daily summary · ${section.business_date || ''}`} subtitle="Accounting business date from the locked check. Profit after labor excludes food and other operating costs." exportRows={section.cash_movements?.length ? section.cash_movements : section.top_items || []}>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat label="Net sales" value={money(summary.net_revenue)} comparison={comparison.net_revenue} comparisonFormat={money} /><Stat label="Employee cost" value={money(summary.labor_cost)} comparison={comparison.labor_cost} comparisonFormat={money} invertDelta /><Stat label="Profit after labor" value={money(summary.labor_adjusted_profit)} comparison={comparison.labor_adjusted_profit} comparisonFormat={money} /><Stat label="Tickets" value={number(summary.ticket_count)} comparison={comparison.ticket_count} /><Stat label="Voluntary tips" value={summary.voluntary_tips == null ? 'Unavailable' : money(summary.voluntary_tips)} comparison={comparison.voluntary_tips} comparisonFormat={money} />{Number(summary.unattributed_voluntary_tips || 0) !== 0 && <Stat label="Voluntary tips needing attribution" value={money(summary.unattributed_voluntary_tips)} comparison={comparison.unattributed_voluntary_tips} comparisonFormat={money} />}<Stat label="Employee gratuity" value={summary.employee_gratuity == null ? 'Unavailable' : money(summary.employee_gratuity)} comparison={comparison.employee_gratuity} comparisonFormat={money} />{Number(summary.unattributed_employee_gratuity || 0) !== 0 && <Stat label="Employee gratuity needing attribution" value={money(summary.unattributed_employee_gratuity)} comparison={comparison.unattributed_employee_gratuity} comparisonFormat={money} />}<Stat label="Total tip earnings" value={summary.total_tip_earnings == null ? 'Unavailable' : money(summary.total_tip_earnings)} comparison={comparison.total_tip_earnings} comparisonFormat={money} /><Stat label="Expected cash" value={cash.variance_available ? money(cash.expected_cash) : 'Not closed'} /><Stat label="Counted cash" value={cash.variance_available ? money(cash.counted_cash) : 'Not closed'} /><Stat label="Cash variance" value={cash.variance_available ? money(cash.variance) : 'Not closed'} /></div>
+      {section.flags?.length > 0 && <div className="mt-4 grid gap-2">{section.flags.map((flag, index) => <div key={`${flag.message}-${index}`} className="rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{flag.message}</div>)}</div>}
+      <div className="mt-6"><Disclosure title="Cash movements" count={(section.cash_movements || []).length}><Table columns={[{ key: 'movement_type', label: 'Movement' }, { key: 'amount', label: 'Amount', render: money }, { key: 'performed_by_name', label: 'Performed by' }, { key: 'approved_by_name', label: 'Approved by' }, { key: 'status', label: 'Status' }]} rows={section.cash_movements || []} /></Disclosure></div>
+      <div className="mt-6 grid gap-6 xl:grid-cols-2">
+        <div><h3 className="mb-2 text-sm font-semibold">Payment mix</h3><Table columns={[{ key: 'payment_method', label: 'Method' }, { key: 'payments', label: 'Count', render: number }, { key: 'amount', label: 'Amount', render: money }, { key: 'voluntary_tips', label: 'Voluntary tips', render: (value, row) => money(value ?? row.tips) }, { key: 'employee_gratuity', label: 'Employee gratuity', render: money }, { key: 'restaurant_service_charges', label: 'Restaurant charges', render: money }, { key: 'unclassified_service_charges', label: 'Unclassified charges', render: money }, { key: 'total_tip_earnings', label: 'Total tip earnings', render: (value, row) => money(value ?? Number(row.voluntary_tips ?? row.tips ?? 0) + Number(row.employee_gratuity ?? 0)) }]} rows={section.payment_mix || []} /></div>
+        <div><h3 className="mb-2 text-sm font-semibold">Top five items</h3><Table columns={[{ key: 'name', label: 'Item' }, { key: 'units', label: 'Units', render: number }, { key: 'revenue', label: 'Revenue', render: money }, { key: 'margin', label: 'Margin', render: money }]} rows={section.top_items || []} /></div>
+      </div>
+    </Section>
+  )
 }

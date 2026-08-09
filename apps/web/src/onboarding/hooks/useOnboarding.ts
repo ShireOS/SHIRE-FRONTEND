@@ -158,6 +158,7 @@ export interface SectionBehaviorData {
   auto_gratuity_value: string
   auto_gratuity_label: string
   auto_gratuity_taxable: boolean
+  assigned_to_employee: boolean
   minimum_party_size: string
   tip_prompt_mode: 'normal' | 'additional' | 'disabled'
 }
@@ -810,6 +811,7 @@ const normalizeSectionBehaviors = (value: unknown, names: string[]): SectionBeha
       auto_gratuity_value: row ? asStringNumber(row.auto_gratuity_value) || '18' : '18',
       auto_gratuity_label: row ? asString(row.auto_gratuity_label).trim() || `${name} Service Charge` : `${name} Service Charge`,
       auto_gratuity_taxable: row ? row.auto_gratuity_taxable === true : false,
+      assigned_to_employee: row && typeof row.assigned_to_employee === 'boolean' ? row.assigned_to_employee : true,
       minimum_party_size: row && row.minimum_party_size != null ? asStringNumber(row.minimum_party_size) : '',
       tip_prompt_mode: row ? asEnum(row.tip_prompt_mode, SECTION_TIP_PROMPT_MODES, 'additional') : 'additional',
     }

@@ -12,7 +12,12 @@ export const REPORT_GLOSSARY = {
   card_tips_owed: 'Card tips owed — tips captured on card/gift payments that must be paid out to staff. Cash tips are already in staff pockets and are never owed again.',
   cash_collected: 'Cash collected — cash actually taken in, including cash tips, after dual-pricing adjustments.',
   total_collected: 'Total collected — everything charged across all tenders, including tips.',
-  gratuity: 'Gratuity — automatic service charges on checks (e.g. large parties); distinct from voluntary tips.',
+  employee_gratuity: 'Employee gratuity — a mandatory charge assigned to the employee; distinct from voluntary tips and restaurant revenue.',
+  unattributed_voluntary_tips: 'Voluntary tips needing attribution — captured tips on checks without an employee; included in totals but not paid until assigned.',
+  unattributed_employee_gratuity: 'Employee gratuity needing attribution — employee-owned gratuity on checks without an employee; included in totals but not paid until assigned.',
+  restaurant_service_charges: 'Restaurant service charges — mandatory charges retained by the restaurant; never employee tip earnings.',
+  unclassified_service_charges: 'Unclassified service charges — legacy charges without a locked employee-versus-restaurant ownership snapshot.',
+  service_charges: 'All service charges — employee, restaurant, and unclassified mandatory charges combined.',
 }
 
 export const fetchReconciliation = (restaurantId, startDate, endDate) =>
@@ -30,6 +35,11 @@ export const failedChecks = (recon, extraChecks = []) => ([
   ...(recon?.checks || []).filter(check => !check.ok),
   ...extraChecks.filter(check => !check.ok),
 ])
+
+const warningText = (warning) => {
+  if (typeof warning === 'string') return warning
+  return warning?.message || warning?.detail || warning?.code || 'Verification is incomplete.'
+}
 
 const csvCell = (value) => {
   const text = String(value ?? '')
@@ -57,6 +67,9 @@ export function downloadDeltasCsv(recon, extraChecks = [], filename = 'report-ve
     if (typeof value === 'object') continue
     rows.push([`recomputed: ${key}`, '', '', value, '', '', REPORT_GLOSSARY[key] || ''])
   }
+  for (const warning of recon?.warnings || []) {
+    rows.push(['warning', 'INCOMPLETE', '', '', '', '', warningText(warning)])
+  }
   const blob = new Blob([rows.map(row => row.map(csvCell).join(',')).join('\n')], { type: 'text/csv' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -69,7 +82,9 @@ export function downloadDeltasCsv(recon, extraChecks = [], filename = 'report-ve
 export function ReconciliationBanner({ recon, extraChecks = [], filename }) {
   if (!recon) return null
   const failing = failedChecks(recon, extraChecks)
-  if (failing.length === 0) {
+  const warnings = recon.warnings || []
+  const verified = recon.status === 'verified' && recon.complete === true && failing.length === 0
+  if (verified) {
     return (
       <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1.5 text-xs font-semibold text-emerald-200" title="Every total was independently recomputed from raw transactions and matches.">
         ✓ Totals verified against transactions
@@ -80,7 +95,9 @@ export function ReconciliationBanner({ recon, extraChecks = [], filename }) {
     <div className="rounded-xl border border-amber-300/30 bg-amber-300/[0.07] p-4 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="font-semibold text-amber-100">
-          Verification found {failing.length} mismatch{failing.length === 1 ? '' : 'es'} — the report below shows the original numbers.
+          {failing.length > 0
+            ? `Verification found ${failing.length} mismatch${failing.length === 1 ? '' : 'es'} — the report below shows the original numbers.`
+            : 'Verification is incomplete — the report below shows the recorded numbers without guessing.'}
         </p>
         <button
           type="button"
@@ -101,6 +118,11 @@ export function ReconciliationBanner({ recon, extraChecks = [], filename }) {
               <span className="text-amber-100/70"> · checks {check.order_ids.slice(0, 8).join(', ')}{check.order_ids.length > 8 ? '…' : ''}</span>
             )}
             {check.note && <span className="block text-xs text-amber-100/60">{check.note}</span>}
+          </li>
+        ))}
+        {warnings.map((warning, index) => (
+          <li key={`${warning?.code || 'warning'}-${index}`} className="text-amber-100/90">
+            {warningText(warning)}
           </li>
         ))}
       </ul>

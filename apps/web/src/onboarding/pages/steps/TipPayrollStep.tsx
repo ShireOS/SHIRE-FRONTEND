@@ -23,10 +23,10 @@ const POOL_METHODS: Array<{
 ]
 
 const CASH_TIP_MODES: Array<{ value: TipPayrollSettingsData['cash_tip_declaration_mode']; label: string }> = [
-  { value: 'not_tracked', label: 'Do not track cash tips' },
-  { value: 'declared_by_employee', label: 'Employee declares' },
+  { value: 'not_tracked', label: 'Not tracked — no declaration' },
+  { value: 'declared_by_employee', label: 'Optional — employee may declare' },
   { value: 'declared_by_manager', label: 'Manager declares' },
-  { value: 'required_checkout', label: 'Required at checkout' },
+  { value: 'required_checkout', label: 'Required before checkout' },
 ]
 
 const PAYROLL_FREQUENCIES: Array<{ value: TipPayrollSettingsData['payroll_export_frequency']; label: string }> = [
@@ -118,6 +118,7 @@ export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
           <select value={settings.cash_tip_declaration_mode} onChange={(event) => update({ cash_tip_declaration_mode: event.target.value as TipPayrollSettingsData['cash_tip_declaration_mode'] })} className={inputClass}>
             {CASH_TIP_MODES.map(option => <option key={option.value} value={option.value} className="bg-[#1a1a1a]">{option.label}</option>)}
           </select>
+          <p className="mt-2 text-xs leading-5 text-[rgb(var(--text-tertiary))]">Optional means an employee can enter a real amount or Skip. Skip records no declaration; it is never treated as $0. Only required mode blocks Server Checkout.</p>
         </div>
         <div>
           <label className={labelClass}>Credit card tips paid</label>

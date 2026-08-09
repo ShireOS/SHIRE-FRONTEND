@@ -29,6 +29,7 @@ const defaultBehavior = (name: string): SectionBehaviorData => ({
   auto_gratuity_value: '18',
   auto_gratuity_label: name.toLowerCase() === 'hibachi' ? 'Hibachi Service Charge' : `${name || 'Section'} Service Charge`,
   auto_gratuity_taxable: false,
+  assigned_to_employee: true,
   minimum_party_size: '',
   tip_prompt_mode: 'additional',
 })
@@ -153,10 +154,18 @@ export function SectionsStep({ onboarding }: SectionsStepProps) {
                       <option value="disabled">No tip prompt</option>
                     </select>
                   </label>
+                  <label className="space-y-2 text-sm text-[rgb(var(--text-secondary))]">
+                    <span>Who receives it</span>
+                    <select value={behavior.assigned_to_employee ? 'employee' : 'restaurant'} onChange={event => updateBehavior(section, { assigned_to_employee: event.target.value === 'employee' })} className="w-full rounded-lg border border-white/10 bg-[#161616] px-3 py-2.5 text-[rgb(var(--text-primary))]">
+                      <option value="employee">Employee — tip earnings</option>
+                      <option value="restaurant">Restaurant — service-charge revenue</option>
+                    </select>
+                  </label>
                   <label className="flex items-center gap-3 text-sm text-[rgb(var(--text-primary))]">
                     <input type="checkbox" checked={behavior.auto_gratuity_taxable} onChange={event => updateBehavior(section, { auto_gratuity_taxable: event.target.checked })} className="h-4 w-4 accent-[#d4a854]" />
                     Charge is taxable
                   </label>
+                  <p className="text-xs leading-5 text-[rgb(var(--text-tertiary))] md:col-span-2">Employee-owned gratuity remains separate from voluntary tips and is included once in the employee settlement.</p>
                 </div>
               )}
             </div>
