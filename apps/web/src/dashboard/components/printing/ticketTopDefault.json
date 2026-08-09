@@ -55,6 +55,19 @@
       "type": "divider"
     },
     {
+      "align": "left",
+      "bold": true,
+      "color": "red",
+      "field": "check_memo",
+      "requires": "check_memo",
+      "size": "standard",
+      "type": "field"
+    },
+    {
+      "requires": "check_memo",
+      "type": "divider"
+    },
+    {
       "align": "center",
       "bold": true,
       "field": "course_banner",

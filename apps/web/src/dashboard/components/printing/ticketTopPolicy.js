@@ -44,6 +44,8 @@ export const TICKET_TOP_STARTER = {
       right_width: 7,
     },
     { type: 'divider' },
+    { type: 'field', field: 'check_memo', align: 'left', size: 'standard', bold: true, color: 'red', requires: 'check_memo' },
+    { type: 'divider', requires: 'check_memo' },
     { type: 'field', field: 'course_banner', align: 'center', bold: true, requires: 'course_banner' },
     { type: 'divider', requires: 'course_banner' },
   ],

@@ -34,12 +34,15 @@ export const TICKET_TOP_FIELDS = {
   restaurant_name: { label: 'Restaurant name', hint: 'From the restaurant record' },
   address: { label: 'Address', hint: 'From the restaurant record' },
   phone: { label: 'Phone', hint: 'From the restaurant record' },
+  check_memo: { label: 'Check memo', hint: 'CHECK MEMO · whole-check instruction' },
   location: { label: 'Table / tab (bare)', hint: 'Table 12 — no label', bare: true },
   check_number_only: { label: 'Check number (bare)', hint: '418 — digits only', bare: true },
   server_name: { label: 'Server name (bare)', hint: 'Marcus — no label', bare: true },
   time_only: { label: 'Sent time (bare)', hint: '6:42P — no label', bare: true },
   course_banner: { label: 'Course banner', hint: 'COURSE: DESSERT', bare: true },
   guest_count_only: { label: 'Guest count (bare)', hint: '3 — digits only', bare: true },
+  check_memo_label: { label: 'Check memo label (bare)', hint: 'CHECK MEMO — label only', bare: true },
+  check_memo_value: { label: 'Check memo value (bare)', hint: 'Memo text without the label', bare: true },
 }
 
 const fieldLabel = field => TICKET_TOP_FIELDS[field]?.label || field
@@ -510,6 +513,10 @@ Table 12 · Marcus          3:14P
         </div>
         {advanced && renderAddZone('info')}
       </div>
+
+      <p className="mt-3 text-xs text-dash-tertiary">
+        Check memo is a whole-check kitchen instruction. Move and style it like any row, or use its label and value inside a two-column row. If every memo field is removed or hidden for an order method, the compact memo safely returns immediately before the items. CHANGE and CANCEL / HOLD corrections always use the fixed safety banner.
+      </p>
 
       {!advanced && (
         <p className="mt-3 text-xs text-dash-tertiary">

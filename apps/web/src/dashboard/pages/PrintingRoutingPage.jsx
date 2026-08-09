@@ -8,6 +8,7 @@ import ResilientPrintingCard from '../components/printing/ResilientPrintingCard'
 import ProductionWorkflowCard from '../components/printing/ProductionWorkflowCard'
 import HardwareChainGuide from '../components/printing/HardwareChainGuide'
 import TicketTopBuilder from '../components/printing/TicketTopBuilder'
+import { TICKET_TOP_STARTER } from '../components/printing/ticketTopPolicy'
 
 const DEFAULT_CONFIG = {
   receipt_detail: 'clean',
@@ -42,6 +43,20 @@ const PRICING_PROGRAM_LABELS = {
   cash_discount: 'Cash discount · standard price minus discount',
 }
 
+const MEMO_FIELDS = new Set(['check_memo', 'check_memo_label', 'check_memo_value'])
+
+function memoPresentation(rows) {
+  for (const row of rows || []) {
+    if (row?.type === 'field' && MEMO_FIELDS.has(row.field)) return row
+    if (row?.type !== 'pair') continue
+    for (const side of [row.left, row.right]) {
+      const parts = Array.isArray(side?.parts) ? side.parts : [side]
+      if (parts.some(part => MEMO_FIELDS.has(part?.field))) return { ...row, ...side, pair: true }
+    }
+  }
+  return { align: 'left', size: 'standard', bold: true, color: 'red' }
+}
+
 function Toggle({ label, checked, onChange }) {
   return (
     <label className="flex items-center justify-between gap-4 border-b border-white/10 py-3 text-sm last:border-0">
@@ -74,6 +89,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const [output, setOutput] = useState('kitchen_ticket')
   const [customerVariant, setCustomerVariant] = useState('open_check')
   const [kitchenVariant, setKitchenVariant] = useState('dine_in')
+  const [kitchenMemo, setKitchenMemo] = useState('OK')
   const [selectedTargetId, setSelectedTargetId] = useState('')
   const [previewCapabilities, setPreviewCapabilities] = useState(null)
   const [dirtyTargetIds, setDirtyTargetIds] = useState(() => new Set())
@@ -171,6 +187,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
             output,
             customer_variant: customerVariant,
             kitchen_variant: kitchenVariant,
+            kitchen_memo: kitchenMemo.trim() || null,
             station_id: scope === 'whole' ? null : scope,
             target_id: selectedTargetId || null,
             paper_width_mm: selectedTarget?.config?.paper_width_mm || null,
@@ -200,7 +217,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [config, customerVariant, kitchenVariant, loading, output, restaurantId, scope, section, selectedTarget, selectedTargetId])
+  }, [config, customerVariant, kitchenMemo, kitchenVariant, loading, output, restaurantId, scope, section, selectedTarget, selectedTargetId])
 
   const effectiveKitchen = useMemo(() => ({
     ...config.kitchen,
@@ -211,6 +228,12 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const ticketTopOverridden = scope === 'whole'
     ? ticketTopConfigured
     : Array.isArray(stationKitchen?.header) || Array.isArray(stationKitchen?.info)
+  const memoStyle = useMemo(() => {
+    const rows = ticketTopConfigured
+      ? [...(effectiveKitchen.header || []), ...(effectiveKitchen.info || [])]
+      : [...TICKET_TOP_STARTER.header, ...TICKET_TOP_STARTER.info]
+    return memoPresentation(rows)
+  }, [effectiveKitchen, ticketTopConfigured])
 
   const effectiveAliases = kind => ({
     ...(config.aliases?.[kind] || {}),
@@ -345,6 +368,9 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const paperWidthOptions = displayedCapabilities?.paper_width_options || []
   const previewTitle = output === 'kitchen_ticket' ? 'Kitchen ticket' : output === 'server_report' ? 'Server report' : 'Customer receipt'
   const previewSize = output === 'kitchen_ticket' ? effectiveKitchen.size : output === 'server_report' ? config.report?.size : config.customer?.size
+  const previewLines = preview.split('\n')
+  const firstPreviewItemIndex = previewLines.findIndex(line => /^\d+(?:\.\d+)?\s{2}\S/.test(line))
+  const memoPreviewValues = kitchenMemo.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
 
   return (
     <div className="space-y-5">
@@ -377,6 +403,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
               </Select>
               {output === 'kitchen_ticket' && <Select label="Apply to" value={scope} onChange={setScope}><option value="whole">Whole Kitchen</option>{stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}</Select>}
               {output === 'kitchen_ticket' && <Select label="Preview order method" value={kitchenVariant} onChange={setKitchenVariant}><option value="dine_in">Dine-in</option><option value="togo">To-Go</option><option value="delivery">Delivery</option></Select>}
+              {output === 'kitchen_ticket' && <label className="block"><span className="label-mono">Preview check memo</span><input maxLength={240} value={kitchenMemo} onChange={event => setKitchenMemo(event.target.value)} placeholder="Blank previews a ticket with no check memo" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></label>}
               {output === 'customer_receipt' && <Select label="Preview state" value={customerVariant} onChange={setCustomerVariant}><option value="open_check">Open check</option><option value="paid_cash">Paid with cash</option><option value="paid_card">Paid with credit card</option><option value="paid_debit">Paid with debit / prepaid</option></Select>}
             </div>
           </div>
@@ -582,7 +609,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
         <div className="h-fit rounded-2xl border border-white/10 bg-white/[0.035] p-5 xl:sticky xl:top-20">
           <div className="flex items-center justify-between"><div><p className="label-mono">Live preview</p><h2 className="mt-1 text-lg font-semibold">{previewTitle}</h2></div>{previewStatus === 'ready' ? <span className="inline-flex items-center gap-1 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" /> Real renderer</span> : previewStatus === 'error' ? <span className="inline-flex items-center gap-1 text-xs text-amber-200"><AlertCircle className="h-4 w-4" /> Renderer unavailable</span> : <span className="inline-flex items-center gap-1 text-xs text-dash-tertiary"><Loader2 className="h-4 w-4 animate-spin" /> Rendering</span>}</div>
           <div className="mx-auto mt-5 max-w-[430px] bg-[#fffdf6] px-7 py-8 text-black shadow-2xl">
-            <pre className={`whitespace-pre-wrap font-mono leading-relaxed ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{preview.split('\n').map((line, index, lines) => {
+            <pre className={`whitespace-pre-wrap font-mono leading-relaxed ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{previewLines.map((line, index, lines) => {
               const isModifier = output === 'kitchen_ticket' && /^\s*\+/.test(line)
               const isItem = output === 'kitchen_ticket' && /^\d+(?:\.\d+)?\s{2}\S/.test(line)
               // Guest notes carry whichever marker the note style configures, so
@@ -593,15 +620,23 @@ export default function PrintingRoutingPage({ restaurantId }) {
                 || line.trim() === 'ORDER NOTE'
                 || (index > 0 && lines[index - 1].trim() === 'ORDER NOTE')
               )
-              const requestedColor = isNote ? (effectiveKitchen.note_color ?? 'red') : effectiveKitchen.modifier_color
-              const requestedBold = isItem ? (effectiveKitchen.item_bold ?? true) : isNote ? (effectiveKitchen.note_bold ?? true) : (effectiveKitchen.modifier_bold ?? true)
-              const requestedSize = isNote ? (effectiveKitchen.note_size ?? 'large') : (effectiveKitchen.modifier_size ?? 'large')
+              const isCheckMemo = output === 'kitchen_ticket' && (
+                /^CHECK MEMO(?:\s*[·:]|\s*$)/i.test(line.trim())
+                || (index > 0 && /^CHECK MEMO\s*$/i.test(lines[index - 1].trim()))
+                || ((firstPreviewItemIndex < 0 || index < firstPreviewItemIndex) && memoPreviewValues.includes(line.trim()))
+              )
+              const requestedColor = isCheckMemo ? (memoStyle.color ?? 'black') : isNote ? (effectiveKitchen.note_color ?? 'red') : effectiveKitchen.modifier_color
+              const requestedBold = isItem ? (effectiveKitchen.item_bold ?? true) : isCheckMemo ? (memoStyle.bold ?? false) : isNote ? (effectiveKitchen.note_bold ?? true) : (effectiveKitchen.modifier_bold ?? true)
+              const requestedSize = isCheckMemo ? (memoStyle.size ?? 'standard') : isNote ? (effectiveKitchen.note_size ?? 'large') : (effectiveKitchen.modifier_size ?? 'large')
               const fallbackBold = requestedColor === 'red' && supportsRed === false
               const className = [
-                (isModifier || isNote) && requestedColor === 'red' && supportsRed === true ? 'text-red-700' : '',
-                (isModifier || isNote || isItem) && (requestedBold || fallbackBold) ? 'font-bold' : '',
-                (isModifier || isNote) && requestedSize === 'standard' ? 'text-[0.86em]' : '',
-                (isModifier || isNote) && requestedSize === 'large' ? 'text-[1em]' : '',
+                (isModifier || isNote || isCheckMemo) && requestedColor === 'red' && supportsRed === true ? 'text-red-700' : '',
+                (isModifier || isNote || isCheckMemo || isItem) && (requestedBold || fallbackBold) ? 'font-bold' : '',
+                (isModifier || isNote || isCheckMemo) && requestedSize === 'standard' ? 'text-[0.86em]' : '',
+                (isModifier || isNote || isCheckMemo) && requestedSize === 'large' ? 'text-[1em]' : '',
+                isCheckMemo && requestedSize === 'double' ? 'text-[1.15em]' : '',
+                isCheckMemo && !memoStyle.pair && memoStyle.align === 'center' ? 'block text-center' : '',
+                isCheckMemo && !memoStyle.pair && memoStyle.align === 'right' ? 'block text-right' : '',
               ].filter(Boolean).join(' ')
               return <span key={index} className={className}>{line}{'\n'}</span>
             })}</pre>

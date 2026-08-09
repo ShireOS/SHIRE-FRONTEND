@@ -25,7 +25,7 @@ const DEFAULT_PATH = new URL('./ticketTopDefault.json', import.meta.url)
 
 // Mirror of this file in the backend repo: Shire_POS_backend/tests/ticket_top_default.json
 // Update both, then update this digest and DEFAULT_SHA256 there.
-const EXPECTED_SHA256 = '959ea2ebb6e3ed30cdce8d31cf591b812a31561c2ca9b03a849c4bc099907560'
+const EXPECTED_SHA256 = '9c47cd6210594d3686606e2d4f860ddf5fcd4dd1364ec91d54771965dbd82e97'
 
 test('the starter is exactly what the printer renders by default', () => {
   const shipped = JSON.parse(readFileSync(DEFAULT_PATH, 'utf8'))
@@ -67,6 +67,20 @@ test('the starter info line joins location and server opposite the time', () => 
 test('the course banner and the rule under it appear and vanish together', () => {
   const conditional = TICKET_TOP_STARTER.info.filter(row => row.requires === 'course_banner')
   assert.deepEqual(conditional.map(row => row.type), ['field', 'divider'])
+})
+
+test('ordinary check memos start as a compact customizable row with their own rule', () => {
+  const conditional = TICKET_TOP_STARTER.info.filter(row => row.requires === 'check_memo')
+  assert.deepEqual(conditional.map(row => row.type), ['field', 'divider'])
+  assert.deepEqual(conditional[0], {
+    type: 'field',
+    field: 'check_memo',
+    align: 'left',
+    size: 'standard',
+    bold: true,
+    color: 'red',
+    requires: 'check_memo',
+  })
 })
 
 test('configured layouts keep an absent zone empty instead of inventing starter rows', () => {
