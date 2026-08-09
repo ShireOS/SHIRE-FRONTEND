@@ -1,10 +1,16 @@
-export function serializeHeadcountPolicy(headcount) {
+// Tipout policy serialization + validation. Formerly
+// apps/web/src/shared/tips/tipPayrollPolicy.js, shared verbatim by the setup
+// panel and onboarding; mobile now uses it too instead of its trimmed copy.
+
+import type { HeadcountPolicyData, TipRoleRuleData, WeekdayTipoutOverridesData, TipPayrollSettingsData } from './types'
+
+export function serializeHeadcountPolicy(headcount: HeadcountPolicyData | null | undefined) {
   if (!headcount) return null
   return {
     driver_role: headcount.driver_role,
     tiers: (headcount.tiers || []).map(tier => ({
       min_count: Number(tier.min_count),
-      max_count: tier.max_count == null || tier.max_count === '' ? null : Number(tier.max_count),
+      max_count: tier.max_count == null || (tier.max_count as unknown) === '' ? null : Number(tier.max_count),
       allocations: (tier.allocations || [])
         .filter(item => Number(item.percent) > 0 && (item.unallocated || item.target_role))
         .map(item => ({
@@ -16,7 +22,7 @@ export function serializeHeadcountPolicy(headcount) {
   }
 }
 
-export function serializeTipRoleRules(rules) {
+export function serializeTipRoleRules(rules: TipRoleRuleData[]) {
   return rules.map(rule => ({
     ...rule,
     pool_points: rule.pool_points === '' || rule.pool_points == null ? null : Number(rule.pool_points),
@@ -27,7 +33,7 @@ export function serializeTipRoleRules(rules) {
       .filter(item => item.staff_id && Number(item.weight) > 0)
       .map(item => ({ staff_id: item.staff_id, weight: Number(item.weight) })),
     tipouts: (rule.tipouts || [])
-      .filter(item => (item.target_role || item.headcount) && item.percent !== '' && Number(item.percent) > 0)
+      .filter(item => (item.target_role || item.headcount) && (item.percent as unknown) !== '' && Number(item.percent) > 0)
       .map(item => ({
         target_role: item.headcount ? null : item.target_role,
         percent: Number(item.percent),
@@ -42,7 +48,7 @@ export function serializeTipRoleRules(rules) {
   }))
 }
 
-export function serializeWeekdayTipoutOverrides(overrides) {
+export function serializeWeekdayTipoutOverrides(overrides: WeekdayTipoutOverridesData) {
   return Object.fromEntries(Object.entries(overrides || {}).flatMap(([weekday, override]) => {
     if (override?.mode === 'disabled') return [[weekday, { mode: 'disabled' }]]
     if (override?.mode !== 'custom') return []
@@ -61,7 +67,7 @@ export function serializeWeekdayTipoutOverrides(overrides) {
   }))
 }
 
-function validateHeadcountPolicy(headcount, sourceRole, label, errors) {
+function validateHeadcountPolicy(headcount: any, sourceRole: string, label: string, errors: string[]) {
   if (!headcount?.driver_role) errors.push(`${label} needs a headcount role.`)
   const tiers = Array.isArray(headcount?.tiers) ? headcount.tiers : []
   if (!tiers.length) {
@@ -82,9 +88,9 @@ function validateHeadcountPolicy(headcount, sourceRole, label, errors) {
 
     const allocations = Array.isArray(tier.allocations) ? tier.allocations : []
     if (!allocations.length) errors.push(`${tierLabel} needs at least one recipient.`)
-    const recipients = new Set()
+    const recipients = new Set<string>()
     let allocationTotal = 0
-    allocations.forEach((allocation, allocationIndex) => {
+    allocations.forEach((allocation: any, allocationIndex: number) => {
       const allocationLabel = `${tierLabel}, recipient ${allocationIndex + 1}`
       const percent = Number(allocation.percent)
       if (!(percent > 0) || percent > 100) errors.push(`${allocationLabel} needs a percentage greater than 0 and no more than 100.`)
@@ -103,10 +109,10 @@ function validateHeadcountPolicy(headcount, sourceRole, label, errors) {
   if (finalMax != null && finalMax !== '') errors.push(`${label} needs an open-ended final bracket.`)
 }
 
-function validateRoleRules(rules, scope, errors) {
-  ;(Array.isArray(rules) ? rules : []).forEach((rule, ruleIndex) => {
+function validateRoleRules(rules: unknown, scope: string, errors: string[]) {
+  ;(Array.isArray(rules) ? rules : []).forEach((rule: any, ruleIndex: number) => {
     const sourceRole = rule?.role_key || `role ${ruleIndex + 1}`
-    ;(Array.isArray(rule?.tipouts) ? rule.tipouts : []).forEach((tipout, tipoutIndex) => {
+    ;(Array.isArray(rule?.tipouts) ? rule.tipouts : []).forEach((tipout: any, tipoutIndex: number) => {
       const label = `${scope} tipout ${tipoutIndex + 1} from ${sourceRole}`
       const percent = Number(tipout?.percent)
       if (tipout?.percent === '' || tipout?.percent == null || !(percent > 0) || percent > 100) {
@@ -119,11 +125,11 @@ function validateRoleRules(rules, scope, errors) {
   })
 }
 
-function validateCategoryProfiles(profiles, scope, errors) {
-  ;(Array.isArray(profiles) ? profiles : []).forEach((profile, profileIndex) => {
+function validateCategoryProfiles(profiles: unknown, scope: string, errors: string[]) {
+  ;(Array.isArray(profiles) ? profiles : []).forEach((profile: any, profileIndex: number) => {
     const profileLabel = profile?.name || `menu group ${profileIndex + 1}`
     validateRoleRules(profile?.role_tip_rules, `${scope} ${profileLabel}`, errors)
-    ;(Array.isArray(profile?.item_overrides) ? profile.item_overrides : []).forEach((override, overrideIndex) => {
+    ;(Array.isArray(profile?.item_overrides) ? profile.item_overrides : []).forEach((override: any, overrideIndex: number) => {
       validateRoleRules(
         override?.role_tip_rules,
         `${scope} ${profileLabel}, item ${override?.menu_item_name || overrideIndex + 1}`,
@@ -133,8 +139,8 @@ function validateCategoryProfiles(profiles, scope, errors) {
   })
 }
 
-export function validateTipoutPolicy(settings) {
-  const errors = []
+export function validateTipoutPolicy(settings: Partial<TipPayrollSettingsData> | null | undefined): string[] {
+  const errors: string[] = []
   validateRoleRules(settings?.role_tip_rules, 'Default', errors)
   validateCategoryProfiles(settings?.category_tip_profiles, 'Menu', errors)
   const weekdayOverrides = settings?.weekday_tipout_overrides || {}
@@ -154,13 +160,14 @@ export function validateTipoutPolicy(settings) {
   return [...new Set(errors)]
 }
 
-function stableValue(value) {
+function stableValue(value: any): any {
   if (Array.isArray(value)) return value.map(stableValue)
   if (!value || typeof value !== 'object') return value
   return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableValue(value[key])]))
 }
 
-export function tipoutPolicyFingerprint(settings) {
+/** Order-independent JSON of the policy, for change detection. */
+export function tipoutPolicyFingerprint(settings: Partial<TipPayrollSettingsData> | null | undefined): string {
   const policy = {
     role_tip_rules: serializeTipRoleRules(settings?.role_tip_rules || []),
     category_tip_profiles: (settings?.category_tip_profiles || []).map(profile => ({

@@ -18,7 +18,7 @@ import ModernRestaurantSetupPanel, {
   buildSetupWarnings as buildModernSetupWarnings,
   warningCount as modernWarningCount,
 } from './RestaurantSetupPanel'
-import { TimeEntry } from './components/shared/TimeEntry'
+import { SmartTimeInput } from '../shared/components/SmartTimeInput'
 import DashboardShell from './shell/DashboardShell'
 import StoresPage from './pages/StoresPage'
 import RatesPage from './pages/RatesPage'
@@ -2361,8 +2361,8 @@ function SchedulingPanel({ restaurantId }) {
                   className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none"
                 />
                 <div className="grid grid-cols-2 gap-2">
-                  <TimeEntry value={shiftForm.shift_start} onChange={value => setShiftForm(prev => ({ ...prev, shift_start: value }))} placeholder="17:00" ariaLabel="Shift start" />
-                  <TimeEntry value={shiftForm.shift_end} onChange={value => setShiftForm(prev => ({ ...prev, shift_end: value }))} placeholder="17:00" ariaLabel="Shift end" />
+                  <SmartTimeInput value={shiftForm.shift_start} onChange={value => setShiftForm(prev => ({ ...prev, shift_start: value }))} ariaLabel="Shift start" />
+                  <SmartTimeInput value={shiftForm.shift_end} onChange={value => setShiftForm(prev => ({ ...prev, shift_end: value }))} ariaLabel="Shift end" />
                 </div>
                 <label className="flex items-center gap-2 text-sm text-dash-secondary">
                   <input type="checkbox" checked={shiftForm.is_locked} onChange={event => setShiftForm(prev => ({ ...prev, is_locked: event.target.checked }))} />
@@ -2703,8 +2703,8 @@ function SchedulingPanel({ restaurantId }) {
                   {SCHEDULING_DAYS.map((day, index) => <option key={day} value={index}>{day}</option>)}
                 </select>
                 <div className="grid grid-cols-2 gap-2">
-                  <TimeEntry value={coverageForm.start_time} onChange={value => setCoverageForm(prev => ({ ...prev, start_time: value }))} placeholder="17:00" ariaLabel="Coverage start" />
-                  <TimeEntry value={coverageForm.end_time} onChange={value => setCoverageForm(prev => ({ ...prev, end_time: value }))} placeholder="17:00" ariaLabel="Coverage end" />
+                  <SmartTimeInput value={coverageForm.start_time} onChange={value => setCoverageForm(prev => ({ ...prev, start_time: value }))} ariaLabel="Coverage start" />
+                  <SmartTimeInput value={coverageForm.end_time} onChange={value => setCoverageForm(prev => ({ ...prev, end_time: value }))} ariaLabel="Coverage end" />
                 </div>
                 <label className="flex items-center gap-2 text-sm text-dash-secondary">
                   <input type="checkbox" checked={coverageForm.is_prime_shift} onChange={event => setCoverageForm(prev => ({ ...prev, is_prime_shift: event.target.checked }))} />
@@ -3765,8 +3765,8 @@ function EmployeePortal() {
                       <option value="available">Available</option>
                       <option value="not_available">Not available</option>
                     </select>
-                    <TimeEntry value={availabilityForm.start_time} onChange={value => setAvailabilityForm(prev => ({ ...prev, start_time: value }))} placeholder="10:00" ariaLabel="Availability start" />
-                    <TimeEntry value={availabilityForm.end_time} onChange={value => setAvailabilityForm(prev => ({ ...prev, end_time: value }))} placeholder="17:00" ariaLabel="Availability end" />
+                    <SmartTimeInput value={availabilityForm.start_time} onChange={value => setAvailabilityForm(prev => ({ ...prev, start_time: value }))} ariaLabel="Availability start" />
+                    <SmartTimeInput value={availabilityForm.end_time} onChange={value => setAvailabilityForm(prev => ({ ...prev, end_time: value }))} ariaLabel="Availability end" />
                     <select value={availabilityForm.reason} onChange={event => setAvailabilityForm(prev => ({ ...prev, reason: event.target.value }))} className="rounded-xl border border-white/10 bg-dash-base px-3 py-2 text-sm text-dash-cream outline-none">
                       <option value="">Reason dropdown</option>
                       {EMPLOYEE_REASON_OPTIONS.map(reason => <option key={reason} value={reason}>{reason}</option>)}
@@ -3777,7 +3777,7 @@ function EmployeePortal() {
                   <div className="space-y-2">
                     {availability.map((entry, index) => (
                       <div key={entry.id || `${entry.day_of_week}-${index}`} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-3 text-sm">
-                        <span>{EMPLOYEE_DAYS[Number(entry.day_of_week)]} · {String(entry.start_time).slice(0, 5)}-{String(entry.end_time).slice(0, 5)} · {entry.availability_type}</span>
+                        <span>{EMPLOYEE_DAYS[Number(entry.day_of_week)]} · {formatDisplayTime(entry.start_time)}-{formatDisplayTime(entry.end_time)} · {entry.availability_type}</span>
                         <button type="button" onClick={() => void removeAvailability(index)} className="text-red-200">Remove</button>
                       </div>
                     ))}
@@ -4268,17 +4268,6 @@ const DEFAULT_HOURS = DAYS.map((_, day_of_week) => ({
   close_time: '22:00',
   is_closed: false,
 }))
-
-const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
-  const hours = Math.floor(i / 2)
-  const minutes = i % 2 === 0 ? '00' : '30'
-  const period = hours >= 12 ? 'PM' : 'AM'
-  const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
-  return {
-    value: `${hours.toString().padStart(2, '0')}:${minutes}`,
-    label: `${displayHours}:${minutes} ${period}`,
-  }
-})
 
 function Field({ label, children }) {
   return (

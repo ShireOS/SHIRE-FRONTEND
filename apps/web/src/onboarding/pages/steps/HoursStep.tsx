@@ -1,21 +1,12 @@
 import { useState } from 'react'
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
+import { SmartTimeInput } from '../../../shared/components/SmartTimeInput'
 
 interface HoursStepProps {
   onboarding: UseOnboardingReturn
 }
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-
-const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
-  const hours = Math.floor(i / 2)
-  const minutes = i % 2 === 0 ? '00' : '30'
-  const period = hours >= 12 ? 'PM' : 'AM'
-  const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours
-  const value = `${hours.toString().padStart(2, '0')}:${minutes}`
-  const label = `${displayHours}:${minutes} ${period}`
-  return { value, label }
-})
 
 export function HoursStep({ onboarding }: HoursStepProps) {
   const { data, updateData, saveOperatingHours, nextStep, isLoading, error } = onboarding
@@ -110,28 +101,22 @@ export function HoursStep({ onboarding }: HoursStepProps) {
           <div className="flex items-center gap-4">
             <div className="flex-1">
               <label className="label-mono block mb-1 text-[rgb(var(--gold))]">Opens</label>
-              <select
+              <SmartTimeInput
+                ariaLabel="Restaurant opens"
                 value={referenceHours.open_time}
-                onChange={(e) => updateDayHours(1, 'open_time', e.target.value)}
-                className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
-              >
-                {TIME_OPTIONS.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+                onChange={(value) => updateDayHours(1, 'open_time', value)}
+                inputClassName="!rounded-lg"
+              />
             </div>
             <span className="text-[rgb(var(--text-tertiary))] pt-6">to</span>
             <div className="flex-1">
               <label className="label-mono block mb-1 text-[rgb(var(--gold))]">Closes</label>
-              <select
+              <SmartTimeInput
+                ariaLabel="Restaurant closes"
                 value={referenceHours.close_time}
-                onChange={(e) => updateDayHours(1, 'close_time', e.target.value)}
-                className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
-              >
-                {TIME_OPTIONS.map(opt => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+                onChange={(value) => updateDayHours(1, 'close_time', value)}
+                inputClassName="!rounded-lg"
+              />
             </div>
           </div>
 
@@ -185,25 +170,21 @@ export function HoursStep({ onboarding }: HoursStepProps) {
 
                   {!hours.is_closed && (
                     <div className="flex items-center gap-2">
-                      <select
+                      <SmartTimeInput
+                        className="w-36"
+                        ariaLabel={`${day} opens`}
                         value={hours.open_time}
-                        onChange={(e) => updateDayHours(i, 'open_time', e.target.value)}
-                        className="px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] text-sm focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
-                      >
-                        {TIME_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
+                        onChange={(value) => updateDayHours(i, 'open_time', value)}
+                        inputClassName="!rounded-lg !py-2"
+                      />
                       <span className="text-[rgb(var(--text-tertiary))]">-</span>
-                      <select
+                      <SmartTimeInput
+                        className="w-36"
+                        ariaLabel={`${day} closes`}
                         value={hours.close_time}
-                        onChange={(e) => updateDayHours(i, 'close_time', e.target.value)}
-                        className="px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] text-sm focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
-                      >
-                        {TIME_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
+                        onChange={(value) => updateDayHours(i, 'close_time', value)}
+                        inputClassName="!rounded-lg !py-2"
+                      />
                     </div>
                   )}
 

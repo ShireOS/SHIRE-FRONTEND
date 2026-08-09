@@ -3,6 +3,7 @@ import { supabase } from '../../../shared/lib/supabase'
 import { API_CONFIG } from '../../../shared/api/config'
 import { fetchPosApi } from '../../../shared/api/posClient'
 import type { JobCodeData, RolePermissionData, UseOnboardingReturn } from '../../hooks/useOnboarding'
+import { defaultRolePermission } from '@shire/settings'
 import { cashDrawerRoleSummary } from '../../../dashboard/utils/cashDrawerPermissions'
 
 interface TeamStepProps {
@@ -63,38 +64,10 @@ export function TeamStep({ onboarding }: TeamStepProps) {
   const roleCode = (value: string) =>
     value.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || 'role'
 
-  const defaultPermissionForRole = (code: JobCodeData): RolePermissionData => {
-    const roleKey = roleCode(code.code || code.label)
-    const elevated = code.permission_tier === 'owner' || code.permission_tier === 'manager' || roleKey === 'owner' || roleKey === 'manager'
-    const cashier = roleKey === 'cashier'
-    const service = roleKey === 'server' || roleKey === 'bartender' || roleKey === 'cashier'
-    return {
-      role_key: roleKey,
-      can_refund: elevated || cashier,
-      refund_limit: elevated ? '' : cashier ? '25' : '',
-      can_void: elevated,
-      can_comp: elevated,
-      can_discount: elevated || service,
-      discount_limit_percent: elevated ? '' : service ? '20' : '',
-      can_open_cash_drawer: elevated || cashier || roleKey === 'bartender',
-      can_no_sale: elevated || cashier,
-      can_paid_in_out: elevated || cashier,
-      can_adjust_tips: elevated,
-      can_edit_menu: elevated,
-      can_edit_employees: elevated,
-      can_edit_schedules: elevated,
-      can_view_reports: elevated,
-      can_close_drawer: elevated || cashier,
-      can_close_day: elevated,
-      can_reopen_business_day: roleKey === 'owner',
-      can_change_payment_settings: roleKey === 'owner',
-      can_edit_sent_items_within_window: elevated || service,
-      can_edit_sent_items_after_window: elevated,
-      can_unsend_sent_items: elevated || service,
-      can_edit_paid_check_items: elevated,
-      require_manager_pin_for_approval: !elevated,
-    }
-  }
+  // Canonical starting permissions; the job code's tier makes custom-named
+  // manager-tier roles start elevated.
+  const defaultPermissionForRole = (code: JobCodeData): RolePermissionData =>
+    defaultRolePermission(roleCode(code.code || code.label), code.permission_tier)
 
   const selectedJobCode = activeJobCodes.find(code => code.code === role)
   const selectedRoleKey = roleCode(selectedJobCode?.code || selectedJobCode?.label || role)

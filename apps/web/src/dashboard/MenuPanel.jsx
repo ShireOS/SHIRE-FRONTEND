@@ -43,6 +43,9 @@ import { MenuItemCreate } from './MenuItemCreate'
 import { MenuEditor } from '../onboarding/components/MenuEditor'
 import { useAuth } from '../auth'
 import { PublishControls } from '../shared/components/PublishControls'
+import { SmartDateTimeInput } from '../shared/components/SmartDateTimeInput'
+import { SmartTimeInput } from '../shared/components/SmartTimeInput'
+import { formatTimeLabel } from '../shared/utils/timeInput.js'
 import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
 import { PropagationModal } from '../shared/components/PropagationModal'
 import { scheduleChange } from '../shared/api/scheduledChanges'
@@ -1805,7 +1808,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         cycle_anchor_date: specialDraft.schedule_kind === 'cycle' ? specialDraft.cycle_anchor_date : null,
         cycle_length_days: specialDraft.schedule_kind === 'cycle' ? Number(specialDraft.cycle_length_days) : null,
         cycle_day_number: specialDraft.schedule_kind === 'cycle' ? Number(specialDraft.cycle_day_number) : null,
-        expires_at: specialDraft.expires_at ? new Date(specialDraft.expires_at).toISOString() : null,
+        expires_at: specialDraft.expires_at || null,
         sort_order: specials.length,
         is_active: true,
         preserve_gratuity_basis: specialDraft.preserve_gratuity_basis,
@@ -2279,18 +2282,18 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                               </SmallButton>
                             )
                           })}
-                          <TextInput
-                            type="time"
-                            className="!w-auto"
+                          <SmartTimeInput
+                            className="w-36"
+                            ariaLabel={`${category.name} visible from`}
                             value={category.availability_start_time ? String(category.availability_start_time).slice(0, 5) : ''}
-                            onChange={event => updateCategory(index, { availability_start_time: event.target.value })}
+                            onChange={value => updateCategory(index, { availability_start_time: value })}
                           />
                           <span className="text-xs text-dash-tertiary">to</span>
-                          <TextInput
-                            type="time"
-                            className="!w-auto"
+                          <SmartTimeInput
+                            className="w-36"
+                            ariaLabel={`${category.name} visible until`}
                             value={category.availability_end_time ? String(category.availability_end_time).slice(0, 5) : ''}
-                            onChange={event => updateCategory(index, { availability_end_time: event.target.value })}
+                            onChange={value => updateCategory(index, { availability_end_time: value })}
                           />
                         </>
                       )}
@@ -2863,7 +2866,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                                 : special.schedule_kind === 'cycle'
                                   ? `Every ${special.cycle_length_days} days`
                                   : 'Manual'}
-                            {special.start_time ? ` · ${String(special.start_time).slice(0, 5)}${special.end_time ? `–${String(special.end_time).slice(0, 5)}` : ''}` : ''}
+                            {special.start_time ? ` · ${formatTimeLabel(special.start_time)}${special.end_time ? `–${formatTimeLabel(special.end_time)}` : ''}` : ''}
                           </p>
                           {special.note && <p className="mt-1 text-sm text-dash-tertiary">{special.note}</p>}
                         </div>
@@ -2970,11 +2973,11 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                     </div>
                   )}
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="Start time"><TextInput type="time" value={specialDraft.start_time} onChange={event => setSpecialDraft(prev => ({ ...prev, start_time: event.target.value }))} /></Field>
-                    <Field label="End time"><TextInput type="time" value={specialDraft.end_time} onChange={event => setSpecialDraft(prev => ({ ...prev, end_time: event.target.value }))} /></Field>
+                    <Field label="Start time"><SmartTimeInput ariaLabel="Special start time" value={specialDraft.start_time} onChange={value => setSpecialDraft(prev => ({ ...prev, start_time: value }))} /></Field>
+                    <Field label="End time"><SmartTimeInput ariaLabel="Special end time" value={specialDraft.end_time} onChange={value => setSpecialDraft(prev => ({ ...prev, end_time: value }))} /></Field>
                   </div>
                   <Field label="Expires (optional)">
-                    <TextInput type="datetime-local" value={specialDraft.expires_at} onChange={event => setSpecialDraft(prev => ({ ...prev, expires_at: event.target.value }))} />
+                    <SmartDateTimeInput ariaLabel="Special expiration" value={specialDraft.expires_at} onChange={value => setSpecialDraft(prev => ({ ...prev, expires_at: value }))} />
                   </Field>
                   <label className="flex min-h-11 items-center gap-3 rounded-md border border-white/10 px-3 text-sm text-dash-primary">
                     <input type="checkbox" checked={specialDraft.preserve_gratuity_basis} onChange={event => setSpecialDraft(prev => ({ ...prev, preserve_gratuity_basis: event.target.checked }))} className="h-4 w-4 accent-dash-gold" />
@@ -3004,7 +3007,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                         {(Array.isArray(category.availability_days) && category.availability_days.length > 0 && category.availability_days.length < 7
                           ? category.availability_days.map(day => DAYS_SHORT[day]).join(', ')
                           : 'Every day')}
-                        {category.availability_start_time ? ` · ${String(category.availability_start_time).slice(0, 5)}–${category.availability_end_time ? String(category.availability_end_time).slice(0, 5) : 'close'}` : ''}
+                        {category.availability_start_time ? ` · ${formatTimeLabel(category.availability_start_time)}–${category.availability_end_time ? formatTimeLabel(category.availability_end_time) : 'close'}` : ''}
                       </span>
                     </div>
                     <SmallButton onClick={() => jumpToCategory(category.name)}>Edit category →</SmallButton>
@@ -3026,7 +3029,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       <span className="font-medium text-dash-cream">{item.name}</span>
                       <span className="ml-2 text-dash-tertiary">
                         {item.availability_mode === 'schedule'
-                          ? `Weekly: ${(item.availability_days || []).map(day => DAYS_SHORT[day]).join(', ')}${item.availability_start_time ? ` · ${String(item.availability_start_time).slice(0, 5)}–${item.availability_end_time ? String(item.availability_end_time).slice(0, 5) : 'close'}` : ''}`
+                          ? `Weekly: ${(item.availability_days || []).map(day => DAYS_SHORT[day]).join(', ')}${item.availability_start_time ? ` · ${formatTimeLabel(item.availability_start_time)}–${item.availability_end_time ? formatTimeLabel(item.availability_end_time) : 'close'}` : ''}`
                           : item.availability_mode === 'seasonal'
                             ? `${item.availability_start_date || '...'} → ${item.availability_end_date || '...'}`
                             : 'Manual only'}

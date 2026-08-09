@@ -6,7 +6,7 @@ import {
   serializeWeekdayTipoutOverrides,
   tipoutPolicyFingerprint,
   validateTipoutPolicy,
-} from './tipPayrollPolicy.js'
+} from './tipsPolicy.ts'
 
 const rule = {
   role_key: 'server',

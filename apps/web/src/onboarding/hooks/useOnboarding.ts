@@ -1,12 +1,69 @@
 import { useState, useCallback, useEffect } from 'react'
+import {
+  DEFAULT_HOURS,
+  isRecord,
+  asString,
+  asNullableString,
+  asEnum,
+  defaultRolePermissions,
+  defaultCloseoutSettings,
+  defaultMenuCategories,
+  defaultCheckWorkflowSettings,
+  defaultTipPayrollSettings,
+  normalizeSectionNames,
+  normalizeSectionProfiles,
+  normalizeTaxRates,
+  normalizeServiceCharges,
+  normalizeMenuCategories,
+  normalizeDiscountRules,
+  normalizeRolePermissions,
+  normalizeCloseoutSettings,
+  normalizeCheckWorkflowSettings,
+  normalizeJobCodes,
+  normalizeTipPayrollSettings,
+  taxesChargesPayload,
+  discountRulesPayload,
+  menuCategoriesPayload,
+  managerControlsPayload,
+  closeoutSettingsPayload,
+  checkWorkflowSettingsPayload,
+  tipPayrollPayload,
+} from '@shire/settings'
+import type {
+  TaxRateData,
+  ServiceChargeData,
+  SectionBehaviorData,
+  MenuCategoryData,
+  DiscountRuleData,
+  RolePermissionData,
+  CloseoutSettingsData,
+  CheckWorkflowSettingsData,
+  JobCodeData,
+  TipPayrollSettingsData,
+} from '@shire/settings'
+
+// Settings types now live in @shire/settings; step components keep importing
+// them from this hook.
+export type {
+  TaxRateData,
+  ServiceChargeData,
+  SectionBehaviorData,
+  MenuCategoryData,
+  DiscountRuleData,
+  RolePermissionData,
+  CloseoutSettingsData,
+  CheckWorkflowSettingsData,
+  JobCodeData,
+  TipRoleRuleData,
+  CategoryTipProfileData,
+  TipPayrollSettingsData,
+} from '@shire/settings'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../shared/lib/supabase'
 import { API_CONFIG } from '../../shared/api/config'
 import { fetchPosApi } from '../../shared/api/posClient'
 import { useAuth } from '../../auth'
 import type { Restaurant } from '@shire/db'
-import { serializeTipRoleRules, serializeWeekdayTipoutOverrides } from '../../shared/tips/tipPayrollPolicy'
-
 
 export type RestaurantType =
   | 'fine_dining'
@@ -126,240 +183,6 @@ export interface OnboardingData {
   invites: TeamInvite[]
 }
 
-export interface TaxRateData {
-  id?: string | null
-  name: string
-  rate: string
-  applies_to: 'all' | 'food' | 'alcohol' | 'non_alcohol' | 'merchandise'
-  is_default: boolean
-  is_inclusive: boolean
-  is_active?: boolean
-}
-
-export interface ServiceChargeData {
-  id?: string | null
-  name: string
-  charge_type: 'percentage' | 'fixed'
-  amount: string
-  applies_to: 'all' | 'dine_in' | 'bar' | 'takeout' | 'delivery' | 'catering' | 'large_party'
-  taxable: boolean
-  auto_apply: boolean
-  is_tip: boolean
-  is_active?: boolean
-}
-
-export interface SectionBehaviorData {
-  id?: string | null
-  name: string
-  service_mode: 'standard' | 'hibachi' | 'bar' | 'patio' | 'counter' | 'custom'
-  auto_gratuity_enabled: boolean
-  auto_gratuity_type: 'percentage' | 'fixed'
-  auto_gratuity_value: string
-  auto_gratuity_label: string
-  auto_gratuity_taxable: boolean
-  assigned_to_employee: boolean
-  minimum_party_size: string
-  tip_prompt_mode: 'normal' | 'additional' | 'disabled'
-}
-
-export interface MenuCategoryData {
-  id?: string | null
-  name: string
-  tax_rate_id: string
-  routing_station_id: string
-  routing_station_name: string
-  default_fire_mode?: 'inherit' | 'immediate' | 'hold' | 'manual' | 'by_course' | ''
-  kds_display_group?: string
-  is_active?: boolean
-}
-
-export interface DiscountRuleData {
-  id?: string | null
-  name: string
-  discount_type: 'discount' | 'comp' | 'promo' | 'employee_meal' | 'service_recovery'
-  applies_to: 'item' | 'check' | 'both'
-  value_type: 'percent' | 'fixed' | 'open'
-  default_value: string
-  editable_by_employee: boolean
-  min_value: string
-  max_value: string
-  allowed_roles: string[]
-  requires_manager_approval: boolean
-  tax_behavior: 'reduce_taxable_amount' | 'apply_after_tax' | 'no_tax_impact'
-  reason_required: boolean
-  service_modes: string[]
-  days_of_week: number[]
-  is_active?: boolean
-}
-
-export interface RolePermissionData {
-  id?: string | null
-  role_key: string
-  can_refund: boolean
-  refund_limit: string
-  can_void: boolean
-  can_comp: boolean
-  can_discount: boolean
-  discount_limit_percent: string
-  can_open_cash_drawer: boolean
-  can_no_sale: boolean
-  can_paid_in_out: boolean
-  can_adjust_tips: boolean
-  can_edit_menu: boolean
-  can_edit_employees: boolean
-  can_edit_schedules: boolean
-  can_view_reports: boolean
-  can_close_drawer: boolean
-  can_close_day: boolean
-  can_reopen_business_day: boolean
-  can_change_payment_settings: boolean
-  can_edit_sent_items_within_window: boolean
-  can_edit_sent_items_after_window: boolean
-  can_unsend_sent_items: boolean
-  can_edit_paid_check_items: boolean
-  require_manager_pin_for_approval: boolean
-}
-
-export interface CloseoutSettingsData {
-  cash_tracking_mode: 'shared_drawer' | 'per_terminal' | 'per_employee' | 'no_cash'
-  require_starting_bank: boolean
-  opening_bank_source: 'none' | 'fixed' | 'previous_retained'
-  opening_bank_default: string
-  track_deposit_at_close: boolean
-  blind_drawer_close: boolean
-  allow_paid_in_out: boolean
-  require_manager_for_drawer_open: boolean
-  cash_drop_threshold: string
-  cash_variance_threshold: string
-  server_require_all_checks_closed: boolean
-  server_require_tabs_closed: boolean
-  server_require_cash_tips_declared: boolean
-  server_require_credit_tips_reviewed: boolean
-  deduct_credit_card_tips_from_cash_due: boolean
-  server_require_tipout_entry: boolean
-  server_require_manager_approval: boolean
-  server_checkout_report_delivery: 'none' | 'print' | 'email' | 'print_and_email'
-  allow_clockout_before_checkout: boolean
-  eod_batch_close_mode: 'automatic' | 'manual' | 'prompt_manager'
-  eod_require_drawers_closed: boolean
-  eod_require_servers_checked_out: boolean
-  eod_require_open_checks_resolved: boolean
-  eod_require_paid_outs_reviewed: boolean
-  eod_require_tip_adjustments_reviewed: boolean
-  eod_report_recipients: string[]
-  eod_reports: string[]
-  eod_email_on_close: boolean
-  eod_email_formats: Array<'pdf' | 'xlsx'>
-}
-
-// Only fields the POS enforces; the dropped split/merge/transfer/tab-close
-// toggles were never read by any POS code path.
-export interface CheckWorkflowSettingsData {
-  seat_numbers_enabled: boolean
-  seat_number_required: boolean
-  course_required: boolean
-  split_by_seat_enabled: boolean
-  split_by_item_enabled: boolean
-  allow_bar_tabs: boolean
-  tab_name_required: boolean
-  card_preauth_required: boolean
-  default_preauth_amount: string
-  require_manager_for_reopen: boolean
-  allow_hold_and_fire: boolean
-  default_order_fire_mode: 'manual' | 'immediate' | 'by_course'
-  default_hold_minutes: string
-  hold_preset_minutes: number[]
-  allow_manual_hold: boolean
-  allow_item_seat_move: boolean
-  allow_multi_item_seat_move: boolean
-  require_manager_for_item_move_after_send: boolean
-  sent_item_correction_window_minutes: string
-}
-
-export interface JobCodeData {
-  id?: string | null
-  code: string
-  label: string
-  permission_tier: 'owner' | 'manager' | 'normal' | 'limited' | 'waiter'
-  default_hourly_rate: string
-  is_tipped: boolean
-  tipout_role: string
-  sort_order: number
-  is_active?: boolean
-}
-
-export interface TipRoleRuleData {
-  role_key: string
-  tip_eligible: boolean
-  contributes_to_pool: boolean
-  receives_from_pool: boolean
-  pool_points: string
-  pool_contribution_percent: string
-  pool_share_percent: string
-  tipout_split_basis: 'hours' | 'even' | 'weights'
-  tipout_split_weights: Array<{ staff_id: string; weight: string }>
-  tipouts: Array<{
-    target_role: string
-    percent: string
-    basis: 'tips' | 'sales'
-    sales_category: string
-    basis_scope: 'own' | 'restaurant'
-    headcount: {
-      driver_role: string
-      tiers: Array<{
-        min_count: number
-        max_count: number | null
-        allocations: Array<{ target_role: string; unallocated: boolean; percent: string }>
-      }>
-    } | null
-  }>
-  tipout_percent: string
-  tipout_target_role: string
-  notes: string
-}
-
-export interface CategoryTipProfileData {
-  id: string
-  name: string
-  category_ids: string[]
-  category_names: string[]
-  role_tip_rules: TipRoleRuleData[]
-  item_overrides: Array<{
-    menu_item_id: string
-    menu_item_name: string
-    role_tip_rules: TipRoleRuleData[]
-  }>
-}
-
-export interface TipPayrollSettingsData {
-  tip_distribution_mode: 'individual' | 'pooled' | 'role_based' | 'sales_based' | 'hours_based' | 'points_based' | 'role_shares'
-  cash_tip_declaration_mode: 'not_tracked' | 'declared_by_employee' | 'declared_by_manager' | 'required_checkout'
-  credit_tip_payout_timing: 'nightly' | 'payroll'
-  payroll_provider: string
-  payroll_export_frequency: 'daily' | 'weekly' | 'biweekly' | 'semimonthly' | 'monthly' | 'manual'
-  payroll_period_start_weekday: number
-  payroll_period_anchor_date: string
-  payroll_semimonthly_cutoff_day: number
-  payroll_report_default_period: 'last_completed' | 'current_open'
-  tip_pooling_enabled: boolean
-  tip_pool_reset: 'shift' | 'day' | 'pay_period'
-  tipout_basis: 'none' | 'sales' | 'tips' | 'hours' | 'points' | 'custom'
-  tipout_sales_includes_tax: boolean
-  tipout_include_managers: boolean
-  require_tipout_at_checkout: boolean
-  allow_manager_tip_adjustments: boolean
-  auto_withhold_credit_card_fees: boolean
-  credit_card_fee_percent: string
-  role_tip_rules: TipRoleRuleData[]
-  category_tip_profiles: CategoryTipProfileData[]
-  weekday_tipout_overrides: Partial<Record<'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday', {
-    mode: 'disabled' | 'custom'
-    role_tip_rules?: TipRoleRuleData[]
-    category_tip_profiles?: CategoryTipProfileData[]
-  }>>
-  notes: string
-}
-
 export interface OperatingHoursData {
   day_of_week: number
   open_time: string
@@ -385,19 +208,6 @@ interface OnboardingDraft {
   updatedAt: string
 }
 
-const DEFAULT_HOURS: OperatingHoursData[] = [
-  { day_of_week: 0, open_time: '11:00', close_time: '22:00', is_closed: true }, // Sunday
-  { day_of_week: 1, open_time: '11:00', close_time: '22:00', is_closed: false },
-  { day_of_week: 2, open_time: '11:00', close_time: '22:00', is_closed: false },
-  { day_of_week: 3, open_time: '11:00', close_time: '22:00', is_closed: false },
-  { day_of_week: 4, open_time: '11:00', close_time: '22:00', is_closed: false },
-  { day_of_week: 5, open_time: '11:00', close_time: '23:00', is_closed: false },
-  { day_of_week: 6, open_time: '11:00', close_time: '23:00', is_closed: false },
-]
-
-const DEFAULT_ROLE_KEYS = ['owner', 'manager', 'server', 'bartender', 'cashier', 'host', 'runner', 'busser', 'kitchen']
-const EOD_REPORT_OPTIONS = ['sales_summary', 'labor_summary', 'cash_drawer_summary', 'tip_summary', 'discounts_voids_refunds', 'tax_summary']
-
 const defaultJobCodes = (): JobCodeData[] => [
   { code: 'owner', label: 'Owner', permission_tier: 'owner', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 10, is_active: true },
   { code: 'manager', label: 'Manager', permission_tier: 'manager', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 20, is_active: true },
@@ -408,174 +218,6 @@ const defaultJobCodes = (): JobCodeData[] => [
   { code: 'busser', label: 'Busser', permission_tier: 'normal', default_hourly_rate: '', is_tipped: true, tipout_role: 'busser', sort_order: 70, is_active: true },
   { code: 'kitchen', label: 'Kitchen', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: 'kitchen', sort_order: 80, is_active: true },
 ]
-
-const defaultTipRoleRules = (jobCodes: JobCodeData[] = defaultJobCodes()): TipRoleRuleData[] =>
-  jobCodes.map(code => ({
-    role_key: code.code,
-    tip_eligible: code.is_tipped,
-    contributes_to_pool: code.is_tipped,
-    receives_from_pool: code.is_tipped,
-    pool_points: code.is_tipped ? '1' : '',
-    pool_contribution_percent: '100',
-    pool_share_percent: '',
-    tipout_split_basis: 'even',
-    tipout_split_weights: [],
-    tipouts: [],
-    tipout_percent: '',
-    tipout_target_role: '',
-    notes: '',
-  }))
-
-const defaultTipPayrollSettings = (): TipPayrollSettingsData => ({
-  tip_distribution_mode: 'individual',
-  cash_tip_declaration_mode: 'declared_by_employee',
-  credit_tip_payout_timing: 'payroll',
-  payroll_provider: '',
-  payroll_export_frequency: 'biweekly',
-  payroll_period_start_weekday: 0,
-  payroll_period_anchor_date: '',
-  payroll_semimonthly_cutoff_day: 15,
-  payroll_report_default_period: 'last_completed',
-  tip_pooling_enabled: false,
-  tip_pool_reset: 'day',
-  tipout_basis: 'none',
-  tipout_sales_includes_tax: false,
-  tipout_include_managers: false,
-  require_tipout_at_checkout: false,
-  allow_manager_tip_adjustments: true,
-  auto_withhold_credit_card_fees: false,
-  credit_card_fee_percent: '',
-    role_tip_rules: defaultTipRoleRules(),
-    category_tip_profiles: [],
-    weekday_tipout_overrides: {},
-  notes: '',
-})
-
-function slugRoleCode(value: unknown, fallback = 'role'): string {
-  const raw = String(value || fallback).toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '')
-  const normalized = raw || fallback
-  return /^[a-z]/.test(normalized) ? normalized.slice(0, 80) : `role_${normalized}`.slice(0, 80)
-}
-
-const roleKeysForPermissions = (jobCodes: JobCodeData[] = defaultJobCodes()): string[] => {
-  const seen = new Set<string>()
-  const keys: string[] = []
-  const activeJobCodeKeys = jobCodes
-    .filter(code => code?.is_active !== false)
-    .map(code => code.code)
-  const sourceKeys = activeJobCodeKeys.length > 0 ? activeJobCodeKeys : DEFAULT_ROLE_KEYS
-  for (const key of sourceKeys) {
-    const roleKey = slugRoleCode(key)
-    if (!roleKey || seen.has(roleKey)) continue
-    seen.add(roleKey)
-    keys.push(roleKey)
-  }
-  return keys
-}
-
-const defaultRolePermission = (roleKey: string): RolePermissionData => {
-  const normalizedRoleKey = slugRoleCode(roleKey)
-  const elevated = normalizedRoleKey === 'owner' || normalizedRoleKey === 'manager'
-  const cashier = normalizedRoleKey === 'cashier'
-  const service = normalizedRoleKey === 'server' || normalizedRoleKey === 'bartender' || normalizedRoleKey === 'cashier'
-  return {
-    role_key: normalizedRoleKey,
-    can_refund: elevated || cashier,
-    refund_limit: elevated ? '' : cashier ? '25' : '',
-    can_void: elevated,
-    can_comp: elevated,
-    can_discount: elevated || service,
-    discount_limit_percent: elevated ? '' : service ? '20' : '',
-    can_open_cash_drawer: elevated || cashier || normalizedRoleKey === 'bartender',
-    can_no_sale: elevated || cashier,
-    can_paid_in_out: elevated || cashier,
-    can_adjust_tips: elevated,
-    can_edit_menu: elevated,
-    can_edit_employees: elevated,
-    can_edit_schedules: elevated,
-    can_view_reports: elevated,
-    can_close_drawer: elevated || cashier,
-    can_close_day: elevated,
-    can_reopen_business_day: normalizedRoleKey === 'owner',
-    can_change_payment_settings: normalizedRoleKey === 'owner',
-    can_edit_sent_items_within_window: elevated || service,
-    can_edit_sent_items_after_window: elevated,
-    can_unsend_sent_items: elevated || service,
-    can_edit_paid_check_items: elevated,
-    require_manager_pin_for_approval: !elevated,
-  }
-}
-
-const defaultRolePermissions = (jobCodes: JobCodeData[] = defaultJobCodes()): RolePermissionData[] =>
-  roleKeysForPermissions(jobCodes).map(roleKey => defaultRolePermission(roleKey))
-
-const defaultCloseoutSettings = (): CloseoutSettingsData => ({
-  cash_tracking_mode: 'shared_drawer',
-  // The drawer starts empty unless a restaurant configures a float. Onboarding
-  // must not opt a new store into typing an opening bank every night.
-  require_starting_bank: false,
-  opening_bank_source: 'none',
-  opening_bank_default: '',
-  track_deposit_at_close: false,
-  blind_drawer_close: true,
-  allow_paid_in_out: true,
-  require_manager_for_drawer_open: true,
-  cash_drop_threshold: '',
-  cash_variance_threshold: '',
-  server_require_all_checks_closed: true,
-  server_require_tabs_closed: true,
-  server_require_cash_tips_declared: false,
-  server_require_credit_tips_reviewed: true,
-  deduct_credit_card_tips_from_cash_due: true,
-  server_require_tipout_entry: false,
-  server_require_manager_approval: true,
-  server_checkout_report_delivery: 'print',
-  allow_clockout_before_checkout: false,
-  eod_batch_close_mode: 'prompt_manager',
-  eod_require_drawers_closed: true,
-  eod_require_servers_checked_out: true,
-  eod_require_open_checks_resolved: true,
-  eod_require_paid_outs_reviewed: true,
-  eod_require_tip_adjustments_reviewed: true,
-  eod_report_recipients: [],
-  eod_reports: ['sales_summary', 'cash_drawer_summary', 'tip_summary', 'discounts_voids_refunds', 'tax_summary'],
-  eod_email_on_close: false,
-  eod_email_formats: ['pdf'],
-})
-
-const defaultMenuCategories = (): MenuCategoryData[] => [
-  { name: 'Appetizers', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'by_course', kds_display_group: 'Apps', is_active: true },
-  { name: 'Entrees', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'by_course', kds_display_group: 'Entrees', is_active: true },
-  { name: 'Desserts', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'by_course', kds_display_group: 'Desserts', is_active: true },
-  { name: 'Sides', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'inherit', kds_display_group: 'Sides', is_active: true },
-  { name: 'Drinks', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_fire_mode: 'immediate', kds_display_group: 'Drinks', is_active: true },
-  { name: 'Cocktails', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_fire_mode: 'immediate', kds_display_group: 'Bar', is_active: true },
-  { name: 'Beer & Wine', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_fire_mode: 'immediate', kds_display_group: 'Bar', is_active: true },
-  { name: 'Specials', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_fire_mode: 'inherit', kds_display_group: 'Specials', is_active: true },
-  { name: 'Other', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Expo', default_fire_mode: 'inherit', kds_display_group: 'Other', is_active: true },
-]
-
-const defaultCheckWorkflowSettings = (): CheckWorkflowSettingsData => ({
-  seat_numbers_enabled: true,
-  seat_number_required: false,
-  course_required: false,
-  split_by_seat_enabled: true,
-  split_by_item_enabled: true,
-  allow_bar_tabs: true,
-  tab_name_required: true,
-  card_preauth_required: false,
-  default_preauth_amount: '',
-  require_manager_for_reopen: true,
-  allow_hold_and_fire: true,
-  default_order_fire_mode: 'immediate',
-  default_hold_minutes: '10',
-  hold_preset_minutes: [5, 10, 15],
-  allow_manual_hold: true,
-  allow_item_seat_move: true,
-  allow_multi_item_seat_move: true,
-  require_manager_for_item_move_after_send: false,
-  sent_item_correction_window_minutes: '4',
-})
 
 const INITIAL_DATA: OnboardingData = {
   name: '',
@@ -622,11 +264,11 @@ const INITIAL_DATA: OnboardingData = {
   ],
   service_charges: [],
   discount_rules: [],
-  role_permissions: defaultRolePermissions(),
+  role_permissions: defaultRolePermissions(defaultJobCodes()),
   closeout_settings: defaultCloseoutSettings(),
   check_workflow_settings: defaultCheckWorkflowSettings(),
   job_codes: defaultJobCodes(),
-  tip_payroll_settings: defaultTipPayrollSettings(),
+  tip_payroll_settings: defaultTipPayrollSettings(defaultJobCodes()),
 
   challenges: [],
   daily_covers_range: null,
@@ -697,54 +339,9 @@ const PAYOUT_SCHEDULES: OnboardingData['payout_schedule'][] = ['daily', 'weekly'
 const REFUND_FUNDING_SOURCES: OnboardingData['refund_funding_source'][] = ['processor_balance', 'bank_account']
 const BATCH_CLOSE_MODES: OnboardingData['batch_close_mode'][] = ['automatic', 'manual']
 const CREDIT_CARD_TIP_PAYOUTS: OnboardingData['credit_card_tip_payout'][] = ['nightly', 'payroll']
-const TAX_APPLIES_TO: TaxRateData['applies_to'][] = ['all', 'food', 'alcohol', 'non_alcohol', 'merchandise']
-const CHARGE_TYPES: ServiceChargeData['charge_type'][] = ['percentage', 'fixed']
-const CHARGE_APPLIES_TO: ServiceChargeData['applies_to'][] = ['all', 'dine_in', 'bar', 'takeout', 'delivery', 'catering', 'large_party']
-const SECTION_SERVICE_MODES: SectionBehaviorData['service_mode'][] = ['standard', 'hibachi', 'bar', 'patio', 'counter', 'custom']
-const SECTION_TIP_PROMPT_MODES: SectionBehaviorData['tip_prompt_mode'][] = ['normal', 'additional', 'disabled']
-const DISCOUNT_TYPES: DiscountRuleData['discount_type'][] = ['discount', 'comp', 'promo', 'employee_meal', 'service_recovery']
-const DISCOUNT_APPLIES_TO: DiscountRuleData['applies_to'][] = ['item', 'check', 'both']
-const DISCOUNT_VALUE_TYPES: DiscountRuleData['value_type'][] = ['percent', 'fixed', 'open']
-const DISCOUNT_TAX_BEHAVIORS: DiscountRuleData['tax_behavior'][] = ['reduce_taxable_amount', 'apply_after_tax', 'no_tax_impact']
-const DISCOUNT_ROLES = ['owner', 'manager', 'server', 'bartender', 'cashier', 'host', 'runner', 'busser']
-const DISCOUNT_SERVICE_MODES = ['dine_in', 'bar', 'counter_service', 'takeout', 'delivery', 'catering']
-const CASH_TRACKING_MODES: CloseoutSettingsData['cash_tracking_mode'][] = ['shared_drawer', 'per_terminal', 'per_employee', 'no_cash']
-const SERVER_REPORT_DELIVERY: CloseoutSettingsData['server_checkout_report_delivery'][] = ['none', 'print', 'email', 'print_and_email']
-const EOD_BATCH_CLOSE_MODES: CloseoutSettingsData['eod_batch_close_mode'][] = ['automatic', 'manual', 'prompt_manager']
-const ORDER_FIRE_MODES: CheckWorkflowSettingsData['default_order_fire_mode'][] = ['manual', 'immediate', 'by_course']
-const PERMISSION_TIERS: JobCodeData['permission_tier'][] = ['owner', 'manager', 'normal', 'limited', 'waiter']
-const TIP_DISTRIBUTION_MODES: TipPayrollSettingsData['tip_distribution_mode'][] = ['individual', 'pooled', 'role_based', 'sales_based', 'hours_based', 'points_based', 'role_shares']
-const CASH_TIP_DECLARATION_MODES: TipPayrollSettingsData['cash_tip_declaration_mode'][] = ['not_tracked', 'declared_by_employee', 'declared_by_manager', 'required_checkout']
-const PAYROLL_EXPORT_FREQUENCIES: TipPayrollSettingsData['payroll_export_frequency'][] = ['daily', 'weekly', 'biweekly', 'semimonthly', 'monthly', 'manual']
-const TIP_POOL_RESETS: TipPayrollSettingsData['tip_pool_reset'][] = ['shift', 'day', 'pay_period']
-const TIPOUT_BASES: TipPayrollSettingsData['tipout_basis'][] = ['none', 'sales', 'tips', 'hours', 'points', 'custom']
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
-
-const asString = (value: unknown, fallback = ''): string =>
-  typeof value === 'string' ? value : fallback
-
-const asConfigString = (value: unknown, fallback = ''): string => {
-  if (typeof value === 'string') return value
-  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
-  return fallback
-}
-
-const asNullableString = (value: unknown): string | null => {
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
-}
 
 const asNullableNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null
-
-const asStringNumber = (value: unknown): string => {
-  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
-  if (typeof value === 'string') return value.replace(/[^\d.]/g, '').slice(0, 10)
-  return ''
-}
 
 const asStringArray = (value: unknown): string[] => {
   if (!Array.isArray(value)) return []
@@ -753,44 +350,6 @@ const asStringArray = (value: unknown): string[] => {
     .map(item => item.trim())
     .filter(Boolean)
 }
-
-const normalizeSectionNames = (sections: string[]): string[] => {
-  const normalized: string[] = []
-  const seen = new Set<string>()
-  for (const raw of ['Table', ...sections]) {
-    const name = raw.trim().replace(/\s+/g, ' ')
-    if (!name) continue
-    const key = name.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    normalized.push(key === 'table' ? 'Table' : name)
-  }
-  return normalized.length > 0 ? normalized : ['Table']
-}
-
-const normalizeSectionBehaviors = (value: unknown, names: string[]): SectionBehaviorData[] => {
-  const rows = Array.isArray(value) ? value.filter(isRecord) : []
-  const byName = new Map(rows.map(row => [asString(row.name).trim().toLowerCase(), row]))
-  return normalizeSectionNames(names).map(name => {
-    const row = byName.get(name.toLowerCase())
-    return {
-      id: row ? asNullableString(row.id) : null,
-      name,
-      service_mode: row ? asEnum(row.service_mode, SECTION_SERVICE_MODES, 'standard') : 'standard',
-      auto_gratuity_enabled: row ? row.auto_gratuity_enabled === true : false,
-      auto_gratuity_type: row ? asEnum(row.auto_gratuity_type, CHARGE_TYPES, 'percentage') : 'percentage',
-      auto_gratuity_value: row ? asStringNumber(row.auto_gratuity_value) || '18' : '18',
-      auto_gratuity_label: row ? asString(row.auto_gratuity_label).trim() || `${name} Service Charge` : `${name} Service Charge`,
-      auto_gratuity_taxable: row ? row.auto_gratuity_taxable === true : false,
-      assigned_to_employee: row && typeof row.assigned_to_employee === 'boolean' ? row.assigned_to_employee : true,
-      minimum_party_size: row && row.minimum_party_size != null ? asStringNumber(row.minimum_party_size) : '',
-      tip_prompt_mode: row ? asEnum(row.tip_prompt_mode, SECTION_TIP_PROMPT_MODES, 'additional') : 'additional',
-    }
-  })
-}
-
-const asEnum = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
-  allowed.includes(value as T) ? (value as T) : fallback
 
 const asMenuImportMethod = (value: unknown): OnboardingData['menu_import_method'] =>
   MENU_IMPORT_METHODS.includes(value as OnboardingData['menu_import_method'])
@@ -820,6 +379,12 @@ const asInvites = (value: unknown): TeamInvite[] => {
     .filter((invite): invite is TeamInvite => invite !== null)
 }
 
+const asConfigString = (value: unknown, fallback = ''): string => {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return fallback
+}
+
 const normalizeTime = (value: unknown, fallback: string): string => {
   if (typeof value !== 'string') return fallback
   return value.slice(0, 5)
@@ -847,513 +412,33 @@ const normalizeOperatingHours = (value: unknown): OperatingHoursData[] => {
   return seeded
 }
 
-const normalizeTaxRates = (value: unknown): TaxRateData[] => {
-  const rows = Array.isArray(value) ? value : []
-  const normalized = rows
-    .filter(isRecord)
-    .map(row => ({
-      id: asNullableString(row.id),
-      name: asString(row.name).trim(),
-      rate: asStringNumber(row.rate),
-      applies_to: asEnum(row.applies_to, TAX_APPLIES_TO, 'all'),
-      is_default: typeof row.is_default === 'boolean' ? row.is_default : false,
-      is_inclusive: typeof row.is_inclusive === 'boolean' ? row.is_inclusive : false,
-      is_active: typeof row.is_active === 'boolean' ? row.is_active : true,
-    }))
-    .filter(row => row.name && row.is_active !== false)
-
-  if (normalized.length === 0) {
-    return INITIAL_DATA.tax_rates.map(row => ({ ...row }))
-  }
-
-  const hasDefault = normalized.some(row => row.is_default)
-  return normalized.map((row, index) => ({
-    ...row,
-    is_default: row.is_default || (!hasDefault && index === 0),
-  }))
+// Payload builders delegate to @shire/settings so onboarding saves the exact
+// same shapes as the setup panel. Onboarding never collects auto-gratuity, so
+// that key is withheld from the taxes-charges payload rather than sending
+// package defaults over a surface that has no UI for it.
+const taxesChargesToPayload = (data: OnboardingData) => {
+  const { tax_rates, service_charges } = taxesChargesPayload(data.tax_rates, data.service_charges, undefined)
+  return { tax_rates, service_charges }
 }
 
-const normalizeServiceCharges = (value: unknown): ServiceChargeData[] => {
-  if (!Array.isArray(value)) return []
-  return value
-    .filter(isRecord)
-    .map(row => ({
-      id: asNullableString(row.id),
-      name: asString(row.name).trim(),
-      charge_type: asEnum(row.charge_type, CHARGE_TYPES, 'percentage'),
-      amount: asStringNumber(row.amount),
-      applies_to: asEnum(row.applies_to, CHARGE_APPLIES_TO, 'all'),
-      taxable: typeof row.taxable === 'boolean' ? row.taxable : true,
-      auto_apply: typeof row.auto_apply === 'boolean' ? row.auto_apply : false,
-      is_tip: typeof row.is_tip === 'boolean' ? row.is_tip : false,
-      is_active: typeof row.is_active === 'boolean' ? row.is_active : true,
-    }))
-    .filter(row => row.name && row.is_active !== false)
-}
+const discountRulesToPayload = (data: OnboardingData) => discountRulesPayload(data.discount_rules)
 
-const normalizeMenuCategories = (value: unknown): MenuCategoryData[] => {
-  const rows = Array.isArray(value) ? value : []
-  const normalized = rows
-    .filter(isRecord)
-    .map(row => ({
-      id: asNullableString(row.id),
-      name: asString(row.name).trim(),
-      tax_rate_id: asString(row.tax_rate_id),
-      routing_station_id: asString(row.routing_station_id),
-      routing_station_name: asString(row.routing_station_name),
-      default_fire_mode: asString(row.default_fire_mode) as MenuCategoryData['default_fire_mode'],
-      kds_display_group: asString(row.kds_display_group),
-      is_active: typeof row.is_active === 'boolean' ? row.is_active : true,
-    }))
-    .filter(row => row.is_active !== false)
+const managerControlsToPayload = (data: OnboardingData) => managerControlsPayload(data.role_permissions, data.job_codes)
 
-  return normalized.length > 0 ? normalized : defaultMenuCategories()
-}
+const closeoutSettingsToPayload = (data: OnboardingData) => closeoutSettingsPayload(data.closeout_settings)
 
-const normalizeDiscountRoles = (value: unknown): string[] => {
-  const roles = asStringArray(value).map(role => role.toLowerCase()).filter(role => DISCOUNT_ROLES.includes(role))
-  return Array.from(new Set(roles.length > 0 ? roles : ['owner', 'manager']))
-}
+const checkWorkflowSettingsToPayload = (data: OnboardingData) => checkWorkflowSettingsPayload(data.check_workflow_settings)
 
-const normalizeDiscountServiceModes = (value: unknown): string[] =>
-  Array.from(new Set(asStringArray(value).map(mode => mode.toLowerCase()).filter(mode => DISCOUNT_SERVICE_MODES.includes(mode))))
+const tipPayrollToPayload = (data: OnboardingData) => tipPayrollPayload(data.tip_payroll_settings, data.job_codes)
 
-const normalizeDaysOfWeek = (value: unknown): number[] => {
-  if (!Array.isArray(value)) return []
-  return Array.from(new Set(
-    value
-      .map(day => Number(day))
-      .filter(day => Number.isInteger(day) && day >= 0 && day <= 6)
-  )).sort((a, b) => a - b)
-}
-
-const normalizeDiscountRules = (value: unknown): DiscountRuleData[] => {
-  if (!Array.isArray(value)) return []
-  return value
-    .filter(isRecord)
-    .map(row => ({
-      id: asNullableString(row.id),
-      name: asString(row.name).trim(),
-      discount_type: asEnum(row.discount_type, DISCOUNT_TYPES, 'discount'),
-      applies_to: asEnum(row.applies_to, DISCOUNT_APPLIES_TO, 'check'),
-      value_type: asEnum(row.value_type, DISCOUNT_VALUE_TYPES, 'percent'),
-      default_value: asStringNumber(row.default_value),
-      editable_by_employee: typeof row.editable_by_employee === 'boolean' ? row.editable_by_employee : false,
-      min_value: asStringNumber(row.min_value),
-      max_value: asStringNumber(row.max_value),
-      allowed_roles: normalizeDiscountRoles(row.allowed_roles),
-      requires_manager_approval: typeof row.requires_manager_approval === 'boolean' ? row.requires_manager_approval : false,
-      tax_behavior: asEnum(row.tax_behavior, DISCOUNT_TAX_BEHAVIORS, 'reduce_taxable_amount'),
-      reason_required: typeof row.reason_required === 'boolean' ? row.reason_required : false,
-      service_modes: normalizeDiscountServiceModes(row.service_modes),
-      days_of_week: normalizeDaysOfWeek(row.days_of_week),
-      is_active: typeof row.is_active === 'boolean' ? row.is_active : true,
-    }))
-    .filter(row => row.name && row.is_active !== false)
-}
-
-const normalizeRolePermissions = (value: unknown, jobCodes: JobCodeData[] = defaultJobCodes()): RolePermissionData[] => {
-  const rows = Array.isArray(value) ? value.filter(isRecord) : []
-  const roleKeys = roleKeysForPermissions(jobCodes)
-  const byRole = new Map<string, RolePermissionData>()
-  for (const row of rows) {
-    const role = slugRoleCode(row.role_key)
-    const defaults = defaultRolePermission(role)
-    byRole.set(role, {
-      id: asNullableString(row.id),
-      role_key: role,
-      can_refund: typeof row.can_refund === 'boolean' ? row.can_refund : false,
-      refund_limit: asStringNumber(row.refund_limit),
-      can_void: typeof row.can_void === 'boolean' ? row.can_void : false,
-      can_comp: typeof row.can_comp === 'boolean' ? row.can_comp : false,
-      can_discount: typeof row.can_discount === 'boolean' ? row.can_discount : false,
-      discount_limit_percent: asStringNumber(row.discount_limit_percent),
-      can_open_cash_drawer: typeof row.can_open_cash_drawer === 'boolean' ? row.can_open_cash_drawer : false,
-      can_no_sale: typeof row.can_no_sale === 'boolean' ? row.can_no_sale : false,
-      can_paid_in_out: typeof row.can_paid_in_out === 'boolean' ? row.can_paid_in_out : false,
-      can_adjust_tips: typeof row.can_adjust_tips === 'boolean' ? row.can_adjust_tips : false,
-      can_edit_menu: typeof row.can_edit_menu === 'boolean' ? row.can_edit_menu : false,
-      can_edit_employees: typeof row.can_edit_employees === 'boolean' ? row.can_edit_employees : false,
-      can_edit_schedules: typeof row.can_edit_schedules === 'boolean' ? row.can_edit_schedules : false,
-      can_view_reports: typeof row.can_view_reports === 'boolean' ? row.can_view_reports : false,
-      can_close_drawer: typeof row.can_close_drawer === 'boolean' ? row.can_close_drawer : false,
-      can_close_day: typeof row.can_close_day === 'boolean' ? row.can_close_day : false,
-      can_reopen_business_day: typeof row.can_reopen_business_day === 'boolean' ? row.can_reopen_business_day : defaults.can_reopen_business_day,
-      can_change_payment_settings: typeof row.can_change_payment_settings === 'boolean' ? row.can_change_payment_settings : false,
-      can_edit_sent_items_within_window: typeof row.can_edit_sent_items_within_window === 'boolean' ? row.can_edit_sent_items_within_window : defaults.can_edit_sent_items_within_window,
-      can_edit_sent_items_after_window: typeof row.can_edit_sent_items_after_window === 'boolean' ? row.can_edit_sent_items_after_window : defaults.can_edit_sent_items_after_window,
-      can_unsend_sent_items: typeof row.can_unsend_sent_items === 'boolean' ? row.can_unsend_sent_items : defaults.can_unsend_sent_items,
-      can_edit_paid_check_items: typeof row.can_edit_paid_check_items === 'boolean' ? row.can_edit_paid_check_items : defaults.can_edit_paid_check_items,
-      require_manager_pin_for_approval: typeof row.require_manager_pin_for_approval === 'boolean'
-        ? row.require_manager_pin_for_approval
-        : true,
-    })
-  }
-  const normalized = roleKeys.map(role => byRole.get(role) || defaultRolePermission(role))
-  for (const [role, row] of byRole.entries()) {
-    if (!roleKeys.includes(role)) normalized.push(row)
-  }
-  return normalized
-}
-
-const normalizeReportRecipients = (value: unknown): string[] =>
-  asStringArray(value)
-    .map(email => email.toLowerCase())
-    .filter(email => email.includes('@'))
-
-const normalizeEodReports = (value: unknown): string[] => {
-  const reports = asStringArray(value).filter(report => EOD_REPORT_OPTIONS.includes(report))
-  return Array.from(new Set(reports.length > 0 ? reports : defaultCloseoutSettings().eod_reports))
-}
-
-const normalizeCloseoutSettings = (value: unknown): CloseoutSettingsData => {
-  const fallback = defaultCloseoutSettings()
-  if (!isRecord(value)) return fallback
-  return {
-    cash_tracking_mode: asEnum(value.cash_tracking_mode, CASH_TRACKING_MODES, fallback.cash_tracking_mode),
-    require_starting_bank: false,
-    opening_bank_source: asEnum(
-      value.opening_bank_source,
-      ['none', 'fixed', 'previous_retained'] as const,
-      value.require_starting_bank === true
-        ? 'previous_retained'
-        : Number(asStringNumber(value.opening_bank_default) || 0) > 0 ? 'fixed' : fallback.opening_bank_source,
-    ),
-    opening_bank_default: asStringNumber(value.opening_bank_default),
-    track_deposit_at_close: typeof value.track_deposit_at_close === 'boolean' ? value.track_deposit_at_close : fallback.track_deposit_at_close,
-    blind_drawer_close: typeof value.blind_drawer_close === 'boolean' ? value.blind_drawer_close : fallback.blind_drawer_close,
-    allow_paid_in_out: typeof value.allow_paid_in_out === 'boolean' ? value.allow_paid_in_out : fallback.allow_paid_in_out,
-    require_manager_for_drawer_open: typeof value.require_manager_for_drawer_open === 'boolean' ? value.require_manager_for_drawer_open : fallback.require_manager_for_drawer_open,
-    cash_drop_threshold: asStringNumber(value.cash_drop_threshold),
-    cash_variance_threshold: asStringNumber(value.cash_variance_threshold),
-    server_require_all_checks_closed: typeof value.server_require_all_checks_closed === 'boolean' ? value.server_require_all_checks_closed : fallback.server_require_all_checks_closed,
-    server_require_tabs_closed: typeof value.server_require_tabs_closed === 'boolean' ? value.server_require_tabs_closed : fallback.server_require_tabs_closed,
-    server_require_cash_tips_declared: false,
-    server_require_credit_tips_reviewed: typeof value.server_require_credit_tips_reviewed === 'boolean' ? value.server_require_credit_tips_reviewed : fallback.server_require_credit_tips_reviewed,
-    deduct_credit_card_tips_from_cash_due: typeof value.deduct_credit_card_tips_from_cash_due === 'boolean' ? value.deduct_credit_card_tips_from_cash_due : fallback.deduct_credit_card_tips_from_cash_due,
-    server_require_tipout_entry: typeof value.server_require_tipout_entry === 'boolean' ? value.server_require_tipout_entry : fallback.server_require_tipout_entry,
-    server_require_manager_approval: typeof value.server_require_manager_approval === 'boolean' ? value.server_require_manager_approval : fallback.server_require_manager_approval,
-    server_checkout_report_delivery: asEnum(value.server_checkout_report_delivery, SERVER_REPORT_DELIVERY, fallback.server_checkout_report_delivery),
-    allow_clockout_before_checkout: typeof value.allow_clockout_before_checkout === 'boolean' ? value.allow_clockout_before_checkout : fallback.allow_clockout_before_checkout,
-    eod_batch_close_mode: asEnum(value.eod_batch_close_mode, EOD_BATCH_CLOSE_MODES, fallback.eod_batch_close_mode),
-    eod_require_drawers_closed: typeof value.eod_require_drawers_closed === 'boolean' ? value.eod_require_drawers_closed : fallback.eod_require_drawers_closed,
-    eod_require_servers_checked_out: typeof value.eod_require_servers_checked_out === 'boolean' ? value.eod_require_servers_checked_out : fallback.eod_require_servers_checked_out,
-    eod_require_open_checks_resolved: typeof value.eod_require_open_checks_resolved === 'boolean' ? value.eod_require_open_checks_resolved : fallback.eod_require_open_checks_resolved,
-    eod_require_paid_outs_reviewed: typeof value.eod_require_paid_outs_reviewed === 'boolean' ? value.eod_require_paid_outs_reviewed : fallback.eod_require_paid_outs_reviewed,
-    eod_require_tip_adjustments_reviewed: typeof value.eod_require_tip_adjustments_reviewed === 'boolean' ? value.eod_require_tip_adjustments_reviewed : fallback.eod_require_tip_adjustments_reviewed,
-    eod_report_recipients: normalizeReportRecipients(value.eod_report_recipients),
-    eod_reports: normalizeEodReports(value.eod_reports),
-    eod_email_on_close: typeof value.eod_email_on_close === 'boolean' ? value.eod_email_on_close : fallback.eod_email_on_close,
-    eod_email_formats: asStringArray(value.eod_email_formats).filter((format): format is 'pdf' | 'xlsx' => format === 'pdf' || format === 'xlsx').length > 0
-      ? asStringArray(value.eod_email_formats).filter((format): format is 'pdf' | 'xlsx' => format === 'pdf' || format === 'xlsx')
-      : fallback.eod_email_formats,
-  }
-}
-
-const normalizeCheckWorkflowSettings = (value: unknown): CheckWorkflowSettingsData => {
-  const fallback = defaultCheckWorkflowSettings()
-  if (!isRecord(value)) return fallback
-  const holdPresetValues = Array.isArray(value.hold_preset_minutes)
-    ? Array.from(new Set(value.hold_preset_minutes.map(Number).filter(minutes => Number.isFinite(minutes) && minutes > 0))).slice(0, 8)
-    : fallback.hold_preset_minutes
-  return {
-    seat_numbers_enabled: typeof value.seat_numbers_enabled === 'boolean' ? value.seat_numbers_enabled : fallback.seat_numbers_enabled,
-    seat_number_required: typeof value.seat_number_required === 'boolean' ? value.seat_number_required : fallback.seat_number_required,
-    course_required: typeof value.course_required === 'boolean' ? value.course_required : fallback.course_required,
-    split_by_seat_enabled: typeof value.split_by_seat_enabled === 'boolean' ? value.split_by_seat_enabled : fallback.split_by_seat_enabled,
-    split_by_item_enabled: typeof value.split_by_item_enabled === 'boolean' ? value.split_by_item_enabled : fallback.split_by_item_enabled,
-    allow_bar_tabs: typeof value.allow_bar_tabs === 'boolean' ? value.allow_bar_tabs : fallback.allow_bar_tabs,
-    tab_name_required: typeof value.tab_name_required === 'boolean' ? value.tab_name_required : fallback.tab_name_required,
-    card_preauth_required: typeof value.card_preauth_required === 'boolean' ? value.card_preauth_required : fallback.card_preauth_required,
-    default_preauth_amount: asStringNumber(value.default_preauth_amount),
-    require_manager_for_reopen: typeof value.require_manager_for_reopen === 'boolean' ? value.require_manager_for_reopen : fallback.require_manager_for_reopen,
-    allow_hold_and_fire: typeof value.allow_hold_and_fire === 'boolean' ? value.allow_hold_and_fire : fallback.allow_hold_and_fire,
-    default_order_fire_mode: asEnum(value.default_order_fire_mode, ORDER_FIRE_MODES, fallback.default_order_fire_mode),
-    default_hold_minutes: asStringNumber(value.default_hold_minutes) || fallback.default_hold_minutes,
-    hold_preset_minutes: holdPresetValues.length > 0 ? holdPresetValues : fallback.hold_preset_minutes,
-    allow_manual_hold: typeof value.allow_manual_hold === 'boolean' ? value.allow_manual_hold : fallback.allow_manual_hold,
-    allow_item_seat_move: typeof value.allow_item_seat_move === 'boolean' ? value.allow_item_seat_move : fallback.allow_item_seat_move,
-    allow_multi_item_seat_move: typeof value.allow_multi_item_seat_move === 'boolean' ? value.allow_multi_item_seat_move : fallback.allow_multi_item_seat_move,
-    require_manager_for_item_move_after_send: typeof value.require_manager_for_item_move_after_send === 'boolean' ? value.require_manager_for_item_move_after_send : fallback.require_manager_for_item_move_after_send,
-    sent_item_correction_window_minutes: String(Math.max(0, Math.min(15, Number(asStringNumber(value.sent_item_correction_window_minutes) || fallback.sent_item_correction_window_minutes)))),
-  }
-}
-
-const normalizeJobCodes = (value: unknown): JobCodeData[] => {
-  const rows = Array.isArray(value) ? value.filter(isRecord) : []
-  const normalized = rows
-    .map((row, index) => ({
-      id: asNullableString(row.id),
-      code: slugRoleCode(row.code || row.label, `role_${index + 1}`),
-      label: asString(row.label, asString(row.code)).trim(),
-      permission_tier: asEnum(row.permission_tier, PERMISSION_TIERS, 'normal'),
-      default_hourly_rate: asStringNumber(row.default_hourly_rate),
-      is_tipped: typeof row.is_tipped === 'boolean' ? row.is_tipped : false,
-      tipout_role: asString(row.tipout_role),
-      sort_order: typeof row.sort_order === 'number' ? row.sort_order : index * 10,
-      is_active: typeof row.is_active === 'boolean' ? row.is_active : true,
-    }))
-    .filter(row => row.label && row.is_active !== false)
-
-  return normalized.length > 0 ? normalized : defaultJobCodes()
-}
-
-const normalizeHeadcountPolicy = (value: unknown): TipRoleRuleData['tipouts'][number]['headcount'] => {
-  if (!isRecord(value) || !asString(value.driver_role) || !Array.isArray(value.tiers)) return null
-  return {
-    driver_role: slugRoleCode(value.driver_role),
-    tiers: value.tiers.filter(isRecord).map(tier => ({
-      min_count: Math.max(0, Number(tier.min_count) || 0),
-      max_count: tier.max_count == null || tier.max_count === '' ? null : Math.max(0, Number(tier.max_count) || 0),
-      allocations: (Array.isArray(tier.allocations) ? tier.allocations.filter(isRecord) : []).flatMap(allocation => {
-        const unallocated = allocation.unallocated === true
-        const targetRole = asString(allocation.target_role)
-        if (!unallocated && !targetRole) return []
-        return [{
-          target_role: unallocated ? '' : slugRoleCode(targetRole),
-          unallocated,
-          percent: asStringNumber(allocation.percent),
-        }]
-      }),
-    })),
-  }
-}
-
-const normalizeTipRoleRules = (value: unknown, jobCodes: JobCodeData[] = defaultJobCodes()): TipRoleRuleData[] => {
-  const fallback = defaultTipRoleRules(jobCodes)
-  const rows = Array.isArray(value) ? value.filter(isRecord) : []
-  const byRole = new Map<string, TipRoleRuleData>()
-  for (const row of rows) {
-    const roleKey = slugRoleCode(row.role_key)
-    byRole.set(roleKey, {
-      role_key: roleKey,
-      tip_eligible: typeof row.tip_eligible === 'boolean' ? row.tip_eligible : true,
-      contributes_to_pool: typeof row.contributes_to_pool === 'boolean' ? row.contributes_to_pool : true,
-      receives_from_pool: typeof row.receives_from_pool === 'boolean' ? row.receives_from_pool : true,
-      pool_points: asStringNumber(row.pool_points),
-      pool_contribution_percent: row.pool_contribution_percent == null ? '100' : asStringNumber(row.pool_contribution_percent),
-      pool_share_percent: asStringNumber(row.pool_share_percent),
-      tipout_split_basis: row.tipout_split_basis === 'hours' || row.tipout_split_basis === 'weights' ? row.tipout_split_basis : 'even',
-      tipout_split_weights: (Array.isArray(row.tipout_split_weights) ? row.tipout_split_weights.filter(isRecord) : []).flatMap(item => {
-        const staffId = asString(item.staff_id)
-        const weight = asStringNumber(item.weight)
-        return staffId && Number(weight) > 0 ? [{ staff_id: staffId, weight }] : []
-      }),
-      tipouts: Array.isArray(row.tipouts)
-        ? row.tipouts.filter(isRecord).flatMap(item => {
-            const target = asString(item.target_role)
-            const headcount = normalizeHeadcountPolicy(item.headcount)
-            if (!target && !headcount) return []
-            return [{
-              target_role: target ? slugRoleCode(target) : '',
-              percent: asStringNumber(item.percent),
-              basis: item.basis === 'sales' ? 'sales' : 'tips',
-              sales_category: asString(item.sales_category),
-              basis_scope: item.basis_scope === 'restaurant' ? 'restaurant' : 'own',
-              headcount,
-            }]
-          })
-        : [],
-      tipout_percent: asStringNumber(row.tipout_percent),
-      tipout_target_role: asString(row.tipout_target_role),
-      notes: asString(row.notes),
-    })
-  }
-  return fallback.map(rule => byRole.get(rule.role_key) || rule)
-}
-
-const normalizeCategoryTipProfiles = (value: unknown, jobCodes: JobCodeData[]): CategoryTipProfileData[] => {
-  const rows = Array.isArray(value) ? value.filter(isRecord) : []
-  const seenCategories = new Set<string>()
-  return rows.flatMap((row, index) => {
-    const categoryIds = [...new Set(asStringArray(row.category_ids).map(String).filter(Boolean))].filter(id => {
-      if (seenCategories.has(id)) return false
-      seenCategories.add(id)
-      return true
-    })
-    if (!categoryIds.length) return []
-    const seenItems = new Set<string>()
-    const itemOverrides = (Array.isArray(row.item_overrides) ? row.item_overrides.filter(isRecord) : []).flatMap(override => {
-      const menuItemId = asString(override.menu_item_id)
-      if (!menuItemId || seenItems.has(menuItemId)) return []
-      seenItems.add(menuItemId)
-      return [{
-        menu_item_id: menuItemId,
-        menu_item_name: asString(override.menu_item_name),
-        role_tip_rules: normalizeTipRoleRules(override.role_tip_rules, jobCodes),
-      }]
-    })
-    return [{
-      id: asString(row.id) || `category_profile_${index + 1}`,
-      name: asString(row.name),
-      category_ids: categoryIds,
-      category_names: asStringArray(row.category_names),
-      role_tip_rules: normalizeTipRoleRules(row.role_tip_rules, jobCodes),
-      item_overrides: itemOverrides,
-    }]
-  })
-}
-
-const TIPOUT_WEEKDAYS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])
-
-const normalizeWeekdayTipoutOverrides = (value: unknown, jobCodes: JobCodeData[]): TipPayrollSettingsData['weekday_tipout_overrides'] => {
-  if (!isRecord(value)) return {}
-  const normalized: TipPayrollSettingsData['weekday_tipout_overrides'] = {}
-  Object.entries(value).forEach(([weekday, raw]) => {
-    if (!TIPOUT_WEEKDAYS.has(weekday) || !isRecord(raw)) return
-    const day = weekday as keyof TipPayrollSettingsData['weekday_tipout_overrides']
-    if (raw.mode === 'disabled') normalized[day] = { mode: 'disabled' }
-    if (raw.mode === 'custom') normalized[day] = {
-      mode: 'custom',
-      role_tip_rules: normalizeTipRoleRules(raw.role_tip_rules, jobCodes),
-      category_tip_profiles: normalizeCategoryTipProfiles(raw.category_tip_profiles, jobCodes),
-    }
-  })
-  return normalized
-}
-
-const normalizeTipPayrollSettings = (value: unknown, jobCodes: JobCodeData[] = defaultJobCodes()): TipPayrollSettingsData => {
-  const fallback = defaultTipPayrollSettings()
-  if (!isRecord(value)) {
-    return { ...fallback, role_tip_rules: defaultTipRoleRules(jobCodes) }
-  }
-  return {
-    tip_distribution_mode: asEnum(value.tip_distribution_mode, TIP_DISTRIBUTION_MODES, fallback.tip_distribution_mode),
-    cash_tip_declaration_mode: asEnum(value.cash_tip_declaration_mode, CASH_TIP_DECLARATION_MODES, fallback.cash_tip_declaration_mode),
-    credit_tip_payout_timing: asEnum(value.credit_tip_payout_timing, CREDIT_CARD_TIP_PAYOUTS, fallback.credit_tip_payout_timing),
-    payroll_provider: asString(value.payroll_provider),
-    payroll_export_frequency: asEnum(value.payroll_export_frequency, PAYROLL_EXPORT_FREQUENCIES, fallback.payroll_export_frequency),
-    payroll_period_start_weekday: Math.max(0, Math.min(6, Number(value.payroll_period_start_weekday ?? fallback.payroll_period_start_weekday))),
-    payroll_period_anchor_date: asString(value.payroll_period_anchor_date),
-    payroll_semimonthly_cutoff_day: Math.max(1, Math.min(27, Number(value.payroll_semimonthly_cutoff_day ?? fallback.payroll_semimonthly_cutoff_day))),
-    payroll_report_default_period: value.payroll_report_default_period === 'current_open' ? 'current_open' : 'last_completed',
-    tip_pooling_enabled: typeof value.tip_pooling_enabled === 'boolean' ? value.tip_pooling_enabled : fallback.tip_pooling_enabled,
-    tip_pool_reset: asEnum(value.tip_pool_reset, TIP_POOL_RESETS, fallback.tip_pool_reset),
-    tipout_basis: asEnum(value.tipout_basis, TIPOUT_BASES, fallback.tipout_basis),
-    tipout_sales_includes_tax: typeof value.tipout_sales_includes_tax === 'boolean' ? value.tipout_sales_includes_tax : fallback.tipout_sales_includes_tax,
-    tipout_include_managers: typeof value.tipout_include_managers === 'boolean' ? value.tipout_include_managers : fallback.tipout_include_managers,
-    require_tipout_at_checkout: typeof value.require_tipout_at_checkout === 'boolean' ? value.require_tipout_at_checkout : fallback.require_tipout_at_checkout,
-    allow_manager_tip_adjustments: typeof value.allow_manager_tip_adjustments === 'boolean' ? value.allow_manager_tip_adjustments : fallback.allow_manager_tip_adjustments,
-    auto_withhold_credit_card_fees: typeof value.auto_withhold_credit_card_fees === 'boolean' ? value.auto_withhold_credit_card_fees : fallback.auto_withhold_credit_card_fees,
-    credit_card_fee_percent: asStringNumber(value.credit_card_fee_percent),
-    role_tip_rules: normalizeTipRoleRules(value.role_tip_rules, jobCodes),
-    category_tip_profiles: normalizeCategoryTipProfiles(value.category_tip_profiles, jobCodes),
-    weekday_tipout_overrides: normalizeWeekdayTipoutOverrides(value.weekday_tipout_overrides, jobCodes),
-    notes: asString(value.notes),
-  }
-}
-
-const taxesChargesToPayload = (data: OnboardingData) => ({
-  tax_rates: normalizeTaxRates(data.tax_rates).map(row => ({
-    id: row.id || undefined,
-    name: row.name,
-    rate: row.rate === '' ? 0 : Number(row.rate),
-    applies_to: row.applies_to,
-    is_default: row.is_default,
-    is_inclusive: row.is_inclusive,
-    is_active: true,
-  })),
-  service_charges: normalizeServiceCharges(data.service_charges).map(row => ({
-    id: row.id || undefined,
-    name: row.name,
-    charge_type: row.charge_type,
-    amount: row.amount === '' ? 0 : Number(row.amount),
-    applies_to: row.applies_to,
-    taxable: row.taxable,
-    auto_apply: row.auto_apply,
-    is_tip: row.is_tip,
-    is_active: true,
-  })),
-})
-
-const discountRulesToPayload = (data: OnboardingData) => ({
-  discount_rules: normalizeDiscountRules(data.discount_rules).map(row => ({
-    id: row.id || undefined,
-    name: row.name,
-    discount_type: row.discount_type,
-    applies_to: row.applies_to,
-    value_type: row.value_type,
-    default_value: row.default_value === '' ? null : Number(row.default_value),
-    editable_by_employee: row.editable_by_employee,
-    min_value: row.editable_by_employee && row.min_value !== '' ? Number(row.min_value) : null,
-    max_value: row.editable_by_employee && row.max_value !== '' ? Number(row.max_value) : null,
-    allowed_roles: row.allowed_roles,
-    requires_manager_approval: row.requires_manager_approval,
-    tax_behavior: row.tax_behavior,
-    reason_required: row.reason_required,
-    service_modes: row.service_modes,
-    days_of_week: row.days_of_week,
-    is_active: true,
-  })),
-})
-
-const managerControlsToPayload = (data: OnboardingData) => ({
-  role_permissions: normalizeRolePermissions(data.role_permissions, data.job_codes).map(row => ({
-    ...row,
-    id: undefined,
-    refund_limit: row.refund_limit === '' ? null : Number(row.refund_limit),
-    discount_limit_percent: row.discount_limit_percent === '' ? null : Number(row.discount_limit_percent),
-  })),
-})
-
-const closeoutSettingsToPayload = (data: OnboardingData) => {
-  const settings = normalizeCloseoutSettings(data.closeout_settings)
-  return {
-    ...settings,
-    require_starting_bank: false,
-    opening_bank_default: settings.opening_bank_source === 'none' || settings.opening_bank_default === '' ? 0 : Number(settings.opening_bank_default),
-    cash_drop_threshold: settings.cash_drop_threshold === '' ? null : Number(settings.cash_drop_threshold),
-    cash_variance_threshold: settings.cash_variance_threshold === '' ? null : Number(settings.cash_variance_threshold),
-  }
-}
-
-const menuCategoriesToPayload = (data: OnboardingData) => ({
-  categories: normalizeMenuCategories(data.menu_categories).map(row => ({
-    id: row.id || undefined,
-    name: row.name,
-    tax_rate_id: row.tax_rate_id || null,
-    routing_station_id: row.routing_station_id || null,
-    routing_station_name: row.routing_station_name || null,
-    default_fire_mode: row.default_fire_mode || null,
-    kds_display_group: row.kds_display_group || null,
-    is_active: true,
-  })),
-})
+// The package builder also carries default_course_type/prep_time_minutes, so
+// an onboarding save no longer wipes course types set from the mobile editor.
+const menuCategoriesToPayload = (data: OnboardingData) => menuCategoriesPayload(data.menu_categories)
 
 const validateMenuCategories = (categories: MenuCategoryData[]) => {
   const blankIndex = normalizeMenuCategories(categories).findIndex(row => !row.name.trim())
   if (blankIndex >= 0) {
     throw new Error(`Menu category ${blankIndex + 1} needs a name. Use Remove to delete it.`)
-  }
-}
-
-const checkWorkflowSettingsToPayload = (data: OnboardingData) => {
-  const settings = normalizeCheckWorkflowSettings(data.check_workflow_settings)
-  const holdPresetMinutes = Array.from(new Set(settings.hold_preset_minutes.map(Number).filter(minutes => Number.isFinite(minutes) && minutes > 0))).slice(0, 8)
-  return {
-    ...settings,
-    default_preauth_amount: settings.default_preauth_amount === '' ? null : Number(settings.default_preauth_amount),
-    default_hold_minutes: Math.max(1, Math.min(360, Number(settings.default_hold_minutes || 10))),
-    sent_item_correction_window_minutes: Math.max(0, Math.min(15, Number(settings.sent_item_correction_window_minutes || 0))),
-    hold_preset_minutes: holdPresetMinutes.length > 0 ? holdPresetMinutes : defaultCheckWorkflowSettings().hold_preset_minutes,
-  }
-}
-
-const tipPayrollToPayload = (data: OnboardingData) => {
-  const settings = normalizeTipPayrollSettings(data.tip_payroll_settings, data.job_codes)
-  return {
-    ...settings,
-    payroll_period_anchor_date: settings.payroll_period_anchor_date || null,
-    payroll_period_start_weekday: Number(settings.payroll_period_start_weekday),
-    payroll_semimonthly_cutoff_day: Number(settings.payroll_semimonthly_cutoff_day),
-    credit_card_fee_percent: settings.credit_card_fee_percent === '' ? null : Number(settings.credit_card_fee_percent),
-    role_tip_rules: serializeTipRoleRules(settings.role_tip_rules),
-    category_tip_profiles: settings.category_tip_profiles.map(profile => ({
-      ...profile,
-      role_tip_rules: serializeTipRoleRules(profile.role_tip_rules),
-      item_overrides: profile.item_overrides.map(override => ({ ...override, role_tip_rules: serializeTipRoleRules(override.role_tip_rules) })),
-    })),
-    weekday_tipout_overrides: serializeWeekdayTipoutOverrides(settings.weekday_tipout_overrides),
   }
 }
 
@@ -1437,7 +522,7 @@ const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): On
     seating_capacity: asNullableNumber(input.seating_capacity),
     table_count: asNullableNumber(input.table_count),
     sections,
-    section_behaviors: normalizeSectionBehaviors(input.section_behaviors, sections),
+    section_behaviors: normalizeSectionProfiles(input.section_behaviors, sections),
     menu_import_method: asMenuImportMethod(input.menu_import_method),
     team_setup_method: asTeamSetupMethod(input.team_setup_method),
     invites: asInvites(input.invites),
@@ -2044,7 +1129,7 @@ export function useOnboarding() {
       table_count: restaurant.table_count,
       operating_hours: normalizeOperatingHours(hoursResult.data),
       sections: sectionNames.length > 0 ? sectionNames : INITIAL_DATA.sections,
-      section_behaviors: normalizeSectionBehaviors(sectionRows, sectionNames),
+      section_behaviors: normalizeSectionProfiles(sectionRows, sectionNames),
       tax_rates: normalizeTaxRates(isRecord(taxesChargesResult) ? taxesChargesResult.tax_rates : []),
       service_charges: normalizeServiceCharges(isRecord(taxesChargesResult) ? taxesChargesResult.service_charges : []),
       discount_rules: normalizeDiscountRules(isRecord(discountRulesResult) ? discountRulesResult.discount_rules : []),
@@ -2912,7 +1997,7 @@ export function useOnboarding() {
     try {
       const activeRestaurantId = getActiveRestaurantId()
       const sectionNames = normalizeSectionNames(data.sections)
-      const sectionBehaviors = normalizeSectionBehaviors(data.section_behaviors, sectionNames)
+      const sectionBehaviors = normalizeSectionProfiles(data.section_behaviors, sectionNames)
       const response = await runWithTimeout(
         async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/sections`, {
           method: 'PUT',
@@ -2938,7 +2023,7 @@ export function useOnboarding() {
       const savedNames = normalizeSectionNames(asStringArray((saved || []).map((section: { name?: unknown }) => section.name)))
       setData(prev => mergeOnboardingData(prev, {
         sections: savedNames,
-        section_behaviors: normalizeSectionBehaviors(saved, savedNames),
+        section_behaviors: normalizeSectionProfiles(saved, savedNames),
       }))
 
       const { error: stepError } = isSetupEditor

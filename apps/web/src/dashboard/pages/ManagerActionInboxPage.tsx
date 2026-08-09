@@ -7,6 +7,7 @@ import {
   type ManagerInboxItem,
 } from '../../shared/api/backOfficeApi'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
+import { SmartDateTimeInput } from '../../shared/components/SmartDateTimeInput'
 
 type Props = {
   restaurantId: string
@@ -196,13 +197,13 @@ export default function ManagerActionInboxPage({ restaurantId }: Props) {
               {selected.available_actions.length > 0 && selected.source === 'operational' && canAdjustTimeclock && (
                 <div className="space-y-4 border-t border-dash-border pt-5">
                   <div>
-                    <label className="label-mono" htmlFor="alert-custom-time">Custom clock-out</label>
-                    <input
-                      id="alert-custom-time"
-                      type="datetime-local"
+                    <p className="label-mono">Custom clock-out</p>
+                    <SmartDateTimeInput
+                      ariaLabel="Custom clock-out"
+                      minuteStep={1}
                       value={customTime}
-                      onChange={(event) => setCustomTime(event.target.value)}
-                      className="mt-2 min-h-11 w-full rounded-lg border border-dash-border bg-dash-base px-3 text-sm outline-none focus:border-shell-accent"
+                      onChange={setCustomTime}
+                      className="mt-2"
                     />
                   </div>
                   <div>

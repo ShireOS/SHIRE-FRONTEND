@@ -1,5 +1,6 @@
 import { CalendarClock, Save, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { SmartDateTimeInput } from './SmartDateTimeInput'
 
 type Props = {
   label: string
@@ -11,7 +12,7 @@ type Props = {
 
 function defaultLocalDateTime() {
   const next = new Date(Date.now() + 60 * 60 * 1000)
-  next.setMinutes(Math.ceil(next.getMinutes() / 5) * 5, 0, 0)
+  next.setMinutes(Math.ceil(next.getMinutes() / 15) * 15, 0, 0)
   const offset = next.getTimezoneOffset() * 60_000
   return new Date(next.getTime() - offset).toISOString().slice(0, 16)
 }
@@ -48,9 +49,9 @@ export function PublishControls({ label, disabled, busy, onPublishNow, onSchedul
           <div><p className="text-xs font-semibold uppercase text-dash-tertiary">Publish later</p><h2 className="mt-1 text-lg font-semibold">{label}</h2></div>
           <button type="button" aria-label="Close" onClick={() => setOpen(false)} className="grid h-9 w-9 place-items-center rounded-md border border-dash-border"><X size={17} /></button>
         </div>
-        <label className="mt-5 block text-sm font-medium">Date and time
-          <input type="datetime-local" value={localDateTime} min={defaultLocalDateTime()} onChange={(event) => setLocalDateTime(event.target.value)} className="mt-2 min-h-11 w-full rounded-md border border-dash-border bg-transparent px-3" />
-        </label>
+        <div className="mt-5 text-sm font-medium"><p className="mb-2">Date and time</p>
+          <SmartDateTimeInput ariaLabel={`Schedule ${label}`} value={localDateTime} onChange={setLocalDateTime} />
+        </div>
         <p className="mt-2 text-xs text-dash-tertiary">{timezone}. Selected changes will remain pending until this time.</p>
         {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
         <div className="mt-5 flex justify-end gap-2">

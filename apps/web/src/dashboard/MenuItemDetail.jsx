@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../shared/lib/supabase'
 import { fetchCached, fetchWithSupabaseAuth, queryClient, queryKeys, STALE_TIMES } from '../shared/query'
+import { SmartTimeInput } from '../shared/components/SmartTimeInput'
+import { SmartDateTimeInput } from '../shared/components/SmartDateTimeInput'
 import {
   addGroupOption,
   applyAlphaOrderToGroup,
@@ -950,7 +952,7 @@ export function MenuItemDetail({
         suggested_tip_basis: specialForm.suggested_tip_basis,
         schedule_kind: 'manual',
         days_of_week: [0, 1, 2, 3, 4, 5, 6],
-        expires_at: specialForm.expires_at ? new Date(specialForm.expires_at).toISOString() : null,
+        expires_at: specialForm.expires_at || null,
         sort_order: 0,
         is_active: true,
       })
@@ -1400,7 +1402,7 @@ export function MenuItemDetail({
               <TextInput value={specialForm.display_name} onChange={event => setSpecialForm(prev => ({ ...prev, display_name: event.target.value }))} placeholder={`Special name (${item.name})`} />
               <TextInput inputMode="decimal" value={specialForm.special_price} onChange={event => setSpecialForm(prev => ({ ...prev, special_price: cleanDecimal(event.target.value) }))} placeholder="Price" />
               <TextInput value={specialForm.note} onChange={event => setSpecialForm(prev => ({ ...prev, note: event.target.value }))} placeholder="Note (optional)" />
-              <TextInput type="datetime-local" value={specialForm.expires_at} onChange={event => setSpecialForm(prev => ({ ...prev, expires_at: event.target.value }))} />
+              <SmartDateTimeInput className="!grid-cols-1" ariaLabel="Special expiration" value={specialForm.expires_at} onChange={value => setSpecialForm(prev => ({ ...prev, expires_at: value }))} />
               <SelectInput value={specialForm.suggested_tip_basis} onChange={event => setSpecialForm(prev => ({ ...prev, suggested_tip_basis: event.target.value }))}>
                 <option value="after_discount">Tips on special price</option>
                 <option value="before_discount">Tips on regular price</option>
@@ -1443,8 +1445,8 @@ export function MenuItemDetail({
                 <option value="fixed">Flat price</option>
               </SelectInput>
               <TextInput inputMode="decimal" value={priceRuleForm.adjustment_value} onChange={event => setPriceRuleForm(prev => ({ ...prev, adjustment_value: cleanDecimal(event.target.value) }))} placeholder={priceRuleForm.adjustment_type === 'percent_off' ? '20' : '2.00'} />
-              <TextInput type="time" value={priceRuleForm.start_time} onChange={event => setPriceRuleForm(prev => ({ ...prev, start_time: event.target.value }))} />
-              <TextInput type="time" value={priceRuleForm.end_time} onChange={event => setPriceRuleForm(prev => ({ ...prev, end_time: event.target.value }))} />
+              <SmartTimeInput ariaLabel="Price rule start time" value={priceRuleForm.start_time} onChange={value => setPriceRuleForm(prev => ({ ...prev, start_time: value }))} />
+              <SmartTimeInput ariaLabel="Price rule end time" value={priceRuleForm.end_time} onChange={value => setPriceRuleForm(prev => ({ ...prev, end_time: value }))} />
               <SelectInput value={priceRuleForm.suggested_tip_basis} onChange={event => setPriceRuleForm(prev => ({ ...prev, suggested_tip_basis: event.target.value }))}>
                 <option value="after_discount">Tips after rule</option>
                 <option value="before_discount">Tips before rule</option>
@@ -1553,8 +1555,8 @@ export function MenuItemDetail({
                     ))}
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <Field label="From"><TextInput type="time" value={schedule.availability_start_time} onChange={event => setSchedule(prev => ({ ...prev, availability_start_time: event.target.value }))} /></Field>
-                    <Field label="Until"><TextInput type="time" value={schedule.availability_end_time} onChange={event => setSchedule(prev => ({ ...prev, availability_end_time: event.target.value }))} /></Field>
+                    <Field label="From"><SmartTimeInput ariaLabel="Item available from" value={schedule.availability_start_time} onChange={value => setSchedule(prev => ({ ...prev, availability_start_time: value }))} /></Field>
+                    <Field label="Until"><SmartTimeInput ariaLabel="Item available until" value={schedule.availability_end_time} onChange={value => setSchedule(prev => ({ ...prev, availability_end_time: value }))} /></Field>
                   </div>
                 </>
               )}
