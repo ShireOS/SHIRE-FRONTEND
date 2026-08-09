@@ -84,16 +84,16 @@
     --dash-surface: 253 250 244;
     --dash-elevated: 255 254 250;
 
-    /* Borders - soft separators */
+    /* Borders - visible warm separators on cream surfaces */
     --dash-border: 188 169 132;
-    --dash-border-color: rgba(96, 82, 60, 0.065);
-    --dash-divider-color: rgba(96, 82, 60, 0.05);
+    --dash-border-color: rgba(96, 82, 60, 0.2);
+    --dash-divider-color: rgba(96, 82, 60, 0.16);
 
     /* Glass effects - cream frosted glass */
     --glass-bg: rgba(253, 250, 244, 0.5);
     --glass-bg-hover: rgba(255, 255, 252, 0.8);
-    --glass-border: transparent;
-    --glass-border-emphasis: rgba(0, 0, 0, 0.06);
+    --glass-border: rgba(96, 82, 60, 0.2);
+    --glass-border-emphasis: rgba(96, 82, 60, 0.29);
     --glass-blur: 24px;
     --glass-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.6);
 
@@ -144,6 +144,28 @@
     --shell-cta-bg: 26 22 21;
     --shell-cta-text: 255 255 255;
   }
+}
+
+/* Legacy dark-surface utilities need a warm separator when rendered on cream. */
+.light .border-white\/5,
+.light .border-white\/\[0\.055\],
+.light .border-white\/\[0\.08\],
+.light .border-white\/10 {
+  border-color: var(--dash-border-color);
+}
+
+.light .border-white\/15 {
+  border-color: rgba(96, 82, 60, 0.23);
+}
+
+.light .border-white\/20,
+.light .border-white\/25 {
+  border-color: rgba(96, 82, 60, 0.27);
+}
+
+.light .divide-white\/5 > :not([hidden]) ~ :not([hidden]),
+.light .divide-white\/10 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--dash-divider-color);
 }
 
 /* Force all borders transparent by default */
