@@ -20,7 +20,7 @@ import { Badge } from '../components/shared/Badge'
 import { Modal, ModalFooter } from '../components/shared/Modal'
 import RolePermissionsPanel from '../components/team/RolePermissionsPanel'
 import PermissionEditor, { diffOverrides } from '../components/team/PermissionEditor'
-import { normalizeJobCodes } from '../RestaurantSetupPanel'
+import { normalizeJobCodes } from '@shire/settings'
 import { cashDrawerRoleSummary } from '../utils/cashDrawerPermissions'
 
 const money = (value) =>

@@ -12,6 +12,7 @@
     "@react-native/assets-registry": "0.81.5",
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@shire/db": "workspace:*",
+    "@shire/settings": "workspace:*",
     "@shire/menu-search": "workspace:*",
     "@supabase/supabase-js": "^2.108.2",
     "dotenv": "^17.4.2",

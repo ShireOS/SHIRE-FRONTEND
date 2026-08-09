@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchPosApi } from '../../../shared/api/posClient'
 import type { JobCodeData, RolePermissionData, UseOnboardingReturn } from '../../hooks/useOnboarding'
+import { defaultRolePermission as defaultPermissionForRole, sanitizeNumber, slugRoleCode } from '@shire/settings'
 import { cashDrawerRoleSummary } from '../../../dashboard/utils/cashDrawerPermissions'
 
 interface ManagerControlsStepProps {
@@ -31,50 +32,10 @@ const PERMISSIONS: Array<{ key: keyof RolePermissionData; label: string }> = [
 ]
 
 const inputClass = 'w-full min-w-0 px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]'
-const sanitizeNumber = (value: string) => value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1').slice(0, 10)
 const displayRate = (value: unknown) => {
   const text = String(value ?? '').trim()
   return text === '0' || text === '0.0' || text === '0.00' ? '' : text
 }
-const slugRoleCode = (value: string, fallback = 'role') => {
-  const raw = value.toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '')
-  const normalized = raw || fallback
-  return /^[a-z]/.test(normalized) ? normalized.slice(0, 80) : `role_${normalized}`.slice(0, 80)
-}
-
-const defaultPermissionForRole = (roleKey: string): RolePermissionData => {
-  const normalizedRoleKey = slugRoleCode(roleKey)
-  const elevated = normalizedRoleKey === 'owner' || normalizedRoleKey === 'manager'
-  const cashier = normalizedRoleKey === 'cashier'
-  const service = normalizedRoleKey === 'server' || normalizedRoleKey === 'bartender' || normalizedRoleKey === 'cashier'
-  return {
-    role_key: normalizedRoleKey,
-    can_refund: elevated || cashier,
-    refund_limit: elevated ? '' : cashier ? '25' : '',
-    can_void: elevated,
-    can_comp: elevated,
-    can_discount: elevated || service,
-    discount_limit_percent: elevated ? '' : service ? '20' : '',
-    can_open_cash_drawer: elevated || cashier || normalizedRoleKey === 'bartender',
-    can_no_sale: elevated || cashier,
-    can_paid_in_out: elevated || cashier,
-    can_adjust_tips: elevated,
-    can_edit_menu: elevated,
-    can_edit_employees: elevated,
-    can_edit_schedules: elevated,
-    can_view_reports: elevated,
-    can_close_drawer: elevated || cashier,
-    can_close_day: elevated,
-    can_reopen_business_day: normalizedRoleKey === 'owner',
-    can_change_payment_settings: normalizedRoleKey === 'owner',
-    can_edit_sent_items_within_window: elevated || service,
-    can_edit_sent_items_after_window: elevated,
-    can_unsend_sent_items: elevated || service,
-    can_edit_paid_check_items: elevated,
-    require_manager_pin_for_approval: !elevated,
-  }
-}
-
 function Toggle({
   active,
   label,

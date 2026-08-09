@@ -4,14 +4,15 @@ import { fetchWithSupabaseAuth } from '../../shared/query'
 import { useAuth } from '../../auth'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import { fetchTipoutExceptions, resolveTipoutException } from '../../shared/api/tipoutExceptions'
-import { tipoutPolicyFingerprint, validateTipoutPolicy } from '../../shared/tips/tipPayrollPolicy'
 import {
-  PayrollSetupFields,
+  tipoutPolicyFingerprint,
+  validateTipoutPolicy,
   defaultTipPayrollSettings,
   normalizeJobCodes,
   normalizeTipPayrollSettings,
   tipPayrollPayload,
-} from '../RestaurantSetupPanel'
+} from '@shire/settings'
+import { PayrollSetupFields } from '../RestaurantSetupPanel'
 import EmailPayrollModal from '../components/payroll/EmailPayrollModal'
 import IntervalControls from '../components/payroll/IntervalControls'
 import TipRulesEditor from '../components/payroll/TipRulesEditor'

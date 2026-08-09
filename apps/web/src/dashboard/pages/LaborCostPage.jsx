@@ -4,7 +4,7 @@ import { fetchCached, fetchWithSupabaseAuth, queryKeys } from '../../shared/quer
 import { posTimeClockApi } from '../../shared/api/posClient'
 import { useAuth } from '../../auth'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
-import { normalizeJobCodes } from '../RestaurantSetupPanel'
+import { normalizeJobCodes } from '@shire/settings'
 import IntervalControls from '../components/payroll/IntervalControls'
 import { currentBrowsingInterval, intervalLabel } from '../utils/payrollIntervals'
 import {

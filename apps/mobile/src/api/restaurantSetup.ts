@@ -110,7 +110,7 @@ export type MenuCategory = {
   routing_station_id?: string | null;
   routing_station_name?: string | null;
   default_course_type?: 'none' | 'appetizer' | 'entree' | 'dessert' | 'drink' | 'side' | 'other' | null;
-  default_fire_mode?: 'inherit' | 'immediate' | 'hold' | 'manual' | 'by_course' | null;
+  default_fire_mode?: 'inherit' | 'immediate' | 'hold' | 'manual' | 'by_course' | '' | null;
   prep_time_minutes?: string | number | null;
   kds_display_group?: string | null;
   is_active?: boolean;
@@ -357,7 +357,7 @@ export async function fetchTipPayrollSettings(restaurantId: string) {
   return posApiRequest<TipPayrollSettings>(restaurantId, `/restaurants/${restaurantId}/tips-payroll-settings`);
 }
 
-export async function saveTipPayrollSettings(restaurantId: string, payload: TipPayrollSettings) {
+export async function saveTipPayrollSettings(restaurantId: string, payload: TipPayrollSettings | Record<string, unknown>) {
   return posApiRequest<TipPayrollSettings>(restaurantId, `/restaurants/${restaurantId}/tips-payroll-settings`, {
     method: 'PUT',
     body: payload,

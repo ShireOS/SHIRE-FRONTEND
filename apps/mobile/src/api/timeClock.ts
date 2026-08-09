@@ -52,7 +52,8 @@ export type TimeClockRequest = {
 };
 
 export type JobCode = {
-  id: string;
+  // Absent/null for rows not yet saved to the server (normalizers keep drafts).
+  id?: string | null;
   code: string;
   label: string;
   permission_tier?: string;
