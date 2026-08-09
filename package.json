@@ -2,6 +2,9 @@
     "private": true,
     "scripts": {
         "web": "pnpm --filter web dev",
+        "web:dev:sandbox": "node scripts/web-dev-sandbox.mjs",
+        "web:dev:sandbox:down": "node scripts/web-dev-sandbox.mjs --down",
+        "web:dev:sandbox:test": "node --test scripts/web-dev-sandbox.test.mjs",
         "ios": "pnpm --filter mobile ios",
         "ios_device": "pnpm --filter mobile ios_device",
         "ios_server": "pnpm --filter mobile start",

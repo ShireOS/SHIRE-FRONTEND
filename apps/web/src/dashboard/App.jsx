@@ -71,11 +71,26 @@ class DashboardErrorBoundary extends Component {
 }
 
 export default function App() {
+  const sandboxMode = import.meta.env.VITE_SANDBOX_MODE === 'true'
+  const sandboxRestaurant = import.meta.env.VITE_SANDBOX_RESTAURANT_LABEL || 'Local restaurant clone'
+
   return (
-    <DashboardErrorBoundary>
-      <Suspense fallback={<div className="min-h-screen bg-dash-base flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-dash-gold" /></div>}>
-        <AuthenticatedDashboardApp />
-      </Suspense>
-    </DashboardErrorBoundary>
+    <>
+      {sandboxMode && (
+        <div
+          role="status"
+          className="fixed inset-x-0 top-0 z-[9999] border-b-2 border-black bg-amber-300 px-4 py-2 text-center text-xs font-black uppercase tracking-[0.16em] text-black shadow-lg"
+        >
+          Sandbox — {sandboxRestaurant} — no production actions
+        </div>
+      )}
+      <div className={sandboxMode ? 'pt-9' : undefined}>
+        <DashboardErrorBoundary>
+          <Suspense fallback={<div className="min-h-screen bg-dash-base flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-dash-gold" /></div>}>
+            <AuthenticatedDashboardApp />
+          </Suspense>
+        </DashboardErrorBoundary>
+      </div>
+    </>
   )
 }

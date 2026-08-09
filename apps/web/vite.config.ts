@@ -3,6 +3,39 @@ import react from '@vitejs/plugin-react'
 import { existsSync } from 'fs'
 import { resolve } from 'path'
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+function isLoopbackHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value)
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && LOOPBACK_HOSTS.has(parsed.hostname)
+  } catch {
+    return false
+  }
+}
+
+function assertSafeSandboxEnv(env: Record<string, string>) {
+  if (env.VITE_SANDBOX_MODE !== 'true') return
+
+  const requiredUrls = [
+    'VITE_API_BASE_URL',
+    'VITE_POS_API_BASE_URL',
+    'VITE_POS_API_PROXY_TARGET',
+    'VITE_RESERVATIONS_API_BASE_URL',
+    'VITE_SUPABASE_URL',
+  ]
+  const missing = requiredUrls.filter(name => !env[name]?.trim())
+  if (!env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim()) missing.push('VITE_SUPABASE_PUBLISHABLE_KEY')
+  if (missing.length > 0) {
+    throw new Error(`Sandbox mode requires explicit local configuration: ${missing.join(', ')}`)
+  }
+
+  const unsafe = requiredUrls.filter(name => !isLoopbackHttpUrl(env[name]))
+  if (unsafe.length > 0) {
+    throw new Error(`Sandbox mode refuses non-loopback targets: ${unsafe.join(', ')}`)
+  }
+}
+
 // SPA fallback for the owner console.
 function ownerConsoleFallback() {
   return {
@@ -61,6 +94,7 @@ export default defineConfig(({ mode }) => {
   const rootEnvDir = resolve(__dirname, '../..')
   const bookEntry = resolve(__dirname, 'book/index.html')
   const env = loadEnv(mode, rootEnvDir, '')
+  assertSafeSandboxEnv(env)
   const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL || ''
   const supabasePublishableKey =
     env.VITE_SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_PUBLISHABLE_KEY || ''
