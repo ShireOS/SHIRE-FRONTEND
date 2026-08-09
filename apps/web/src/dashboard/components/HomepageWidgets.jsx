@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowDown,
   ArrowUp,
@@ -42,6 +42,9 @@ const MONEY_IDS = new Set([
   'tips_collected', 'tipout_paid', 'tipout_received', 'final_payout',
   'refunds', 'voided_items',
   'total_amount', 'discount_amount', 'comp_amount', 'item_void_amount', 'check_void_amount',
+  'non_taxable_net', 'taxable_net', 'gross_voids', 'tax', 'grand_total',
+  'item_discounts', 'check_discounts', 'total_collected', 'card_collected',
+  'cash_collected', 'other_collected',
 ])
 const GRAIN_OPTIONS = [
   ['total', 'Total'], ['day', 'Daily'], ['week', 'Weekly'],
@@ -259,37 +262,111 @@ function WidgetHeader({ widget, onSettings }) {
   return <header className="mb-4 flex items-start justify-between gap-3"><div><p className="label-mono">Homepage widget</p><h2 className="mt-1 text-lg font-semibold">{widget.label}</h2><p className="mt-1 text-xs text-dash-tertiary">{widget.description}</p></div><button type="button" onClick={(event) => { event.stopPropagation(); onSettings() }} title={`Configure ${widget.label}`} aria-label={`Configure ${widget.label}`} className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-dash-border text-dash-secondary hover:text-dash-cream"><Settings2 size={16} /></button></header>
 }
 
-function richKpiDetail(widgetId, payload) {
-  if (!payload) return null
-  const orders = payload.series?.orders || []
-  const covers = payload.series?.covers || []
-  const servers = payload.contributors?.servers || []
-  const labor = payload.contributors?.labor_staff || []
-  const definitions = {
-    net_sales: { rows: orders, valueKey: 'net_sales', contributors: servers.map((row) => ({ name: row.name, primary: money(row.net_sales), secondary: `${number(row.transactions)} checks` })) },
-    orders: { rows: orders, valueKey: 'transactions', contributors: servers.map((row) => ({ name: row.name, primary: number(row.transactions), secondary: money(row.net_sales) })) },
-    covers: { rows: covers, valueKey: 'covers', contributors: [] },
-    average_check: { rows: orders.map((row) => ({ ...row, average_check: Number(row.transactions) ? Number(row.net_sales) / Number(row.transactions) : 0 })), valueKey: 'average_check', contributors: [] },
-    tips: { rows: orders, valueKey: 'tips', contributors: servers.map((row) => ({ name: row.name, primary: money(row.tips), secondary: `${number(row.transactions)} checks` })) },
-    labor_cost: { rows: [], valueKey: 'labor_cost', contributors: labor.map((row) => ({ name: row.name, primary: money(row.labor_cost), secondary: `${number(Number(row.worked_minutes || 0) / 60)} hrs` })) },
-  }
-  return definitions[widgetId] || null
+function measureColumns(data, widget) {
+  return data?.measure_columns?.length ? data.measure_columns : (widget.columns || [])
 }
 
-function KpiWidget({ widget, data, detail, expanded, onToggle, onSettings }) {
+function dimensionColumns(data) {
+  return data?.dimension_columns || []
+}
+
+function tableColumns(data, widget) {
+  const dimensions = dimensionColumns(data)
+  const measures = measureColumns(data, widget)
+  return [...dimensions.map((id) => ({
+    id,
+    label: id === 'breakdown' ? String(data?.breakdown || 'breakdown').replaceAll('_', ' ').replace('revenue center', 'section') : id.replaceAll('_', ' '),
+    kind: id === 'period' ? 'date' : 'text',
+  })), ...measures]
+}
+
+function primaryMeasure(data, widget) {
+  return measureColumns(data, widget)[0] || widget.columns?.[0]
+}
+
+const SALES_SUM_FIELDS = [
+  'gross_sales', 'item_discounts', 'check_discounts', 'discounts', 'net_sales',
+  'non_taxable_net', 'taxable_net', 'gross_voids', 'void_receipts', 'receipts',
+  'covers', 'tax', 'tips', 'grand_total', 'total_collected', 'card_collected',
+  'cash_collected', 'other_collected',
+]
+
+function aggregateSalesRows(rows = []) {
+  const summary = Object.fromEntries(SALES_SUM_FIELDS.map((id) => [id, 0]))
+  rows.forEach((row) => SALES_SUM_FIELDS.forEach((id) => { summary[id] += Number(row[id] || 0) }))
+  summary.average_check = summary.receipts > 0 ? summary.net_sales / summary.receipts : 0
+  return summary
+}
+
+function salesTrendRows(rows = []) {
+  const periods = new Map()
+  rows.filter((row) => row.period != null).forEach((row) => {
+    const period = String(row.period)
+    const current = periods.get(period) || { period, net_sales: 0 }
+    current.net_sales += Number(row.net_sales || 0)
+    periods.set(period, current)
+  })
+  return [...periods.values()].sort((left, right) => left.period.localeCompare(right.period))
+}
+
+function MiniBarList({ rows, measure, limit = 5 }) {
+  if (!rows?.length || !measure) return null
+  const visible = rows.slice(0, limit)
+  const max = Math.max(1, ...visible.map((row) => Math.abs(Number(row[measure.id] || 0))))
+  return <div className="mt-4 space-y-2">{visible.map((row, index) => <div key={`${row.breakdown || row.period || index}-${index}`}><div className="mb-1 flex items-center justify-between gap-3 text-[11px]"><span className="truncate text-dash-secondary">{row.breakdown || row.period || `Row ${index + 1}`}</span><span className="shrink-0 font-mono text-dash-cream">{formatValue(row[measure.id], measure.kind)}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/5"><div className="h-full rounded-full bg-shell-accent" style={{ width: `${Math.max(2, Math.abs(Number(row[measure.id] || 0)) / max * 100)}%` }} /></div></div>)}</div>
+}
+
+function DetailChart({ data, widget, height = 260 }) {
+  let rows = data?.rows || []
+  const measure = primaryMeasure(data, widget)
+  if (!rows.length || !measure) return null
+  const hasPeriod = rows.some((row) => row.period != null)
+  const hasBreakdown = rows.some((row) => row.breakdown != null)
+  if (hasPeriod && hasBreakdown) {
+    const byPeriod = new Map()
+    rows.forEach((row) => {
+      const key = String(row.period)
+      const current = byPeriod.get(key) || { period: row.period }
+      current[measure.id] = Number(current[measure.id] || 0) + Number(row[measure.id] || 0)
+      byPeriod.set(key, current)
+    })
+    rows = [...byPeriod.values()].sort((left, right) => String(left.period).localeCompare(String(right.period)))
+  }
+  const dataKey = hasPeriod ? 'period' : hasBreakdown ? 'breakdown' : null
+  if (!dataKey) return null
+  const tick = measure.kind === 'money' ? (value) => `$${Math.round(Number(value) / 1000)}k` : number
+  const tooltip = (value) => formatValue(value, measure.kind)
+  return <div className="h-[260px] min-w-0 rounded-md border border-dash-border p-3" style={{ height }}><ResponsiveContainer width="100%" height="100%">{hasPeriod ? <LineChart data={rows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey={dataKey} tickFormatter={(value) => String(value).slice(5, 10)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis tickFormatter={tick} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={tooltip} /><Line type="monotone" dataKey={measure.id} stroke="#4f7ee8" strokeWidth={2.5} dot={{ r: 2 }} connectNulls /></LineChart> : <BarChart data={rows.slice(0, 12)}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey={dataKey} tick={{ fill: '#a8a29e', fontSize: 10 }} interval={0} angle={-18} textAnchor="end" height={60} /><YAxis tickFormatter={tick} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={tooltip} /><Bar dataKey={measure.id} fill="#4f7ee8" radius={[3, 3, 0, 0]} /></BarChart>}</ResponsiveContainer></div>
+}
+
+function KpiWidget({ widget, data, onOpenDetails, onSettings }) {
   const column = data?.measure_columns?.[0] || widget.columns[0]
   const row = data?.rows?.[0] || {}
   const secondary = (data?.measure_columns || []).slice(1, 3)
-  const canExpand = Boolean(detail?.rows?.length || detail?.contributors?.length)
-  return <section onClick={canExpand ? onToggle : undefined} className={`glass-card min-w-0 rounded-lg p-5 transition ${canExpand ? 'cursor-pointer hover:-translate-y-px' : ''} ${expanded ? 'md:col-span-2 xl:col-span-2' : ''}`}>
+  return <section onClick={onOpenDetails} className="glass-card min-w-0 cursor-pointer rounded-lg p-5 transition hover:-translate-y-px hover:border-shell-accent/40">
     <WidgetHeader widget={widget} onSettings={onSettings} />
     <p className="truncate font-mono text-3xl tabular-nums text-dash-cream">{formatValue(row[column.id], column.kind)}</p>
-    <p className="mt-1 text-xs text-dash-tertiary">{column.label}{canExpand ? ' · Select for trend and contributors' : ''}</p>
+    <p className="mt-1 text-xs text-dash-tertiary">{column.label}</p>
     {secondary.length > 0 && <div className="mt-4 grid grid-cols-2 gap-2 border-t border-dash-border pt-3">{secondary.map((item) => <div key={item.id}><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-1 font-mono text-sm text-dash-secondary">{formatValue(row[item.id], item.kind)}</p></div>)}</div>}
-    {expanded && detail && <div className="mt-5 grid gap-5 border-t border-dash-border pt-5 lg:grid-cols-[minmax(0,1fr)_240px]" onClick={(event) => event.stopPropagation()}>
-      <div>{detail.rows.length > 0 ? <div className="h-44"><ResponsiveContainer width="100%" height="100%"><BarChart data={detail.rows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey="bucket" tickFormatter={(value) => String(value).slice(5, 10)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis tickFormatter={(value) => MONEY_IDS.has(detail.valueKey) || detail.valueKey === 'average_check' ? `$${Math.round(value)}` : number(value)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={(value) => MONEY_IDS.has(detail.valueKey) || detail.valueKey === 'average_check' ? money(value) : number(value)} /><Bar dataKey={detail.valueKey} fill="#4f7ee8" radius={[3, 3, 0, 0]} /></BarChart></ResponsiveContainer></div> : <p className="flex h-44 items-center justify-center text-sm text-dash-tertiary">No time series for this metric.</p>}</div>
-      <div><p className="label-mono !text-[10px]">Contributors</p>{detail.contributors.length > 0 ? <ul className="mt-3 space-y-2">{detail.contributors.slice(0, 6).map((item) => <li key={item.name} className="flex items-baseline justify-between gap-3 text-sm"><span className="truncate text-dash-secondary">{item.name}</span><span className="shrink-0 text-right"><span className="block font-mono text-dash-cream">{item.primary}</span><span className="block text-[10px] text-dash-tertiary">{item.secondary}</span></span></li>)}</ul> : <p className="mt-3 text-xs leading-5 text-dash-tertiary">No contributor breakdown for this range.</p>}</div>
-    </div>}
+  </section>
+}
+
+function SalesWidget({ widget, data, onOpenDetails, onSettings }) {
+  const rows = data?.rows || []
+  const summary = aggregateSalesRows(rows)
+  const measures = (data?.measure_columns || widget.default_columns.map((id) => widget.columns.find((column) => column.id === id)).filter(Boolean)).slice(0, 6)
+  const trend = salesTrendRows(rows)
+  const trendData = {
+    rows: trend,
+    measure_columns: [{ id: 'net_sales', label: 'Net sales', kind: 'money' }],
+    dimension_columns: ['period'],
+  }
+  return <section onClick={onOpenDetails} className="glass-card cursor-pointer rounded-lg p-5 transition hover:border-shell-accent/40 xl:col-span-4">
+    <WidgetHeader widget={widget} onSettings={onSettings} />
+    <div className={`grid gap-5 ${trend.length > 1 ? 'xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,.95fr)]' : ''}`}>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{measures.map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-xl text-dash-cream">{formatValue(summary[item.id], item.kind)}</p></div>)}</div>
+      {trend.length > 1 && <div><p className="label-mono mb-3">Net sales trend</p><DetailChart data={trendData} widget={widget} height={230} /></div>}
+    </div>
   </section>
 }
 
@@ -304,7 +381,7 @@ function scopeNoun(data) {
   return data?.reporting_scope?.dimension === 'device' ? 'device' : 'section'
 }
 
-function ScopedBreakdownWidget({ widget, data, settings, onSettings }) {
+function ScopedBreakdownWidget({ widget, data, settings, onSettings, onOpenDetails }) {
   const rows = data?.rows || []
   const measures = data?.measure_columns || []
   const primary = measures[0] || widget.columns[0]
@@ -321,7 +398,7 @@ function ScopedBreakdownWidget({ widget, data, settings, onSettings }) {
       })
       return point
     })
-    return <section className="glass-card rounded-lg p-5 xl:col-span-2">
+    return <section onClick={onOpenDetails} className="glass-card cursor-pointer rounded-lg p-5 transition hover:border-shell-accent/40 xl:col-span-2">
       <WidgetHeader widget={widget} onSettings={onSettings} />
       <div className="mb-4 flex items-center gap-2 text-xs font-semibold text-dash-secondary"><Layers3 size={15} /><span className="capitalize">Trend by {noun}</span></div>
       <div className="h-72"><ResponsiveContainer width="100%" height="100%">{settings?.chart_type === 'bar' ? <BarChart data={chartRows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey="period" tickFormatter={(value) => String(value).slice(5, 10)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis tickFormatter={(value) => MONEY_IDS.has(primary.id) ? `$${Math.round(value / 1000)}k` : number(value)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={(value) => formatValue(value, primary.kind)} /><Legend wrapperStyle={{ fontSize: 11 }} />{names.map((name, index) => <Bar key={name} dataKey={name} fill={SCOPE_COLORS[index % SCOPE_COLORS.length]} radius={[2, 2, 0, 0]} />)}</BarChart> : <LineChart data={chartRows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey="period" tickFormatter={(value) => String(value).slice(5, 10)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis tickFormatter={(value) => MONEY_IDS.has(primary.id) ? `$${Math.round(value / 1000)}k` : number(value)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={(value) => formatValue(value, primary.kind)} /><Legend wrapperStyle={{ fontSize: 11 }} />{names.map((name, index) => <Line key={name} type="monotone" dataKey={name} stroke={SCOPE_COLORS[index % SCOPE_COLORS.length]} strokeWidth={2.5} dot={{ r: 2.5 }} connectNulls />)}</LineChart>}</ResponsiveContainer></div>
@@ -329,23 +406,23 @@ function ScopedBreakdownWidget({ widget, data, settings, onSettings }) {
   }
 
   const max = Math.max(1, ...rows.map((row) => Math.abs(Number(row[primary.id] || 0))))
-  return <section className="glass-card rounded-lg p-5 xl:col-span-2">
+  return <section onClick={onOpenDetails} className="glass-card cursor-pointer rounded-lg p-5 transition hover:border-shell-accent/40 xl:col-span-2">
     <WidgetHeader widget={widget} onSettings={onSettings} />
     <div className="mb-4 flex items-center gap-2 text-xs font-semibold text-dash-secondary"><Layers3 size={15} /><span className="capitalize">Results by {noun}</span></div>
     {rows.length ? <div className="space-y-3">{rows.map((row, index) => <div key={`${row.breakdown || noun}-${index}`} className="rounded-md border border-dash-border p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-dash-cream">{row.breakdown || `Unassigned ${noun}`}</p><p className="mt-1 text-[10px] text-dash-tertiary">{measures.slice(1, 4).map((item) => `${item.label}: ${formatValue(row[item.id], item.kind)}`).join(' · ')}</p></div><p className="shrink-0 font-mono text-sm text-dash-cream">{formatValue(row[primary.id], primary.kind)}</p></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/5"><div className="h-full rounded-full bg-shell-accent" style={{ width: `${Math.max(2, Math.abs(Number(row[primary.id] || 0)) / max * 100)}%` }} /></div></div>)}</div> : <p className="py-8 text-center text-sm text-dash-tertiary">No attributed {noun} data for this range.</p>}
   </section>
 }
 
-function ChartWidget({ widget, data, settings, onSettings }) {
+function ChartWidget({ widget, data, settings, onSettings, onOpenDetails }) {
   const measure = data?.measure_columns?.[0] || widget.columns[0]
   const rows = data?.rows || []
   const chartType = settings.chart_type || 'line'
   const dataKey = (row) => row.period || row.breakdown || 'Total'
   const latest = rows.at(-1) || {}
-  return <section className="glass-card rounded-lg p-5 xl:col-span-2"><WidgetHeader widget={widget} onSettings={onSettings} />{data?.measure_columns?.length > 1 && <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{data.measure_columns.slice(0, 4).map((item) => <div key={item.id} className="rounded-md border border-dash-border p-3"><p className="label-mono !text-[9px]">Latest {item.label}</p><p className="mt-1 font-mono text-sm text-dash-cream">{formatValue(latest[item.id], item.kind)}</p></div>)}</div>}<div className="h-72"><ResponsiveContainer width="100%" height="100%">{chartType === 'bar' ? <BarChart data={rows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey={dataKey} tick={{ fill: '#a8a29e', fontSize: 11 }} /><YAxis tickFormatter={(value) => MONEY_IDS.has(measure.id) ? `$${Math.round(value / 1000)}k` : number(value)} tick={{ fill: '#a8a29e', fontSize: 11 }} /><Tooltip formatter={(value) => formatValue(value, measure.kind)} /><Bar dataKey={measure.id} fill="#4f7ee8" radius={[4, 4, 0, 0]} /></BarChart> : <LineChart data={rows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey={dataKey} tick={{ fill: '#a8a29e', fontSize: 11 }} /><YAxis tickFormatter={(value) => MONEY_IDS.has(measure.id) ? `$${Math.round(value / 1000)}k` : number(value)} tick={{ fill: '#a8a29e', fontSize: 11 }} /><Tooltip formatter={(value) => formatValue(value, measure.kind)} /><Line type="monotone" dataKey={measure.id} stroke="#4f7ee8" strokeWidth={3} dot={{ r: 3 }} connectNulls /></LineChart>}</ResponsiveContainer></div></section>
+  return <section onClick={onOpenDetails} className="glass-card cursor-pointer rounded-lg p-5 transition hover:border-shell-accent/40 xl:col-span-2"><WidgetHeader widget={widget} onSettings={onSettings} />{data?.measure_columns?.length > 1 && <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{data.measure_columns.slice(0, 4).map((item) => <div key={item.id} className="rounded-md border border-dash-border p-3"><p className="label-mono !text-[9px]">Latest {item.label}</p><p className="mt-1 font-mono text-sm text-dash-cream">{formatValue(latest[item.id], item.kind)}</p></div>)}</div>}<div className="h-72"><ResponsiveContainer width="100%" height="100%">{chartType === 'bar' ? <BarChart data={rows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey={dataKey} tick={{ fill: '#a8a29e', fontSize: 11 }} /><YAxis tickFormatter={(value) => MONEY_IDS.has(measure.id) ? `$${Math.round(value / 1000)}k` : number(value)} tick={{ fill: '#a8a29e', fontSize: 11 }} /><Tooltip formatter={(value) => formatValue(value, measure.kind)} /><Bar dataKey={measure.id} fill="#4f7ee8" radius={[4, 4, 0, 0]} /></BarChart> : <LineChart data={rows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey={dataKey} tick={{ fill: '#a8a29e', fontSize: 11 }} /><YAxis tickFormatter={(value) => MONEY_IDS.has(measure.id) ? `$${Math.round(value / 1000)}k` : number(value)} tick={{ fill: '#a8a29e', fontSize: 11 }} /><Tooltip formatter={(value) => formatValue(value, measure.kind)} /><Line type="monotone" dataKey={measure.id} stroke="#4f7ee8" strokeWidth={3} dot={{ r: 3 }} connectNulls /></LineChart>}</ResponsiveContainer></div></section>
 }
 
-function MenuPerformanceWidget({ widget, data, settings, onSettings }) {
+function MenuPerformanceWidget({ widget, data, settings, onSettings, onOpenDetails }) {
   const rows = [...(data?.rows || [])]
   const measures = data?.measure_columns || []
   const metric = measures.find((item) => item.id === settings.sort_by) || measures.find((item) => item.id === 'revenue') || measures[0]
@@ -355,34 +432,149 @@ function MenuPerformanceWidget({ widget, data, settings, onSettings }) {
   const bottom = rows.slice(-take).reverse()
   const max = Math.max(1, ...rows.map((row) => Number(row[metric?.id] || 0)))
   const List = ({ title, icon: Icon, items, tone }) => <div><div className="mb-3 flex items-center gap-2"><Icon size={16} className={tone} /><h3 className="text-sm font-semibold">{title}</h3></div><div className="space-y-2">{items.map((row, index) => <div key={`${row.breakdown}-${index}`} className="rounded-md border border-dash-border p-3"><div className="flex items-baseline justify-between gap-3"><span className="truncate text-sm font-semibold">{row.breakdown || `Item ${index + 1}`}</span><span className="font-mono text-sm">{formatValue(row[metric?.id], metric?.kind)}</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5"><div className="h-full rounded-full bg-shell-accent" style={{ width: `${Math.max(2, Number(row[metric?.id] || 0) / max * 100)}%` }} /></div><p className="mt-2 text-[10px] text-dash-tertiary">{measures.filter((item) => item.id !== metric?.id).slice(0, 3).map((item) => `${item.label}: ${formatValue(row[item.id], item.kind)}`).join(' · ')}</p></div>)}</div></div>
-  return <section className="glass-card rounded-lg p-5 xl:col-span-4"><WidgetHeader widget={widget} onSettings={onSettings} />{rows.length ? <div className="grid gap-6 lg:grid-cols-2"><List title="Top performers" icon={TrendingUp} items={top} tone="text-dash-success" /><List title="Bottom performers" icon={TrendingDown} items={bottom} tone="text-dash-warning" /></div> : <p className="py-8 text-center text-sm text-dash-tertiary">No menu sales for this range.</p>}</section>
+  return <section onClick={onOpenDetails} className="glass-card cursor-pointer rounded-lg p-5 transition hover:border-shell-accent/40 xl:col-span-4"><WidgetHeader widget={widget} onSettings={onSettings} />{rows.length ? <div className="grid gap-6 lg:grid-cols-2"><List title="Top performers" icon={TrendingUp} items={top} tone="text-dash-success" /><List title="Bottom performers" icon={TrendingDown} items={bottom} tone="text-dash-warning" /></div> : <p className="py-8 text-center text-sm text-dash-tertiary">No menu sales for this range.</p>}</section>
 }
 
-function SummaryWidget({ widget, data, onSettings }) {
+function SummaryWidget({ widget, data, onSettings, onOpenDetails }) {
   const row = data?.rows?.[0] || {}
   const measures = data?.measure_columns || []
-  return <section className="glass-card rounded-lg p-5 xl:col-span-2"><WidgetHeader widget={widget} onSettings={onSettings} /><div className="grid gap-3 sm:grid-cols-2">{measures.map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-xl text-dash-cream">{formatValue(row[item.id], item.kind)}</p></div>)}</div></section>
+  const preview = measures.slice(0, 6)
+  return <section onClick={onOpenDetails} className="glass-card cursor-pointer rounded-lg p-5 transition hover:border-shell-accent/40 xl:col-span-2"><WidgetHeader widget={widget} onSettings={onSettings} /><div className="grid gap-3 sm:grid-cols-2">{preview.map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-xl text-dash-cream">{formatValue(row[item.id], item.kind)}</p></div>)}</div>{measures.length > preview.length && <p className="mt-3 text-xs font-semibold text-shell-accent">View all details</p>}</section>
 }
 
-function TableWidget({ widget, data, onSettings }) {
-  const dimensions = data?.dimension_columns || []
-  const measures = data?.measure_columns || []
-  const columns = [...dimensions.map((id) => ({
-    id,
-    label: id === 'breakdown' ? String(data?.breakdown || 'breakdown').replaceAll('_', ' ').replace('revenue center', 'section') : id.replaceAll('_', ' '),
-    kind: id === 'period' ? 'date' : 'text',
-  })), ...measures]
-  return <section className="glass-card overflow-hidden rounded-lg xl:col-span-2"><div className="p-5 pb-1"><WidgetHeader widget={widget} onSettings={onSettings} /></div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-y border-dash-border">{columns.map((column) => <th key={column.id} className="label-mono px-4 py-3 !text-[10px] capitalize">{column.label}</th>)}</tr></thead><tbody>{(data?.rows || []).map((row, index) => <tr key={`${row.period || ''}-${row.breakdown || ''}-${index}`} className="border-b border-dash-border last:border-0">{columns.map((column) => <td key={column.id} className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row[column.id], column.kind)}</td>)}</tr>)}{!data?.rows?.length && <tr><td colSpan={Math.max(1, columns.length)} className="px-4 py-8 text-center text-dash-tertiary">No data for this range.</td></tr>}</tbody></table></div></section>
+function TableWidget({ widget, data, onSettings, onOpenDetails }) {
+  const columns = tableColumns(data, widget)
+  const measure = primaryMeasure(data, widget)
+  const rows = (data?.rows || []).slice(0, 6)
+  return <section onClick={onOpenDetails} className="glass-card cursor-pointer overflow-hidden rounded-lg transition hover:border-shell-accent/40 xl:col-span-2"><div className="p-5 pb-1"><WidgetHeader widget={widget} onSettings={onSettings} /></div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-y border-dash-border">{columns.map((column) => <th key={column.id} className="label-mono px-4 py-3 !text-[10px] capitalize">{column.label}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={`${row.period || ''}-${row.breakdown || ''}-${index}`} className="border-b border-dash-border last:border-0">{columns.map((column) => <td key={column.id} className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row[column.id], column.kind)}</td>)}</tr>)}{!data?.rows?.length && <tr><td colSpan={Math.max(1, columns.length)} className="px-4 py-8 text-center text-dash-tertiary">No data for this range.</td></tr>}</tbody></table></div><div className="px-5 pb-4"><MiniBarList rows={data?.rows || []} measure={measure} /></div>{(data?.rows || []).length > rows.length && <div className="border-t border-dash-border px-5 py-3"><p className="text-xs font-semibold text-shell-accent">View all details</p></div>}</section>
 }
 
-function DiscountReviewWidget({ widget, data, onSettings }) {
+function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, settings, onClose }) {
+  const dates = periodDates(period, anchorDate)
+  const measures = widget.id === 'sales_summary' ? widget.columns || [] : measureColumns(data, widget)
+  const rows = data?.rows || []
+  const summaryRow = widget.id === 'sales_summary' ? aggregateSalesRows(rows) : rows[0] || {}
+  const commonBody = {
+    start_date: dates.start,
+    end_date: dates.end,
+    columns: (widget.columns || []).map((column) => column.id),
+    chart_type: settings?.chart_type || 'bar',
+    scope_dimension: settings?.scope_dimension || 'none',
+    scope_mode: settings?.scope_mode || 'cumulative',
+    scope_ids: settings?.scope_ids || [],
+    ...(scope === 'portfolio' ? { group_ids: groupIds || null, include_ungrouped: includeUngrouped } : {}),
+  }
+  const path = scope === 'portfolio' ? `/portfolio-reports/homepage/widgets/${widget.id}/data` : `/restaurants/${restaurantId}/reports/homepage/widgets/${widget.id}/data`
+  const defaultBreakdown = widget.id === 'sales_summary'
+    ? scope === 'portfolio' ? 'restaurant' : 'employee'
+    : widget.default_breakdown && widget.default_breakdown !== 'none' ? widget.default_breakdown : (widget.breakdowns || []).includes('restaurant') ? 'restaurant' : 'none'
+  const trendBreakdown = (widget.breakdowns || []).includes('none') ? 'none' : defaultBreakdown
+  const canTrend = (widget.grains || []).includes('day') && widget.id !== 'discount_review'
+  const trendQuery = useQuery({
+    queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'trend', period, anchorDate, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
+    queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'day', breakdown: trendBreakdown }) }),
+    enabled: canTrend,
+  })
+  const breakdown = defaultBreakdown
+  const breakdownQuery = useQuery({
+    queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'breakdown', period, anchorDate, breakdown, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
+    queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'total', breakdown }) }),
+    enabled: widget.id !== 'discount_review',
+  })
+  const detailQuery = useQuery({
+    queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'detail', period, anchorDate, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
+    queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'detail', breakdown }) }),
+    enabled: (widget.grains || []).includes('detail') && widget.id !== 'discount_review',
+  })
+  const trendData = trendQuery.data
+  const breakdownData = breakdownQuery.data
+  const detailData = detailQuery.data
+  const tableData = detailData?.rows?.length ? detailData : breakdownData?.rows?.length ? breakdownData : data
+  const table = tableColumns(tableData, widget)
+  if (widget.id === 'discount_review') {
+    const summary = data?.summary || {}
+    const employees = data?.employees || []
+    const reasons = data?.reasons || []
+    const events = data?.recent_events || []
+    return (
+      <Modal title={`${widget.label} details`} onClose={onClose} width="max-w-6xl">
+        <div className="space-y-5 p-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {[['Total impact', summary.total_amount, 'money'], ['Actions', summary.action_count, 'number'], ['Average action', summary.average_action_amount, 'money'], ['Flagged employees', summary.flagged_employees, 'number'], ['Unattributed actions', summary.unattributed_actions, 'number']].map(([label, value, kind]) => <div key={label} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(value, kind)}</p></div>)}
+          </div>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <section><p className="label-mono mb-3">Employee impact</p><DetailChart data={{ rows: employees.slice(0, 12).map((row) => ({ ...row, breakdown: row.employee_name || row.employee || 'Unknown' })), measure_columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }], dimension_columns: ['breakdown'], breakdown: 'employee' }} widget={{ ...widget, columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }] }} /></section>
+            <section><p className="label-mono mb-3">Reason codes</p><DetailChart data={{ rows: reasons.slice(0, 12).map((row) => ({ ...row, breakdown: row.reason_label || row.reason_code })), measure_columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }], dimension_columns: ['breakdown'], breakdown: 'reason' }} widget={{ ...widget, columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }] }} /></section>
+          </div>
+          <div className="overflow-x-auto rounded-md border border-dash-border">
+            <table className="w-full min-w-[860px] text-left text-sm">
+              <thead><tr className="border-b border-dash-border">{['When', 'Employee', 'Action', 'Reason', 'Amount', 'Restaurant'].map((label) => <th key={label} className="label-mono px-4 py-3 !text-[10px]">{label}</th>)}</tr></thead>
+              <tbody>{events.map((row, index) => <tr key={`${row.period || row.occurred_at || index}-${index}`} className="border-b border-dash-border last:border-0"><td className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row.period || row.occurred_at, 'date')}</td><td className="px-4 py-3 text-dash-secondary">{row.employee_name || row.employee || 'Unknown'}</td><td className="px-4 py-3 capitalize text-dash-secondary">{String(row.action_type || row.action || '').replaceAll('_', ' ')}</td><td className="px-4 py-3 text-dash-secondary">{row.reason_label || row.reason || row.reason_code || '—'}</td><td className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row.amount || row.total_amount, 'money')}</td><td className="px-4 py-3 text-dash-secondary">{row.restaurant_name || row.restaurant || '—'}</td></tr>)}{!events.length && <tr><td colSpan={6} className="px-4 py-10 text-center text-dash-tertiary">No discount or void events for this range.</td></tr>}</tbody>
+            </table>
+          </div>
+        </div>
+      </Modal>
+    )
+  }
+  if (widget.id === 'sales_summary') {
+    const metric = (id) => widget.columns.find((column) => column.id === id)
+    const groups = [
+      ['Sales', ['gross_sales', 'item_discounts', 'check_discounts', 'discounts', 'net_sales', 'non_taxable_net', 'taxable_net', 'gross_voids']],
+      ['Checks and guests', ['receipts', 'void_receipts', 'covers', 'average_check']],
+      ['Tax, tips, and tenders', ['tax', 'tips', 'grand_total', 'total_collected', 'card_collected', 'cash_collected', 'other_collected']],
+    ]
+    const netSalesWidget = { ...widget, columns: [metric('net_sales'), ...widget.columns.filter((column) => column.id !== 'net_sales')].filter(Boolean) }
+    const tenderData = {
+      rows: [
+        { breakdown: 'Card', total_collected: summaryRow.card_collected },
+        { breakdown: 'Cash', total_collected: summaryRow.cash_collected },
+        { breakdown: 'Other', total_collected: summaryRow.other_collected },
+      ],
+      measure_columns: [{ id: 'total_collected', label: 'Collected', kind: 'money' }],
+      dimension_columns: ['breakdown'],
+      breakdown: 'payment method',
+    }
+    return <Modal title="Sales details" onClose={onClose} width="max-w-6xl">
+      <div className="space-y-6 p-5">
+        {groups.map(([title, ids]) => <section key={title}><p className="label-mono mb-3">{title}</p><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{ids.map(metric).filter(Boolean).map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(summaryRow[item.id], item.kind)}</p></div>)}</div></section>)}
+        <div className="grid gap-5 xl:grid-cols-3">
+          <section><p className="label-mono mb-3">Net sales trend</p>{trendQuery.isFetching ? <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">Loading trend...</p> : trendData?.rows?.length ? <DetailChart data={trendData} widget={netSalesWidget} /> : <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">No trend available.</p>}</section>
+          <section><p className="label-mono mb-3 capitalize">Net sales by {defaultBreakdown.replaceAll('_', ' ')}</p>{breakdownQuery.isFetching ? <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">Loading breakdown...</p> : breakdownData?.rows?.length ? <DetailChart data={breakdownData} widget={netSalesWidget} /> : <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">No breakdown available.</p>}</section>
+          <section><p className="label-mono mb-3">Tender mix</p><DetailChart data={tenderData} widget={{ ...widget, columns: tenderData.measure_columns }} /></section>
+        </div>
+        <section><p className="label-mono mb-3">Order activity</p><div className="max-h-[480px] overflow-auto rounded-md border border-dash-border"><table className="w-full min-w-[1500px] text-left text-sm"><thead className="sticky top-0 bg-dash-elevated"><tr className="border-b border-dash-border">{table.map((column) => <th key={column.id} className="label-mono px-4 py-3 !text-[10px] capitalize">{column.label}</th>)}</tr></thead><tbody>{(tableData?.rows || []).map((row, index) => <tr key={`${row.period || ''}-${row.order_number || ''}-${index}`} className="border-b border-dash-border last:border-0">{table.map((column) => <td key={column.id} className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row[column.id], column.kind)}</td>)}</tr>)}{!(tableData?.rows || []).length && <tr><td colSpan={Math.max(1, table.length)} className="px-4 py-10 text-center text-dash-tertiary">No sales or voided checks for this range.</td></tr>}</tbody></table></div></section>
+      </div>
+    </Modal>
+  }
+  return (
+    <Modal title={`${widget.label} details`} onClose={onClose} width="max-w-6xl">
+      <div className="space-y-5 p-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {measures.map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(summaryRow[item.id], item.kind)}</p></div>)}
+        </div>
+        <div className="grid gap-5 lg:grid-cols-2">
+          <section><p className="label-mono mb-3">Trend</p>{trendQuery.isFetching && <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">Loading trend...</p>}{!trendQuery.isFetching && trendData?.rows?.length ? <DetailChart data={trendData} widget={widget} /> : !trendQuery.isFetching && <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">No trend available for this widget.</p>}</section>
+          <section><p className="label-mono mb-3">Breakdown</p>{breakdownQuery.isFetching && <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">Loading breakdown...</p>}{!breakdownQuery.isFetching && breakdownData?.rows?.length ? <DetailChart data={breakdownData} widget={widget} /> : !breakdownQuery.isFetching && <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">No breakdown available for this widget.</p>}</section>
+        </div>
+        <div className="overflow-x-auto rounded-md border border-dash-border">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead><tr className="border-b border-dash-border">{table.map((column) => <th key={column.id} className="label-mono px-4 py-3 !text-[10px] capitalize">{column.label}</th>)}</tr></thead>
+            <tbody>{(tableData?.rows || []).map((row, index) => <tr key={`${row.period || ''}-${row.breakdown || ''}-${index}`} className="border-b border-dash-border last:border-0">{table.map((column) => <td key={column.id} className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row[column.id], column.kind)}</td>)}</tr>)}{!(tableData?.rows || []).length && <tr><td colSpan={Math.max(1, table.length)} className="px-4 py-10 text-center text-dash-tertiary">No data for this range.</td></tr>}</tbody>
+          </table>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function DiscountReviewWidget({ widget, data, onSettings, onOpenDetails }) {
   const summary = data?.summary || {}
   const employees = (data?.employees || []).filter((employee) => employee.action_count > 0).slice(0, 10)
   const alerts = data?.alerts || []
   const reasons = data?.reasons || []
   const scopeRows = data?.scope_breakdown || []
   const scopeName = scopeNoun(data)
-  return <section className="glass-card rounded-lg p-5 xl:col-span-4">
+  return <section onClick={onOpenDetails} className="glass-card cursor-pointer rounded-lg p-5 transition hover:border-shell-accent/40 xl:col-span-4">
     <WidgetHeader widget={widget} onSettings={onSettings} />
     {scopedBreakdown(data) && <div className="mb-5 rounded-md border border-dash-border p-4"><div className="mb-3 flex items-center gap-2"><Layers3 size={15} className="text-dash-secondary" /><h3 className="text-sm font-semibold capitalize">Impact by {scopeName}</h3></div>{scopeRows.length ? <div className="grid gap-2 md:grid-cols-2">{scopeRows.map((row) => <div key={row.breakdown} className="flex items-center justify-between gap-3 rounded-md bg-white/[0.03] p-3"><div className="min-w-0"><p className="truncate text-sm font-semibold">{row.breakdown}</p><p className="text-[10px] text-dash-tertiary">{number(row.action_count)} actions · {money(row.average_action_amount)} average</p></div><p className="shrink-0 font-mono text-sm">{money(row.total_amount)}</p></div>)}</div> : <p className="text-sm text-dash-tertiary">No attributed {scopeName} activity for this range.</p>}</div>}
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -402,11 +594,11 @@ function DiscountReviewWidget({ widget, data, onSettings }) {
   </section>
 }
 
-export default function HomepageWidgets({ scope, restaurantId, period, anchorDate, groupIds = null, includeUngrouped = false }) {
+export default function HomepageWidgets({ scope, restaurantId, period, anchorDate, groupIds = null, includeUngrouped = false, onScopeLoaded = null }) {
   const queryClient = useQueryClient()
   const [configureOpen, setConfigureOpen] = useState(false)
   const [settingsId, setSettingsId] = useState(null)
-  const [expandedKpi, setExpandedKpi] = useState(null)
+  const [detailId, setDetailId] = useState(null)
   const [saving, setSaving] = useState(false)
   const preferencePath = scope === 'portfolio' ? '/portfolio-reports/homepage/preferences' : `/restaurants/${restaurantId}/reports/homepage/preferences`
   const preferenceQuery = useQuery({ queryKey: ['homepage-preferences', scope, restaurantId], queryFn: () => fetchWithSupabaseAuth(preferencePath), enabled: scope === 'portfolio' || Boolean(restaurantId) })
@@ -425,12 +617,9 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
     queryFn: () => fetchWithSupabaseAuth(dataPath, { method: 'POST', body: JSON.stringify({ period, anchor_date: anchorDate || null, widget_ids: orderedVisible, widget_settings: preference.widget_settings || {}, ...portfolioScope }) }),
     enabled: orderedVisible.length > 0,
   })
-  const richMetricsQuery = useQuery({
-    queryKey: ['owner-metrics', restaurantId, period],
-    queryFn: () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/owner-analytics/metrics?period=${period}`),
-    enabled: scope === 'restaurant' && Boolean(restaurantId),
-    placeholderData: keepPreviousData,
-  })
+  useEffect(() => {
+    if (dataQuery.data?.scope && onScopeLoaded) onScopeLoaded(dataQuery.data.scope)
+  }, [dataQuery.data?.scope, onScopeLoaded])
   const savePreference = async (next) => {
     setSaving(true)
     try {
@@ -463,18 +652,21 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
         if (!widget) return null
         const data = dataQuery.data?.widgets?.[id]
         const onSettings = () => setSettingsId(id)
+        const onOpenDetails = () => setDetailId(id)
         const settings = preference.widget_settings?.[id] || {}
-        if (scopedBreakdown(data) && id !== 'discount_review') return <ScopedBreakdownWidget key={id} widget={widget} data={data} settings={settings} onSettings={onSettings} />
-        if (KPI_WIDGETS.has(id)) return <KpiWidget key={id} widget={widget} data={data} detail={richKpiDetail(id, richMetricsQuery.data)} expanded={expandedKpi === id} onToggle={() => setExpandedKpi((current) => current === id ? null : id)} onSettings={onSettings} />
-        if (id === 'discount_review') return <DiscountReviewWidget key={id} widget={widget} data={data} onSettings={onSettings} />
-        if (id === 'menu_performance') return <MenuPerformanceWidget key={id} widget={widget} data={data} settings={settings} onSettings={onSettings} />
-        if (id === 'sales_trend' || settings.display_mode === 'chart') return <ChartWidget key={id} widget={widget} data={data} settings={settings} onSettings={onSettings} />
-        if (!(data?.dimension_columns || []).length && (data?.rows || []).length <= 1 && (data?.measure_columns || []).length > 1) return <SummaryWidget key={id} widget={widget} data={data} onSettings={onSettings} />
-        return <TableWidget key={id} widget={widget} data={data} onSettings={onSettings} />
+        if (id === 'sales_summary') return <SalesWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
+        if (scopedBreakdown(data) && id !== 'discount_review') return <ScopedBreakdownWidget key={id} widget={widget} data={data} settings={settings} onSettings={onSettings} onOpenDetails={onOpenDetails} />
+        if (KPI_WIDGETS.has(id)) return <KpiWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
+        if (id === 'discount_review') return <DiscountReviewWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
+        if (id === 'menu_performance') return <MenuPerformanceWidget key={id} widget={widget} data={data} settings={settings} onSettings={onSettings} onOpenDetails={onOpenDetails} />
+        if (id === 'sales_trend' || settings.display_mode === 'chart') return <ChartWidget key={id} widget={widget} data={data} settings={settings} onSettings={onSettings} onOpenDetails={onOpenDetails} />
+        if (!(data?.dimension_columns || []).length && (data?.rows || []).length <= 1 && (data?.measure_columns || []).length > 1) return <SummaryWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
+        return <TableWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
       })}
     </div>
     {!orderedVisible.length && <div className="rounded-md border border-dash-border p-8 text-center"><FileText className="mx-auto text-dash-tertiary" /><p className="mt-3 text-sm text-dash-secondary">Choose widgets to build this homepage.</p></div>}
     {configureOpen && <ConfigureModal catalog={preference.catalog || []} visible={preference.visible_widgets || []} order={preference.widget_order || []} saving={saving} onClose={() => setConfigureOpen(false)} onSave={(visible, order) => savePreference({ visible_widgets: visible, widget_order: order, widget_settings: preference.widget_settings || {} })} />}
     {selectedWidget && <WidgetSettingsModal widget={selectedWidget} widgetData={dataQuery.data?.widgets?.[settingsId]} dimensions={dimensionQuery.data} settings={preference.widget_settings?.[settingsId] || {}} pdfSettings={preference.widget_pdf_settings?.[settingsId] || {}} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={saveSettings} onSavePdf={(settings) => saveWidgetPreference('pdf', settings)} />}
+    {detailId && <WidgetDetailModal widget={(preference.catalog || []).find((widget) => widget.id === detailId) || { label: 'Widget', columns: [] }} data={dataQuery.data?.widgets?.[detailId]} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} settings={preference.widget_settings?.[detailId] || {}} onClose={() => setDetailId(null)} />}
   </div>
 }

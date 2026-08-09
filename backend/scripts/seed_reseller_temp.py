@@ -14,6 +14,66 @@ load_dotenv(os.environ.get("SHIRE_BACKEND_ENV", ".env"))
 
 RESELLER_ID = uuid.UUID("4567634c-17db-4c91-b6e7-422e217708ff")
 
+
+def host_floor_map_from_seed_tables(floor_tables: list[dict], floor_plan: dict) -> dict:
+    """Convert the seed's top-left pixel tables into the canonical
+    shire.host_floor_map.v1 shape (normalized center fractions)."""
+    canvas_w = float(floor_plan.get("canvasWidth") or 1000)
+    canvas_h = float(floor_plan.get("canvasHeight") or 680)
+    tables_by_id: dict[str, dict] = {}
+    total_capacity = 0
+    section_names: list[str] = []
+    for t in floor_tables:
+        section = t.get("section") or "Main Floor"
+        if section not in section_names:
+            section_names.append(section)
+        width = float(t.get("width") or 120)
+        height = float(t.get("height") or 68)
+        capacity = int(t.get("capacity") or 4)
+        total_capacity += capacity
+        tid = str(t["id"])
+        tables_by_id[tid] = {
+            "id": tid,
+            "backend_table_id": tid,
+            "tableId": tid,
+            "externalId": tid,
+            "table_number": str(t.get("number") or t.get("label") or tid),
+            "label": str(t.get("label") or t.get("number") or tid),
+            "name": str(t.get("label") or t.get("number") or tid),
+            "capacity": capacity,
+            "shape": "rectangular" if t.get("shape") in (None, "rect") else ("round" if t.get("shape") == "circle" else t["shape"]),
+            "table_type": "rectangular" if t.get("shape") in (None, "rect") else ("round" if t.get("shape") == "circle" else t["shape"]),
+            "sectionName": section,
+            "roomId": section.lower().replace(" ", "-"),
+            "position": {
+                "center_x": round((float(t.get("x") or 0) + width / 2) / canvas_w, 4),
+                "center_y": round((float(t.get("y") or 0) + height / 2) / canvas_h, 4),
+                "width": round(width / canvas_w, 4),
+                "height": round(height / canvas_h, 4),
+            },
+        }
+    return {
+        "schema": "shire.host_floor_map.v1",
+        "source": "reseller_temp_seed",
+        "canvasWidth": 1000,
+        "canvasHeight": 680,
+        "coordinateMode": "normalized_center",
+        "sourceImageUrl": None,
+        "rooms": [
+            {
+                "roomId": section.lower().replace(" ", "-"),
+                "label": section.upper(),
+                "filterLabel": section,
+                "layoutMode": "freeform",
+            }
+            for section in section_names
+        ],
+        "tables": tables_by_id,
+        "totalTables": len(tables_by_id),
+        "totalCapacity": total_capacity,
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
+    }
+
 RESTAURANTS = [
     ("00000000-0000-4000-8000-000000000101", "Shire Temp Bistro", "shire-temp-bistro", "Casual American", "casual", ["American", "Brunch"], "101 Market St", "Charleston", "SC", "29401"),
     ("00000000-0000-4000-8000-000000000102", "Shire Temp Cantina", "shire-temp-cantina", "Modern Mexican", "casual", ["Mexican", "Cocktails"], "220 King St", "Charleston", "SC", "29401"),
@@ -266,11 +326,11 @@ async def main() -> None:
                     INSERT INTO public.restaurants (
                       id, name, timezone, config, owner_id, slug, address, city, state, postal_code,
                       country, type, cuisine_types, phone, email, website, seating_capacity, table_count,
-                      status, onboarding_step, onboarding_completed_at, floor_plan_data,
+                      status, onboarding_step, onboarding_completed_at,
                       floor_plan_updated_at, public_slug, join_code, display_name
                     )
                     VALUES ($1,$2,'America/New_York',$3::jsonb,NULL,$4,$5,$6,$7,$8,'US',$9,$10::text[],
-                            '555-0101',$11,$12,96,16,'active',20,$13,$14::jsonb,$13,$4,$15,$16)
+                            '555-0101',$11,$12,96,16,'active',20,$13,$13,$4,$14,$15)
                     """,
                     rid,
                     name,
@@ -285,9 +345,22 @@ async def main() -> None:
                     f"hello+{slug}@shire.local",
                     f"https://{slug}.shire.local",
                     completed,
-                    json.dumps(floor_plan),
                     str(41010 + idx),
                     display,
+                )
+                # Canonical floor plan: host_floor_maps is the sole store (the
+                # legacy restaurants.floor_plan_data column was retired).
+                await conn.execute(
+                    """
+                    INSERT INTO public.host_floor_maps (restaurant_id, map_version, floor_map_json, updated_at)
+                    VALUES ($1, 1, $2::jsonb, now())
+                    ON CONFLICT (restaurant_id) DO UPDATE
+                    SET floor_map_json = EXCLUDED.floor_map_json,
+                        map_version = host_floor_maps.map_version + 1,
+                        updated_at = now()
+                    """,
+                    rid,
+                    json.dumps(host_floor_map_from_seed_tables(floor_tables, floor_plan)),
                 )
                 await conn.execute(
                     """

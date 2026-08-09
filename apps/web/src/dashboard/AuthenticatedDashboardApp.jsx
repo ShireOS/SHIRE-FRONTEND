@@ -5133,7 +5133,7 @@ export function RestaurantWorkspace({
         {activeTab === 'analytics' && (
           <>
             <ResellerAccessCard restaurant={restaurant} />
-            <LegacyAnalyticsDashboard restaurant={restaurant} />
+            <AnalyticsDashboard restaurant={restaurant} />
           </>
         )}
         {activeTab === 'checks' && <CheckLedgerSection restaurantId={restaurantId} />}

@@ -100,7 +100,6 @@ const CAPACITY_OPTIONS = [
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const MAX_SPLIT_COUNT = 8
 const DEFAULT_HOURS = [
   { day_of_week: 0, open_time: '11:00', close_time: '22:00', is_closed: true },
   { day_of_week: 1, open_time: '11:00', close_time: '22:00', is_closed: false },
@@ -1317,31 +1316,22 @@ function defaultCloseoutSettings() {
   }
 }
 
+// Only fields the POS actually enforces. The old form also collected split
+// limits, merge/transfer toggles, tab auto-close, reopen allowance, guest-check
+// printing, and notes — none of which any POS code path reads; they were
+// removed rather than shown as working controls.
 function defaultCheckWorkflowSettings() {
   return {
     seat_numbers_enabled: true,
     seat_number_required: false,
     course_required: false,
-    allow_split_checks: true,
     split_by_seat_enabled: true,
     split_by_item_enabled: true,
-    split_evenly_enabled: true,
-    max_split_count: '8',
-    allow_partial_payments: true,
-    require_manager_for_split_after_payment: true,
-    allow_check_merge: true,
-    allow_table_transfer: true,
-    allow_server_transfer: true,
-    require_manager_for_transfer: false,
     allow_bar_tabs: true,
     tab_name_required: true,
     card_preauth_required: false,
     default_preauth_amount: '',
-    allow_tabs_without_table: true,
-    auto_close_paid_tabs: true,
-    allow_reopen_closed_checks: false,
     require_manager_for_reopen: true,
-    allow_send_before_required_modifiers: false,
     allow_hold_and_fire: true,
     default_order_fire_mode: 'immediate',
     default_hold_minutes: '10',
@@ -1350,9 +1340,8 @@ function defaultCheckWorkflowSettings() {
     allow_item_seat_move: true,
     allow_multi_item_seat_move: true,
     require_manager_for_item_move_after_send: false,
-    print_guest_check_by_default: true,
     sent_item_correction_window_minutes: '4',
-    notes: '',
+    to_go_enabled: false,
   }
 }
 
@@ -1718,20 +1707,18 @@ function normalizeCloseoutSettings(row) {
 function normalizeCheckWorkflowSettings(row) {
   const fallback = defaultCheckWorkflowSettings()
   const source = row && typeof row === 'object' ? row : {}
-  const maxSplitCount = Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(String(source.max_split_count ?? '').replace(/[^\d]/g, '') || fallback.max_split_count)))
   const holdPresetMinutes = Array.isArray(source.hold_preset_minutes)
     ? Array.from(new Set(source.hold_preset_minutes.map(Number).filter(minutes => Number.isFinite(minutes) && minutes > 0))).slice(0, 8)
     : fallback.hold_preset_minutes
+  const normalized = {}
+  for (const key of Object.keys(fallback)) normalized[key] = source[key] ?? fallback[key]
   return {
-    ...fallback,
-    ...source,
-    max_split_count: String(maxSplitCount),
+    ...normalized,
     default_preauth_amount: source.default_preauth_amount == null ? '' : sanitizeNumber(source.default_preauth_amount),
     default_order_fire_mode: ORDER_FIRE_MODE_OPTIONS.some(option => option.value === source.default_order_fire_mode) ? source.default_order_fire_mode : fallback.default_order_fire_mode,
     default_hold_minutes: source.default_hold_minutes == null ? fallback.default_hold_minutes : String(source.default_hold_minutes).replace(/[^\d]/g, '').slice(0, 3) || fallback.default_hold_minutes,
     hold_preset_minutes: holdPresetMinutes.length > 0 ? holdPresetMinutes : fallback.hold_preset_minutes,
     sent_item_correction_window_minutes: String(Math.max(0, Math.min(15, Number(source.sent_item_correction_window_minutes ?? fallback.sent_item_correction_window_minutes) || 0))),
-    notes: source.notes || '',
   }
 }
 
@@ -1831,12 +1818,10 @@ function checkWorkflowSettingsPayload(checkWorkflowSettings) {
   const holdPresetMinutes = Array.from(new Set(settings.hold_preset_minutes.map(Number).filter(minutes => Number.isFinite(minutes) && minutes > 0))).slice(0, 8)
   return {
     ...settings,
-    max_split_count: Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(settings.max_split_count || MAX_SPLIT_COUNT))),
     default_preauth_amount: settings.default_preauth_amount === '' ? null : Number(settings.default_preauth_amount),
     default_hold_minutes: Math.max(1, Math.min(360, Number(settings.default_hold_minutes || 10))),
     sent_item_correction_window_minutes: Math.max(0, Math.min(15, Number(settings.sent_item_correction_window_minutes || 0))),
     hold_preset_minutes: holdPresetMinutes.length > 0 ? holdPresetMinutes : defaultCheckWorkflowSettings().hold_preset_minutes,
-    notes: settings.notes.trim() || null,
   }
 }
 
@@ -4189,7 +4174,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       {activeSetupTab === 'check_workflow' && (
         <SectionShell
           title="Check Workflow"
-          description="Split checks, seat numbers, bar tabs, preauthorization, transfers, check reopening, and order fire rules."
+          description="Seat numbers, order fire and hold rules, split-by-seat/item, bar tabs, preauthorization, and reopen approval."
           actions={publishControls('Save workflow', saveCheckWorkflowSettings)}
         >
           <div className="space-y-5">
@@ -4199,12 +4184,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                 <Field label="Default Fire Mode">
                   <SelectInput value={checkWorkflowSettings.default_order_fire_mode} onChange={event => updateCheckWorkflowSettings({ default_order_fire_mode: event.target.value })}>
                     {ORDER_FIRE_MODE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </SelectInput>
-                </Field>
-                <Field label="Guest Checks">
-                  <SelectInput value={checkWorkflowSettings.print_guest_check_by_default ? 'yes' : 'no'} onChange={event => updateCheckWorkflowSettings({ print_guest_check_by_default: event.target.value === 'yes' })}>
-                    <option value="yes">Print by default</option>
-                    <option value="no">Print on request</option>
                   </SelectInput>
                 </Field>
                 <Field label="Default Hold Minutes">
@@ -4238,33 +4217,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   ['allow_item_seat_move', 'Move item seat'],
                   ['allow_multi_item_seat_move', 'Multi-move items'],
                   ['require_manager_for_item_move_after_send', 'Manager after sent'],
-                  ['allow_send_before_required_modifiers', 'Send without required modifiers'],
-                ].map(([field, label]) => (
-                  <SmallButton key={field} variant={checkWorkflowSettings[field] ? 'primary' : 'secondary'} onClick={() => updateCheckWorkflowSettings({ [field]: !checkWorkflowSettings[field] })}>{label}</SmallButton>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-              <p className="label-mono mb-3">Split Checks & Payments</p>
-              <div className="grid gap-3 lg:grid-cols-3">
-                <Field label="Max Split Count">
-                  <TextInput value={checkWorkflowSettings.max_split_count} inputMode="numeric" onChange={event => updateCheckWorkflowSettings({ max_split_count: String(Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(event.target.value.replace(/[^\d]/g, '') || 1)))) })} placeholder="8" />
-                </Field>
-                <Field label="Partial Payments">
-                  <SelectInput value={checkWorkflowSettings.allow_partial_payments ? 'yes' : 'no'} onChange={event => updateCheckWorkflowSettings({ allow_partial_payments: event.target.value === 'yes' })}>
-                    <option value="yes">Allow</option>
-                    <option value="no">Do not allow</option>
-                  </SelectInput>
-                </Field>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {[
-                  ['allow_split_checks', 'Split checks'],
                   ['split_by_seat_enabled', 'Split by seat'],
                   ['split_by_item_enabled', 'Split by item'],
-                  ['split_evenly_enabled', 'Split evenly'],
-                  ['require_manager_for_split_after_payment', 'Manager after payment split'],
+                  ['to_go_enabled', 'TO GO button'],
                 ].map(([field, label]) => (
                   <SmallButton key={field} variant={checkWorkflowSettings[field] ? 'primary' : 'secondary'} onClick={() => updateCheckWorkflowSettings({ [field]: !checkWorkflowSettings[field] })}>{label}</SmallButton>
                 ))}
@@ -4289,34 +4244,11 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                 {[
                   ['allow_bar_tabs', 'Bar tabs'],
                   ['card_preauth_required', 'Card preauth'],
-                  ['allow_tabs_without_table', 'Tabs without table'],
-                  ['auto_close_paid_tabs', 'Auto-close paid tabs'],
-                ].map(([field, label]) => (
-                  <SmallButton key={field} variant={checkWorkflowSettings[field] ? 'primary' : 'secondary'} onClick={() => updateCheckWorkflowSettings({ [field]: !checkWorkflowSettings[field] })}>{label}</SmallButton>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-              <p className="label-mono mb-3">Transfers & Reopening</p>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  ['allow_check_merge', 'Merge checks'],
-                  ['allow_table_transfer', 'Table transfer'],
-                  ['allow_server_transfer', 'Server transfer'],
-                  ['require_manager_for_transfer', 'Manager transfer approval'],
-                  ['allow_reopen_closed_checks', 'Reopen closed checks'],
                   ['require_manager_for_reopen', 'Manager reopen approval'],
                 ].map(([field, label]) => (
                   <SmallButton key={field} variant={checkWorkflowSettings[field] ? 'primary' : 'secondary'} onClick={() => updateCheckWorkflowSettings({ [field]: !checkWorkflowSettings[field] })}>{label}</SmallButton>
                 ))}
               </div>
-              <textarea
-                value={checkWorkflowSettings.notes}
-                onChange={event => updateCheckWorkflowSettings({ notes: event.target.value })}
-                placeholder="Optional check workflow notes..."
-                className="mt-4 min-h-24 w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-dash-primary outline-none transition focus:border-gold/40 focus:ring-2 focus:ring-gold/10"
-              />
             </div>
           </div>
         </SectionShell>

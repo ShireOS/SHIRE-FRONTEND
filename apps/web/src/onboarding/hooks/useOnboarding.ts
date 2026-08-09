@@ -7,7 +7,6 @@ import { useAuth } from '../../auth'
 import type { Restaurant } from '@shire/db'
 import { serializeTipRoleRules, serializeWeekdayTipoutOverrides } from '../../shared/tips/tipPayrollPolicy'
 
-const MAX_SPLIT_COUNT = 8
 
 export type RestaurantType =
   | 'fine_dining'
@@ -253,30 +252,19 @@ export interface CloseoutSettingsData {
   eod_email_formats: Array<'pdf' | 'xlsx'>
 }
 
+// Only fields the POS enforces; the dropped split/merge/transfer/tab-close
+// toggles were never read by any POS code path.
 export interface CheckWorkflowSettingsData {
   seat_numbers_enabled: boolean
   seat_number_required: boolean
   course_required: boolean
-  allow_split_checks: boolean
   split_by_seat_enabled: boolean
   split_by_item_enabled: boolean
-  split_evenly_enabled: boolean
-  max_split_count: string
-  allow_partial_payments: boolean
-  require_manager_for_split_after_payment: boolean
-  allow_check_merge: boolean
-  allow_table_transfer: boolean
-  allow_server_transfer: boolean
-  require_manager_for_transfer: boolean
   allow_bar_tabs: boolean
   tab_name_required: boolean
   card_preauth_required: boolean
   default_preauth_amount: string
-  allow_tabs_without_table: boolean
-  auto_close_paid_tabs: boolean
-  allow_reopen_closed_checks: boolean
   require_manager_for_reopen: boolean
-  allow_send_before_required_modifiers: boolean
   allow_hold_and_fire: boolean
   default_order_fire_mode: 'manual' | 'immediate' | 'by_course'
   default_hold_minutes: string
@@ -285,9 +273,7 @@ export interface CheckWorkflowSettingsData {
   allow_item_seat_move: boolean
   allow_multi_item_seat_move: boolean
   require_manager_for_item_move_after_send: boolean
-  print_guest_check_by_default: boolean
   sent_item_correction_window_minutes: string
-  notes: string
 }
 
 export interface JobCodeData {
@@ -573,26 +559,13 @@ const defaultCheckWorkflowSettings = (): CheckWorkflowSettingsData => ({
   seat_numbers_enabled: true,
   seat_number_required: false,
   course_required: false,
-  allow_split_checks: true,
   split_by_seat_enabled: true,
   split_by_item_enabled: true,
-  split_evenly_enabled: true,
-  max_split_count: '8',
-  allow_partial_payments: true,
-  require_manager_for_split_after_payment: true,
-  allow_check_merge: true,
-  allow_table_transfer: true,
-  allow_server_transfer: true,
-  require_manager_for_transfer: false,
   allow_bar_tabs: true,
   tab_name_required: true,
   card_preauth_required: false,
   default_preauth_amount: '',
-  allow_tabs_without_table: true,
-  auto_close_paid_tabs: true,
-  allow_reopen_closed_checks: false,
   require_manager_for_reopen: true,
-  allow_send_before_required_modifiers: false,
   allow_hold_and_fire: true,
   default_order_fire_mode: 'immediate',
   default_hold_minutes: '10',
@@ -601,9 +574,7 @@ const defaultCheckWorkflowSettings = (): CheckWorkflowSettingsData => ({
   allow_item_seat_move: true,
   allow_multi_item_seat_move: true,
   require_manager_for_item_move_after_send: false,
-  print_guest_check_by_default: true,
   sent_item_correction_window_minutes: '4',
-  notes: '',
 })
 
 const INITIAL_DATA: OnboardingData = {
@@ -1082,7 +1053,6 @@ const normalizeCloseoutSettings = (value: unknown): CloseoutSettingsData => {
 const normalizeCheckWorkflowSettings = (value: unknown): CheckWorkflowSettingsData => {
   const fallback = defaultCheckWorkflowSettings()
   if (!isRecord(value)) return fallback
-  const maxSplitCount = Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(asStringNumber(value.max_split_count) || fallback.max_split_count)))
   const holdPresetValues = Array.isArray(value.hold_preset_minutes)
     ? Array.from(new Set(value.hold_preset_minutes.map(Number).filter(minutes => Number.isFinite(minutes) && minutes > 0))).slice(0, 8)
     : fallback.hold_preset_minutes
@@ -1090,26 +1060,13 @@ const normalizeCheckWorkflowSettings = (value: unknown): CheckWorkflowSettingsDa
     seat_numbers_enabled: typeof value.seat_numbers_enabled === 'boolean' ? value.seat_numbers_enabled : fallback.seat_numbers_enabled,
     seat_number_required: typeof value.seat_number_required === 'boolean' ? value.seat_number_required : fallback.seat_number_required,
     course_required: typeof value.course_required === 'boolean' ? value.course_required : fallback.course_required,
-    allow_split_checks: typeof value.allow_split_checks === 'boolean' ? value.allow_split_checks : fallback.allow_split_checks,
     split_by_seat_enabled: typeof value.split_by_seat_enabled === 'boolean' ? value.split_by_seat_enabled : fallback.split_by_seat_enabled,
     split_by_item_enabled: typeof value.split_by_item_enabled === 'boolean' ? value.split_by_item_enabled : fallback.split_by_item_enabled,
-    split_evenly_enabled: typeof value.split_evenly_enabled === 'boolean' ? value.split_evenly_enabled : fallback.split_evenly_enabled,
-    max_split_count: String(maxSplitCount),
-    allow_partial_payments: typeof value.allow_partial_payments === 'boolean' ? value.allow_partial_payments : fallback.allow_partial_payments,
-    require_manager_for_split_after_payment: typeof value.require_manager_for_split_after_payment === 'boolean' ? value.require_manager_for_split_after_payment : fallback.require_manager_for_split_after_payment,
-    allow_check_merge: typeof value.allow_check_merge === 'boolean' ? value.allow_check_merge : fallback.allow_check_merge,
-    allow_table_transfer: typeof value.allow_table_transfer === 'boolean' ? value.allow_table_transfer : fallback.allow_table_transfer,
-    allow_server_transfer: typeof value.allow_server_transfer === 'boolean' ? value.allow_server_transfer : fallback.allow_server_transfer,
-    require_manager_for_transfer: typeof value.require_manager_for_transfer === 'boolean' ? value.require_manager_for_transfer : fallback.require_manager_for_transfer,
     allow_bar_tabs: typeof value.allow_bar_tabs === 'boolean' ? value.allow_bar_tabs : fallback.allow_bar_tabs,
     tab_name_required: typeof value.tab_name_required === 'boolean' ? value.tab_name_required : fallback.tab_name_required,
     card_preauth_required: typeof value.card_preauth_required === 'boolean' ? value.card_preauth_required : fallback.card_preauth_required,
     default_preauth_amount: asStringNumber(value.default_preauth_amount),
-    allow_tabs_without_table: typeof value.allow_tabs_without_table === 'boolean' ? value.allow_tabs_without_table : fallback.allow_tabs_without_table,
-    auto_close_paid_tabs: typeof value.auto_close_paid_tabs === 'boolean' ? value.auto_close_paid_tabs : fallback.auto_close_paid_tabs,
-    allow_reopen_closed_checks: typeof value.allow_reopen_closed_checks === 'boolean' ? value.allow_reopen_closed_checks : fallback.allow_reopen_closed_checks,
     require_manager_for_reopen: typeof value.require_manager_for_reopen === 'boolean' ? value.require_manager_for_reopen : fallback.require_manager_for_reopen,
-    allow_send_before_required_modifiers: typeof value.allow_send_before_required_modifiers === 'boolean' ? value.allow_send_before_required_modifiers : fallback.allow_send_before_required_modifiers,
     allow_hold_and_fire: typeof value.allow_hold_and_fire === 'boolean' ? value.allow_hold_and_fire : fallback.allow_hold_and_fire,
     default_order_fire_mode: asEnum(value.default_order_fire_mode, ORDER_FIRE_MODES, fallback.default_order_fire_mode),
     default_hold_minutes: asStringNumber(value.default_hold_minutes) || fallback.default_hold_minutes,
@@ -1118,9 +1075,7 @@ const normalizeCheckWorkflowSettings = (value: unknown): CheckWorkflowSettingsDa
     allow_item_seat_move: typeof value.allow_item_seat_move === 'boolean' ? value.allow_item_seat_move : fallback.allow_item_seat_move,
     allow_multi_item_seat_move: typeof value.allow_multi_item_seat_move === 'boolean' ? value.allow_multi_item_seat_move : fallback.allow_multi_item_seat_move,
     require_manager_for_item_move_after_send: typeof value.require_manager_for_item_move_after_send === 'boolean' ? value.require_manager_for_item_move_after_send : fallback.require_manager_for_item_move_after_send,
-    print_guest_check_by_default: typeof value.print_guest_check_by_default === 'boolean' ? value.print_guest_check_by_default : fallback.print_guest_check_by_default,
     sent_item_correction_window_minutes: String(Math.max(0, Math.min(15, Number(asStringNumber(value.sent_item_correction_window_minutes) || fallback.sent_item_correction_window_minutes)))),
-    notes: asString(value.notes),
   }
 }
 
@@ -1377,12 +1332,10 @@ const checkWorkflowSettingsToPayload = (data: OnboardingData) => {
   const holdPresetMinutes = Array.from(new Set(settings.hold_preset_minutes.map(Number).filter(minutes => Number.isFinite(minutes) && minutes > 0))).slice(0, 8)
   return {
     ...settings,
-    max_split_count: Math.max(1, Math.min(MAX_SPLIT_COUNT, Number(settings.max_split_count || MAX_SPLIT_COUNT))),
     default_preauth_amount: settings.default_preauth_amount === '' ? null : Number(settings.default_preauth_amount),
     default_hold_minutes: Math.max(1, Math.min(360, Number(settings.default_hold_minutes || 10))),
     sent_item_correction_window_minutes: Math.max(0, Math.min(15, Number(settings.sent_item_correction_window_minutes || 0))),
     hold_preset_minutes: holdPresetMinutes.length > 0 ? holdPresetMinutes : defaultCheckWorkflowSettings().hold_preset_minutes,
-    notes: settings.notes.trim() || null,
   }
 }
 
