@@ -24,6 +24,7 @@ import {
 interface EditorOption {
   localId: string
   modifierId: string | null   // saved menu_modifiers id
+  linkedToGroup: boolean      // modifier row and question link are separate writes
   name: string
   priceDelta: string          // controlled input, parsed on save
   isDefault: boolean
@@ -64,6 +65,7 @@ const modifiersBase = (restaurantId: string) =>
 const blankOption = (): EditorOption => ({
   localId: crypto.randomUUID(),
   modifierId: null,
+  linkedToGroup: false,
   name: '',
   priceDelta: '',
   isDefault: false,
@@ -91,6 +93,17 @@ const decimal = (value: string) => {
   return rest.length ? `${whole}.${rest.join('').slice(0, 2)}` : whole
 }
 
+const responseError = async (response: Response, fallback: string) => {
+  let detail = ''
+  try {
+    const payload = await response.json()
+    detail = typeof payload?.detail === 'string' ? payload.detail : payload?.detail?.message || payload?.message || ''
+  } catch {
+    // Non-JSON failures still surface the endpoint and status below.
+  }
+  return new Error(detail || `${fallback} (${response.status})`)
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 
 export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: ModifierEditorProps) {
@@ -99,19 +112,22 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [popupFor, setPopupFor] = useState<string | null>(null) // localId of open popup
 
-  // Load existing questions + their answers on mount (survive back-navigation)
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true)
-      try {
+  // Load existing questions + their answers on mount (survive back-navigation).
+  // A failed modifier read must never masquerade as a genuinely empty menu.
+  const load = useCallback(async () => {
+    setLoading(true)
+    setLoadError(null)
+    try {
         const token = await getToken()
         const [groups, modifiersRes] = await Promise.all([
           fetchModifierGroups(restaurantId),
           fetch(modifiersBase(restaurantId), { headers: { Authorization: token } }),
         ])
-        const modifierRows: any[] = modifiersRes.ok ? await modifiersRes.json() : []
+        if (!modifiersRes.ok) throw await responseError(modifiersRes, 'Could not load modifiers')
+        const modifierRows: any[] = await modifiersRes.json()
         const modifiersById = new Map(modifierRows.map(row => [String(row.id), row]))
         setQuestions(groups
           // Allergy questions are managed by their own surface, not here.
@@ -130,6 +146,7 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
               return {
                 localId: option.modifier_id,
                 modifierId: option.modifier_id,
+                linkedToGroup: true,
                 name: modifier?.name ?? 'Modifier',
                 priceDelta: modifier && Number(modifier.price_delta) > 0 ? String(modifier.price_delta) : '',
                 isDefault: Boolean(option.is_default),
@@ -140,20 +157,22 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
             itemIds: new Set(group.item_ids),
           })))
         setRemovedGroupIds(new Set())
-      } catch {
-        // start with an empty list — the save path creates everything fresh
-      } finally {
-        setLoading(false)
-      }
+    } catch (loadFailure) {
+      setLoadError(loadFailure instanceof Error ? loadFailure.message : 'Could not load modifier questions.')
+    } finally {
+      setLoading(false)
     }
-    void load()
   }, [restaurantId])
+
+  useEffect(() => {
+    void load()
+  }, [load])
 
   const updateQuestion = useCallback((localId: string, patch: Partial<Omit<EditorQuestion, 'localId' | 'groupId' | 'options' | 'itemIds'>>) => {
     setQuestions(prev => prev.map(q => q.localId === localId ? { ...q, ...patch } : q))
   }, [])
 
-  const updateOption = useCallback((questionId: string, optionId: string, patch: Partial<Omit<EditorOption, 'localId' | 'modifierId'>>) => {
+  const updateOption = useCallback((questionId: string, optionId: string, patch: Partial<Omit<EditorOption, 'localId'>>) => {
     setQuestions(prev => prev.map(q => q.localId === questionId
       ? { ...q, options: q.options.map(o => o.localId === optionId ? { ...o, ...patch } : o) }
       : q))
@@ -170,7 +189,7 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
       return {
         ...q,
         options: q.options.filter(o => o.localId !== optionId),
-        removedOptionIds: option?.modifierId ? [...q.removedOptionIds, option.modifierId] : q.removedOptionIds,
+        removedOptionIds: option?.modifierId && option.linkedToGroup ? [...q.removedOptionIds, option.modifierId] : q.removedOptionIds,
       }
     }))
   }
@@ -210,16 +229,19 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
         const group = question.groupId
           ? await updateModifierGroup(question.groupId, groupDraft)
           : await createModifierGroup(restaurantId, groupDraft)
+        if (!question.groupId) {
+          // Save progress after each successful write. A later answer failure
+          // can then retry this group instead of creating a duplicate group.
+          setQuestions(prev => prev.map(candidate => (
+            candidate.localId === question.localId ? { ...candidate, groupId: group.id } : candidate
+          )))
+        }
 
-        const existingOptionIds = new Set(
-          question.groupId
-            ? question.options.filter(o => o.modifierId).map(o => o.modifierId as string)
-            : [],
-        )
         let optionOrder = 0
         for (const option of question.options) {
           if (option.name.trim() === '') continue
           const priceDelta = parseFloat(option.priceDelta) || 0
+          let modifierId = option.modifierId
           if (!option.modifierId) {
             // New answer: create the modifier, then add it to the question.
             const res = await fetch(modifiersBase(restaurantId), {
@@ -233,11 +255,14 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
                 is_active: true,
               }),
             })
-            if (!res.ok) throw new Error(`Failed to create "${option.name}"`)
+            if (!res.ok) throw await responseError(res, `Failed to create "${option.name}"`)
             const created: { id: string } = await res.json()
-            await addGroupOption(group.id, created.id, { is_default: option.isDefault, display_order: optionOrder })
+            modifierId = created.id
+            // Preserve the created modifier id even if the separate link write
+            // fails. The retry can link this row instead of cloning it.
+            updateOption(question.localId, option.localId, { modifierId, linkedToGroup: false })
           } else {
-            await fetch(`${modifiersBase(restaurantId)}/${option.modifierId}`, {
+            const response = await fetch(`${modifiersBase(restaurantId)}/${option.modifierId}`, {
               method: 'PUT',
               headers,
               body: JSON.stringify({
@@ -247,11 +272,14 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
                 print_on_kitchen_ticket: option.printOnKitchenTicket,
               }),
             })
-            if (existingOptionIds.has(option.modifierId)) {
-              await updateGroupOption(group.id, option.modifierId, { is_default: option.isDefault, display_order: optionOrder })
-            } else {
-              await addGroupOption(group.id, option.modifierId, { is_default: option.isDefault, display_order: optionOrder })
-            }
+            if (!response.ok) throw await responseError(response, `Failed to update "${option.name}"`)
+          }
+          if (!modifierId) throw new Error(`Modifier "${option.name}" did not return an id.`)
+          if (option.linkedToGroup) {
+            await updateGroupOption(group.id, modifierId, { is_default: option.isDefault, display_order: optionOrder })
+          } else {
+            await addGroupOption(group.id, modifierId, { is_default: option.isDefault, display_order: optionOrder })
+            updateOption(question.localId, option.localId, { modifierId, linkedToGroup: true })
           }
           optionOrder += 1
         }
@@ -313,7 +341,7 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
 
         <button
           onClick={() => void handleSave()}
-          disabled={saving}
+          disabled={saving || Boolean(loadError)}
           className="px-4 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-gray-100 disabled:opacity-40 transition-colors"
         >
           {saving ? 'Saving…' : validCount > 0 || removedGroupIds.size > 0 ? 'Save & Continue' : 'Skip'}
@@ -323,6 +351,19 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
       {error && (
         <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
           {error}
+        </div>
+      )}
+
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
+          <span>{loadError} Nothing was changed; retry the read before saving.</span>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="shrink-0 rounded-lg border border-red-400/30 px-3 py-1.5 font-medium hover:bg-red-500/10"
+          >
+            Retry
+          </button>
         </div>
       )}
 

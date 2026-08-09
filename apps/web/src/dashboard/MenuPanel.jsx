@@ -660,6 +660,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [editorPrefs, setEditorPrefs] = useState(null)
   const editorPrefsRef = useRef(null)
   const editorPrefsTimerRef = useRef(null)
+  const editorPrefsPendingRef = useRef(null)
+  const editorPrefsRestaurantRef = useRef(restaurantId)
+  editorPrefsRestaurantRef.current = restaurantId
   const [expandedCategoryNames, setExpandedCategoryNames] = useState(() => new Set())
   const [categoryScrollTarget, setCategoryScrollTarget] = useState(null)
 
@@ -811,17 +814,37 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   }
 
   const loadEditorPrefs = async () => {
+    const targetRestaurantId = restaurantId
     // Layout prefs are cosmetic — swallow failures so they never block the menu.
     try {
-      const data = await api(`/restaurants/${restaurantId}/reports/view-preferences`)
+      const data = await api(`/restaurants/${targetRestaurantId}/reports/view-preferences`)
+      if (editorPrefsRestaurantRef.current !== targetRestaurantId) return
       const saved = data?.settings?.menu_item_editor
       const next = saved && typeof saved === 'object' ? saved : {}
       editorPrefsRef.current = next
       setEditorPrefs(next)
     } catch {
+      if (editorPrefsRestaurantRef.current !== targetRestaurantId) return
       editorPrefsRef.current = {}
       setEditorPrefs({})
     }
+  }
+
+  const persistEditorPrefs = ({ restaurantId: targetRestaurantId, settings }) => {
+    void fetchWithSupabaseAuth(`/restaurants/${targetRestaurantId}/reports/view-preferences/menu_item_editor`, {
+      method: 'PUT',
+      body: JSON.stringify({ settings }),
+    }).catch(() => {})
+  }
+
+  const flushEditorPrefs = () => {
+    if (editorPrefsTimerRef.current) {
+      clearTimeout(editorPrefsTimerRef.current)
+      editorPrefsTimerRef.current = null
+    }
+    const pending = editorPrefsPendingRef.current
+    editorPrefsPendingRef.current = null
+    if (pending) persistEditorPrefs(pending)
   }
 
   // Optimistic local merge; the PUT is debounced so drag/collapse bursts
@@ -831,27 +854,21 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     editorPrefsRef.current = next
     setEditorPrefs(next)
     if (editorPrefsTimerRef.current) clearTimeout(editorPrefsTimerRef.current)
+    editorPrefsPendingRef.current = { restaurantId, settings: next }
     editorPrefsTimerRef.current = setTimeout(() => {
       editorPrefsTimerRef.current = null
-      void api(`/restaurants/${restaurantId}/reports/view-preferences/menu_item_editor`, {
-        method: 'PUT',
-        body: JSON.stringify({ settings: editorPrefsRef.current }),
-      }).catch(() => {})
+      const pending = editorPrefsPendingRef.current
+      editorPrefsPendingRef.current = null
+      if (pending) persistEditorPrefs(pending)
     }, 450)
   }
 
   useEffect(() => () => {
-    // Flush a pending layout save on unmount so the last change isn't lost.
-    if (editorPrefsTimerRef.current) {
-      clearTimeout(editorPrefsTimerRef.current)
-      editorPrefsTimerRef.current = null
-      void api(`/restaurants/${restaurantId}/reports/view-preferences/menu_item_editor`, {
-        method: 'PUT',
-        body: JSON.stringify({ settings: editorPrefsRef.current || {} }),
-      }).catch(() => {})
-    }
+    // Switching stores and unmounting both flush the captured store+settings
+    // pair. Never combine a new store's ref with an old store's URL.
+    flushEditorPrefs()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [restaurantId])
 
   const loadSpecialSettings = async () => {
     const { data, error } = await supabase.from('restaurants').select('config').eq('id', restaurantId).single()
