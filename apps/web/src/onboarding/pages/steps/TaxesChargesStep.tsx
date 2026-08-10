@@ -1,40 +1,24 @@
+import {
+  CHARGE_APPLIES_TO_OPTIONS,
+  MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET,
+  defaultTaxRate,
+  taxAppliesToOptions,
+  taxPresetDraft,
+} from '@shire/settings'
 import type { ServiceChargeData, TaxRateData, UseOnboardingReturn } from '../../hooks/useOnboarding'
 
 interface TaxesChargesStepProps {
   onboarding: UseOnboardingReturn
 }
 
-const TAX_APPLIES_TO: Array<{ value: TaxRateData['applies_to']; label: string }> = [
-  { value: 'all', label: 'All sales' },
-  { value: 'food', label: 'Food' },
-  { value: 'alcohol', label: 'Alcohol' },
-  { value: 'non_alcohol', label: 'Non-alcohol' },
-  { value: 'merchandise', label: 'Merchandise' },
-]
-
 const CHARGE_APPLIES_TO: Array<{ value: ServiceChargeData['applies_to']; label: string }> = [
-  { value: 'all', label: 'All orders' },
-  { value: 'dine_in', label: 'Dine-in' },
-  { value: 'bar', label: 'Bar' },
-  { value: 'takeout', label: 'Takeout' },
-  { value: 'delivery', label: 'Delivery' },
-  { value: 'catering', label: 'Catering' },
-  { value: 'large_party', label: 'Large party' },
+  ...CHARGE_APPLIES_TO_OPTIONS,
 ]
 
 const inputClass = 'w-full min-w-0 px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]'
 const compactInputClass = `${inputClass} text-sm`
 
 const sanitizeNumber = (value: string) => value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1').slice(0, 10)
-
-const defaultTaxRate = (): TaxRateData => ({
-  name: 'Sales Tax',
-  rate: '',
-  applies_to: 'all',
-  is_default: true,
-  is_inclusive: false,
-  is_active: true,
-})
 
 const defaultServiceCharge = (index: number): ServiceChargeData => ({
   name: index === 0 ? 'Service Charge' : `Service Charge ${index + 1}`,
@@ -104,6 +88,15 @@ export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
     })
   }
 
+  const applyMyrtleBeachTaxes = () => {
+    if (!window.confirm('Confirm this restaurant is inside Myrtle Beach city limits. This replaces the tax-rate draft and assigns Beer & Wine and Cocktails to their correct rates.')) return
+    const preset = taxPresetDraft(MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET)
+    updateData({
+      tax_rates: preset.tax_rates,
+      tax_category_assignments: preset.category_assignments,
+    })
+  }
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     try {
@@ -128,6 +121,13 @@ export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
           <p className="mt-2 text-sm leading-6 text-[rgb(var(--text-secondary))]">
             Define the tax categories the POS will use for order totals, refunds, closeout, and reports.
           </p>
+          <button
+            type="button"
+            onClick={applyMyrtleBeachTaxes}
+            className="mt-3 rounded-lg border border-[rgba(201,169,98,0.45)] px-3 py-2 text-sm text-[rgb(var(--text-primary))] transition-colors hover:bg-[rgba(201,169,98,0.08)]"
+          >
+            Use Myrtle Beach city-limits rates
+          </button>
         </div>
 
         <div className="space-y-3">
@@ -152,7 +152,7 @@ export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
                   onChange={(event) => updateTax(index, { applies_to: event.target.value as TaxRateData['applies_to'] })}
                   className={compactInputClass}
                 >
-                  {TAX_APPLIES_TO.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  {taxAppliesToOptions(tax.applies_to).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">

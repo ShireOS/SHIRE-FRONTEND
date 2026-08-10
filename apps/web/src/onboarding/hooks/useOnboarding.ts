@@ -13,6 +13,7 @@ import {
   normalizeSectionNames,
   normalizeSectionProfiles,
   normalizeTaxRates,
+  normalizeCategoryTaxAssignments,
   normalizeServiceCharges,
   normalizeMenuCategories,
   normalizeDiscountRules,
@@ -40,6 +41,7 @@ import type {
   CheckWorkflowSettingsData,
   JobCodeData,
   TipPayrollSettingsData,
+  CategoryTaxAssignmentData,
 } from '@shire/settings'
 
 // Settings types now live in @shire/settings; step components keep importing
@@ -117,6 +119,7 @@ export interface OnboardingData {
   // Step 3: Taxes & Charges
   tax_rates: TaxRateData[]
   service_charges: ServiceChargeData[]
+  tax_category_assignments?: CategoryTaxAssignmentData[]
 
   // Step 4: Discounts, Comps & Promos
   discount_rules: DiscountRuleData[]
@@ -264,6 +267,7 @@ const INITIAL_DATA: OnboardingData = {
     },
   ],
   service_charges: [],
+  tax_category_assignments: undefined,
   discount_rules: [],
   role_permissions: defaultRolePermissions(defaultJobCodes()),
   closeout_settings: defaultCloseoutSettings(),
@@ -412,8 +416,12 @@ const normalizeOperatingHours = (value: unknown): OperatingHoursData[] => {
 // that key is withheld from the taxes-charges payload rather than sending
 // package defaults over a surface that has no UI for it.
 const taxesChargesToPayload = (data: OnboardingData) => {
-  const { tax_rates, service_charges } = taxesChargesPayload(data.tax_rates, data.service_charges, undefined)
-  return { tax_rates, service_charges }
+  return taxesChargesPayload(
+    data.tax_rates,
+    data.service_charges,
+    undefined,
+    data.tax_category_assignments,
+  )
 }
 
 const discountRulesToPayload = (data: OnboardingData) => discountRulesPayload(data.discount_rules)
@@ -473,6 +481,9 @@ const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): On
     refund_approval_threshold: asString(input.refund_approval_threshold),
     tax_rates: normalizeTaxRates(input.tax_rates),
     service_charges: normalizeServiceCharges(input.service_charges),
+    tax_category_assignments: Array.isArray(input.tax_category_assignments)
+      ? normalizeCategoryTaxAssignments(input.tax_category_assignments)
+      : undefined,
     menu_categories: normalizeMenuCategories(input.menu_categories),
     discount_rules: normalizeDiscountRules(input.discount_rules),
     role_permissions: normalizeRolePermissions(input.role_permissions, normalizeJobCodes(input.job_codes)),
@@ -1640,6 +1651,7 @@ export function useOnboarding() {
       setData(prev => mergeOnboardingData(prev, {
         tax_rates: normalizeTaxRates(isRecord(saved) ? saved.tax_rates : []),
         service_charges: normalizeServiceCharges(isRecord(saved) ? saved.service_charges : []),
+        tax_category_assignments: data.tax_category_assignments,
       }))
 
       const { error: stepError } = isSetupEditor
@@ -2219,8 +2231,29 @@ export function useOnboarding() {
       }
 
       const saved = await response.json().catch(() => ({}))
+      let savedTaxes: unknown = null
+      if (data.tax_category_assignments?.length) {
+        const taxResponse = await runWithTimeout(
+          async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/taxes-charges`, {
+            method: 'PUT',
+            headers: await getApiHeaders(),
+            body: JSON.stringify(taxesChargesToPayload(data)),
+          }),
+          'Assigning category tax rates timed out. Please retry.'
+        )
+        if (!taxResponse.ok) {
+          const body = await taxResponse.json().catch(() => ({}))
+          throw new Error(asString(body.detail) || asString(body.message) || `Assigning category tax rates failed (${taxResponse.status})`)
+        }
+        savedTaxes = await taxResponse.json().catch(() => ({}))
+      }
       setData(prev => mergeOnboardingData(prev, {
         menu_categories: normalizeMenuCategories(isRecord(saved) ? saved.categories : []),
+        ...(isRecord(savedTaxes) ? {
+          tax_rates: normalizeTaxRates(savedTaxes.tax_rates),
+          service_charges: normalizeServiceCharges(savedTaxes.service_charges),
+        } : {}),
+        tax_category_assignments: undefined,
       }))
 
       const { error: stepError } = isSetupEditor

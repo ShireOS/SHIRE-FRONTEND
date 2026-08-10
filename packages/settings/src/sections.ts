@@ -1,6 +1,6 @@
-import { isOptionValue, TAX_APPLIES_TO_OPTIONS, CHARGE_APPLIES_TO_OPTIONS } from './options'
+import { isOptionValue, TAX_APPLIES_TO_VALUES, CHARGE_APPLIES_TO_OPTIONS } from './options'
 import { sanitizeInteger, sanitizeNumber, asEnum } from './helpers'
-import type { AutoGratuityData, SectionBehaviorData, ServiceChargeData, TaxRateData } from './types'
+import type { AutoGratuityData, CategoryTaxAssignmentData, SectionBehaviorData, ServiceChargeData, TaxRateData } from './types'
 
 /**
  * 'Table' is always first and deduped case-insensitively; blank names drop.
@@ -81,7 +81,7 @@ export function normalizeTaxRates(rows: unknown): TaxRateData[] {
       id: row?.id || null,
       name: String(row?.name || '').trim(),
       rate: row?.rate == null ? '' : sanitizeNumber(row.rate),
-      applies_to: isOptionValue(TAX_APPLIES_TO_OPTIONS, row?.applies_to) ? row.applies_to : 'all',
+      applies_to: (TAX_APPLIES_TO_VALUES as readonly string[]).includes(row?.applies_to) ? row.applies_to : 'all',
       is_default: Boolean(row?.is_default),
       is_inclusive: Boolean(row?.is_inclusive),
       is_active: row?.is_active !== false,
@@ -130,7 +130,23 @@ export function normalizeAutoGratuity(row: unknown): AutoGratuityData {
 }
 
 /** PUT /restaurants/:id/taxes-charges body. */
-export function taxesChargesPayload(taxRates: unknown, serviceCharges: unknown, autoGratuity: unknown) {
+export function normalizeCategoryTaxAssignments(rows: unknown): CategoryTaxAssignmentData[] {
+  const normalized = new Map<string, CategoryTaxAssignmentData>()
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const categoryName = String(row?.category_name || '').trim().replace(/\s+/g, ' ')
+    if (!categoryName) continue
+    const taxName = row?.tax_name == null ? null : String(row.tax_name).trim().replace(/\s+/g, ' ') || null
+    normalized.set(categoryName.toLowerCase(), { category_name: categoryName, tax_name: taxName })
+  }
+  return [...normalized.values()]
+}
+
+export function taxesChargesPayload(
+  taxRates: unknown,
+  serviceCharges: unknown,
+  autoGratuity: unknown,
+  categoryAssignments?: unknown,
+) {
   const gratuity = normalizeAutoGratuity(autoGratuity)
   return {
     auto_gratuity: {
@@ -160,5 +176,8 @@ export function taxesChargesPayload(taxRates: unknown, serviceCharges: unknown, 
       is_tip: row.is_tip,
       is_active: true,
     })),
+    ...(categoryAssignments !== undefined
+      ? { category_assignments: normalizeCategoryTaxAssignments(categoryAssignments) }
+      : {}),
   }
 }

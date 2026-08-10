@@ -46,8 +46,11 @@ const SECTION_LABELS: Record<ReportSectionId, string> = {
   payroll_support: 'Payroll support',
   punch_log: 'Punch log',
   z_report: 'End-of-day Z report',
+  tax_summary: 'Tax',
   daily_summary: 'Daily summary',
 };
+const REPORT_CATALOG_VERSION = 2;
+const REPORT_CATALOG_VERSION_KEY = '__report_catalog_version';
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const PERIODS = [
   { id: 'week', label: 'This week' },
@@ -69,6 +72,23 @@ const DEFAULT_PREFERENCE: ReportPreference = {
   section_order: [...REPORT_SECTIONS],
   section_settings: {},
 };
+
+function effectiveReportPreference(preference: ReportPreference): ReportPreference {
+  const savedOrder = preference.section_order?.length ? preference.section_order : [...REPORT_SECTIONS];
+  const order = [...savedOrder, ...REPORT_SECTIONS.filter((id) => !savedOrder.includes(id))];
+  const savedVersion = Number(preference.section_settings?.[REPORT_CATALOG_VERSION_KEY] || 1);
+  const newlyIntroduced = order.filter((id) => !savedOrder.includes(id) || (id === 'tax_summary' && savedVersion < 2));
+  const chosen = [...(preference.visible_sections || order), ...newlyIntroduced];
+  return {
+    ...preference,
+    section_order: order,
+    visible_sections: order.filter((id) => chosen.includes(id)),
+    section_settings: {
+      ...(preference.section_settings || {}),
+      [REPORT_CATALOG_VERSION_KEY]: REPORT_CATALOG_VERSION,
+    },
+  };
+}
 const EMPTY_RECIPIENT: Omit<ReportRecipient, 'id'> = {
   name: '',
   email: '',
@@ -296,7 +316,7 @@ export default function RestaurantReportsScreen() {
         fetchRestaurantReportingDimensions(restaurantId),
       ]);
       setReport(nextReport);
-      setPreference(nextPreference);
+      setPreference(effectiveReportPreference(nextPreference));
       setRecipients(recipientData.recipients || []);
       setCanManageRecipients(Boolean(recipientData.can_manage));
       setEmailDelivery({
@@ -316,7 +336,7 @@ export default function RestaurantReportsScreen() {
   const savePreference = async (next: ReportPreference) => {
     if (!restaurantId) return;
     const saved = await saveReportPreference(restaurantId, next);
-    setPreference(saved);
+    setPreference(effectiveReportPreference(saved));
   };
   const saveRecipient = async (draft: Omit<ReportRecipient, 'id'>, id?: string) => {
     if (!restaurantId) return;
@@ -403,6 +423,7 @@ export default function RestaurantReportsScreen() {
           if (id === 'payroll_support') return <PayrollSection key={id} section={section} statWidth={statWidth} comparisonEnabled={comparisonEnabled} />;
           if (id === 'punch_log') return <PunchSection key={id} section={section} statWidth={statWidth} />;
           if (id === 'z_report') return <ZReportSection key={id} section={section} />;
+          if (id === 'tax_summary') return <TaxSummarySection key={id} section={section} statWidth={statWidth} comparisonEnabled={comparisonEnabled} />;
           return <DailySection key={id} section={section} statWidth={statWidth} comparisonEnabled={comparisonEnabled} />;
         })}
       </ScrollView>
@@ -489,6 +510,15 @@ function ZReportSection({ section }: { section: any }) {
     ...(section.cash_drawer_events || []).filter((event: any) => event.event_type === 'no_sale').map((event: any) => ({ ...event, movement_type: 'no_sale', performed_by_name: event.staff_name, reason_preset_label: event.reason })),
   ];
   return <ReportSection title="End-of-day Z report"><Text style={styles.subhead}>Cash accountability</Text><View style={styles.statGrid}><Stat width="48%" label="Paid in" value={formatMoney(cash.paid_in)} /><Stat width="48%" label="Paid out" value={formatMoney(cash.paid_out)} /><Stat width="48%" label="Cash drops" value={formatMoney(cash.cash_drop)} /><Stat width="48%" label="Variance" value={cash.variance_available ? formatMoney(cash.variance) : 'Not closed'} /></View>{Number(cash.pending_count || 0) > 0 && <View style={styles.flag}><Text style={styles.flagText}>{cash.pending_count} cash movement exception(s) require reconciliation.</Text></View>}{Number(cash.unreviewed_paid_out_count || 0) > 0 && <View style={styles.flag}><Text style={styles.flagText}>{cash.unreviewed_paid_out_count} paid-out movement(s) remain unreviewed.</Text></View>}<Disclosure title="Cash movements" count={movements.length}><DataTable columns={[['business_date', 'Date'], ['movement_type', 'Type'], ['amount', 'Amount'], ['performed_by_name', 'Performed'], ['approved_by_name', 'Approved'], ['reviewed_by_name', 'Reviewed'], ['status', 'Status']]} rows={movements} formatters={{ amount: formatMoney }} /></Disclosure><Text style={styles.subhead}>Daily closes</Text><DataTable columns={[['business_date', 'Date'], ['closed_by_name', 'Closed by'], ['closed_at', 'Closed at']]} rows={section.daily_closes || []} formatters={{ closed_at: (value) => new Date(value as string).toLocaleString() }} /><Text style={styles.subhead}>Payment mix</Text><DataTable columns={[['business_date', 'Date'], ['payment_method', 'Method'], ['payments', 'Count'], ['amount', 'Amount'], ['expected_deposit', 'Deposit']]} rows={section.payment_mix || []} formatters={{ amount: formatMoney, expected_deposit: formatMoney }} /><Disclosure title="Transactions" count={transactions.length}><DataTable columns={[['order_number', 'Check'], ['completed_at', 'Completed'], ['waiter_name', 'Server'], ['payment_method', 'Method'], ['amount', 'Amount'], ['tip_amount', 'Tip']]} rows={transactions} formatters={{ completed_at: (value) => new Date(value as string).toLocaleString(), amount: formatMoney, tip_amount: formatMoney }} /></Disclosure></ReportSection>;
+}
+
+function TaxSummarySection({ section, statWidth, comparisonEnabled }: { section: any; statWidth: any; comparisonEnabled: boolean }) {
+  const totals = section.totals || {};
+  const comparison = comparisonEnabled ? section.comparison || {} : {};
+  const recon = section.reconciliation || {};
+  const unattributed = Number(recon.unattributed_tax_added || 0) + Number(recon.unattributed_tax_included || 0);
+  const inclusive = Number(totals.inclusive_tax || 0);
+  return <ReportSection title="Tax" subtitle="Added and price-inclusive tax remain separate and reconcile to total liability."><View style={styles.statGrid}><Stat width={statWidth} label="Taxable sales" value={formatMoney(totals.taxable_sales)} comparison={comparison.taxable_sales} comparisonFormat={formatMoney} /><Stat width={statWidth} label="Non-taxable sales" value={formatMoney(totals.non_taxable_sales)} comparison={comparison.non_taxable_sales} comparisonFormat={formatMoney} /><Stat width={statWidth} label="Tax collected" value={formatMoney(totals.tax_collected)} comparison={comparison.tax_collected} comparisonFormat={formatMoney} />{inclusive !== 0 && <Stat width={statWidth} label="Tax in prices" value={formatMoney(totals.inclusive_tax)} comparison={comparison.inclusive_tax} comparisonFormat={formatMoney} />}{inclusive !== 0 && <Stat width={statWidth} label="Total liability" value={formatMoney(totals.total_tax_liability)} comparison={comparison.total_tax_liability} comparisonFormat={formatMoney} />}<Stat width={statWidth} label="Service charge tax" value={formatMoney(totals.service_charge_tax)} /><Stat width={statWidth} label="Checks" value={formatNumber(totals.ticket_count)} /><Stat width={statWidth} label="Tax-exempt checks" value={formatNumber(totals.tax_exempt_tickets)} /></View>{Math.abs(unattributed) >= 0.01 && <View style={styles.flag}><Text style={styles.flagText}>{formatMoney(unattributed)} could not be attributed to a current tax rate and remains listed separately.</Text></View>}<Text style={styles.subhead}>By tax rate</Text><DataTable columns={[["name", "Tax rate"], ["rate_percent", "Rate %"], ["taxable_sales", "Taxable"], ["tax_added", "Added"], ["tax_included", "In prices"], ["tax_collected", "Total tax"]]} rows={section.by_rate || []} formatters={{ rate_percent: (value) => value == null ? '—' : `${formatNumber(value, 4)}%`, taxable_sales: formatMoney, tax_added: formatMoney, tax_included: formatMoney, tax_collected: formatMoney }} /><Text style={styles.subhead}>By category</Text><DataTable columns={[["name", "Category"], ["tax_rate_name", "Tax rate"], ["taxable_sales", "Taxable"], ["non_taxable_sales", "Non-taxable"], ["tax_collected", "Tax"]]} rows={section.by_category || []} formatters={{ taxable_sales: formatMoney, non_taxable_sales: formatMoney, tax_collected: formatMoney }} /><Text style={styles.subhead}>By business date</Text><DataTable columns={[["business_date", "Date"], ["taxable_sales", "Taxable"], ["tax_collected", "Added"], ["inclusive_tax", "In prices"], ["total_tax_liability", "Liability"]]} rows={section.by_date || []} formatters={{ taxable_sales: formatMoney, tax_collected: formatMoney, inclusive_tax: formatMoney, total_tax_liability: formatMoney }} /></ReportSection>;
 }
 
 function DailySection({ section, statWidth, comparisonEnabled }: { section: any; statWidth: any; comparisonEnabled: boolean }) {

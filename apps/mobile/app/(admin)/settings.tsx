@@ -34,11 +34,8 @@ import {
   type CloseoutSettings,
   type CheckWorkflowSettings,
   type DiscountRule,
-  type DiscountRulesPayload,
   type FloorPlanTable,
-  type ManagerControlsPayload,
   type MenuCategory,
-  type MenuCategorySetupPayload,
   type RolePermission,
   type ServiceCharge,
   type RestaurantSetupConfig,
@@ -58,7 +55,7 @@ import { palette, semanticColors, statusColors } from '@/styles/colors';
 import { radius, spacing } from '@/styles/tokens';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { getOwnerRestaurant, type OwnerRestaurant } from '../../packages/supabase';
 
 import {
@@ -67,8 +64,6 @@ import {
   defaultCloseoutSettings,
   defaultCheckWorkflowSettings,
   defaultTipPayrollSettings,
-  defaultRolePermission,
-  rolePermissionKeys,
   slugRoleCode as roleCode,
   normalizeSectionNames,
   normalizeJobCodes,
@@ -84,17 +79,34 @@ import {
   closeoutSettingsPayload,
   normalizeCheckWorkflowSettings,
   checkWorkflowSettingsPayload,
-  normalizeTipRoleRules,
   normalizeTipPayrollSettings,
   tipPayrollPayload,
   taxesChargesPayload,
+  MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET,
+  taxAppliesToOptions,
+  taxPresetDraft,
 } from '@shire/settings'
 
 // Mobile-named wrappers over the canonical payload builders. Mobile has no
 // auto-gratuity UI, so that key is withheld from the taxes-charges payload.
-function taxChargePayload(taxRates: TaxRate[], serviceCharges: ServiceCharge[]): TaxesChargesPayload {
-  const { tax_rates, service_charges } = taxesChargesPayload(taxRates, serviceCharges, undefined)
-  return { tax_rates, service_charges } as TaxesChargesPayload
+function taxChargePayload(
+  taxRates: TaxRate[],
+  serviceCharges: ServiceCharge[],
+  categoryAssignments?: TaxesChargesPayload['category_assignments'],
+): TaxesChargesPayload {
+  const payload = taxesChargesPayload(
+    taxRates,
+    serviceCharges,
+    undefined,
+    categoryAssignments,
+  )
+  return {
+    tax_rates: payload.tax_rates as TaxRate[],
+    service_charges: payload.service_charges as ServiceCharge[],
+    ...(payload.category_assignments
+      ? { category_assignments: payload.category_assignments }
+      : {}),
+  }
 }
 const closeoutPayload = closeoutSettingsPayload
 const checkWorkflowPayload = checkWorkflowSettingsPayload
@@ -114,13 +126,8 @@ const GUEST_FLOW_OPTIONS = [
   { id: 'tab_first', label: 'Tab first' },
   { id: 'counter_pay', label: 'Counter pay' },
 ];
-const TAX_APPLIES_TO_OPTIONS = [
-  ['all', 'All sales'],
-  ['food', 'Food'],
-  ['alcohol', 'Alcohol'],
-  ['non_alcohol', 'Non-alcohol'],
-  ['merchandise', 'Merch'],
-] as const;
+const taxAppliesToChoices = (currentValue: string) => taxAppliesToOptions(currentValue)
+  .map((option) => [option.value, option.label] as const);
 const CHARGE_APPLIES_TO_OPTIONS = [
   ['all', 'All orders'],
   ['dine_in', 'Dine-in'],
@@ -346,11 +353,6 @@ function textValue(value: unknown) {
   return typeof value === 'string' ? value : '';
 }
 
-function numberText(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
-  return typeof value === 'string' ? sanitizeMoney(value).slice(0, 10) : '';
-}
-
 function validateDiscountRules(discountRules: DiscountRule[]) {
   const rows = normalizeDiscountRules(discountRules);
   const blankIndex = rows.findIndex((row) => !row.name);
@@ -462,6 +464,7 @@ export default function OwnerSettings() {
   const [paymentEdits, setPaymentEdits] = useState(DEFAULT_PAYMENTS);
   const [serviceModelEdits, setServiceModelEdits] = useState(DEFAULT_SERVICE_MODEL);
   const [taxRateEdits, setTaxRateEdits] = useState<TaxRate[]>([defaultTaxRate()]);
+  const [taxCategoryAssignments, setTaxCategoryAssignments] = useState<TaxesChargesPayload['category_assignments']>();
   const [serviceChargeEdits, setServiceChargeEdits] = useState<ServiceCharge[]>([]);
   const [menuCategoryEdits, setMenuCategoryEdits] = useState<MenuCategory[]>(defaultMenuCategories());
   const [discountRuleEdits, setDiscountRuleEdits] = useState<DiscountRule[]>([]);
@@ -476,8 +479,7 @@ export default function OwnerSettings() {
   const [staffRoleEdits, setStaffRoleEdits] = useState<Record<string, string>>({});
   const [savingRateId, setSavingRateId] = useState<string | null>(null);
   const [savingStaffId, setSavingStaffId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const [, setIsLoading] = useState(true);
   const [isRegisteringNotifications, setIsRegisteringNotifications] = useState(false);
   const [message, setMessage] = useState('');
   const [notificationMessage, setNotificationMessage] = useState('');
@@ -567,6 +569,7 @@ export default function OwnerSettings() {
         setPaymentEdits(normalizedSetup.payments);
         setServiceModelEdits(normalizedSetup.serviceModel);
         setTaxRateEdits(normalizeTaxRates(taxesCharges.tax_rates));
+        setTaxCategoryAssignments(undefined);
         setServiceChargeEdits(normalizeServiceCharges(taxesCharges.service_charges));
         setMenuCategoryEdits(normalizeMenuCategories(menuCategoryData.categories));
         setDiscountRuleEdits(normalizeDiscountRules(discountData.discount_rules));
@@ -747,17 +750,42 @@ export default function OwnerSettings() {
     setIsSavingTaxes(true);
     setTaxesMessage('Saving taxes and charges...');
     try {
-      const payload = taxChargePayload(taxRateEdits, serviceChargeEdits);
-      if (await scheduleRestaurantSave(publication, 'Taxes and charges', { method: 'PUT', path: `/restaurants/${restaurantId}/taxes-charges`, body: payload as unknown as Record<string, unknown> }, setTaxesMessage)) return;
+      const payload = taxChargePayload(taxRateEdits, serviceChargeEdits, taxCategoryAssignments);
+      if (await scheduleRestaurantSave(publication, 'Taxes and charges', { method: 'PUT', path: `/restaurants/${restaurantId}/taxes-charges`, body: payload as unknown as Record<string, unknown> }, setTaxesMessage)) {
+        setTaxCategoryAssignments(undefined);
+        return;
+      }
       const saved = await saveRestaurantTaxesCharges(restaurantId, payload);
       setTaxRateEdits(normalizeTaxRates(saved.tax_rates));
       setServiceChargeEdits(normalizeServiceCharges(saved.service_charges));
-      setTaxesMessage('Taxes and charges saved.');
+      setTaxCategoryAssignments(undefined);
+      setTaxesMessage(saved.category_assignment_warnings?.length
+        ? `Taxes saved. ${saved.category_assignment_warnings.join(' ')}`
+        : 'Taxes and charges saved.');
     } catch (err) {
       setTaxesMessage(err instanceof Error ? err.message : 'Could not save taxes and charges.');
     } finally {
       setIsSavingTaxes(false);
     }
+  };
+
+  const applyMyrtleBeachTaxes = () => {
+    Alert.alert(
+      'Use Myrtle Beach city-limits rates?',
+      'Only apply this inside Myrtle Beach city limits. This replaces the tax-rate draft and assigns Beer & Wine and Cocktails to their correct rates.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Apply',
+          onPress: () => {
+            const preset = taxPresetDraft(MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET);
+            setTaxRateEdits(preset.tax_rates as TaxRate[]);
+            setTaxCategoryAssignments(preset.category_assignments);
+            setTaxesMessage('Myrtle Beach rates ready. Save taxes to apply them.');
+          },
+        },
+      ],
+    );
   };
 
   const updateMenuCategory = (index: number, patch: Partial<MenuCategory>) => {
@@ -2017,7 +2045,7 @@ export default function OwnerSettings() {
               <ChoiceGroup
                 label="Applies to"
                 value={tax.applies_to}
-                options={TAX_APPLIES_TO_OPTIONS}
+                options={taxAppliesToChoices(tax.applies_to)}
                 onChange={(value) => updateTaxRate(index, { applies_to: value as TaxRate['applies_to'] })}
               />
             </View>
@@ -2040,6 +2068,12 @@ export default function OwnerSettings() {
             </View>
           </View>
         ))}
+        <UiButton
+          label="Use Myrtle Beach city-limits rates"
+          variant="secondary"
+          disabled={isSavingTaxes}
+          onPress={applyMyrtleBeachTaxes}
+        />
         <UiButton
           label="Add tax rate"
           variant="secondary"

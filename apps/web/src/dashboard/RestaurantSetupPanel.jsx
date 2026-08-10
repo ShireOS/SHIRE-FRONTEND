@@ -3,6 +3,9 @@ import {
   SERVICE_MODE_OPTIONS,
   GUEST_FLOW_OPTIONS,
   TAX_APPLIES_TO_OPTIONS,
+  taxAppliesToOptions,
+  MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET,
+  taxPresetDraft,
   CHARGE_APPLIES_TO_OPTIONS,
   DISCOUNT_TYPE_OPTIONS,
   DISCOUNT_APPLIES_TO_OPTIONS,
@@ -1420,6 +1423,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [pricingPolicy, setPricingPolicy] = useState(() => normalizePricingPolicy({ jurisdiction_state: restaurant.state || 'SC' }))
   const [serviceModel, setServiceModel] = useState(() => initialServiceModel(restaurant))
   const [taxRates, setTaxRates] = useState([defaultTaxRate()])
+  const [taxCategoryAssignments, setTaxCategoryAssignments] = useState(undefined)
   const [serviceCharges, setServiceCharges] = useState([])
   const [autoGratuity, setAutoGratuity] = useState(defaultAutoGratuity())
   const [discountRules, setDiscountRules] = useState([])
@@ -1802,6 +1806,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setSectionProfiles(normalizeSectionProfiles(sectionRows, sectionNames))
       setFloorTables(mapFloorPlanTables(floorPlan))
       setTaxRates(normalizeTaxRates(taxesCharges?.tax_rates))
+      setTaxCategoryAssignments(undefined)
       setServiceCharges(normalizeServiceCharges(taxesCharges?.service_charges))
       setAutoGratuity(normalizeAutoGratuity(taxesCharges?.auto_gratuity))
       setDiscountRules(normalizeDiscountRules(discountData?.discount_rules))
@@ -2007,23 +2012,45 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   }
 
   const saveTaxesCharges = async (publication) => {
-    const payload = taxesChargesPayload(taxRates, serviceCharges, autoGratuity)
+    const payload = taxesChargesPayload(taxRates, serviceCharges, autoGratuity, taxCategoryAssignments)
+    const propagationPayload = {
+      ...payload,
+      tax_rates: payload.tax_rates.map(({ id, ...row }) => row),
+      service_charges: payload.service_charges.map(({ id, ...row }) => row),
+    }
     await saveWithPropagation({
       sectionId: 'taxes_charges',
       label: 'Taxes & Charges',
       propagation: SETUP_PROPAGATION.taxes_charges,
       successMessage: 'Saved taxes and charges.',
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/taxes-charges', payload),
-      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/taxes-charges', payload),
+      saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/taxes-charges', propagationPayload),
       onSourceSaved: (saved) => {
         setTaxRates(normalizeTaxRates(saved?.tax_rates))
         setServiceCharges(normalizeServiceCharges(saved?.service_charges))
         setAutoGratuity(normalizeAutoGratuity(saved?.auto_gratuity))
+        setTaxCategoryAssignments(undefined)
         queryClient.setQueryData(queryKeys.taxesCharges(restaurantId), saved)
+        if (saved?.category_assignment_warnings?.length) {
+          setSetupError(saved.category_assignment_warnings.join(' '))
+        }
       },
       publication,
-      buildCommand: (targetId) => ({ method: 'PUT', path: `/restaurants/${targetId}/taxes-charges`, body: payload, target_type: 'restaurant', target_id: targetId }),
+      buildCommand: (targetId) => ({
+        method: 'PUT',
+        path: `/restaurants/${targetId}/taxes-charges`,
+        body: targetId === restaurantId ? payload : propagationPayload,
+        target_type: 'restaurant',
+        target_id: targetId,
+      }),
     })
+  }
+
+  const applyMyrtleBeachTaxes = () => {
+    if (!window.confirm('Confirm this restaurant is inside Myrtle Beach city limits. This replaces the tax-rate draft and assigns Beer & Wine and Cocktails to their correct rates.')) return
+    const preset = taxPresetDraft(MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET)
+    setTaxRates(preset.tax_rates)
+    setTaxCategoryAssignments(preset.category_assignments)
   }
 
   const updateDiscountRule = (index, patch) => {
@@ -2959,6 +2986,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
               <div>
                 <p className="label-mono">Tax Rates</p>
                 <p className="mt-2 text-sm text-dash-secondary">Add one or more tax categories. The default tax also syncs to legacy POS tax settings.</p>
+                <SmallButton onClick={applyMyrtleBeachTaxes} className="mt-3">Use Myrtle Beach city-limits rates</SmallButton>
               </div>
               {normalizeTaxRates(taxRates).map((tax, index) => (
                 <div key={tax.id || `tax:${index}`} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
@@ -2966,7 +2994,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                     <TextInput value={tax.name} onChange={event => updateTaxRate(index, { name: event.target.value })} placeholder="Sales Tax" />
                     <TextInput inputMode="decimal" value={tax.rate} onChange={event => updateTaxRate(index, { rate: sanitizeNumber(event.target.value) })} placeholder="Rate %" />
                     <SelectInput value={tax.applies_to} onChange={event => updateTaxRate(index, { applies_to: event.target.value })}>
-                      {TAX_APPLIES_TO_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      {taxAppliesToOptions(tax.applies_to).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </SelectInput>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">

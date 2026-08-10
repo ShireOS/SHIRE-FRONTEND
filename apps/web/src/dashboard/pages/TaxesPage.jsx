@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ArrowUpRight, Pencil, Plus, Trash2 } from 'lucide-react'
+import {
+  MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET,
+  taxAppliesToOptions,
+  taxPresetDraft,
+} from '@shire/settings'
 import { fetchCached, fetchWithSupabaseAuth, queryClient, queryKeys, STALE_TIMES } from '../../shared/query'
 import { Modal, ModalFooter } from '../components/shared/Modal'
 
@@ -63,7 +68,7 @@ export default function TaxesPage({ restaurantId }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [draft, setDraft] = useState(null) // { id?, name, rate, is_inclusive, is_default, categoryIds }
+  const [draft, setDraft] = useState(null) // { id?, name, rate, applies_to, is_inclusive, is_default, categoryIds }
 
   const api = (path, init) => fetchWithSupabaseAuth(path, init)
 
@@ -100,8 +105,9 @@ export default function TaxesPage({ restaurantId }) {
     setBusy(true)
     setError('')
     try {
-      await work()
-      if (successMessage) setNotice(successMessage)
+      const result = await work()
+      if (typeof result === 'string') setNotice(result)
+      else if (successMessage) setNotice(successMessage)
       return true
     } catch (err) {
       setError(`${failLabel}: ${err.message || 'something went wrong.'}`)
@@ -134,25 +140,13 @@ export default function TaxesPage({ restaurantId }) {
   const toChargeInput = (row) => ({
     id: row.id,
     name: row.name,
+    display_label: row.display_label || null,
     charge_type: row.charge_type || 'percentage',
     amount: Number(row.amount) || 0,
     applies_to: row.applies_to || 'all',
     taxable: Boolean(row.taxable),
     auto_apply: Boolean(row.auto_apply),
     is_tip: Boolean(row.is_tip),
-    is_active: true,
-  })
-
-  const toCategoryInput = (category, taxRateId) => ({
-    id: category.id || undefined,
-    name: (category.name || '').trim(),
-    tax_rate_id: taxRateId === undefined ? (category.tax_rate_id || null) : taxRateId,
-    routing_station_id: category.routing_station_id || null,
-    routing_station_name: category.routing_station_name || null,
-    default_course_type: category.default_course_type || null,
-    default_fire_mode: category.default_fire_mode || null,
-    prep_time_minutes: category.prep_time_minutes === '' || category.prep_time_minutes == null ? null : Number(category.prep_time_minutes),
-    kds_display_group: category.kds_display_group || null,
     is_active: true,
   })
 
@@ -164,38 +158,21 @@ export default function TaxesPage({ restaurantId }) {
 
   // The taxes-charges PUT is a full replace, so every save re-sends the whole
   // active list with the edited row swapped in (or appended).
-  const putTaxes = async (nextTaxRates) => api(`/restaurants/${restaurantId}/taxes-charges`, {
+  const putTaxes = async (nextTaxRates, categoryAssignments) => api(`/restaurants/${restaurantId}/taxes-charges`, {
     method: 'PUT',
     body: JSON.stringify({
       tax_rates: nextTaxRates,
       service_charges: serviceCharges.map(toChargeInput),
+      ...(categoryAssignments !== undefined ? { category_assignments: categoryAssignments } : {}),
     }),
   })
-
-  const saveCategoryAssignments = async (taxId, selectedIds) => {
-    const changed = categories.some((category) => {
-      const wants = selectedIds.has(category.id)
-      const has = category.tax_rate_id === taxId
-      return wants !== has
-    })
-    if (!changed) return
-    const payload = {
-      categories: categories
-        .filter((category) => category.name && category.name.trim())
-        .map((category) => {
-          if (selectedIds.has(category.id)) return toCategoryInput(category, taxId)
-          if (category.tax_rate_id === taxId) return toCategoryInput(category, null)
-          return toCategoryInput(category)
-        }),
-    }
-    await api(`/restaurants/${restaurantId}/menu/categories`, { method: 'PUT', body: JSON.stringify(payload) })
-  }
 
   const openEditor = (tax) => {
     setDraft(tax ? {
       id: tax.id,
       name: tax.name,
       rate: String(Number(tax.rate) || 0),
+      applies_to: tax.applies_to || 'all',
       is_inclusive: Boolean(tax.is_inclusive),
       is_default: Boolean(tax.is_default),
       categoryIds: new Set((categoriesByTax[tax.id] || []).map((c) => c.id)),
@@ -203,6 +180,7 @@ export default function TaxesPage({ restaurantId }) {
       id: null,
       name: '',
       rate: '',
+      applies_to: 'all',
       is_inclusive: false,
       is_default: taxRates.length === 0,
       categoryIds: new Set(),
@@ -217,24 +195,24 @@ export default function TaxesPage({ restaurantId }) {
 
     const ok = await run(async () => {
       let next = taxRates.map(toTaxInput)
-      const edited = { id: draft.id || undefined, name, rate, applies_to: 'all', is_default: draft.is_default, is_inclusive: draft.is_inclusive, is_active: true }
+      const edited = { id: draft.id || undefined, name, rate, applies_to: draft.applies_to, is_default: draft.is_default, is_inclusive: draft.is_inclusive, is_active: true }
       if (draft.id) next = next.map((row) => (row.id === draft.id ? edited : row))
       else next = [...next, edited]
       if (edited.is_default) next = next.map((row) => (row === edited ? row : { ...row, is_default: false }))
 
-      const saved = await putTaxes(next)
+      const categoryAssignments = categories.flatMap((category) => {
+        if (draft.categoryIds.has(category.id)) return [{ category_name: category.name, tax_name: name }]
+        if (draft.id && category.tax_rate_id === draft.id) return [{ category_name: category.name, tax_name: null }]
+        return []
+      })
+      const saved = await putTaxes(next, categoryAssignments)
       const savedRates = saved?.tax_rates || []
       setTaxRates(savedRates)
       setServiceCharges(saved?.service_charges || [])
-
-      // Resolve the id for a newly created tax so categories can point at it.
-      const existingIds = new Set(taxRates.map((row) => row.id).filter(Boolean))
-      const taxId = draft.id || savedRates.find((row) => row.id && !existingIds.has(row.id))?.id
-      if (!taxId) throw new Error('The tax was saved, but its ID was missing from the response. Reload before assigning categories.')
-      if (!draft.id) setDraft((current) => (current ? { ...current, id: taxId } : current))
-      if (taxId) await saveCategoryAssignments(taxId, draft.categoryIds)
       invalidate()
       await load(true)
+      const warnings = saved?.category_assignment_warnings || []
+      if (warnings.length) return `Tax saved. ${warnings.join(' ')}`
     }, `Tax "${name}" saved.`, 'Couldn’t save the tax')
     if (ok) setDraft(null)
   }
@@ -246,12 +224,16 @@ export default function TaxesPage({ restaurantId }) {
       : `Remove "${tax.name}"?`
     if (!window.confirm(warning)) return
     run(async () => {
-      const saved = await putTaxes(taxRates.filter((row) => row.id !== tax.id).map(toTaxInput))
+      const saved = await putTaxes(
+        taxRates.filter((row) => row.id !== tax.id).map(toTaxInput),
+        assigned.map((category) => ({ category_name: category.name, tax_name: null })),
+      )
       setTaxRates(saved?.tax_rates || [])
       setServiceCharges(saved?.service_charges || [])
-      if (assigned.length) await saveCategoryAssignments(tax.id, new Set())
       invalidate()
       await load(true)
+      const warnings = saved?.category_assignment_warnings || []
+      if (warnings.length) return `Tax removed. ${warnings.join(' ')}`
     }, `Tax "${tax.name}" removed.`, 'Couldn’t remove the tax')
   }
 
@@ -266,6 +248,19 @@ export default function TaxesPage({ restaurantId }) {
     })
   }
 
+  const applyMyrtleBeachTaxes = () => {
+    if (!window.confirm('Confirm this restaurant is inside Myrtle Beach city limits. This replaces its active tax rates and assigns Beer & Wine and Cocktails to their correct rates.')) return
+    run(async () => {
+      const preset = taxPresetDraft(MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET)
+      const saved = await putTaxes(preset.tax_rates, preset.category_assignments)
+      invalidate()
+      await load(true)
+      const warnings = saved?.category_assignment_warnings || []
+      if (warnings.length) return `Rates applied. ${warnings.join(' ')}`
+      return 'Myrtle Beach city-limits taxes applied.'
+    }, 'Myrtle Beach city-limits taxes applied.', 'Couldn’t apply the tax preset')
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -276,7 +271,15 @@ export default function TaxesPage({ restaurantId }) {
             built into your menu prices or added at checkout.
           </p>
         </div>
-        {subTab === 'rates' && (
+        {subTab === 'rates' && <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={applyMyrtleBeachTaxes}
+            disabled={busy}
+            className="rounded-lg border border-dash-gold/50 px-3 py-2 text-sm font-semibold text-dash-gold hover:bg-dash-gold/10 disabled:opacity-50"
+          >
+            Use Myrtle Beach rates
+          </button>
           <button
             type="button"
             onClick={() => openEditor(null)}
@@ -285,7 +288,7 @@ export default function TaxesPage({ restaurantId }) {
           >
             <Plus size={15} /> New tax
           </button>
-        )}
+        </div>}
       </div>
 
       <div className="flex gap-2">
@@ -424,7 +427,7 @@ export default function TaxesPage({ restaurantId }) {
       <Modal isOpen={Boolean(draft)} onClose={() => setDraft(null)} title={draft?.id ? 'Edit tax' : 'New tax'} size="md">
         {draft ? (
           <div className="space-y-5">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <label className="block">
                 <span className="mb-1.5 block text-xs font-semibold text-dash-secondary">Name</span>
                 <input
@@ -443,6 +446,16 @@ export default function TaxesPage({ restaurantId }) {
                   placeholder="8.25"
                   className="w-full rounded-lg border border-dash-border bg-dash-panel px-3 py-2 text-sm tabular-nums text-dash-cream placeholder:text-dash-tertiary focus:border-dash-gold/60 focus:outline-none"
                 />
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold text-dash-secondary">Tax scope</span>
+                <select
+                  value={draft.applies_to}
+                  onChange={(e) => setDraft({ ...draft, applies_to: e.target.value })}
+                  className="w-full rounded-lg border border-dash-border bg-dash-panel px-3 py-2 text-sm text-dash-cream focus:border-dash-gold/60 focus:outline-none"
+                >
+                  {taxAppliesToOptions(draft.applies_to).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
               </label>
             </div>
 

@@ -66,7 +66,7 @@ export type TaxRate = {
   restaurant_id?: string;
   name: string;
   rate: string | number;
-  applies_to: 'all' | 'food' | 'alcohol' | 'non_alcohol' | 'merchandise';
+  applies_to: 'all' | 'food' | 'beer_wine' | 'liquor' | 'non_alcohol' | 'merchandise' | 'alcohol';
   is_default: boolean;
   is_inclusive: boolean;
   is_active?: boolean;
@@ -88,6 +88,8 @@ export type ServiceCharge = {
 export type TaxesChargesPayload = {
   tax_rates: TaxRate[];
   service_charges: ServiceCharge[];
+  category_assignments?: { category_name: string; tax_name: string | null }[];
+  category_assignment_warnings?: string[];
 };
 
 export async function fetchTaxesCharges(restaurantId: string) {
@@ -118,8 +120,8 @@ export type MenuCategory = {
 
 export type MenuCategorySetupPayload = {
   categories: MenuCategory[];
-  tax_rates?: Array<{ id: string; name: string; rate?: string | number | null }>;
-  stations?: Array<{ id: string; name: string }>;
+  tax_rates?: { id: string; name: string; rate?: string | number | null }[];
+  stations?: { id: string; name: string }[];
 };
 
 export async function fetchMenuCategories(restaurantId: string) {
@@ -290,9 +292,9 @@ export type TipRoleRule = {
   pool_points: string | number | null;
   pool_contribution_percent?: string | number | null;
   tipout_split_basis?: 'hours' | 'even' | 'weights';
-  tipout_split_weights?: Array<{ staff_id: string; weight: string | number }>;
+  tipout_split_weights?: { staff_id: string; weight: string | number }[];
   pool_share_percent?: string | number | null;
-  tipouts?: Array<{
+  tipouts?: {
     target_role: string | null;
     percent: string | number;
     basis: 'tips' | 'sales';
@@ -300,17 +302,17 @@ export type TipRoleRule = {
     basis_scope?: 'own' | 'restaurant';
     headcount?: {
       driver_role: string;
-      tiers: Array<{
+      tiers: {
         min_count: number;
         max_count: number | null;
-        allocations: Array<{
+        allocations: {
           target_role: string | null;
           unallocated: boolean;
           percent: string | number;
-        }>;
-      }>;
+        }[];
+      }[];
     } | null;
-  }>;
+  }[];
   tipout_percent: string | number | null;
   tipout_target_role: string | null;
   notes?: string | null;
@@ -322,11 +324,11 @@ export type CategoryTipProfile = {
   category_ids: string[];
   category_names: string[];
   role_tip_rules: TipRoleRule[];
-  item_overrides: Array<{
+  item_overrides: {
     menu_item_id: string;
     menu_item_name: string;
     role_tip_rules: TipRoleRule[];
-  }>;
+  }[];
 };
 
 export type TipPayrollSettings = {

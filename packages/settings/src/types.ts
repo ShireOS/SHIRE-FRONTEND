@@ -3,14 +3,21 @@
 // surfaces; numeric inputs stay strings while editable and become numbers in
 // the *Payload builders.
 
+export type TaxAppliesTo = 'all' | 'food' | 'beer_wine' | 'liquor' | 'non_alcohol' | 'merchandise' | 'alcohol'
+
 export interface TaxRateData {
   id?: string | null
   name: string
   rate: string
-  applies_to: 'all' | 'food' | 'alcohol' | 'non_alcohol' | 'merchandise'
+  applies_to: TaxAppliesTo
   is_default: boolean
   is_inclusive: boolean
   is_active?: boolean
+}
+
+export interface CategoryTaxAssignmentData {
+  category_name: string
+  tax_name: string | null
 }
 
 export interface ServiceChargeData {

@@ -9,6 +9,7 @@ export const REPORT_SECTIONS = [
   'payroll_support',
   'punch_log',
   'z_report',
+  'tax_summary',
   'daily_summary',
 ] as const;
 

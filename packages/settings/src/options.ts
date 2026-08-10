@@ -72,13 +72,26 @@ export const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
 
 // --- Taxes & charges --------------------------------------------------------
 
-export const TAX_APPLIES_TO_OPTIONS: readonly SettingsOption<'all' | 'food' | 'alcohol' | 'non_alcohol' | 'merchandise'>[] = [
+export const TAX_APPLIES_TO_OPTIONS: readonly SettingsOption<'all' | 'food' | 'beer_wine' | 'liquor' | 'non_alcohol' | 'merchandise'>[] = [
   { value: 'all', label: 'All sales' },
   { value: 'food', label: 'Food' },
-  { value: 'alcohol', label: 'Alcohol' },
+  { value: 'beer_wine', label: 'Beer & Wine' },
+  { value: 'liquor', label: 'Liquor' },
   { value: 'non_alcohol', label: 'Non-alcohol' },
   { value: 'merchandise', label: 'Merchandise' },
 ]
+
+export const TAX_APPLIES_TO_VALUES = [
+  ...TAX_APPLIES_TO_OPTIONS.map(option => option.value),
+  'alcohol',
+] as const
+
+/** Preserve an existing generic alcohol scope while nudging new setup toward the split scopes. */
+export function taxAppliesToOptions(currentValue?: string): readonly SettingsOption[] {
+  return currentValue === 'alcohol'
+    ? [...TAX_APPLIES_TO_OPTIONS, { value: 'alcohol', label: 'All alcohol (legacy)' }]
+    : TAX_APPLIES_TO_OPTIONS
+}
 
 export const CHARGE_APPLIES_TO_OPTIONS: readonly SettingsOption<'all' | 'dine_in' | 'bar' | 'takeout' | 'delivery' | 'catering' | 'large_party'>[] = [
   { value: 'all', label: 'All orders' },
