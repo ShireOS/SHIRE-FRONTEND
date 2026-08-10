@@ -194,6 +194,11 @@ surface independently, while every mutation is also guarded by the ML backend.
   the POS backend. Back Office exposes the resulting read-only daily/Z/PDF/XLSX/
   email reporting under the existing `reports.view` permission; it never writes
   cash ledger rows directly.
+- The full POS check ledger appears both on the store Home page below analytics
+  widgets and on the dedicated Checks route. Both locations reuse
+  `CheckLedgerSection`, including Active/Closed/History, detail and activity-log
+  views, and the existing `reports.view` read boundary; refund actions retain
+  their separate `payments.refund` guard.
 - Opening cash is a `settings.edit` restaurant policy on the existing
   `pos_closeout_settings` row: zero, fixed, or the latest finalized
   `pos_cash_reconciliations.retained_bank` with a configured fallback. Staff are

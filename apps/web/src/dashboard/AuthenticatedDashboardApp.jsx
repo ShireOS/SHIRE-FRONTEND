@@ -480,6 +480,7 @@ function AnalyticsDashboard({ restaurant }) {
         </nav>
       </header>
       {viewHydrated && <HomepageWidgets scope="restaurant" restaurantId={restaurant?.id} period={period} />}
+      {viewHydrated && <CheckLedgerSection restaurantId={restaurant?.id} />}
     </div>
   )
 }
