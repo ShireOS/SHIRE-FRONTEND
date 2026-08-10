@@ -7,22 +7,6 @@ export const ENDPOINTS = {
   restaurantWaiters: (restaurantId: string) =>
     `/restaurants/${restaurantId}/waiters`,
 
-  // Scheduling endpoints
-  schedules: (restaurantId: string, weekStart?: string) =>
-    `/restaurants/${restaurantId}/schedules${weekStart ? `?week_start=${weekStart}` : ''}`,
-  scheduleById: (scheduleId: string) => `/schedules/${scheduleId}`,
-  scheduleItems: (scheduleId: string) => `/schedules/${scheduleId}/items`,
-  createScheduleItem: (scheduleId: string) => `/schedules/${scheduleId}/items`,
-  updateScheduleItem: (itemId: string) => `/schedule-items/${itemId}`,
-  deleteScheduleItem: (itemId: string) => `/schedule-items/${itemId}`,
-  publishSchedule: (scheduleId: string) => `/schedules/${scheduleId}/publish`,
-  runScheduler: (restaurantId: string) => `/restaurants/${restaurantId}/schedules/run`,
-  schedulerStatus: (runId: string) => `/schedule-runs/${runId}`,
-  staffingRequirements: (restaurantId: string) =>
-    `/restaurants/${restaurantId}/staffing-requirements`,
-  staffAvailability: (waiterId: string) => `/staff/${waiterId}/availability`,
-  staffPreferences: (waiterId: string) => `/staff/${waiterId}/preferences`,
-
   // Review Management endpoints
   reviewStats: (restaurantId: string) =>
     `/reviews/${restaurantId}/stats`,
