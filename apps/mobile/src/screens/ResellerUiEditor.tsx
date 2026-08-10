@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -91,12 +91,12 @@ function RealThemePreview({
 }) {
   const webView = useRef<WebView>(null);
   const previewUrl = SERVICE_PREVIEW_URLS[service];
-  const sendState = () => {
+  const sendState = useCallback(() => {
     const message = JSON.stringify({ type: 'shire-ui-preview-state', service, tokens, componentOverrides, mode });
     webView.current?.injectJavaScript(`window.postMessage(${message}, window.location.origin); true;`);
-  };
+  }, [componentOverrides, mode, service, tokens]);
 
-  useEffect(() => sendState(), [componentOverrides, mode, service, tokens]);
+  useEffect(() => sendState(), [sendState]);
 
   if (!previewUrl) {
     return (
