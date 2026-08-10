@@ -133,15 +133,32 @@ surface independently, while every mutation is also guarded by the ML backend.
   scope loads all admin-visible reseller groups instead of treating the admin's
   profile ID as a reseller ID; the scope picker is always dismissible and shows
   theme-loading failures inside the dialog.
+  Reseller sidebar visibility comes from one grant-to-route map used by every
+  store route, including the specialized Setup and UI Editor shells. The
+  owner-controlled `setup` grant covers Setup, UI Editor, Taxes, POS Settings,
+  and Printing & Routing; `team` covers Members, Time Clock, and Alerts; report,
+  check, labor-cost, and payroll/tip surfaces remain mandatory. Route changes
+  reuse the resolved store grants so the sidebar does not change composition.
+  UI previews default to the same-origin Expo exports under
+  `apps/web/public/previews`; environment URLs may explicitly override them.
+  Never add an implicit localhost or developer-machine fallback.
 - Migrations (manual run): ML `supabase/migrations/0055_team_hub_access.sql`
   (restaurant_members + back_office_permissions + invitations alter), POS repo
   `0022_pos_timeclock_breaks_v1.sql` (pos_time_clock_breaks).
 - POS backend: portal Supabase-JWT auth for `/manager/timeclock*` validates
   sessions through Supabase Auth (including asymmetric signing keys; legacy
-  `SUPABASE_JWT_SECRET` fallback), breaks on entries.
+  `SUPABASE_JWT_SECRET` fallback), breaks on entries. All portal-owned POS
+  routes use the same resolver for owners, platform admins, restaurant members,
+  direct resellers, and assigned reseller employees. Unlinked legacy members
+  use `restaurant_members.role` only as the role-default lookup key; explicit
+  permission overrides still win and no waiter link is guessed. Reseller store
+  grants are translated to the canonical permission keys in that resolver;
+  printing/check-workflow routes must not maintain a private owner/member check.
 - ML backend: `app/api/back_office.py` (members/invites/my-access/accept),
   `app/services/back_office_access.py` (merge + require_back_office_permission),
-  guards on tips_payroll + waiters mutations.
+  guards on tips_payroll + waiters mutations. ML-owned employee, invite, alert,
+  and settings endpoints mirror the same reseller store/employee grant
+  translation; reseller read access does not imply mutation access.
 - Manager alerts: the store bell and Alerts page merge existing scheduling
   requests with durable missed-clock-out alerts. Desktop and mobile call the
   same ML-backend action API; time corrections write the existing POS

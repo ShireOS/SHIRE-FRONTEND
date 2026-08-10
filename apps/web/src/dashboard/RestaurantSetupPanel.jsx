@@ -63,6 +63,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../shared/lib/supabase'
 import { queryClient, queryKeys, fetchCached, fetchWithSupabaseAuth, STALE_TIMES } from '../shared/query'
 import { fetchPosApi } from '../shared/api/posClient'
+import { fetchReservationsApi } from '../shared/api/reservationsClient'
 import { FloorPlanEditor } from '../onboarding/components/FloorPlanEditor'
 import { normalizeFloorPlanTablesForEditor } from '../onboarding/components/FloorPlanCanvas'
 import { FloorPlanTableSetup } from '../onboarding/components/FloorPlanTableSetup'
@@ -165,12 +166,6 @@ const DEFAULT_RESERVATION_TIMING = {
   reservation_default_duration_minutes: '90',
   reservation_windows_follow_operating_hours: true,
 }
-
-const RESERVATIONS_API_BASE_URL = (
-  import.meta.env.VITE_RESERVATIONS_API_BASE_URL ||
-  import.meta.env.VITE_RESERVATIONS_API_BASE ||
-  'http://localhost:4100/api/v1'
-).replace(/\/+$/, '')
 
 const ROLE_OPTIONS = ['server', 'bartender', 'host', 'manager', 'busser', 'runner']
 
@@ -1576,13 +1571,11 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     })
 
   const fetchReservationSettings = async (targetRestaurantId) => {
-    const { data: sessionData } = await supabase.auth.getSession()
-    const headers = new Headers()
-    headers.set('Content-Type', 'application/json')
-    if (sessionData?.session?.access_token) headers.set('Authorization', `Bearer ${sessionData.session.access_token}`)
-    const response = await fetch(`${RESERVATIONS_API_BASE_URL}/locations/${targetRestaurantId}/reservation-settings`, { headers })
-    if (!response.ok) return null
-    return response.json()
+    try {
+      return await fetchReservationsApi(`/locations/${targetRestaurantId}/reservation-settings`)
+    } catch {
+      return null
+    }
   }
 
   const saveReservationSettings = async (targetRestaurantId, timing, operatingHours) => {
@@ -1596,13 +1589,8 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       : existingPeriods.length > 0
         ? reservationPeriodsWithDefaults(timing, existingPeriods)
         : reservationPeriodsFromHours(timing, operatingHours, existingPeriods)
-    const { data: sessionData } = await supabase.auth.getSession()
-    const headers = new Headers()
-    headers.set('Content-Type', 'application/json')
-    if (sessionData?.session?.access_token) headers.set('Authorization', `Bearer ${sessionData.session.access_token}`)
-    const response = await fetch(`${RESERVATIONS_API_BASE_URL}/locations/${targetRestaurantId}/reservation-settings`, {
+    await fetchReservationsApi(`/locations/${targetRestaurantId}/reservation-settings`, {
       method: 'PUT',
-      headers,
       body: JSON.stringify({
         bookingHorizonDays: Number(payload.reservation_online_booking_horizon_days),
         gracePeriodMinutes: Number(payload.reservation_online_grace_period_minutes),
@@ -1611,10 +1599,6 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         timingPolicies: payload.timingPolicies,
       }),
     })
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      throw new Error(body?.message || `Saving reservation timing failed (${response.status})`)
-    }
   }
 
   const saveHoursForRestaurant = async (targetRestaurantId, nextHours) => {

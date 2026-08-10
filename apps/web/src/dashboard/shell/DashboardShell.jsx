@@ -40,6 +40,7 @@ import { queryClient, queryKeys, fetchWithSupabaseAuth, STALE_TIMES } from '../.
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import { TAB_PERMISSIONS } from '../../shared/permissions'
 import { backOfficeApi } from '../../shared/api/backOfficeApi'
+import { fetchReservationsApi } from '../../shared/api/reservationsClient'
 
 const THEME_STORAGE_KEY = 'shire_dashboard_theme'
 
@@ -110,21 +111,9 @@ export function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
     prefetch(queryKeys.menuCategories(restaurantId), api(`/restaurants/${restaurantId}/menu/categories`), STALE_TIMES.setup)
     prefetch(queryKeys.priceAllocations(restaurantId), api(`/restaurants/${restaurantId}/menu/price-allocations`), STALE_TIMES.setup)
   } else if (tabId === 'feedback') {
-    const reservationsBaseUrl = (
-      import.meta.env.VITE_RESERVATIONS_API_BASE_URL ||
-      import.meta.env.VITE_RESERVATIONS_API_BASE ||
-      'http://localhost:4100/api/v1'
-    ).replace(/\/+$/, '')
     prefetch(
       queryKeys.guestFeedback(restaurantId, 'all'),
-      async () => {
-        const { data: sessionData } = await supabase.auth.getSession()
-        const headers = new Headers({ 'Content-Type': 'application/json' })
-        if (sessionData?.session?.access_token) headers.set('Authorization', `Bearer ${sessionData.session.access_token}`)
-        const response = await fetch(`${reservationsBaseUrl}/locations/${restaurantId}/guest-feedback?status=all`, { headers })
-        if (!response.ok) throw new Error('Could not load guest feedback')
-        return response.json()
-      },
+      () => fetchReservationsApi(`/locations/${restaurantId}/guest-feedback?status=all`),
       STALE_TIMES.messaging
     )
   }

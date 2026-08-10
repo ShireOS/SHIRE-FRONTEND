@@ -1,0 +1,15 @@
+{
+  "generated_at": "2026-08-10T19:08:03Z",
+  "exports": {
+    "pos": {
+      "base_path": "/previews/pos",
+      "source_commit": "f207b23",
+      "expo_version": "56.0.12"
+    },
+    "host": {
+      "base_path": "/previews/host",
+      "source_commit": "c30401f",
+      "expo_version": "54.0.33"
+    }
+  }
+}

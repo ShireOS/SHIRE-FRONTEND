@@ -62,6 +62,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../shared/lib/supabase'
 import { API_CONFIG } from '../../shared/api/config'
 import { fetchPosApi } from '../../shared/api/posClient'
+import { fetchReservationsApi } from '../../shared/api/reservationsClient'
 import { useAuth } from '../../auth'
 import type { Restaurant } from '@shire/db'
 
@@ -312,12 +313,6 @@ const INITIAL_DATA: OnboardingData = {
 const ONBOARDING_MAX_STEP = 20
 const REQUEST_TIMEOUT_MS = 20000
 const ONBOARDING_DRAFT_VERSION = 1
-const RESERVATIONS_API_BASE_URL = (
-  import.meta.env.VITE_RESERVATIONS_API_BASE_URL ||
-  import.meta.env.VITE_RESERVATIONS_API_BASE ||
-  'http://localhost:4100/api/v1'
-).replace(/\/+$/, '')
-
 const MENU_IMPORT_METHODS: OnboardingData['menu_import_method'][] = [
   'skip',
   'manual',
@@ -743,10 +738,7 @@ const firstNumericValue = (
 
 const fetchReservationSettings = async (restaurantId: string): Promise<Record<string, unknown> | null> => {
   try {
-    const headers = await getApiHeaders()
-    const response = await fetch(`${RESERVATIONS_API_BASE_URL}/locations/${restaurantId}/reservation-settings`, { headers })
-    if (!response.ok) return null
-    const body = await response.json()
+    const body = await fetchReservationsApi<unknown>(`/locations/${restaurantId}/reservation-settings`)
     return isRecord(body) ? body : null
   } catch (err) {
     console.warn('[Onboarding] Could not load reservation timing:', err)
@@ -765,10 +757,8 @@ const saveReservationSettings = async (restaurantId: string, data: OnboardingDat
     : existingPeriods.length > 0
       ? applyReservationPeriodDefaults(existingPeriods, data)
       : servicePeriodsFromOperatingHours(data, existingPeriods)
-  const headers = await getApiHeaders()
-  const response = await fetch(`${RESERVATIONS_API_BASE_URL}/locations/${restaurantId}/reservation-settings`, {
+  await fetchReservationsApi(`/locations/${restaurantId}/reservation-settings`, {
     method: 'PUT',
-    headers,
     body: JSON.stringify({
       bookingHorizonDays: Number(patch.reservation_online_booking_horizon_days),
       gracePeriodMinutes: Number(patch.reservation_online_grace_period_minutes),
@@ -777,10 +767,6 @@ const saveReservationSettings = async (restaurantId: string, data: OnboardingDat
       timingPolicies: patch.timingPolicies,
     }),
   })
-  if (!response.ok) {
-    const body = await response.json().catch(() => null)
-    throw new Error(asString(isRecord(body) ? body.message : null) || `Saving reservation timing failed (${response.status})`)
-  }
 }
 
 const reservationTimingFromSettings = (settings: Record<string, unknown> | null): Partial<OnboardingData> => {

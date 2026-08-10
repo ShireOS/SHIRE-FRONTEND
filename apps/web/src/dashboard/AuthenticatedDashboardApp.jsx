@@ -13,6 +13,7 @@ import { OnboardingPage } from '../onboarding'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { supabase } from '../shared/lib/supabase'
 import { API_CONFIG } from '../shared/api/config'
+import { fetchReservationsApi } from '../shared/api/reservationsClient'
 import { queryClient, queryKeys, fetchCached, fetchWithSupabaseAuth, STALE_TIMES } from '../shared/query'
 import ModernRestaurantSetupPanel, {
   buildSetupWarnings as buildModernSetupWarnings,
@@ -203,33 +204,6 @@ function PlaceholderPanel({ title, eyebrow, children }) {
       <div className="mt-4 max-w-3xl text-dash-secondary">{children}</div>
     </section>
   )
-}
-
-const RESERVATIONS_API_BASE_URL = (
-  import.meta.env.VITE_RESERVATIONS_API_BASE_URL ||
-  import.meta.env.VITE_RESERVATIONS_API_BASE ||
-  'http://localhost:4100/api/v1'
-).replace(/\/+$/, '')
-
-async function fetchReservationsApi(endpoint, options = {}) {
-  const { data: sessionData } = await supabase.auth.getSession()
-  const headers = new Headers(options.headers || {})
-  if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
-  if (sessionData?.session?.access_token) headers.set('Authorization', `Bearer ${sessionData.session.access_token}`)
-  let response
-  try {
-    response = await fetch(`${RESERVATIONS_API_BASE_URL}${endpoint}`, {
-      ...options,
-      headers,
-    })
-  } catch {
-    throw new Error(`Reservations service is unreachable at ${RESERVATIONS_API_BASE_URL}. Start the reservations API or set VITE_RESERVATIONS_API_BASE_URL.`)
-  }
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}))
-    throw new Error(body.message || body.detail || `Request failed (${response.status})`)
-  }
-  return response.json()
 }
 
 const feedbackStatusOptions = [

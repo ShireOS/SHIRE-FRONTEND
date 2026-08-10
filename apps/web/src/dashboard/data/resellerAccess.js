@@ -1,41 +1,20 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../shared/lib/supabase'
 import { useAuth } from '../../auth'
+import {
+  allowedTabsForResellerPermissions,
+  normalizeResellerPermissions,
+} from './resellerTabs'
+
+export {
+  DEFAULT_RESELLER_PERMISSIONS,
+  RESELLER_TOGGLEABLE_TABS,
+} from './resellerTabs'
 
 // Analytics and rates/payout data remain mandatory. Device and peripheral
 // management is explicitly grantable per store because it can operate live
 // terminals, printers, and drawers.
-export const RESELLER_TOGGLEABLE_TABS = ['devices', 'setup', 'menu', 'feedback', 'team', 'scheduling', 'messaging', 'payments', 'close_day']
-export const DEFAULT_RESELLER_PERMISSIONS = {
-  devices: true,
-  setup: true,
-  menu: true,
-  feedback: true,
-  team: false,
-  scheduling: false,
-  messaging: false,
-  payments: false,
-  close_day: false,
-}
-
-const normalizePermissions = (permissions) => ({
-  ...DEFAULT_RESELLER_PERMISSIONS,
-  ...(permissions && typeof permissions === 'object' ? permissions : {}),
-})
-
-const allowedTabsForResellerPermissions = (permissions) => {
-  const normalized = normalizePermissions(permissions)
-  const tabs = [
-    'analytics',
-    ...RESELLER_TOGGLEABLE_TABS
-      .filter((tab) => normalized[tab])
-      .map((tab) => tab === 'close_day' ? 'close-day' : tab),
-  ]
-  // POS Menus uses the existing owner-controlled Menu grant; it is not a
-  // separate reseller permission stored on reseller_restaurants.
-  if (normalized.menu) tabs.push('menu-workspace')
-  return tabs
-}
+const allowedTabsCache = new Map()
 
 export async function fetchDeviceAccessibleRestaurantIds({ accountType, userId, restaurantIds, ownedRestaurantIds = [] }) {
   const ids = [...new Set((restaurantIds || []).filter(Boolean))]
@@ -69,7 +48,7 @@ export async function fetchDeviceAccessibleRestaurantIds({ accountType, userId, 
   if (error) throw error
 
   return [...ownedIds, ...(data || [])
-    .filter((assignment) => normalizePermissions(assignment.permissions).devices)
+    .filter((assignment) => normalizeResellerPermissions(assignment.permissions).devices)
     .map((assignment) => assignment.restaurant_id)]
 }
 
@@ -98,17 +77,25 @@ export async function updateResellerPermissions(assignmentId, permissions) {
  */
 export function useAllowedStoreTabs(restaurant) {
   const auth = useAuth()
-  const [allowed, setAllowed] = useState(null) // null = everything
-
   const isReseller = ['reseller', 'reseller_employee'].includes(auth.accountType)
   const isOwned = restaurant?.owner_id === auth.user?.id
   const restaurantId = restaurant?.id
+  const cacheKey = isReseller && !isOwned && restaurantId && auth.user?.id
+    ? `${auth.user.id}:${restaurantId}`
+    : null
+  const [allowed, setAllowed] = useState(() => (
+    cacheKey
+      ? allowedTabsCache.get(cacheKey) || allowedTabsForResellerPermissions(null)
+      : null
+  )) // null = everything for owners, members, and admins
 
   useEffect(() => {
     if (!isReseller || isOwned || !restaurantId || !auth.user?.id) {
       setAllowed(null)
       return
     }
+    const nextCacheKey = `${auth.user.id}:${restaurantId}`
+    setAllowed(allowedTabsCache.get(nextCacheKey) || allowedTabsForResellerPermissions(null))
     let cancelled = false
     const load = async () => {
       let resellerId = auth.user.id
@@ -141,12 +128,18 @@ export function useAllowedStoreTabs(restaurant) {
       .then(({ assignment, employeePermissions }) => {
         if (cancelled) return
         const tabs = allowedTabsForResellerPermissions(assignment?.permissions)
-        setAllowed(employeePermissions?.close_day === false
+        const resolved = employeePermissions?.close_day === false
           ? tabs.filter((tab) => tab !== 'close-day')
-          : tabs)
+          : tabs
+        allowedTabsCache.set(nextCacheKey, resolved)
+        setAllowed(resolved)
       })
       .catch(() => {
-        if (!cancelled) setAllowed(['analytics'])
+        if (!cancelled) {
+          const fallback = ['analytics', 'reports', 'checks', 'labor-cost', 'tip-pooling']
+          allowedTabsCache.set(nextCacheKey, fallback)
+          setAllowed(fallback)
+        }
       })
     return () => {
       cancelled = true

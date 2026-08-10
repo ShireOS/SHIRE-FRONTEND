@@ -39,6 +39,7 @@ import {
 } from './data/resellerProfile'
 import DashboardShell from '../dashboard/shell/DashboardShell'
 import { RestaurantWorkspace as ResellerRestaurantWorkspace } from '../dashboard/AuthenticatedDashboardApp'
+import { useAllowedStoreTabs } from '../dashboard/data/resellerAccess'
 import OverviewPage from '../dashboard/pages/OverviewPage'
 import RatesPage from '../dashboard/pages/RatesPage'
 import DevicesPage from '../dashboard/pages/DevicesPage'
@@ -1137,6 +1138,7 @@ function ResellerSetupEditor() {
   const auth = useAuth()
   const { restaurantId } = useParams()
   const restaurant = auth.restaurant.restaurants.find((item) => item.id === restaurantId) || null
+  const allowedStoreTabs = useAllowedStoreTabs(restaurant)
   const { groups, restaurants, isLoading: isPortfolioLoading, error: portfolioError } = useResellerPortfolio()
   const [isSwitching, setIsSwitching] = useState(true)
   const [waiterCount, setWaiterCount] = useState(null)
@@ -1207,6 +1209,10 @@ function ResellerSetupEditor() {
     return <Navigate to="/reseller" replace />
   }
 
+  if (allowedStoreTabs && !allowedStoreTabs.includes('setup')) {
+    return <Navigate to={`/reseller/restaurants/${restaurantId}/analytics`} replace />
+  }
+
   if (isSwitching || isPortfolioLoading || auth.restaurant.currentRestaurant?.id !== restaurantId) {
     return <LoadingScreen />
   }
@@ -1222,6 +1228,7 @@ function ResellerSetupEditor() {
       restaurant={restaurant}
       restaurantId={restaurantId}
       setupWarningCount={warningCount(setupWarnings)}
+      allowedStoreTabs={allowedStoreTabs}
       routes={RESELLER_SHELL_ROUTES}
     >
       {portfolioError && <StatusMessage tone="error">{portfolioError}</StatusMessage>}
@@ -1256,10 +1263,14 @@ function ResellerUiEditorRoute() {
   const auth = useAuth()
   const { restaurantId } = useParams()
   const restaurant = auth.restaurant.restaurants.find((item) => item.id === restaurantId) || null
+  const allowedStoreTabs = useAllowedStoreTabs(restaurant)
   const { employee, groups, restaurants, isLoading, error } = useResellerPortfolio()
 
   if (!restaurant) return <Navigate to="/reseller" replace />
   if (isLoading) return <LoadingScreen />
+  if (allowedStoreTabs && !allowedStoreTabs.includes('ui')) {
+    return <Navigate to={`/reseller/restaurants/${restaurantId}/analytics`} replace />
+  }
 
   return (
     <DashboardShell
@@ -1271,6 +1282,7 @@ function ResellerUiEditorRoute() {
       ]}
       restaurant={restaurant}
       restaurantId={restaurantId}
+      allowedStoreTabs={allowedStoreTabs}
       routes={RESELLER_SHELL_ROUTES}
     >
       {error && <StatusMessage tone="error">{error}</StatusMessage>}

@@ -71,9 +71,9 @@ function cloneOverrides(value: UiComponentOverrides): UiComponentOverrides {
   return JSON.parse(JSON.stringify(value)) as UiComponentOverrides;
 }
 
-const SERVICE_PREVIEW_URLS: Record<UiService, string> = {
-  pos: process.env.EXPO_PUBLIC_POS_UI_PREVIEW_URL || 'http://Harshiths-MacBook-Pro.local:8082/?shirePreview=1',
-  host: process.env.EXPO_PUBLIC_HOST_UI_PREVIEW_URL || 'http://Harshiths-MacBook-Pro.local:8081/?shirePreview=1',
+const SERVICE_PREVIEW_URLS: Record<UiService, string | undefined> = {
+  pos: process.env.EXPO_PUBLIC_POS_UI_PREVIEW_URL,
+  host: process.env.EXPO_PUBLIC_HOST_UI_PREVIEW_URL,
 };
 
 function RealThemePreview({
@@ -90,6 +90,7 @@ function RealThemePreview({
   onComponentSelect: (selection: UiPreviewComponentSelection) => void;
 }) {
   const webView = useRef<WebView>(null);
+  const previewUrl = SERVICE_PREVIEW_URLS[service];
   const sendState = () => {
     const message = JSON.stringify({ type: 'shire-ui-preview-state', service, tokens, componentOverrides, mode });
     webView.current?.injectJavaScript(`window.postMessage(${message}, window.location.origin); true;`);
@@ -97,11 +98,20 @@ function RealThemePreview({
 
   useEffect(() => sendState(), [componentOverrides, mode, service, tokens]);
 
+  if (!previewUrl) {
+    return (
+      <View style={[styles.realPreview, styles.previewUnavailable]}>
+        <Text style={styles.previewUnavailableTitle}>{service === 'pos' ? 'POS' : 'Host'} preview unavailable</Text>
+        <Text style={styles.previewUnavailableBody}>Configure the hosted preview URL for this app build.</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.realPreview}>
       <WebView
         ref={webView}
-        source={{ uri: SERVICE_PREVIEW_URLS[service] }}
+        source={{ uri: previewUrl }}
         onLoadEnd={sendState}
         onMessage={(event) => {
           try {
@@ -469,6 +479,9 @@ const styles = StyleSheet.create({
   previewModalBody: { flex: 1, justifyContent: 'center' },
   realPreview: { marginTop: 12, width: '100%', aspectRatio: 4 / 3, minHeight: 420, overflow: 'hidden', borderWidth: 1, borderColor: semanticColors.border, borderRadius: 8, backgroundColor: '#000000' },
   previewWebView: { flex: 1, backgroundColor: '#000000' },
+  previewUnavailable: { alignItems: 'center', justifyContent: 'center', padding: 24 },
+  previewUnavailableTitle: { ...typography.title, color: semanticColors.text, textAlign: 'center' },
+  previewUnavailableBody: { ...typography.body, color: semanticColors.textMuted, marginTop: 8, textAlign: 'center' },
   historyRow: { gap: 9, alignItems: 'center', paddingTop: 12 },
   historySwatch: { width: 42, height: 42, borderRadius: 7, borderWidth: 1, borderColor: semanticColors.borderStrong },
   tokenList: { marginTop: 10, gap: 8 },
