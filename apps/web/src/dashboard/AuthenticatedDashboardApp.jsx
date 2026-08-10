@@ -844,7 +844,7 @@ function LegacyAnalyticsDashboard({ restaurant }) {
             {widgetVisible('staff') && (
             <AnalyticsSection
               title="Staff"
-              source="shifts + waiters"
+              source="POS time clock + closed checks"
               status={staff.status}
               sampleSize={staff.sample_size}
               emptyMessage={staff.empty_message}
@@ -3447,16 +3447,22 @@ function EmployeePortal() {
                 <p className="label-mono">Biweekly wages</p>
                 <p className="mt-2 text-2xl font-semibold">{employeeLaborCost == null ? 'Unset' : `$${Number(employeeLaborCost).toFixed(2)}`}</p>
                 <p className="mt-1 text-xs text-dash-tertiary">
-                  {earnings?.has_missing_labor_rate ? 'Some role rates are missing.' : earnings?.wage_status || 'Using clocked time and role rates when configured.'}
+                  {earnings?.actual?.open_punches
+                    ? earnings.wage_status
+                    : earnings?.has_missing_labor_rate
+                      ? 'Some role rates are missing.'
+                      : earnings?.wage_status || 'Using clocked time and role rates when configured.'}
                 </p>
               </div>
               <div>
                 <p className="label-mono">Shifts</p>
                 <p className="mt-2 text-2xl font-semibold">{earnings?.shift_count ?? 0}</p>
+                <p className="mt-1 text-xs text-dash-tertiary">{earnings?.actual?.punch_count != null ? `${earnings.actual.punch_count} clocked` : ''}</p>
               </div>
               <div>
                 <p className="label-mono">Hours</p>
                 <p className="mt-2 text-2xl font-semibold">{Number(earnings?.hours ?? totalWeekHours).toFixed(1)}</p>
+                <p className="mt-1 text-xs text-dash-tertiary">{earnings?.actual?.hours != null ? `${Number(earnings.actual.hours).toFixed(1)} clocked` : ''}</p>
               </div>
             </section>
           </div>

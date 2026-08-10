@@ -64,6 +64,18 @@ export type EarningsSummary = {
   wage_status?: string | null;
   shift_count?: number;
   hours?: number;
+  scheduled?: {
+    shift_count?: number;
+    hours?: number;
+    estimated_wages?: number | null;
+  };
+  actual?: {
+    punch_count?: number;
+    open_punches?: number;
+    hours?: number;
+    wages?: number;
+    unrated_minutes?: number;
+  };
 };
 
 export type StaffContact = {

@@ -164,13 +164,16 @@ export default function EmployeeHome() {
             </View>
 
             <View style={styles.statsGrid}>
-              <StatTile label="Hours" value={Number(earnings?.hours || 0).toFixed(1)} />
-              <StatTile label="Shifts" value={String(earnings?.shift_count ?? upcomingShifts.length)} />
+              <StatTile label="Scheduled hrs" value={Number(earnings?.hours || 0).toFixed(1)} />
+              <StatTile label="Worked hrs" value={Number(earnings?.actual?.hours || 0).toFixed(1)} />
               <StatTile
                 label="Wages"
                 value={formatMoney(actualWages)}
               />
             </View>
+            {Number(earnings?.actual?.open_punches || 0) > 0 && (
+              <UiText variant="caption" tone="muted">{earnings?.wage_status}</UiText>
+            )}
 
             {announcements[0] && (
               <View style={styles.announcements}>
