@@ -52,6 +52,22 @@ export function ticketTopRowsMatch(zones, externalRows) {
     && JSON.stringify(stripTicketTopRowIds(zones.info)) === JSON.stringify(externalRows.info)
 }
 
+// Find the presentation attached to a field without reimplementing the ticket
+// grammar in the preview. Pair columns can override their parent row, so merge
+// both just like the printer renderer does.
+export function ticketTopFieldPresentation(rows, field) {
+  for (const row of rows || []) {
+    if (row?.type === 'field' && row.field === field) return { ...row, pair: false }
+    if (row?.type !== 'pair') continue
+    for (const side of [row.left, row.right]) {
+      if (ticketTopSideParts(side).some(part => part?.field === field)) {
+        return { ...row, ...(side || {}), pair: true }
+      }
+    }
+  }
+  return null
+}
+
 export function buildTicketTopPatch(zones, changedZones) {
   const patch = {}
   for (const zone of changedZones) {

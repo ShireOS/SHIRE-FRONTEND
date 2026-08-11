@@ -7,6 +7,7 @@ import {
   TICKET_TOP_STARTER,
   buildTicketTopPatch,
   ticketTopEditorRows,
+  ticketTopFieldPresentation,
   ticketTopRowsMatch,
   ticketTopSideLabel,
   ticketTopSideParts,
@@ -112,6 +113,26 @@ test('a bare field is read as a one-part column', () => {
   assert.deepEqual(ticketTopSideParts({ field: 'server_name' }), [{ field: 'server_name' }])
   assert.deepEqual(ticketTopSideParts(undefined), [])
   assert.deepEqual(ticketTopSideParts({}), [])
+})
+
+test('preview presentation follows stock and customized field sizing', () => {
+  assert.deepEqual(ticketTopFieldPresentation(TICKET_TOP_STARTER.header, 'order_type'), {
+    type: 'field', field: 'order_type', align: 'center', size: 'large', bold: true, pair: false,
+  })
+  assert.deepEqual(
+    ticketTopFieldPresentation([{
+      type: 'pair', bold: true,
+      left: { parts: [{ field: 'server_name' }], size: 'large' },
+      right: { parts: [{ field: 'time_only' }] },
+    }], 'server_name'),
+    {
+      type: 'pair', bold: true, pair: true,
+      left: { parts: [{ field: 'server_name' }], size: 'large' },
+      right: { parts: [{ field: 'time_only' }] },
+      parts: [{ field: 'server_name' }], size: 'large',
+    },
+  )
+  assert.equal(ticketTopFieldPresentation([], 'order_type'), null)
 })
 
 test('a column summarises as join or fallback so the row reads at a glance', () => {

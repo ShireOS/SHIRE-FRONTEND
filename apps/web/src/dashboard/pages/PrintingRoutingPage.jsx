@@ -8,7 +8,7 @@ import ResilientPrintingCard from '../components/printing/ResilientPrintingCard'
 import ProductionWorkflowCard from '../components/printing/ProductionWorkflowCard'
 import HardwareChainGuide from '../components/printing/HardwareChainGuide'
 import TicketTopBuilder from '../components/printing/TicketTopBuilder'
-import { TICKET_TOP_STARTER } from '../components/printing/ticketTopPolicy'
+import { TICKET_TOP_STARTER, ticketTopFieldPresentation } from '../components/printing/ticketTopPolicy'
 
 const DEFAULT_CONFIG = {
   receipt_detail: 'clean',
@@ -44,6 +44,7 @@ const PRICING_PROGRAM_LABELS = {
 }
 
 const MEMO_FIELDS = new Set(['check_memo', 'check_memo_label', 'check_memo_value'])
+const KITCHEN_METHOD_LABELS = { dine_in: 'DINE IN', togo: 'TO GO', delivery: 'DELIVERY' }
 
 function memoPresentation(rows) {
   for (const row of rows || []) {
@@ -233,6 +234,12 @@ export default function PrintingRoutingPage({ restaurantId }) {
       ? [...(effectiveKitchen.header || []), ...(effectiveKitchen.info || [])]
       : [...TICKET_TOP_STARTER.header, ...TICKET_TOP_STARTER.info]
     return memoPresentation(rows)
+  }, [effectiveKitchen, ticketTopConfigured])
+  const methodStyle = useMemo(() => {
+    const rows = ticketTopConfigured
+      ? [...(effectiveKitchen.header || []), ...(effectiveKitchen.info || [])]
+      : [...TICKET_TOP_STARTER.header, ...TICKET_TOP_STARTER.info]
+    return ticketTopFieldPresentation(rows, 'order_type') || {}
   }, [effectiveKitchen, ticketTopConfigured])
 
   const effectiveAliases = kind => ({
@@ -610,10 +617,14 @@ export default function PrintingRoutingPage({ restaurantId }) {
 
         <div className="h-fit rounded-2xl border border-white/10 bg-white/[0.035] p-5 xl:sticky xl:top-20">
           <div className="flex items-center justify-between"><div><p className="label-mono">Live preview</p><h2 className="mt-1 text-lg font-semibold">{previewTitle}</h2></div>{previewStatus === 'ready' ? <span className="inline-flex items-center gap-1 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" /> Real renderer</span> : previewStatus === 'error' ? <span className="inline-flex items-center gap-1 text-xs text-amber-200"><AlertCircle className="h-4 w-4" /> Renderer unavailable</span> : <span className="inline-flex items-center gap-1 text-xs text-dash-tertiary"><Loader2 className="h-4 w-4 animate-spin" /> Rendering</span>}</div>
-          <div className="mx-auto mt-5 max-w-[430px] bg-[#fffdf6] px-7 py-8 text-black shadow-2xl">
-            <pre className={`whitespace-pre-wrap font-mono leading-relaxed ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{previewLines.map((line, index, lines) => {
+          <div className="mt-5 overflow-x-auto pb-2">
+            <div className="mx-auto w-max min-w-[430px] bg-[#fffdf6] px-7 py-8 text-black shadow-2xl">
+            <pre className={`whitespace-pre font-mono leading-relaxed ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{previewLines.map((line, index, lines) => {
               const isModifier = output === 'kitchen_ticket' && /^\s*\+/.test(line)
               const isItem = output === 'kitchen_ticket' && /^\d+(?:\.\d+)?\s{2}\S/.test(line)
+              const isMethod = output === 'kitchen_ticket'
+                && line.trim() === KITCHEN_METHOD_LABELS[kitchenVariant]
+                && (firstPreviewItemIndex < 0 || index < firstPreviewItemIndex)
               // Guest notes carry whichever marker the note style configures, so
               // matching only the old "NOTE:" prefix left them unstyled in the
               // preview under every other choice.
@@ -637,11 +648,20 @@ export default function PrintingRoutingPage({ restaurantId }) {
                 (isModifier || isNote || isCheckMemo) && requestedSize === 'standard' ? 'text-[0.86em]' : '',
                 (isModifier || isNote || isCheckMemo) && requestedSize === 'large' ? 'text-[1em]' : '',
                 isCheckMemo && requestedSize === 'double' ? 'text-[1.15em]' : '',
+                isMethod && methodStyle.bold ? 'font-bold' : '',
+                isMethod && methodStyle.size === 'large' ? 'text-[1.35em] leading-[2.1]' : '',
+                isMethod && methodStyle.size === 'double' ? 'text-[1.7em] leading-[2.1]' : '',
+                isMethod && !methodStyle.pair && methodStyle.align === 'center' ? 'block text-center' : '',
+                isMethod && !methodStyle.pair && methodStyle.align === 'right' ? 'block text-right' : '',
                 isCheckMemo && !memoStyle.pair && memoStyle.align === 'center' ? 'block text-center' : '',
                 isCheckMemo && !memoStyle.pair && memoStyle.align === 'right' ? 'block text-right' : '',
               ].filter(Boolean).join(' ')
-              return <span key={index} className={className}>{line}{'\n'}</span>
+              const displayLine = isMethod && !methodStyle.pair && ['center', 'right'].includes(methodStyle.align)
+                ? line.trim()
+                : line
+              return <span key={index} className={className}>{displayLine}{'\n'}</span>
             })}</pre>
+            </div>
           </div>
           <p className="mt-4 text-center text-xs text-dash-tertiary">Uses live menu names and the same ReceiptLine renderer as the printer.</p>
         </div>
