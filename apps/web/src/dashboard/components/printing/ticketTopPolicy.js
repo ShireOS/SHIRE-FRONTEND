@@ -1,6 +1,6 @@
-// The starter is the ticket the POS already prints, written in the grammar the
-// builder edits — it mirrors DEFAULT_KITCHEN_TICKET_TOP in the backend's
-// printing_policy.py.
+// The starter is the ticket the POS and backend print, written in the grammar
+// the builder edits. The checked-in JSON is mirrored in all three runtimes so
+// the dashboard's real preview cannot silently drift from paper output.
 //
 // It used to be a best-effort approximation, because the editable schema could
 // not express the two-column heading the POS actually printed. Opening the
@@ -9,41 +9,25 @@
 // row type closed that gap, so customizing now starts from exactly what was on
 // paper and every edit from there is a real choice.
 //
-//     CHK 418                  DINE IN
-//     Table 12 · Marcus          3:14P
-//     --------------------------------
+//                  DINE IN
+// Kitchen · Marcus                    3:14 PM
+// -------------------------------------------
+//                  TABLE 12
+// -------------------------------------------
 export const TICKET_TOP_STARTER = {
   header: [
+    { type: 'field', field: 'order_type', align: 'center', size: 'large', bold: true },
     {
       type: 'pair',
-      // `first` is a fallback chain: an offline ticket has no check number yet
-      // and falls back to the table rather than printing a blank column.
-      left: {
-        parts: [{ field: 'check_number' }, { field: 'location' }],
-        mode: 'first',
-        size: 'large',
-        bold: true,
-      },
-      right: { parts: [{ field: 'order_type' }], size: 'large', bold: true },
-      right_width: 10,
-    },
-  ],
-  info: [
-    {
-      type: 'pair',
-      // `hide_if_duplicate`: when the header already fell back to the table,
-      // printing it again here would say Table 7 twice.
-      left: {
-        parts: [
-          { field: 'location', hide_if_duplicate: true },
-          { field: 'server_name' },
-        ],
-        join: ' · ',
-      },
+      left: { parts: [{ field: 'station_name' }, { field: 'server_name' }], join: ' · ' },
       right: { parts: [{ field: 'time_only' }] },
-      right_width: 7,
+      right_width: 9,
     },
     { type: 'divider' },
+    { type: 'field', field: 'location', align: 'center', bold: true },
+    { type: 'divider' },
+  ],
+  info: [
     { type: 'field', field: 'check_memo', align: 'left', size: 'standard', bold: true, color: 'red', requires: 'check_memo' },
     { type: 'divider', requires: 'check_memo' },
     { type: 'field', field: 'course_banner', align: 'center', bold: true, requires: 'course_banner' },

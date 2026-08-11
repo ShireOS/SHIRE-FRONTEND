@@ -1,40 +1,18 @@
 {
   "header": [
     {
-      "left": {
-        "bold": true,
-        "mode": "first",
-        "parts": [
-          {
-            "field": "check_number"
-          },
-          {
-            "field": "location"
-          }
-        ],
-        "size": "large"
-      },
-      "right": {
-        "bold": true,
-        "parts": [
-          {
-            "field": "order_type"
-          }
-        ],
-        "size": "large"
-      },
-      "right_width": 10,
-      "type": "pair"
-    }
-  ],
-  "info": [
+      "align": "center",
+      "bold": true,
+      "field": "order_type",
+      "size": "large",
+      "type": "field"
+    },
     {
       "left": {
-        "join": " \u00b7 ",
+        "join": " · ",
         "parts": [
           {
-            "field": "location",
-            "hide_if_duplicate": true
+            "field": "station_name"
           },
           {
             "field": "server_name"
@@ -48,12 +26,23 @@
           }
         ]
       },
-      "right_width": 7,
+      "right_width": 9,
       "type": "pair"
     },
     {
       "type": "divider"
     },
+    {
+      "align": "center",
+      "bold": true,
+      "field": "location",
+      "type": "field"
+    },
+    {
+      "type": "divider"
+    }
+  ],
+  "info": [
     {
       "align": "left",
       "bold": true,

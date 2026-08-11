@@ -27,8 +27,8 @@ const DEFAULT_CONFIG = {
     print_seats: true, combine_identical: true, item_bold: true, item_name_mode: 'alias',
     modifier_name_mode: 'alias', modifier_size: 'large', modifier_color: 'black', modifier_bold: true,
     note_size: 'large', note_color: 'red', note_bold: true,
-    check_number_format: 'chk', time_format: 'compact', seat_format: 'short',
-    note_style: 'stars', item_separator: 'dots',
+    check_number_format: 'chk', time_format: 'meridiem', seat_format: 'short',
+    note_style: 'stars', item_separator: 'dashes',
   },
   aliases: { items: {}, modifiers: {} },
   stations: {},
@@ -251,7 +251,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
     return next
   })
 
-  // Removes the ticket-top spec so the POS prints its legacy hardcoded top
+  // Removes the ticket-top spec so the POS prints the canonical stock top
   // again (station scope falls back to the whole-kitchen spec, if any).
   // patchKitchen can't do this — merging never deletes keys. The counter
   // remounts the builder so it re-reads the post-reset effective rows.
@@ -262,9 +262,11 @@ export default function PrintingRoutingPage({ restaurantId }) {
       if (scope === 'whole') {
         delete next.kitchen.header
         delete next.kitchen.info
+        delete next.kitchen.ticket_top_customized
       } else if (next.stations?.[scope]?.kitchen) {
         delete next.stations[scope].kitchen.header
         delete next.stations[scope].kitchen.info
+        delete next.stations[scope].kitchen.ticket_top_customized
       }
       return next
     })
@@ -506,7 +508,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
                   stationScoped={scope !== 'whole'}
                   canReset={ticketTopOverridden}
                   supportsRed={supportsRed}
-                  onChange={patchKitchen}
+                  onChange={patch => patchKitchen({ ...patch, ticket_top_customized: true })}
                   onReset={resetTicketTop}
                 />
               ) : (
@@ -551,9 +553,9 @@ export default function PrintingRoutingPage({ restaurantId }) {
                       <option value="full">ORD-2026-000418</option>
                       <option value="labeled">Order ORD-2026-000418</option>
                     </Select>
-                    <Select label="Sent time" value={effectiveKitchen.time_format ?? 'compact'} onChange={value => patchKitchen({ time_format: value })}>
-                      <option value="compact">3:14P (recommended)</option>
-                      <option value="meridiem">3:14 PM</option>
+                    <Select label="Sent time" value={effectiveKitchen.time_format ?? 'meridiem'} onChange={value => patchKitchen({ time_format: value })}>
+                      <option value="compact">3:14P</option>
+                      <option value="meridiem">3:14 PM (recommended)</option>
                       <option value="h24">15:14</option>
                     </Select>
                     <Select label="Seats" value={effectiveKitchen.seat_format ?? 'short'} onChange={value => patchKitchen({ seat_format: value })}>
@@ -568,9 +570,9 @@ export default function PrintingRoutingPage({ restaurantId }) {
                       <option value="bracket">[NO ONION]</option>
                       <option value="plain">NO ONION</option>
                     </Select>
-                    <Select label="Between items" value={effectiveKitchen.item_separator ?? 'dots'} onChange={value => patchKitchen({ item_separator: value })}>
-                      <option value="dots">Dotted rule (recommended)</option>
-                      <option value="dashes">Solid rule</option>
+                    <Select label="Between items" value={effectiveKitchen.item_separator ?? 'dashes'} onChange={value => patchKitchen({ item_separator: value })}>
+                      <option value="dots">Dotted rule</option>
+                      <option value="dashes">Solid rule (recommended)</option>
                       <option value="blank">Blank line</option>
                       <option value="none">Nothing</option>
                     </Select>

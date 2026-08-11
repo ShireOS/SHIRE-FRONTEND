@@ -25,7 +25,7 @@ const DEFAULT_PATH = new URL('./ticketTopDefault.json', import.meta.url)
 
 // Mirror of this file in the backend repo: Shire_POS_backend/tests/ticket_top_default.json
 // Update both, then update this digest and DEFAULT_SHA256 there.
-const EXPECTED_SHA256 = '9c47cd6210594d3686606e2d4f860ddf5fcd4dd1364ec91d54771965dbd82e97'
+const EXPECTED_SHA256 = '2b0fae39e1d51dc7ce73227e2201b9c5a3db63a0dc798f79d6caa0b4aae17db3'
 
 test('the starter is exactly what the printer renders by default', () => {
   const shipped = JSON.parse(readFileSync(DEFAULT_PATH, 'utf8'))
@@ -42,26 +42,18 @@ test('default checksum is pinned', () => {
       + 'and DEFAULT_SHA256 in the backend, then re-run both suites.',
   )
 })
-test('the starter reproduces the printed two-column heading', () => {
-  const [heading] = TICKET_TOP_STARTER.header
-  assert.equal(heading.type, 'pair')
-  assert.equal(heading.right_width, 10)
-  // Check number, falling back to the table when a ticket has no number yet.
-  assert.equal(heading.left.mode, 'first')
-  assert.deepEqual(heading.left.parts.map(part => part.field), ['check_number', 'location'])
-  assert.equal(heading.left.size, 'large')
-  assert.equal(heading.right.parts[0].field, 'order_type')
-})
-
-test('the starter info line joins location and server opposite the time', () => {
-  const [info] = TICKET_TOP_STARTER.info
-  assert.equal(info.type, 'pair')
-  assert.deepEqual(info.left.parts.map(part => part.field), ['location', 'server_name'])
-  // The header may already have fallen back to the table; repeating it here
-  // would print "Table 7" twice.
-  assert.equal(info.left.parts[0].hide_if_duplicate, true)
-  assert.equal(info.right.parts[0].field, 'time_only')
-  assert.equal(info.right_width, 7)
+test('the starter centers method and table around the service identity row', () => {
+  const [method, identity, beforeTable, table, afterTable] = TICKET_TOP_STARTER.header
+  assert.deepEqual(
+    [method.type, method.field, method.align, method.size, method.bold],
+    ['field', 'order_type', 'center', 'large', true],
+  )
+  assert.equal(identity.type, 'pair')
+  assert.deepEqual(identity.left.parts.map(part => part.field), ['station_name', 'server_name'])
+  assert.equal(identity.left.join, ' · ')
+  assert.equal(identity.right.parts[0].field, 'time_only')
+  assert.equal(identity.right_width, 9)
+  assert.deepEqual([beforeTable.type, table.field, table.align, table.bold, afterTable.type], ['divider', 'location', 'center', true, 'divider'])
 })
 
 test('the course banner and the rule under it appear and vanish together', () => {
