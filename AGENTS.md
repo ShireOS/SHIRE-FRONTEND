@@ -142,6 +142,8 @@ surface independently, while every mutation is also guarded by the ML backend.
   POS Settings reason-preset reads and mutations use the same portal-aware
   `settings.edit` guard as the rest of that setup surface; valid dashboard
   Supabase sessions must never be parsed only as native POS staff tokens.
+  POS-backed pages preserve HTTP status on load failures: authentication or
+  permission errors must not be presented as a network/backend outage.
   UI previews default to the same-origin Expo exports under
   `apps/web/public/previews`; environment URLs may explicitly override them.
   Never add an implicit localhost or developer-machine fallback.
