@@ -54,6 +54,12 @@ import { fetchResellerPortfolioForUser } from '../reseller/data/resellerPortfoli
 import { copyItemConfig } from './data/menuDuplicate'
 import BulkPricingPanel from './BulkPricingPanel'
 import {
+  cleanMoneyDraft,
+  moneyDraftMapToValues,
+  moneyValuesToDraft,
+  parseMoneyDraft,
+} from './utils/moneyDraft.js'
+import {
   archivePricingSpecial,
   createPricingSpecial,
   getPricingSpecials,
@@ -257,7 +263,7 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
     overage_price: group.overage_price == null ? '' : String(group.overage_price),
     prompt_mode: normalizedPromptMode(group.prompt_mode),
     pre_modifiers: Array.isArray(group.pre_modifiers) ? group.pre_modifiers : [],
-    pre_modifier_prices: group.pre_modifier_prices || {},
+    pre_modifier_prices: moneyValuesToDraft(group.pre_modifier_prices),
     no_print: Boolean(group.no_print),
     kitchen_display_role: group.kitchen_display_role || (group.type === 'side' ? 'side' : ''),
   }))
@@ -292,10 +298,10 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
       is_required: draft.is_required,
       prompt_on_order: draft.is_required ? true : draft.prompt_on_order,
       included_count: Number(draft.included_count) || 0,
-      overage_price: draft.overage_price === '' ? null : Number(draft.overage_price),
+      overage_price: parseMoneyDraft(draft.overage_price),
       prompt_mode: draft.prompt_mode,
       pre_modifiers: draft.pre_modifiers,
-      pre_modifier_prices: draft.pre_modifier_prices,
+      pre_modifier_prices: moneyDraftMapToValues(draft.pre_modifier_prices, draft.pre_modifiers),
       no_print: draft.no_print,
       kitchen_display_role: draft.kitchen_display_role || null,
     })
@@ -416,7 +422,18 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
                     {draft.pre_modifiers.map(value => (
                       <label key={value} className="flex items-center gap-1 text-xs text-dash-secondary">
                         {value} $
-                        <TextInput className="!w-20 !px-2 !py-1.5" inputMode="decimal" value={draft.pre_modifier_prices[value] == null ? '' : String(draft.pre_modifier_prices[value])} onChange={event => setDraft(prev => ({ ...prev, pre_modifier_prices: { ...prev.pre_modifier_prices, [value]: Number(cleanDecimal(event.target.value) || 0) } }))} />
+                        <TextInput
+                          className="!w-20 !px-2 !py-1.5"
+                          inputMode="decimal"
+                          value={draft.pre_modifier_prices[value] ?? ''}
+                          onChange={event => setDraft(prev => ({
+                            ...prev,
+                            pre_modifier_prices: {
+                              ...prev.pre_modifier_prices,
+                              [value]: cleanMoneyDraft(event.target.value),
+                            },
+                          }))}
+                        />
                       </label>
                     ))}
                   </div>
@@ -485,7 +502,7 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
                       defaultValue={option.overage_price == null ? '' : String(option.overage_price)}
                       placeholder="Extra $ override"
                       onBlur={event => {
-                        const next = event.target.value === '' ? null : Number(cleanDecimal(event.target.value))
+                        const next = parseMoneyDraft(event.target.value)
                         if (next !== option.overage_price) {
                           onLink(() => updateGroupOption(group.id, option.modifier_id, { overage_price: next }))
                         }
@@ -508,12 +525,15 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
                           defaultValue={option.pre_modifier_price_overrides?.[option.default_pre_modifier] ?? ''}
                           placeholder="+$"
                           title="Override this side instruction's surcharge for this modifier"
-                          onBlur={event => onLink(() => updateGroupOption(group.id, option.modifier_id, {
-                            pre_modifier_price_overrides: {
-                              ...(option.pre_modifier_price_overrides || {}),
-                              [option.default_pre_modifier]: Number(cleanDecimal(event.target.value) || 0),
-                            },
-                          }))}
+                          onBlur={event => {
+                            const prices = { ...(option.pre_modifier_price_overrides || {}) }
+                            const amount = parseMoneyDraft(event.target.value)
+                            if (amount === null) delete prices[option.default_pre_modifier]
+                            else prices[option.default_pre_modifier] = amount
+                            onLink(() => updateGroupOption(group.id, option.modifier_id, {
+                              pre_modifier_price_overrides: prices,
+                            }))
+                          }}
                         />
                       )}
                     </div>
@@ -1773,7 +1793,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         is_required: groupDraft.is_required,
         prompt_on_order: groupDraft.prompt_on_order,
         included_count: Number(groupDraft.included_count) || 0,
-        overage_price: groupDraft.overage_price === '' ? null : Number(groupDraft.overage_price),
+        overage_price: parseMoneyDraft(groupDraft.overage_price),
         prompt_mode: groupDraft.prompt_mode,
         pre_modifiers: groupDraft.pre_modifiers,
         pre_modifier_prices: groupDraft.pre_modifier_prices,
