@@ -144,6 +144,9 @@ surface independently, while every mutation is also guarded by the ML backend.
   Supabase sessions must never be parsed only as native POS staff tokens.
   POS-backed pages preserve HTTP status on load failures: authentication or
   permission errors must not be presented as a network/backend outage.
+  POS requests refresh Supabase sessions through one single-flight coordinator:
+  refresh before expiry, retry once after `401`, and never treat `403` as a
+  token failure. Signing out clears restaurant-scoped query state.
   UI previews default to the same-origin Expo exports under
   `apps/web/public/previews`; environment URLs may explicitly override them.
   Never add an implicit localhost or developer-machine fallback.

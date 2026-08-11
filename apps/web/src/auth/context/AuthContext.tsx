@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react'
+import type { Query } from '@tanstack/react-query'
 import { isSupabaseConfigured, supabase, supabaseConfigError } from '../../shared/lib/supabase'
+import { queryClient } from '../../shared/query/queryClient'
 import type { User, Session, AuthError } from '@supabase/supabase-js'
 import type { Profile, Restaurant, RestaurantMember } from '@shire/db'
 import { isAbortError } from '../utils/authErrors'
@@ -565,10 +567,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('[Auth] State change:', event)
 
       if (event === 'SIGNED_OUT') {
+        queryClient.clear()
         setSession(null)
         setUser(null)
         resetRestaurantState()
         return
+      }
+
+      if (event === 'TOKEN_REFRESHED') {
+        void queryClient.invalidateQueries({
+          predicate: (query: Query) => query.state.status === 'error',
+        })
       }
 
       setSession(nextSession ?? null)

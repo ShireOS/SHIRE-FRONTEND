@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { requestWithPosSession } from './posSession'
 
 // Second backend: the POS API (Shire_POS_backend). The dashboard talks to it
 // for time clock management, printing, and report tooling; auth is the
@@ -30,8 +31,6 @@ export async function fetchPosApi<T = any>(
 ): Promise<T> {
   const { mount = 'pos', ...init } = options
   const base = mount === 'integration' ? POS_API_BASE : `${POS_API_BASE}/dev-v2`
-  const { data: sessionData } = await supabase.auth.getSession()
-  let token = sessionData?.session?.access_token
   const request = (accessToken?: string) => {
     const headers = new Headers(init.headers || {})
     if (!(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
@@ -52,15 +51,11 @@ export async function fetchPosApi<T = any>(
     }
   }
 
-  let response = await requestWithTransportRetry(token)
-  if (response.status === 401 && !init.signal?.aborted) {
-    const { data: refreshed } = await supabase.auth.refreshSession()
-    const refreshedToken = refreshed.session?.access_token
-    if (refreshedToken && refreshedToken !== token) {
-      token = refreshedToken
-      response = await requestWithTransportRetry(token)
-    }
-  }
+  const response = await requestWithPosSession({
+    auth: supabase.auth,
+    request: requestWithTransportRetry,
+    signal: init.signal,
+  })
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
     const detail = body.detail || body.message
