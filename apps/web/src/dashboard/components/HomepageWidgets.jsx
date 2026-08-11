@@ -449,6 +449,22 @@ function TableWidget({ widget, data, onSettings, onOpenDetails }) {
   return <section onClick={onOpenDetails} className="glass-card cursor-pointer overflow-hidden rounded-lg transition hover:border-shell-accent/40 xl:col-span-2"><div className="p-5 pb-1"><WidgetHeader widget={widget} onSettings={onSettings} /></div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-y border-dash-border">{columns.map((column) => <th key={column.id} className="label-mono px-4 py-3 !text-[10px] capitalize">{column.label}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={`${row.period || ''}-${row.breakdown || ''}-${index}`} className="border-b border-dash-border last:border-0">{columns.map((column) => <td key={column.id} className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row[column.id], column.kind)}</td>)}</tr>)}{!data?.rows?.length && <tr><td colSpan={Math.max(1, columns.length)} className="px-4 py-8 text-center text-dash-tertiary">No data for this range.</td></tr>}</tbody></table></div><div className="px-5 pb-4"><MiniBarList rows={data?.rows || []} measure={measure} /></div>{(data?.rows || []).length > rows.length && <div className="border-t border-dash-border px-5 py-3"><p className="text-xs font-semibold text-shell-accent">View all details</p></div>}</section>
 }
 
+function DrilldownResult({ query, data, widget, loadingLabel, emptyLabel }) {
+  if (query.isFetching) {
+    return <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">{loadingLabel}</p>
+  }
+  if (query.isError) {
+    return (
+      <div role="alert" className="rounded-md border border-red-500/40 bg-red-500/10 p-5 text-sm text-red-100">
+        <p>Unable to load this widget data.</p>
+        <button type="button" onClick={() => query.refetch()} className="mt-3 rounded-md border border-red-300/40 px-3 py-1.5 text-xs font-semibold text-red-50 hover:bg-red-500/20">Retry</button>
+      </div>
+    )
+  }
+  if (data?.rows?.length) return <DetailChart data={data} widget={widget} />
+  return <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">{emptyLabel}</p>
+}
+
 function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, settings, onClose }) {
   const dates = periodDates(period, anchorDate)
   const measures = widget.id === 'sales_summary' ? widget.columns || [] : measureColumns(data, widget)
@@ -538,8 +554,8 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
       <div className="space-y-6 p-5">
         {groups.map(([title, ids]) => <section key={title}><p className="label-mono mb-3">{title}</p><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{ids.map(metric).filter(Boolean).map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(summaryRow[item.id], item.kind)}</p></div>)}</div></section>)}
         <div className="grid gap-5 xl:grid-cols-3">
-          <section><p className="label-mono mb-3">Net sales trend</p>{trendQuery.isFetching ? <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">Loading trend...</p> : trendData?.rows?.length ? <DetailChart data={trendData} widget={netSalesWidget} /> : <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">No trend available.</p>}</section>
-          <section><p className="label-mono mb-3 capitalize">Net sales by {defaultBreakdown.replaceAll('_', ' ')}</p>{breakdownQuery.isFetching ? <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">Loading breakdown...</p> : breakdownData?.rows?.length ? <DetailChart data={breakdownData} widget={netSalesWidget} /> : <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">No breakdown available.</p>}</section>
+          <section><p className="label-mono mb-3">Net sales trend</p><DrilldownResult query={trendQuery} data={trendData} widget={netSalesWidget} loadingLabel="Loading trend..." emptyLabel="No trend available." /></section>
+          <section><p className="label-mono mb-3 capitalize">Net sales by {defaultBreakdown.replaceAll('_', ' ')}</p><DrilldownResult query={breakdownQuery} data={breakdownData} widget={netSalesWidget} loadingLabel="Loading breakdown..." emptyLabel="No breakdown available." /></section>
           <section><p className="label-mono mb-3">Tender mix</p><DetailChart data={tenderData} widget={{ ...widget, columns: tenderData.measure_columns }} /></section>
         </div>
         <section><p className="label-mono mb-3">Order activity</p><div className="max-h-[480px] overflow-auto rounded-md border border-dash-border"><table className="w-full min-w-[1500px] text-left text-sm"><thead className="sticky top-0 bg-dash-elevated"><tr className="border-b border-dash-border">{table.map((column) => <th key={column.id} className="label-mono px-4 py-3 !text-[10px] capitalize">{column.label}</th>)}</tr></thead><tbody>{(tableData?.rows || []).map((row, index) => <tr key={`${row.period || ''}-${row.order_number || ''}-${index}`} className="border-b border-dash-border last:border-0">{table.map((column) => <td key={column.id} className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row[column.id], column.kind)}</td>)}</tr>)}{!(tableData?.rows || []).length && <tr><td colSpan={Math.max(1, table.length)} className="px-4 py-10 text-center text-dash-tertiary">No sales or voided checks for this range.</td></tr>}</tbody></table></div></section>
@@ -553,8 +569,8 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
           {measures.map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(summaryRow[item.id], item.kind)}</p></div>)}
         </div>
         <div className="grid gap-5 lg:grid-cols-2">
-          <section><p className="label-mono mb-3">Trend</p>{trendQuery.isFetching && <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">Loading trend...</p>}{!trendQuery.isFetching && trendData?.rows?.length ? <DetailChart data={trendData} widget={widget} /> : !trendQuery.isFetching && <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">No trend available for this widget.</p>}</section>
-          <section><p className="label-mono mb-3">Breakdown</p>{breakdownQuery.isFetching && <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">Loading breakdown...</p>}{!breakdownQuery.isFetching && breakdownData?.rows?.length ? <DetailChart data={breakdownData} widget={widget} /> : !breakdownQuery.isFetching && <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">No breakdown available for this widget.</p>}</section>
+          <section><p className="label-mono mb-3">Trend</p><DrilldownResult query={trendQuery} data={trendData} widget={widget} loadingLabel="Loading trend..." emptyLabel="No trend available for this widget." /></section>
+          <section><p className="label-mono mb-3">Breakdown</p><DrilldownResult query={breakdownQuery} data={breakdownData} widget={widget} loadingLabel="Loading breakdown..." emptyLabel="No breakdown available for this widget." /></section>
         </div>
         <div className="overflow-x-auto rounded-md border border-dash-border">
           <table className="w-full min-w-[760px] text-left text-sm">
