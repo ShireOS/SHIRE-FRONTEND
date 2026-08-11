@@ -439,11 +439,13 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
       <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
         <h2 className="text-lg font-semibold">Ticket header &amp; info</h2>
         <p className="mt-1 text-sm text-dash-tertiary">
-          Using the standard ticket top — the check number and order method on one line, table, server and sent time on the next. Improvements to it reach you automatically until you customize.
+          Using the standard ticket top — order method centered, station and server on the left, sent time on the right, then the table centered between single-width rules. Improvements to it reach you automatically until you customize.
         </p>
         <pre className="mt-3 overflow-x-auto rounded-xl border border-white/10 bg-black/25 px-3 py-2 font-mono text-[11px] leading-5 text-dash-secondary">
-{`CHK 418                  DINE IN
-Table 12 · Marcus          3:14P
+{`             DINE IN
+Kitchen · Marcus          3:14 PM
+--------------------------------
+            TABLE 12
 --------------------------------`}
         </pre>
         <button
