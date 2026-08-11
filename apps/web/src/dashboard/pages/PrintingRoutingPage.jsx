@@ -9,6 +9,11 @@ import ProductionWorkflowCard from '../components/printing/ProductionWorkflowCar
 import HardwareChainGuide from '../components/printing/HardwareChainGuide'
 import TicketTopBuilder from '../components/printing/TicketTopBuilder'
 import { TICKET_TOP_STARTER, ticketTopFieldPresentation } from '../components/printing/ticketTopPolicy'
+import {
+  isKitchenPreviewItemLine,
+  isKitchenPreviewLocationLine,
+  isKitchenPreviewModifierLine,
+} from '../components/printing/ticketPreviewPolicy'
 
 const DEFAULT_CONFIG = {
   receipt_detail: 'clean',
@@ -626,13 +631,13 @@ export default function PrintingRoutingPage({ restaurantId }) {
           <div className="mt-5 overflow-x-auto pb-2">
             <div className="mx-auto w-max min-w-[430px] bg-[#fffdf6] px-7 py-8 text-black shadow-2xl">
             <pre className={`whitespace-pre font-mono leading-relaxed ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{previewLines.map((line, index, lines) => {
-              const isModifier = output === 'kitchen_ticket' && /^\s*\+/.test(line)
-              const isItem = output === 'kitchen_ticket' && /^\d+(?:\.\d+)?\s{2}\S/.test(line)
+              const isModifier = output === 'kitchen_ticket' && isKitchenPreviewModifierLine(lines, index)
+              const isItem = output === 'kitchen_ticket' && isKitchenPreviewItemLine(line)
               const isMethod = output === 'kitchen_ticket'
                 && line.trim() === KITCHEN_METHOD_LABELS[kitchenVariant]
                 && (firstPreviewItemIndex < 0 || index < firstPreviewItemIndex)
               const isLocation = output === 'kitchen_ticket'
-                && /^(?:Table|Tab)\s+\S/i.test(line.trim())
+                && isKitchenPreviewLocationLine(line)
                 && (firstPreviewItemIndex < 0 || index < firstPreviewItemIndex)
               // Guest notes carry whichever marker the note style configures, so
               // matching only the old "NOTE:" prefix left them unstyled in the
