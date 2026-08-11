@@ -4,6 +4,7 @@ import { fetchWithSupabaseAuth } from '../../shared/query'
 import { useAuth } from '../../auth'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import { fetchTipoutExceptions, resolveTipoutException } from '../../shared/api/tipoutExceptions'
+import { shouldShowTipoutExceptions } from './tipPoolingSectionPolicy'
 import {
   tipoutPolicyFingerprint,
   validateTipoutPolicy,
@@ -565,10 +566,17 @@ export default function TipPoolingPage({ restaurantId }) {
     setOverview(null)
     setWaiters([])
     setMenuItems([])
+    setTipoutExceptionData(null)
+    setTipoutExceptionError('')
+    setTipoutExceptionMessage('')
     void loadRuns()
     void loadTipConfig()
-    void loadTipoutExceptions()
   }, [restaurantId])
+
+  useEffect(() => {
+    if (!shouldShowTipoutExceptions(activeSubTab)) return
+    void loadTipoutExceptions()
+  }, [activeSubTab, restaurantId])
 
   // Build the weekly labor-cost aggregate by fetching detail for recent runs.
   const loadOverview = async (runList, codes) => {
@@ -900,7 +908,7 @@ export default function TipPoolingPage({ restaurantId }) {
         {/* Section navigation lives in the left sidebar (Payroll & Tips sub-items). */}
       </section>
 
-      {tipoutExceptionData?.items?.length ? (
+      {shouldShowTipoutExceptions(activeSubTab) && tipoutExceptionData?.items?.length ? (
         <TipoutExceptionPanel
           data={tipoutExceptionData}
           canAdjust={canAdjustTips}

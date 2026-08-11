@@ -139,6 +139,9 @@ surface independently, while every mutation is also guarded by the ML backend.
   and Printing & Routing; `team` covers Members, Time Clock, and Alerts; report,
   check, labor-cost, and payroll/tip surfaces remain mandatory. Route changes
   reuse the resolved store grants so the sidebar does not change composition.
+  POS Settings reason-preset reads and mutations use the same portal-aware
+  `settings.edit` guard as the rest of that setup surface; valid dashboard
+  Supabase sessions must never be parsed only as native POS staff tokens.
   UI previews default to the same-origin Expo exports under
   `apps/web/public/previews`; environment URLs may explicitly override them.
   Never add an implicit localhost or developer-machine fallback.
