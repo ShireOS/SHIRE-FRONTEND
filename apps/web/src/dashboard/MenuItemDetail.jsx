@@ -457,6 +457,21 @@ function QuestionEditor({
               <option value="hidden">This item: hidden</option>
             </SelectInput>
           )}
+          {depth === 0 && itemId && (
+            <SelectInput
+              className="!w-auto !py-1.5"
+              value={itemOverride?.kitchen_display_role || ''}
+              title="Override the entire question's kitchen hierarchy for this menu item"
+              onChange={event => void linkWork(
+                () => setItemGroupOverride(group.id, itemId, { kitchen_display_role: event.target.value || null }),
+                event.target.value ? 'Item-specific kitchen hierarchy saved.' : 'Using the question hierarchy.',
+              )}
+            >
+              <option value="">This item: inherit hierarchy</option>
+              <option value="ingredient">This item: all ingredients</option>
+              <option value="side">This item: all sides / non-ingredients</option>
+            </SelectInput>
+          )}
           <SmallButton
             variant={group.is_required ? 'primary' : 'secondary'}
             onClick={() => void patchGroup({
@@ -686,6 +701,22 @@ function QuestionEditor({
                         <option value="">Print: auto</option>
                         <option value="no">No print here</option>
                         <option value="yes">Print here</option>
+                      </SelectInput>
+                      <SelectInput
+                        className="!w-auto !py-1.5"
+                        value={modOverride?.kitchen_display_role || ''}
+                        title="Highest-precedence kitchen hierarchy override for this one modifier on this item"
+                        onChange={event => {
+                          const value = event.target.value
+                          void linkWork(
+                            () => saveItemModOverride(option.modifier_id, { kitchen_display_role: value || null }),
+                            value ? 'Modifier hierarchy overridden for this item.' : 'Modifier hierarchy now inherits.',
+                          )
+                        }}
+                      >
+                        <option value="">Hierarchy: inherit</option>
+                        <option value="ingredient">Ingredient here</option>
+                        <option value="side">Side / non-ingredient here</option>
                       </SelectInput>
                     </>
                   )}

@@ -34,12 +34,12 @@ export async function fetchModifierGroups(restaurantId) {
       .in('group_id', groupIds),
     supabase
       .from('menu_modifier_group_options')
-      .select('group_id, modifier_id, is_default, display_order, overage_price, child_group_id, default_pre_modifier, pre_modifier_price_overrides')
+      .select('group_id, modifier_id, is_default, display_order, overage_price, child_group_id, default_pre_modifier, pre_modifier_price_overrides, kitchen_display_role')
       .in('group_id', groupIds)
       .order('display_order', { ascending: true }),
     supabase
       .from('menu_item_modifier_group_overrides')
-      .select('group_id, item_id, prompt_mode, default_modifier_ids, opted_out, display_order')
+      .select('group_id, item_id, prompt_mode, default_modifier_ids, opted_out, display_order, kitchen_display_role')
       .in('group_id', groupIds),
     supabase
       .from('menu_category_modifier_groups')
@@ -80,6 +80,7 @@ export async function fetchModifierGroups(restaurantId) {
       child_group_id: row.child_group_id || null,
       default_pre_modifier: row.default_pre_modifier || null,
       pre_modifier_price_overrides: row.pre_modifier_price_overrides || {},
+      kitchen_display_role: row.kitchen_display_role || null,
     })
   }
   const promptsByGroup = {}
@@ -91,6 +92,7 @@ export async function fetchModifierGroups(restaurantId) {
       default_modifier_ids: Array.isArray(row.default_modifier_ids) ? row.default_modifier_ids : null,
       opted_out: Boolean(row.opted_out),
       display_order: row.display_order == null ? null : Number(row.display_order),
+      kitchen_display_role: row.kitchen_display_role || null,
     }
   }
   const categoriesByGroup = {}
@@ -131,6 +133,7 @@ export async function createModifierGroup(restaurantId, draft) {
       pre_modifier_prices: draft.pre_modifier_prices || {},
       // Omit pre-migration so inserts keep working before 20260712 is applied.
       ...(draft.no_print != null ? { no_print: draft.no_print } : {}),
+      ...(draft.kitchen_display_role != null ? { kitchen_display_role: draft.kitchen_display_role } : {}),
     })
     .select('*')
     .single()
@@ -140,7 +143,7 @@ export async function createModifierGroup(restaurantId, draft) {
 
 // Columns added by later manual-run migrations — stripped and retried on
 // 42703 so saves keep working before the migration is applied.
-const OPTIONAL_GROUP_COLUMNS = ['no_print', 'modifier_sort_mode']
+const OPTIONAL_GROUP_COLUMNS = ['no_print', 'modifier_sort_mode', 'kitchen_display_role']
 
 export async function updateModifierGroup(groupId, patch) {
   let { data, error } = await supabase
@@ -290,6 +293,7 @@ const overrideIsEmpty = (row) =>
   && (row.default_modifier_ids == null)
   && !row.opted_out
   && row.display_order == null
+  && row.kitchen_display_role == null
 
 // Merge-upsert the per-item layer of a question. Patch keys: prompt_mode
 // (null = use question default), default_modifier_ids (null = use question
@@ -298,19 +302,20 @@ const overrideIsEmpty = (row) =>
 export async function setItemGroupOverride(groupId, itemId, patch) {
   const { data: existingRows, error: readError } = await supabase
     .from('menu_item_modifier_group_overrides')
-    .select('group_id, item_id, prompt_mode, default_modifier_ids, opted_out, display_order')
+    .select('group_id, item_id, prompt_mode, default_modifier_ids, opted_out, display_order, kitchen_display_role')
     .eq('group_id', groupId)
     .eq('item_id', itemId)
     .limit(1)
   if (readError) throw readError
   const existing = existingRows?.[0] || {
-    prompt_mode: null, default_modifier_ids: null, opted_out: false, display_order: null,
+    prompt_mode: null, default_modifier_ids: null, opted_out: false, display_order: null, kitchen_display_role: null,
   }
   const next = {
     prompt_mode: 'prompt_mode' in patch ? patch.prompt_mode : existing.prompt_mode,
     default_modifier_ids: 'default_modifier_ids' in patch ? patch.default_modifier_ids : existing.default_modifier_ids,
     opted_out: 'opted_out' in patch ? Boolean(patch.opted_out) : Boolean(existing.opted_out),
     display_order: 'display_order' in patch ? patch.display_order : existing.display_order,
+    kitchen_display_role: 'kitchen_display_role' in patch ? patch.kitchen_display_role : existing.kitchen_display_role,
   }
   if (overrideIsEmpty(next)) {
     const { error } = await supabase
@@ -337,7 +342,7 @@ export async function setItemGroupPromptMode(groupId, itemId, promptMode) {
 export async function fetchItemModifierOverrides(restaurantId) {
   const { data, error } = await supabase
     .from('menu_item_modifier_overrides')
-    .select('item_id, modifier_id, price_delta, no_print')
+    .select('item_id, modifier_id, price_delta, no_print, kitchen_display_role')
     .eq('restaurant_id', restaurantId)
   if (error) {
     // Fail soft until the 20260712 migration is applied.
@@ -349,6 +354,7 @@ export async function fetchItemModifierOverrides(restaurantId) {
     ;(byItem[row.item_id] ||= {})[row.modifier_id] = {
       price_delta: row.price_delta == null ? null : Number(row.price_delta),
       no_print: row.no_print == null ? null : Boolean(row.no_print),
+      kitchen_display_role: row.kitchen_display_role || null,
     }
   }
   return byItem
@@ -357,17 +363,18 @@ export async function fetchItemModifierOverrides(restaurantId) {
 export async function setItemModifierOverride(restaurantId, itemId, modifierId, patch) {
   const { data: existingRows, error: readError } = await supabase
     .from('menu_item_modifier_overrides')
-    .select('price_delta, no_print')
+    .select('price_delta, no_print, kitchen_display_role')
     .eq('item_id', itemId)
     .eq('modifier_id', modifierId)
     .limit(1)
   if (readError) throw readError
-  const existing = existingRows?.[0] || { price_delta: null, no_print: null }
+  const existing = existingRows?.[0] || { price_delta: null, no_print: null, kitchen_display_role: null }
   const next = {
     price_delta: 'price_delta' in patch ? patch.price_delta : existing.price_delta,
     no_print: 'no_print' in patch ? patch.no_print : existing.no_print,
+    kitchen_display_role: 'kitchen_display_role' in patch ? patch.kitchen_display_role : existing.kitchen_display_role,
   }
-  if (next.price_delta == null && next.no_print == null) {
+  if (next.price_delta == null && next.no_print == null && next.kitchen_display_role == null) {
     const { error } = await supabase
       .from('menu_item_modifier_overrides')
       .delete()
@@ -385,6 +392,14 @@ export async function setItemModifierOverride(restaurantId, itemId, modifierId, 
       ...next,
       updated_at: new Date().toISOString(),
     })
+  if (error) throw error
+}
+
+export async function setModifierKitchenDisplayRole(modifierId, kitchenDisplayRole) {
+  const { error } = await supabase
+    .from('menu_modifiers')
+    .update({ kitchen_display_role: kitchenDisplayRole || null, updated_at: new Date().toISOString() })
+    .eq('id', modifierId)
   if (error) throw error
 }
 
@@ -525,6 +540,7 @@ export async function cloneGroupChainForItem(restaurantId, groups, groupId, item
           child_group_id: childCloneId,
           default_pre_modifier: option.default_pre_modifier || null,
           pre_modifier_price_overrides: option.pre_modifier_price_overrides || {},
+          kitchen_display_role: option.kitchen_display_role || null,
         })
       if (optionError) throw optionError
     }
@@ -556,6 +572,7 @@ export async function addGroupOption(groupId, modifierId, extra = {}) {
       child_group_id: extra.child_group_id ?? null,
       default_pre_modifier: extra.default_pre_modifier ?? null,
       pre_modifier_price_overrides: extra.pre_modifier_price_overrides ?? {},
+      kitchen_display_role: extra.kitchen_display_role ?? null,
     })
   if (error) throw error
 }

@@ -21,6 +21,7 @@ import {
   reorderGroupOptions,
   replaceGroupItems,
   setGroupAnswerSortMode,
+  setModifierKitchenDisplayRole,
   updateGroupOption,
   updateModifierGroup,
   wouldCreateCycle,
@@ -175,6 +176,7 @@ const defaultGroupDraft = () => ({
   prompt_mode: 'ask',
   pre_modifiers: [],
   pre_modifier_prices: {},
+  kitchen_display_role: 'ingredient',
 })
 
 // Pull a human-readable reason out of whatever was thrown (Error, Supabase
@@ -257,6 +259,7 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
     pre_modifiers: Array.isArray(group.pre_modifiers) ? group.pre_modifiers : [],
     pre_modifier_prices: group.pre_modifier_prices || {},
     no_print: Boolean(group.no_print),
+    kitchen_display_role: group.kitchen_display_role || (group.type === 'side' ? 'side' : ''),
   }))
   const modifiersById = useMemo(() => Object.fromEntries(modifiers.map(m => [m.id, m])), [modifiers])
   const groupsById = useMemo(() => Object.fromEntries(groups.map(g => [g.id, g])), [groups])
@@ -294,6 +297,7 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
       pre_modifiers: draft.pre_modifiers,
       pre_modifier_prices: draft.pre_modifier_prices,
       no_print: draft.no_print,
+      kitchen_display_role: draft.kitchen_display_role || null,
     })
   }
 
@@ -377,6 +381,16 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
                   <option value="no">Never print (FOH-only)</option>
                 </SelectInput>
               </Field>
+              <Field label="Kitchen ticket hierarchy">
+                <SelectInput
+                  value={draft.kitchen_display_role}
+                  onChange={event => setDraft(prev => ({ ...prev, kitchen_display_role: event.target.value }))}
+                >
+                  <option value="">Inherit / legacy</option>
+                  <option value="ingredient">Ingredient (+ and indented)</option>
+                  <option value="side">Side / non-ingredient (flush left)</option>
+                </SelectInput>
+              </Field>
               <Field label="Side buttons">
                 <SelectInput
                   value={sideButtonMode(draft.pre_modifiers)}
@@ -450,7 +464,7 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
                 if (!option) return null
                 const modifier = modifiersById[option.modifier_id]
                 return (
-                  <div className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 lg:grid-cols-[auto_1.2fr_auto_1fr_1fr_1.3fr_auto] lg:items-center">
+                  <div className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 lg:grid-cols-[auto_1.2fr_auto_1fr_1fr_1.3fr_1.1fr_auto] lg:items-center">
                     <DragHandle
                       handleProps={handleProps}
                       title={answerSortMode === 'alpha' ? 'Drag to switch to a custom order' : 'Drag to reorder this answer'}
@@ -514,6 +528,15 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
                       {option.child_group_id && !nestableGroups.some(candidate => candidate.id === option.child_group_id) && (
                         <option value={option.child_group_id}>Then ask: {groupsById[option.child_group_id]?.name || 'Nested group'}</option>
                       )}
+                    </SelectInput>
+                    <SelectInput
+                      value={option.kitchen_display_role || ''}
+                      title="Override this option's kitchen ticket hierarchy"
+                      onChange={event => onLink(() => updateGroupOption(group.id, option.modifier_id, { kitchen_display_role: event.target.value || null }))}
+                    >
+                      <option value="">Inherit from group</option>
+                      <option value="ingredient">Ingredient</option>
+                      <option value="side">Side / non-ingredient</option>
                     </SelectInput>
                     <SmallButton variant="danger" onClick={() => onLink(() => removeGroupOption(group.id, option.modifier_id))}>Remove</SmallButton>
                   </div>
@@ -674,7 +697,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [allergyExclusions, setAllergyExclusions] = useState([])
   const [pillDraft, setPillDraft] = useState('')
 
-  const [modifierDraft, setModifierDraft] = useState({ name: '', price_delta: '', category: '', tax_rate_id: '', reporting_category_id: '', group_id: '', new_question_name: '', print_on_kitchen_ticket: true, item_ids: new Set() })
+  const [modifierDraft, setModifierDraft] = useState({ name: '', price_delta: '', category: '', tax_rate_id: '', reporting_category_id: '', group_id: '', new_question_name: '', print_on_kitchen_ticket: true, kitchen_display_role: '', item_ids: new Set() })
   const [showModifierDrawer, setShowModifierDrawer] = useState(false)
   const [groupDraft, setGroupDraft] = useState(() => defaultGroupDraft())
   const [specialDraft, setSpecialDraft] = useState(() => defaultSpecialDraft())
@@ -726,7 +749,15 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
   const loadModifiers = async () => {
     const rows = await api(`/restaurants/${restaurantId}/menu/modifiers`)
-    setModifiers(Array.isArray(rows) ? rows : [])
+    const list = Array.isArray(rows) ? rows : []
+    const { data: roleRows, error: roleError } = await supabase
+      .from('menu_modifiers')
+      .select('id, kitchen_display_role')
+      .eq('restaurant_id', restaurantId)
+      .is('archived_at', null)
+    if (roleError && roleError.code !== '42703') throw roleError
+    const roleById = Object.fromEntries((roleRows || []).map(row => [row.id, row.kitchen_display_role || null]))
+    setModifiers(list.map(row => ({ ...row, kitchen_display_role: roleById[row.id] ?? row.kitchen_display_role ?? null })))
   }
 
   const loadGroups = async () => {
@@ -1576,6 +1607,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           tax_rate_id: modifierDraft.tax_rate_id || null,
           reporting_category_id: modifierDraft.reporting_category_id || null,
           print_on_kitchen_ticket: modifierDraft.print_on_kitchen_ticket !== false,
+          kitchen_display_role: modifierDraft.kitchen_display_role || null,
         }),
       })
       if (created?.id && modifierDraft.item_ids.size > 0) {
@@ -1583,6 +1615,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           method: 'PUT',
           body: JSON.stringify({ item_ids: Array.from(modifierDraft.item_ids) }),
         })
+      }
+      if (created?.id && modifierDraft.kitchen_display_role) {
+        await setModifierKitchenDisplayRole(created.id, modifierDraft.kitchen_display_role)
       }
       let targetGroup = matchingGroup
       if (created?.id && wantsNewQuestion) {
@@ -1605,7 +1640,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         await addGroupOption(targetGroup.id, created.id, { display_order: targetGroup.options.length })
         await loadGroups()
       }
-      setModifierDraft(prev => ({ name: '', price_delta: '', category: prev.category, tax_rate_id: '', reporting_category_id: '', group_id: prev.group_id === '__new__' ? '' : prev.group_id, new_question_name: '', print_on_kitchen_ticket: true, item_ids: new Set() }))
+      setModifierDraft(prev => ({ name: '', price_delta: '', category: prev.category, tax_rate_id: '', reporting_category_id: '', group_id: prev.group_id === '__new__' ? '' : prev.group_id, new_question_name: '', print_on_kitchen_ticket: true, kitchen_display_role: '', item_ids: new Set() }))
       setShowModifierDrawer(false)
       await loadModifiers()
     }, wantsNewQuestion
@@ -1637,6 +1672,11 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     })
     await loadModifiers()
   }, undefined, 'Couldn’t update the modifier')
+
+  const setModifierKitchenRole = (modifierId, role) => run(async () => {
+    await setModifierKitchenDisplayRole(modifierId, role)
+    await loadModifiers()
+  }, role ? 'Kitchen hierarchy saved.' : 'Kitchen hierarchy now inherits.', 'Couldn’t save kitchen hierarchy')
 
   const recategorizeModifier = (modifier, nextCategory) => {
     const matchingGroup = groupMatchingCategory(nextCategory)
@@ -1737,6 +1777,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         prompt_mode: groupDraft.prompt_mode,
         pre_modifiers: groupDraft.pre_modifiers,
         pre_modifier_prices: groupDraft.pre_modifier_prices,
+        kitchen_display_role: groupDraft.kitchen_display_role || null,
         display_order: groups.length,
       })
       setGroupDraft(defaultGroupDraft())
@@ -2535,6 +2576,16 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       <option value="no">Never prints (FOH-only)</option>
                     </SelectInput>
                   </Field>
+                  <Field label="Kitchen ticket hierarchy fallback">
+                    <SelectInput
+                      value={modifierDraft.kitchen_display_role}
+                      onChange={event => setModifierDraft(prev => ({ ...prev, kitchen_display_role: event.target.value }))}
+                    >
+                      <option value="">Inherit / legacy</option>
+                      <option value="ingredient">Ingredient</option>
+                      <option value="side">Side / non-ingredient</option>
+                    </SelectInput>
+                  </Field>
                   <div className="grid grid-cols-2 gap-3">
                   <Field label="Tax rate">
               <SelectInput
@@ -2652,6 +2703,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       onSetTaxRate={next => void updateModifier(modifier.id, { tax_rate_id: next })}
                       onSetReportingCategory={next => void updateModifier(modifier.id, { reporting_category_id: next })}
                       onSetPrint={shouldPrint => void updateModifier(modifier.id, { print_on_kitchen_ticket: shouldPrint })}
+                      onSetKitchenRole={next => void setModifierKitchenRole(modifier.id, next)}
                       onReplaceItems={itemIds => void replaceModifierItems(modifier.id, itemIds)}
                       onDelete={() => void deleteModifier(modifier.id)}
                     />
@@ -2765,6 +2817,18 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
               <span>selections are free, then $</span>
               <TextInput inputMode="decimal" className="!w-20 !px-2 !py-1.5 text-center" placeholder="0.00" value={groupDraft.overage_price} onChange={event => setGroupDraft(prev => ({ ...prev, overage_price: cleanDecimal(event.target.value) }))} />
               <span>each extra</span>
+              <span className="text-dash-tertiary">·</span>
+              <span>Kitchen hierarchy</span>
+              <SelectInput
+                className="!w-auto !py-1.5"
+                value={groupDraft.kitchen_display_role}
+                title="Suggested for this new question; no classification is stored until Create question is clicked"
+                onChange={event => setGroupDraft(prev => ({ ...prev, kitchen_display_role: event.target.value }))}
+              >
+                <option value="">Inherit / legacy</option>
+                <option value="ingredient">Ingredient (suggested)</option>
+                <option value="side">Side / non-ingredient</option>
+              </SelectInput>
             </div>
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-dash-gold/80">
               {groupRulesSummary({
@@ -3176,7 +3240,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
 // ── Modifier list row ───────────────────────────────────────────────────────
 
-function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitchenAlias, askedByGroups = [], allGroups = [], onAddToQuestion = null, busy, onRename, onReprice, onRecategorize, onSetTaxRate, onSetReportingCategory, onSetPrint, onReplaceItems, onDelete }) {
+function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitchenAlias, askedByGroups = [], allGroups = [], onAddToQuestion = null, busy, onRename, onReprice, onRecategorize, onSetTaxRate, onSetReportingCategory, onSetPrint, onSetKitchenRole, onReplaceItems, onDelete }) {
   const [expanded, setExpanded] = useState(false)
   const selectedIds = useMemo(() => new Set(modifier.item_ids || []), [modifier])
   const neverPrints = modifier.print_on_kitchen_ticket === false
@@ -3185,7 +3249,7 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitch
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
-      <div className="grid gap-3 lg:grid-cols-[1.2fr_110px_150px_150px_150px_auto_auto_auto_auto_auto] lg:items-center">
+      <div className="grid gap-3 lg:grid-cols-[1.2fr_110px_150px_150px_150px_150px_auto_auto_auto_auto_auto] lg:items-center">
         <TextInput
           defaultValue={modifier.name}
           onBlur={event => {
@@ -3229,6 +3293,15 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitch
           {reportingCategories.map(category => (
             <option key={category.id} value={category.id}>{category.name}</option>
           ))}
+        </SelectInput>
+        <SelectInput
+          title="Legacy fallback used only when the group and item do not override it"
+          value={modifier.kitchen_display_role || ''}
+          onChange={event => onSetKitchenRole(event.target.value || null)}
+        >
+          <option value="">Hierarchy: inherit</option>
+          <option value="ingredient">Ingredient</option>
+          <option value="side">Side / non-ingredient</option>
         </SelectInput>
         <SmallButton
           variant={neverPrints ? 'primary' : 'secondary'}
