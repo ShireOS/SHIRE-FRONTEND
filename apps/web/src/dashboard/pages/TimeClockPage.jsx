@@ -208,15 +208,18 @@ function PermissionNotice() {
   )
 }
 
-function PosBackendNotice({ message }) {
+function PosBackendNotice({ error }) {
+  const authorizationFailure = error?.status === 401 || error?.status === 403
   return (
     <div className="rounded-2xl border border-amber-400/40 bg-amber-400/[0.06] p-5 text-sm text-amber-100/90">
-      <p className="font-semibold text-amber-200">POS backend not reachable</p>
+      <p className="font-semibold text-amber-200">
+        {authorizationFailure ? 'POS access could not be verified' : 'Time clock unavailable'}
+      </p>
       <p className="mt-2 max-w-2xl leading-relaxed text-amber-100/80">
-        Time-clock data lives in the POS API. Check that the POS backend is running and that{' '}
-        <span className="font-mono">VITE_POS_API_BASE_URL</span> points at it (dev default{' '}
-        <span className="font-mono">http://localhost:8005/api/v1/dev-v2</span>).
-        {message ? <span className="mt-1 block font-mono text-[11px] text-amber-100/60">{message}</span> : null}
+        {authorizationFailure
+          ? 'The POS API rejected this dashboard session or its restaurant permissions. Refresh the session and verify that the deployed POS build includes the portal authorization contract.'
+          : 'The POS API did not return time-clock data. Verify the active backend deployment and network connection.'}
+        {error?.message ? <span className="mt-1 block font-mono text-[11px] text-amber-100/60">{error.message}</span> : null}
       </p>
     </div>
   )
@@ -698,7 +701,7 @@ export default function TimeClockPage({ restaurantId }) {
       {permissionDenied ? (
         <PermissionNotice />
       ) : loadError ? (
-        <PosBackendNotice message={loadError?.message} />
+        <PosBackendNotice error={loadError} />
       ) : loading ? (
         <div className="glass-card rounded-2xl p-5 text-sm text-dash-secondary">Loading time clock…</div>
       ) : !cards.length ? (
