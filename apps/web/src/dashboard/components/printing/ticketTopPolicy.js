@@ -24,7 +24,7 @@ export const TICKET_TOP_STARTER = {
       right_width: 9,
     },
     { type: 'divider' },
-    { type: 'field', field: 'location', align: 'center', bold: true },
+    { type: 'field', field: 'location', align: 'center', size: 'large', bold: true },
     { type: 'divider' },
   ],
   info: [

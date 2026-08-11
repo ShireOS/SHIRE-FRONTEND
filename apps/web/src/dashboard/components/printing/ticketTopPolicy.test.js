@@ -26,7 +26,7 @@ const DEFAULT_PATH = new URL('./ticketTopDefault.json', import.meta.url)
 
 // Mirror of this file in the backend repo: Shire_POS_backend/tests/ticket_top_default.json
 // Update both, then update this digest and DEFAULT_SHA256 there.
-const EXPECTED_SHA256 = '2b0fae39e1d51dc7ce73227e2201b9c5a3db63a0dc798f79d6caa0b4aae17db3'
+const EXPECTED_SHA256 = '5f736007e0216735084f2e73a3a8c25ea68cd0a03706c26754585c961695dfed'
 
 test('the starter is exactly what the printer renders by default', () => {
   const shipped = JSON.parse(readFileSync(DEFAULT_PATH, 'utf8'))
@@ -54,7 +54,7 @@ test('the starter centers method and table around the service identity row', () 
   assert.equal(identity.left.join, ' · ')
   assert.equal(identity.right.parts[0].field, 'time_only')
   assert.equal(identity.right_width, 9)
-  assert.deepEqual([beforeTable.type, table.field, table.align, table.bold, afterTable.type], ['divider', 'location', 'center', true, 'divider'])
+  assert.deepEqual([beforeTable.type, table.field, table.align, table.size, table.bold, afterTable.type], ['divider', 'location', 'center', 'large', true, 'divider'])
 })
 
 test('the course banner and the rule under it appear and vanish together', () => {
@@ -118,6 +118,9 @@ test('a bare field is read as a one-part column', () => {
 test('preview presentation follows stock and customized field sizing', () => {
   assert.deepEqual(ticketTopFieldPresentation(TICKET_TOP_STARTER.header, 'order_type'), {
     type: 'field', field: 'order_type', align: 'center', size: 'large', bold: true, pair: false,
+  })
+  assert.deepEqual(ticketTopFieldPresentation(TICKET_TOP_STARTER.header, 'location'), {
+    type: 'field', field: 'location', align: 'center', size: 'large', bold: true, pair: false,
   })
   assert.deepEqual(
     ticketTopFieldPresentation([{

@@ -241,6 +241,12 @@ export default function PrintingRoutingPage({ restaurantId }) {
       : [...TICKET_TOP_STARTER.header, ...TICKET_TOP_STARTER.info]
     return ticketTopFieldPresentation(rows, 'order_type') || {}
   }, [effectiveKitchen, ticketTopConfigured])
+  const locationStyle = useMemo(() => {
+    const rows = ticketTopConfigured
+      ? [...(effectiveKitchen.header || []), ...(effectiveKitchen.info || [])]
+      : [...TICKET_TOP_STARTER.header, ...TICKET_TOP_STARTER.info]
+    return ticketTopFieldPresentation(rows, 'location') || {}
+  }, [effectiveKitchen, ticketTopConfigured])
 
   const effectiveAliases = kind => ({
     ...(config.aliases?.[kind] || {}),
@@ -625,6 +631,9 @@ export default function PrintingRoutingPage({ restaurantId }) {
               const isMethod = output === 'kitchen_ticket'
                 && line.trim() === KITCHEN_METHOD_LABELS[kitchenVariant]
                 && (firstPreviewItemIndex < 0 || index < firstPreviewItemIndex)
+              const isLocation = output === 'kitchen_ticket'
+                && /^(?:Table|Tab)\s+\S/i.test(line.trim())
+                && (firstPreviewItemIndex < 0 || index < firstPreviewItemIndex)
               // Guest notes carry whichever marker the note style configures, so
               // matching only the old "NOTE:" prefix left them unstyled in the
               // preview under every other choice.
@@ -653,10 +662,16 @@ export default function PrintingRoutingPage({ restaurantId }) {
                 isMethod && methodStyle.size === 'double' ? 'text-[1.7em] leading-[2.1]' : '',
                 isMethod && !methodStyle.pair && methodStyle.align === 'center' ? 'block text-center' : '',
                 isMethod && !methodStyle.pair && methodStyle.align === 'right' ? 'block text-right' : '',
+                isLocation && locationStyle.bold ? 'font-bold' : '',
+                isLocation && locationStyle.size === 'large' ? 'text-[1.35em] leading-[2.1]' : '',
+                isLocation && locationStyle.size === 'double' ? 'text-[1.7em] leading-[2.1]' : '',
+                isLocation && !locationStyle.pair && locationStyle.align === 'center' ? 'block text-center' : '',
+                isLocation && !locationStyle.pair && locationStyle.align === 'right' ? 'block text-right' : '',
                 isCheckMemo && !memoStyle.pair && memoStyle.align === 'center' ? 'block text-center' : '',
                 isCheckMemo && !memoStyle.pair && memoStyle.align === 'right' ? 'block text-right' : '',
               ].filter(Boolean).join(' ')
-              const displayLine = isMethod && !methodStyle.pair && ['center', 'right'].includes(methodStyle.align)
+              const displayLine = (isMethod && !methodStyle.pair && ['center', 'right'].includes(methodStyle.align))
+                || (isLocation && !locationStyle.pair && ['center', 'right'].includes(locationStyle.align))
                 ? line.trim()
                 : line
               return <span key={index} className={className}>{displayLine}{'\n'}</span>

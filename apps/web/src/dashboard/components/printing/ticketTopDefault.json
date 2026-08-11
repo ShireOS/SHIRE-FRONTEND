@@ -36,6 +36,7 @@
       "align": "center",
       "bold": true,
       "field": "location",
+      "size": "large",
       "type": "field"
     },
     {
