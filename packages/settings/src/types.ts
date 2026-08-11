@@ -182,6 +182,7 @@ export interface JobCodeData {
   tipout_role: string
   sort_order: number
   is_active?: boolean
+  assigned_count?: number
 }
 
 /**

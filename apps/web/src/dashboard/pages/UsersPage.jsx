@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom'
 import { Check, ChevronDown, Search } from 'lucide-react'
 import { useAuth } from '../../auth'
 import { supabase } from '../../shared/lib/supabase'
+import { backOfficeApi } from '../../shared/api/backOfficeApi'
 
 const ACCOUNT_TYPES = [
   { value: 'owner', label: 'Owner' },
@@ -114,12 +115,8 @@ export default function UsersPage({ fallbackPath = '/enterprise/stores' }) {
     setBusyKey(profile.id)
     setError(null)
     try {
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ account_type: accountType })
-        .eq('id', profile.id)
-      if (updateError) throw updateError
-      setProfiles((prev) => prev.map((item) => (item.id === profile.id ? { ...item, account_type: accountType } : item)))
+      const updated = await backOfficeApi.updatePlatformAccountType(profile.id, accountType)
+      setProfiles((prev) => prev.map((item) => (item.id === profile.id ? { ...item, ...updated } : item)))
     } catch (updateError) {
       setError(updateError?.message || 'Could not update account type.')
     } finally {
@@ -203,6 +200,7 @@ export default function UsersPage({ fallbackPath = '/enterprise/stores' }) {
         <div className="space-y-2">
           {visibleProfiles.map((profile) => {
             const accountType = profile.account_type || 'owner'
+            const isSuperuser = Boolean(profile.is_superuser)
             const isReseller = accountType === 'reseller'
             const isExpanded = expandedId === profile.id
             return (
@@ -222,7 +220,7 @@ export default function UsersPage({ fallbackPath = '/enterprise/stores' }) {
                     <span className="sr-only">Account type</span>
                     <select
                       value={accountType}
-                      disabled={busyKey === profile.id || profile.id === auth.user?.id}
+                      disabled={busyKey === profile.id || profile.id === auth.user?.id || isSuperuser}
                       onChange={(event) => void changeAccountType(profile, event.target.value)}
                       className="appearance-none bg-transparent text-sm font-medium text-dash-cream outline-none disabled:opacity-60"
                     >
@@ -232,6 +230,11 @@ export default function UsersPage({ fallbackPath = '/enterprise/stores' }) {
                     </select>
                     <ChevronDown size={13} strokeWidth={1.75} className="pointer-events-none absolute right-3 text-dash-tertiary" aria-hidden="true" />
                   </label>
+                  {isSuperuser && (
+                    <span className="rounded-full border border-shell-accent/40 px-2.5 py-1 font-mono text-[10px] uppercase text-shell-accent">
+                      Superuser
+                    </span>
+                  )}
                   {isReseller && (
                     <button
                       type="button"

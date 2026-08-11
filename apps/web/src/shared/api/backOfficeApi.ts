@@ -7,6 +7,9 @@ import type { PermissionMap } from '../permissions'
 
 export interface BackOfficeAccess {
   is_owner: boolean
+  is_admin?: boolean
+  is_reseller?: boolean
+  authority_level: 'staff' | 'manager' | 'owner' | 'platform_admin'
   permissions: PermissionMap
   member_id: string | null
   waiter_id: string | null
@@ -59,6 +62,15 @@ export interface ManagerInboxResponse {
 }
 
 export const backOfficeApi = {
+  updatePlatformAccountType: (
+    profileId: string,
+    accountType: 'owner' | 'reseller' | 'reseller_employee' | 'admin',
+  ): Promise<{ id: string; account_type: string; is_superuser: boolean }> =>
+    fetchWithSupabaseAuth(`/platform/users/${profileId}/account-type`, {
+      method: 'PATCH',
+      body: JSON.stringify({ account_type: accountType }),
+    }),
+
   managerInbox: (restaurantId: string, status: 'open' | 'all' = 'open'): Promise<ManagerInboxResponse> =>
     fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-action-inbox?status=${status}`),
 

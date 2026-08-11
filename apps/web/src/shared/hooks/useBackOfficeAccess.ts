@@ -38,6 +38,13 @@ export function useBackOfficeAccess(auth: AuthLike, restaurantId: string | null 
       ? allPermissions(true)
       : query.data?.permissions || allPermissions(false)
     const isOwner = bypass || Boolean(query.data?.is_owner)
+    const authorityLevel = ownsRestaurant
+      ? 'owner'
+      : auth?.accountType === 'admin'
+        ? 'platform_admin'
+        : auth?.accountType === 'reseller'
+          ? 'manager'
+          : query.data?.authority_level || 'staff'
     return {
       isOwner,
       // While the member's access is still loading, err open on visibility so
@@ -46,6 +53,7 @@ export function useBackOfficeAccess(auth: AuthLike, restaurantId: string | null 
       permissions,
       can: (key: string) => isOwner || canCheck(permissions, key),
       memberId: query.data?.member_id ?? null,
+      authorityLevel,
     }
-  }, [bypass, query.data, query.isLoading])
+  }, [auth?.accountType, bypass, ownsRestaurant, query.data, query.isLoading])
 }

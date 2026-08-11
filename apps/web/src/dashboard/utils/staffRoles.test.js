@@ -4,7 +4,10 @@ import test from 'node:test'
 import {
   assignedStaffRoles,
   buildStaffRoleUpdate,
+  canManageJobCode,
+  canManageStaffMember,
   defaultStaffRole,
+  jobCodeAuthority,
   normalizeRoleCode,
   normalizeStaffRoleOptions,
   primaryStaffRole,
@@ -71,4 +74,18 @@ test('removing the current primary promotes the next selected role', () => {
     roles: ['expo'],
     job_code_id: 'expo-id',
   })
+})
+
+test('staff authority permits parallel roles but blocks higher roles', () => {
+  assert.equal(canManageJobCode('manager', { code: 'manager', permission_tier: 'manager' }), true)
+  assert.equal(canManageJobCode('manager', { code: 'admin' }), true)
+  assert.equal(canManageJobCode('manager', { code: 'owner', permission_tier: 'owner' }), false)
+  assert.equal(canManageJobCode('owner', { code: 'owner', permission_tier: 'owner' }), true)
+  assert.equal(jobCodeAuthority({ code: 'server', permission_tier: 'waiter' }), 0)
+})
+
+test('staff authority uses the highest assigned role, not only the primary role', () => {
+  const waiter = { role: 'manager', roles: ['manager', 'owner'] }
+  assert.equal(canManageStaffMember('manager', waiter, jobCodes), false)
+  assert.equal(canManageStaffMember('owner', waiter, jobCodes), true)
 })

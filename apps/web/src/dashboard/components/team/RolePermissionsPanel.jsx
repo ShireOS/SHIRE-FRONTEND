@@ -5,6 +5,7 @@ import { PERMISSION_TOGGLES, fetchRolePermissions, updateRolePermission } from '
 import { PERMISSION_KEYS, mergePermissions } from '../../../shared/permissions'
 import PermissionEditor from './PermissionEditor'
 import { cashDrawerRoleSummary } from '../../utils/cashDrawerPermissions'
+import { canManageJobCode, roleCodeFromJobCode } from '../../utils/staffRoles'
 
 const roleLabel = (key) =>
   String(key || '')
@@ -144,7 +145,7 @@ function RoleCard({ role, busy, onPatch, cashDrawerPolicy }) {
   )
 }
 
-export default function RolePermissionsPanel({ restaurantId, cashDrawerPolicy, onRolesChange }) {
+export default function RolePermissionsPanel({ restaurantId, cashDrawerPolicy, onRolesChange, authorityLevel, jobCodes = [] }) {
   const [roles, setRoles] = useState([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -177,7 +178,7 @@ export default function RolePermissionsPanel({ restaurantId, cashDrawerPolicy, o
     setRoles(next)
     onRolesChange?.(next)
     try {
-      await updateRolePermission(role.id, changes)
+      await updateRolePermission(restaurantId, role.id, changes)
     } catch (err) {
       setError(err.message || 'Change failed')
       setRoles(previous)
@@ -185,7 +186,7 @@ export default function RolePermissionsPanel({ restaurantId, cashDrawerPolicy, o
     } finally {
       setBusy(false)
     }
-  }, [onRolesChange, roles])
+  }, [onRolesChange, restaurantId, roles])
 
   const sorted = useMemo(() => [...roles].sort((a, b) => a.role_key.localeCompare(b.role_key)), [roles])
 
@@ -209,7 +210,19 @@ export default function RolePermissionsPanel({ restaurantId, cashDrawerPolicy, o
         ) : sorted.length === 0 ? (
           <p className="text-xs text-dash-tertiary">No POS roles configured for this store yet.</p>
         ) : (
-          sorted.map((role) => <RoleCard key={role.id} role={role} busy={busy} onPatch={patch} cashDrawerPolicy={cashDrawerPolicy} />)
+          sorted.map((role) => {
+            const jobCode = jobCodes.find((item) => roleCodeFromJobCode(item) === role.role_key)
+            const locked = !jobCode || !canManageJobCode(authorityLevel, jobCode)
+            return (
+              <RoleCard
+                key={role.id}
+                role={role}
+                busy={busy || locked}
+                onPatch={patch}
+                cashDrawerPolicy={cashDrawerPolicy}
+              />
+            )
+          })
         )}
       </CardContent>
     </Card>

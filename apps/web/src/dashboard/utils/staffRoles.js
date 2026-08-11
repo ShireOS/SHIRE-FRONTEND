@@ -2,6 +2,18 @@ const ROLE_ALIASES = Object.freeze({
   waiter: 'server',
 })
 
+const AUTHORITY_RANKS = Object.freeze({
+  staff: 0,
+  normal: 0,
+  limited: 0,
+  waiter: 0,
+  server: 0,
+  manager: 1,
+  admin: 1,
+  owner: 2,
+  platform_admin: 3,
+})
+
 function storedRoleCode(value) {
   return String(value || '').trim().toLowerCase()
 }
@@ -13,6 +25,26 @@ export function normalizeRoleCode(value) {
 
 export function roleCodeFromJobCode(jobCode) {
   return normalizeRoleCode(typeof jobCode === 'string' ? jobCode : jobCode?.code)
+}
+
+export function staffAuthorityRank(value) {
+  return AUTHORITY_RANKS[String(value || 'staff').trim().toLowerCase()] ?? 0
+}
+
+export function jobCodeAuthority(jobCode) {
+  return staffAuthorityRank(jobCode?.permission_tier || jobCode?.code)
+}
+
+export function canManageJobCode(authorityLevel, jobCode) {
+  return staffAuthorityRank(authorityLevel) >= jobCodeAuthority(jobCode)
+}
+
+export function canManageStaffMember(authorityLevel, waiter, jobCodes = []) {
+  const options = normalizeStaffRoleOptions(jobCodes)
+  return assignedStaffRoles(waiter, options).every((role) => {
+    const jobCode = options.find(option => roleCodeFromJobCode(option) === role)
+    return canManageJobCode(authorityLevel, jobCode || { code: role, permission_tier: role })
+  })
 }
 
 export function staffRoleLabel(jobCode) {

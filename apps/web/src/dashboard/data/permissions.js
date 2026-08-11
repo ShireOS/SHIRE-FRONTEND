@@ -1,4 +1,5 @@
 import { supabase } from '../../shared/lib/supabase'
+import { fetchWithSupabaseAuth } from '../../shared/query/fetchWithSupabaseAuth'
 
 // POS role permission matrix (pos_role_permissions). One row per (restaurant, role_key).
 // The POS apps hydrate the signed-in staffer's row at PIN validation and gate
@@ -28,13 +29,7 @@ export const PERMISSION_TOGGLES = [
 ]
 
 export async function fetchRolePermissions(restaurantId) {
-  const { data, error } = await supabase
-    .from('pos_role_permissions')
-    .select('*')
-    .eq('restaurant_id', restaurantId)
-    .order('role_key')
-  if (error) throw error
-  return data || []
+  return fetchWithSupabaseAuth(`/restaurants/${restaurantId}/role-permissions`)
 }
 
 export async function fetchCashDrawerPolicy(restaurantId) {
@@ -51,10 +46,9 @@ export async function fetchCashDrawerPolicy(restaurantId) {
   }
 }
 
-export async function updateRolePermission(id, patch) {
-  const { error } = await supabase
-    .from('pos_role_permissions')
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('id', id)
-  if (error) throw error
+export async function updateRolePermission(restaurantId, id, patch) {
+  return fetchWithSupabaseAuth(`/restaurants/${restaurantId}/role-permissions/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
 }

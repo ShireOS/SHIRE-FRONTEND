@@ -14,6 +14,7 @@ export function normalizeJobCodes(rows: unknown): JobCodeData[] {
       tipout_role: row?.tipout_role || '',
       sort_order: Number.isFinite(Number(row?.sort_order)) ? Number(row.sort_order) : index * 10,
       is_active: row?.is_active !== false,
+      assigned_count: Math.max(0, Number.parseInt(String(row?.assigned_count || 0), 10) || 0),
     }))
     .filter(row => row.label && row.is_active)
 }

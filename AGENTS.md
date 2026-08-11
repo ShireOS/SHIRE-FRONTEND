@@ -28,6 +28,16 @@
 - **Dashboard-side auth:** Supabase auth (owner account today). Dynamic role
   permissions live in ML backend migration `0049_dynamic_role_permissions.sql`,
   surfaced in `apps/web/src/dashboard/components/team/RolePermissionsPanel.jsx`.
+- **Role-management authority is hierarchical:** staff < manager < owner <
+  platform admin. A caller may create, assign, edit, or remove only parallel or
+  lower roles. Platform admins may delegate admin, but `profiles.is_superuser`
+  marks the immutable founding account and is never accepted from browser writes
+  or signup metadata. These checks are enforced by both ML and POS APIs; UI
+  disabling is only a convenience.
+- **POS positions are archived, not deleted.** Team -> Employees -> Members owns
+  the position catalog editor. A position can be archived only when no employee
+  is assigned through either `waiters.job_code_id` or `employee_job_codes`;
+  recreating the same code reactivates the existing row and preserves history.
 - **Back-office access by invite (being built):** an owner/manager can grant any
   employee dashboard access by entering their email. This sends an invite email
   backed by the existing `staff_invitations` table (ML migration
