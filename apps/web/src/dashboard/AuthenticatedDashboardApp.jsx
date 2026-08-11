@@ -26,6 +26,7 @@ import RatesPage from './pages/RatesPage'
 import UsersPage from './pages/UsersPage'
 import ResellerAccessCard from './pages/ResellerAccessCard'
 import OverviewPage from './pages/OverviewPage'
+import { normalizeReportingScope, WHOLE_RESTAURANT_SCOPE } from './components/homepageWidgetMath'
 import SettingsPage from './pages/SettingsPage'
 import PosSettingsPage from './pages/PosSettingsPage'
 import PrintingRoutingPage from './pages/PrintingRoutingPage'
@@ -438,6 +439,7 @@ function MiniTable({ columns, rows }) {
 
 function AnalyticsDashboard({ restaurant }) {
   const [period, setPeriod] = useState('week')
+  const [reportingScope, setReportingScope] = useState(() => ({ ...WHOLE_RESTAURANT_SCOPE }))
   const [viewHydrated, setViewHydrated] = useState(false)
   const [viewPersistenceReady, setViewPersistenceReady] = useState(false)
   useEffect(() => {
@@ -445,10 +447,12 @@ function AnalyticsDashboard({ restaurant }) {
     let cancelled = false
     setViewHydrated(false)
     setViewPersistenceReady(false)
+    setReportingScope({ ...WHOLE_RESTAURANT_SCOPE })
     fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/reports/view-preferences`)
       .then((payload) => {
         if (!cancelled) {
           setPeriod(payload.settings?.homepage?.period || 'week')
+          setReportingScope(normalizeReportingScope(payload.settings?.homepage))
           setViewPersistenceReady(true)
         }
       })
@@ -460,11 +464,11 @@ function AnalyticsDashboard({ restaurant }) {
     if (!restaurant?.id || !viewHydrated || !viewPersistenceReady) return
     const timeout = window.setTimeout(() => {
       fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/reports/view-preferences/homepage`, {
-        method: 'PUT', body: JSON.stringify({ settings: { period, anchor_date: null } }),
+        method: 'PUT', body: JSON.stringify({ settings: { period, anchor_date: null, ...reportingScope } }),
       }).catch(() => undefined)
     }, 450)
     return () => window.clearTimeout(timeout)
-  }, [restaurant?.id, viewHydrated, viewPersistenceReady, period])
+  }, [restaurant?.id, viewHydrated, viewPersistenceReady, period, reportingScope])
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-5 border-b border-white/10 pb-5 lg:flex-row lg:items-end lg:justify-between">
@@ -479,7 +483,7 @@ function AnalyticsDashboard({ restaurant }) {
           ))}
         </nav>
       </header>
-      {viewHydrated && <HomepageWidgets scope="restaurant" restaurantId={restaurant?.id} period={period} />}
+      {viewHydrated && <HomepageWidgets scope="restaurant" restaurantId={restaurant?.id} period={period} dashboardScope={reportingScope} onDashboardScopeChange={setReportingScope} />}
       {viewHydrated && <CheckLedgerSection restaurantId={restaurant?.id} />}
     </div>
   )

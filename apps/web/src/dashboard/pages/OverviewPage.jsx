@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { fetchWithSupabaseAuth } from '../../shared/query'
 import HomepageWidgets from '../components/HomepageWidgets'
+import { normalizeReportingScope, WHOLE_RESTAURANT_SCOPE } from '../components/homepageWidgetMath'
 import PortfolioEmailPanel from './PortfolioEmailPanel'
 
 const PERIODS = [
@@ -77,6 +78,7 @@ export default function OverviewPage() {
   const [includeUngrouped, setIncludeUngrouped] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
   const [portfolioScope, setPortfolioScope] = useState(null)
+  const [reportingScope, setReportingScope] = useState(() => ({ ...WHOLE_RESTAURANT_SCOPE }))
   const [viewHydrated, setViewHydrated] = useState(false)
   const [viewPersistenceReady, setViewPersistenceReady] = useState(false)
 
@@ -90,6 +92,7 @@ export default function OverviewPage() {
           setPeriod(saved.period || 'week')
           setSelectedGroups(new Set(saved.group_ids || []))
           setIncludeUngrouped(Boolean(saved.include_ungrouped))
+          setReportingScope(normalizeReportingScope(saved))
         }
         setViewPersistenceReady(true)
       })
@@ -102,11 +105,11 @@ export default function OverviewPage() {
     const timeout = window.setTimeout(() => {
       fetchWithSupabaseAuth('/portfolio-reports/view-preferences/overview', {
         method: 'PUT',
-        body: JSON.stringify({ settings: { period, group_ids: [...selectedGroups], include_ungrouped: includeUngrouped } }),
+        body: JSON.stringify({ settings: { period, group_ids: [...selectedGroups], include_ungrouped: includeUngrouped, ...reportingScope } }),
       }).catch(() => undefined)
     }, 450)
     return () => window.clearTimeout(timeout)
-  }, [viewHydrated, viewPersistenceReady, period, selectedGroups, includeUngrouped])
+  }, [viewHydrated, viewPersistenceReady, period, selectedGroups, includeUngrouped, reportingScope])
   const groupQuery = [...selectedGroups].sort().join(',')
   const groups = portfolioScope?.groups || []
   const handleScopeLoaded = useCallback((scope) => setPortfolioScope(scope), [])
@@ -148,6 +151,8 @@ export default function OverviewPage() {
         <HomepageWidgets
           scope="portfolio"
           period={period}
+          dashboardScope={reportingScope}
+          onDashboardScopeChange={setReportingScope}
           groupIds={groupQuery ? [...selectedGroups] : null}
           includeUngrouped={includeUngrouped}
           onScopeLoaded={handleScopeLoaded}

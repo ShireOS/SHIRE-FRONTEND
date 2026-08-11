@@ -29,6 +29,13 @@ import {
   YAxis,
 } from 'recharts'
 import { fetchWithSupabaseAuth } from '../../shared/query'
+import {
+  aggregateWidgetRows,
+  effectiveHomepageWidgetSettings,
+  normalizeReportingScope,
+  pruneReportingScope,
+  WHOLE_RESTAURANT_SCOPE,
+} from './homepageWidgetMath'
 
 const KPI_WIDGETS = new Set([
   'net_sales', 'orders', 'covers', 'labor_cost', 'profit_after_labor',
@@ -38,13 +45,14 @@ const MONEY_IDS = new Set([
   'net_sales', 'gross_sales', 'tips', 'discounts', 'average_check',
   'labor_cost', 'profit_after_labor', 'gross_amount', 'processor_fees',
   'expected_deposit', 'settled_deposit', 'pending_deposit', 'revenue',
-  'cost', 'margin', 'declared_cash', 'declared_card', 'declared_other',
+  'gross_revenue', 'cost', 'margin', 'declared_cash', 'declared_card', 'declared_other',
   'tips_collected', 'tipout_paid', 'tipout_received', 'final_payout',
   'refunds', 'voided_items',
   'total_amount', 'discount_amount', 'comp_amount', 'item_void_amount', 'check_void_amount',
   'non_taxable_net', 'taxable_net', 'gross_voids', 'tax', 'grand_total',
   'item_discounts', 'check_discounts', 'total_collected', 'card_collected',
-  'cash_collected', 'other_collected',
+  'cash_collected', 'other_collected', 'service_charges', 'employee_service_charges',
+  'restaurant_service_charges', 'unclassified_service_charges',
 ])
 const GRAIN_OPTIONS = [
   ['total', 'Total'], ['day', 'Daily'], ['week', 'Weekly'],
@@ -173,9 +181,31 @@ function ReportingScopeFields({ widget, dimensions, value, onChange }) {
   </div>
 }
 
-function WidgetSettingsModal({ widget, widgetData, dimensions, settings, pdfSettings, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave, onSavePdf }) {
+function scopeControlLabel(value) {
+  const scope = normalizeReportingScope(value)
+  if (scope.scope_dimension === 'none') return 'Whole restaurant'
+  const noun = scope.scope_dimension === 'device' ? 'device' : 'section'
+  if (!scope.scope_ids.length) return `All ${noun}s`
+  return `${scope.scope_ids.length} ${noun}${scope.scope_ids.length === 1 ? '' : 's'}`
+}
+
+function DashboardScopeModal({ dimensions, value, onClose, onSave }) {
+  const [draft, setDraft] = useState(() => normalizeReportingScope(value))
+  const scopeWidget = { reporting_dimensions: ['revenue_center', 'device'] }
+  return <Modal title="Dashboard scope" onClose={onClose}>
+    <div className="space-y-4 p-5">
+      <p className="text-sm leading-6 text-dash-secondary">This filter applies to every widget whose source data can be reliably assigned to a section or device. Labor and other restaurant-wide records remain unfiltered.</p>
+      <ReportingScopeFields widget={scopeWidget} dimensions={dimensions} value={draft} onChange={setDraft} />
+    </div>
+    <footer className="sticky bottom-0 flex justify-end gap-2 border-t border-dash-border bg-dash-elevated p-5"><button type="button" onClick={onClose} className="h-10 rounded-md border border-dash-border px-4 text-sm">Cancel</button><button type="button" onClick={() => onSave(normalizeReportingScope(draft))} className="h-10 rounded-md bg-shell-cta px-4 text-sm font-semibold text-shell-cta-text">Apply scope</button></footer>
+  </Modal>
+}
+
+function WidgetSettingsModal({ widget, widgetData, dimensions, settings, dashboardScope, pdfSettings, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave, onSavePdf }) {
   const dates = periodDates(period, anchorDate)
   const [tab, setTab] = useState('display')
+  const explicitWidgetScope = settings.scope_source === 'widget'
+  const effectiveDisplayScope = explicitWidgetScope ? normalizeReportingScope(settings) : normalizeReportingScope(dashboardScope)
   const [draft, setDraft] = useState(() => ({
     display_grain: settings.display_grain || (widget.id === 'sales_trend' ? 'day' : 'total'),
     display_breakdown: settings.display_breakdown || widget.default_breakdown,
@@ -187,7 +217,10 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, pdfSett
     limit: settings.limit || 12,
     alert_z_score: settings.alert_z_score || 2,
     alert_min_actions: settings.alert_min_actions || 5,
-    scope_dimension: settings.scope_dimension || 'none', scope_mode: settings.scope_mode || 'cumulative', scope_ids: settings.scope_ids || [],
+    scope_source: explicitWidgetScope ? 'widget' : 'global',
+    scope_dimension: explicitWidgetScope ? settings.scope_dimension || 'none' : 'none',
+    scope_mode: explicitWidgetScope ? settings.scope_mode || 'cumulative' : 'cumulative',
+    scope_ids: explicitWidgetScope ? settings.scope_ids || [] : [],
   }))
   const [report, setReport] = useState(() => ({
     start_date: dates.start, end_date: dates.end,
@@ -198,7 +231,7 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, pdfSett
     employee_ids: [], action_types: ['discount', 'comp', 'item_void', 'check_void'],
     reason_codes: [], include_team_average: true,
     alert_z_score: settings.alert_z_score || 2, alert_min_actions: settings.alert_min_actions || 5,
-    scope_dimension: settings.scope_dimension || 'none', scope_mode: settings.scope_mode || 'cumulative', scope_ids: settings.scope_ids || [],
+    ...effectiveDisplayScope,
     ...(pdfSettings || {}),
   }))
   const [working, setWorking] = useState(false)
@@ -229,7 +262,10 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, pdfSett
     <Modal title={widget.label} onClose={onClose}>
       <div className="flex border-b border-dash-border px-5"><button type="button" onClick={() => setTab('display')} className={`h-11 border-b-2 px-4 text-sm font-semibold ${tab === 'display' ? 'border-shell-accent' : 'border-transparent text-dash-tertiary'}`}>Display</button><button type="button" onClick={() => setTab('pdf')} className={`h-11 border-b-2 px-4 text-sm font-semibold ${tab === 'pdf' ? 'border-shell-accent' : 'border-transparent text-dash-tertiary'}`}>PDF report</button></div>
       {tab === 'display' ? <div className="space-y-5 p-5">
-        <ReportingScopeFields widget={widget} dimensions={dimensions} value={draft} onChange={setDraft} />
+        {(widget.reporting_dimensions || []).length ? <div className="space-y-3">
+          <div><p className="label-mono mb-2">Filter behavior</p><div className="flex flex-wrap gap-2"><Choice selected={draft.scope_source !== 'widget'} onClick={() => setDraft({ ...draft, scope_source: 'global', scope_dimension: 'none', scope_mode: 'cumulative', scope_ids: [] })}>Use dashboard scope</Choice><Choice selected={draft.scope_source === 'widget'} onClick={() => setDraft({ ...draft, scope_source: 'widget', scope_dimension: 'none', scope_mode: 'cumulative', scope_ids: [] })}>Custom scope</Choice></div><p className="mt-2 text-xs text-dash-tertiary">Dashboard scope: {scopeControlLabel(dashboardScope)}</p></div>
+          {draft.scope_source === 'widget' && <ReportingScopeFields widget={widget} dimensions={dimensions} value={draft} onChange={setDraft} />}
+        </div> : <ReportingScopeFields widget={widget} dimensions={dimensions} value={draft} onChange={setDraft} />}
         {widget.id === 'discount_review' ? <>
           <p className="text-sm leading-6 text-dash-secondary">Employees are flagged only after meeting the minimum sample and exceeding the selected number of standard deviations above peers at the same restaurant.</p>
           <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">Outlier threshold<input type="number" min="1" max="5" step="0.1" value={draft.alert_z_score} onChange={(event) => setDraft({ ...draft, alert_z_score: Number(event.target.value) })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-3" /><span className="mt-1 block text-xs text-dash-tertiary">Standard deviations above peers</span></label><label className="text-sm">Minimum actions<input type="number" min="1" max="100" value={draft.alert_min_actions} onChange={(event) => setDraft({ ...draft, alert_min_actions: Number(event.target.value) })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-3" /><span className="mt-1 block text-xs text-dash-tertiary">Prevents one-off false alerts</span></label></div>
@@ -259,7 +295,7 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, pdfSett
 }
 
 function WidgetHeader({ widget, onSettings }) {
-  return <header className="mb-4 flex items-start justify-between gap-3"><div><p className="label-mono">Homepage widget</p><h2 className="mt-1 text-lg font-semibold">{widget.label}</h2><p className="mt-1 text-xs text-dash-tertiary">{widget.description}</p></div><button type="button" onClick={(event) => { event.stopPropagation(); onSettings() }} title={`Configure ${widget.label}`} aria-label={`Configure ${widget.label}`} className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-dash-border text-dash-secondary hover:text-dash-cream"><Settings2 size={16} /></button></header>
+  return <header className="mb-4 flex items-start justify-between gap-3"><div><p className="label-mono">Homepage widget</p><h2 className="mt-1 text-lg font-semibold">{widget.label}</h2><p className="mt-1 text-xs text-dash-tertiary">{widget.description}</p>{widget.scopeLabel && <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-shell-accent"><Layers3 size={13} />{widget.scopeLabel}</p>}</div><button type="button" onClick={(event) => { event.stopPropagation(); onSettings() }} title={`Configure ${widget.label}`} aria-label={`Configure ${widget.label}`} className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-dash-border text-dash-secondary hover:text-dash-cream"><Settings2 size={16} /></button></header>
 }
 
 function measureColumns(data, widget) {
@@ -288,7 +324,8 @@ const SALES_SUM_FIELDS = [
   'gross_sales', 'item_discounts', 'check_discounts', 'discounts', 'net_sales',
   'non_taxable_net', 'taxable_net', 'gross_voids', 'void_receipts', 'receipts',
   'covers', 'tax', 'tips', 'grand_total', 'total_collected', 'card_collected',
-  'cash_collected', 'other_collected',
+  'cash_collected', 'other_collected', 'service_charges', 'employee_service_charges',
+  'restaurant_service_charges', 'unclassified_service_charges',
 ]
 
 function aggregateSalesRows(rows = []) {
@@ -296,6 +333,25 @@ function aggregateSalesRows(rows = []) {
   rows.forEach((row) => SALES_SUM_FIELDS.forEach((id) => { summary[id] += Number(row[id] || 0) }))
   summary.average_check = summary.receipts > 0 ? summary.net_sales / summary.receipts : 0
   return summary
+}
+
+function reportingScopeLabel(data, dimensions) {
+  const scope = data?.reporting_scope || {}
+  if (!scope.dimension || scope.dimension === 'none') return null
+  const noun = scope.dimension === 'device' ? 'devices' : 'sections'
+  const options = scope.dimension === 'device' ? dimensions?.devices || [] : dimensions?.sections || []
+  const selected = new Set((scope.ids || []).map(String))
+  const names = options.filter((item) => selected.has(String(item.id))).map((item) => item.restaurant_name && options.some((other) => other.name === item.name && other.restaurant_id !== item.restaurant_id) ? `${item.restaurant_name} / ${item.name}` : item.name)
+  if (names.length) return `Filtered: ${names.join(' + ')}`
+  return scope.mode === 'breakdown' ? `All ${noun}, broken down` : `All ${noun}`
+}
+
+function widgetScopeLabel(widget, data, dimensions, dashboardScope) {
+  const applied = reportingScopeLabel(data, dimensions)
+  if (applied) return applied
+  const globalScope = normalizeReportingScope(dashboardScope)
+  if (globalScope.scope_dimension === 'none' || (widget.reporting_dimensions || []).includes(globalScope.scope_dimension)) return null
+  return `Whole restaurant · ${globalScope.scope_dimension === 'device' ? 'device' : 'section'} attribution unavailable`
 }
 
 function salesTrendRows(rows = []) {
@@ -341,7 +397,7 @@ function DetailChart({ data, widget, height = 260 }) {
 
 function KpiWidget({ widget, data, onOpenDetails, onSettings }) {
   const column = data?.measure_columns?.[0] || widget.columns[0]
-  const row = data?.rows?.[0] || {}
+  const row = data?.summary || aggregateWidgetRows(data?.rows || [])
   const secondary = (data?.measure_columns || []).slice(1, 3)
   return <section onClick={onOpenDetails} className="glass-card min-w-0 cursor-pointer rounded-lg p-5 transition hover:-translate-y-px hover:border-shell-accent/40">
     <WidgetHeader widget={widget} onSettings={onSettings} />
@@ -353,8 +409,8 @@ function KpiWidget({ widget, data, onOpenDetails, onSettings }) {
 
 function SalesWidget({ widget, data, onOpenDetails, onSettings }) {
   const rows = data?.rows || []
-  const summary = aggregateSalesRows(rows)
-  const measures = (data?.measure_columns || widget.default_columns.map((id) => widget.columns.find((column) => column.id === id)).filter(Boolean)).slice(0, 6)
+  const summary = data?.summary || aggregateSalesRows(rows)
+  const measures = (data?.measure_columns || widget.default_columns.map((id) => widget.columns.find((column) => column.id === id)).filter(Boolean)).slice(0, 8)
   const trend = salesTrendRows(rows)
   const trendData = {
     rows: trend,
@@ -436,7 +492,7 @@ function MenuPerformanceWidget({ widget, data, settings, onSettings, onOpenDetai
 }
 
 function SummaryWidget({ widget, data, onSettings, onOpenDetails }) {
-  const row = data?.rows?.[0] || {}
+  const row = data?.summary || aggregateWidgetRows(data?.rows || [])
   const measures = data?.measure_columns || []
   const preview = measures.slice(0, 6)
   return <section onClick={onOpenDetails} className="glass-card cursor-pointer rounded-lg p-5 transition hover:border-shell-accent/40 xl:col-span-2"><WidgetHeader widget={widget} onSettings={onSettings} /><div className="grid gap-3 sm:grid-cols-2">{preview.map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-xl text-dash-cream">{formatValue(row[item.id], item.kind)}</p></div>)}</div>{measures.length > preview.length && <p className="mt-3 text-xs font-semibold text-shell-accent">View all details</p>}</section>
@@ -469,7 +525,7 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
   const dates = periodDates(period, anchorDate)
   const measures = widget.id === 'sales_summary' ? widget.columns || [] : measureColumns(data, widget)
   const rows = data?.rows || []
-  const summaryRow = widget.id === 'sales_summary' ? aggregateSalesRows(rows) : rows[0] || {}
+  const summaryRow = data?.summary || (widget.id === 'sales_summary' ? aggregateSalesRows(rows) : aggregateWidgetRows(rows))
   const commonBody = {
     start_date: dates.start,
     end_date: dates.end,
@@ -515,6 +571,7 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
     return (
       <Modal title={`${widget.label} details`} onClose={onClose} width="max-w-6xl">
         <div className="space-y-5 p-5">
+          {widget.scopeLabel && <p className="inline-flex items-center gap-2 rounded-md border border-shell-accent/30 bg-shell-accent/10 px-3 py-2 text-xs font-semibold text-shell-accent"><Layers3 size={14} />{widget.scopeLabel}</p>}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {[['Total impact', summary.total_amount, 'money'], ['Actions', summary.action_count, 'number'], ['Average action', summary.average_action_amount, 'money'], ['Flagged employees', summary.flagged_employees, 'number'], ['Unattributed actions', summary.unattributed_actions, 'number']].map(([label, value, kind]) => <div key={label} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(value, kind)}</p></div>)}
           </div>
@@ -537,7 +594,7 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
     const groups = [
       ['Sales', ['gross_sales', 'item_discounts', 'check_discounts', 'discounts', 'net_sales', 'non_taxable_net', 'taxable_net', 'gross_voids']],
       ['Checks and guests', ['receipts', 'void_receipts', 'covers', 'average_check']],
-      ['Tax, tips, and tenders', ['tax', 'tips', 'grand_total', 'total_collected', 'card_collected', 'cash_collected', 'other_collected']],
+      ['Tax, service charges, tips, and tenders', ['tax', 'service_charges', 'employee_service_charges', 'restaurant_service_charges', 'unclassified_service_charges', 'tips', 'grand_total', 'total_collected', 'card_collected', 'cash_collected', 'other_collected']],
     ]
     const netSalesWidget = { ...widget, columns: [metric('net_sales'), ...widget.columns.filter((column) => column.id !== 'net_sales')].filter(Boolean) }
     const tenderData = {
@@ -552,6 +609,7 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
     }
     return <Modal title="Sales details" onClose={onClose} width="max-w-6xl">
       <div className="space-y-6 p-5">
+        {widget.scopeLabel && <p className="inline-flex items-center gap-2 rounded-md border border-shell-accent/30 bg-shell-accent/10 px-3 py-2 text-xs font-semibold text-shell-accent"><Layers3 size={14} />{widget.scopeLabel}</p>}
         {groups.map(([title, ids]) => <section key={title}><p className="label-mono mb-3">{title}</p><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{ids.map(metric).filter(Boolean).map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(summaryRow[item.id], item.kind)}</p></div>)}</div></section>)}
         <div className="grid gap-5 xl:grid-cols-3">
           <section><p className="label-mono mb-3">Net sales trend</p><DrilldownResult query={trendQuery} data={trendData} widget={netSalesWidget} loadingLabel="Loading trend..." emptyLabel="No trend available." /></section>
@@ -565,6 +623,7 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
   return (
     <Modal title={`${widget.label} details`} onClose={onClose} width="max-w-6xl">
       <div className="space-y-5 p-5">
+        {widget.scopeLabel && <p className="inline-flex items-center gap-2 rounded-md border border-shell-accent/30 bg-shell-accent/10 px-3 py-2 text-xs font-semibold text-shell-accent"><Layers3 size={14} />{widget.scopeLabel}</p>}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {measures.map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(summaryRow[item.id], item.kind)}</p></div>)}
         </div>
@@ -610,9 +669,10 @@ function DiscountReviewWidget({ widget, data, onSettings, onOpenDetails }) {
   </section>
 }
 
-export default function HomepageWidgets({ scope, restaurantId, period, anchorDate, groupIds = null, includeUngrouped = false, onScopeLoaded = null }) {
+export default function HomepageWidgets({ scope, restaurantId, period, anchorDate, dashboardScope = WHOLE_RESTAURANT_SCOPE, onDashboardScopeChange = null, groupIds = null, includeUngrouped = false, onScopeLoaded = null }) {
   const queryClient = useQueryClient()
   const [configureOpen, setConfigureOpen] = useState(false)
+  const [scopeOpen, setScopeOpen] = useState(false)
   const [settingsId, setSettingsId] = useState(null)
   const [detailId, setDetailId] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -623,14 +683,28 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
     ? `/portfolio-reports/dimensions?${new URLSearchParams({ ...(groupIds?.length ? { group_ids: groupIds.join(',') } : {}), include_ungrouped: String(includeUngrouped) })}`
     : `/restaurants/${restaurantId}/reports/dimensions`
   const dimensionQuery = useQuery({ queryKey: ['reporting-dimensions', scope, restaurantId, (groupIds || []).join(','), includeUngrouped], queryFn: () => fetchWithSupabaseAuth(dimensionPath), enabled: scope === 'portfolio' || Boolean(restaurantId) })
+  const resolvedDashboardScope = useMemo(
+    () => pruneReportingScope(dashboardScope, dimensionQuery.data),
+    [dashboardScope, dimensionQuery.data],
+  )
+  useEffect(() => {
+    if (!dimensionQuery.data || !onDashboardScopeChange) return
+    if (JSON.stringify(resolvedDashboardScope) !== JSON.stringify(normalizeReportingScope(dashboardScope))) {
+      onDashboardScopeChange(resolvedDashboardScope)
+    }
+  }, [dashboardScope, dimensionQuery.data, onDashboardScopeChange, resolvedDashboardScope])
   const orderedVisible = useMemo(() => (preference.widget_order || []).filter((id) => (preference.visible_widgets || []).includes(id)), [preference])
+  const effectiveSettings = useMemo(
+    () => effectiveHomepageWidgetSettings(preference.widget_settings || {}, orderedVisible, resolvedDashboardScope),
+    [preference.widget_settings, orderedVisible, resolvedDashboardScope],
+  )
   const dataPath = scope === 'portfolio' ? '/portfolio-reports/homepage/data' : `/restaurants/${restaurantId}/reports/homepage/data`
   const portfolioScope = scope === 'portfolio'
     ? { ...(groupIds?.length ? { group_ids: groupIds } : {}), include_ungrouped: includeUngrouped }
     : {}
   const dataQuery = useQuery({
-    queryKey: ['homepage-data', scope, restaurantId, period, anchorDate, (groupIds || []).join(','), includeUngrouped, orderedVisible.join(','), JSON.stringify(preference.widget_settings || {})],
-    queryFn: () => fetchWithSupabaseAuth(dataPath, { method: 'POST', body: JSON.stringify({ period, anchor_date: anchorDate || null, widget_ids: orderedVisible, widget_settings: preference.widget_settings || {}, ...portfolioScope }) }),
+    queryKey: ['homepage-data', scope, restaurantId, period, anchorDate, (groupIds || []).join(','), includeUngrouped, orderedVisible.join(','), JSON.stringify(effectiveSettings)],
+    queryFn: () => fetchWithSupabaseAuth(dataPath, { method: 'POST', body: JSON.stringify({ period, anchor_date: anchorDate || null, widget_ids: orderedVisible, widget_settings: effectiveSettings, ...portfolioScope }) }),
     enabled: orderedVisible.length > 0,
   })
   useEffect(() => {
@@ -658,18 +732,20 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
   }
   const saveSettings = async (settings) => saveWidgetPreference('display', settings)
   const selectedWidget = (preference.catalog || []).find((widget) => widget.id === settingsId)
+  const detailWidget = (preference.catalog || []).find((widget) => widget.id === detailId) || { label: 'Widget', columns: [] }
   if (preferenceQuery.isPending) return <p className="p-6 text-sm text-dash-tertiary">Loading homepage...</p>
   return <div className="space-y-4">
-    <div className="flex justify-end"><button type="button" onClick={() => setConfigureOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm font-semibold text-dash-secondary hover:text-dash-cream"><Settings2 size={15} />Customize homepage</button></div>
+    <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setScopeOpen(true)} className={`inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-semibold ${resolvedDashboardScope.scope_dimension === 'none' ? 'border-dash-border text-dash-secondary hover:text-dash-cream' : 'border-shell-accent bg-shell-accent/10 text-dash-cream'}`}><Layers3 size={15} />{scopeControlLabel(resolvedDashboardScope)}</button><button type="button" onClick={() => setConfigureOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm font-semibold text-dash-secondary hover:text-dash-cream"><Settings2 size={15} />Customize homepage</button></div>
     {dataQuery.isError && <p className="rounded-md border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger">{dataQuery.error?.message || 'Could not load homepage widgets.'}</p>}
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {orderedVisible.map((id) => {
-        const widget = preference.catalog.find((item) => item.id === id)
-        if (!widget) return null
+        const catalogWidget = preference.catalog.find((item) => item.id === id)
+        if (!catalogWidget) return null
         const data = dataQuery.data?.widgets?.[id]
+        const widget = { ...catalogWidget, scopeLabel: widgetScopeLabel(catalogWidget, data, dimensionQuery.data, resolvedDashboardScope) }
         const onSettings = () => setSettingsId(id)
         const onOpenDetails = () => setDetailId(id)
-        const settings = preference.widget_settings?.[id] || {}
+        const settings = effectiveSettings[id] || {}
         if (id === 'sales_summary') return <SalesWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
         if (scopedBreakdown(data) && id !== 'discount_review') return <ScopedBreakdownWidget key={id} widget={widget} data={data} settings={settings} onSettings={onSettings} onOpenDetails={onOpenDetails} />
         if (KPI_WIDGETS.has(id)) return <KpiWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
@@ -681,8 +757,9 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
       })}
     </div>
     {!orderedVisible.length && <div className="rounded-md border border-dash-border p-8 text-center"><FileText className="mx-auto text-dash-tertiary" /><p className="mt-3 text-sm text-dash-secondary">Choose widgets to build this homepage.</p></div>}
+    {scopeOpen && <DashboardScopeModal dimensions={dimensionQuery.data} value={resolvedDashboardScope} onClose={() => setScopeOpen(false)} onSave={(next) => { onDashboardScopeChange?.(next); setScopeOpen(false) }} />}
     {configureOpen && <ConfigureModal catalog={preference.catalog || []} visible={preference.visible_widgets || []} order={preference.widget_order || []} saving={saving} onClose={() => setConfigureOpen(false)} onSave={(visible, order) => savePreference({ visible_widgets: visible, widget_order: order, widget_settings: preference.widget_settings || {} })} />}
-    {selectedWidget && <WidgetSettingsModal widget={selectedWidget} widgetData={dataQuery.data?.widgets?.[settingsId]} dimensions={dimensionQuery.data} settings={preference.widget_settings?.[settingsId] || {}} pdfSettings={preference.widget_pdf_settings?.[settingsId] || {}} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={saveSettings} onSavePdf={(settings) => saveWidgetPreference('pdf', settings)} />}
-    {detailId && <WidgetDetailModal widget={(preference.catalog || []).find((widget) => widget.id === detailId) || { label: 'Widget', columns: [] }} data={dataQuery.data?.widgets?.[detailId]} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} settings={preference.widget_settings?.[detailId] || {}} onClose={() => setDetailId(null)} />}
+    {selectedWidget && <WidgetSettingsModal widget={selectedWidget} widgetData={dataQuery.data?.widgets?.[settingsId]} dimensions={dimensionQuery.data} settings={preference.widget_settings?.[settingsId] || {}} dashboardScope={resolvedDashboardScope} pdfSettings={preference.widget_pdf_settings?.[settingsId] || {}} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={saveSettings} onSavePdf={(settings) => saveWidgetPreference('pdf', settings)} />}
+    {detailId && <WidgetDetailModal widget={{ ...detailWidget, scopeLabel: widgetScopeLabel(detailWidget, dataQuery.data?.widgets?.[detailId], dimensionQuery.data, resolvedDashboardScope) }} data={dataQuery.data?.widgets?.[detailId]} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} settings={effectiveSettings[detailId] || {}} onClose={() => setDetailId(null)} />}
   </div>
 }
