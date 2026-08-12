@@ -10,6 +10,7 @@ import {
   defaultMenuCategories,
   defaultCheckWorkflowSettings,
   defaultTipPayrollSettings,
+  defaultAutoGratuity,
   normalizeSectionNames,
   normalizeSectionProfiles,
   normalizeTaxRates,
@@ -22,6 +23,7 @@ import {
   normalizeCheckWorkflowSettings,
   normalizeJobCodes,
   normalizeTipPayrollSettings,
+  normalizeAutoGratuity,
   taxesChargesPayload,
   discountRulesPayload,
   menuCategoriesPayload,
@@ -42,6 +44,7 @@ import type {
   JobCodeData,
   TipPayrollSettingsData,
   CategoryTaxAssignmentData,
+  AutoGratuityData,
 } from '@shire/settings'
 
 // Settings types now live in @shire/settings; step components keep importing
@@ -115,10 +118,12 @@ export interface OnboardingData {
   batch_close_time: string
   credit_card_tip_payout: 'nightly' | 'payroll'
   refund_approval_threshold: string
+  pricing_policy: PricingPolicyData
 
   // Step 3: Taxes & Charges
   tax_rates: TaxRateData[]
   service_charges: ServiceChargeData[]
+  auto_gratuity: AutoGratuityData
   tax_category_assignments?: CategoryTaxAssignmentData[]
 
   // Step 4: Discounts, Comps & Promos
@@ -187,6 +192,20 @@ export interface OnboardingData {
   invites: TeamInvite[]
 }
 
+export interface PricingPolicyData {
+  version: number
+  enabled: boolean
+  mode: 'dual_pricing_posted_electronic' | 'cash_discount' | 'credit_surcharge' | 'service_fee_all' | 'none'
+  rate: number
+  basis: 'subtotal' | 'subtotal_plus_tax'
+  listed_price_basis: 'cash' | 'electronic'
+  display_order: 'cash_first' | 'electronic_first'
+  applies_to: string[]
+  jurisdiction_state: string
+  label: string
+  disclosure: string
+}
+
 export interface OperatingHoursData {
   day_of_week: number
   open_time: string
@@ -223,6 +242,41 @@ const defaultJobCodes = (): JobCodeData[] => [
   { code: 'kitchen', label: 'Kitchen', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: 'kitchen', sort_order: 80, is_active: true },
 ]
 
+const defaultPricingPolicy = (): PricingPolicyData => ({
+  version: 0,
+  enabled: true,
+  mode: 'dual_pricing_posted_electronic',
+  rate: 0.035,
+  basis: 'subtotal_plus_tax',
+  listed_price_basis: 'electronic',
+  display_order: 'cash_first',
+  applies_to: ['card', 'credit', 'debit', 'terminal', 'gift_card', 'standalone', 'external'],
+  jurisdiction_state: 'SC',
+  label: 'Dual pricing',
+  disclosure: 'Cash and electronic prices are shown before payment. The final receipt reflects the selected payment method.',
+})
+
+const normalizePricingPolicy = (value: unknown): PricingPolicyData => {
+  const fallback = defaultPricingPolicy()
+  const row = isRecord(value) ? value : {}
+  const mode = ['dual_pricing_posted_electronic', 'cash_discount', 'credit_surcharge', 'service_fee_all', 'none'].includes(asString(row.mode))
+    ? asString(row.mode) as PricingPolicyData['mode']
+    : fallback.mode
+  return {
+    version: Number.isInteger(Number(row.version)) ? Math.max(0, Number(row.version)) : 0,
+    enabled: typeof row.enabled === 'boolean' ? row.enabled : fallback.enabled,
+    mode,
+    rate: Number.isFinite(Number(row.rate)) ? Number(row.rate) : fallback.rate,
+    basis: row.basis === 'subtotal' ? 'subtotal' : 'subtotal_plus_tax',
+    listed_price_basis: row.listed_price_basis === 'cash' ? 'cash' : 'electronic',
+    display_order: row.display_order === 'electronic_first' ? 'electronic_first' : 'cash_first',
+    applies_to: asStringArray(row.applies_to).length ? asStringArray(row.applies_to) : fallback.applies_to,
+    jurisdiction_state: asString(row.jurisdiction_state, fallback.jurisdiction_state).toUpperCase().slice(0, 2),
+    label: asString(row.label, fallback.label),
+    disclosure: asString(row.disclosure, fallback.disclosure),
+  }
+}
+
 const INITIAL_DATA: OnboardingData = {
   name: '',
   address: '',
@@ -255,6 +309,7 @@ const INITIAL_DATA: OnboardingData = {
   batch_close_time: '04:00',
   credit_card_tip_payout: 'payroll',
   refund_approval_threshold: '',
+  pricing_policy: defaultPricingPolicy(),
 
   tax_rates: [
     {
@@ -267,6 +322,7 @@ const INITIAL_DATA: OnboardingData = {
     },
   ],
   service_charges: [],
+  auto_gratuity: defaultAutoGratuity(),
   tax_category_assignments: undefined,
   discount_rules: [],
   role_permissions: defaultRolePermissions(defaultJobCodes()),
@@ -411,15 +467,11 @@ const normalizeOperatingHours = (value: unknown): OperatingHoursData[] => {
   return seeded
 }
 
-// Payload builders delegate to @shire/settings so onboarding saves the exact
-// same shapes as the setup panel. Onboarding never collects auto-gratuity, so
-// that key is withheld from the taxes-charges payload rather than sending
-// package defaults over a surface that has no UI for it.
 const taxesChargesToPayload = (data: OnboardingData) => {
   return taxesChargesPayload(
     data.tax_rates,
     data.service_charges,
-    undefined,
+    data.auto_gratuity,
     data.tax_category_assignments,
   )
 }
@@ -479,8 +531,10 @@ const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): On
     batch_close_time: asString(input.batch_close_time, INITIAL_DATA.batch_close_time),
     credit_card_tip_payout: asEnum(input.credit_card_tip_payout, CREDIT_CARD_TIP_PAYOUTS, INITIAL_DATA.credit_card_tip_payout),
     refund_approval_threshold: asString(input.refund_approval_threshold),
+    pricing_policy: normalizePricingPolicy(input.pricing_policy),
     tax_rates: normalizeTaxRates(input.tax_rates),
     service_charges: normalizeServiceCharges(input.service_charges),
+    auto_gratuity: normalizeAutoGratuity(input.auto_gratuity),
     tax_category_assignments: Array.isArray(input.tax_category_assignments)
       ? normalizeCategoryTaxAssignments(input.tax_category_assignments)
       : undefined,
@@ -825,6 +879,17 @@ const fetchTaxesCharges = async (restaurantId: string) => {
   return response.json()
 }
 
+const fetchPricingPolicy = async (restaurantId: string) => {
+  const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/pricing-policy`, {
+    headers: await getApiHeaders(),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}))
+    throw new Error(asString(body.detail) || asString(body.message) || `Loading pricing policy failed (${response.status})`)
+  }
+  return response.json()
+}
+
 const fetchSections = async (restaurantId: string) => {
   const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/sections`, {
     headers: await getApiHeaders(),
@@ -1022,7 +1087,7 @@ export function useOnboarding() {
   }, [])
 
   const hydrateFromRestaurant = useCallback(async (restaurant: Restaurant): Promise<Partial<OnboardingData>> => {
-    const [hoursResult, sectionsResult, taxesChargesResult, discountRulesResult, menuCategoriesResult, managerControlsResult, closeoutSettingsResult, checkWorkflowResult, jobCodesResult, tipPayrollResult, reservationSettingsResult] = await Promise.all([
+    const [hoursResult, sectionsResult, taxesChargesResult, pricingPolicyResult, discountRulesResult, menuCategoriesResult, managerControlsResult, closeoutSettingsResult, checkWorkflowResult, jobCodesResult, tipPayrollResult, reservationSettingsResult] = await Promise.all([
       runWithTimeout(
         () =>
           supabase
@@ -1043,6 +1108,13 @@ export function useOnboarding() {
         'Loading taxes and charges timed out.'
       ).catch(err => {
         console.warn('[Onboarding] Could not hydrate taxes and charges:', err)
+        return null
+      }),
+      runWithTimeout(
+        () => fetchPricingPolicy(restaurant.id),
+        'Loading pricing policy timed out.'
+      ).catch(err => {
+        console.warn('[Onboarding] Could not hydrate pricing policy:', err)
         return null
       }),
       runWithTimeout(
@@ -1129,6 +1201,8 @@ export function useOnboarding() {
       section_behaviors: normalizeSectionProfiles(sectionRows, sectionNames),
       tax_rates: normalizeTaxRates(isRecord(taxesChargesResult) ? taxesChargesResult.tax_rates : []),
       service_charges: normalizeServiceCharges(isRecord(taxesChargesResult) ? taxesChargesResult.service_charges : []),
+      auto_gratuity: normalizeAutoGratuity(isRecord(taxesChargesResult) ? taxesChargesResult.auto_gratuity : null),
+      pricing_policy: normalizePricingPolicy(pricingPolicyResult),
       discount_rules: normalizeDiscountRules(isRecord(discountRulesResult) ? discountRulesResult.discount_rules : []),
       menu_categories: normalizeMenuCategories(isRecord(menuCategoriesResult) ? menuCategoriesResult.categories : []),
       role_permissions: normalizeRolePermissions(isRecord(managerControlsResult) ? managerControlsResult.role_permissions : [], jobCodes),
@@ -1574,6 +1648,7 @@ export function useOnboarding() {
       )
 
       if (updateError) throw updateError
+
       setRestaurantId(activeRestaurantId)
     } catch (err) {
       const message = toErrorMessage(err, 'Failed to save legal setup')
@@ -1617,6 +1692,21 @@ export function useOnboarding() {
       )
 
       if (updateError) throw updateError
+
+      const pricingResponse = await runWithTimeout(
+        async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/pricing-policy`, {
+          method: 'PUT',
+          headers: await getApiHeaders(),
+          body: JSON.stringify({ ...data.pricing_policy, expected_version: data.pricing_policy.version }),
+        }),
+        'Saving pricing policy timed out. Please retry.'
+      )
+      if (!pricingResponse.ok) {
+        const body = await pricingResponse.json().catch(() => ({}))
+        throw new Error(asString(body.detail) || asString(body.message) || `Saving pricing policy failed (${pricingResponse.status})`)
+      }
+      const savedPricingPolicy = await pricingResponse.json()
+      setData(prev => mergeOnboardingData(prev, { pricing_policy: normalizePricingPolicy(savedPricingPolicy) }))
       setRestaurantId(activeRestaurantId)
     } catch (err) {
       const message = toErrorMessage(err, 'Failed to save payment setup')
@@ -1651,6 +1741,7 @@ export function useOnboarding() {
       setData(prev => mergeOnboardingData(prev, {
         tax_rates: normalizeTaxRates(isRecord(saved) ? saved.tax_rates : []),
         service_charges: normalizeServiceCharges(isRecord(saved) ? saved.service_charges : []),
+        auto_gratuity: normalizeAutoGratuity(isRecord(saved) ? saved.auto_gratuity : null),
         tax_category_assignments: data.tax_category_assignments,
       }))
 
@@ -2312,6 +2403,32 @@ export function useOnboarding() {
     }
   }, [data.menu_import_method, getActiveRestaurantId, fetchRestaurantConfig, onboardingProgressPatch, runWithTimeout])
 
+  const saveRoutingProgress = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const activeRestaurantId = getActiveRestaurantId()
+      const existingConfig = await fetchRestaurantConfig(activeRestaurantId)
+      const { error: updateError } = await runWithTimeout(
+        () => supabase
+          .from('restaurants')
+          .update({
+            config: { ...existingConfig, kitchen_routing_reviewed_at: new Date().toISOString() },
+            ...onboardingProgressPatch(20),
+          })
+          .eq('id', activeRestaurantId),
+        'Saving kitchen routing review timed out. Please retry.'
+      )
+      if (updateError) throw updateError
+    } catch (err) {
+      const message = toErrorMessage(err, 'Failed to save kitchen routing review')
+      setError(message)
+      throw err
+    } finally {
+      setIsLoading(false)
+    }
+  }, [fetchRestaurantConfig, getActiveRestaurantId, onboardingProgressPatch, runWithTimeout])
+
   // Complete onboarding
   const completeOnboarding = useCallback(async () => {
     setIsLoading(true)
@@ -2478,6 +2595,7 @@ export function useOnboarding() {
     saveCapacity,
     saveMenuCategories,
     saveMenuProgress,
+    saveRoutingProgress,
     completeOnboarding,
     goToDashboard,
 

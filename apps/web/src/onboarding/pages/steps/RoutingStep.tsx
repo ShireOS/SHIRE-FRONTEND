@@ -70,6 +70,7 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [workingAction, setWorkingAction] = useState<string | null>(null)
+  const [savingReview, setSavingReview] = useState(false)
   const loadedRoutesRef = useRef<Map<string, string | null>>(new Map())
 
   const load = async () => {
@@ -446,10 +447,17 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
 
       <button
         type="button"
-        onClick={onboarding.nextStep}
-        className="w-full rounded-xl bg-white px-4 py-4 text-sm font-semibold text-black transition-colors hover:bg-gray-100"
+        disabled={savingReview}
+        onClick={() => {
+          setSavingReview(true)
+          void onboarding.saveRoutingProgress()
+            .then(onboarding.nextStep)
+            .catch(err => setError(err instanceof Error ? err.message : 'Could not save routing review.'))
+            .finally(() => setSavingReview(false))
+        }}
+        className="w-full rounded-xl bg-white px-4 py-4 text-sm font-semibold text-black transition-colors hover:bg-gray-100 disabled:opacity-50"
       >
-        Continue
+        {savingReview ? 'Saving...' : 'Continue'}
       </button>
     </div>
   )
