@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery, keepPreviousData } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Maximize2,
   Minimize2,
+  LoaderCircle,
   ReceiptText,
   RefreshCw,
   Search,
@@ -513,7 +514,6 @@ export default function CheckLedgerSection({ restaurantId }) {
     queryKey: queryKeys.checkLedger(restaurantId, query),
     queryFn: ({ signal }) => posCheckLedgerApi.list(restaurantId, query, signal),
     enabled: Boolean(restaurantId) && canView,
-    placeholderData: keepPreviousData,
     staleTime: 10000,
     // Open checks are live; history doesn't need polling.
     refetchInterval: tab === 'active' && !selectedOrderId ? LIVE_REFRESH_MS : false,
@@ -650,7 +650,10 @@ export default function CheckLedgerSection({ restaurantId }) {
             </div>
           )}
           {ledgerQuery.isPending && (
-            <p className="mt-4 text-sm text-dash-tertiary">Loading checks…</p>
+            <div role="status" className="mt-4 flex min-h-24 items-center justify-center gap-2 rounded-md border border-dash-border bg-white/[0.015] text-sm text-dash-tertiary">
+              <LoaderCircle size={15} className="animate-spin text-shell-accent" aria-hidden="true" />
+              Loading {tab === 'active' ? 'active' : tab === 'closed' ? 'closed' : 'check history'} checks...
+            </div>
           )}
           {!ledgerQuery.isPending && !ledgerQuery.isError && items.length === 0 && (
             <p className="mt-4 text-sm text-dash-tertiary">
