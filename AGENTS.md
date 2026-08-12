@@ -269,6 +269,10 @@ surface independently, while every mutation is also guarded by the ML backend.
   item-modifier override, and item price-allocation policies also verify that every
   referenced row belongs to the submitted restaurant, preventing cross-tenant
   record links.
+- The store Menu workspace exposes Kitchen Routing only to members with
+  `settings.edit`; the existing POS-backend routing guards remain authoritative.
+  Setup keeps the same routing editor while setup is incomplete, so completing
+  onboarding changes navigation placement rather than the persisted contract.
 - Server Quick Menu, Fast Bar, department ranking, and bartender home preferences
   use existing `menu.view` for Back Office visibility and `menu.edit_items` for
   mutation. Owners and authorized resellers share the audited POS-backend

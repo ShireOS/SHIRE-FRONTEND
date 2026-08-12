@@ -18,8 +18,13 @@ test('active checks use the full POS lifecycle metric instead of only open', () 
   assert.equal(query.status, undefined)
 })
 
-test('closed and history retain their explicit filters', () => {
-  assert.equal(buildCheckLedgerQuery({ ...base, tab: 'closed' }).status, 'closed')
+test('closed includes paid checks that have not reached their terminal status yet', () => {
+  const query = buildCheckLedgerQuery({ ...base, tab: 'closed' })
+  assert.equal(query.metric, 'sales')
+  assert.equal(query.status, undefined)
+})
+
+test('history retains its explicit status filter', () => {
   assert.deepEqual(buildCheckLedgerQuery({ ...base, tab: 'history', historyStatus: 'voided' }), {
     date_from: base.dateFrom,
     date_to: base.dateTo,

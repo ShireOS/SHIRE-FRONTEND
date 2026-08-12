@@ -5193,12 +5193,13 @@ export function RestaurantWorkspace({
           <ConfigurationHub tabs={[
             { id: 'menu', label: 'Menu' },
             ...(backOfficeAccess.can('menu.edit_items') ? [{ id: 'discounts', label: 'Discounts' }] : []),
+            ...(backOfficeAccess.can('settings.edit') ? [{ id: 'routing', label: 'Kitchen Routing' }] : []),
             ...(auth.accountType === 'admin' ? [{ id: 'taxes', label: 'Taxes & Charges' }] : []),
           ]} initialTab="menu">
             {(section) => section === 'menu' ? (
               <MenuPanel restaurantId={restaurantId} canEditPrices={backOfficeAccess.can('menu.edit_prices')} />
             ) : (
-              <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[section === 'taxes' ? 'taxes_charges' : 'discounts']} showHeader={false} />
+              <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[section === 'taxes' ? 'taxes_charges' : section]} showHeader={false} />
             )}
           </ConfigurationHub>
         )}

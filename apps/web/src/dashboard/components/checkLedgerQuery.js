@@ -19,8 +19,7 @@ export function buildCheckLedgerQuery({
   }
   return {
     business_date: businessDate || undefined,
-    metric: tab === 'active' ? 'active_checks' : undefined,
-    status: tab === 'closed' ? 'closed' : undefined,
+    metric: tab === 'active' ? 'active_checks' : tab === 'closed' ? 'sales' : undefined,
     search: search || undefined,
     page,
     page_size: 25,
