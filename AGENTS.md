@@ -186,6 +186,12 @@ surface independently, while every mutation is also guarded by the ML backend.
   every active printer choose Hold & alert or an explicit backup, and exposes
   one-tap reroute/restore. Policy lives inside existing
   `kitchen_output_targets.config`; no new schema is required.
+- Automatic paid-receipt behavior is a restaurant-wide `settings.edit` policy
+  stored in `restaurants.config.pos.printing.auto_print_after_payment`. It
+  defaults on, is edited from Printing & Routing -> Receipts & Tickets, requires
+  a reason when changed, and is audited by the POS backend. Turning it off skips
+  only the automatic post-payment print; payment completion and manual reprints
+  remain available.
 - Terminal hardware and cash-drawer configuration uses the reseller-aware
   `devices.manage` / `settings.edit` POS guards. Changes are sent through audited
   POS-backend endpoints with a required reason; direct Supabase writes remain

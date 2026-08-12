@@ -16,6 +16,7 @@ import {
 } from '../components/printing/ticketPreviewPolicy'
 
 const DEFAULT_CONFIG = {
+  auto_print_after_payment: true,
   receipt_detail: 'clean',
   customer: {
     size: 'medium',
@@ -89,6 +90,8 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const location = useLocation()
   const section = sectionFromHash(location.hash)
   const [config, setConfig] = useState(DEFAULT_CONFIG)
+  const [savedAutoPrintAfterPayment, setSavedAutoPrintAfterPayment] = useState(true)
+  const [receiptPolicyReason, setReceiptPolicyReason] = useState('')
   const [routing, setRouting] = useState({ stations: [], targets: [] })
   const [catalog, setCatalog] = useState([])
   const [scope, setScope] = useState('whole')
@@ -135,7 +138,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
         if (!current) return
         if (itemsResult.error) throw itemsResult.error
         if (modifiersResult.error) throw modifiersResult.error
-        setConfig({
+        const mergedPrinting = {
           ...clone(DEFAULT_CONFIG), ...(printing || {}),
           customer: {
             ...clone(DEFAULT_CONFIG.customer), ...(printing?.customer || {}),
@@ -143,7 +146,10 @@ export default function PrintingRoutingPage({ restaurantId }) {
           },
           report: { ...clone(DEFAULT_CONFIG.report), ...(printing?.report || {}) },
           kitchen: { ...clone(DEFAULT_CONFIG.kitchen), ...(printing?.kitchen || {}) },
-        })
+        }
+        setConfig(mergedPrinting)
+        setSavedAutoPrintAfterPayment(mergedPrinting.auto_print_after_payment !== false)
+        setReceiptPolicyReason('')
         setLoadedRestaurantId(String(restaurantId))
         setRouting(routes || { stations: [], targets: [] })
         setCatalog([
@@ -348,10 +354,22 @@ export default function PrintingRoutingPage({ restaurantId }) {
   })
 
   const save = async () => {
-    setSaving(true); setError(''); setMessage('')
+    const autoPrintChanged = (config.auto_print_after_payment !== false) !== savedAutoPrintAfterPayment
+    const reason = receiptPolicyReason.trim()
+    setError(''); setMessage('')
+    if (autoPrintChanged && reason.length < 2) {
+      setError('Enter a reason for changing the restaurant paid-receipt policy.')
+      return
+    }
+    setSaving(true)
     try {
-      const saved = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`, { method: 'PUT', body: JSON.stringify(config) })
+      const saved = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...config, ...(autoPrintChanged ? { change_reason: reason } : {}) }),
+      })
       setConfig(saved)
+      setSavedAutoPrintAfterPayment(saved.auto_print_after_payment !== false)
+      setReceiptPolicyReason('')
       for (const targetId of dirtyTargetIds) {
         const target = (routing.targets || []).find(candidate => String(candidate.id) === String(targetId))
         if (!target) continue
@@ -414,6 +432,22 @@ export default function PrintingRoutingPage({ restaurantId }) {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,.85fr)]">
         <div className="space-y-4">
+          {section === 'receipts' && (
+            <div className="rounded-2xl border border-dash-gold/30 bg-dash-gold/[0.07] p-5">
+              <p className="label-mono">Paid receipt behavior</p>
+              <h2 className="mt-2 text-lg font-semibold">Automatic receipt after payment</h2>
+              <p className="mt-1 text-sm text-dash-tertiary">This restaurant-wide policy is shared with every POS station. It is enabled by default.</p>
+              <div className="mt-3"><Toggle label="Print automatically when payment succeeds" checked={config.auto_print_after_payment !== false} onChange={value => setConfig(current => ({ ...current, auto_print_after_payment: value }))} /></div>
+              <p className="mt-3 text-xs text-dash-tertiary">When off, payment still completes normally and staff can print from Payment Complete or a closed check at any time.</p>
+              {(config.auto_print_after_payment !== false) !== savedAutoPrintAfterPayment && (
+                <label className="mt-4 block">
+                  <span className="label-mono">Reason for change</span>
+                  <input maxLength={300} value={receiptPolicyReason} onChange={event => setReceiptPolicyReason(event.target.value)} placeholder="Example: Guests prefer digital receipts" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" />
+                  <span className="mt-2 block text-xs text-dash-tertiary">Saved in the printing configuration audit log.</span>
+                </label>
+              )}
+            </div>
+          )}
           <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
             <div className="grid gap-4 md:grid-cols-2">
               <Select label="Output" value={output} onChange={setOutput}><option value="kitchen_ticket">Kitchen ticket</option><option value="customer_receipt">Customer receipt</option><option value="server_report">Server report</option></Select>
