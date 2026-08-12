@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase'
 import { requestWithPosSession } from './posSession'
+import { withRequestDeadline } from './requestDeadline'
 
 // Second backend: the POS API (Shire_POS_backend). The dashboard talks to it
 // for time clock management, printing, and report tooling; auth is the
@@ -22,6 +23,7 @@ export interface FetchPosApiOptions extends RequestInit {
   // 'pos' (default) targets the consolidated /api/v1/dev-v2 surface;
   // 'integration' targets the plain /api/v1 mount.
   mount?: 'pos' | 'integration'
+  timeoutMs?: number
 }
 
 export async function fetchPosApi<T = any>(
@@ -29,33 +31,36 @@ export async function fetchPosApi<T = any>(
   endpoint: string,
   options: FetchPosApiOptions = {},
 ): Promise<T> {
-  const { mount = 'pos', ...init } = options
+  const { mount = 'pos', timeoutMs, ...init } = options
   const base = mount === 'integration' ? POS_API_BASE : `${POS_API_BASE}/dev-v2`
-  const request = (accessToken?: string) => {
+  const request = (requestSignal: AbortSignal, accessToken?: string) => {
     const headers = new Headers(init.headers || {})
     if (!(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
     if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
     headers.set('X-Restaurant-Id', restaurantId)
-    return fetch(`${base}${endpoint}`, { ...init, headers })
+    return fetch(`${base}${endpoint}`, { ...init, headers, signal: requestSignal })
   }
 
   const method = String(init.method || 'GET').toUpperCase()
   const canRetryTransport = method === 'GET' || (method === 'POST' && endpoint.endsWith('/preview'))
-  const requestWithTransportRetry = async (accessToken?: string) => {
+  const requestWithTransportRetry = async (requestSignal: AbortSignal, accessToken?: string) => {
     try {
-      return await request(accessToken)
+      return await request(requestSignal, accessToken)
     } catch (error) {
-      if (!canRetryTransport || init.signal?.aborted) throw error
+      if (!canRetryTransport || requestSignal.aborted) throw error
       await new Promise(resolve => setTimeout(resolve, 400))
-      return request(accessToken)
+      return request(requestSignal, accessToken)
     }
   }
 
-  const response = await requestWithPosSession({
-    auth: supabase.auth,
-    request: requestWithTransportRetry,
-    signal: init.signal,
-  })
+  const response = await withRequestDeadline(
+    (requestSignal) => requestWithPosSession({
+      auth: supabase.auth,
+      request: (accessToken) => requestWithTransportRetry(requestSignal, accessToken),
+      signal: requestSignal,
+    }),
+    { signal: init.signal, timeoutMs, message: 'Checks took too long to load. Try again.' },
+  )
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
     const detail = body.detail || body.message

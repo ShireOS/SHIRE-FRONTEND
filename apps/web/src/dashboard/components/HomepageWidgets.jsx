@@ -10,6 +10,7 @@ import {
   FileText,
   LineChart as LineChartIcon,
   Layers3,
+  RefreshCw,
   Settings2,
   TrendingDown,
   TrendingUp,
@@ -734,9 +735,10 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
   const selectedWidget = (preference.catalog || []).find((widget) => widget.id === settingsId)
   const detailWidget = (preference.catalog || []).find((widget) => widget.id === detailId) || { label: 'Widget', columns: [] }
   if (preferenceQuery.isPending) return <p className="p-6 text-sm text-dash-tertiary">Loading homepage...</p>
+  if (preferenceQuery.isError) return <div className="flex items-center justify-between gap-3 rounded-md border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger"><span>{preferenceQuery.error?.message || 'Could not load homepage settings.'}</span><button type="button" onClick={() => preferenceQuery.refetch()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-dash-danger/30 px-2.5 py-1.5 text-xs font-semibold"><RefreshCw size={13} />Retry</button></div>
   return <div className="space-y-4">
     <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setScopeOpen(true)} className={`inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-semibold ${resolvedDashboardScope.scope_dimension === 'none' ? 'border-dash-border text-dash-secondary hover:text-dash-cream' : 'border-shell-accent bg-shell-accent/10 text-dash-cream'}`}><Layers3 size={15} />{scopeControlLabel(resolvedDashboardScope)}</button><button type="button" onClick={() => setConfigureOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm font-semibold text-dash-secondary hover:text-dash-cream"><Settings2 size={15} />Customize homepage</button></div>
-    {dataQuery.isError && <p className="rounded-md border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger">{dataQuery.error?.message || 'Could not load homepage widgets.'}</p>}
+    {dataQuery.isError && <div className="flex items-center justify-between gap-3 rounded-md border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger"><span>{dataQuery.error?.message || 'Could not load homepage widgets.'}</span><button type="button" onClick={() => dataQuery.refetch()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-dash-danger/30 px-2.5 py-1.5 text-xs font-semibold"><RefreshCw size={13} />Retry</button></div>}
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {orderedVisible.map((id) => {
         const catalogWidget = preference.catalog.find((item) => item.id === id)
