@@ -43,10 +43,11 @@ import {
   groupRulesSummary,
   money,
 } from './components/menuUi'
-
-const ROUTE_INHERIT_VALUE = ''
-const ROUTE_NO_PRODUCTION_VALUE = '__no_production_route__'
-const ROUTE_MULTI_VALUE = '__multiple_production_routes__'
+import {
+  ROUTE_INHERIT_VALUE,
+  ROUTE_MULTI_VALUE,
+  ROUTE_NO_PRODUCTION_VALUE,
+} from './menuRouting'
 
 const COURSE_OPTIONS = [
   { value: '', label: 'Inherit from category' },
@@ -1605,7 +1606,7 @@ export function MenuItemDetail({
       case 'kitchen': return (
           <DetailCard {...controls} title="Kitchen" hint={productionRouting?.categoryRouting?.description || (category?.routing_station_id ? `Category default: ${stationName(category.routing_station_id) || 'station'}` : 'No category default station set.')}>
             <div className="space-y-3">
-              <Field label="Production route">
+              <Field label="Item route">
                 <SelectInput
                   value={productionRouting?.value ?? item.routing_station_id ?? ''}
                   onChange={event => {
@@ -1617,7 +1618,7 @@ export function MenuItemDetail({
                     void patchItem(item.id, { routing_station_id: event.target.value || null }, event.target.value ? 'Station override saved.' : 'Now inherits category station.')
                   }}
                 >
-                  <option value={ROUTE_INHERIT_VALUE}>Inherit category/fallback</option>
+                  <option value={ROUTE_INHERIT_VALUE}>Automatic · category or restaurant fallback</option>
                   <option value={ROUTE_NO_PRODUCTION_VALUE}>No production route</option>
                   {productionRouting?.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
                   {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}

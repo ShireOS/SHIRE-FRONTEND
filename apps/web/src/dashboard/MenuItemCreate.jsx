@@ -13,10 +13,11 @@ import {
   groupRulesSummary,
   money,
 } from './components/menuUi'
-
-const ROUTE_INHERIT_VALUE = ''
-const ROUTE_NO_PRODUCTION_VALUE = '__no_production_route__'
-const ROUTE_MULTI_VALUE = '__multiple_production_routes__'
+import {
+  ROUTE_INHERIT_VALUE,
+  ROUTE_MULTI_VALUE,
+  ROUTE_NO_PRODUCTION_VALUE,
+} from './menuRouting'
 
 const AVAILABILITY_MODES = [
   { value: 'always', label: 'Always available' },
@@ -65,14 +66,16 @@ export function MenuItemCreate({
   onCancel,
   onSave,
   onCreateModifier = null,
-  routingIssueForDraft = null,
+  resolveRoutingForDraft = null,
 }) {
   const [draft, setDraft] = useState(initialDraft)
   const [showModifierPicker, setShowModifierPicker] = useState(false)
   const [questionSearch, setQuestionSearch] = useState('')
   const set = (patch) => setDraft(prev => ({ ...prev, ...patch }))
-  const routingIssue = routingIssueForDraft?.(draft) || ''
+  const resolvedRoute = resolveRoutingForDraft?.(draft) || null
+  const routingIssue = resolvedRoute?.error || ''
   const canSave = Boolean(draft.name.trim()) && draft.price !== '' && !routingIssue && !busy
+  const [routeOverrideOpen, setRouteOverrideOpen] = useState(() => Boolean(draft.routing))
 
   const modifiersById = useMemo(() => Object.fromEntries(modifiers.map(m => [m.id, m])), [modifiers])
 
@@ -395,20 +398,36 @@ export function MenuItemCreate({
 
           <CreateCard
             title="Kitchen"
-            hint="Where this item prints and how it courses. Inherit follows the category."
+            hint="The category chooses production automatically. Add an item override only when this item is an exception."
           >
-            <div className="grid gap-3 md:grid-cols-3">
-              <Field label="Production route">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.025] p-4">
+              <div>
+                <p className="label-mono">Automatic destination</p>
+                <p className={`mt-1 text-base font-semibold ${routingIssue ? 'text-amber-200' : 'text-dash-cream'}`}>{resolvedRoute?.label || 'Resolving route...'}</p>
+                <p className="mt-1 text-xs text-dash-tertiary">{resolvedRoute?.description || 'Choose a category to preview where this item will print.'}</p>
+              </div>
+              <SmallButton
+                variant={routeOverrideOpen ? 'primary' : 'secondary'}
+                onClick={() => {
+                  if (routeOverrideOpen) set({ routing: ROUTE_INHERIT_VALUE })
+                  setRouteOverrideOpen(value => !value)
+                }}
+              >
+                {routeOverrideOpen ? 'Use automatic route' : 'Add item override'}
+              </SmallButton>
+            </div>
+            {routeOverrideOpen && <div className="mb-4 max-w-md">
+              <Field label="Item-specific destination">
                 <SelectInput value={draft.routing} onChange={event => set({ routing: event.target.value })}>
-                  <option value={ROUTE_INHERIT_VALUE}>Inherit category/fallback</option>
-                  <option value={ROUTE_NO_PRODUCTION_VALUE}>No production route</option>
-                  {draft.routing === ROUTE_MULTI_VALUE && (
-                    <option value={ROUTE_MULTI_VALUE}>Multiple stations (same as source)</option>
-                  )}
+                  <option value={ROUTE_INHERIT_VALUE}>Automatic · category or restaurant fallback</option>
+                  <option value={ROUTE_NO_PRODUCTION_VALUE}>No production ticket</option>
+                  {draft.routing === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations (same as source)</option>}
                   {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                 </SelectInput>
-                {routingIssue && <p className="mt-1 text-xs text-amber-300">{routingIssue}</p>}
               </Field>
+            </div>}
+            {routingIssue && <p className="mb-4 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-xs text-amber-200">{routingIssue}</p>}
+            <div className="grid gap-3 md:grid-cols-2">
               <Field label="Course">
                 <SelectInput value={draft.course_type} onChange={event => set({ course_type: event.target.value })}>
                   {COURSE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}

@@ -781,8 +781,15 @@ function KitchenRoutingSetup({ restaurantId }) {
           {(config?.menu_items || []).map(item => (
             <div key={item.id} className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-sm md:grid-cols-[1fr_auto]">
               <span>{item.name}</span>
-              <span className={item.routing_publishable ? 'text-emerald-200' : 'text-amber-200'}>
-                {item.routing_publishable ? 'Confirmed' : 'Needs confirmation'}
+              <span className={(item.routing_covered ?? item.routing_publishable) ? 'text-emerald-200' : 'text-amber-200'}>
+                {(item.routing_covered ?? item.routing_publishable)
+                  ? item.routing_confirmed
+                    ? 'Ready · confirmed'
+                    : item.routing_source === 'category' ? 'Ready · category default'
+                      : item.routing_source === 'fallback' ? 'Ready · restaurant fallback'
+                        : item.routing_source?.includes('no_production') ? 'Ready · no production'
+                          : 'Ready · item override'
+                  : 'Missing route'}
               </span>
             </div>
           ))}

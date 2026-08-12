@@ -41,6 +41,13 @@ import {
 } from './data/menuAllergies'
 import { MenuItemDetail } from './MenuItemDetail'
 import { MenuItemCreate } from './MenuItemCreate'
+import {
+  ROUTE_INHERIT_VALUE,
+  ROUTE_MULTI_VALUE,
+  ROUTE_NO_PRODUCTION_VALUE,
+  hasItemProductionOverride,
+  resolveDraftProductionRoute,
+} from './menuRouting'
 import { MenuEditor } from '../onboarding/components/MenuEditor'
 import { useAuth } from '../auth'
 import { PublishControls } from '../shared/components/PublishControls'
@@ -97,10 +104,6 @@ const MENU_TABS = [
   { id: 'specials', label: 'Item Availability' },
   { id: 'printing', label: 'Printing & Routing' },
 ]
-
-const ROUTE_INHERIT_VALUE = ''
-const ROUTE_NO_PRODUCTION_VALUE = '__no_production_route__'
-const ROUTE_MULTI_VALUE = '__multiple_production_routes__'
 
 const routeCategoryKey = (value) => String(value || '').trim().toLowerCase()
 
@@ -723,6 +726,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [specialDraft, setSpecialDraft] = useState(() => defaultSpecialDraft())
   const [scheduleItemId, setScheduleItemId] = useState('')
   const [routingItemSearch, setRoutingItemSearch] = useState('')
+  const [showAllRoutingItems, setShowAllRoutingItems] = useState(false)
 
   const api = (path, init) => fetchWithSupabaseAuth(path, init)
   const routingApi = (path, init) => fetchPosApi(restaurantId, path, init)
@@ -1094,7 +1098,13 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       rules,
       exclusions,
       value: routingValueFor(rules, exclusions),
-      description: routingDescriptionFor(rules, exclusions, 'Uses fallback/no explicit route'),
+      description: routingDescriptionFor(
+        rules,
+        exclusions,
+        routing?.fallback?.ok
+          ? `Uses restaurant fallback · ${routing.fallback.station?.name || 'station'}`
+          : 'No category route or working restaurant fallback',
+      ),
     }
   }
   const itemProductionRouting = (item) => {
@@ -1105,7 +1115,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       ? 'Inherits no production route'
       : categoryRouting.rules.length > 0
         ? `Inherits ${categoryRouting.description.replace(/^Routes to /, '')}`
-        : 'Inherits category/fallback'
+        : routing?.fallback?.ok
+          ? `Automatic · ${routing.fallback.station?.name || 'station'} via restaurant fallback`
+          : 'No working automatic route'
     return {
       rules,
       exclusions,
@@ -1115,27 +1127,18 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     }
   }
 
-  const routingIssueForDraft = (draft, sourceItem = null) => {
-    if (draft.routing === ROUTE_NO_PRODUCTION_VALUE) return ''
-    if (draft.routing === ROUTE_MULTI_VALUE) {
-      const rules = sourceItem ? itemRouteRules(sourceItem) : []
-      if (rules.length > 0 && rules.every(rule => routableStationIds.has(rule.station_id))) return ''
-      return 'The source item has a route without an active kitchen output. Choose a working station.'
-    }
-    if (draft.routing) {
-      return routableStationIds.has(draft.routing)
-        ? ''
-        : 'That station has no active kitchen output. Assign a printer/display or choose another route.'
-    }
-    const inherited = categoryProductionRouting(draft.category || 'Other')
-    if (inherited.exclusions.length > 0) return ''
-    if (inherited.rules.length > 0) {
-      return inherited.rules.every(rule => routableStationIds.has(rule.station_id))
-        ? ''
-        : 'This category route has no active kitchen output. Fix it or choose an item route.'
-    }
-    if (routing?.fallback?.ok) return ''
-    return 'This category has no working route or fallback. Choose a production station or “No production route”.'
+  const resolveRoutingForDraft = (draft, sourceItem = null) => {
+    const categoryRouting = categoryProductionRouting(draft.category || 'Other')
+    return resolveDraftProductionRoute({
+      routing: draft.routing,
+      category: draft.category || 'Other',
+      categoryRules: categoryRouting.rules,
+      categoryExcluded: categoryRouting.exclusions.length > 0,
+      sourceItemRules: sourceItem ? itemRouteRules(sourceItem) : [],
+      stations,
+      routableStationIds,
+      fallback: routing?.fallback,
+    })
   }
 
   // ── Items ────────────────────────────────────────────────────────────────
@@ -1948,9 +1951,12 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
   const routingItems = useMemo(() => {
     const needle = routingItemSearch.trim().toLowerCase()
-    if (!needle) return mergedItems
-    return mergedItems.filter(item => item.name.toLowerCase().includes(needle) || (item.category || '').toLowerCase().includes(needle))
-  }, [mergedItems, routingItemSearch])
+    const visible = showAllRoutingItems
+      ? mergedItems
+      : mergedItems.filter(item => hasItemProductionOverride(item, activeRoutingRules, activeRoutingExclusions))
+    if (!needle) return visible
+    return visible.filter(item => item.name.toLowerCase().includes(needle) || (item.category || '').toLowerCase().includes(needle))
+  }, [mergedItems, routingItemSearch, showAllRoutingItems, activeRoutingRules, activeRoutingExclusions])
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -2039,7 +2045,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           busy={busy}
           onCancel={() => setCreating(null)}
           onSave={saveNewItem}
-          routingIssueForDraft={draft => routingIssueForDraft(draft, creating.source)}
+          resolveRoutingForDraft={draft => resolveRoutingForDraft(draft, creating.source)}
         />
       )}
 
@@ -2260,7 +2266,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                           void routeCategory(category.name, event.target.value)
                         }}
                       >
-                        <option value={ROUTE_INHERIT_VALUE}>Use fallback/no explicit route</option>
+                        <option value={ROUTE_INHERIT_VALUE}>Use restaurant fallback</option>
                         <option value={ROUTE_NO_PRODUCTION_VALUE}>No production needed · mark handled</option>
                         {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
                         {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
@@ -3200,7 +3206,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                         void routeCategory(name, event.target.value)
                       }}
                     >
-                      <option value={ROUTE_INHERIT_VALUE}>Use fallback/no explicit route</option>
+                      <option value={ROUTE_INHERIT_VALUE}>Use restaurant fallback</option>
                       <option value={ROUTE_NO_PRODUCTION_VALUE}>No production needed · mark handled</option>
                       {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
                       {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
@@ -3218,10 +3224,13 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
           <SectionShell
             title="Item Overrides"
-            description="Route individual items somewhere different from their category — e.g. the seafood tower to the raw bar printer."
+            description="Only exceptions appear here. Every other item automatically follows its category, then the restaurant fallback."
           >
-            <div className="mb-3">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <div className="min-w-64 flex-1">
               <TextInput value={routingItemSearch} onChange={event => setRoutingItemSearch(event.target.value)} placeholder="Search items..." />
+              </div>
+              <SmallButton onClick={() => setShowAllRoutingItems(value => !value)}>{showAllRoutingItems ? 'Show exceptions only' : 'Add or view an override'}</SmallButton>
             </div>
             <div className="max-h-[480px] space-y-2 overflow-y-auto pr-1">
               {routingItems.map(item => {
@@ -3242,7 +3251,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                         void routeItemProduction(item, event.target.value)
                       }}
                     >
-                      <option value={ROUTE_INHERIT_VALUE}>Inherit category/fallback</option>
+                      <option value={ROUTE_INHERIT_VALUE}>Automatic · category or restaurant fallback</option>
                       <option value={ROUTE_NO_PRODUCTION_VALUE}>No production needed · mark handled</option>
                       {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
                       {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
@@ -3250,6 +3259,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                   </div>
                 )
               })}
+              {routingItems.length === 0 && <MenuEmptyState title={routingItemSearch ? 'No matching items' : 'No item-specific routes'}>{routingItemSearch ? 'Try another item or category name.' : 'All items are using their category or the restaurant fallback automatically.'}</MenuEmptyState>}
             </div>
           </SectionShell>
         </div>
