@@ -37,6 +37,11 @@ import {
   pruneReportingScope,
   WHOLE_RESTAURANT_SCOPE,
 } from './homepageWidgetMath'
+import {
+  widgetPurposeMeasure,
+  widgetSupportingMeasures,
+  withWidgetPurposeColumn,
+} from './homepageWidgetPresentation'
 
 const KPI_WIDGETS = new Set([
   'net_sales', 'orders', 'covers', 'labor_cost', 'profit_after_labor',
@@ -210,7 +215,7 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, dashboa
   const [draft, setDraft] = useState(() => ({
     display_grain: settings.display_grain || (widget.id === 'sales_trend' ? 'day' : 'total'),
     display_breakdown: settings.display_breakdown || widget.default_breakdown,
-    display_columns: settings.display_columns || widget.default_columns,
+    display_columns: withWidgetPurposeColumn(widget, settings.display_columns || widget.default_columns),
     chart_type: settings.chart_type || (widget.id === 'sales_trend' ? 'line' : 'bar'),
     display_mode: settings.display_mode || (widget.id === 'sales_trend' ? 'chart' : 'table'),
     sort_by: settings.sort_by || widget.default_columns[0],
@@ -250,7 +255,10 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, dashboa
     } catch (nextError) { setError(nextError instanceof Error ? nextError.message : 'Could not generate this PDF.') }
     finally { setWorking(false) }
   }
-  const renderColumns = (state, setter, key) => <div className="grid gap-2 sm:grid-cols-2">{widget.columns.map((column) => <label key={column.id} className="flex min-h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm"><input type="checkbox" checked={state[key].includes(column.id)} onChange={() => toggleColumn(key, column.id, setter)} />{column.label}</label>)}</div>
+  const renderColumns = (state, setter, key) => <div className="grid gap-2 sm:grid-cols-2">{widget.columns.map((column) => {
+    const isPurpose = key === 'display_columns' && column.id === widget.primary_column
+    return <label key={column.id} className="flex min-h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm"><input type="checkbox" checked={state[key].includes(column.id)} disabled={isPurpose} onChange={() => toggleColumn(key, column.id, setter)} /><span>{column.label}{isPurpose && <span className="ml-1 text-xs text-dash-tertiary">Primary</span>}</span></label>
+  })}</div>
   const employeeOptions = (widgetData?.employees || []).filter((employee) => employee.employee_id)
   const reasonOptions = [...new Map((widgetData?.reasons || []).map((reason) => [reason.reason_code, reason])).values()]
   const renderAuditOptions = () => <>
@@ -318,7 +326,7 @@ function tableColumns(data, widget) {
 }
 
 function primaryMeasure(data, widget) {
-  return measureColumns(data, widget)[0] || widget.columns?.[0]
+  return widgetPurposeMeasure(widget, data)
 }
 
 const SALES_SUM_FIELDS = [
@@ -397,14 +405,36 @@ function DetailChart({ data, widget, height = 260 }) {
 }
 
 function KpiWidget({ widget, data, onOpenDetails, onSettings }) {
-  const column = data?.measure_columns?.[0] || widget.columns[0]
+  const column = widgetPurposeMeasure(widget, data)
   const row = data?.summary || aggregateWidgetRows(data?.rows || [])
-  const secondary = (data?.measure_columns || []).slice(1, 3)
+  const secondary = widgetSupportingMeasures(widget, data)
+  const missingRates = widget.id === 'profit_after_labor' ? Number(row.missing_rate_entries || 0) : 0
   return <section onClick={onOpenDetails} className="glass-card min-w-0 cursor-pointer rounded-lg p-5 transition hover:-translate-y-px hover:border-shell-accent/40">
     <WidgetHeader widget={widget} onSettings={onSettings} />
     <p className="truncate font-mono text-3xl tabular-nums text-dash-cream">{formatValue(row[column.id], column.kind)}</p>
     <p className="mt-1 text-xs text-dash-tertiary">{column.label}</p>
     {secondary.length > 0 && <div className="mt-4 grid grid-cols-2 gap-2 border-t border-dash-border pt-3">{secondary.map((item) => <div key={item.id}><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-1 font-mono text-sm text-dash-secondary">{formatValue(row[item.id], item.kind)}</p></div>)}</div>}
+    {missingRates > 0 && <p className="mt-3 text-xs text-amber-200">Estimate excludes {number(missingRates)} time entr{missingRates === 1 ? 'y' : 'ies'} without a wage rate.</p>}
+  </section>
+}
+
+function CardDepositWidget({ widget, data, onOpenDetails, onSettings }) {
+  const row = data?.summary || aggregateWidgetRows(data?.rows || [])
+  const purpose = widgetPurposeMeasure(widget, data)
+  const availableMeasures = data?.measure_columns?.length ? data.measure_columns : (widget.columns || [])
+  const metric = (id) => availableMeasures.find((column) => column.id === id)
+  const supporting = ['total_collected', 'processor_fees', 'settled_deposit', 'pending_deposit'].map(metric).filter(Boolean)
+  const showsSettlement = Boolean(metric('settled_deposit'))
+  const expected = Number(row.expected_deposit || 0)
+  const settled = Number(row.settled_deposit || 0)
+  const settledPercent = expected > 0 ? Math.min(100, Math.max(0, settled / expected * 100)) : 0
+  return <section onClick={onOpenDetails} className="glass-card min-w-0 cursor-pointer rounded-lg p-5 transition hover:-translate-y-px hover:border-shell-accent/40 xl:col-span-2">
+    <WidgetHeader widget={widget} onSettings={onSettings} />
+    <p className="font-mono text-3xl tabular-nums text-dash-cream">{formatValue(row[purpose.id], purpose.kind)}</p>
+    <p className="mt-1 text-xs text-dash-tertiary">Expected bank deposit</p>
+    {showsSettlement && <><div className="mt-4 h-2 overflow-hidden rounded-full bg-white/5"><div className="h-full rounded-full bg-dash-success" style={{ width: `${settledPercent}%` }} /></div><div className="mt-2 flex justify-between gap-3 text-[10px] text-dash-tertiary"><span>{number(settledPercent)}% settled</span><span>{formatValue(settled, 'money')} received</span></div></>}
+    <div className="mt-4 grid grid-cols-2 gap-3 border-t border-dash-border pt-3">{supporting.map((item) => <div key={item.id}><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-1 font-mono text-sm text-dash-secondary">{formatValue(row[item.id], item.kind)}</p></div>)}</div>
+    {Number(row.unknown_fee_payments || 0) > 0 && <p className="mt-3 text-xs text-amber-200">{number(row.unknown_fee_payments)} card payment{Number(row.unknown_fee_payments) === 1 ? '' : 's'} still awaiting processor fees.</p>}
   </section>
 }
 
@@ -422,9 +452,14 @@ function SalesWidget({ widget, data, onOpenDetails, onSettings }) {
     <WidgetHeader widget={widget} onSettings={onSettings} />
     <div className={`grid gap-5 ${trend.length > 1 ? 'xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,.95fr)]' : ''}`}>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{measures.map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-xl text-dash-cream">{formatValue(summary[item.id], item.kind)}</p></div>)}</div>
-      {trend.length > 1 && <div><p className="label-mono mb-3">Net sales trend</p><DetailChart data={trendData} widget={widget} height={230} /></div>}
+      {trend.length > 1 && <div><p className="label-mono mb-3">Net sales trend</p><SalesTrendChart rows={trendData.rows} /></div>}
     </div>
   </section>
+}
+
+function SalesTrendChart({ rows }) {
+  const chartRows = rows.map((row) => ({ ...row, net_sales: Number(row.net_sales || 0) }))
+  return <div className="h-[230px] min-w-0 rounded-md border border-dash-border p-3"><ResponsiveContainer width="100%" height="100%"><LineChart data={chartRows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey="period" tickFormatter={(value) => String(value).slice(5, 10)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis domain={['auto', 'auto']} tickFormatter={(value) => `$${Math.round(Number(value) / 1000)}k`} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={(value) => money(value)} /><Line type="monotone" dataKey="net_sales" stroke="#4f7ee8" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls isAnimationActive={false} /></LineChart></ResponsiveContainer></div>
 }
 
 const SCOPE_COLORS = ['#4f7ee8', '#22c55e', '#f59e0b', '#ec4899', '#14b8a6', '#a78bfa', '#f97316', '#06b6d4']
@@ -441,7 +476,7 @@ function scopeNoun(data) {
 function ScopedBreakdownWidget({ widget, data, settings, onSettings, onOpenDetails }) {
   const rows = data?.rows || []
   const measures = data?.measure_columns || []
-  const primary = measures[0] || widget.columns[0]
+  const primary = widgetPurposeMeasure(widget, data)
   const noun = scopeNoun(data)
   const hasPeriods = rows.some((row) => row.period != null)
   const names = [...new Set(rows.map((row) => String(row.breakdown || `Unassigned ${noun}`)))]
@@ -471,7 +506,7 @@ function ScopedBreakdownWidget({ widget, data, settings, onSettings, onOpenDetai
 }
 
 function ChartWidget({ widget, data, settings, onSettings, onOpenDetails }) {
-  const measure = data?.measure_columns?.[0] || widget.columns[0]
+  const measure = widgetPurposeMeasure(widget, data)
   const rows = data?.rows || []
   const chartType = settings.chart_type || 'line'
   const dataKey = (row) => row.period || row.breakdown || 'Total'
@@ -597,7 +632,7 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
       ['Checks and guests', ['receipts', 'void_receipts', 'covers', 'average_check']],
       ['Tax, service charges, tips, and tenders', ['tax', 'service_charges', 'employee_service_charges', 'restaurant_service_charges', 'unclassified_service_charges', 'tips', 'grand_total', 'total_collected', 'card_collected', 'cash_collected', 'other_collected']],
     ]
-    const netSalesWidget = { ...widget, columns: [metric('net_sales'), ...widget.columns.filter((column) => column.id !== 'net_sales')].filter(Boolean) }
+    const netSalesWidget = { ...widget, primary_column: 'net_sales', columns: [metric('net_sales'), ...widget.columns.filter((column) => column.id !== 'net_sales')].filter(Boolean) }
     const tenderData = {
       rows: [
         { breakdown: 'Card', total_collected: summaryRow.card_collected },
@@ -750,6 +785,7 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
         const settings = effectiveSettings[id] || {}
         if (id === 'sales_summary') return <SalesWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
         if (scopedBreakdown(data) && id !== 'discount_review') return <ScopedBreakdownWidget key={id} widget={widget} data={data} settings={settings} onSettings={onSettings} onOpenDetails={onOpenDetails} />
+        if (id === 'credit_card_deposit' && settings.display_mode !== 'chart') return <CardDepositWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
         if (KPI_WIDGETS.has(id)) return <KpiWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
         if (id === 'discount_review') return <DiscountReviewWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
         if (id === 'menu_performance') return <MenuPerformanceWidget key={id} widget={widget} data={data} settings={settings} onSettings={onSettings} onOpenDetails={onOpenDetails} />
