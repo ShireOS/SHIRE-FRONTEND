@@ -26,6 +26,7 @@ const DEFAULT_CONFIG = {
     header_message: '', footer_message: '', show_server: true, show_table: true, table_size: 'standard',
     show_tab_name: false, show_check_number: true, check_number_size: 'standard', show_date_time: true, show_guest_count: true,
     suggested_tips: { enabled: false, percentages: [18, 20, 22], basis: 'subtotal', placement: 'bottom', show_amounts: true },
+    signed_tip_slip: { external_card: false },
   },
   report: { size: 'medium' },
   kitchen: {
@@ -91,6 +92,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const section = sectionFromHash(location.hash)
   const [config, setConfig] = useState(DEFAULT_CONFIG)
   const [savedAutoPrintAfterPayment, setSavedAutoPrintAfterPayment] = useState(true)
+  const [savedExternalCardSignedSlip, setSavedExternalCardSignedSlip] = useState(false)
   const [receiptPolicyReason, setReceiptPolicyReason] = useState('')
   const [routing, setRouting] = useState({ stations: [], targets: [] })
   const [catalog, setCatalog] = useState([])
@@ -149,6 +151,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
         }
         setConfig(mergedPrinting)
         setSavedAutoPrintAfterPayment(mergedPrinting.auto_print_after_payment !== false)
+        setSavedExternalCardSignedSlip(mergedPrinting.customer?.signed_tip_slip?.external_card === true)
         setReceiptPolicyReason('')
         setLoadedRestaurantId(String(restaurantId))
         setRouting(routes || { stations: [], targets: [] })
@@ -355,20 +358,23 @@ export default function PrintingRoutingPage({ restaurantId }) {
 
   const save = async () => {
     const autoPrintChanged = (config.auto_print_after_payment !== false) !== savedAutoPrintAfterPayment
+    const externalSignedSlipChanged = (config.customer?.signed_tip_slip?.external_card === true) !== savedExternalCardSignedSlip
+    const receiptBehaviorChanged = autoPrintChanged || externalSignedSlipChanged
     const reason = receiptPolicyReason.trim()
     setError(''); setMessage('')
-    if (autoPrintChanged && reason.length < 2) {
-      setError('Enter a reason for changing the restaurant paid-receipt policy.')
+    if (receiptBehaviorChanged && reason.length < 2) {
+      setError('Enter a reason for changing restaurant receipt behavior.')
       return
     }
     setSaving(true)
     try {
       const saved = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`, {
         method: 'PUT',
-        body: JSON.stringify({ ...config, ...(autoPrintChanged ? { change_reason: reason } : {}) }),
+        body: JSON.stringify({ ...config, ...(receiptBehaviorChanged ? { change_reason: reason } : {}) }),
       })
       setConfig(saved)
       setSavedAutoPrintAfterPayment(saved.auto_print_after_payment !== false)
+      setSavedExternalCardSignedSlip(saved.customer?.signed_tip_slip?.external_card === true)
       setReceiptPolicyReason('')
       for (const targetId of dirtyTargetIds) {
         const target = (routing.targets || []).find(candidate => String(candidate.id) === String(targetId))
@@ -458,7 +464,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
               {output === 'kitchen_ticket' && <Select label="Apply to" value={scope} onChange={setScope}><option value="whole">Whole Kitchen</option>{stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}</Select>}
               {output === 'kitchen_ticket' && <Select label="Preview order method" value={kitchenVariant} onChange={setKitchenVariant}><option value="dine_in">Dine-in</option><option value="togo">To-Go</option><option value="delivery">Delivery</option></Select>}
               {output === 'kitchen_ticket' && <label className="block"><span className="label-mono">Preview check memo</span><input maxLength={240} value={kitchenMemo} onChange={event => setKitchenMemo(event.target.value)} placeholder="Blank previews a ticket with no check memo" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></label>}
-              {output === 'customer_receipt' && <Select label="Preview state" value={customerVariant} onChange={setCustomerVariant}><option value="open_check">Open check</option><option value="paid_cash">Paid with cash</option><option value="paid_card">Paid with credit card</option><option value="paid_debit">Paid with debit / prepaid</option></Select>}
+              {output === 'customer_receipt' && <Select label="Preview state" value={customerVariant} onChange={setCustomerVariant}><option value="open_check">Open check</option><option value="paid_cash">Paid with cash</option><option value="paid_card">Paid with credit card</option><option value="paid_debit">Paid with debit / prepaid</option><option value="paid_external">Paid on external card terminal</option></Select>}
             </div>
           </div>
 
@@ -504,7 +510,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <h2 className="text-lg font-semibold">Suggested tips</h2>
-                <p className="mt-1 text-sm text-dash-tertiary">Print percentage choices on the open check. Paid receipts never ask for another tip.</p>
+                <p className="mt-1 text-sm text-dash-tertiary">Print percentage choices on the open check. The external-card option below is a separate handwritten tip workflow.</p>
                 <div className="mt-3"><Toggle label="Print suggested tips" checked={config.customer?.suggested_tips?.enabled ?? false} onChange={value => patchCustomer({}, { enabled: value })} /></div>
                 {config.customer?.suggested_tips?.enabled && <div className="mt-4 space-y-4">
                   <div className="grid gap-4 md:grid-cols-2">
@@ -519,6 +525,26 @@ export default function PrintingRoutingPage({ restaurantId }) {
                   </div>
                   <Toggle label="Show calculated dollar amounts" checked={config.customer.suggested_tips.show_amounts} onChange={value => patchCustomer({}, { show_amounts: value })} />
                 </div>}
+                <div className="mt-4 border-t border-white/10 pt-4">
+                  <Toggle
+                    label="Print Tip, Total & Signature lines for external card payments"
+                    checked={config.customer?.signed_tip_slip?.external_card === true}
+                    onChange={value => patchCustomer({
+                      signed_tip_slip: {
+                        ...(config.customer?.signed_tip_slip || {}),
+                        external_card: value,
+                      },
+                    })}
+                  />
+                  <p className="mt-2 text-xs text-dash-tertiary">Integrated Shire card payments already use their standard signed merchant slip. Enable this only when the external terminal does not print its own slip. A recorded tip or finalized No Tip decision never prints blank tip lines.</p>
+                  {(config.customer?.signed_tip_slip?.external_card === true) !== savedExternalCardSignedSlip && (config.auto_print_after_payment !== false) === savedAutoPrintAfterPayment && (
+                    <label className="mt-4 block">
+                      <span className="label-mono">Reason for change</span>
+                      <input maxLength={300} value={receiptPolicyReason} onChange={event => setReceiptPolicyReason(event.target.value)} placeholder="Example: External terminal does not print a signed slip" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" />
+                      <span className="mt-2 block text-xs text-dash-tertiary">Saved in the printing configuration audit log.</span>
+                    </label>
+                  )}
+                </div>
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">

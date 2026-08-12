@@ -192,6 +192,14 @@ surface independently, while every mutation is also guarded by the ML backend.
   a reason when changed, and is audited by the POS backend. Turning it off skips
   only the automatic post-payment print; payment completion and manual reprints
   remain available.
+- External-card signed tip slips use a single default-off toggle within Back
+  Office's existing Suggested Tips receipt section and persist at
+  `restaurants.config.pos.printing.customer.signed_tip_slip.external_card`.
+  Integrated-card slip behavior is not configurable here and remains unchanged.
+  The external option renders Tip, Total, and Signature lines only while the
+  tender's tip decision is pending; recorded tips and finalized No Tip decisions
+  suppress blank lines. Saving uses existing `settings.edit`, requires a reason,
+  and writes the POS print-config audit trail.
 - Terminal hardware and cash-drawer configuration uses the reseller-aware
   `devices.manage` / `settings.edit` POS guards. Changes are sent through audited
   POS-backend endpoints with a required reason; direct Supabase writes remain
