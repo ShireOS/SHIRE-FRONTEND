@@ -15,6 +15,7 @@ import {
   Home,
   LayoutGrid,
   MapPin,
+  Megaphone,
   MessageSquare,
   MessageSquareWarning,
   Monitor,
@@ -29,6 +30,7 @@ import {
   Settings,
   ShoppingCart,
   SlidersHorizontal,
+  Store,
   Sun,
   Users,
   UtensilsCrossed,
@@ -140,10 +142,12 @@ const STORE_NAV = [
   { id: 'checks', label: 'Checks', icon: ReceiptText },
   { id: 'close-day', label: 'Close Day', icon: CalendarCheck },
   { id: 'setup', label: 'Setup', icon: Wrench },
+  { id: 'store-information', label: 'Store Information', icon: Store },
+  { id: 'marketing', label: 'Marketing', icon: Megaphone },
   { id: 'ui', label: 'UI Editor', icon: Palette },
   { id: 'menu-workspace', label: 'POS Menus', icon: SlidersHorizontal },
   { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
-  { id: 'taxes', label: 'Taxes', icon: Percent },
+  { id: 'integrations', label: 'Integrations', icon: SlidersHorizontal },
   { id: 'feedback', label: 'Complaints', icon: MessageSquareWarning },
   { id: 'devices', label: 'Devices', icon: Monitor },
   { id: 'pos-settings', label: 'POS Settings', icon: Settings },
@@ -178,12 +182,12 @@ const STORE_NAV = [
   },
   { id: 'messaging', label: 'Messaging', icon: MessageSquare },
   { id: 'payments', label: 'Payments / Plan', icon: CreditCard },
+  { id: 'settings', label: 'Store Settings', icon: Settings },
 ]
 
 // Future surfaces, visible for shape but intentionally non-functional.
 const STORE_NAV_SOON = [
   { id: 'online-ordering', label: 'Online Ordering', icon: ShoppingCart },
-  { id: 'integrations', label: 'Integration Hub', icon: SlidersHorizontal },
 ]
 
 function SoonChip() {
@@ -359,6 +363,7 @@ export default function DashboardShell({
   restaurant = null,
   restaurantId = null,
   setupWarningCount = 0,
+  showSetup = true,
   allowedStoreTabs = null, // null = all; array = owner-configured reseller visibility
   routes = {},
   children,
@@ -397,6 +402,7 @@ export default function DashboardShell({
   const hidden = hiddenSurfaces(auth)
   const access = useBackOfficeAccess(auth, inStore ? restaurantId : null)
   const tabVisible = (id) => {
+    if (id === 'setup' && !showSetup) return false
     if (allowedStoreTabs && !allowedStoreTabs.includes(id)) return false
     if (hidden.has(id)) return false
     // While a member's access is loading, keep nav visible (server enforces).
@@ -545,7 +551,7 @@ export default function DashboardShell({
             <SidebarItem
               icon={Settings}
               label="Settings"
-              isActive={activeItem === 'settings'}
+              isActive={context !== 'store' && activeItem === 'settings'}
               onClick={() => navigate(navigation.settings)}
             />
           </div>

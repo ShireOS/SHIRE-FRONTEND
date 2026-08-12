@@ -1144,6 +1144,8 @@ function ResellerSetupEditor() {
   const [waiterCount, setWaiterCount] = useState(null)
   const [floorPlanStatus, setFloorPlanStatus] = useState(null)
   const [setupRefreshKey, setSetupRefreshKey] = useState(0)
+  const [setupStatus, setSetupStatus] = useState(null)
+  const [setupStatusLoaded, setSetupStatusLoaded] = useState(false)
   const [propagationRequest, setPropagationRequest] = useState(null)
 
   const setupWarnings = useMemo(
@@ -1175,16 +1177,21 @@ function ResellerSetupEditor() {
     Promise.all([
       fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`),
       fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`).catch(() => null),
+      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/setup-status`).catch(() => null),
     ])
-      .then(([waiterData, floorPlan]) => {
+      .then(([waiterData, floorPlan, nextSetupStatus]) => {
         if (cancelled) return
         setWaiterCount(Array.isArray(waiterData) ? waiterData.length : 0)
         setFloorPlanStatus(floorPlan)
+        setSetupStatus(nextSetupStatus)
+        setSetupStatusLoaded(true)
       })
       .catch(() => {
         if (!cancelled) {
           setWaiterCount(null)
           setFloorPlanStatus(null)
+          setSetupStatus(null)
+          setSetupStatusLoaded(true)
         }
       })
     return () => {
@@ -1213,6 +1220,10 @@ function ResellerSetupEditor() {
     return <Navigate to={`/reseller/restaurants/${restaurantId}/analytics`} replace />
   }
 
+  if (setupStatusLoaded && setupStatus?.complete) {
+    return <Navigate to={`/reseller/restaurants/${restaurantId}/store-information`} replace />
+  }
+
   if (isSwitching || isPortfolioLoading || auth.restaurant.currentRestaurant?.id !== restaurantId) {
     return <LoadingScreen />
   }
@@ -1227,7 +1238,8 @@ function ResellerSetupEditor() {
       ]}
       restaurant={restaurant}
       restaurantId={restaurantId}
-      setupWarningCount={warningCount(setupWarnings)}
+      setupWarningCount={setupStatus?.missing_count ?? warningCount(setupWarnings)}
+      showSetup={!setupStatusLoaded || !setupStatus?.complete}
       allowedStoreTabs={allowedStoreTabs}
       routes={RESELLER_SHELL_ROUTES}
     >
@@ -1265,6 +1277,25 @@ function ResellerUiEditorRoute() {
   const restaurant = auth.restaurant.restaurants.find((item) => item.id === restaurantId) || null
   const allowedStoreTabs = useAllowedStoreTabs(restaurant)
   const { employee, groups, restaurants, isLoading, error } = useResellerPortfolio()
+  const [section, setSection] = useState('appearance')
+  const [setupStatus, setSetupStatus] = useState(null)
+  const [setupStatusLoaded, setSetupStatusLoaded] = useState(false)
+
+  const refreshSetupStatus = useCallback(async () => {
+    if (!restaurantId) return
+    try {
+      setSetupStatus(await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/setup-status`))
+    } catch {
+      setSetupStatus(null)
+    } finally {
+      setSetupStatusLoaded(true)
+    }
+  }, [restaurantId])
+
+  useEffect(() => {
+    setSetupStatusLoaded(false)
+    void refreshSetupStatus()
+  }, [refreshSetupStatus])
 
   if (!restaurant) return <Navigate to="/reseller" replace />
   if (isLoading) return <LoadingScreen />
@@ -1282,16 +1313,25 @@ function ResellerUiEditorRoute() {
       ]}
       restaurant={restaurant}
       restaurantId={restaurantId}
+      setupWarningCount={setupStatus?.missing_count ?? 0}
+      showSetup={!setupStatusLoaded || !setupStatus?.complete}
       allowedStoreTabs={allowedStoreTabs}
       routes={RESELLER_SHELL_ROUTES}
     >
       {error && <StatusMessage tone="error">{error}</StatusMessage>}
-      <ResellerUiEditor
-        restaurants={restaurants}
-        groups={groups}
-        initialRestaurantId={restaurantId}
-        canEditMenuWorkspace={['reseller', 'admin'].includes(auth.accountType) || Boolean(employee?.permissions?.edit_setup)}
-      />
+      <nav className="mb-5 flex flex-wrap gap-2 border-b border-white/10 pb-4" aria-label="UI editor sections">
+        {[['appearance', 'Appearance'], ['sections', 'Sections'], ['capacity', 'Floor Plan']].map(([id, label]) => <button key={id} type="button" onClick={() => setSection(id)} className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${section === id ? 'bg-dash-gold text-black' : 'border border-white/10 text-dash-secondary hover:border-white/20 hover:text-dash-cream'}`}>{label}</button>)}
+      </nav>
+      {section === 'appearance' ? (
+        <ResellerUiEditor
+          restaurants={restaurants}
+          groups={groups}
+          initialRestaurantId={restaurantId}
+          canEditMenuWorkspace={['reseller', 'admin'].includes(auth.accountType) || Boolean(employee?.permissions?.edit_setup)}
+        />
+      ) : (
+        <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} allowedTabs={[section]} showHeader={false} onSetupChanged={refreshSetupStatus} />
+      )}
     </DashboardShell>
   )
 }

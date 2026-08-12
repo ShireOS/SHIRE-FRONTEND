@@ -95,9 +95,9 @@ const SETUP_TABS = [
   { id: 'manager_controls', label: 'Manager Controls' },
   { id: 'closeout', label: 'Cash & Closeout' },
   { id: 'check_workflow', label: 'Check Workflow' },
-  // Tips & Payroll now lives in the dedicated "Payroll & Tips" hub (single source
-  // of truth). The render block + propagation handler below remain for reuse but
-  // the tab is intentionally not surfaced here to avoid duplicate config.
+  { id: 'tips_payroll', label: 'Tips & Payroll' },
+  { id: 'goals', label: 'Goals' },
+  { id: 'service_model', label: 'Tools & Service Model' },
   { id: 'sections', label: 'Sections' },
   { id: 'hours', label: 'Hours' },
   { id: 'reservation_timing', label: 'Reservations' },
@@ -300,10 +300,38 @@ const pricingPolicyPayload = (policy) => {
 const initialServiceModel = (restaurant) => {
   const config = restaurant.config && typeof restaurant.config === 'object' ? restaurant.config : {}
   return {
+    current_pos: config.current_pos ?? '',
+    current_scheduling: config.current_scheduling ?? '',
+    current_reservations: config.current_reservations ?? '',
     service_modes: Array.isArray(config.service_modes) && config.service_modes.length > 0 ? config.service_modes : ['dine_in'],
     default_guest_flow: config.default_guest_flow || 'seat_first',
   }
 }
+
+const initialGoals = (restaurant) => {
+  const config = restaurant.config && typeof restaurant.config === 'object' ? restaurant.config : {}
+  return {
+    challenges: Array.isArray(config.challenges) ? config.challenges : [],
+    daily_covers_range: config.daily_covers_range ?? '',
+    team_size_range: config.team_size_range ?? '',
+    primary_goal: config.primary_goal ?? '',
+  }
+}
+
+const CURRENT_TOOL_OPTIONS = {
+  current_pos: [['', 'None selected'], ['toast', 'Toast'], ['square', 'Square'], ['clover', 'Clover'], ['lightspeed', 'Lightspeed'], ['other', 'Other'], ['none', 'None']],
+  current_scheduling: [['', 'None selected'], ['7shifts', '7shifts'], ['hotschedules', 'HotSchedules'], ['wheniwork', 'When I Work'], ['deputy', 'Deputy'], ['spreadsheet', 'Spreadsheet'], ['none', 'None']],
+  current_reservations: [['', 'None selected'], ['opentable', 'OpenTable'], ['resy', 'Resy'], ['yelp', 'Yelp'], ['walkins', 'Walk-ins only'], ['other', 'Other']],
+}
+
+const GOAL_CHALLENGES = [
+  ['table_turnover', 'Table turnover'],
+  ['floor_visibility', 'Floor visibility'],
+  ['scheduling', 'Scheduling'],
+  ['performance_data', 'Performance data'],
+  ['waitlist', 'Waitlist management'],
+  ['communication', 'Team communication'],
+]
 
 function WarningTriangle({ className = '' }) {
   return (
@@ -1401,8 +1429,24 @@ export function warningCount(warnings) {
   return Object.values(warnings || {}).reduce((sum, items) => sum + items.length, 0)
 }
 
-export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings = {}, onSetupChanged, propagationContext = null }) {
-  const [activeSetupTab, setActiveSetupTab] = useState('basics')
+export default function RestaurantSetupPanel({
+  restaurant,
+  restaurantId,
+  auth,
+  setupWarnings = {},
+  onSetupChanged,
+  propagationContext = null,
+  allowedTabs = null,
+  initialTab = null,
+  showHeader = true,
+}) {
+  const visibleSetupTabs = useMemo(() => {
+    if (!Array.isArray(allowedTabs)) return SETUP_TABS
+    const allowed = new Set(allowedTabs)
+    return SETUP_TABS.filter(tab => allowed.has(tab.id))
+  }, [allowedTabs])
+  const visibleSetupTabIds = visibleSetupTabs.map(tab => tab.id).join(',')
+  const [activeSetupTab, setActiveSetupTab] = useState(() => initialTab || visibleSetupTabs[0]?.id || 'basics')
   const [coverImageUrl, setCoverImageUrl] = useState(restaurant.cover_image_url || '')
   const [pendingCoverFile, setPendingCoverFile] = useState(null)
   const [pendingCoverPreviewUrl, setPendingCoverPreviewUrl] = useState('')
@@ -1422,6 +1466,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [payments, setPayments] = useState(() => initialPayments(restaurant))
   const [pricingPolicy, setPricingPolicy] = useState(() => normalizePricingPolicy({ jurisdiction_state: restaurant.state || 'SC' }))
   const [serviceModel, setServiceModel] = useState(() => initialServiceModel(restaurant))
+  const [goals, setGoals] = useState(() => initialGoals(restaurant))
   const [taxRates, setTaxRates] = useState([defaultTaxRate()])
   const [taxCategoryAssignments, setTaxCategoryAssignments] = useState(undefined)
   const [serviceCharges, setServiceCharges] = useState([])
@@ -1452,6 +1497,12 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [isSaving, setIsSaving] = useState(false)
 
   const isPropagationEnabled = Boolean(propagationContext?.requestTargets)
+
+  useEffect(() => {
+    if (!visibleSetupTabs.some(tab => tab.id === activeSetupTab)) {
+      setActiveSetupTab(initialTab || visibleSetupTabs[0]?.id || 'basics')
+    }
+  }, [activeSetupTab, initialTab, visibleSetupTabs])
 
   const updateRestaurantRow = async (targetRestaurantId, patch) => {
     const { data, error } = await supabase
@@ -1754,11 +1805,16 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         return { label, value: fallback, error: err }
       }
     }
+    const scopedFor = (tabIds, label, read, fallback) => (
+      tabIds.some(tabId => visibleSetupTabs.some(tab => tab.id === tabId))
+        ? scoped(label, read, fallback)
+        : Promise.resolve({ label, value: fallback, error: null })
+    )
     try {
       const results = await Promise.all([
-        scoped('Employees', () => fetchCached(queryKeys.waiters(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`), 0), []),
-        scoped('Roles', () => fetchCached(queryKeys.jobCodes(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`), 0), []),
-        scoped('Hours', () => cached(queryKeys.operatingHours(restaurantId), async () => {
+        scopedFor(['employees'], 'Employees', () => fetchCached(queryKeys.waiters(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`), 0), []),
+        scopedFor(['employees', 'manager_controls', 'tips_payroll'], 'Roles', () => fetchCached(queryKeys.jobCodes(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`), 0), []),
+        scopedFor(['hours'], 'Hours', () => cached(queryKeys.operatingHours(restaurantId), async () => {
           const { data, error } = await supabase
             .from('operating_hours')
             .select('day_of_week, open_time, close_time, is_closed')
@@ -1767,16 +1823,16 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
           if (error) throw error
           return data
         }), []),
-        scoped('Sections', () => cached(queryKeys.sections(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`)), []),
-        scoped('Floor plan', () => cached(queryKeys.floorPlan(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`)), null),
-        scoped('Taxes and charges', () => cached(queryKeys.taxesCharges(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/taxes-charges`)), null),
-        scoped('Discounts', () => cached(queryKeys.discountRules(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/discount-rules`)), null),
-        scoped('Manager controls', () => cached(queryKeys.managerControls(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-controls`)), null),
-        scoped('Closeout', () => cached(queryKeys.closeoutSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`)), null),
-        scoped('Check workflow', () => cached(queryKeys.checkWorkflowSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/check-workflow-settings`)), null),
-        scoped('Tips and payroll', () => cached(queryKeys.tipsPayrollSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`)), null),
-        scoped('Pricing policy', () => cached(queryKeys.pricingPolicy(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pricing-policy`)), null),
-        scoped('Reservation timing', () => fetchReservationSettings(restaurantId), null),
+        scopedFor(['sections'], 'Sections', () => cached(queryKeys.sections(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`)), []),
+        scopedFor(['capacity'], 'Floor plan', () => cached(queryKeys.floorPlan(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`)), null),
+        scopedFor(['taxes_charges'], 'Taxes and charges', () => cached(queryKeys.taxesCharges(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/taxes-charges`)), null),
+        scopedFor(['discounts'], 'Discounts', () => cached(queryKeys.discountRules(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/discount-rules`)), null),
+        scopedFor(['manager_controls'], 'Manager controls', () => cached(queryKeys.managerControls(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-controls`)), null),
+        scopedFor(['closeout'], 'Closeout', () => cached(queryKeys.closeoutSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`)), null),
+        scopedFor(['check_workflow'], 'Check workflow', () => cached(queryKeys.checkWorkflowSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/check-workflow-settings`)), null),
+        scopedFor(['tips_payroll'], 'Tips and payroll', () => cached(queryKeys.tipsPayrollSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`)), null),
+        scopedFor(['payments'], 'Pricing policy', () => cached(queryKeys.pricingPolicy(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pricing-policy`)), null),
+        scopedFor(['reservation_timing'], 'Reservation timing', () => fetchReservationSettings(restaurantId), null),
       ])
       const [
         staffRows,
@@ -1831,7 +1887,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
 
   useEffect(() => {
     void loadSetupData()
-  }, [restaurantId])
+  }, [restaurantId, visibleSetupTabIds])
 
   const referenceHours = useMemo(() => hours.find(day => !day.is_closed) || hours[1] || DEFAULT_HOURS[1], [hours])
 
@@ -1874,8 +1930,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       cuisine_types: profile.cuisine_types,
     }
     const saveRestaurantBasics = async (targetId) => {
-      await updateRestaurantRow(targetId, payload)
-      return mergeRestaurantConfig(targetId, serviceModel)
+      return updateRestaurantRow(targetId, payload)
     }
     await saveWithPropagation({
       sectionId: 'basics',
@@ -1885,12 +1940,31 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       saveSource: saveRestaurantBasics,
       saveTarget: saveRestaurantBasics,
       publication,
-      buildCommand: (targetId) => [
-        { method: 'PATCH', path: `/restaurants/${targetId}/setup-profile`, body: { patch: payload }, target_type: 'restaurant', target_id: targetId },
-        { method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: serviceModel }, target_type: 'restaurant', target_id: targetId },
-      ],
+      buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-profile`, body: { patch: payload }, target_type: 'restaurant', target_id: targetId }),
     })
   }
+
+  const saveGoals = async (publication) => saveWithPropagation({
+    sectionId: 'goals',
+    label: 'Goals',
+    propagation: 'specified',
+    successMessage: 'Saved goals.',
+    saveSource: (targetId) => mergeRestaurantConfig(targetId, goals),
+    saveTarget: (targetId) => mergeRestaurantConfig(targetId, goals),
+    publication,
+    buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: goals }, target_type: 'restaurant', target_id: targetId }),
+  })
+
+  const saveServiceModel = async (publication) => saveWithPropagation({
+    sectionId: 'service_model',
+    label: 'Tools & Service Model',
+    propagation: SETUP_PROPAGATION.service_model,
+    successMessage: 'Saved tools and service model.',
+    saveSource: (targetId) => mergeRestaurantConfig(targetId, serviceModel),
+    saveTarget: (targetId) => mergeRestaurantConfig(targetId, serviceModel),
+    publication,
+    buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: serviceModel }, target_type: 'restaurant', target_id: targetId }),
+  })
 
   const updateRestaurantConfig = async (patch, successMessage) => {
     return saveWithPropagation({
@@ -2518,7 +2592,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   return (
     <div className="space-y-6">
       <ScheduledChangesPanel />
-      <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+      {showHeader && <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="label-mono">Restaurant Setup</p>
@@ -2536,7 +2610,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         </div>
 
         <nav className="mt-6 flex flex-wrap gap-2">
-          {SETUP_TABS.map(item => (
+          {visibleSetupTabs.map(item => (
             <button
               key={item.id}
               type="button"
@@ -2553,7 +2627,28 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
             </button>
           ))}
         </nav>
-      </section>
+      </section>}
+
+      {!showHeader && visibleSetupTabs.length > 1 && (
+        <nav className="flex flex-wrap gap-2 border-b border-white/10 pb-4">
+          {visibleSetupTabs.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setActiveSetupTab(item.id)}
+              className={[
+                'rounded-lg px-3 py-2 text-sm font-semibold transition',
+                activeSetupTab === item.id
+                  ? 'bg-dash-gold text-black'
+                  : 'border border-white/10 text-dash-secondary hover:border-white/20 hover:text-dash-cream',
+              ].join(' ')}
+            >
+              {item.label}
+              {setupWarnings[item.id]?.length > 0 && <WarningTriangle className="ml-2 align-middle" />}
+            </button>
+          ))}
+        </nav>
+      )}
 
       {setupError && (
         <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">
@@ -2629,46 +2724,55 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                 ))}
               </div>
             </Field>
-            <div className="border-t border-white/10 pt-6">
-              <div className="mb-4">
-                <p className="label-mono">Service Modes</p>
-                <p className="mt-2 text-sm text-dash-secondary">Select every service style this location will operate.</p>
+          </div>
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'goals' && (
+        <SectionShell
+          title="Goals"
+          description="Operating priorities and restaurant profile ranges captured during onboarding."
+          actions={publishControls('Save goals', saveGoals)}
+        >
+          <div className="space-y-6">
+            <Field label="Biggest Challenges">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {GOAL_CHALLENGES.map(([value, label]) => {
+                  const selected = goals.challenges.includes(value)
+                  return <button key={value} type="button" onClick={() => setGoals(prev => ({ ...prev, challenges: selected ? prev.challenges.filter(item => item !== value) : [...prev.challenges, value] }))} className={`rounded-xl border p-4 text-left text-sm font-semibold transition ${selected ? 'border-dash-gold bg-dash-gold/10 text-dash-cream' : 'border-white/10 bg-white/[0.03] text-dash-secondary hover:border-white/20'}`}>{label}</button>
+                })}
               </div>
+            </Field>
+            <div className="grid gap-4 md:grid-cols-3">
+              <Field label="Daily Covers"><SelectInput value={goals.daily_covers_range} onChange={event => setGoals(prev => ({ ...prev, daily_covers_range: event.target.value }))}><option value="">Not specified</option><option value="under_50">Under 50</option><option value="50_150">50 - 150</option><option value="150_300">150 - 300</option><option value="300_plus">300+</option></SelectInput></Field>
+              <Field label="Team Size"><SelectInput value={goals.team_size_range} onChange={event => setGoals(prev => ({ ...prev, team_size_range: event.target.value }))}><option value="">Not specified</option><option value="1_5">1 - 5</option><option value="6_15">6 - 15</option><option value="16_30">16 - 30</option><option value="30_plus">30+</option></SelectInput></Field>
+              <Field label="Primary Goal"><SelectInput value={goals.primary_goal} onChange={event => setGoals(prev => ({ ...prev, primary_goal: event.target.value }))}><option value="">Not specified</option><option value="revenue">Increase revenue</option><option value="costs">Reduce costs</option><option value="guest_experience">Guest experience</option><option value="data">Better data</option><option value="replace_tools">Replace current tools</option></SelectInput></Field>
+            </div>
+          </div>
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'service_model' && (
+        <SectionShell
+          title="Tools & Service Model"
+          description="Current operating systems, service styles, and the default guest flow captured during onboarding."
+          actions={publishControls('Save tools & service model', saveServiceModel)}
+        >
+          <div className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-3">
+              <Field label="Current POS"><SelectInput value={serviceModel.current_pos} onChange={event => setServiceModel(prev => ({ ...prev, current_pos: event.target.value }))}>{CURRENT_TOOL_OPTIONS.current_pos.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</SelectInput></Field>
+              <Field label="Scheduling Tool"><SelectInput value={serviceModel.current_scheduling} onChange={event => setServiceModel(prev => ({ ...prev, current_scheduling: event.target.value }))}>{CURRENT_TOOL_OPTIONS.current_scheduling.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</SelectInput></Field>
+              <Field label="Reservations Tool"><SelectInput value={serviceModel.current_reservations} onChange={event => setServiceModel(prev => ({ ...prev, current_reservations: event.target.value }))}>{CURRENT_TOOL_OPTIONS.current_reservations.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</SelectInput></Field>
+            </div>
+            <Field label="Service Modes">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {SERVICE_MODE_OPTIONS.map(option => {
                   const selected = serviceModel.service_modes.includes(option.id)
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setServiceModel(prev => ({
-                        ...prev,
-                        service_modes: selected
-                          ? prev.service_modes.filter(item => item !== option.id)
-                          : [...prev.service_modes, option.id],
-                      }))}
-                      className={[
-                        'rounded-xl border p-4 text-left text-sm font-semibold transition',
-                        selected
-                          ? 'border-dash-gold bg-dash-gold/10 text-dash-cream'
-                          : 'border-white/10 bg-white/[0.03] text-dash-secondary hover:border-white/20 hover:text-dash-cream',
-                      ].join(' ')}
-                    >
-                      {option.label}
-                    </button>
-                  )
+                  return <button key={option.id} type="button" onClick={() => setServiceModel(prev => ({ ...prev, service_modes: selected ? prev.service_modes.filter(item => item !== option.id) : [...prev.service_modes, option.id] }))} className={`rounded-xl border p-4 text-left text-sm font-semibold transition ${selected ? 'border-dash-gold bg-dash-gold/10 text-dash-cream' : 'border-white/10 bg-white/[0.03] text-dash-secondary hover:border-white/20'}`}>{option.label}</button>
                 })}
               </div>
-              <Field label="Default Guest Flow">
-                <SelectInput
-                  value={serviceModel.default_guest_flow}
-                  onChange={event => setServiceModel(prev => ({ ...prev, default_guest_flow: event.target.value }))}
-                  className="mt-3"
-                >
-                  {GUEST_FLOW_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
-                </SelectInput>
-              </Field>
-            </div>
+            </Field>
+            <Field label="Default Guest Flow"><SelectInput value={serviceModel.default_guest_flow} onChange={event => setServiceModel(prev => ({ ...prev, default_guest_flow: event.target.value }))}>{GUEST_FLOW_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</SelectInput></Field>
           </div>
         </SectionShell>
       )}
@@ -3950,11 +4054,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       )}
 
       {activeSetupTab === 'integrations' && (
-        <SectionShell title="Integrations" description="Connections used by the live deployment. These controls are still placeholders.">
-          <div className="grid gap-4 md:grid-cols-3">
-            <OptionCard title="POS" description="Toast, Square, Clover, or manual imports." disabled />
-            <OptionCard title="Scheduling" description="7shifts, Homebase, or SHIRE native scheduling." disabled />
-            <OptionCard title="Reservations" description="Booking links, reservation providers, and sync settings." disabled />
+        <SectionShell title="Integrations" description="Provider connections are managed from the Tools & Service Model and Reservations sections above.">
+          <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4 text-sm leading-6 text-dash-secondary">
+            Declared POS, scheduling, and reservation providers are saved as restaurant configuration. OAuth connection records remain provider-managed and are never replaced by this screen.
           </div>
         </SectionShell>
       )}

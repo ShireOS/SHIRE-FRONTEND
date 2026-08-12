@@ -145,8 +145,9 @@ surface independently, while every mutation is also guarded by the ML backend.
   theme-loading failures inside the dialog.
   Reseller sidebar visibility comes from one grant-to-route map used by every
   store route, including the specialized Setup and UI Editor shells. The
-  owner-controlled `setup` grant covers Setup, UI Editor, Taxes, POS Settings,
-  and Printing & Routing; `team` covers Members, Time Clock, and Alerts; report,
+  owner-controlled `setup` grant covers conditional Setup, Store Information,
+  Marketing, Store Settings, Integrations, UI Editor, POS Settings, and Printing
+  & Routing; `team` covers Members, Time Clock, and Alerts; report,
   check, labor-cost, and payroll/tip surfaces remain mandatory. Route changes
   reuse the resolved store grants so the sidebar does not change composition.
   POS Settings reason-preset reads and mutations use the same portal-aware
@@ -160,6 +161,20 @@ surface independently, while every mutation is also guarded by the ML backend.
   UI previews default to the same-origin Expo exports under
   `apps/web/public/previews`; environment URLs may explicitly override them.
   Never add an implicit localhost or developer-machine fallback.
+- Store setup completeness (2026-08-11) is derived by the ML backend from the
+  canonical restaurant, POS, menu, hours, floor, and staffing records. Setup is
+  a recovery route and is shown only while a required domain is incomplete;
+  `onboarding_completed_at` remains historical metadata and is not the source
+  of truth. Permanent configuration ownership is Store Information (Basics and
+  Goals), Marketing (Branding), Store Settings (Legal, Payments, Cash/Closeout,
+  Check Workflow, Hours), Integrations (current tools/service model and
+  reservations), Menu (menu data, discounts, routing, and admin-only tax UI),
+  Team (members/roles and Manager Controls), UI Editor (appearance, sections,
+  floor plan), and Payroll & Tips. All of these pages reuse the Setup editor's
+  canonical save contracts. Discount reads require `menu.view`; writes require
+  `menu.edit_items`. Taxes remain editable from onboarding/recovery Setup, but
+  their permanent Menu surface is shown only to platform admins (including the
+  configured Cameron admin account).
 - Migrations (manual run): ML `supabase/migrations/0055_team_hub_access.sql`
   (restaurant_members + back_office_permissions + invitations alter), POS repo
   `0022_pos_timeclock_breaks_v1.sql` (pos_time_clock_breaks).

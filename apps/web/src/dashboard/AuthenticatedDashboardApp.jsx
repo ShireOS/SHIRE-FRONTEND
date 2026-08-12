@@ -34,7 +34,6 @@ import TipPoolingPage from './pages/TipPoolingPage'
 import LaborCostPage from './pages/LaborCostPage'
 import TeamPage from './pages/TeamPage'
 import TimeClockPage from './pages/TimeClockPage'
-import TaxesPage from './pages/TaxesPage'
 import AcceptInvitePage from './pages/AcceptInvitePage'
 import ClaimStorePage from './pages/ClaimStorePage'
 import DevicesPage from './pages/DevicesPage'
@@ -139,6 +138,10 @@ const TABS = [
   { id: 'checks', label: 'Checks' },
   { id: 'close-day', label: 'Close Day' },
   { id: 'setup', label: 'Edit Setup' },
+  { id: 'store-information', label: 'Store Information' },
+  { id: 'marketing', label: 'Marketing' },
+  { id: 'settings', label: 'Store Settings' },
+  { id: 'integrations', label: 'Integrations' },
   { id: 'ui', label: 'UI Editor' },
   { id: 'menu', label: 'Menu' },
   { id: 'menu-workspace', label: 'POS Menus' },
@@ -204,6 +207,30 @@ function PlaceholderPanel({ title, eyebrow, children }) {
       <h2 className="text-3xl font-semibold tracking-tight">{title}</h2>
       <div className="mt-4 max-w-3xl text-dash-secondary">{children}</div>
     </section>
+  )
+}
+
+function ConfigurationHub({ tabs, initialTab, children }) {
+  const [active, setActive] = useState(initialTab || tabs[0]?.id)
+  useEffect(() => {
+    if (!tabs.some(tab => tab.id === active)) setActive(tabs[0]?.id)
+  }, [active, tabs])
+  return (
+    <div className="space-y-5">
+      <nav className="flex flex-wrap gap-2 border-b border-white/10 pb-4" aria-label="Configuration sections">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActive(tab.id)}
+            className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${active === tab.id ? 'bg-dash-gold text-black' : 'border border-white/10 text-dash-secondary hover:border-white/20 hover:text-dash-cream'}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+      {children(active)}
+    </div>
   )
 }
 
@@ -4969,11 +4996,24 @@ export function RestaurantWorkspace({
   const [setupRefreshKey, setSetupRefreshKey] = useState(0)
   const allowedStoreTabs = useAllowedStoreTabs(restaurant)
   const backOfficeAccess = useBackOfficeAccess(auth, restaurantId)
-
   const setupWarnings = useMemo(
     () => buildModernSetupWarnings(restaurant || {}, waiterCount, floorPlanStatus, jobCodeCount),
     [restaurant, waiterCount, floorPlanStatus, jobCodeCount]
   )
+  const setupStatusQuery = useQuery({
+    queryKey: queryKeys.setupStatus(restaurantId || ''),
+    queryFn: () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/setup-status`),
+    enabled: Boolean(restaurantId && restaurant && (backOfficeAccess.loading || backOfficeAccess.can('settings.edit'))),
+    staleTime: STALE_TIMES.setup,
+    refetchInterval: query => query.state.data?.complete ? false : 15_000,
+  })
+  const showSetup = setupStatusQuery.isLoading || Boolean(setupStatusQuery.error) || setupStatusQuery.data?.complete !== true
+  const setupWarningCount = setupStatusQuery.data?.missing_count ?? modernWarningCount(setupWarnings || {})
+
+  const handleSetupChanged = () => {
+    setSetupRefreshKey(key => key + 1)
+    void queryClient.invalidateQueries({ queryKey: queryKeys.setupStatus(restaurantId) })
+  }
 
   useEffect(() => {
     if (!restaurantId || !restaurant) return
@@ -5047,6 +5087,10 @@ export function RestaurantWorkspace({
     return <Navigate to={`${restaurantBase}/${restaurantId}/analytics`} replace />
   }
 
+  if (activeTab === 'setup' && !setupStatusQuery.isLoading && !setupStatusQuery.error && setupStatusQuery.data?.complete) {
+    return <Navigate to={`${restaurantBase}/${restaurantId}/store-information`} replace />
+  }
+
   // Back-office members only reach permitted tabs (owners bypass; server
   // guards remain the real enforcement).
   const requiredPermission = TAB_PERMISSIONS[activeTab]
@@ -5076,7 +5120,8 @@ export function RestaurantWorkspace({
           breadcrumb={breadcrumb}
           restaurant={restaurant}
           restaurantId={restaurantId}
-          setupWarningCount={modernWarningCount(setupWarnings || {})}
+          setupWarningCount={setupWarningCount}
+          showSetup={showSetup}
           allowedStoreTabs={allowedStoreTabs}
           routes={shellRoutes}
         >
@@ -5085,7 +5130,7 @@ export function RestaurantWorkspace({
             restaurantId={restaurantId}
             auth={auth}
             setupWarnings={setupWarnings}
-            onSetupChanged={() => setSetupRefreshKey(key => key + 1)}
+            onSetupChanged={handleSetupChanged}
           />
         </DashboardShell>
       </ProtectedRoute>
@@ -5100,7 +5145,8 @@ export function RestaurantWorkspace({
         breadcrumb={breadcrumb}
         restaurant={restaurant}
         restaurantId={restaurantId}
-        setupWarningCount={modernWarningCount(setupWarnings || {})}
+        setupWarningCount={setupWarningCount}
+        showSetup={showSetup}
         allowedStoreTabs={allowedStoreTabs}
         routes={shellRoutes}
       >
@@ -5113,23 +5159,48 @@ export function RestaurantWorkspace({
         {activeTab === 'checks' && <CheckLedgerSection restaurantId={restaurantId} />}
         {activeTab === 'reports' && <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurant?.name} canConfigureServerReceipt={backOfficeAccess.can('settings.edit')} />}
         {activeTab === 'close-day' && <CloseDayPage restaurantId={restaurantId} restaurantName={restaurant?.name} />}
+        {activeTab === 'store-information' && (
+          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['basics', 'goals']} showHeader={false} />
+        )}
+        {activeTab === 'marketing' && (
+          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['branding']} showHeader={false} />
+        )}
+        {activeTab === 'settings' && (
+          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['legal', 'payments', 'closeout', 'check_workflow', 'hours']} showHeader={false} />
+        )}
+        {activeTab === 'integrations' && (
+          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['service_model', 'reservation_timing', 'integrations']} showHeader={false} />
+        )}
         {activeTab === 'ui' && (
-          <ResellerUiEditor
-            restaurants={restaurant ? [{
-              ...restaurant,
-              reseller_group_id: 'ungrouped',
-              reseller_group_name: 'Current store',
-              reseller_group_color: '#9CA3AF',
-            }] : []}
-            groups={[]}
-            initialRestaurantId={restaurantId}
-          />
+          <ConfigurationHub tabs={[{ id: 'appearance', label: 'Appearance' }, { id: 'sections', label: 'Sections' }, { id: 'floor-plan', label: 'Floor Plan' }]} initialTab="appearance">
+            {(section) => section === 'appearance' ? (
+              <ResellerUiEditor
+                restaurants={restaurant ? [{
+                  ...restaurant,
+                  reseller_group_id: 'ungrouped',
+                  reseller_group_name: 'Current store',
+                  reseller_group_color: '#9CA3AF',
+                }] : []}
+                groups={[]}
+                initialRestaurantId={restaurantId}
+              />
+            ) : (
+              <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[section === 'sections' ? 'sections' : 'capacity']} showHeader={false} />
+            )}
+          </ConfigurationHub>
         )}
         {activeTab === 'menu' && (
-          <MenuPanel
-            restaurantId={restaurantId}
-            canEditPrices={backOfficeAccess.can('menu.edit_prices')}
-          />
+          <ConfigurationHub tabs={[
+            { id: 'menu', label: 'Menu' },
+            ...(backOfficeAccess.can('menu.edit_items') ? [{ id: 'discounts', label: 'Discounts' }] : []),
+            ...(auth.accountType === 'admin' ? [{ id: 'taxes', label: 'Taxes & Charges' }] : []),
+          ]} initialTab="menu">
+            {(section) => section === 'menu' ? (
+              <MenuPanel restaurantId={restaurantId} canEditPrices={backOfficeAccess.can('menu.edit_prices')} />
+            ) : (
+              <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[section === 'taxes' ? 'taxes_charges' : 'discounts']} showHeader={false} />
+            )}
+          </ConfigurationHub>
         )}
         {activeTab === 'menu-workspace' && (
           <MenuWorkspaceEditor
@@ -5137,9 +5208,16 @@ export function RestaurantWorkspace({
             canEdit={backOfficeAccess.can('menu.edit_items')}
           />
         )}
-        {activeTab === 'taxes' && <TaxesPage restaurantId={restaurantId} />}
+        {activeTab === 'taxes' && <Navigate to={`${restaurantBase}/${restaurantId}/menu`} replace />}
         {activeTab === 'feedback' && <GuestFeedbackPanel restaurantId={restaurantId} />}
-        {activeTab === 'team' && <TeamPage restaurantId={restaurantId} />}
+        {activeTab === 'team' && (
+          <ConfigurationHub tabs={[
+            { id: 'members', label: 'Members & Roles' },
+            ...(backOfficeAccess.can('settings.edit') ? [{ id: 'manager-controls', label: 'Manager Controls' }] : []),
+          ]} initialTab="members">
+            {(section) => section === 'members' ? <TeamPage restaurantId={restaurantId} /> : <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['manager_controls']} showHeader={false} />}
+          </ConfigurationHub>
+        )}
         {activeTab === 'time-clock' && <TimeClockPage restaurantId={restaurantId} />}
         {activeTab === 'labor-cost' && <LaborCostPage restaurantId={restaurantId} />}
         {activeTab === 'devices' && <StoreDevicesPanel restaurantId={restaurantId} />}
@@ -5165,6 +5243,10 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   checks: 'Checks',
   'close-day': 'Close Day',
   setup: 'Setup',
+  'store-information': 'Store Information',
+  marketing: 'Marketing',
+  settings: 'Store Settings',
+  integrations: 'Integrations',
   'menu-workspace': 'POS Menus',
   ui: 'UI Editor',
   menu: 'Menu',
