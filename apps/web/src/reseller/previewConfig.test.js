@@ -11,9 +11,16 @@ test('bundled previews use same-origin deployment paths', () => {
   assert.deepEqual(resolvePreviewUrls('', [BUNDLED_PREVIEW_PATHS.pos]), ['/previews/pos/index.html'])
 })
 
-test('configured hosted preview wins in every environment', () => {
+test('configured hosted preview is tried first with the bundled export as fallback', () => {
   assert.deepEqual(
-    resolvePreviewUrls('https://preview.example.com/pos'),
-    ['https://preview.example.com/pos'],
+    resolvePreviewUrls('https://preview.example.com/pos', [BUNDLED_PREVIEW_PATHS.pos]),
+    ['https://preview.example.com/pos', '/previews/pos/index.html'],
+  )
+})
+
+test('duplicate configured and fallback URLs are removed', () => {
+  assert.deepEqual(
+    resolvePreviewUrls(BUNDLED_PREVIEW_PATHS.pos, [BUNDLED_PREVIEW_PATHS.pos]),
+    [BUNDLED_PREVIEW_PATHS.pos],
   )
 })

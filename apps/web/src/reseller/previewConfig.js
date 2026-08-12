@@ -5,6 +5,8 @@ export const BUNDLED_PREVIEW_PATHS = Object.freeze({
 
 export function resolvePreviewUrls(configuredUrl, fallbackUrls = []) {
   const configured = String(configuredUrl || '').trim()
-  if (configured) return [configured]
-  return fallbackUrls
+  return [...new Set([
+    ...(configured ? [configured] : []),
+    ...fallbackUrls.map((url) => String(url || '').trim()).filter(Boolean),
+  ])]
 }

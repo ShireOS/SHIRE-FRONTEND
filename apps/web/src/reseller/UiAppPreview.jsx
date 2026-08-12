@@ -16,6 +16,16 @@ function previewUrls(service) {
     .map(withPreviewFlag)
 }
 
+function previewVersionLabel(preview) {
+  if (!preview) return ''
+  const updateNumber = Number(preview.updateNumber)
+  const commit = String(preview.sourceCommit || '').trim().slice(0, 8)
+  const parts = []
+  if (Number.isInteger(updateNumber) && updateNumber > 0) parts.push(`POS update ${updateNumber}`)
+  if (commit) parts.push(commit)
+  return parts.join(' · ')
+}
+
 function PreviewFrame({
   service,
   tokens,
@@ -31,17 +41,20 @@ function PreviewFrame({
   const [loaded, setLoaded] = useState(false)
   const [candidateIndex, setCandidateIndex] = useState(0)
   const [failed, setFailed] = useState(false)
+  const [previewVersion, setPreviewVersion] = useState(null)
   const urls = useMemo(() => previewUrls(service), [service])
   const url = urls[candidateIndex]
 
   const retry = () => {
     setLoaded(false)
     setFailed(false)
+    setPreviewVersion(null)
     setCandidateIndex(0)
   }
 
   useEffect(() => {
     setLoaded(false)
+    setPreviewVersion(null)
   }, [service, url])
 
   const sendState = () => {
@@ -65,6 +78,7 @@ function PreviewFrame({
       if (event.source !== frame.current?.contentWindow || event.origin !== new URL(url).origin) return
       if (event.data?.type === 'shire-ui-preview-ready' && event.data.service === service) {
         setLoaded(true)
+        setPreviewVersion(event.data.preview ?? null)
         sendState()
       }
       if (event.data?.type === 'shire-ui-preview-component-selected' && event.data.service === service) {
@@ -80,6 +94,7 @@ function PreviewFrame({
   useEffect(() => {
     setLoaded(false)
     setFailed(false)
+    setPreviewVersion(null)
     setCandidateIndex(0)
   }, [service])
 
@@ -106,6 +121,9 @@ function PreviewFrame({
       className="h-full w-full border-0 bg-white"
       allow="clipboard-read; clipboard-write"
     />}
+    {loaded && previewVersionLabel(previewVersion) && <div className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-full border border-black/10 bg-white/90 px-2.5 py-1 text-[10px] font-semibold text-black/65 shadow-sm backdrop-blur">
+      {previewVersionLabel(previewVersion)}
+    </div>}
   </div>
 }
 
