@@ -15,7 +15,7 @@ import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import { posCheckLedgerApi, posRefundApi } from '../../shared/api/posClient'
 import { queryKeys } from '../../shared/query'
 import { activityTitle, activityWho, groupActivityIntoSessions } from './checkActivity'
-import { buildCheckLedgerQuery } from './checkLedgerQuery'
+import { buildCheckLedgerQuery, ledgerCheckCount } from './checkLedgerQuery'
 
 const LIVE_REFRESH_MS = 15000
 
@@ -626,7 +626,7 @@ export default function CheckLedgerSection({ restaurantId }) {
 
           {payload && (
             <div className="mt-3 flex flex-wrap gap-2">
-              <SummaryChip label="checks" value={Number(summary.checks ?? payload.total ?? 0).toLocaleString('en-US')} />
+              <SummaryChip label="checks" value={ledgerCheckCount(payload).toLocaleString('en-US')} />
               <SummaryChip label="gross" value={money(summary.gross_total)} />
               <SummaryChip label="payments" value={money(summary.transaction_total)} />
               {Number(summary.needs_attention) > 0 && (

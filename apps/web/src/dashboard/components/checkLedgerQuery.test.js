@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildCheckLedgerQuery } from './checkLedgerQuery.js'
+import { buildCheckLedgerQuery, ledgerCheckCount } from './checkLedgerQuery.js'
 
 const base = {
   businessDate: '',
@@ -28,4 +28,9 @@ test('closed and history retain their explicit filters', () => {
     page: 1,
     page_size: 25,
   })
+})
+
+test('check count follows the filtered ledger even when a stale summary disagrees', () => {
+  assert.equal(ledgerCheckCount({ total: 4, summary: { checks: 0 }, items: [{}, {}, {}, {}] }), 4)
+  assert.equal(ledgerCheckCount({ summary: { checks: 2 }, items: [{}, {}] }), 2)
 })

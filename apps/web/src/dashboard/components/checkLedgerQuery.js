@@ -26,3 +26,7 @@ export function buildCheckLedgerQuery({
     page_size: 25,
   }
 }
+
+export function ledgerCheckCount(payload) {
+  return Number(payload?.total ?? payload?.summary?.checks ?? payload?.items?.length ?? 0)
+}
