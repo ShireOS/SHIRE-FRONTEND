@@ -30,6 +30,7 @@ import {
   YAxis,
 } from 'recharts'
 import { fetchWithSupabaseAuth } from '../../shared/query'
+import { DEFAULT_API_TIMEOUT_MS } from '../../shared/api/requestDeadline'
 import {
   aggregateWidgetRows,
   effectiveHomepageWidgetSettings,
@@ -580,18 +581,18 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
   const canTrend = (widget.grains || []).includes('day') && widget.id !== 'discount_review'
   const trendQuery = useQuery({
     queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'trend', period, anchorDate, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
-    queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'day', breakdown: trendBreakdown }) }),
+    queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'day', breakdown: trendBreakdown }), timeoutMs: DEFAULT_API_TIMEOUT_MS }),
     enabled: canTrend,
   })
   const breakdown = defaultBreakdown
   const breakdownQuery = useQuery({
     queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'breakdown', period, anchorDate, breakdown, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
-    queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'total', breakdown }) }),
+    queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'total', breakdown }), timeoutMs: DEFAULT_API_TIMEOUT_MS }),
     enabled: widget.id !== 'discount_review',
   })
   const detailQuery = useQuery({
     queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'detail', period, anchorDate, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
-    queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'detail', breakdown }) }),
+    queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'detail', breakdown }), timeoutMs: DEFAULT_API_TIMEOUT_MS }),
     enabled: (widget.grains || []).includes('detail') && widget.id !== 'discount_review',
   })
   const trendData = trendQuery.data
@@ -713,12 +714,12 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
   const [detailId, setDetailId] = useState(null)
   const [saving, setSaving] = useState(false)
   const preferencePath = scope === 'portfolio' ? '/portfolio-reports/homepage/preferences' : `/restaurants/${restaurantId}/reports/homepage/preferences`
-  const preferenceQuery = useQuery({ queryKey: ['homepage-preferences', scope, restaurantId], queryFn: () => fetchWithSupabaseAuth(preferencePath), enabled: scope === 'portfolio' || Boolean(restaurantId) })
+  const preferenceQuery = useQuery({ queryKey: ['homepage-preferences', scope, restaurantId], queryFn: () => fetchWithSupabaseAuth(preferencePath, { timeoutMs: DEFAULT_API_TIMEOUT_MS }), enabled: scope === 'portfolio' || Boolean(restaurantId) })
   const preference = preferenceQuery.data || { visible_widgets: [], widget_order: [], widget_settings: {}, widget_pdf_settings: {}, catalog: [] }
   const dimensionPath = scope === 'portfolio'
     ? `/portfolio-reports/dimensions?${new URLSearchParams({ ...(groupIds?.length ? { group_ids: groupIds.join(',') } : {}), include_ungrouped: String(includeUngrouped) })}`
     : `/restaurants/${restaurantId}/reports/dimensions`
-  const dimensionQuery = useQuery({ queryKey: ['reporting-dimensions', scope, restaurantId, (groupIds || []).join(','), includeUngrouped], queryFn: () => fetchWithSupabaseAuth(dimensionPath), enabled: scope === 'portfolio' || Boolean(restaurantId) })
+  const dimensionQuery = useQuery({ queryKey: ['reporting-dimensions', scope, restaurantId, (groupIds || []).join(','), includeUngrouped], queryFn: () => fetchWithSupabaseAuth(dimensionPath, { timeoutMs: DEFAULT_API_TIMEOUT_MS }), enabled: scope === 'portfolio' || Boolean(restaurantId) })
   const resolvedDashboardScope = useMemo(
     () => pruneReportingScope(dashboardScope, dimensionQuery.data),
     [dashboardScope, dimensionQuery.data],
@@ -740,7 +741,7 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
     : {}
   const dataQuery = useQuery({
     queryKey: ['homepage-data', scope, restaurantId, period, anchorDate, (groupIds || []).join(','), includeUngrouped, orderedVisible.join(','), JSON.stringify(effectiveSettings)],
-    queryFn: () => fetchWithSupabaseAuth(dataPath, { method: 'POST', body: JSON.stringify({ period, anchor_date: anchorDate || null, widget_ids: orderedVisible, widget_settings: effectiveSettings, ...portfolioScope }) }),
+    queryFn: () => fetchWithSupabaseAuth(dataPath, { method: 'POST', body: JSON.stringify({ period, anchor_date: anchorDate || null, widget_ids: orderedVisible, widget_settings: effectiveSettings, ...portfolioScope }), timeoutMs: DEFAULT_API_TIMEOUT_MS }),
     enabled: orderedVisible.length > 0,
   })
   useEffect(() => {

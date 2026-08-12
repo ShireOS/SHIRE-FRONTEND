@@ -2,7 +2,7 @@ import { supabase } from '../lib/supabase'
 import { API_CONFIG } from '../api/config'
 import { fetchPosApi } from '../api/posClient'
 import { requestWithPosSession } from '../api/posSession'
-import { withRequestDeadline } from '../api/requestDeadline'
+import { withOptionalRequestDeadline } from '../api/requestDeadline'
 
 const POS_OWNED_RESTAURANT_ROUTE =
   /^\/restaurants\/([^/]+)\/(?:tips-payroll-settings|pay-periods|tip-pools(?:\/|$)|job-codes(?:\/|$))/
@@ -16,7 +16,7 @@ export async function fetchWithSupabaseAuth<T = any>(
     return fetchPosApi<T>(decodeURIComponent(posRoute[1]), endpoint, options)
   }
   const { timeoutMs, ...init } = options
-  const response = await withRequestDeadline(
+  const response = await withOptionalRequestDeadline(
     (requestSignal) => requestWithPosSession({
       auth: supabase.auth,
       signal: requestSignal,

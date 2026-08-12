@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabase'
 import { requestWithPosSession } from './posSession'
-import { withRequestDeadline } from './requestDeadline'
+import { DEFAULT_API_TIMEOUT_MS, withOptionalRequestDeadline } from './requestDeadline'
 
 // Second backend: the POS API (Shire_POS_backend). The dashboard talks to it
 // for time clock management, printing, and report tooling; auth is the
@@ -33,7 +33,7 @@ export async function fetchPosApi<T = any>(
 ): Promise<T> {
   const { mount = 'pos', timeoutMs, ...init } = options
   const base = mount === 'integration' ? POS_API_BASE : `${POS_API_BASE}/dev-v2`
-  const request = (requestSignal: AbortSignal, accessToken?: string) => {
+  const request = (requestSignal?: AbortSignal | null, accessToken?: string) => {
     const headers = new Headers(init.headers || {})
     if (!(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
     if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
@@ -43,23 +43,23 @@ export async function fetchPosApi<T = any>(
 
   const method = String(init.method || 'GET').toUpperCase()
   const canRetryTransport = method === 'GET' || (method === 'POST' && endpoint.endsWith('/preview'))
-  const requestWithTransportRetry = async (requestSignal: AbortSignal, accessToken?: string) => {
+  const requestWithTransportRetry = async (requestSignal?: AbortSignal | null, accessToken?: string) => {
     try {
       return await request(requestSignal, accessToken)
     } catch (error) {
-      if (!canRetryTransport || requestSignal.aborted) throw error
+      if (!canRetryTransport || requestSignal?.aborted) throw error
       await new Promise(resolve => setTimeout(resolve, 400))
       return request(requestSignal, accessToken)
     }
   }
 
-  const response = await withRequestDeadline(
+  const response = await withOptionalRequestDeadline(
     (requestSignal) => requestWithPosSession({
       auth: supabase.auth,
       request: (accessToken) => requestWithTransportRetry(requestSignal, accessToken),
       signal: requestSignal,
     }),
-    { signal: init.signal, timeoutMs, message: 'Checks took too long to load. Try again.' },
+    { signal: init.signal, timeoutMs, message: 'The POS service took too long to respond. Try again.' },
   )
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
@@ -125,10 +125,16 @@ export const posCheckLedgerApi = {
       if (value !== undefined && value !== null && value !== '') params.set(key, String(value))
     }
     const qs = params.toString()
-    return fetchPosApi(restaurantId, `/manager/check-ledger${qs ? `?${qs}` : ''}`, { signal })
+    return fetchPosApi(restaurantId, `/manager/check-ledger${qs ? `?${qs}` : ''}`, {
+      signal,
+      timeoutMs: DEFAULT_API_TIMEOUT_MS,
+    })
   },
   detail: (restaurantId: string, orderId: string, signal?: AbortSignal) =>
-    fetchPosApi(restaurantId, `/manager/check-ledger/${encodeURIComponent(orderId)}`, { signal }),
+    fetchPosApi(restaurantId, `/manager/check-ledger/${encodeURIComponent(orderId)}`, {
+      signal,
+      timeoutMs: DEFAULT_API_TIMEOUT_MS,
+    }),
 }
 
 export interface CloseDayFinalizeInput {

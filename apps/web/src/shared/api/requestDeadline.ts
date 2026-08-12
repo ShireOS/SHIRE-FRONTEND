@@ -39,3 +39,11 @@ export async function withRequestDeadline<T>(
     options.signal?.removeEventListener('abort', abortFromCaller)
   }
 }
+
+export function withOptionalRequestDeadline<T>(
+  request: (signal?: AbortSignal | null) => Promise<T>,
+  options: { signal?: AbortSignal | null; timeoutMs?: number; message?: string } = {},
+): Promise<T> {
+  if (options.timeoutMs === undefined) return request(options.signal)
+  return withRequestDeadline(request, options)
+}
