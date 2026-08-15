@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase'
-import { requestWithPosSession } from './posSession'
+import { PosSessionError, requestWithPosSession } from './posSession'
+import { redirectForUnrecoverableSession } from '../auth/sessionRecovery'
 import { DEFAULT_API_TIMEOUT_MS, withOptionalRequestDeadline } from './requestDeadline'
 
 // Second backend: the POS API (Shire_POS_backend). The dashboard talks to it
@@ -53,14 +54,22 @@ export async function fetchPosApi<T = any>(
     }
   }
 
-  const response = await withOptionalRequestDeadline(
-    (requestSignal) => requestWithPosSession({
-      auth: supabase.auth,
-      request: (accessToken) => requestWithTransportRetry(requestSignal, accessToken),
-      signal: requestSignal,
-    }),
-    { signal: init.signal, timeoutMs, message: 'The POS service took too long to respond. Try again.' },
-  )
+  let response: Response
+  try {
+    response = await withOptionalRequestDeadline(
+      (requestSignal) => requestWithPosSession({
+        auth: supabase.auth,
+        request: (accessToken) => requestWithTransportRetry(requestSignal, accessToken),
+        signal: requestSignal,
+      }),
+      { signal: init.signal, timeoutMs, message: 'The POS service took too long to respond. Try again.' },
+    )
+  } catch (error) {
+    if (error instanceof PosSessionError && error.unrecoverable) {
+      await redirectForUnrecoverableSession()
+    }
+    throw error
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
     const detail = body.detail || body.message

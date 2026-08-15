@@ -1,3 +1,5 @@
+import { isUnrecoverableSessionError } from '../auth/sessionErrors.ts'
+
 const SESSION_REFRESH_SKEW_MS = 60_000
 
 interface SessionLike {
@@ -7,7 +9,12 @@ interface SessionLike {
 
 interface SessionResult {
   data?: { session?: SessionLike | null } | null
-  error?: { message?: string } | null
+  error?: SessionErrorLike | null
+}
+
+interface SessionErrorLike {
+  message?: string
+  code?: string
 }
 
 interface AuthClientLike {
@@ -27,11 +34,22 @@ const refreshes = new WeakMap<object, Promise<string>>()
 export class PosSessionError extends Error {
   status = 401
   code = 'pos_session_expired'
+  unrecoverable: boolean
 
-  constructor(message = 'Your dashboard session expired. Sign in again.') {
+  constructor(
+    message = 'Your dashboard session expired. Sign in again.',
+    unrecoverable = false,
+  ) {
     super(message)
     this.name = 'PosSessionError'
+    this.unrecoverable = unrecoverable
   }
+}
+
+export { isUnrecoverableSessionError } from '../auth/sessionErrors.ts'
+
+function toPosSessionError(error: SessionErrorLike | null | undefined): PosSessionError {
+  return new PosSessionError(error?.message, isUnrecoverableSessionError(error))
 }
 
 export function sessionExpiresSoon(
@@ -45,7 +63,7 @@ export function sessionExpiresSoon(
 
 async function readSession(auth: AuthClientLike): Promise<SessionLike> {
   const result = await auth.getSession()
-  if (result.error) throw new PosSessionError(result.error.message)
+  if (result.error) throw toPosSessionError(result.error)
   const session = result.data?.session
   if (!session?.access_token) throw new PosSessionError()
   return session
@@ -82,7 +100,7 @@ async function refreshAccessToken(
       // Preserve the refresh failure below.
     }
 
-    throw new PosSessionError(result.error?.message)
+    throw toPosSessionError(result.error)
   })()
 
   refreshes.set(auth as object, refresh)

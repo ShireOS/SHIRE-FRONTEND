@@ -5,6 +5,8 @@ import { queryClient } from '../../shared/query/queryClient'
 import type { User, Session, AuthError } from '@supabase/supabase-js'
 import type { Profile, Restaurant, RestaurantMember } from '@shire/db'
 import { isAbortError } from '../utils/authErrors'
+import { isUnrecoverableSessionError } from '../../shared/auth/sessionErrors'
+import { redirectForUnrecoverableSession } from '../../shared/auth/sessionRecovery'
 
 const isRestaurantMemberPolicyRecursion = (message: string): boolean =>
   message
@@ -546,7 +548,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(currentSession)
         setUser(currentSession?.user ?? null)
       } catch (error) {
-        if (isAbortError(error)) {
+        if (isUnrecoverableSessionError(error as AuthError)) {
+          await redirectForUnrecoverableSession()
+        } else if (isAbortError(error)) {
           console.warn('[Auth] Initialization aborted; continuing with fallback state.')
         } else {
           console.error('[Auth] Initialization error:', error)

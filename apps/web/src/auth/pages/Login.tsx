@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useRedirectIfAuthenticated } from '../hooks/useRequireAuth'
 import { AuthLayout } from '../components/AuthLayout'
@@ -17,6 +17,8 @@ export function LoginPage() {
   const { signIn, signInWithGoogle } = useAuth()
   const { isReady } = useRedirectIfAuthenticated()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const sessionEnded = searchParams.get('reason') === 'session-ended'
 
   const [mode, setMode] = useState<'manager' | 'employee'>('manager')
   const [email, setEmail] = useState('')
@@ -173,6 +175,11 @@ export function LoginPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          {sessionEnded && !error && (
+            <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-200">
+              Your session ended. Sign in again to continue.
+            </div>
+          )}
           {error && (
             <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-sm">
               {error}
