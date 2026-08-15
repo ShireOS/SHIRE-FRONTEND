@@ -98,28 +98,10 @@ export async function copyItemConfig({
   }
 
   try {
-    const { data: rules, error } = await supabase
-      .from('pos_menu_price_rules')
-      .select('*')
-      .eq('restaurant_id', restaurantId)
-      .eq('menu_item_id', sourceItem.id)
-      .is('archived_at', null)
-    if (error) throw error
-    for (const rule of rules || []) {
-      const { id, created_at, updated_at, archived_at, ...rest } = rule
-      const { data: createdRule, error: insertError } = await supabase
-        .from('pos_menu_price_rules')
-        .insert({ ...rest, menu_item_id: targetItem.id })
-        .select('*')
-        .single()
-      if (insertError) throw insertError
-      await supabase.from('pos_menu_price_rule_events').insert({
-        restaurant_id: restaurantId,
-        price_rule_id: createdRule.id,
-        event_type: 'created',
-        after_data: createdRule,
-      }).then(() => null, () => null)
-    }
+    await api(`/restaurants/${restaurantId}/menu/pricing/items/${sourceItem.id}/rules/copy`, {
+      method: 'POST',
+      body: JSON.stringify({ target_menu_item_id: targetItem.id }),
+    })
   } catch {
     warnings.push('happy hour price rules')
   }

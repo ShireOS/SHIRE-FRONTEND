@@ -268,7 +268,11 @@ surface independently, while every mutation is also guarded by the ML backend.
 - Supabase-direct menu writes use `can_manage_store_menu()` RLS. Category-question,
   item-modifier override, and item price-allocation policies also verify that every
   referenced row belongs to the submitted restaurant, preventing cross-tenant
-  record links.
+  record links. Item-level recurring price rules are read and written through
+  the ML pricing API under `menu.view` / `menu.edit_prices`; rule and
+  actor-attributed audit writes commit transactionally, while browser roles
+  cannot access those tables directly. The POS backend remains authoritative for
+  the effective price charged to a check.
 - The store Menu workspace exposes Kitchen Routing only to members with
   `settings.edit`; the existing POS-backend routing guards remain authoritative.
   Setup keeps the same routing editor while setup is incomplete, so completing

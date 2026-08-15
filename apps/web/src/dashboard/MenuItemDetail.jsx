@@ -48,6 +48,13 @@ import {
   ROUTE_MULTI_VALUE,
   ROUTE_NO_PRODUCTION_VALUE,
 } from './menuRouting'
+import { ITEM_PRICE_RULE_TYPES, specialPricePreview } from './menuPricing'
+import {
+  archiveItemPriceRule,
+  createItemPriceRule,
+  getItemPriceRules,
+  updateItemPriceRule,
+} from '../shared/api/menuPricing'
 
 const COURSE_OPTIONS = [
   { value: '', label: 'Inherit from category' },
@@ -69,7 +76,7 @@ const AVAILABILITY_MODES = [
 
 // Card ids for the item editor's two columns; saved orders are filtered to
 // these, so renamed/removed cards can never make a section disappear.
-const MAIN_CARDS = ['basics', 'questions', 'specials', 'happy_hour', 'tax_split']
+const MAIN_CARDS = ['basics', 'questions', 'specials', 'tax_split']
 const SIDE_CARDS = ['photo', 'availability', 'kitchen']
 const resolveCardOrder = (saved, defaults) => {
   const known = (Array.isArray(saved) ? saved : []).filter(id => defaults.includes(id))
@@ -1031,32 +1038,56 @@ export function MenuItemDetail({
     await reloadSpecials()
   }, 'Special archived.')
 
-  // ── Happy hour / recurring price rules (item-scoped) ─────────────────────────
-  // Written directly to pos_menu_price_rules, mirroring how specials are managed
-  // here. RLS restricts this to owner/manager. Delta rules (% / $ off) auto-track
-  // the base price; a flat rule sets an absolute price.
+  // ── Special pricing / recurring price rules (item-scoped) ────────────────────
+  // The pricing API enforces menu.edit_prices and records each mutation with its
+  // actor in the same transaction. POS remains authoritative for price resolution.
   const [itemPriceRules, setItemPriceRules] = useState([])
+  const [priceRulesError, setPriceRulesError] = useState('')
+  const [specialPricingOpen, setSpecialPricingOpen] = useState(false)
+  const priceRulesLoadRef = useRef(0)
   const [priceRuleForm, setPriceRuleForm] = useState({
-    name: '', adjustment_type: 'percent_off', adjustment_value: '', start_time: '', end_time: '',
+    name: '', adjustment_type: '', adjustment_value: '', start_time: '', end_time: '',
     days_of_week: WEEKDAY_PRICE_RULE_DAYS, suggested_tip_basis: 'after_discount',
   })
   const reloadPriceRules = async () => {
-    const { data } = await supabase
-      .from('pos_menu_price_rules')
-      .select('*')
-      .eq('restaurant_id', restaurantId)
-      .eq('menu_item_id', item.id)
-      .is('archived_at', null)
-      .order('priority', { ascending: false })
-    setItemPriceRules(data || [])
+    const loadId = ++priceRulesLoadRef.current
+    try {
+      const data = await getItemPriceRules(restaurantId, item.id)
+      if (loadId !== priceRulesLoadRef.current) return []
+      setPriceRulesError('')
+      setItemPriceRules(data || [])
+      return data || []
+    } catch (error) {
+      if (loadId !== priceRulesLoadRef.current) return []
+      setItemPriceRules([])
+      setPriceRulesError(error?.message || 'Special pricing could not load.')
+      return []
+    }
   }
-  useEffect(() => { void reloadPriceRules() }, [item.id, restaurantId])
+  useEffect(() => {
+    setItemPriceRules([])
+    setPriceRulesError('')
+    setSpecialPricingOpen(false)
+    setPriceRuleForm({
+      name: '', adjustment_type: '', adjustment_value: '', start_time: '', end_time: '',
+      days_of_week: WEEKDAY_PRICE_RULE_DAYS, suggested_tip_basis: 'after_discount',
+    })
+    void reloadPriceRules()
+  }, [item.id, restaurantId])
 
-  const priceRuleSummary = (rule) => rule.adjustment_type === 'percent_off'
-    ? `${Number(rule.adjustment_value)}% off`
-    : rule.adjustment_type === 'amount_off'
-      ? `${money(rule.adjustment_value)} off`
-      : `${money(rule.adjustment_value)} flat`
+  const priceRuleSummary = (rule) => {
+    const adjustment = rule.adjustment_type === 'percent_off'
+      ? `${Number(rule.adjustment_value)}% off`
+      : rule.adjustment_type === 'amount_off'
+        ? `${money(rule.adjustment_value)} off`
+        : rule.adjustment_type === 'percent_up'
+          ? `${Number(rule.adjustment_value)}% increase`
+          : rule.adjustment_type === 'amount_up'
+            ? `${money(rule.adjustment_value)} increase`
+            : `${money(rule.adjustment_value)} fixed`
+    const preview = specialPricePreview(item.price, rule.adjustment_type, rule.adjustment_value)
+    return `${adjustment} → ${preview ? money(preview) : '—'} special`
+  }
   const fmtRuleTime = (t) => (t ? String(t).slice(0, 5) : '')
   const priceRuleDaysSummary = (rule) => {
     const days = [...(rule.days_of_week || [])].sort((a, b) => a - b)
@@ -1071,72 +1102,46 @@ export function MenuItemDetail({
   }
 
   const addPriceRule = () => run(async () => {
+    if (!priceRuleForm.adjustment_type) throw new Error('Choose how the special price is calculated')
+    if (priceRuleForm.adjustment_value === '') throw new Error('Enter the discount or special price')
     const value = priceRuleForm.adjustment_value === '' ? 0 : Number(priceRuleForm.adjustment_value)
     if (!Number.isFinite(value) || value < 0) throw new Error('Enter a valid amount')
+    if (priceRuleForm.adjustment_type !== 'fixed' && value === 0) throw new Error('Discount must be greater than zero')
     if (priceRuleForm.adjustment_type === 'percent_off' && value > 100) throw new Error('% off cannot exceed 100')
     const scheduled = Boolean(priceRuleForm.start_time || priceRuleForm.end_time)
     if (scheduled && (!priceRuleForm.start_time || !priceRuleForm.end_time)) throw new Error('Choose both a start and end time')
     if (scheduled && priceRuleForm.days_of_week.length === 0) throw new Error('Choose at least one day')
-    const { data, error } = await supabase
-      .from('pos_menu_price_rules')
-      .insert({
-        restaurant_id: restaurantId,
-        name: priceRuleForm.name.trim() || 'Happy hour',
-        scope_type: 'item',
-        menu_item_id: item.id,
-        adjustment_type: priceRuleForm.adjustment_type,
-        adjustment_value: value,
-        suggested_tip_basis: priceRuleForm.suggested_tip_basis,
-        is_active: true,
-        schedule_kind: scheduled ? 'weekly' : 'manual',
-        days_of_week: scheduled ? [...priceRuleForm.days_of_week].sort((a, b) => a - b) : ALL_PRICE_RULE_DAYS,
-        start_time: priceRuleForm.start_time || null,
-        end_time: priceRuleForm.end_time || null,
-      })
-      .select('*')
-      .single()
-    if (error) throw error
-    await supabase.from('pos_menu_price_rule_events').insert({
-      restaurant_id: restaurantId,
-      price_rule_id: data.id,
-      event_type: 'created',
-      after_data: data,
-    }).then(() => null, () => null)
+    await createItemPriceRule(restaurantId, item.id, {
+      name: priceRuleForm.name.trim() || 'Special pricing',
+      adjustment_type: priceRuleForm.adjustment_type,
+      adjustment_value: value,
+      suggested_tip_basis: priceRuleForm.suggested_tip_basis,
+      days_of_week: scheduled ? [...priceRuleForm.days_of_week].sort((a, b) => a - b) : ALL_PRICE_RULE_DAYS,
+      start_time: priceRuleForm.start_time || null,
+      end_time: priceRuleForm.end_time || null,
+    })
     setPriceRuleForm({
-      name: '', adjustment_type: 'percent_off', adjustment_value: '', start_time: '', end_time: '',
+      name: '', adjustment_type: '', adjustment_value: '', start_time: '', end_time: '',
       days_of_week: WEEKDAY_PRICE_RULE_DAYS, suggested_tip_basis: 'after_discount',
     })
+    setSpecialPricingOpen(true)
     await reloadPriceRules()
   }, 'Price rule added.')
 
   const togglePriceRule = (rule) => run(async () => {
-    const { error } = await supabase
-      .from('pos_menu_price_rules')
-      .update({ is_active: !rule.is_active, updated_at: new Date().toISOString() })
-      .eq('id', rule.id)
-      .eq('restaurant_id', restaurantId)
-    if (error) throw error
+    await updateItemPriceRule(restaurantId, item.id, rule.id, { is_active: !rule.is_active })
     await reloadPriceRules()
   })
 
   const setPriceRuleTipBasis = (rule, suggestedTipBasis) => run(async () => {
-    const { error } = await supabase
-      .from('pos_menu_price_rules')
-      .update({ suggested_tip_basis: suggestedTipBasis, updated_at: new Date().toISOString() })
-      .eq('id', rule.id)
-      .eq('restaurant_id', restaurantId)
-    if (error) throw error
+    await updateItemPriceRule(restaurantId, item.id, rule.id, { suggested_tip_basis: suggestedTipBasis })
     await reloadPriceRules()
   }, 'Suggested tip basis updated.')
 
   const archivePriceRule = (rule) => run(async () => {
-    const { error } = await supabase
-      .from('pos_menu_price_rules')
-      .update({ archived_at: new Date().toISOString(), is_active: false, updated_at: new Date().toISOString() })
-      .eq('id', rule.id)
-      .eq('restaurant_id', restaurantId)
-    if (error) throw error
-    await reloadPriceRules()
+    await archiveItemPriceRule(restaurantId, item.id, rule.id)
+    const remaining = await reloadPriceRules()
+    if (remaining.length === 0) setSpecialPricingOpen(false)
   }, 'Price rule archived.')
 
   // ── Editor layout: card order per column + collapse state per item, saved
@@ -1174,6 +1179,153 @@ export function MenuItemDetail({
     </SmallButton>
   ) : null
 
+  const hasPriceRules = itemPriceRules.length > 0
+  const showSpecialPricing = specialPricingOpen || hasPriceRules || Boolean(priceRulesError)
+  const specialPrice = specialPricePreview(item.price, priceRuleForm.adjustment_type, priceRuleForm.adjustment_value)
+  const adjustmentIsFixed = priceRuleForm.adjustment_type === 'fixed'
+  const adjustmentLabel = priceRuleForm.adjustment_type === 'percent_off' ? 'Discount %' : 'Discount $'
+
+  const specialPricingEditor = showSpecialPricing ? (
+    <div className="mt-4 space-y-4 border-t border-white/10 pt-4">
+      {priceRulesError && (
+        <p className="rounded-lg border border-red-400/25 bg-red-400/10 px-3 py-2 text-sm text-red-200">
+          Special pricing could not load: {priceRulesError}
+        </p>
+      )}
+
+      {itemPriceRules.length > 0 && (
+        <div className="space-y-2">
+          <p className="label-mono">Configured rules</p>
+          {itemPriceRules.map(rule => (
+            <div key={rule.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.025] p-3 text-sm">
+              <div>
+                <span className="font-medium text-dash-cream">{rule.name}</span>
+                <span className="ml-2 text-dash-tertiary">
+                  {priceRuleSummary(rule)} · {priceRuleScheduleSummary(rule)}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <SelectInput
+                  value={rule.suggested_tip_basis || 'after_discount'}
+                  disabled={!canEditPrices || busy}
+                  onChange={event => void setPriceRuleTipBasis(rule, event.target.value)}
+                  className="!w-auto !py-2"
+                >
+                  <option value="after_discount">Tips on special price</option>
+                  <option value="before_discount">Tips on regular price</option>
+                </SelectInput>
+                <SmallButton variant={rule.is_active ? 'primary' : 'secondary'} disabled={!canEditPrices || busy} onClick={() => void togglePriceRule(rule)}>
+                  {rule.is_active ? 'Active' : 'Paused'}
+                </SmallButton>
+                <SmallButton variant="danger" disabled={!canEditPrices || busy} onClick={() => void archivePriceRule(rule)}>Archive</SmallButton>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="rounded-lg border border-white/10 bg-white/[0.018] p-4">
+        <div>
+          <p className="font-semibold text-dash-cream">Add a pricing rule</p>
+          <p className="mt-1 text-xs text-dash-tertiary">Leave both times blank to keep it always on.</p>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <Field label="Rule name (optional)">
+            <TextInput
+              value={priceRuleForm.name}
+              disabled={!canEditPrices || busy}
+              onChange={event => setPriceRuleForm(prev => ({ ...prev, name: event.target.value }))}
+              placeholder="Happy hour"
+            />
+          </Field>
+          <Field label="Price rule">
+            <SelectInput
+              value={priceRuleForm.adjustment_type}
+              disabled={!canEditPrices || busy}
+              onChange={event => setPriceRuleForm(prev => ({ ...prev, adjustment_type: event.target.value, adjustment_value: '' }))}
+            >
+              <option value="">Choose a rule…</option>
+              {ITEM_PRICE_RULE_TYPES.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </SelectInput>
+          </Field>
+          {priceRuleForm.adjustment_type && (
+            <Field label={adjustmentIsFixed ? 'Special price $' : adjustmentLabel}>
+              <TextInput
+                inputMode="decimal"
+                value={priceRuleForm.adjustment_value}
+                disabled={!canEditPrices || busy}
+                onChange={event => setPriceRuleForm(prev => ({ ...prev, adjustment_value: cleanDecimal(event.target.value) }))}
+                placeholder={priceRuleForm.adjustment_type === 'percent_off' ? '25' : '0.00'}
+              />
+            </Field>
+          )}
+          {priceRuleForm.adjustment_type && !adjustmentIsFixed && (
+            <Field label="Special price $">
+              <TextInput
+                value={specialPrice}
+                readOnly
+                aria-label="Calculated special price"
+                placeholder="Calculated automatically"
+                className="cursor-default !border-dash-gold/25 !bg-dash-gold/[0.05]"
+              />
+            </Field>
+          )}
+        </div>
+
+        {priceRuleForm.adjustment_type && (
+          <>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[160px_160px_minmax(180px,1fr)]">
+              <Field label="Starts">
+                <SmartTimeInput disabled={!canEditPrices || busy} ariaLabel="Price rule start time" value={priceRuleForm.start_time} onChange={value => setPriceRuleForm(prev => ({ ...prev, start_time: value }))} />
+              </Field>
+              <Field label="Ends">
+                <SmartTimeInput disabled={!canEditPrices || busy} ariaLabel="Price rule end time" value={priceRuleForm.end_time} onChange={value => setPriceRuleForm(prev => ({ ...prev, end_time: value }))} />
+              </Field>
+              <Field label="Suggested tips">
+                <SelectInput value={priceRuleForm.suggested_tip_basis} disabled={!canEditPrices || busy} onChange={event => setPriceRuleForm(prev => ({ ...prev, suggested_tip_basis: event.target.value }))}>
+                  <option value="after_discount">Calculate on special price</option>
+                  <option value="before_discount">Calculate on regular price</option>
+                </SelectInput>
+              </Field>
+            </div>
+
+            {(priceRuleForm.start_time || priceRuleForm.end_time) && (
+              <div className="mt-4">
+                <span className="label-mono">Days</span>
+                <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Price rule days">
+                  {DAYS_SHORT.map((day, index) => {
+                    const selected = priceRuleForm.days_of_week.includes(index)
+                    return (
+                      <SmallButton
+                        key={day}
+                        variant={selected ? 'primary' : 'secondary'}
+                        disabled={!canEditPrices || busy}
+                        title={(selected ? 'Remove ' : 'Add ') + day}
+                        onClick={() => setPriceRuleForm(prev => ({
+                          ...prev,
+                          days_of_week: selected
+                            ? prev.days_of_week.filter(value => value !== index)
+                            : [...prev.days_of_week, index].sort((a, b) => a - b),
+                        }))}
+                      >
+                        {day}
+                      </SmallButton>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end">
+              <SmallButton variant="primary" onClick={() => void addPriceRule()} disabled={!canEditPrices || busy}>Add pricing rule</SmallButton>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  ) : null
+
   const renderCard = (cardId, cardHandleProps) => {
     const controls = {
       handleProps: onSaveEditorPrefs ? cardHandleProps : null,
@@ -1182,8 +1334,8 @@ export function MenuItemDetail({
     }
     switch (cardId) {
       case 'basics': return (
-          <DetailCard {...controls} title="Basics" hint="Changes save when you click away.">
-            <div className="grid gap-3 md:grid-cols-[1.4fr_120px_1fr]">
+          <DetailCard {...controls} title="Basics" hint="Regular item details and optional special pricing.">
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_130px_190px_minmax(0,1fr)]">
               <Field label="Name">
                 <TextInput
                   defaultValue={item.name}
@@ -1193,9 +1345,10 @@ export function MenuItemDetail({
                   }}
                 />
               </Field>
-              <Field label="Price $">
+              <Field label="Regular price $">
                 <TextInput
                   inputMode="decimal"
+                  disabled={!canEditPrices || busy}
                   defaultValue={item.price != null ? String(item.price) : ''}
                   onBlur={event => {
                     const next = Number(cleanDecimal(event.target.value))
@@ -1203,6 +1356,19 @@ export function MenuItemDetail({
                   }}
                 />
               </Field>
+              <label className="block space-y-2">
+                <span className="label-mono">Special pricing</span>
+                <span className="flex min-h-[46px] items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-4 text-sm font-semibold text-dash-cream">
+                  <input
+                    type="checkbox"
+                    checked={showSpecialPricing}
+                    disabled={!canEditPrices || busy || hasPriceRules}
+                    onChange={event => setSpecialPricingOpen(event.target.checked)}
+                    className="h-4 w-4 accent-dash-gold"
+                  />
+                  {hasPriceRules ? `${itemPriceRules.length} configured` : 'Add a rule'}
+                </span>
+              </label>
               <Field label="Category">
                 <SelectInput value={item.category || 'Other'} onChange={event => void patchItem(item.id, { category: event.target.value })}>
                   {categoryNames.map(name => <option key={name} value={name}>{name}</option>)}
@@ -1210,6 +1376,7 @@ export function MenuItemDetail({
                 </SelectInput>
               </Field>
             </div>
+            {specialPricingEditor}
             <div className="mt-3">
               <Field label="Description">
                 <TextAreaInput
@@ -1441,75 +1608,6 @@ export function MenuItemDetail({
               </SelectInput>
               <SmallButton variant="primary" onClick={() => void pinSpecial()} disabled={busy}>Pin special</SmallButton>
             </div>
-          </DetailCard>
-      )
-      case 'happy_hour': return (
-          <DetailCard {...controls} title="Happy hour & price rules" hint="Recurring price change for this item during a daily window. % off / $ off follow the base price; flat sets an absolute price. Leave times empty for always-on.">
-            <div className="space-y-2">
-              {itemPriceRules.map(rule => (
-                <div key={rule.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-sm">
-                  <div>
-                    <span className="rounded-full bg-emerald-200 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-900">Happy hour</span>
-                    <span className="ml-2 font-medium text-dash-cream">{rule.name}</span>
-                    <span className="ml-2 text-dash-tertiary">
-                      {priceRuleSummary(rule)} · {priceRuleScheduleSummary(rule)}
-                    </span>
-                  </div>
-                  <div className="flex gap-2">
-                    <SelectInput value={rule.suggested_tip_basis || 'after_discount'} onChange={event => void setPriceRuleTipBasis(rule, event.target.value)}>
-                      <option value="after_discount">Tips after rule</option>
-                      <option value="before_discount">Tips before rule</option>
-                    </SelectInput>
-                    <SmallButton variant={rule.is_active ? 'primary' : 'secondary'} onClick={() => void togglePriceRule(rule)}>
-                      {rule.is_active ? 'Active' : 'Paused'}
-                    </SmallButton>
-                    <SmallButton variant="danger" onClick={() => void archivePriceRule(rule)}>Archive</SmallButton>
-                  </div>
-                </div>
-              ))}
-              {itemPriceRules.length === 0 ? <p className="text-sm text-dash-tertiary">No price rules yet.</p> : null}
-            </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-[1.3fr_120px_110px_110px_110px_170px_auto]">
-              <TextInput value={priceRuleForm.name} onChange={event => setPriceRuleForm(prev => ({ ...prev, name: event.target.value }))} placeholder="Rule name (Happy hour)" />
-              <SelectInput value={priceRuleForm.adjustment_type} onChange={event => setPriceRuleForm(prev => ({ ...prev, adjustment_type: event.target.value }))}>
-                <option value="percent_off">% off</option>
-                <option value="amount_off">$ off</option>
-                <option value="fixed">Flat price</option>
-              </SelectInput>
-              <TextInput inputMode="decimal" value={priceRuleForm.adjustment_value} onChange={event => setPriceRuleForm(prev => ({ ...prev, adjustment_value: cleanDecimal(event.target.value) }))} placeholder={priceRuleForm.adjustment_type === 'percent_off' ? '20' : '2.00'} />
-              <SmartTimeInput ariaLabel="Price rule start time" value={priceRuleForm.start_time} onChange={value => setPriceRuleForm(prev => ({ ...prev, start_time: value }))} />
-              <SmartTimeInput ariaLabel="Price rule end time" value={priceRuleForm.end_time} onChange={value => setPriceRuleForm(prev => ({ ...prev, end_time: value }))} />
-              <SelectInput value={priceRuleForm.suggested_tip_basis} onChange={event => setPriceRuleForm(prev => ({ ...prev, suggested_tip_basis: event.target.value }))}>
-                <option value="after_discount">Tips after rule</option>
-                <option value="before_discount">Tips before rule</option>
-              </SelectInput>
-              <SmallButton variant="primary" onClick={() => void addPriceRule()} disabled={busy}>Add rule</SmallButton>
-            </div>
-            {(priceRuleForm.start_time || priceRuleForm.end_time) && (
-              <div className="mt-3">
-                <span className="label-mono">Days</span>
-                <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Price rule days">
-                  {DAYS_SHORT.map((day, index) => {
-                    const selected = priceRuleForm.days_of_week.includes(index)
-                    return (
-                      <SmallButton
-                        key={day}
-                        variant={selected ? 'primary' : 'secondary'}
-                        title={(selected ? 'Remove ' : 'Add ') + day}
-                        onClick={() => setPriceRuleForm(prev => ({
-                          ...prev,
-                          days_of_week: selected
-                            ? prev.days_of_week.filter(value => value !== index)
-                            : [...prev.days_of_week, index].sort((a, b) => a - b),
-                        }))}
-                      >
-                        {day}
-                      </SmallButton>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
           </DetailCard>
       )
       case 'tax_split': return (

@@ -4,6 +4,16 @@ export type PricingTiming = 'now' | 'scheduled' | 'window' | 'weekly'
 export type PricingScope = 'item' | 'category' | 'all'
 export type PricingAdjustment = 'percent_off' | 'amount_off' | 'percent_up' | 'amount_up' | 'fixed'
 
+export type ItemPriceRuleInput = {
+  name?: string | null
+  adjustment_type: 'percent_off' | 'amount_off' | 'fixed'
+  adjustment_value: number
+  start_time?: string | null
+  end_time?: string | null
+  days_of_week?: number[]
+  suggested_tip_basis?: 'before_discount' | 'after_discount'
+}
+
 export type PricingChangeInput = {
   name: string
   restaurant_ids: string[]
@@ -48,6 +58,31 @@ export const updatePricingBatch = (
   method: 'PATCH',
   body: JSON.stringify({ restaurant_ids: restaurantIds, action }),
 })
+
+export const getItemPriceRules = (restaurantId: string, itemId: string) =>
+  fetchWithSupabaseAuth<any[]>(`${base(restaurantId)}/items/${itemId}/rules`)
+
+export const createItemPriceRule = (restaurantId: string, itemId: string, body: ItemPriceRuleInput) =>
+  fetchWithSupabaseAuth<any>(`${base(restaurantId)}/items/${itemId}/rules`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+export const updateItemPriceRule = (
+  restaurantId: string,
+  itemId: string,
+  ruleId: string,
+  body: { is_active?: boolean; suggested_tip_basis?: 'before_discount' | 'after_discount' },
+) => fetchWithSupabaseAuth<any>(`${base(restaurantId)}/items/${itemId}/rules/${ruleId}`, {
+  method: 'PATCH',
+  body: JSON.stringify(body),
+})
+
+export const archiveItemPriceRule = (restaurantId: string, itemId: string, ruleId: string) =>
+  fetchWithSupabaseAuth<{ id: string; archived: boolean }>(
+    `${base(restaurantId)}/items/${itemId}/rules/${ruleId}`,
+    { method: 'DELETE' },
+  )
 
 export const getPricingSpecials = (restaurantId: string) =>
   fetchWithSupabaseAuth<any[]>(`${base(restaurantId)}/specials`)
