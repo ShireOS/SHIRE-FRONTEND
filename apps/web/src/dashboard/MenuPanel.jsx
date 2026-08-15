@@ -3270,6 +3270,17 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
 // ── Modifier list row ───────────────────────────────────────────────────────
 
+function ModifierRowField({ label, children }) {
+  return (
+    <div className="min-w-0">
+      <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.08em] text-dash-tertiary">
+        {label}
+      </span>
+      {children}
+    </div>
+  )
+}
+
 function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitchenAlias, askedByGroups = [], allGroups = [], onAddToQuestion = null, busy, onRename, onReprice, onRecategorize, onSetTaxRate, onSetReportingCategory, onSetPrint, onSetKitchenRole, onReplaceItems, onDelete }) {
   const [expanded, setExpanded] = useState(false)
   const selectedIds = useMemo(() => new Set(modifier.item_ids || []), [modifier])
@@ -3279,71 +3290,97 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitch
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
-      <div className="grid gap-3 lg:grid-cols-[1.2fr_110px_150px_150px_150px_150px_auto_auto_auto_auto_auto] lg:items-center">
-        <TextInput
-          defaultValue={modifier.name}
-          onBlur={event => {
-            const next = event.target.value.trim()
-            if (next && next !== modifier.name) onRename(next)
-          }}
-        />
-        <TextInput
-          inputMode="decimal"
-          defaultValue={modifier.price_delta != null ? String(modifier.price_delta) : '0'}
-          onBlur={event => {
-            const next = Number(cleanDecimal(event.target.value)) || 0
-            if (next !== Number(modifier.price_delta)) onReprice(next)
-          }}
-        />
-        <TextInput
-          list="menu-modifier-categories"
-          title="Category — type a new name to create one"
-          defaultValue={modifierCategoryOf(modifier)}
-          onBlur={event => {
-            const next = event.target.value.trim() || 'Add-ons'
-            if (next !== modifierCategoryOf(modifier)) onRecategorize(next)
-          }}
-        />
-        <SelectInput
-          title="Tax this modifier's charge at its own rate instead of the item's"
-          value={modifier.tax_rate_id || ''}
-          onChange={event => onSetTaxRate(event.target.value || null)}
-        >
-          <option value="">Follows item</option>
-          {taxRates.map(rate => (
-            <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
-          ))}
-        </SelectInput>
-        <SelectInput
-          title="Report this modifier's sales under its own department instead of the item's"
-          value={modifier.reporting_category_id || ''}
-          onChange={event => onSetReportingCategory(event.target.value || null)}
-        >
-          <option value="">Item's category</option>
-          {reportingCategories.map(category => (
-            <option key={category.id} value={category.id}>{category.name}</option>
-          ))}
-        </SelectInput>
-        <SelectInput
-          title="Legacy fallback used only when the group and item do not override it"
-          value={modifier.kitchen_display_role || ''}
-          onChange={event => onSetKitchenRole(event.target.value || null)}
-        >
-          <option value="">Hierarchy: inherit</option>
-          <option value="ingredient">Ingredient</option>
-          <option value="side">Side / non-ingredient</option>
-        </SelectInput>
-        <SmallButton
-          variant={neverPrints ? 'primary' : 'secondary'}
-          title={neverPrints
-            ? 'Hidden from kitchen tickets everywhere it’s used — click to print again'
-            : 'Prints on kitchen tickets — click to never print it (e.g. FOH-only notes, upsells the kitchen doesn’t need)'}
-          onClick={() => onSetPrint(neverPrints)}
-        >
-          {neverPrints ? 'Never prints' : 'Prints'}
-        </SmallButton>
-        <span className="text-sm text-dash-tertiary">{(modifier.item_ids || []).length} item{(modifier.item_ids || []).length === 1 ? '' : 's'}</span>
-        <a href="./printing-routing#receipts" className="rounded-lg border border-dash-gold/25 bg-dash-gold/10 px-2 py-2 text-center text-xs font-semibold text-dash-gold" title="Open Receipts & Tickets">Kitchen: {kitchenAlias || 'Full name'}</a>
+      <div className="grid gap-3 lg:grid-cols-[1.2fr_110px_150px_150px_150px_150px_auto_auto_auto_auto_auto] lg:items-end">
+        <ModifierRowField label="Modifier name">
+          <TextInput
+            aria-label="Modifier name"
+            defaultValue={modifier.name}
+            onBlur={event => {
+              const next = event.target.value.trim()
+              if (next && next !== modifier.name) onRename(next)
+            }}
+          />
+        </ModifierRowField>
+        <ModifierRowField label="Price adjustment">
+          <TextInput
+            aria-label="Price adjustment"
+            inputMode="decimal"
+            defaultValue={modifier.price_delta != null ? String(modifier.price_delta) : '0'}
+            onBlur={event => {
+              const next = Number(cleanDecimal(event.target.value)) || 0
+              if (next !== Number(modifier.price_delta)) onReprice(next)
+            }}
+          />
+        </ModifierRowField>
+        <ModifierRowField label="Modifier category">
+          <TextInput
+            aria-label="Modifier category"
+            list="menu-modifier-categories"
+            title="Category — type a new name to create one"
+            defaultValue={modifierCategoryOf(modifier)}
+            onBlur={event => {
+              const next = event.target.value.trim() || 'Add-ons'
+              if (next !== modifierCategoryOf(modifier)) onRecategorize(next)
+            }}
+          />
+        </ModifierRowField>
+        <ModifierRowField label="Tax rate">
+          <SelectInput
+            aria-label="Modifier tax rate"
+            title="Tax this modifier's charge at its own rate instead of the item's"
+            value={modifier.tax_rate_id || ''}
+            onChange={event => onSetTaxRate(event.target.value || null)}
+          >
+            <option value="">Follows item</option>
+            {taxRates.map(rate => (
+              <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
+            ))}
+          </SelectInput>
+        </ModifierRowField>
+        <ModifierRowField label="Sales category">
+          <SelectInput
+            aria-label="Modifier sales category"
+            title="Report this modifier's sales under its own department instead of the item's"
+            value={modifier.reporting_category_id || ''}
+            onChange={event => onSetReportingCategory(event.target.value || null)}
+          >
+            <option value="">Item's category</option>
+            {reportingCategories.map(category => (
+              <option key={category.id} value={category.id}>{category.name}</option>
+            ))}
+          </SelectInput>
+        </ModifierRowField>
+        <ModifierRowField label="Kitchen hierarchy">
+          <SelectInput
+            aria-label="Modifier kitchen hierarchy"
+            title="Legacy fallback used only when the group and item do not override it"
+            value={modifier.kitchen_display_role || ''}
+            onChange={event => onSetKitchenRole(event.target.value || null)}
+          >
+            <option value="">Hierarchy: inherit</option>
+            <option value="ingredient">Ingredient</option>
+            <option value="side">Side / non-ingredient</option>
+          </SelectInput>
+        </ModifierRowField>
+        <ModifierRowField label="Kitchen ticket">
+          <SmallButton
+            variant={neverPrints ? 'primary' : 'secondary'}
+            title={neverPrints
+              ? 'Hidden from kitchen tickets everywhere it’s used — click to print again'
+              : 'Prints on kitchen tickets — click to never print it (e.g. FOH-only notes, upsells the kitchen doesn’t need)'}
+            onClick={() => onSetPrint(neverPrints)}
+          >
+            {neverPrints ? 'Never prints' : 'Prints'}
+          </SmallButton>
+        </ModifierRowField>
+        <ModifierRowField label="Applied items">
+          <span className="flex min-h-10 items-center rounded-xl border border-white/10 bg-white/[0.025] px-3 text-sm text-dash-tertiary">
+            {(modifier.item_ids || []).length} item{(modifier.item_ids || []).length === 1 ? '' : 's'}
+          </span>
+        </ModifierRowField>
+        <ModifierRowField label="Ticket name">
+          <a href="./printing-routing#receipts" className="flex min-h-10 items-center justify-center rounded-lg border border-dash-gold/25 bg-dash-gold/10 px-2 py-2 text-center text-xs font-semibold text-dash-gold" title="Open Receipts & Tickets">{kitchenAlias || 'Full name'}</a>
+        </ModifierRowField>
         <SmallButton onClick={() => setExpanded(current => !current)}>{expanded ? 'Close' : 'Items'}</SmallButton>
         <SmallButton variant="danger" onClick={onDelete} disabled={busy}>Remove</SmallButton>
       </div>
