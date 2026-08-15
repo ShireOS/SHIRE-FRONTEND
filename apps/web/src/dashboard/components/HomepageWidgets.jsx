@@ -39,6 +39,7 @@ import {
   WHOLE_RESTAURANT_SCOPE,
 } from './homepageWidgetMath'
 import {
+  homepageWidgetChartCopy,
   widgetPurposeMeasure,
   widgetSupportingMeasures,
   withWidgetPurposeColumn,
@@ -382,7 +383,7 @@ function MiniBarList({ rows, measure, limit = 5 }) {
   return <div className="mt-4 space-y-2">{visible.map((row, index) => <div key={`${row.breakdown || row.period || index}-${index}`}><div className="mb-1 flex items-center justify-between gap-3 text-[11px]"><span className="truncate text-dash-secondary">{row.breakdown || row.period || `Row ${index + 1}`}</span><span className="shrink-0 font-mono text-dash-cream">{formatValue(row[measure.id], measure.kind)}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/5"><div className="h-full rounded-full bg-shell-accent" style={{ width: `${Math.max(2, Math.abs(Number(row[measure.id] || 0)) / max * 100)}%` }} /></div></div>)}</div>
 }
 
-function DetailChart({ data, widget, height = 260 }) {
+function DetailChart({ data, widget, height = 260, ariaLabel }) {
   let rows = data?.rows || []
   const measure = primaryMeasure(data, widget)
   if (!rows.length || !measure) return null
@@ -402,7 +403,7 @@ function DetailChart({ data, widget, height = 260 }) {
   if (!dataKey) return null
   const tick = measure.kind === 'money' ? (value) => `$${Math.round(Number(value) / 1000)}k` : number
   const tooltip = (value) => formatValue(value, measure.kind)
-  return <div className="h-[260px] min-w-0 rounded-md border border-dash-border p-3" style={{ height }}><ResponsiveContainer width="100%" height="100%">{hasPeriod ? <LineChart data={rows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey={dataKey} tickFormatter={(value) => String(value).slice(5, 10)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis tickFormatter={tick} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={tooltip} /><Line type="monotone" dataKey={measure.id} stroke="#4f7ee8" strokeWidth={2.5} dot={{ r: 2 }} connectNulls /></LineChart> : <BarChart data={rows.slice(0, 12)}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey={dataKey} tick={{ fill: '#a8a29e', fontSize: 10 }} interval={0} angle={-18} textAnchor="end" height={60} /><YAxis tickFormatter={tick} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={tooltip} /><Bar dataKey={measure.id} fill="#4f7ee8" radius={[3, 3, 0, 0]} /></BarChart>}</ResponsiveContainer></div>
+  return <div aria-label={ariaLabel} className="h-[260px] min-w-0 rounded-md border border-dash-border p-3" style={{ height }}><ResponsiveContainer width="100%" height="100%">{hasPeriod ? <LineChart data={rows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey={dataKey} tickFormatter={(value) => String(value).slice(5, 10)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis tickFormatter={tick} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={tooltip} /><Line name={measure.label} type="monotone" dataKey={measure.id} stroke="#4f7ee8" strokeWidth={2.5} dot={{ r: 2 }} connectNulls /></LineChart> : <BarChart data={rows.slice(0, 12)}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey={dataKey} tick={{ fill: '#a8a29e', fontSize: 10 }} interval={0} angle={-18} textAnchor="end" height={60} /><YAxis tickFormatter={tick} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={tooltip} /><Bar name={measure.label} dataKey={measure.id} fill="#4f7ee8" radius={[3, 3, 0, 0]} /></BarChart>}</ResponsiveContainer></div>
 }
 
 function KpiWidget({ widget, data, onOpenDetails, onSettings }) {
@@ -542,7 +543,7 @@ function TableWidget({ widget, data, onSettings, onOpenDetails }) {
   return <section onClick={onOpenDetails} className="glass-card cursor-pointer overflow-hidden rounded-lg transition hover:border-shell-accent/40 xl:col-span-2"><div className="p-5 pb-1"><WidgetHeader widget={widget} onSettings={onSettings} /></div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-y border-dash-border">{columns.map((column) => <th key={column.id} className="label-mono px-4 py-3 !text-[10px] capitalize">{column.label}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={`${row.period || ''}-${row.breakdown || ''}-${index}`} className="border-b border-dash-border last:border-0">{columns.map((column) => <td key={column.id} className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row[column.id], column.kind)}</td>)}</tr>)}{!data?.rows?.length && <tr><td colSpan={Math.max(1, columns.length)} className="px-4 py-8 text-center text-dash-tertiary">No data for this range.</td></tr>}</tbody></table></div><div className="px-5 pb-4"><MiniBarList rows={data?.rows || []} measure={measure} /></div>{(data?.rows || []).length > rows.length && <div className="border-t border-dash-border px-5 py-3"><p className="text-xs font-semibold text-shell-accent">View all details</p></div>}</section>
 }
 
-function DrilldownResult({ query, data, widget, loadingLabel, emptyLabel }) {
+function DrilldownResult({ query, data, widget, loadingLabel, emptyLabel, chartLabel }) {
   if (query.isFetching) {
     return <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">{loadingLabel}</p>
   }
@@ -554,7 +555,7 @@ function DrilldownResult({ query, data, widget, loadingLabel, emptyLabel }) {
       </div>
     )
   }
-  if (data?.rows?.length) return <DetailChart data={data} widget={widget} />
+  if (data?.rows?.length) return <DetailChart data={data} widget={widget} ariaLabel={chartLabel} />
   return <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">{emptyLabel}</p>
 }
 
@@ -600,6 +601,7 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
   const detailData = detailQuery.data
   const tableData = detailData?.rows?.length ? detailData : breakdownData?.rows?.length ? breakdownData : data
   const table = tableColumns(tableData, widget)
+  const chartCopy = homepageWidgetChartCopy(widget, trendData || data, breakdownData?.breakdown || breakdown)
   if (widget.id === 'discount_review') {
     const summary = data?.summary || {}
     const employees = data?.employees || []
@@ -613,8 +615,8 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
             {[['Total impact', summary.total_amount, 'money'], ['Actions', summary.action_count, 'number'], ['Average action', summary.average_action_amount, 'money'], ['Flagged employees', summary.flagged_employees, 'number'], ['Unattributed actions', summary.unattributed_actions, 'number']].map(([label, value, kind]) => <div key={label} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(value, kind)}</p></div>)}
           </div>
           <div className="grid gap-5 lg:grid-cols-2">
-            <section><p className="label-mono mb-3">Employee impact</p><DetailChart data={{ rows: employees.slice(0, 12).map((row) => ({ ...row, breakdown: row.employee_name || row.employee || 'Unknown' })), measure_columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }], dimension_columns: ['breakdown'], breakdown: 'employee' }} widget={{ ...widget, columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }] }} /></section>
-            <section><p className="label-mono mb-3">Reason codes</p><DetailChart data={{ rows: reasons.slice(0, 12).map((row) => ({ ...row, breakdown: row.reason_label || row.reason_code })), measure_columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }], dimension_columns: ['breakdown'], breakdown: 'reason' }} widget={{ ...widget, columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }] }} /></section>
+            <section><p className="label-mono mb-3">Discount and void impact by employee</p><DetailChart ariaLabel="Discount and void impact by employee" data={{ rows: employees.slice(0, 12).map((row) => ({ ...row, breakdown: row.employee_name || row.employee || 'Unknown' })), measure_columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }], dimension_columns: ['breakdown'], breakdown: 'employee' }} widget={{ ...widget, columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }] }} /></section>
+            <section><p className="label-mono mb-3">Discount and void impact by reason code</p><DetailChart ariaLabel="Discount and void impact by reason code" data={{ rows: reasons.slice(0, 12).map((row) => ({ ...row, breakdown: row.reason_label || row.reason_code })), measure_columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }], dimension_columns: ['breakdown'], breakdown: 'reason' }} widget={{ ...widget, columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }] }} /></section>
           </div>
           <div className="overflow-x-auto rounded-md border border-dash-border">
             <table className="w-full min-w-[860px] text-left text-sm">
@@ -649,9 +651,9 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
         {widget.scopeLabel && <p className="inline-flex items-center gap-2 rounded-md border border-shell-accent/30 bg-shell-accent/10 px-3 py-2 text-xs font-semibold text-shell-accent"><Layers3 size={14} />{widget.scopeLabel}</p>}
         {groups.map(([title, ids]) => <section key={title}><p className="label-mono mb-3">{title}</p><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{ids.map(metric).filter(Boolean).map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(summaryRow[item.id], item.kind)}</p></div>)}</div></section>)}
         <div className="grid gap-5 xl:grid-cols-3">
-          <section><p className="label-mono mb-3">Net sales trend</p><DrilldownResult query={trendQuery} data={trendData} widget={netSalesWidget} loadingLabel="Loading trend..." emptyLabel="No trend available." /></section>
-          <section><p className="label-mono mb-3 capitalize">Net sales by {defaultBreakdown.replaceAll('_', ' ')}</p><DrilldownResult query={breakdownQuery} data={breakdownData} widget={netSalesWidget} loadingLabel="Loading breakdown..." emptyLabel="No breakdown available." /></section>
-          <section><p className="label-mono mb-3">Tender mix</p><DetailChart data={tenderData} widget={{ ...widget, columns: tenderData.measure_columns }} /></section>
+          <section><p className="label-mono mb-3">Sales: net sales by business day</p><DrilldownResult chartLabel="Sales: net sales by business day" query={trendQuery} data={trendData} widget={netSalesWidget} loadingLabel="Loading daily net sales..." emptyLabel="No daily net sales available." /></section>
+          <section><p className="label-mono mb-3 capitalize">Sales: net sales by {defaultBreakdown.replaceAll('_', ' ')}</p><DrilldownResult chartLabel={`Sales: net sales by ${defaultBreakdown.replaceAll('_', ' ')}`} query={breakdownQuery} data={breakdownData} widget={netSalesWidget} loadingLabel={`Loading net sales by ${defaultBreakdown.replaceAll('_', ' ')}...`} emptyLabel={`No net sales by ${defaultBreakdown.replaceAll('_', ' ')} available.`} /></section>
+          <section><p className="label-mono mb-3">Sales: collected tenders by payment method</p><DetailChart ariaLabel="Sales: collected tenders by payment method" data={tenderData} widget={{ ...widget, columns: tenderData.measure_columns }} /></section>
         </div>
         <section><p className="label-mono mb-3">Order activity</p><div className="max-h-[480px] overflow-auto rounded-md border border-dash-border"><table className="w-full min-w-[1500px] text-left text-sm"><thead className="sticky top-0 bg-dash-elevated"><tr className="border-b border-dash-border">{table.map((column) => <th key={column.id} className="label-mono px-4 py-3 !text-[10px] capitalize">{column.label}</th>)}</tr></thead><tbody>{(tableData?.rows || []).map((row, index) => <tr key={`${row.period || ''}-${row.order_number || ''}-${index}`} className="border-b border-dash-border last:border-0">{table.map((column) => <td key={column.id} className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row[column.id], column.kind)}</td>)}</tr>)}{!(tableData?.rows || []).length && <tr><td colSpan={Math.max(1, table.length)} className="px-4 py-10 text-center text-dash-tertiary">No sales or voided checks for this range.</td></tr>}</tbody></table></div></section>
       </div>
@@ -664,9 +666,9 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {measures.map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(summaryRow[item.id], item.kind)}</p></div>)}
         </div>
-        <div className="grid gap-5 lg:grid-cols-2">
-          <section><p className="label-mono mb-3">Trend</p><DrilldownResult query={trendQuery} data={trendData} widget={widget} loadingLabel="Loading trend..." emptyLabel="No trend available for this widget." /></section>
-          <section><p className="label-mono mb-3">Breakdown</p><DrilldownResult query={breakdownQuery} data={breakdownData} widget={widget} loadingLabel="Loading breakdown..." emptyLabel="No breakdown available for this widget." /></section>
+        <div className={`grid gap-5 ${canTrend ? 'lg:grid-cols-2' : ''}`}>
+          {canTrend && <section><p className="label-mono">{chartCopy.trend.title}</p><p className="mb-3 mt-1 text-xs text-dash-tertiary">{chartCopy.trend.description}</p><DrilldownResult chartLabel={chartCopy.trend.title} query={trendQuery} data={trendData} widget={widget} loadingLabel={`Loading ${chartCopy.trend.title.toLowerCase()}...`} emptyLabel={`No ${chartCopy.trend.title.toLowerCase()} available.`} /></section>}
+          <section><p className="label-mono">{chartCopy.breakdown.title}</p><p className="mb-3 mt-1 text-xs text-dash-tertiary">{chartCopy.breakdown.description}</p><DrilldownResult chartLabel={chartCopy.breakdown.title} query={breakdownQuery} data={breakdownData} widget={widget} loadingLabel={`Loading ${chartCopy.breakdown.title.toLowerCase()}...`} emptyLabel={`No ${chartCopy.breakdown.title.toLowerCase()} available.`} /></section>
         </div>
         <div className="overflow-x-auto rounded-md border border-dash-border">
           <table className="w-full min-w-[760px] text-left text-sm">
