@@ -375,8 +375,24 @@ const ANALYTICS_PERIODS = [
   { id: 'week', label: 'Week' },
   { id: 'month', label: 'Month' },
   { id: 'year', label: 'Year' },
-  { id: 'full', label: 'Full' },
+  { id: 'full', label: 'All' },
 ]
+
+function analyticsDateKey(value) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+}
+
+// Mirrors the backend homepage window semantics (period_window): week starts
+// Monday, month on the 1st, year on Jan 1, full since 2000 — through today.
+function analyticsPeriodRange(preset) {
+  const end = new Date()
+  const start = new Date(end)
+  if (preset === 'week') start.setDate(end.getDate() - ((end.getDay() + 6) % 7))
+  else if (preset === 'month') start.setDate(1)
+  else if (preset === 'year') { start.setMonth(0); start.setDate(1) }
+  else if (preset === 'full') start.setFullYear(2000, 0, 1)
+  return { start: analyticsDateKey(start), end: analyticsDateKey(end) }
+}
 
 const formatCurrency = (value) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -465,10 +481,23 @@ function MiniTable({ columns, rows }) {
 }
 
 function AnalyticsDashboard({ restaurant }) {
-  const [period, setPeriod] = useState('week')
+  const [periodPreset, setPeriodPreset] = useState('week')
+  const [dates, setDates] = useState(() => analyticsPeriodRange('week'))
   const [reportingScope, setReportingScope] = useState(() => ({ ...WHOLE_RESTAURANT_SCOPE }))
   const [viewHydrated, setViewHydrated] = useState(false)
   const [viewPersistenceReady, setViewPersistenceReady] = useState(false)
+  const selectPeriod = (preset) => {
+    setPeriodPreset(preset)
+    setDates(analyticsPeriodRange(preset))
+  }
+  const setCustomDate = (field, value) => {
+    if (!value) return
+    const range = { start: dates.start, end: dates.end, [field]: value }
+    if (field === 'start' && value > range.end) range.end = value
+    if (field === 'end' && value < range.start) range.start = value
+    setPeriodPreset('custom')
+    setDates(range)
+  }
   useEffect(() => {
     if (!restaurant?.id) return
     let cancelled = false
@@ -478,8 +507,17 @@ function AnalyticsDashboard({ restaurant }) {
     fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/reports/view-preferences`)
       .then((payload) => {
         if (!cancelled) {
-          setPeriod(payload.settings?.homepage?.period || 'week')
-          setReportingScope(normalizeReportingScope(payload.settings?.homepage))
+          const saved = payload.settings?.homepage
+          const preset = saved?.period || 'week'
+          if (preset === 'custom' && saved?.custom_start_date && saved?.custom_end_date) {
+            setPeriodPreset('custom')
+            setDates({ start: saved.custom_start_date, end: saved.custom_end_date })
+          } else {
+            const resolved = preset === 'custom' ? 'week' : preset
+            setPeriodPreset(resolved)
+            setDates(analyticsPeriodRange(resolved))
+          }
+          setReportingScope(normalizeReportingScope(saved))
           setViewPersistenceReady(true)
         }
       })
@@ -491,11 +529,18 @@ function AnalyticsDashboard({ restaurant }) {
     if (!restaurant?.id || !viewHydrated || !viewPersistenceReady) return
     const timeout = window.setTimeout(() => {
       fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/reports/view-preferences/homepage`, {
-        method: 'PUT', body: JSON.stringify({ settings: { period, anchor_date: null, ...reportingScope } }),
+        method: 'PUT',
+        body: JSON.stringify({ settings: {
+          period: periodPreset,
+          anchor_date: null,
+          custom_start_date: periodPreset === 'custom' ? dates.start : null,
+          custom_end_date: periodPreset === 'custom' ? dates.end : null,
+          ...reportingScope,
+        } }),
       }).catch(() => undefined)
     }, 450)
     return () => window.clearTimeout(timeout)
-  }, [restaurant?.id, viewHydrated, viewPersistenceReady, period, reportingScope])
+  }, [restaurant?.id, viewHydrated, viewPersistenceReady, periodPreset, dates, reportingScope])
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-5 border-b border-white/10 pb-5 lg:flex-row lg:items-end lg:justify-between">
@@ -504,13 +549,25 @@ function AnalyticsDashboard({ restaurant }) {
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">{restaurant?.name || 'Restaurant'}</h1>
           <p className="mt-2 text-sm text-dash-secondary">Live restaurant performance and operational reporting.</p>
         </div>
-        <nav className="grid grid-cols-5 rounded-xl border border-white/10 p-1">
-          {ANALYTICS_PERIODS.map((item) => (
-            <button key={item.id} type="button" onClick={() => setPeriod(item.id)} className={`rounded-lg px-3 py-2 text-sm font-semibold ${period === item.id ? 'bg-dash-gold text-black' : 'text-dash-secondary hover:text-dash-cream'}`}>{item.label}</button>
-          ))}
-        </nav>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <nav className="grid grid-cols-5 self-start rounded-xl border border-white/10 p-1 sm:self-auto">
+            {ANALYTICS_PERIODS.map((item) => (
+              <button key={item.id} type="button" onClick={() => selectPeriod(item.id)} className={`rounded-lg px-3 py-2 text-sm font-semibold ${periodPreset === item.id ? 'bg-dash-gold text-black' : 'text-dash-secondary hover:text-dash-cream'}`}>{item.label}</button>
+            ))}
+          </nav>
+          <div className="flex items-end gap-2">
+            <label className="block text-sm text-dash-secondary">
+              <span className="mb-1 block text-xs font-semibold uppercase text-dash-tertiary">From</span>
+              <input type="date" value={dates.start} max={dates.end} onChange={(event) => setCustomDate('start', event.target.value)} className="h-10 rounded-md border border-white/10 bg-white/[0.04] px-3 text-sm [color-scheme:dark]" />
+            </label>
+            <label className="block text-sm text-dash-secondary">
+              <span className="mb-1 block text-xs font-semibold uppercase text-dash-tertiary">Through</span>
+              <input type="date" value={dates.end} min={dates.start} onChange={(event) => setCustomDate('end', event.target.value)} className="h-10 rounded-md border border-white/10 bg-white/[0.04] px-3 text-sm [color-scheme:dark]" />
+            </label>
+          </div>
+        </div>
       </header>
-      {viewHydrated && <HomepageWidgets scope="restaurant" restaurantId={restaurant?.id} period={period} dashboardScope={reportingScope} onDashboardScopeChange={setReportingScope} />}
+      {viewHydrated && <HomepageWidgets scope="restaurant" restaurantId={restaurant?.id} period={periodPreset} dateRange={dates} dashboardScope={reportingScope} onDashboardScopeChange={setReportingScope} />}
       {viewHydrated && <CheckLedgerSection restaurantId={restaurant?.id} />}
     </div>
   )

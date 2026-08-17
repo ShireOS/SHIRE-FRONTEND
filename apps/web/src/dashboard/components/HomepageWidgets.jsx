@@ -209,8 +209,8 @@ function DashboardScopeModal({ dimensions, value, onClose, onSave }) {
   </Modal>
 }
 
-function WidgetSettingsModal({ widget, widgetData, dimensions, settings, dashboardScope, pdfSettings, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave, onSavePdf }) {
-  const dates = periodDates(period, anchorDate)
+function WidgetSettingsModal({ widget, widgetData, dimensions, settings, dashboardScope, pdfSettings, period, anchorDate, dateRange, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave, onSavePdf }) {
+  const dates = dateRange?.start && dateRange?.end ? dateRange : periodDates(period, anchorDate)
   const [tab, setTab] = useState('display')
   const explicitWidgetScope = settings.scope_source === 'widget'
   const effectiveDisplayScope = explicitWidgetScope ? normalizeReportingScope(settings) : normalizeReportingScope(dashboardScope)
@@ -559,8 +559,8 @@ function DrilldownResult({ query, data, widget, loadingLabel, emptyLabel, chartL
   return <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">{emptyLabel}</p>
 }
 
-function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, settings, onClose }) {
-  const dates = periodDates(period, anchorDate)
+function WidgetDetailModal({ widget, data, period, anchorDate, dateRange, scope, restaurantId, groupIds, includeUngrouped, settings, onClose }) {
+  const dates = dateRange?.start && dateRange?.end ? dateRange : periodDates(period, anchorDate)
   const measures = widget.id === 'sales_summary' ? widget.columns || [] : measureColumns(data, widget)
   const rows = data?.rows || []
   const summaryRow = data?.summary || (widget.id === 'sales_summary' ? aggregateSalesRows(rows) : aggregateWidgetRows(rows))
@@ -581,18 +581,18 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
   const trendBreakdown = (widget.breakdowns || []).includes('none') ? 'none' : defaultBreakdown
   const canTrend = (widget.grains || []).includes('day') && widget.id !== 'discount_review'
   const trendQuery = useQuery({
-    queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'trend', period, anchorDate, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
+    queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'trend', period, anchorDate, dates.start, dates.end, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
     queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'day', breakdown: trendBreakdown }), timeoutMs: DEFAULT_API_TIMEOUT_MS }),
     enabled: canTrend,
   })
   const breakdown = defaultBreakdown
   const breakdownQuery = useQuery({
-    queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'breakdown', period, anchorDate, breakdown, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
+    queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'breakdown', period, anchorDate, dates.start, dates.end, breakdown, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
     queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'total', breakdown }), timeoutMs: DEFAULT_API_TIMEOUT_MS }),
     enabled: widget.id !== 'discount_review',
   })
   const detailQuery = useQuery({
-    queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'detail', period, anchorDate, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
+    queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'detail', period, anchorDate, dates.start, dates.end, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
     queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'detail', breakdown }), timeoutMs: DEFAULT_API_TIMEOUT_MS }),
     enabled: (widget.grains || []).includes('detail') && widget.id !== 'discount_review',
   })
@@ -708,7 +708,7 @@ function DiscountReviewWidget({ widget, data, onSettings, onOpenDetails }) {
   </section>
 }
 
-export default function HomepageWidgets({ scope, restaurantId, period, anchorDate, dashboardScope = WHOLE_RESTAURANT_SCOPE, onDashboardScopeChange = null, groupIds = null, includeUngrouped = false, onScopeLoaded = null }) {
+export default function HomepageWidgets({ scope, restaurantId, period, anchorDate, dateRange = null, dashboardScope = WHOLE_RESTAURANT_SCOPE, onDashboardScopeChange = null, groupIds = null, includeUngrouped = false, onScopeLoaded = null }) {
   const queryClient = useQueryClient()
   const [configureOpen, setConfigureOpen] = useState(false)
   const [scopeOpen, setScopeOpen] = useState(false)
@@ -742,8 +742,8 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
     ? { ...(groupIds?.length ? { group_ids: groupIds } : {}), include_ungrouped: includeUngrouped }
     : {}
   const dataQuery = useQuery({
-    queryKey: ['homepage-data', scope, restaurantId, period, anchorDate, (groupIds || []).join(','), includeUngrouped, orderedVisible.join(','), JSON.stringify(effectiveSettings)],
-    queryFn: () => fetchWithSupabaseAuth(dataPath, { method: 'POST', body: JSON.stringify({ period, anchor_date: anchorDate || null, widget_ids: orderedVisible, widget_settings: effectiveSettings, ...portfolioScope }), timeoutMs: DEFAULT_API_TIMEOUT_MS }),
+    queryKey: ['homepage-data', scope, restaurantId, period, anchorDate, dateRange?.start, dateRange?.end, (groupIds || []).join(','), includeUngrouped, orderedVisible.join(','), JSON.stringify(effectiveSettings)],
+    queryFn: () => fetchWithSupabaseAuth(dataPath, { method: 'POST', body: JSON.stringify({ period, anchor_date: anchorDate || null, ...(dateRange?.start && dateRange?.end ? { start_date: dateRange.start, end_date: dateRange.end } : {}), widget_ids: orderedVisible, widget_settings: effectiveSettings, ...portfolioScope }), timeoutMs: DEFAULT_API_TIMEOUT_MS }),
     enabled: orderedVisible.length > 0,
   })
   useEffect(() => {
@@ -800,7 +800,7 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
     {!orderedVisible.length && <div className="rounded-md border border-dash-border p-8 text-center"><FileText className="mx-auto text-dash-tertiary" /><p className="mt-3 text-sm text-dash-secondary">Choose widgets to build this homepage.</p></div>}
     {scopeOpen && <DashboardScopeModal dimensions={dimensionQuery.data} value={resolvedDashboardScope} onClose={() => setScopeOpen(false)} onSave={(next) => { onDashboardScopeChange?.(next); setScopeOpen(false) }} />}
     {configureOpen && <ConfigureModal catalog={preference.catalog || []} visible={preference.visible_widgets || []} order={preference.widget_order || []} saving={saving} onClose={() => setConfigureOpen(false)} onSave={(visible, order) => savePreference({ visible_widgets: visible, widget_order: order, widget_settings: preference.widget_settings || {} })} />}
-    {selectedWidget && <WidgetSettingsModal widget={selectedWidget} widgetData={dataQuery.data?.widgets?.[settingsId]} dimensions={dimensionQuery.data} settings={preference.widget_settings?.[settingsId] || {}} dashboardScope={resolvedDashboardScope} pdfSettings={preference.widget_pdf_settings?.[settingsId] || {}} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={saveSettings} onSavePdf={(settings) => saveWidgetPreference('pdf', settings)} />}
-    {detailId && <WidgetDetailModal widget={{ ...detailWidget, scopeLabel: widgetScopeLabel(detailWidget, dataQuery.data?.widgets?.[detailId], dimensionQuery.data, resolvedDashboardScope) }} data={dataQuery.data?.widgets?.[detailId]} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} settings={effectiveSettings[detailId] || {}} onClose={() => setDetailId(null)} />}
+    {selectedWidget && <WidgetSettingsModal widget={selectedWidget} widgetData={dataQuery.data?.widgets?.[settingsId]} dimensions={dimensionQuery.data} settings={preference.widget_settings?.[settingsId] || {}} dashboardScope={resolvedDashboardScope} pdfSettings={preference.widget_pdf_settings?.[settingsId] || {}} period={period} anchorDate={anchorDate} dateRange={dateRange} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={saveSettings} onSavePdf={(settings) => saveWidgetPreference('pdf', settings)} />}
+    {detailId && <WidgetDetailModal widget={{ ...detailWidget, scopeLabel: widgetScopeLabel(detailWidget, dataQuery.data?.widgets?.[detailId], dimensionQuery.data, resolvedDashboardScope) }} data={dataQuery.data?.widgets?.[detailId]} period={period} anchorDate={anchorDate} dateRange={dateRange} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} settings={effectiveSettings[detailId] || {}} onClose={() => setDetailId(null)} />}
   </div>
 }
