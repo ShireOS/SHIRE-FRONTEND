@@ -22,6 +22,10 @@
   the built-in roles.
 - **POS-side auth:** PIN identify → staff token (`get_current_waiter` →
   `WaiterContext` in Shire_POS_backend). Manager-gated routes check `is_manager(ctx)`.
+  Per-check gratuity overrides use the distinct `can_adjust_gratuity` role
+  permission; they never reuse voluntary-tip permission `can_adjust_tips`.
+  Add/change/remove mutations require an unpaid editable check and write the
+  durable manager-action audit with actor, reason, and before/after amounts.
   Day-close permissions are separate: `can_close_day` closes the current day,
   while `can_reopen_business_day` authorizes the audited reopen workflow and
   defaults to owner-only until explicitly granted to another role.

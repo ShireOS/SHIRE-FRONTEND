@@ -157,6 +157,7 @@ export const MANAGER_PERMISSION_OPTIONS = [
   { key: 'can_no_sale', label: 'No-sale' },
   { key: 'can_paid_in_out', label: 'Paid in/out' },
   { key: 'can_adjust_tips', label: 'Tip edits' },
+  { key: 'can_adjust_gratuity', label: 'Adjust gratuity' },
   { key: 'can_edit_menu', label: 'Menu edits' },
   { key: 'can_edit_employees', label: 'Employee edits' },
   { key: 'can_edit_schedules', label: 'Schedule edits' },

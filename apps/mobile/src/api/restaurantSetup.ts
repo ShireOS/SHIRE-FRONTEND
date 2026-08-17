@@ -184,6 +184,7 @@ export type RolePermission = {
   can_no_sale: boolean;
   can_paid_in_out: boolean;
   can_adjust_tips: boolean;
+  can_adjust_gratuity: boolean;
   can_edit_menu: boolean;
   can_edit_employees: boolean;
   can_edit_schedules: boolean;
