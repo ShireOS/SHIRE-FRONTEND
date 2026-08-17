@@ -3290,10 +3290,11 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitch
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
-      <div className="grid gap-3 lg:grid-cols-[1.2fr_110px_150px_150px_150px_150px_auto_auto_auto_auto_auto] lg:items-end">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 2xl:items-end">
         <ModifierRowField label="Modifier name">
           <TextInput
             aria-label="Modifier name"
+            className="min-w-0"
             defaultValue={modifier.name}
             onBlur={event => {
               const next = event.target.value.trim()
@@ -3304,6 +3305,7 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitch
         <ModifierRowField label="Price adjustment">
           <TextInput
             aria-label="Price adjustment"
+            className="min-w-0"
             inputMode="decimal"
             defaultValue={modifier.price_delta != null ? String(modifier.price_delta) : '0'}
             onBlur={event => {
@@ -3315,6 +3317,7 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitch
         <ModifierRowField label="Modifier category">
           <TextInput
             aria-label="Modifier category"
+            className="min-w-0"
             list="menu-modifier-categories"
             title="Category — type a new name to create one"
             defaultValue={modifierCategoryOf(modifier)}
@@ -3327,6 +3330,7 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitch
         <ModifierRowField label="Tax rate">
           <SelectInput
             aria-label="Modifier tax rate"
+            className="min-w-0"
             title="Tax this modifier's charge at its own rate instead of the item's"
             value={modifier.tax_rate_id || ''}
             onChange={event => onSetTaxRate(event.target.value || null)}
@@ -3340,6 +3344,7 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitch
         <ModifierRowField label="Sales category">
           <SelectInput
             aria-label="Modifier sales category"
+            className="min-w-0"
             title="Report this modifier's sales under its own department instead of the item's"
             value={modifier.reporting_category_id || ''}
             onChange={event => onSetReportingCategory(event.target.value || null)}
@@ -3353,6 +3358,7 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitch
         <ModifierRowField label="Kitchen hierarchy">
           <SelectInput
             aria-label="Modifier kitchen hierarchy"
+            className="min-w-0"
             title="Legacy fallback used only when the group and item do not override it"
             value={modifier.kitchen_display_role || ''}
             onChange={event => onSetKitchenRole(event.target.value || null)}
@@ -3381,8 +3387,12 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitch
         <ModifierRowField label="Ticket name">
           <a href="./printing-routing#receipts" className="flex min-h-10 items-center justify-center rounded-lg border border-dash-gold/25 bg-dash-gold/10 px-2 py-2 text-center text-xs font-semibold text-dash-gold" title="Open Receipts & Tickets">{kitchenAlias || 'Full name'}</a>
         </ModifierRowField>
-        <SmallButton onClick={() => setExpanded(current => !current)}>{expanded ? 'Close' : 'Items'}</SmallButton>
-        <SmallButton variant="danger" onClick={onDelete} disabled={busy}>Remove</SmallButton>
+        <ModifierRowField label="Actions">
+          <div className="flex flex-wrap gap-2">
+            <SmallButton onClick={() => setExpanded(current => !current)}>{expanded ? 'Close' : 'Items'}</SmallButton>
+            <SmallButton variant="danger" onClick={onDelete} disabled={busy}>Remove</SmallButton>
+          </div>
+        </ModifierRowField>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
         {askedByGroups.length > 0 ? (

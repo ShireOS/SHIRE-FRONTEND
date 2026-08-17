@@ -34,3 +34,8 @@ test('editable modifier values have explicit accessible names', () => {
     assert.match(source, new RegExp(`aria-label="${label}"`))
   }
 })
+
+test('modifier rows use responsive tracks instead of one collapsible eleven-column row', () => {
+  assert.match(source, /sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6/)
+  assert.doesNotMatch(source, /lg:grid-cols-\[1\.2fr_110px/)
+})
