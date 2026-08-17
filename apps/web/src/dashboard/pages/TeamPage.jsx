@@ -598,6 +598,7 @@ export default function TeamPage({ restaurantId }) {
   const [boInvites, setBoInvites] = useState([])
   const [boLoading, setBoLoading] = useState(true)
   const [boUnavailable, setBoUnavailable] = useState(false)
+  const [boBootstrapped, setBoBootstrapped] = useState(null)
   const [inviteState, setInviteState] = useState(null) // { waiterId: string|null } | null
   const [editingMember, setEditingMember] = useState(null)
 
@@ -608,24 +609,44 @@ export default function TeamPage({ restaurantId }) {
     if (!restaurantId) return
     let cancelled = false
     setLoading(true)
-    Promise.all([
-      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=true`),
-      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`)
-        .then((rows) => ({ rows, failed: false }))
-        .catch(() => ({ rows: [], failed: true })),
-      fetchRolePermissions(restaurantId).catch(() => []),
-      fetchCashDrawerPolicy(restaurantId).catch(() => null),
-    ])
-      .then(([waiterRows, jobCodeResult, roleRows, drawerPolicy]) => {
+    setError(null)
+    setBoLoading(true)
+    setBoBootstrapped(null)
+    backOfficeApi.teamWorkspace(restaurantId)
+      .then((workspace) => {
         if (cancelled) return
-        setWaiters(Array.isArray(waiterRows) ? waiterRows : [])
-        setJobCodes(normalizeJobCodes(jobCodeResult.rows))
-        setRoleLoadError(jobCodeResult.failed)
-        setRolePerms(Array.isArray(roleRows) ? roleRows : [])
-        setCashDrawerPolicy(drawerPolicy)
+        setWaiters(Array.isArray(workspace?.waiters) ? workspace.waiters : [])
+        setJobCodes(normalizeJobCodes(workspace?.job_codes))
+        setRoleLoadError(false)
+        setRolePerms(Array.isArray(workspace?.role_permissions) ? workspace.role_permissions : [])
+        setCashDrawerPolicy(workspace?.cash_drawer_policy || null)
+        setBoMembers(Array.isArray(workspace?.members) ? workspace.members : [])
+        setBoInvites(Array.isArray(workspace?.invitations) ? workspace.invitations : [])
+        setBoUnavailable(false)
+        setBoLoading(false)
+        setBoBootstrapped(true)
       })
-      .catch((loadError) => {
-        if (!cancelled) setError(loadError?.message || 'Could not load team data.')
+      .catch(async () => {
+        try {
+          const [waiterRows, jobCodeResult, roleRows, drawerPolicy] = await Promise.all([
+            fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=true`),
+            fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`)
+              .then((rows) => ({ rows, failed: false }))
+              .catch(() => ({ rows: [], failed: true })),
+            fetchRolePermissions(restaurantId).catch(() => []),
+            fetchCashDrawerPolicy(restaurantId).catch(() => null),
+          ])
+          if (cancelled) return
+          setWaiters(Array.isArray(waiterRows) ? waiterRows : [])
+          setJobCodes(normalizeJobCodes(jobCodeResult.rows))
+          setRoleLoadError(jobCodeResult.failed)
+          setRolePerms(Array.isArray(roleRows) ? roleRows : [])
+          setCashDrawerPolicy(drawerPolicy)
+        } catch (loadError) {
+          if (!cancelled) setError(loadError?.message || 'Could not load team data.')
+        } finally {
+          if (!cancelled) setBoBootstrapped(false)
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -649,11 +670,11 @@ export default function TeamPage({ restaurantId }) {
   }
 
   useEffect(() => {
-    if (!restaurantId || access.loading || !canViewMembers) return
+    if (!restaurantId || access.loading || !canViewMembers || boBootstrapped !== false) return
     setBoLoading(true)
     void loadBackOffice()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restaurantId, access.loading, canViewMembers])
+  }, [restaurantId, access.loading, canViewMembers, boBootstrapped])
 
   const refreshBackOffice = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.backOfficeMembers(restaurantId) })

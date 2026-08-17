@@ -38,6 +38,15 @@ export interface BackOfficeInvitation {
   expires_at: string
 }
 
+export interface TeamWorkspaceResponse {
+  waiters: Record<string, unknown>[]
+  job_codes: Record<string, unknown>[]
+  role_permissions: Record<string, unknown>[]
+  cash_drawer_policy: Record<string, unknown>
+  members: BackOfficeMember[]
+  invitations: BackOfficeInvitation[]
+}
+
 export type ManagerInboxSource = 'operational' | 'employee_request' | 'shift_trade'
 
 export interface ManagerInboxItem {
@@ -89,6 +98,9 @@ export const backOfficeApi = {
 
   listMembers: (restaurantId: string): Promise<{ members: BackOfficeMember[]; invitations: BackOfficeInvitation[] }> =>
     fetchWithSupabaseAuth(`/restaurants/${restaurantId}/back-office/members`),
+
+  teamWorkspace: (restaurantId: string): Promise<TeamWorkspaceResponse> =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/team-workspace`),
 
   invite: (
     restaurantId: string,

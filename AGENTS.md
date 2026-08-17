@@ -14,6 +14,13 @@
   employee is allowed to work. At clock-in the employee (or manager) picks one of
   their allowed roles; that role is snapshotted onto `pos_time_clock_entries.role`
   and is what payroll/tip-out groups by.
+- **Pay is per employee-position assignment.** `job_codes.default_hourly_rate`
+  is the restaurant default and `employee_job_codes.hourly_rate_override` is an
+  optional employee-specific rate for that one position. Team -> Employees ->
+  Members edits the structured assignment set; a legacy `waiters.hourly_rate`
+  value mirrors only the primary position and must never be spread across all
+  assigned jobs. Clock-in snapshots the selected job code and effective rate so
+  later configuration changes do not rewrite historical labor or payroll.
 - **Server and Waiter are one working role.** `waiter` is a legacy alias that the
   dashboard renders as `Server`; new assignments prefer the active `server` job
   code while waiter-only restaurants remain compatible. `waiters.pos_role` is a
@@ -196,6 +203,10 @@ surface independently, while every mutation is also guarded by the ML backend.
   guards on tips_payroll + waiters mutations. ML-owned employee, invite, alert,
   and settings endpoints mirror the same reseller store/employee grant
   translation; reseller read access does not imply mutation access.
+  Team loads use the authorized `/restaurants/:id/team-workspace` aggregate so
+  employees, positions, permissions, drawer policy, members, and invites share
+  one access resolution and one data query; individual endpoints remain the
+  compatibility fallback. Employee-position writes bulk-sync assignments.
 - Manager alerts: the store bell and Alerts page merge existing scheduling
   requests with durable missed-clock-out alerts. Desktop and mobile call the
   same ML-backend action API; time corrections write the existing POS
