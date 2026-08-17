@@ -1495,7 +1495,7 @@ export default function RestaurantSetupPanel({
   const [jobCodeDraft, setJobCodeDraft] = useState({ code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 100, is_active: true })
   const [rateEdits, setRateEdits] = useState({})
   const [savingRateId, setSavingRateId] = useState('')
-  const [staffForm, setStaffForm] = useState({ name: '', email: '', role: 'server', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
+  const [staffForm, setStaffForm] = useState({ name: '', email: '', role: '', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
   const [pinEdits, setPinEdits] = useState({})
   const [pinSaving, setPinSaving] = useState({})
   const [pinSaved, setPinSaved] = useState({})
@@ -1992,7 +1992,7 @@ export default function RestaurantSetupPanel({
         jobCodes: normalizedJobCodes,
         rateEdits: nextRateEdits,
         jobCodeDraft: { code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 100, is_active: true },
-        staffForm: { name: '', email: '', role: 'server', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' },
+        staffForm: { name: '', email: '', role: '', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' },
       })
       {
         const configReservationTiming = normalizeReservationTiming(restaurant.config)
@@ -2655,6 +2655,10 @@ export default function RestaurantSetupPanel({
       setSetupError('Employee name is required.')
       return
     }
+    if (!staffForm.role) {
+      setSetupError('Choose an employee role.')
+      return
+    }
     setSetupError('')
     const roleUpdate = buildStaffRoleUpdate(staffForm.role, [staffForm.role], jobCodes)
     const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters`, {
@@ -2671,7 +2675,7 @@ export default function RestaurantSetupPanel({
     })
     setWaiters(prev => [...prev, created])
     queryClient.setQueryData(queryKeys.waiters(restaurantId), prev => Array.isArray(prev) ? [...prev, created] : prev)
-    setStaffForm({ name: '', email: '', role: 'server', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
+    setStaffForm({ name: '', email: '', role: '', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
     onSetupChanged?.()
   }
 
@@ -4122,6 +4126,7 @@ export default function RestaurantSetupPanel({
             <TextInput placeholder="Name" value={staffForm.name} onChange={event => setStaffForm(prev => ({ ...prev, name: event.target.value, employee_login_id: prev.employee_login_id || defaultEmployeeId(event.target.value) }))} />
             <TextInput placeholder="Email optional" value={staffForm.email} onChange={event => setStaffForm(prev => ({ ...prev, email: event.target.value }))} />
             <SelectInput value={staffForm.role} onChange={event => setStaffForm(prev => ({ ...prev, role: event.target.value }))}>
+              <option value="">Choose role</option>
               {normalizeStaffRoleOptions(jobCodes).map(role => <option key={role.id || role.code} value={roleCodeFromJobCode(role)}>{staffRoleLabel(role)}</option>)}
             </SelectInput>
             <TextInput placeholder="Hrs/week" value={staffForm.suggested_weekly_hours} onChange={event => setStaffForm(prev => ({ ...prev, suggested_weekly_hours: event.target.value.replace(/[^\d.]/g, '').slice(0, 5) }))} />

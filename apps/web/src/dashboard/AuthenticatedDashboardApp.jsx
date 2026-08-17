@@ -4479,7 +4479,7 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
   const [sectionRecords, setSectionRecords] = useState([])
   const [menuItems, setMenuItems] = useState([])
   const [setupError, setSetupError] = useState('')
-  const [staffForm, setStaffForm] = useState({ name: '', email: '', role: 'server', pin: '1111', employee_login_id: '' })
+  const [staffForm, setStaffForm] = useState({ name: '', email: '', role: '', pin: '1111', employee_login_id: '' })
   const [tableForm, setTableForm] = useState({ table_number: '', capacity: '2', table_type: 'standard', location: 'inside', section_id: '' })
   const [menuForm, setMenuForm] = useState({ name: '', category: '', price: '', cost: '', description: '' })
 
@@ -4573,6 +4573,10 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
       setSetupError('Employee name is required.')
       return
     }
+    if (!staffForm.role) {
+      setSetupError('Choose an employee role.')
+      return
+    }
     setSetupError('')
     const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters`, {
       method: 'POST',
@@ -4585,7 +4589,7 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
       }),
     })
     setWaiters(prev => [...prev, created])
-    setStaffForm({ name: '', email: '', role: 'server', pin: '1111', employee_login_id: '' })
+    setStaffForm({ name: '', email: '', role: '', pin: '1111', employee_login_id: '' })
     onSetupChanged?.()
   }
 
@@ -5018,6 +5022,7 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
                 <TextInput placeholder="Name" value={staffForm.name} onChange={event => setStaffForm(prev => ({ ...prev, name: event.target.value, employee_login_id: prev.employee_login_id || defaultEmployeeId(event.target.value) }))} />
                 <TextInput placeholder="Email optional" value={staffForm.email} onChange={event => setStaffForm(prev => ({ ...prev, email: event.target.value }))} />
                 <select value={staffForm.role} onChange={event => setStaffForm(prev => ({ ...prev, role: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-3 text-sm text-dash-cream outline-none focus:border-dash-gold/70">
+                  <option value="">Choose role</option>
                   <option value="server">Server</option>
                   <option value="bartender">Bartender</option>
                   <option value="host">Host</option>

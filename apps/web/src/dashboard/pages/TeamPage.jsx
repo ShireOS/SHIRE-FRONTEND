@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BadgeDollarSign, Check, Copy, Eye, EyeOff, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react'
+import { BadgeDollarSign, Check, Copy, Eye, EyeOff, KeyRound, Plus, RefreshCw, Settings2, ShieldCheck, Trash2, UserPlus, Users } from 'lucide-react'
 import { useAuth } from '../../auth'
 import { fetchWithSupabaseAuth, queryClient, queryKeys } from '../../shared/query'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
@@ -8,16 +8,20 @@ import { mergePermissions } from '../../shared/permissions'
 import { fetchCashDrawerPolicy, fetchRolePermissions } from '../data/permissions'
 import {
   assignedStaffRoles,
-  buildStaffRoleUpdate,
   canManageJobCode,
   canManageStaffMember,
-  defaultStaffRole,
   normalizeRoleCode,
   normalizeStaffRoleOptions,
   primaryStaffRole,
   roleCodeFromJobCode,
-  staffRoleLabel,
 } from '../utils/staffRoles'
+import {
+  effectiveStaffPayRate,
+  newStaffPayDrafts,
+  staffPayDrafts,
+  staffPayPayload,
+  validateStaffPayDrafts,
+} from '../utils/staffPay'
 import { Badge } from '../components/shared/Badge'
 import { Modal, ModalFooter } from '../components/shared/Modal'
 import RolePermissionsPanel from '../components/team/RolePermissionsPanel'
@@ -169,78 +173,216 @@ function PinInput({ value, onCommit, disabled = false }) {
   )
 }
 
-function StaffRoleEditor({ waiter, jobCodes, onChange, disabled = false }) {
-  const baseRoles = normalizeStaffRoleOptions(
-    jobCodes.length > 0 ? jobCodes : [{ id: 'server', code: 'server', label: 'Server' }],
-  )
-  // Keep the waiter's currently-assigned roles selectable even when they don't
-  // match a job code / POS role row (id: null keeps job_code_id untouched-safe).
-  const rawAssigned = assignedStaffRoles(waiter, [])
-  const extraRoles = rawAssigned
-    .filter((code) => baseRoles.every((item) => roleCodeFromJobCode(item) !== code))
-    .map((code) => ({ id: null, code, label: roleLabel(code) }))
-  const availableRoles = normalizeStaffRoleOptions([...baseRoles, ...extraRoles])
-  const assignedRoles = assignedStaffRoles(waiter, availableRoles)
-  const primaryRole = primaryStaffRole(waiter, availableRoles)
+function JobAssignmentsFields({ rows, onChange, disabled = false }) {
+  const selectedCount = rows.filter(row => row.selected).length
 
-  const commit = (nextPrimary, nextRoles) => {
-    if (disabled) return
-    const update = buildStaffRoleUpdate(nextPrimary, nextRoles, availableRoles)
-    if (!update.role) return
-    onChange(update)
+  const updateRow = (index, patch) => {
+    onChange(rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
   }
 
-  const toggleRole = (role) => {
-    const selected = assignedRoles.includes(role)
-    const nextRoles = selected
-      ? assignedRoles.filter(item => item !== role)
-      : [...assignedRoles, role]
-    if (nextRoles.length === 0) return
-    commit(selected && role === primaryRole ? nextRoles[0] : primaryRole || role, nextRoles)
+  const togglePosition = (index) => {
+    const target = rows[index]
+    if (target.selected && selectedCount === 1) return
+    const selecting = !target.selected
+    let next = rows.map((row, rowIndex) => rowIndex === index
+      ? { ...row, selected: selecting, is_primary: selecting ? row.is_primary : false }
+      : row)
+    const selected = next.filter(row => row.selected)
+    if (selected.length > 0 && !selected.some(row => row.is_primary)) {
+      const nextPrimary = selected[0].job_code_id
+      next = next.map(row => ({ ...row, is_primary: row.job_code_id === nextPrimary }))
+    }
+    onChange(next)
+  }
+
+  const makePrimary = (index) => {
+    onChange(rows.map((row, rowIndex) => ({
+      ...row,
+      selected: rowIndex === index ? true : row.selected,
+      is_primary: rowIndex === index,
+    })))
   }
 
   return (
-    <span className="flex min-w-[280px] flex-wrap items-center gap-2">
-      <select
-        value={primaryRole}
-        disabled={disabled}
-        onChange={(event) => {
-          const role = event.target.value
-          commit(role, [role, ...assignedRoles.filter(item => item !== role)])
-        }}
-        className="rounded-xl border border-dash-border bg-[var(--glass-bg)] px-2.5 py-1.5 text-xs font-semibold text-dash-secondary outline-none focus:border-shell-accent/60"
-      >
-        {availableRoles.map((code) => (
-          <option key={code.id || code.code} value={roleCodeFromJobCode(code)}>{staffRoleLabel(code)}</option>
-        ))}
-        {primaryRole && availableRoles.every((code) => roleCodeFromJobCode(code) !== primaryRole) && (
-          <option value={primaryRole}>{primaryRole}</option>
+    <div className="divide-y divide-dash-border border-y border-dash-border">
+      {rows.map((row, index) => {
+        const effectiveRate = effectiveStaffPayRate(row)
+        const unavailable = row.is_active === false || !row.job_code_id
+        return (
+          <div key={row.job_code_id || row.code} className="grid gap-3 py-3 sm:grid-cols-[minmax(150px,1fr)_110px_minmax(190px,1.25fr)] sm:items-center">
+            <label className="flex min-w-0 items-center gap-3">
+              <input
+                type="checkbox"
+                checked={row.selected}
+                disabled={disabled || (unavailable && !row.selected) || (row.selected && selectedCount === 1)}
+                onChange={() => togglePosition(index)}
+                className="h-4 w-4 accent-shell-accent"
+              />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold text-dash-cream">{row.label}</span>
+                <span className="block text-[11px] text-dash-tertiary">
+                  Default {money(row.default_hourly_rate)}
+                  {row.is_active === false ? ' · archived' : !row.job_code_id ? ' · position setup required' : ''}
+                </span>
+              </span>
+            </label>
+
+            <label className={`flex items-center gap-2 text-xs font-semibold ${row.selected ? 'text-dash-secondary' : 'text-dash-tertiary'}`}>
+              <input
+                type="radio"
+                name="primary-position"
+                checked={row.selected && row.is_primary}
+                disabled={disabled || !row.selected}
+                onChange={() => makePrimary(index)}
+                className="h-4 w-4 accent-shell-accent"
+              />
+              Primary
+            </label>
+
+            <div className={`flex min-w-0 flex-wrap items-center gap-2 ${row.selected ? '' : 'opacity-45'}`}>
+              <label className="flex items-center gap-2 text-xs font-semibold text-dash-secondary">
+                <input
+                  type="checkbox"
+                  checked={row.use_custom_rate}
+                  disabled={disabled || !row.selected}
+                  onChange={(event) => updateRow(index, {
+                    use_custom_rate: event.target.checked,
+                    hourly_rate_override: event.target.checked ? row.hourly_rate_override : '',
+                  })}
+                  className="h-4 w-4 accent-shell-accent"
+                />
+                Custom rate
+              </label>
+              {row.use_custom_rate ? (
+                <span className="flex items-center gap-1">
+                  <span className="text-xs text-dash-tertiary">$</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={row.hourly_rate_override}
+                    disabled={disabled || !row.selected}
+                    onChange={(event) => updateRow(index, { hourly_rate_override: event.target.value })}
+                    aria-label={`${row.label} custom hourly rate`}
+                    className="w-24 rounded-lg border border-dash-border bg-[var(--glass-bg)] px-2 py-1.5 font-mono text-xs tabular-nums text-dash-cream outline-none focus:border-shell-accent/60"
+                  />
+                  <span className="text-xs text-dash-tertiary">/hr</span>
+                </span>
+              ) : (
+                <span className="text-xs text-dash-tertiary">
+                  Pays {effectiveRate === null ? 'no configured rate' : money(effectiveRate)}
+                </span>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function EmployeeJobsPayModal({ waiter, jobCodes, rolePerms, cashDrawerPolicy, onClose, onSave }) {
+  const isCreating = !waiter
+  const [name, setName] = useState(waiter?.name || '')
+  const [pin, setPin] = useState('')
+  const [rows, setRows] = useState(() => isCreating
+    ? newStaffPayDrafts(jobCodes)
+    : staffPayDrafts(waiter, jobCodes))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const primaryRole = normalizeRoleCode(rows.find(row => row.selected && row.is_primary)?.code)
+  const primaryPermissions = rolePerms.find(item => normalizeRoleCode(item.role_key) === primaryRole) || {}
+  const cashSummary = cashDrawerRoleSummary(primaryPermissions, cashDrawerPolicy || {})
+
+  const save = async () => {
+    const validationError = validateStaffPayDrafts(rows)
+    if (isCreating && !name.trim()) {
+      setError('Employee name is required.')
+      return
+    }
+    if (pin && !/^\d{4}$/.test(pin)) {
+      setError('POS PIN must be exactly 4 digits.')
+      return
+    }
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      await onSave({
+        ...(isCreating ? { name: name.trim(), pin: pin || '1111' } : {}),
+        job_assignments: staffPayPayload(rows),
+      })
+      onClose()
+    } catch (saveError) {
+      setError(saveError?.message || 'Could not save jobs and pay.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      isOpen
+      onClose={busy ? () => {} : onClose}
+      title={isCreating ? 'Add employee' : `Jobs & pay — ${waiter.name}`}
+      size="lg"
+    >
+      <div className="max-h-[72vh] overflow-y-auto">
+        <p className="label-mono">{isCreating ? 'New employee' : waiter.name}</p>
+        <p className="mt-1 text-sm text-dash-tertiary">Select every position this employee may clock in as. Custom rates apply only to that position.</p>
+
+        {isCreating && (
+          <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_150px]">
+            <label className="space-y-1">
+              <span className="text-xs font-semibold text-dash-secondary">Employee name</span>
+              <input
+                value={name}
+                onChange={event => setName(event.target.value)}
+                className="w-full rounded-xl border border-dash-border bg-[var(--glass-bg)] px-3 py-2 text-sm text-dash-cream outline-none focus:border-shell-accent/60"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-semibold text-dash-secondary">POS PIN</span>
+              <input
+                inputMode="numeric"
+                autoComplete="off"
+                value={pin}
+                maxLength={4}
+                placeholder="1111"
+                onChange={event => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
+                className="w-full rounded-xl border border-dash-border bg-[var(--glass-bg)] px-3 py-2 font-mono text-sm tabular-nums tracking-[0.2em] text-dash-cream outline-none placeholder:tracking-normal focus:border-shell-accent/60"
+              />
+            </label>
+          </div>
         )}
-      </select>
-      <span className="flex flex-wrap gap-1">
-        {availableRoles.map((code) => {
-          const role = roleCodeFromJobCode(code)
-          const selected = assignedRoles.includes(role)
-          return (
-            <button
-              key={code.id || code.code}
-              type="button"
-              aria-pressed={selected}
-              onClick={() => toggleRole(role)}
-              disabled={disabled || (selected && assignedRoles.length === 1)}
-              className={[
-                'rounded-full border px-2 py-1 text-[11px] font-semibold transition disabled:cursor-default disabled:opacity-80',
-                selected
-                  ? 'border-shell-accent/60 bg-shell-accent/15 text-dash-cream'
-                  : 'border-dash-border text-dash-tertiary hover:border-shell-accent/50 hover:text-dash-secondary',
-              ].join(' ')}
-            >
-              {staffRoleLabel(code)}
-            </button>
-          )
-        })}
-      </span>
-    </span>
+
+        <div className="mt-5">
+          <JobAssignmentsFields rows={rows} onChange={setRows} disabled={busy} />
+        </div>
+
+        {isCreating && (
+          <div className="mt-4 flex flex-wrap gap-1.5 text-[10px] text-dash-tertiary">
+            <span className="font-semibold text-dash-secondary">Primary-role cash access:</span>
+            {cashSummary.map(item => (
+              <span key={item.key} className="rounded-full border border-dash-border px-2 py-0.5">
+                {item.label}: {item.value}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {error && <p className="mt-4 text-sm text-dash-danger">{error}</p>}
+        <ModalFooter>
+          <button type="button" onClick={onClose} disabled={busy} className="rounded-xl border border-dash-border px-4 py-2 text-sm font-semibold text-dash-secondary">Cancel</button>
+          <button type="button" onClick={() => void save()} disabled={busy} className="rounded-xl bg-shell-cta px-4 py-2 text-sm font-semibold text-shell-cta-text disabled:opacity-50">
+            {busy ? 'Saving…' : isCreating ? 'Add employee' : 'Save jobs & pay'}
+          </button>
+        </ModalFooter>
+      </div>
+    </Modal>
   )
 }
 
@@ -447,7 +589,7 @@ export default function TeamPage({ restaurantId }) {
   const [cashDrawerPolicy, setCashDrawerPolicy] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [newEmployee, setNewEmployee] = useState({ name: '', role: '', hourly_rate: '', pin: '' })
+  const [employeeEditor, setEmployeeEditor] = useState(null)
   const [newGroup, setNewGroup] = useState({ label: '', rate: '', permission_tier: 'normal' })
 
   // Back-office members & invites (ML backend). `unavailable` carries a soft
@@ -518,9 +660,9 @@ export default function TeamPage({ restaurantId }) {
     return loadBackOffice()
   }
 
-  // Job codes + any POS role rows that don't have a matching job code, so the
-  // "Allowed roles" chips cover every configured POS role. Pseudo entries carry
-  // id: null so buildStaffRoleUpdate never writes a bogus job_code_id.
+  // Job codes + any assigned legacy POS roles that do not have a catalog row.
+  // Pseudo entries remain visible for authority and assignment-count checks,
+  // but the Jobs & Pay editor cannot persist them without a real job-code ID.
   const roleOptions = useMemo(() => {
     const known = new Set(jobCodes.map(roleCodeFromJobCode).filter(Boolean))
     const assigned = new Set(waiters.flatMap((waiter) => assignedStaffRoles(waiter, [])))
@@ -555,12 +697,6 @@ export default function TeamPage({ restaurantId }) {
     return counts
   }, [jobCodes, waiters])
 
-  const newEmployeeRole = normalizeRoleCode(newEmployee.role || defaultStaffRole(manageableRoleOptions))
-  const newEmployeeRolePermissions = rolePerms.find(
-    (item) => normalizeRoleCode(item.role_key) === newEmployeeRole,
-  ) || {}
-  const newEmployeeCashSummary = cashDrawerRoleSummary(newEmployeeRolePermissions, cashDrawerPolicy || {})
-
   // Role-default back-office permissions for a waiter (by id) via their
   // primary working role's pos_role_permissions.back_office_permissions.
   const roleDefaultsForWaiter = (waiterId) => {
@@ -583,29 +719,6 @@ export default function TeamPage({ restaurantId }) {
     }
   }
 
-  const addEmployee = () =>
-    act(async () => {
-      if (!newEmployee.name.trim()) throw new Error('Employee name is required.')
-      if (jobCodes.length === 0) {
-        throw new Error(roleLoadError ? 'Roles failed to load. Refresh before adding employees.' : 'Add a role before adding employees.')
-      }
-      const pin = newEmployee.pin.trim()
-      if (pin && !/^\d{4}$/.test(pin)) throw new Error('POS PIN must be exactly 4 digits.')
-      const role = newEmployee.role || defaultStaffRole(manageableRoleOptions)
-      const roleUpdate = buildStaffRoleUpdate(role, [role], jobCodes)
-      const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters`, {
-        method: 'POST',
-        body: JSON.stringify({
-          name: newEmployee.name.trim(),
-          ...roleUpdate,
-          hourly_rate: newEmployee.hourly_rate === '' ? null : Number(newEmployee.hourly_rate),
-          pin: pin || '1111',
-        }),
-      })
-      setWaiters((prev) => [...prev, created])
-      setNewEmployee({ name: '', role: '', hourly_rate: '', pin: '' })
-    })
-
   const patchWaiter = (waiterId, updates) =>
     act(async () => {
       const updated = await fetchWithSupabaseAuth(`/waiters/${waiterId}`, {
@@ -614,6 +727,22 @@ export default function TeamPage({ restaurantId }) {
       })
       setWaiters((prev) => prev.map((waiter) => (waiter.id === waiterId ? updated : waiter)))
     })
+
+  const saveEmployeeJobsPay = async (waiter, payload) => {
+    if (waiter) {
+      const updated = await fetchWithSupabaseAuth(`/waiters/${waiter.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      })
+      setWaiters(prev => prev.map(item => item.id === waiter.id ? updated : item))
+      return
+    }
+    const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+    setWaiters(prev => [...prev, created])
+  }
 
   const addGroup = () =>
     act(async () => {
@@ -696,13 +825,6 @@ export default function TeamPage({ restaurantId }) {
       setBoInvites((prev) => prev.filter((item) => item.id !== invitation.id))
       queryClient.invalidateQueries({ queryKey: queryKeys.backOfficeMembers(restaurantId) })
     })
-
-  const groupRate = (waiter) => {
-    const byId = jobCodes.find((code) => code.id === waiter.job_code_id)
-    const byRole = normalizeStaffRoleOptions(jobCodes)
-      .find((code) => roleCodeFromJobCode(code) === primaryStaffRole(waiter, jobCodes))
-    return (byId || byRole)?.default_hourly_rate ?? null
-  }
 
   if (loading) {
     return (
@@ -806,22 +928,22 @@ export default function TeamPage({ restaurantId }) {
       <Pane icon={Users} eyebrow="Employees" title="Roles, pay & POS PIN">
         <div className="space-y-2">
           {waiters.map((waiter) => {
-            const override = waiter.hourly_rate
-            const inherited = groupRate(waiter)
+            const payRows = staffPayDrafts(waiter, roleOptions).filter(row => row.selected)
             const linkedMember = boMembers.find((member) => member.waiter_id === waiter.id)
             const mayManageWaiter = canManageMembers
               && canManageStaffMember(access.authorityLevel, waiter, roleOptions)
             return (
-              <div key={waiter.id} className="flex flex-wrap items-center gap-3">
-                <span className={`min-w-[130px] text-sm font-semibold ${waiter.is_active === false ? 'text-dash-tertiary line-through' : 'text-dash-cream'}`}>
-                  {waiter.name}
+              <div key={waiter.id} className="flex flex-wrap items-center gap-3 border-b border-dash-border py-2 last:border-b-0">
+                <span className="min-w-[150px]">
+                  <span className={`block text-sm font-semibold ${waiter.is_active === false ? 'text-dash-tertiary line-through' : 'text-dash-cream'}`}>
+                    {waiter.name}
+                  </span>
+                  <span className="block text-[11px] text-dash-tertiary">
+                    {payRows.length > 0
+                      ? payRows.map(row => `${row.label} ${money(effectiveStaffPayRate(row))}`).join(' · ')
+                      : 'No assigned positions'}
+                  </span>
                 </span>
-                <StaffRoleEditor
-                  waiter={waiter}
-                  jobCodes={manageableRoleOptions}
-                  disabled={!mayManageWaiter}
-                  onChange={(updates) => void patchWaiter(waiter.id, updates)}
-                />
                 <span className="ml-auto flex items-center gap-2">
                   <span className="flex items-center gap-1.5" title="POS clock-in PIN">
                     <KeyRound size={13} strokeWidth={1.75} className="text-dash-tertiary" aria-hidden="true" />
@@ -831,17 +953,16 @@ export default function TeamPage({ restaurantId }) {
                       onCommit={(pin) => void patchWaiter(waiter.id, { pin })}
                     />
                   </span>
-                  <RateInput
-                    value={override ?? ''}
+                  <button
+                    type="button"
                     disabled={!mayManageWaiter}
-                    onCommit={(rate) =>
-                      void patchWaiter(waiter.id, { hourly_rate: rate === '' ? null : Number(rate) })
-                    }
-                    placeholder={inherited != null ? Number(inherited).toFixed(2) : '0.00'}
-                  />
-                  <span className="w-24 text-xs text-dash-tertiary">
-                    {override != null && override !== '' ? 'override' : inherited != null ? `group ${money(inherited)}` : 'no rate'}
-                  </span>
+                    onClick={() => setEmployeeEditor({ waiter })}
+                    title={mayManageWaiter ? 'Edit positions and hourly pay' : 'You cannot manage this employee’s positions'}
+                    className="flex min-h-[32px] items-center gap-1.5 rounded-lg border border-dash-border px-2.5 text-xs font-semibold text-dash-secondary transition hover:border-shell-accent/50 hover:text-dash-cream disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Settings2 size={13} strokeWidth={1.75} aria-hidden="true" />
+                    Jobs &amp; pay
+                  </button>
                   {canManageMembers && !boUnavailable && (
                     linkedMember ? (
                       <span
@@ -875,55 +996,16 @@ export default function TeamPage({ restaurantId }) {
             )
           })}
           {waiters.length === 0 && <p className="text-sm text-dash-tertiary">No employees yet.</p>}
-          <div className="flex flex-wrap items-center gap-2 border-t border-dash-border pt-3">
-            <input
-              value={newEmployee.name}
-              disabled={!canManageMembers}
-              onChange={(event) => setNewEmployee((prev) => ({ ...prev, name: event.target.value }))}
-              placeholder="New employee name"
-              className="min-w-[160px] flex-1 rounded-xl border border-dash-border bg-[var(--glass-bg)] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary focus:border-shell-accent/60"
-            />
-            <select
-              value={newEmployee.role || defaultStaffRole(manageableRoleOptions)}
-              onChange={(event) => setNewEmployee((prev) => ({ ...prev, role: event.target.value }))}
-              disabled={!canManageMembers || manageableRoleOptions.length === 0}
-              className="rounded-xl border border-dash-border bg-[var(--glass-bg)] px-2.5 py-2 text-xs font-semibold text-dash-secondary outline-none"
-            >
-              {normalizeStaffRoleOptions(manageableRoleOptions).map((code) => (
-                <option key={code.id || code.code} value={roleCodeFromJobCode(code)}>{staffRoleLabel(code)}</option>
-              ))}
-              {jobCodes.length === 0 && <option value="">No roles</option>}
-            </select>
-            <input
-              inputMode="numeric"
-              autoComplete="off"
-              value={newEmployee.pin}
-              disabled={!canManageMembers}
-              maxLength={4}
-              onChange={(event) =>
-                setNewEmployee((prev) => ({ ...prev, pin: event.target.value.replace(/\D/g, '').slice(0, 4) }))
-              }
-              placeholder="PIN 1111"
-              title="POS clock-in PIN — 4 digits (defaults to 1111)"
-              className="w-24 rounded-xl border border-dash-border bg-[var(--glass-bg)] px-3 py-2 text-center font-mono text-sm tabular-nums tracking-[0.2em] text-dash-cream outline-none placeholder:tracking-normal placeholder:text-dash-tertiary focus:border-shell-accent/60"
-            />
+          <div className="flex justify-end border-t border-dash-border pt-3">
             <button
               type="button"
-              disabled={!canManageMembers}
-              onClick={() => void addEmployee()}
+              disabled={!canManageMembers || manageableRoleOptions.length === 0 || roleLoadError}
+              onClick={() => setEmployeeEditor({ waiter: null })}
               className="flex min-h-[38px] items-center gap-1 rounded-xl bg-shell-cta px-3 text-sm font-semibold text-shell-cta-text transition hover:opacity-90"
             >
               <Plus size={14} strokeWidth={2} aria-hidden="true" />
-              Add
+              Add employee
             </button>
-          </div>
-          <div className="flex flex-wrap gap-1.5 pl-1 text-[10px] text-dash-tertiary">
-            <span className="font-semibold text-dash-secondary">Inherited cash access:</span>
-            {newEmployeeCashSummary.map((item) => (
-              <span key={item.key} className="rounded-full border border-dash-border px-2 py-0.5">
-                {item.label}: {item.value}
-              </span>
-            ))}
           </div>
         </div>
       </Pane>
@@ -1052,6 +1134,19 @@ export default function TeamPage({ restaurantId }) {
         authorityLevel={access.authorityLevel}
         jobCodes={jobCodes}
       />
+
+      {employeeEditor && (
+        <EmployeeJobsPayModal
+          waiter={employeeEditor.waiter}
+          jobCodes={employeeEditor.waiter
+            ? manageableRoleOptions
+            : jobCodes.filter(role => canManageJobCode(access.authorityLevel, role))}
+          rolePerms={rolePerms}
+          cashDrawerPolicy={cashDrawerPolicy}
+          onClose={() => setEmployeeEditor(null)}
+          onSave={(payload) => saveEmployeeJobsPay(employeeEditor.waiter, payload)}
+        />
+      )}
 
       {inviteState && (
         <InviteModal
