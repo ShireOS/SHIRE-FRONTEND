@@ -105,6 +105,19 @@ const MENU_TABS = [
   { id: 'printing', label: 'Printing & Routing' },
 ]
 
+const MENU_SOURCE_TIMEOUT_MS = 45_000
+
+const loadMenuSource = (label, loader) => new Promise((resolve, reject) => {
+  const timer = window.setTimeout(
+    () => reject(new Error(`${label} timed out`)),
+    MENU_SOURCE_TIMEOUT_MS,
+  )
+  Promise.resolve()
+    .then(loader)
+    .then(resolve, reject)
+    .finally(() => window.clearTimeout(timer))
+})
+
 const routeCategoryKey = (value) => String(value || '').trim().toLowerCase()
 
 const COURSE_OPTIONS = [
@@ -989,7 +1002,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       ['kitchen routing', loadRouting],
       ['printing config', loadPrintingConfig],
     ]
-    Promise.allSettled(loaders.map(([, load]) => load())).then(results => {
+    Promise.allSettled(loaders.map(([label, load]) => loadMenuSource(label, load))).then(results => {
       if (cancelled) return
       const failures = results.flatMap((result, index) => (
         result.status === 'rejected'
