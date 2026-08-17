@@ -296,6 +296,12 @@ function FailoverTargetRow({ target, targets, busy, onSave }) {
     reason: nextActive ? 'Manager activated printer outage reroute' : active ? 'Manager restored normal printer routing' : 'Manager configured printer outage policy',
   })
 
+  const discard = () => {
+    setAction(policy.action || 'hold')
+    setBackupTargetIds(policy.backup_target_ids?.length ? policy.backup_target_ids : policy.backup_target_id ? [policy.backup_target_id] : [])
+    setAutoActivate(Boolean(policy.auto_activate))
+  }
+
   return (
     <div className={`rounded-xl border p-4 ${active ? 'border-dash-warning/60 bg-dash-warning/10' : isDown ? 'border-dash-danger/50 bg-dash-danger/10' : 'border-dash-border bg-[var(--glass-bg)]'}`}>
       <div className="flex flex-wrap items-start gap-3">
@@ -335,6 +341,7 @@ function FailoverTargetRow({ target, targets, busy, onSave }) {
           Auto-reroute after a confirmed failure
         </label>
         <div className="flex gap-2">
+          <Button variant="ghost" size="sm" disabled={busy || active} onClick={discard}>Cancel</Button>
           <Button variant="outline" size="sm" disabled={busy || active || (action === 'reroute' && !normalizedBackupIds.length)} onClick={() => submit(false)}>Save policy</Button>
           {action === 'reroute' && !active && (
             <Button size="sm" disabled={busy || !normalizedBackupIds.length} onClick={() => submit(true)}>Reroute now</Button>

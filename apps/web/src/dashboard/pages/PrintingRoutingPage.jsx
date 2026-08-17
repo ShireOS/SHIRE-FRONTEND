@@ -89,7 +89,9 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const location = useLocation()
   const section = sectionFromHash(location.hash)
   const [config, setConfig] = useState(DEFAULT_CONFIG)
+  const [savedConfig, setSavedConfig] = useState(DEFAULT_CONFIG)
   const [routing, setRouting] = useState({ stations: [], targets: [] })
+  const [savedRouting, setSavedRouting] = useState({ stations: [], targets: [] })
   const [catalog, setCatalog] = useState([])
   const [scope, setScope] = useState('whole')
   const [output, setOutput] = useState('kitchen_ticket')
@@ -135,7 +137,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
         if (!current) return
         if (itemsResult.error) throw itemsResult.error
         if (modifiersResult.error) throw modifiersResult.error
-        setConfig({
+        const normalizedConfig = {
           ...clone(DEFAULT_CONFIG), ...(printing || {}),
           customer: {
             ...clone(DEFAULT_CONFIG.customer), ...(printing?.customer || {}),
@@ -143,9 +145,14 @@ export default function PrintingRoutingPage({ restaurantId }) {
           },
           report: { ...clone(DEFAULT_CONFIG.report), ...(printing?.report || {}) },
           kitchen: { ...clone(DEFAULT_CONFIG.kitchen), ...(printing?.kitchen || {}) },
-        })
+        }
+        const normalizedRouting = routes || { stations: [], targets: [] }
+        setConfig(normalizedConfig)
+        setSavedConfig(normalizedConfig)
         setLoadedRestaurantId(String(restaurantId))
-        setRouting(routes || { stations: [], targets: [] })
+        setRouting(normalizedRouting)
+        setSavedRouting(normalizedRouting)
+        setDirtyTargetIds(new Set())
         setCatalog([
           ...(itemsResult.data || []).map(row => ({ ...row, kind: 'items', type: 'Item' })),
           ...(modifiersResult.data || []).map(row => ({ ...row, kind: 'modifiers', type: 'Modifier', category: row.group_name })),
@@ -352,6 +359,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
     try {
       const saved = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`, { method: 'PUT', body: JSON.stringify(config) })
       setConfig(saved)
+      setSavedConfig(saved)
       for (const targetId of dirtyTargetIds) {
         const target = (routing.targets || []).find(candidate => String(candidate.id) === String(targetId))
         if (!target) continue
@@ -370,13 +378,24 @@ export default function PrintingRoutingPage({ restaurantId }) {
       }
       if (dirtyTargetIds.size) {
         const routes = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing`)
-        setRouting(routes || { stations: [], targets: [] })
+        const normalizedRouting = routes || { stations: [], targets: [] }
+        setRouting(normalizedRouting)
+        setSavedRouting(normalizedRouting)
         setDirtyTargetIds(new Set())
       }
       setMessage('Printing configuration saved and active on POS print jobs.')
     } catch (err) {
       setError(err?.message || 'Could not save printing configuration')
     } finally { setSaving(false) }
+  }
+
+  const discard = () => {
+    if (saving || loading) return
+    setConfig(clone(savedConfig))
+    setRouting(clone(savedRouting))
+    setDirtyTargetIds(new Set())
+    setError('')
+    setMessage('Changes discarded.')
   }
 
   if (section === 'routing') return <div className="space-y-5"><ProductionWorkflowCard restaurantId={restaurantId} /><MenuPanel restaurantId={restaurantId} initialTab="printing" onlyTab="printing" /></div>
@@ -623,7 +642,10 @@ export default function PrintingRoutingPage({ restaurantId }) {
               {paperWidthOptions.length > 1 && <div className="mt-4 max-w-xs"><Select label="Installed paper roll" value={String(selectedTarget.config?.paper_width_mm || displayedCapabilities.paper_width_mm)} onChange={patchTargetPaperWidth}>{paperWidthOptions.map(width => <option key={width} value={width}>{width} mm</option>)}</Select></div>}
             </> : <p className="mt-2 text-sm text-dash-tertiary">Choose a compatible printer to calculate its usable paper width.</p>}
           </div>
-          <button onClick={save} disabled={saving || loading || loadedRestaurantId !== String(restaurantId)} className="rounded-xl bg-dash-gold px-5 py-3 text-sm font-semibold text-black disabled:opacity-50">{saving ? 'Saving…' : 'Save changes'}</button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={discard} disabled={saving || loading || loadedRestaurantId !== String(restaurantId)} className="rounded-xl border border-white/10 px-5 py-3 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">Cancel</button>
+            <button type="button" onClick={save} disabled={saving || loading || loadedRestaurantId !== String(restaurantId)} className="rounded-xl bg-dash-gold px-5 py-3 text-sm font-semibold text-black disabled:opacity-50">{saving ? 'Saving…' : 'Save changes'}</button>
+          </div>
         </div>
 
         <div className="h-fit rounded-2xl border border-white/10 bg-white/[0.035] p-5 xl:sticky xl:top-20">

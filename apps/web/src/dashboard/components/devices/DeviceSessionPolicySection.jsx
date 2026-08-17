@@ -141,7 +141,7 @@ function PolicyFields({ draft, setDraft, inherited = null, busy }) {
   )
 }
 
-function SaveBar({ reason, setReason, busy, onSave, onReset, saveLabel = 'Save settings' }) {
+function SaveBar({ reason, setReason, busy, onSave, onReset, onCancel, saveLabel = 'Save settings' }) {
   const disabled = busy || !reason.trim()
   return (
     <div className="mt-3 flex flex-col gap-2 border-t border-dash-border pt-3 sm:flex-row sm:items-end">
@@ -156,6 +156,7 @@ function SaveBar({ reason, setReason, busy, onSave, onReset, saveLabel = 'Save s
         />
       </Field>
       <div className="flex flex-wrap gap-2 sm:pb-4">
+        <button type="button" className={buttonCls} disabled={busy} onClick={onCancel}>Cancel</button>
         {onReset ? (
           <button type="button" className={buttonCls} disabled={disabled} onClick={onReset}>
             <RotateCcw size={13} aria-hidden="true" /> Reset to device-type default
@@ -191,6 +192,11 @@ function TypePolicyRow({ deviceType, policy, onSave, busy }) {
     setReason('')
   }
 
+  const discard = () => {
+    setDraft(toTypeDraft(effective))
+    setReason('')
+  }
+
   return (
     <div className="rounded-xl border border-dash-border bg-[var(--glass-bg)] p-3">
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -200,7 +206,7 @@ function TypePolicyRow({ deviceType, policy, onSave, busy }) {
         </span>
       </div>
       <PolicyFields draft={draft} setDraft={setDraft} busy={busy} />
-      <SaveBar reason={reason} setReason={setReason} busy={busy} onSave={save} />
+      <SaveBar reason={reason} setReason={setReason} busy={busy} onSave={save} onCancel={discard} />
     </div>
   )
 }
@@ -242,6 +248,10 @@ function DeviceOverrideRow({ device, policyByType, onSave, busy }) {
         reason={reason}
         setReason={setReason}
         busy={busy}
+        onCancel={() => {
+          setDraft(toOverrideDraft(device))
+          setReason('')
+        }}
         onSave={() => {
           onSave(policyFromDraft(), reason.trim())
           setReason('')

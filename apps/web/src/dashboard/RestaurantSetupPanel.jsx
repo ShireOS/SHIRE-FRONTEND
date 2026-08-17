@@ -1502,8 +1502,67 @@ export default function RestaurantSetupPanel({
   const [setupError, setSetupError] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const savedDraftsRef = useRef({})
 
   const isPropagationEnabled = Boolean(propagationContext?.requestTargets)
+
+  const rememberSavedDraft = (sectionId, value) => {
+    savedDraftsRef.current[sectionId] = value == null ? value : structuredClone(value)
+  }
+
+  const savedDraft = (sectionId) => {
+    const value = savedDraftsRef.current[sectionId]
+    return value == null ? value : structuredClone(value)
+  }
+
+  const discardSetupChanges = (sectionId) => {
+    const baseline = savedDraft(sectionId)
+    if (baseline === undefined) return
+    setSetupError('')
+    setSaveMessage('Changes discarded.')
+    switch (sectionId) {
+      case 'basics':
+        setProfile(current => ({ ...current, ...baseline }))
+        break
+      case 'goals': setGoals(baseline); break
+      case 'service_model': setServiceModel(baseline); break
+      case 'branding': setPendingCoverFile(null); break
+      case 'legal': setLegal(baseline); break
+      case 'payments': setPayments(baseline); break
+      case 'pricing_policy': setPricingPolicy(baseline); break
+      case 'taxes_charges':
+        setTaxRates(baseline.taxRates)
+        setTaxCategoryAssignments(baseline.taxCategoryAssignments)
+        setServiceCharges(baseline.serviceCharges)
+        setAutoGratuity(baseline.autoGratuity)
+        break
+      case 'discounts': setDiscountRules(baseline); break
+      case 'manager_controls': setRolePermissions(baseline); break
+      case 'closeout': setCloseoutSettings(baseline); break
+      case 'check_workflow': setCheckWorkflowSettings(baseline); break
+      case 'tips_payroll': setTipPayrollSettings(baseline); break
+      case 'sections':
+        setSections(baseline.sections)
+        setSectionProfiles(baseline.sectionProfiles)
+        break
+      case 'hours':
+        setHours(baseline.hours)
+        setSameHours(baseline.sameHours)
+        break
+      case 'reservation_timing': setReservationTiming(baseline); break
+      case 'capacity': setProfile(current => ({ ...current, ...baseline })); break
+      case 'employees':
+        setJobCodes(baseline.jobCodes)
+        setRateEdits(baseline.rateEdits)
+        setJobCodeDraft(baseline.jobCodeDraft)
+        setStaffForm(baseline.staffForm)
+        setPinEdits({})
+        setPinSaved({})
+        break
+      default:
+        break
+    }
+  }
 
   useEffect(() => {
     if (!visibleSetupTabs.some(tab => tab.id === activeSetupTab)) {
@@ -1756,18 +1815,21 @@ export default function RestaurantSetupPanel({
     }
   }
 
-  const publishControls = (label, handler) => (
-    <PublishControls
-      label={label}
-      busy={isSaving}
-      disabled={isSaving}
-      onPublishNow={() => handler()}
-      onSchedule={(scheduledFor, timezone) => handler({ scheduledFor, timezone })}
-    />
+  const publishControls = (label, handler, sectionId) => (
+    <div className="flex flex-wrap items-center gap-2">
+      <SmallButton onClick={() => discardSetupChanges(sectionId)} disabled={isSaving}>Cancel</SmallButton>
+      <PublishControls
+        label={label}
+        busy={isSaving}
+        disabled={isSaving}
+        onPublishNow={() => handler()}
+        onSchedule={(scheduledFor, timezone) => handler({ scheduledFor, timezone })}
+      />
+    </div>
   )
 
   useEffect(() => {
-    setProfile({
+    const nextProfile = {
       name: restaurant.name || '',
       address: restaurant.address || '',
       city: restaurant.city || '',
@@ -1778,15 +1840,42 @@ export default function RestaurantSetupPanel({
       cuisine_types: Array.isArray(restaurant.cuisine_types) ? restaurant.cuisine_types : [],
       seating_capacity: restaurant.seating_capacity || '',
       table_count: restaurant.table_count || '',
-    })
-    setLegal(initialLegal(restaurant))
-    setPayments(initialPayments(restaurant))
+    }
+    const nextLegal = initialLegal(restaurant)
+    const nextPayments = initialPayments(restaurant)
+    const nextServiceModel = initialServiceModel(restaurant)
+    const nextGoals = initialGoals(restaurant)
+    const nextReservationTiming = normalizeReservationTiming(restaurant.config)
+    setProfile(nextProfile)
+    setLegal(nextLegal)
+    setPayments(nextPayments)
     setPricingPolicy(prev => normalizePricingPolicy({ ...prev, jurisdiction_state: prev.jurisdiction_state || restaurant.state || 'SC' }))
-    setServiceModel(initialServiceModel(restaurant))
-    setReservationTiming(normalizeReservationTiming(restaurant.config))
+    setServiceModel(nextServiceModel)
+    setGoals(nextGoals)
+    setReservationTiming(nextReservationTiming)
     setCoverImageUrl(restaurant.cover_image_url || '')
     setPendingCoverFile(null)
     setSaveMessage('')
+    rememberSavedDraft('basics', {
+      name: nextProfile.name,
+      address: nextProfile.address,
+      city: nextProfile.city,
+      state: nextProfile.state,
+      postal_code: nextProfile.postal_code,
+      phone: nextProfile.phone,
+      type: nextProfile.type,
+      cuisine_types: nextProfile.cuisine_types,
+    })
+    rememberSavedDraft('capacity', {
+      seating_capacity: nextProfile.seating_capacity,
+      table_count: nextProfile.table_count,
+    })
+    rememberSavedDraft('legal', nextLegal)
+    rememberSavedDraft('payments', nextPayments)
+    rememberSavedDraft('service_model', nextServiceModel)
+    rememberSavedDraft('goals', nextGoals)
+    rememberSavedDraft('reservation_timing', nextReservationTiming)
+    rememberSavedDraft('branding', { coverImageUrl: restaurant.cover_image_url || '' })
   }, [restaurant])
 
   useEffect(() => {
@@ -1858,30 +1947,59 @@ export default function RestaurantSetupPanel({
       ] = results.map(result => result.value)
 
       const normalized = normalizeHours(hoursRows)
+      const nextSameHours = deriveSameHours(normalized)
       setHours(normalized)
-      setSameHours(deriveSameHours(normalized))
+      setSameHours(nextSameHours)
       setWaiters(Array.isArray(staffRows) ? staffRows : [])
       const normalizedJobCodes = normalizeJobCodes(jobCodeRows)
+      const nextRateEdits = Object.fromEntries(normalizedJobCodes.map(code => [code.id, String(code.default_hourly_rate ?? '')]))
       setJobCodes(normalizedJobCodes)
-      setRateEdits(Object.fromEntries(normalizedJobCodes.map(code => [code.id, String(code.default_hourly_rate ?? '')])))
+      setRateEdits(nextRateEdits)
       const sectionNames = normalizeSectionNames((Array.isArray(sectionRows) ? sectionRows : []).map(section => section.name))
+      const nextSectionProfiles = normalizeSectionProfiles(sectionRows, sectionNames)
       setSections(sectionNames)
-      setSectionProfiles(normalizeSectionProfiles(sectionRows, sectionNames))
+      setSectionProfiles(nextSectionProfiles)
       setFloorTables(mapFloorPlanTables(floorPlan))
-      setTaxRates(normalizeTaxRates(taxesCharges?.tax_rates))
+      const nextTaxRates = normalizeTaxRates(taxesCharges?.tax_rates)
+      const nextServiceCharges = normalizeServiceCharges(taxesCharges?.service_charges)
+      const nextAutoGratuity = normalizeAutoGratuity(taxesCharges?.auto_gratuity)
+      const nextDiscountRules = normalizeDiscountRules(discountData?.discount_rules)
+      const nextRolePermissions = normalizeRolePermissions(managerControls?.role_permissions, normalizedJobCodes)
+      const nextCloseoutSettings = normalizeCloseoutSettings(closeoutData)
+      const nextCheckWorkflowSettings = normalizeCheckWorkflowSettings(checkWorkflowData)
+      const nextTipPayrollSettings = normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes)
+      const nextPricingPolicy = normalizePricingPolicy(pricingPolicyData || { jurisdiction_state: restaurant.state || 'SC' })
+      setTaxRates(nextTaxRates)
       setTaxCategoryAssignments(undefined)
-      setServiceCharges(normalizeServiceCharges(taxesCharges?.service_charges))
-      setAutoGratuity(normalizeAutoGratuity(taxesCharges?.auto_gratuity))
-      setDiscountRules(normalizeDiscountRules(discountData?.discount_rules))
-      setRolePermissions(normalizeRolePermissions(managerControls?.role_permissions, normalizedJobCodes))
-      setCloseoutSettings(normalizeCloseoutSettings(closeoutData))
-      setCheckWorkflowSettings(normalizeCheckWorkflowSettings(checkWorkflowData))
-      setTipPayrollSettings(normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes))
-      setPricingPolicy(normalizePricingPolicy(pricingPolicyData || { jurisdiction_state: restaurant.state || 'SC' }))
+      setServiceCharges(nextServiceCharges)
+      setAutoGratuity(nextAutoGratuity)
+      setDiscountRules(nextDiscountRules)
+      setRolePermissions(nextRolePermissions)
+      setCloseoutSettings(nextCloseoutSettings)
+      setCheckWorkflowSettings(nextCheckWorkflowSettings)
+      setTipPayrollSettings(nextTipPayrollSettings)
+      setPricingPolicy(nextPricingPolicy)
+      rememberSavedDraft('hours', { hours: normalized, sameHours: nextSameHours })
+      rememberSavedDraft('sections', { sections: sectionNames, sectionProfiles: nextSectionProfiles })
+      rememberSavedDraft('taxes_charges', { taxRates: nextTaxRates, taxCategoryAssignments: undefined, serviceCharges: nextServiceCharges, autoGratuity: nextAutoGratuity })
+      rememberSavedDraft('discounts', nextDiscountRules)
+      rememberSavedDraft('manager_controls', nextRolePermissions)
+      rememberSavedDraft('closeout', nextCloseoutSettings)
+      rememberSavedDraft('check_workflow', nextCheckWorkflowSettings)
+      rememberSavedDraft('tips_payroll', nextTipPayrollSettings)
+      rememberSavedDraft('pricing_policy', nextPricingPolicy)
+      rememberSavedDraft('employees', {
+        jobCodes: normalizedJobCodes,
+        rateEdits: nextRateEdits,
+        jobCodeDraft: { code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 100, is_active: true },
+        staffForm: { name: '', email: '', role: 'server', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' },
+      })
       {
         const configReservationTiming = normalizeReservationTiming(restaurant.config)
         const serviceReservationTiming = reservationTimingFromSettings(reservationSettingsData)
-        setReservationTiming(serviceReservationTiming ? { ...configReservationTiming, ...serviceReservationTiming } : configReservationTiming)
+        const nextReservationTiming = serviceReservationTiming ? { ...configReservationTiming, ...serviceReservationTiming } : configReservationTiming
+        setReservationTiming(nextReservationTiming)
+        rememberSavedDraft('reservation_timing', nextReservationTiming)
       }
       const failedLabels = results.filter(result => result.error).map(result => result.label)
       if (failedLabels.length > 0) {
@@ -1946,6 +2064,16 @@ export default function RestaurantSetupPanel({
       successMessage: 'Saved basics.',
       saveSource: saveRestaurantBasics,
       saveTarget: saveRestaurantBasics,
+      onSourceSaved: (saved) => rememberSavedDraft('basics', {
+        name: saved?.name || '',
+        address: saved?.address || '',
+        city: saved?.city || '',
+        state: saved?.state || '',
+        postal_code: saved?.postal_code || '',
+        phone: saved?.phone || '',
+        type: saved?.type || 'casual',
+        cuisine_types: Array.isArray(saved?.cuisine_types) ? saved.cuisine_types : [],
+      }),
       publication,
       buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-profile`, body: { patch: payload }, target_type: 'restaurant', target_id: targetId }),
     })
@@ -1958,6 +2086,7 @@ export default function RestaurantSetupPanel({
     successMessage: 'Saved goals.',
     saveSource: (targetId) => mergeRestaurantConfig(targetId, goals),
     saveTarget: (targetId) => mergeRestaurantConfig(targetId, goals),
+    onSourceSaved: () => rememberSavedDraft('goals', goals),
     publication,
     buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: goals }, target_type: 'restaurant', target_id: targetId }),
   })
@@ -1969,6 +2098,7 @@ export default function RestaurantSetupPanel({
     successMessage: 'Saved tools and service model.',
     saveSource: (targetId) => mergeRestaurantConfig(targetId, serviceModel),
     saveTarget: (targetId) => mergeRestaurantConfig(targetId, serviceModel),
+    onSourceSaved: () => rememberSavedDraft('service_model', serviceModel),
     publication,
     buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: serviceModel }, target_type: 'restaurant', target_id: targetId }),
   })
@@ -2010,6 +2140,7 @@ export default function RestaurantSetupPanel({
         ...legal,
         tos_version: 'shire-placeholder-tos-v1',
       }),
+      onSourceSaved: () => rememberSavedDraft('legal', legal),
       publication,
       buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: { ...legal, tos_version: 'shire-placeholder-tos-v1' } }, target_type: 'restaurant', target_id: targetId }),
     })
@@ -2023,6 +2154,7 @@ export default function RestaurantSetupPanel({
       successMessage: 'Saved payment setup.',
       saveSource: (targetId) => mergeRestaurantConfig(targetId, payments),
       saveTarget: (targetId) => mergeRestaurantConfig(targetId, payments),
+      onSourceSaved: () => rememberSavedDraft('payments', payments),
       publication,
       buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: payments }, target_type: 'restaurant', target_id: targetId }),
     })
@@ -2065,7 +2197,9 @@ export default function RestaurantSetupPanel({
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/pricing-policy', payload),
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/pricing-policy', { ...payload, expected_version: undefined }),
       onSourceSaved: (saved) => {
-        setPricingPolicy(normalizePricingPolicy(saved))
+        const normalized = normalizePricingPolicy(saved)
+        setPricingPolicy(normalized)
+        rememberSavedDraft('pricing_policy', normalized)
         queryClient.setQueryData(queryKeys.pricingPolicy(restaurantId), saved)
       },
     })
@@ -2107,10 +2241,14 @@ export default function RestaurantSetupPanel({
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/taxes-charges', payload),
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/taxes-charges', propagationPayload),
       onSourceSaved: (saved) => {
-        setTaxRates(normalizeTaxRates(saved?.tax_rates))
-        setServiceCharges(normalizeServiceCharges(saved?.service_charges))
-        setAutoGratuity(normalizeAutoGratuity(saved?.auto_gratuity))
+        const nextTaxRates = normalizeTaxRates(saved?.tax_rates)
+        const nextServiceCharges = normalizeServiceCharges(saved?.service_charges)
+        const nextAutoGratuity = normalizeAutoGratuity(saved?.auto_gratuity)
+        setTaxRates(nextTaxRates)
+        setServiceCharges(nextServiceCharges)
+        setAutoGratuity(nextAutoGratuity)
         setTaxCategoryAssignments(undefined)
+        rememberSavedDraft('taxes_charges', { taxRates: nextTaxRates, taxCategoryAssignments: undefined, serviceCharges: nextServiceCharges, autoGratuity: nextAutoGratuity })
         queryClient.setQueryData(queryKeys.taxesCharges(restaurantId), saved)
         if (saved?.category_assignment_warnings?.length) {
           setSetupError(saved.category_assignment_warnings.join(' '))
@@ -2158,7 +2296,9 @@ export default function RestaurantSetupPanel({
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/discount-rules', payload),
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/discount-rules', propagationPayload),
       onSourceSaved: (saved) => {
-        setDiscountRules(normalizeDiscountRules(saved?.discount_rules))
+        const normalized = normalizeDiscountRules(saved?.discount_rules)
+        setDiscountRules(normalized)
+        rememberSavedDraft('discounts', normalized)
         queryClient.setQueryData(queryKeys.discountRules(restaurantId), saved)
       },
       publication,
@@ -2180,7 +2320,9 @@ export default function RestaurantSetupPanel({
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/manager-controls', payload),
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/manager-controls', payload),
       onSourceSaved: (saved) => {
-        setRolePermissions(normalizeRolePermissions(saved?.role_permissions, jobCodes))
+        const normalized = normalizeRolePermissions(saved?.role_permissions, jobCodes)
+        setRolePermissions(normalized)
+        rememberSavedDraft('manager_controls', normalized)
         queryClient.setQueryData(queryKeys.managerControls(restaurantId), saved)
       },
       publication,
@@ -2206,7 +2348,9 @@ export default function RestaurantSetupPanel({
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/closeout-settings', payload),
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/closeout-settings', payload),
       onSourceSaved: (saved) => {
-        setCloseoutSettings(normalizeCloseoutSettings(saved))
+        const normalized = normalizeCloseoutSettings(saved)
+        setCloseoutSettings(normalized)
+        rememberSavedDraft('closeout', normalized)
         queryClient.setQueryData(queryKeys.closeoutSettings(restaurantId), saved)
       },
       publication,
@@ -2224,7 +2368,9 @@ export default function RestaurantSetupPanel({
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/check-workflow-settings', payload),
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/check-workflow-settings', payload),
       onSourceSaved: (saved) => {
-        setCheckWorkflowSettings(normalizeCheckWorkflowSettings(saved))
+        const normalized = normalizeCheckWorkflowSettings(saved)
+        setCheckWorkflowSettings(normalized)
+        rememberSavedDraft('check_workflow', normalized)
         queryClient.setQueryData(queryKeys.checkWorkflowSettings(restaurantId), saved)
       },
       publication,
@@ -2253,7 +2399,9 @@ export default function RestaurantSetupPanel({
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/tips-payroll-settings', payload),
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/tips-payroll-settings', payload),
       onSourceSaved: (saved) => {
-        setTipPayrollSettings(normalizeTipPayrollSettings(saved, jobCodes))
+        const normalized = normalizeTipPayrollSettings(saved, jobCodes)
+        setTipPayrollSettings(normalized)
+        rememberSavedDraft('tips_payroll', normalized)
         queryClient.setQueryData(queryKeys.tipsPayrollSettings(restaurantId), saved)
       },
       publication,
@@ -2304,11 +2452,19 @@ export default function RestaurantSetupPanel({
         ? jobCodes.map(code => code.id === saved.id ? saved : code)
         : [...jobCodes, saved]
       const normalized = normalizeJobCodes(nextCodes)
+      const nextRateEdits = Object.fromEntries(normalized.map(code => [code.id, String(code.default_hourly_rate ?? '')]))
+      const nextJobCodeDraft = { code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: Math.max(100, ...normalized.map(code => Number(code.sort_order) || 0)) + 10, is_active: true }
       setJobCodes(normalized)
-      setRateEdits(Object.fromEntries(normalized.map(code => [code.id, String(code.default_hourly_rate ?? '')])))
+      setRateEdits(nextRateEdits)
       setTipPayrollSettings(prev => normalizeTipPayrollSettings(prev, normalized))
       setRolePermissions(prev => normalizeRolePermissions(prev, normalized))
-      setJobCodeDraft({ code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: Math.max(100, ...normalized.map(code => Number(code.sort_order) || 0)) + 10, is_active: true })
+      setJobCodeDraft(nextJobCodeDraft)
+      rememberSavedDraft('employees', {
+        ...(savedDraft('employees') || {}),
+        jobCodes: normalized,
+        rateEdits: nextRateEdits,
+        jobCodeDraft: nextJobCodeDraft,
+      })
       void queryClient.invalidateQueries({ queryKey: queryKeys.jobCodes(restaurantId) })
       setSaveMessage('Saved role.')
       onSetupChanged?.()
@@ -2329,10 +2485,16 @@ export default function RestaurantSetupPanel({
         body: JSON.stringify(jobCodePayload({ ...jobCode, is_active: false })),
       })
       const normalized = normalizeJobCodes(jobCodes.filter(code => code.id !== jobCode.id))
+      const nextRateEdits = Object.fromEntries(normalized.map(code => [code.id, String(code.default_hourly_rate ?? '')]))
       setJobCodes(normalized)
-      setRateEdits(Object.fromEntries(normalized.map(code => [code.id, String(code.default_hourly_rate ?? '')])))
+      setRateEdits(nextRateEdits)
       setTipPayrollSettings(prev => normalizeTipPayrollSettings(prev, normalized))
       setRolePermissions(prev => normalizeRolePermissions(prev, normalized))
+      rememberSavedDraft('employees', {
+        ...(savedDraft('employees') || {}),
+        jobCodes: normalized,
+        rateEdits: nextRateEdits,
+      })
       void queryClient.invalidateQueries({ queryKey: queryKeys.jobCodes(restaurantId) })
       setSaveMessage('Removed role.')
       onSetupChanged?.()
@@ -2362,8 +2524,10 @@ export default function RestaurantSetupPanel({
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/sections', payload),
       onSourceSaved: (saved) => {
         const savedNames = normalizeSectionNames((Array.isArray(saved) ? saved : []).map(section => section.name))
+        const savedProfiles = normalizeSectionProfiles(saved, savedNames)
         setSections(savedNames)
-        setSectionProfiles(normalizeSectionProfiles(saved, savedNames))
+        setSectionProfiles(savedProfiles)
+        rememberSavedDraft('sections', { sections: savedNames, sectionProfiles: savedProfiles })
         queryClient.setQueryData(queryKeys.sections(restaurantId), saved)
         setFloorTables(prev => prev.map(table => {
           if (table.section_id) return table
@@ -2384,6 +2548,7 @@ export default function RestaurantSetupPanel({
       saveSource: (targetId) => saveHoursForRestaurant(targetId, hours),
       saveTarget: (targetId) => saveHoursForRestaurant(targetId, hours),
       onSourceSaved: () => {
+        rememberSavedDraft('hours', { hours, sameHours })
         void queryClient.invalidateQueries({ queryKey: queryKeys.operatingHours(restaurantId) })
       },
       publication,
@@ -2445,7 +2610,9 @@ export default function RestaurantSetupPanel({
         return mergeRestaurantConfig(targetId, configPatch)
       },
       onSourceSaved: () => {
-        setReservationTiming(normalizeReservationTiming(configPatch))
+        const normalized = normalizeReservationTiming(configPatch)
+        setReservationTiming(normalized)
+        rememberSavedDraft('reservation_timing', normalized)
       },
       publication,
     })
@@ -2467,6 +2634,7 @@ export default function RestaurantSetupPanel({
       saveTarget: (targetId) => updateRestaurantRow(targetId, payload),
       onSourceSaved: () => {
         setProfile(prev => ({ ...prev, seating_capacity: nextCapacity, table_count: nextCount }))
+        rememberSavedDraft('capacity', { seating_capacity: nextCapacity, table_count: nextCount })
       },
       publication,
       buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-profile`, body: { patch: payload }, target_type: 'restaurant', target_id: targetId }),
@@ -2549,6 +2717,16 @@ export default function RestaurantSetupPanel({
     } finally {
       setSavingRateId('')
     }
+  }
+
+  const discardJobCodeChanges = (jobCodeId) => {
+    const baseline = savedDraft('employees')
+    const original = baseline?.jobCodes?.find(code => code.id === jobCodeId)
+    if (!original) return
+    setJobCodes(current => current.map(code => code.id === jobCodeId ? original : code))
+    setRateEdits(current => ({ ...current, [jobCodeId]: baseline.rateEdits?.[jobCodeId] ?? String(original.default_hourly_rate ?? '') }))
+    setSetupError('')
+    setSaveMessage('Changes discarded.')
   }
 
   const saveEditedPin = async (waiterId) => {
@@ -2672,7 +2850,7 @@ export default function RestaurantSetupPanel({
         <SectionShell
           title="Basics"
           description="Restaurant profile, service modes, and default guest flow from Stage 1 onboarding."
-          actions={publishControls('Save basics', saveBasics)}
+          actions={publishControls('Save basics', saveBasics, 'basics')}
         >
           {setupWarnings.basics?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
@@ -2739,7 +2917,7 @@ export default function RestaurantSetupPanel({
         <SectionShell
           title="Goals"
           description="Operating priorities and restaurant profile ranges captured during onboarding."
-          actions={publishControls('Save goals', saveGoals)}
+          actions={publishControls('Save goals', saveGoals, 'goals')}
         >
           <div className="space-y-6">
             <Field label="Biggest Challenges">
@@ -2763,7 +2941,7 @@ export default function RestaurantSetupPanel({
         <SectionShell
           title="Tools & Service Model"
           description="Current operating systems, service styles, and the default guest flow captured during onboarding."
-          actions={publishControls('Save tools & service model', saveServiceModel)}
+          actions={publishControls('Save tools & service model', saveServiceModel, 'service_model')}
         >
           <div className="space-y-6">
             <div className="grid gap-4 md:grid-cols-3">
@@ -2789,9 +2967,12 @@ export default function RestaurantSetupPanel({
           title="POS Branding"
           description={`Choose the background shown on ${restaurant.name}'s PIN screen and restaurant-selection card.`}
           actions={(
-            <SmallButton variant="primary" onClick={() => void saveCoverImage()} disabled={isSaving || !pendingCoverFile}>
-              {isSaving ? 'Saving...' : 'Save background'}
-            </SmallButton>
+            <div className="flex flex-wrap gap-2">
+              <SmallButton onClick={() => discardSetupChanges('branding')} disabled={isSaving || !pendingCoverFile}>Cancel</SmallButton>
+              <SmallButton variant="primary" onClick={() => void saveCoverImage()} disabled={isSaving || !pendingCoverFile}>
+                {isSaving ? 'Saving...' : 'Save background'}
+              </SmallButton>
+            </div>
           )}
         >
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
@@ -2880,7 +3061,7 @@ export default function RestaurantSetupPanel({
         <SectionShell
           title="Business & Legal"
           description="Legal entity details and the placeholder Shire agreement signature captured during Stage 1 onboarding."
-          actions={publishControls('Save legal', saveLegal)}
+          actions={publishControls('Save legal', saveLegal, 'legal')}
         >
           {setupWarnings.legal?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
@@ -2930,7 +3111,7 @@ export default function RestaurantSetupPanel({
         <SectionShell
           title="Payments & Payouts"
           description="Bank account readiness and default processing behavior for refunds, tips, and batch close."
-          actions={publishControls('Save payments', savePayments)}
+          actions={publishControls('Save payments', savePayments, 'payments')}
         >
           {setupWarnings.payments?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
@@ -2990,7 +3171,10 @@ export default function RestaurantSetupPanel({
                   Dual pricing prints cash and electronic options before payment, then receipts show the selected tender outcome.
                 </p>
               </div>
-              <SmallButton variant="primary" onClick={() => void savePricingPolicy()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save pricing policy'}</SmallButton>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <SmallButton onClick={() => discardSetupChanges('pricing_policy')} disabled={isSaving}>Cancel</SmallButton>
+                <SmallButton variant="primary" onClick={() => void savePricingPolicy()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save pricing policy'}</SmallButton>
+              </div>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -3090,7 +3274,7 @@ export default function RestaurantSetupPanel({
         <SectionShell
           title="Taxes & Charges"
           description="Tax categories and service charges used by the POS for order totals, refunds, closeout, and reports."
-          actions={publishControls('Save taxes & charges', saveTaxesCharges)}
+          actions={publishControls('Save taxes & charges', saveTaxesCharges, 'taxes_charges')}
         >
           <div className="space-y-8">
             <div className="space-y-4">
@@ -3179,7 +3363,7 @@ export default function RestaurantSetupPanel({
         <SectionShell
           title="Discounts, Comps & Promos"
           description="Preset POS rules for item discounts, whole-check discounts, comps, employee meals, promos, and service recovery."
-          actions={publishControls('Save discounts', saveDiscountRules)}
+          actions={publishControls('Save discounts', saveDiscountRules, 'discounts')}
         >
           <div className="space-y-5">
             {discountRules.length === 0 && (
@@ -3308,7 +3492,7 @@ export default function RestaurantSetupPanel({
         <SectionShell
           title="Manager Controls"
           description="Role permissions for manager-level POS actions. Employee roles are assigned in the Employees tab; this controls what each role can do during service."
-          actions={publishControls('Save controls', saveManagerControls)}
+          actions={publishControls('Save controls', saveManagerControls, 'manager_controls')}
         >
           <div className="space-y-4">
             {rolePermissions.map((role, index) => (
@@ -3357,7 +3541,7 @@ export default function RestaurantSetupPanel({
         <SectionShell
           title="Cash & Closeout"
           description="Cash drawer handling, server checkout requirements, and end-of-day close rules."
-          actions={publishControls('Save closeout', saveCloseoutSettings)}
+          actions={publishControls('Save closeout', saveCloseoutSettings, 'closeout')}
         >
           <div className="space-y-5">
             <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
@@ -3459,7 +3643,7 @@ export default function RestaurantSetupPanel({
         <SectionShell
           title="Check Workflow"
           description="Seat numbers, order fire and hold rules, split-by-seat/item, bar tabs, preauthorization, and reopen approval."
-          actions={publishControls('Save workflow', saveCheckWorkflowSettings)}
+          actions={publishControls('Save workflow', saveCheckWorkflowSettings, 'check_workflow')}
         >
           <div className="space-y-5">
             <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
@@ -3542,7 +3726,7 @@ export default function RestaurantSetupPanel({
         <SectionShell
           title="Tips & Payroll"
           description="Tip ownership, pooling, tipout rules, cash declarations, credit tip payout, and payroll export defaults."
-          actions={publishControls('Save tips & payroll', saveTipPayrollSettings)}
+          actions={publishControls('Save tips & payroll', saveTipPayrollSettings, 'tips_payroll')}
         >
           <TipPayrollSettingsFields
             settings={tipPayrollSettings}
@@ -3557,7 +3741,7 @@ export default function RestaurantSetupPanel({
         <SectionShell
           title="Sections"
           description="Sections are areas in your restaurant, such as Bar, Patio, Outdoor, or Main Dining. Tables in the floor plan are assigned to one of these categories, and unassigned tables default to Table."
-          actions={publishControls('Save sections', saveSections)}
+          actions={publishControls('Save sections', saveSections, 'sections')}
         >
           {setupWarnings.sections?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
@@ -3628,7 +3812,7 @@ export default function RestaurantSetupPanel({
         <SectionShell
           title="Hours"
           description="Actual operating hours, matching the original onboarding hours editor."
-          actions={publishControls('Save hours', saveHours)}
+          actions={publishControls('Save hours', saveHours, 'hours')}
         >
           <div className="mb-5 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <span className="text-sm text-dash-secondary">Same hours every day?</span>
@@ -3706,9 +3890,12 @@ export default function RestaurantSetupPanel({
           title="Reservation Timing"
           description="Booking windows, party limits, turn time, and whether online and staff-created reservations share the same timing."
           actions={
-            <SmallButton variant="primary" onClick={() => void saveReservationTiming()} disabled={isSaving}>
-              {isSaving ? 'Saving...' : 'Save reservations'}
-            </SmallButton>
+            <div className="flex flex-wrap gap-2">
+              <SmallButton onClick={() => discardSetupChanges('reservation_timing')} disabled={isSaving}>Cancel</SmallButton>
+              <SmallButton variant="primary" onClick={() => void saveReservationTiming()} disabled={isSaving}>
+                {isSaving ? 'Saving...' : 'Save reservations'}
+              </SmallButton>
+            </div>
           }
         >
           <div className="space-y-5">
@@ -3799,7 +3986,7 @@ export default function RestaurantSetupPanel({
         <SectionShell
           title="Capacity / Floor Plan"
           description="Seating capacity plus the visual table editor from onboarding. Use this to add, move, resize, and edit table seats."
-          actions={publishControls('Save capacity', (publication) => saveCapacity({}, publication))}
+          actions={publishControls('Save capacity', (publication) => saveCapacity({}, publication), 'capacity')}
         >
           {setupWarnings.capacity?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
@@ -3957,7 +4144,7 @@ export default function RestaurantSetupPanel({
             ) : (
               <div className="grid gap-3">
                 {normalizeStaffRoleOptions(jobCodes.filter(code => code.is_active !== false)).map(code => (
-                  <div key={code.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto_auto]">
+                  <div key={code.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto_auto_auto]">
                     <TextInput
                       value={code.label || code.code}
                       onChange={event => setJobCodes(prev => prev.map(item => item.id === code.id ? { ...item, label: event.target.value } : item))}
@@ -3975,6 +4162,7 @@ export default function RestaurantSetupPanel({
                     <SmallButton variant={code.is_tipped ? 'primary' : 'secondary'} onClick={() => setJobCodes(prev => prev.map(item => item.id === code.id ? { ...item, is_tipped: !item.is_tipped } : item))}>
                       {code.is_tipped ? 'Tipped' : 'Hourly'}
                     </SmallButton>
+                    <SmallButton onClick={() => discardJobCodeChanges(code.id)} disabled={Boolean(savingRateId)}>Cancel</SmallButton>
                     <PublishControls
                       label="Save role"
                       busy={savingRateId === code.id}
@@ -3985,7 +4173,7 @@ export default function RestaurantSetupPanel({
                     <SmallButton variant="danger" onClick={() => void removeJobCode(code)} disabled={Boolean(savingRateId)}>Remove</SmallButton>
                   </div>
                 ))}
-                <div className="grid gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto]">
+                <div className="grid gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto_auto]">
                   <TextInput value={jobCodeDraft.label} onChange={event => setJobCodeDraft(prev => ({ ...prev, label: event.target.value, code: slugRoleCode(event.target.value) }))} placeholder="New role" />
                   <TextInput value={jobCodeDraft.default_hourly_rate} onChange={event => setJobCodeDraft(prev => ({ ...prev, default_hourly_rate: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))} placeholder="0.00" />
                   <SelectInput value={jobCodeDraft.permission_tier} onChange={event => setJobCodeDraft(prev => ({ ...prev, permission_tier: event.target.value }))}>
@@ -3994,6 +4182,7 @@ export default function RestaurantSetupPanel({
                   <SmallButton variant={jobCodeDraft.is_tipped ? 'primary' : 'secondary'} onClick={() => setJobCodeDraft(prev => ({ ...prev, is_tipped: !prev.is_tipped }))}>
                     {jobCodeDraft.is_tipped ? 'Tipped' : 'Hourly'}
                   </SmallButton>
+                  <SmallButton onClick={() => setJobCodeDraft(savedDraft('employees')?.jobCodeDraft || { code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 100, is_active: true })} disabled={Boolean(savingRateId)}>Cancel</SmallButton>
                   <SmallButton variant="primary" onClick={() => void saveJobCode(jobCodeDraft)} disabled={!jobCodeDraft.label.trim() || Boolean(savingRateId)}>Add role</SmallButton>
                 </div>
               </div>
@@ -4023,7 +4212,7 @@ export default function RestaurantSetupPanel({
                       />
                     </Field>
                   </div>
-                  <div className="grid items-end gap-3 md:grid-cols-[120px_120px_minmax(150px,1fr)_minmax(150px,1fr)_auto_auto]">
+                  <div className="grid items-end gap-3 md:grid-cols-[120px_120px_minmax(150px,1fr)_minmax(150px,1fr)_auto_auto_auto]">
                     <Field label="Hrs/week">
                       <TextInput className="px-3 text-center" defaultValue={waiter.suggested_weekly_hours ?? ''} placeholder="0" onBlur={event => void updateStaff(waiter.id, { suggested_weekly_hours: event.target.value === '' ? null : Number(event.target.value) })} />
                     </Field>
@@ -4051,6 +4240,7 @@ export default function RestaurantSetupPanel({
                     >
                       {pinSaving[waiter.id] ? 'Saving...' : pinSaved[waiter.id] ? 'Saved' : 'Save PIN'}
                     </SmallButton>
+                    <SmallButton onClick={() => { setPinEdits(prev => ({ ...prev, [waiter.id]: '' })); setPinSaved(prev => ({ ...prev, [waiter.id]: false })) }} disabled={!pinEdits[waiter.id] || pinSaving[waiter.id]}>Cancel</SmallButton>
                     <SmallButton variant="danger" onClick={() => void removeStaff(waiter.id)}>Remove</SmallButton>
                   </div>
                 </div>

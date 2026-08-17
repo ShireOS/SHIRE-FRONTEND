@@ -225,6 +225,13 @@ export default function CashCloseDaySettings({ restaurantId }) {
     }
   }
 
+  const discard = () => {
+    if (!settings || saving) return
+    hydrate(settings)
+    setError('')
+    setSaved('Changes discarded.')
+  }
+
   if (loading) {
     return (
       <section className="flex items-center gap-3 border border-dash-border bg-[var(--glass-bg)] p-5 text-sm text-dash-tertiary">
@@ -366,6 +373,7 @@ export default function CashCloseDaySettings({ restaurantId }) {
           <div className="flex flex-wrap items-center justify-end gap-3">
             {saved && <p className="text-xs text-emerald-300">{saved}</p>}
             {error && <p className="text-xs text-red-300">{error}</p>}
+            <button type="button" onClick={discard} disabled={!dirty || saving} className="border border-dash-border px-5 py-2 text-sm font-semibold text-dash-secondary transition hover:text-dash-cream disabled:cursor-not-allowed disabled:opacity-40">Cancel</button>
             <button
               type="button"
               onClick={save}

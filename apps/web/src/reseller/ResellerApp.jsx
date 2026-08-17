@@ -545,6 +545,7 @@ function ResellerProfileEditor({ onboarding = false }) {
   const navigate = useNavigate()
   const { resellerId, groups, restaurants, isLoading: portfolioLoading } = useResellerPortfolio()
   const [profile, setProfile] = useState(() => normalizeResellerProfile(null))
+  const [savedProfile, setSavedProfile] = useState(() => normalizeResellerProfile(null))
   const [employees, setEmployees] = useState([])
   const [employeeDraft, setEmployeeDraft] = useState(() => ({
     name: '',
@@ -573,6 +574,7 @@ function ResellerProfileEditor({ onboarding = false }) {
         canManage ? fetchResellerEmployees(resellerId) : Promise.resolve([]),
       ])
       setProfile(profileRow)
+      setSavedProfile(profileRow)
       setEmployees(employeeRows)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load reseller profile.')
@@ -654,6 +656,7 @@ function ResellerProfileEditor({ onboarding = false }) {
       }
       const saved = await saveResellerProfile(resellerId, profile, { complete })
       setProfile(saved)
+      setSavedProfile(saved)
       setMessage(complete ? 'Reseller onboarding complete.' : 'Saved reseller profile.')
       if (complete) navigate('/reseller', { replace: true })
     } catch (err) {
@@ -672,6 +675,7 @@ function ResellerProfileEditor({ onboarding = false }) {
       const logoUrl = await uploadResellerLogo(resellerId, file)
       const saved = await saveResellerProfile(resellerId, { ...profile, logo_url: logoUrl })
       setProfile(saved)
+      setSavedProfile(saved)
       setMessage('Logo uploaded.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not upload logo.')
@@ -874,12 +878,15 @@ function ResellerProfileEditor({ onboarding = false }) {
             {saving ? 'Saving...' : 'Complete reseller onboarding'}
           </SmallButton>
         ) : (
-          <PublishControls
-            label="Save profile"
-            busy={saving}
-            onPublishNow={() => saveProfile()}
-            onSchedule={(scheduledFor, timezone) => saveProfile({ publication: { scheduledFor, timezone } })}
-          />
+          <>
+            <SmallButton onClick={() => { setProfile(structuredClone(savedProfile)); setError(''); setMessage('Changes discarded.') }} disabled={saving}>Cancel</SmallButton>
+            <PublishControls
+              label="Save profile"
+              busy={saving}
+              onPublishNow={() => saveProfile()}
+              onSchedule={(scheduledFor, timezone) => saveProfile({ publication: { scheduledFor, timezone } })}
+            />
+          </>
         )}
       </div>
     </div>

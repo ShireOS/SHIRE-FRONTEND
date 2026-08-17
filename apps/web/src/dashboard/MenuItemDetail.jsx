@@ -814,6 +814,16 @@ function QuestionEditor({
   )
 }
 
+const availabilityDraft = (item) => ({
+  availability_mode: item.availability_mode || 'always',
+  availability_days: Array.isArray(item.availability_days) && item.availability_days.length > 0 ? item.availability_days : [0, 1, 2, 3, 4, 5, 6],
+  availability_start_time: item.availability_start_time ? String(item.availability_start_time).slice(0, 5) : '',
+  availability_end_time: item.availability_end_time ? String(item.availability_end_time).slice(0, 5) : '',
+  availability_start_date: item.availability_start_date || '',
+  availability_end_date: item.availability_end_date || '',
+  availability_notes: item.availability_notes || '',
+})
+
 export function MenuItemDetail({
   restaurantId, item, categories, categoryNames, stations, groups, modifiers, specials,
   productionRouting, onRouteItemProduction,
@@ -828,15 +838,8 @@ export function MenuItemDetail({
   const [questionSearch, setQuestionSearch] = useState('')
   const [showQuickPicker, setShowQuickPicker] = useState(false)
   const [specialForm, setSpecialForm] = useState({ display_name: '', special_price: '', note: '', expires_at: '', suggested_tip_basis: 'after_discount' })
-  const [schedule, setSchedule] = useState(() => ({
-    availability_mode: item.availability_mode || 'always',
-    availability_days: Array.isArray(item.availability_days) && item.availability_days.length > 0 ? item.availability_days : [0, 1, 2, 3, 4, 5, 6],
-    availability_start_time: item.availability_start_time ? String(item.availability_start_time).slice(0, 5) : '',
-    availability_end_time: item.availability_end_time ? String(item.availability_end_time).slice(0, 5) : '',
-    availability_start_date: item.availability_start_date || '',
-    availability_end_date: item.availability_end_date || '',
-    availability_notes: item.availability_notes || '',
-  }))
+  const [schedule, setSchedule] = useState(() => availabilityDraft(item))
+  useEffect(() => setSchedule(availabilityDraft(item)), [item])
 
   const modifiersById = Object.fromEntries(modifiers.map(m => [m.id, m]))
   const categoriesByName = Object.fromEntries(categories.filter(c => c.name).map(c => [c.name, c]))
@@ -1697,7 +1700,10 @@ export function MenuItemDetail({
                 </div>
               )}
               <TextInput value={schedule.availability_notes} onChange={event => setSchedule(prev => ({ ...prev, availability_notes: event.target.value }))} placeholder="Notes (brunch only, seasonal...)" />
-              <SmallButton variant="primary" onClick={() => void saveSchedule()} disabled={busy}>Save availability</SmallButton>
+              <div className="flex flex-wrap gap-2">
+                <SmallButton onClick={() => setSchedule(availabilityDraft(item))} disabled={busy}>Cancel</SmallButton>
+                <SmallButton variant="primary" onClick={() => void saveSchedule()} disabled={busy}>Save availability</SmallButton>
+              </div>
             </div>
           </DetailCard>
       )

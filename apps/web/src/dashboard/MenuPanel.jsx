@@ -254,22 +254,25 @@ function GroupTree({ groupId, groupsById, modifiersById, depth = 0, seen }) {
 
 // ── Modifier group editor card (Groups tab power view) ─────────────────────
 
+const groupFieldsDraft = (group) => ({
+  name: group.name,
+  min_selections: String(group.min_selections ?? 0),
+  max_selections: group.max_selections == null ? '' : String(group.max_selections),
+  is_required: Boolean(group.is_required),
+  prompt_on_order: group.prompt_on_order !== false,
+  included_count: String(group.included_count ?? 0),
+  overage_price: group.overage_price == null ? '' : String(group.overage_price),
+  prompt_mode: normalizedPromptMode(group.prompt_mode),
+  pre_modifiers: Array.isArray(group.pre_modifiers) ? group.pre_modifiers : [],
+  pre_modifier_prices: moneyValuesToDraft(group.pre_modifier_prices),
+  no_print: Boolean(group.no_print),
+  kitchen_display_role: group.kitchen_display_role || (group.type === 'side' ? 'side' : ''),
+})
+
 function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy, onSave, onArchive, onLink, onAddModifiers, onCreateModifier, onToggleCategory = null }) {
   const [expanded, setExpanded] = useState(false)
-  const [draft, setDraft] = useState(() => ({
-    name: group.name,
-    min_selections: String(group.min_selections ?? 0),
-    max_selections: group.max_selections == null ? '' : String(group.max_selections),
-    is_required: Boolean(group.is_required),
-    prompt_on_order: group.prompt_on_order !== false,
-    included_count: String(group.included_count ?? 0),
-    overage_price: group.overage_price == null ? '' : String(group.overage_price),
-    prompt_mode: normalizedPromptMode(group.prompt_mode),
-    pre_modifiers: Array.isArray(group.pre_modifiers) ? group.pre_modifiers : [],
-    pre_modifier_prices: moneyValuesToDraft(group.pre_modifier_prices),
-    no_print: Boolean(group.no_print),
-    kitchen_display_role: group.kitchen_display_role || (group.type === 'side' ? 'side' : ''),
-  }))
+  const [draft, setDraft] = useState(() => groupFieldsDraft(group))
+  useEffect(() => setDraft(groupFieldsDraft(group)), [group])
   const modifiersById = useMemo(() => Object.fromEntries(modifiers.map(m => [m.id, m])), [modifiers])
   const groupsById = useMemo(() => Object.fromEntries(groups.map(g => [g.id, g])), [groups])
   const attachedIds = useMemo(() => new Set(group.item_ids), [group])
@@ -370,6 +373,7 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
               >
                 {draft.is_required ? 'Required' : 'Optional'}
               </SmallButton>
+              <SmallButton onClick={() => setDraft(groupFieldsDraft(group))} disabled={busy}>Cancel</SmallButton>
               <SmallButton variant="primary" onClick={saveFields} disabled={busy}>Save</SmallButton>
             </div>
             <div className="grid gap-3 rounded-xl border border-white/10 bg-black/10 p-3 md:grid-cols-2">
@@ -676,6 +680,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [menuItems, setMenuItems] = useState([])
   const [itemImages, setItemImages] = useState({})
   const [categories, setCategories] = useState([])
+  const [savedCategories, setSavedCategories] = useState([])
   const [categoryColors, setCategoryColors] = useState({})
   const [taxRates, setTaxRates] = useState([])
   const [modifiers, setModifiers] = useState([])
@@ -762,7 +767,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       () => api(`/restaurants/${restaurantId}/menu/categories`),
       force ? 0 : STALE_TIMES.setup,
     )
-    setCategories(Array.isArray(data) ? data : (data?.categories || []))
+    const next = Array.isArray(data) ? data : (data?.categories || [])
+    setCategories(next)
+    setSavedCategories(next)
     setTaxRates(Array.isArray(data?.tax_rates) ? data.tax_rates : [])
     try {
       setCategoryColors(await fetchCategoryColors(restaurantId))
@@ -1542,7 +1549,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           body: JSON.stringify(categoriesBodyFor(targetId, categories)),
         })
         if (targetId === restaurantId) {
-          setCategories(Array.isArray(saved) ? saved : (saved?.categories || []))
+          const next = Array.isArray(saved) ? saved : (saved?.categories || [])
+          setCategories(next)
+          setSavedCategories(next)
           invalidateCategories()
         }
       }
@@ -2209,13 +2218,16 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           title="Categories"
           description="How the menu is organized on the POS. Each category card shows exactly how its button will look on the device, and sets the tax rate, prep station, and course its items inherit. Click an item count to see what's inside."
           actions={(
-            <PublishControls
-              label={propagationReady ? 'Save categories…' : 'Save categories'}
-              busy={busy}
-              disabled={busy}
-              onPublishNow={() => void publishCategories()}
-              onSchedule={(scheduledFor, timezone) => void publishCategories({ scheduledFor, timezone })}
-            />
+            <div className="flex flex-wrap gap-2">
+              <SmallButton onClick={() => { setCategories(structuredClone(savedCategories)); setError(''); setNotice('Changes discarded.') }} disabled={busy}>Cancel</SmallButton>
+              <PublishControls
+                label={propagationReady ? 'Save categories…' : 'Save categories'}
+                busy={busy}
+                disabled={busy}
+                onPublishNow={() => void publishCategories()}
+                onSchedule={(scheduledFor, timezone) => void publishCategories({ scheduledFor, timezone })}
+              />
+            </div>
           )}
         >
           <div className="mb-4"><ScheduledChangesPanel /></div>
@@ -3073,7 +3085,10 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                     <input type="checkbox" checked={specialDraft.preserve_gratuity_basis} onChange={event => setSpecialDraft(prev => ({ ...prev, preserve_gratuity_basis: event.target.checked }))} className="h-4 w-4 accent-dash-gold" />
                     <span>Calculate gratuity using the regular price</span>
                   </label>
-                  <SmallButton variant="primary" onClick={() => void createSpecial()} disabled={busy}>Save special</SmallButton>
+                  <div className="flex flex-wrap gap-2">
+                    <SmallButton onClick={() => setSpecialDraft(defaultSpecialDraft())} disabled={busy}>Cancel</SmallButton>
+                    <SmallButton variant="primary" onClick={() => void createSpecial()} disabled={busy}>Save special</SmallButton>
+                  </div>
                 </div>
               </div>
             </div>

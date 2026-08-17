@@ -127,6 +127,7 @@ function createTile(widgetId, slot, placement) {
 
 function TerminalHomeDesigner({ restaurantId }) {
   const [config, setConfig] = useState(() => normalizeTerminalHomeConfig())
+  const [savedConfig, setSavedConfig] = useState(() => normalizeTerminalHomeConfig())
   const [selectedId, setSelectedId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -142,6 +143,7 @@ function TerminalHomeDesigner({ restaurantId }) {
       const data = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/terminal-home-config`)
       const normalized = normalizeTerminalHomeConfig(data)
       setConfig(normalized)
+      setSavedConfig(normalized)
       setSelectedId((current) => normalized.tiles.some((tile) => tile.id === current) ? current : normalized.tiles[0]?.id || null)
     } catch (err) {
       setError(err?.message || 'Could not load terminal home config')
@@ -227,6 +229,7 @@ function TerminalHomeDesigner({ restaurantId }) {
       })
       const normalized = normalizeTerminalHomeConfig(saved)
       setConfig(normalized)
+      setSavedConfig(normalized)
       setSelectedId((current) => normalized.tiles.some((tile) => tile.id === current) ? current : normalized.tiles[0]?.id || null)
       setMessage('Terminal quick access saved')
     } catch (err) {
@@ -234,6 +237,14 @@ function TerminalHomeDesigner({ restaurantId }) {
     } finally {
       setSaving(false)
     }
+  }
+
+  const discard = () => {
+    const restored = structuredClone(savedConfig)
+    setConfig(restored)
+    setSelectedId((current) => restored.tiles.some((tile) => tile.id === current) ? current : restored.tiles[0]?.id || null)
+    setError('')
+    setMessage('Changes discarded')
   }
 
   return (
@@ -254,6 +265,7 @@ function TerminalHomeDesigner({ restaurantId }) {
           >
             {[4, 5, 6, 7, 8].map((value) => <option key={value} value={value}>{value} slots</option>)}
           </select>
+          <button type="button" onClick={discard} disabled={saving || loading} className="rounded-xl border border-dash-border px-5 py-2 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">Cancel</button>
           <button
             type="button"
             onClick={save}
@@ -465,6 +477,7 @@ const DEFAULT_MANAGER_APPROVAL_POLICY = {
 
 function ManagerApprovalSettings({ restaurantId }) {
   const [policy, setPolicy] = useState(DEFAULT_MANAGER_APPROVAL_POLICY)
+  const [savedPolicy, setSavedPolicy] = useState(DEFAULT_MANAGER_APPROVAL_POLICY)
   const [changeReason, setChangeReason] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -477,7 +490,11 @@ function ManagerApprovalSettings({ restaurantId }) {
     setError('')
     void fetchPosApi(restaurantId, `/restaurants/${restaurantId}/manager-approval-policy`)
       .then((data) => {
-        if (!cancelled) setPolicy({ ...DEFAULT_MANAGER_APPROVAL_POLICY, ...(data || {}) })
+        if (!cancelled) {
+          const normalized = { ...DEFAULT_MANAGER_APPROVAL_POLICY, ...(data || {}) }
+          setPolicy(normalized)
+          setSavedPolicy(normalized)
+        }
       })
       .catch((err) => { if (!cancelled) setError(err?.message || 'Could not load manager approval settings') })
       .finally(() => { if (!cancelled) setLoading(false) })
@@ -506,7 +523,9 @@ function ManagerApprovalSettings({ restaurantId }) {
           change_reason: changeReason.trim(),
         }),
       })
-      setPolicy({ ...DEFAULT_MANAGER_APPROVAL_POLICY, ...saved })
+      const normalized = { ...DEFAULT_MANAGER_APPROVAL_POLICY, ...saved }
+      setPolicy(normalized)
+      setSavedPolicy(normalized)
       setChangeReason('')
       setMessage('Manager approval policy saved and audited')
     } catch (err) {
@@ -514,6 +533,13 @@ function ManagerApprovalSettings({ restaurantId }) {
     } finally {
       setSaving(false)
     }
+  }
+
+  const discard = () => {
+    setPolicy(structuredClone(savedPolicy))
+    setChangeReason('')
+    setError('')
+    setMessage('Changes discarded')
   }
 
   const rows = [
@@ -536,9 +562,12 @@ function ManagerApprovalSettings({ restaurantId }) {
             </p>
           </div>
         </div>
-        <button type="button" onClick={save} disabled={saving || loading} className="rounded-xl bg-shell-accent px-5 py-2 text-sm font-semibold text-dash-base disabled:opacity-50">
-          {saving ? 'Saving...' : 'Save'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={discard} disabled={saving || loading} className="rounded-xl border border-dash-border px-5 py-2 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">Cancel</button>
+          <button type="button" onClick={save} disabled={saving || loading} className="rounded-xl bg-shell-accent px-5 py-2 text-sm font-semibold text-dash-base disabled:opacity-50">
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
       </div>
 
       {loading ? <div className="mt-4 text-sm text-dash-secondary">Loading manager approval policy...</div> : null}
@@ -688,7 +717,7 @@ export default function PosSettingsPage({ restaurantId }) {
       <ManagerApprovalSettings restaurantId={restaurantId} />
 
       <section className="rounded-2xl border border-dash-border bg-dash-panel p-5">
-        <div className="grid gap-3 md:grid-cols-[180px_1fr_auto]">
+        <div className="grid gap-3 md:grid-cols-[180px_1fr_auto_auto]">
           <select
             value={actionType}
             onChange={(event) => setActionType(event.target.value)}
@@ -702,6 +731,7 @@ export default function PosSettingsPage({ restaurantId }) {
             placeholder="Preset label"
             className="rounded-xl border border-dash-border bg-dash-surface px-3 py-2 text-sm font-semibold text-dash-cream placeholder:text-dash-tertiary outline-none"
           />
+          <button type="button" onClick={() => { setEditingId(null); setActionType('discount'); setLabel(''); setError(''); setMessage('Changes discarded') }} disabled={saving || (!editingId && !label)} className="rounded-xl border border-dash-border px-5 py-2 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">Cancel</button>
           <button
             type="button"
             onClick={savePreset}

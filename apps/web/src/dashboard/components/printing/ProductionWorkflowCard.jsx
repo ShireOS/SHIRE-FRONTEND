@@ -13,6 +13,7 @@ const blankOverride = () => ({ role_key: 'bartender', waiter_id: null, menu_item
 
 export default function ProductionWorkflowCard({ restaurantId }) {
   const [workflow, setWorkflow] = useState(null)
+  const [savedWorkflow, setSavedWorkflow] = useState(null)
   const [reason, setReason] = useState('Update production workflow')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -21,7 +22,7 @@ export default function ProductionWorkflowCard({ restaurantId }) {
   useEffect(() => {
     let current = true
     fetchProductionWorkflow(restaurantId)
-      .then(value => { if (current) setWorkflow(value) })
+      .then(value => { if (current) { setWorkflow(value); setSavedWorkflow(value) } })
       .catch(err => { if (current) setError(err?.message || 'Could not load production workflow') })
     return () => { current = false }
   }, [restaurantId])
@@ -40,10 +41,19 @@ export default function ProductionWorkflowCard({ restaurantId }) {
     try {
       const saved = await applyProductionWorkflow(restaurantId, workflow, reason)
       setWorkflow(saved)
+      setSavedWorkflow(saved)
       setMessage('Production workflow saved. POS destinations and add behavior now use this policy.')
     } catch (err) {
       setError(err?.message || 'Could not save production workflow')
     } finally { setSaving(false) }
+  }
+
+  const discard = () => {
+    if (!savedWorkflow || saving) return
+    setWorkflow(structuredClone(savedWorkflow))
+    setReason('Update production workflow')
+    setError('')
+    setMessage('Changes discarded.')
   }
 
   if (!workflow) return <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 text-sm text-dash-tertiary">{error || 'Loading production workflow…'}</div>
@@ -120,6 +130,7 @@ export default function ProductionWorkflowCard({ restaurantId }) {
 
       <div className="mt-5 flex flex-wrap items-end gap-3">
         <label className="min-w-[280px] flex-1"><span className="label-mono">Reason for change</span><input value={reason} onChange={event => setReason(event.target.value)} maxLength={300} className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></label>
+        <button type="button" disabled={saving} onClick={discard} className="rounded-xl border border-white/10 px-5 py-2.5 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">Cancel</button>
         <button type="button" disabled={saving} onClick={() => void save()} className="rounded-xl bg-dash-gold px-5 py-2.5 text-sm font-semibold text-black disabled:opacity-50">{saving ? 'Saving…' : 'Save production behavior'}</button>
       </div>
     </section>

@@ -1138,6 +1138,19 @@ function normalizeRoleCounts(roles = {}) {
   }, {})
 }
 
+function shiftToForm(item) {
+  if (!item) return null
+  return {
+    waiter_id: item.waiter_id,
+    role: item.role,
+    shift_date: item.shift_date,
+    shift_start: String(item.shift_start).slice(0, 5),
+    shift_end: String(item.shift_end).slice(0, 5),
+    is_locked: Boolean(item.is_locked),
+    notes: item.notes || '',
+  }
+}
+
 function blockDurationMinutes(block) {
   const start = timeToMinutes(block?.start_time, 0)
   const end = timeToMinutes(block?.end_time, start)
@@ -1282,6 +1295,7 @@ function SchedulingPanel({ restaurantId }) {
   const [shiftTradeRequests, setShiftTradeRequests] = useState([])
   const [shiftTradeView, setShiftTradeView] = useState('pending')
   const [requestPolicy, setRequestPolicy] = useState(null)
+  const [savedRequestPolicy, setSavedRequestPolicy] = useState(null)
   const [optimizationWeights, setOptimizationWeights] = useState(DEFAULT_OPTIMIZATION_WEIGHTS)
   const [scheduleRoleFilter, setScheduleRoleFilter] = useState('all')
   const [scheduleEmployeeFilter, setScheduleEmployeeFilter] = useState('all')
@@ -1356,6 +1370,7 @@ function SchedulingPanel({ restaurantId }) {
       force,
     )
     setRequestPolicy(data)
+    setSavedRequestPolicy(structuredClone(data))
     setOptimizationWeights({
       ...DEFAULT_OPTIMIZATION_WEIGHTS,
       ...(data?.manager_settings?.optimization_weights || {}),
@@ -1747,15 +1762,7 @@ function SchedulingPanel({ restaurantId }) {
   const selectShift = (item) => {
     setSelectedShift(item)
     setSelectedDiagnostic(null)
-    setShiftForm({
-      waiter_id: item.waiter_id,
-      role: item.role,
-      shift_date: item.shift_date,
-      shift_start: String(item.shift_start).slice(0, 5),
-      shift_end: String(item.shift_end).slice(0, 5),
-      is_locked: Boolean(item.is_locked),
-      notes: item.notes || '',
-    })
+    setShiftForm(shiftToForm(item))
   }
 
   const selectDiagnostic = (item) => {
@@ -2112,6 +2119,7 @@ function SchedulingPanel({ restaurantId }) {
         }),
       })
       setRequestPolicy(saved)
+      setSavedRequestPolicy(structuredClone(saved))
       setOptimizationWeights({
         ...DEFAULT_OPTIMIZATION_WEIGHTS,
         ...(saved?.manager_settings?.optimization_weights || {}),
@@ -2120,6 +2128,17 @@ function SchedulingPanel({ restaurantId }) {
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Could not save request limits')
     }
+  }
+
+  const discardRequestPolicy = () => {
+    if (!savedRequestPolicy) return
+    const restored = structuredClone(savedRequestPolicy)
+    setRequestPolicy(restored)
+    setOptimizationWeights({
+      ...DEFAULT_OPTIMIZATION_WEIGHTS,
+      ...(restored?.manager_settings?.optimization_weights || {}),
+    })
+    setStatus('Changes discarded.')
   }
 
   const scheduleTimelineWidth = ((calendarBounds.end - calendarBounds.start) / 60) * SCHEDULE_TIMELINE_PIXELS_PER_HOUR
@@ -2438,8 +2457,9 @@ function SchedulingPanel({ restaurantId }) {
                   placeholder="Notes optional"
                   className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary"
                 />
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button type="button" onClick={() => void saveSelectedShift()} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90">Save</button>
+                  <button type="button" onClick={() => setShiftForm(shiftToForm(selectedShift))} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Cancel</button>
                   <button type="button" onClick={() => void deleteSelectedShift()} className="rounded-xl border border-red-400/30 px-4 py-2 text-sm font-semibold text-red-100 transition hover:border-red-300/70">Remove</button>
                 </div>
               </div>
@@ -2797,8 +2817,19 @@ function SchedulingPanel({ restaurantId }) {
                   placeholder="Notes optional"
                   className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary"
                 />
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button type="button" onClick={() => void saveCoverageBlock()} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90">Save block</button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const savedBlock = displayedBlocks.find(block => block.key === coverageForm.key)
+                      setCoverageForm(savedBlock ? blockToForm(savedBlock) : emptyCoverageBlockForm)
+                      setStatus('Changes discarded.')
+                    }}
+                    className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream"
+                  >
+                    Cancel
+                  </button>
                   <button
                     type="button"
                     onClick={() => void deleteCoverageBlock()}
@@ -2901,7 +2932,10 @@ function SchedulingPanel({ restaurantId }) {
                     <span className="font-semibold text-emerald-200">Required</span>
                   </div>
                 </div>
-                <button type="button" onClick={() => void saveRequestPolicy()} className="mt-3 w-full rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Save limits</button>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button type="button" onClick={discardRequestPolicy} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Cancel</button>
+                  <button type="button" onClick={() => void saveRequestPolicy()} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Save limits</button>
+                </div>
               </div>
             )}
           </aside>
@@ -2914,7 +2948,10 @@ function SchedulingPanel({ restaurantId }) {
                 Tune how strongly the draft scheduler balances coverage, target hours, requests, preferences, fairness, and prime-shift spread.
               </p>
             </div>
-            <button type="button" onClick={() => void saveRequestPolicy()} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90">Save weights</button>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={discardRequestPolicy} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Cancel</button>
+              <button type="button" onClick={() => void saveRequestPolicy()} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90">Save weights</button>
+            </div>
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {OPTIMIZATION_WEIGHT_FIELDS.map(([field, label]) => (
