@@ -319,12 +319,12 @@ function QuestionEditor({
     : null
   const isDefaultHere = (option) => (overrideDefaults ? overrideDefaults.includes(option.modifier_id) : option.is_default)
 
-  const patchGroup = (patch, message) => run(async () => {
+  const patchGroup = (patch, message = 'Question saved.') => run(async () => {
     await updateModifierGroup(group.id, patch)
     await reloadGroups()
   }, message)
 
-  const linkWork = (work, message) => run(async () => {
+  const linkWork = (work, message = 'Question saved.') => run(async () => {
     await work()
     await reloadGroups()
   }, message)
@@ -429,7 +429,7 @@ function QuestionEditor({
             defaultValue={group.name}
             onBlur={event => {
               const next = event.target.value.trim()
-              if (next && next !== group.name) void patchGroup({ name: next })
+              if (next && next !== group.name) void patchGroup({ name: next }, 'Question name saved.')
             }}
           />
           {source === 'category' && inheritedFromName && (
@@ -546,7 +546,7 @@ function QuestionEditor({
           defaultValue={String(group.min_selections ?? 0)}
           onBlur={event => {
             const next = Number(cleanDigits(event.target.value)) || 0
-            if (next !== group.min_selections) void patchGroup({ min_selections: group.is_required ? Math.max(1, next) : next })
+            if (next !== group.min_selections) void patchGroup({ min_selections: group.is_required ? Math.max(1, next) : next }, 'Minimum choices saved.')
           }}
         />
         <span>and at most</span>
@@ -558,7 +558,7 @@ function QuestionEditor({
           onBlur={event => {
             const raw = cleanDigits(event.target.value)
             const next = raw === '' ? null : Math.max(Number(raw), group.min_selections || 0)
-            if (next !== group.max_selections) void patchGroup({ max_selections: next })
+            if (next !== group.max_selections) void patchGroup({ max_selections: next }, 'Maximum choices saved.')
           }}
         />
         <span className="text-dash-tertiary">·</span>
@@ -569,7 +569,7 @@ function QuestionEditor({
           defaultValue={String(group.included_count ?? 0)}
           onBlur={event => {
             const next = Number(cleanDigits(event.target.value)) || 0
-            if (next !== (group.included_count ?? 0)) void patchGroup({ included_count: next })
+            if (next !== (group.included_count ?? 0)) void patchGroup({ included_count: next }, 'Included choices saved.')
           }}
         />
         <span>are free, then $</span>
@@ -581,7 +581,7 @@ function QuestionEditor({
           onBlur={event => {
             const raw = cleanDecimal(event.target.value)
             const next = raw === '' ? null : Number(raw)
-            if (next !== group.overage_price) void patchGroup({ overage_price: next })
+            if (next !== group.overage_price) void patchGroup({ overage_price: next }, 'Extra choice price saved.')
           }}
         />
         <span>each extra</span>
@@ -1337,14 +1337,14 @@ export function MenuItemDetail({
     }
     switch (cardId) {
       case 'basics': return (
-          <DetailCard {...controls} title="Basics" hint="Regular item details and optional special pricing.">
+          <DetailCard {...controls} title="Basics" hint="Regular item details autosave when you leave a field or change a selector. Optional special pricing has explicit add/archive controls.">
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_130px_190px_minmax(0,1fr)]">
               <Field label="Name">
                 <TextInput
                   defaultValue={item.name}
                   onBlur={event => {
                     const next = event.target.value.trim()
-                    if (next && next !== item.name) void patchItem(item.id, { name: next })
+                    if (next && next !== item.name) void patchItem(item.id, { name: next }, 'Item name saved.')
                   }}
                 />
               </Field>
@@ -1355,7 +1355,7 @@ export function MenuItemDetail({
                   defaultValue={item.price != null ? String(item.price) : ''}
                   onBlur={event => {
                     const next = Number(cleanDecimal(event.target.value))
-                    if (Number.isFinite(next) && next !== Number(item.price)) void patchItem(item.id, { price: next })
+                    if (Number.isFinite(next) && next !== Number(item.price)) void patchItem(item.id, { price: next }, 'Item price saved.')
                   }}
                 />
               </Field>
@@ -1373,7 +1373,7 @@ export function MenuItemDetail({
                 </span>
               </label>
               <Field label="Category">
-                <SelectInput value={item.category || 'Other'} onChange={event => void patchItem(item.id, { category: event.target.value })}>
+                <SelectInput value={item.category || 'Other'} onChange={event => void patchItem(item.id, { category: event.target.value }, 'Item category saved.')}>
                   {categoryNames.map(name => <option key={name} value={name}>{name}</option>)}
                   {!categoryNames.includes(item.category || 'Other') && <option value={item.category || 'Other'}>{item.category || 'Other'}</option>}
                 </SelectInput>
@@ -1387,7 +1387,7 @@ export function MenuItemDetail({
                   placeholder="What guests see under the item name..."
                   onBlur={event => {
                     const next = event.target.value.trim()
-                    if (next !== (item.description || '')) void patchItem(item.id, { description: next || null })
+                    if (next !== (item.description || '')) void patchItem(item.id, { description: next || null }, 'Item description saved.')
                   }}
                 />
               </Field>
@@ -1399,7 +1399,7 @@ export function MenuItemDetail({
             {...controls}
             actions={questionCollapseActions}
             title={`Questions & modifiers (${questionRows.length})`}
-            hint="Asked top to bottom when this item is ordered — drag the ⠿ grip to change the order. Questions inherited from the category apply to every item in it; opt out to skip one here."
+            hint="Asked top to bottom when this item is ordered. Changes save immediately; drag the ⠿ grip to change the order. Questions inherited from the category apply to every item in it; opt out to skip one here."
           >
             {/* How this item behaves at the POS, in plain English. */}
             {questionRows.length > 0 && (
@@ -1708,7 +1708,7 @@ export function MenuItemDetail({
           </DetailCard>
       )
       case 'kitchen': return (
-          <DetailCard {...controls} title="Kitchen" hint={productionRouting?.categoryRouting?.description || (category?.routing_station_id ? `Category default: ${stationName(category.routing_station_id) || 'station'}` : 'No category default station set.')}>
+          <DetailCard {...controls} title="Kitchen" hint={`${productionRouting?.categoryRouting?.description || (category?.routing_station_id ? `Category default: ${stationName(category.routing_station_id) || 'station'}` : 'No category default station set.')} Changes save immediately.`}>
             <div className="space-y-3">
               <Field label="Item route">
                 <SelectInput
@@ -1732,7 +1732,7 @@ export function MenuItemDetail({
               <Field label="Course">
                 <SelectInput
                   value={item.course_type || ''}
-                  onChange={event => void patchItem(item.id, { course_type: event.target.value || null })}
+                  onChange={event => void patchItem(item.id, { course_type: event.target.value || null }, event.target.value ? 'Item course saved.' : 'Item now inherits course.')}
                 >
                   {COURSE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </SelectInput>
@@ -1744,7 +1744,7 @@ export function MenuItemDetail({
                   onBlur={event => {
                     const raw = cleanDigits(event.target.value)
                     const next = raw === '' ? null : Number(raw)
-                    if (next !== item.prep_time_minutes) void patchItem(item.id, { prep_time_minutes: next })
+                    if (next !== item.prep_time_minutes) void patchItem(item.id, { prep_time_minutes: next }, next == null ? 'Prep time cleared.' : 'Prep time saved.')
                   }}
                 />
               </Field>

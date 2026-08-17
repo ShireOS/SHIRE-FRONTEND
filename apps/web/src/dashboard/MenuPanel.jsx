@@ -1026,6 +1026,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const run = async (work, successMessage, failLabel) => {
     setBusy(true)
     setError('')
+    setNotice('')
     try {
       await work()
       if (successMessage) setNotice(successMessage)
@@ -1710,13 +1711,13 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     await loadGroups()
   }, `"${modifier.name}" is now an answer in "${group.name}".`, 'Couldn’t attach the modifier')
 
-  const updateModifier = (modifierId, patch) => run(async () => {
+  const updateModifier = (modifierId, patch, message = 'Modifier saved.') => run(async () => {
     await api(`/restaurants/${restaurantId}/menu/modifiers/${modifierId}`, {
       method: 'PUT',
       body: JSON.stringify(patch),
     })
     await loadModifiers()
-  }, undefined, 'Couldn’t update the modifier')
+  }, message, 'Couldn’t update the modifier')
 
   const setModifierKitchenRole = (modifierId, role) => run(async () => {
     await setModifierKitchenDisplayRole(modifierId, role)
@@ -1736,7 +1737,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         await loadGroups()
       }
       await loadModifiers()
-    }, matchingGroup && !alreadyInGroup ? `Also added to the "${matchingGroup.name}" question.` : undefined, 'Couldn’t update the modifier')
+    }, matchingGroup && !alreadyInGroup ? `Also added to the "${matchingGroup.name}" question.` : 'Modifier category saved.', 'Couldn’t update the modifier')
   }
 
   const replaceModifierItems = (modifierId, itemIds) => run(async () => {
@@ -1745,7 +1746,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       body: JSON.stringify({ item_ids: itemIds }),
     })
     await loadModifiers()
-  }, undefined, 'Couldn’t update the modifier’s items')
+  }, 'Modifier item list saved.', 'Couldn’t update the modifier’s items')
 
   const deleteModifier = (modifierId) => run(async () => {
     await api(`/restaurants/${restaurantId}/menu/modifiers/${modifierId}`, { method: 'DELETE' })
@@ -1782,7 +1783,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const renamePill = (pill, name) => run(async () => {
     await renameAllergyPill(pill.id, name)
     await loadAllergies()
-  }, undefined, 'Couldn’t rename the pill')
+  }, 'Allergy pill renamed.', 'Couldn’t rename the pill')
 
   const togglePill = (pill) => run(async () => {
     await setAllergyPillActive(pill.id, pill.is_available === false)
@@ -1792,7 +1793,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const togglePillOnItem = (pill, itemId, hide) => run(async () => {
     await setItemPillExcluded(restaurantId, itemId, pill.id, hide)
     await loadAllergies()
-  }, undefined, 'Couldn’t update the item')
+  }, hide ? 'Pill hidden for that item.' : 'Pill restored for that item.', 'Couldn’t update the item')
 
   const bulkPillOnItems = (pill, itemIds, hide) => run(async () => {
     for (const itemId of itemIds) {
@@ -1800,7 +1801,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       if (currentlyHidden !== hide) await setItemPillExcluded(restaurantId, itemId, pill.id, hide)
     }
     await loadAllergies()
-  }, undefined, 'Couldn’t update the items')
+  }, 'Pill item visibility saved.', 'Couldn’t update the items')
 
   // ── Modifier groups ──────────────────────────────────────────────────────
 
@@ -1843,7 +1844,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const runGroupLink = (work) => run(async () => {
     await work()
     await loadGroups()
-  }, undefined, 'Couldn’t update the question')
+  }, 'Question links saved.', 'Couldn’t update the question')
 
   const addModifiersToGroup = (group, modifierIds) => run(async () => {
     let order = group.options.length
@@ -1908,7 +1909,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const updateSpecial = (special, patch) => run(async () => {
     await updatePricingSpecial(restaurantId, special.id, patch)
     await loadSpecials()
-  }, undefined, 'Couldn’t update the special')
+  }, 'Special saved.', 'Couldn’t update the special')
 
   const archiveSpecial = (special) => run(async () => {
     await archivePricingSpecial(restaurantId, special.id)
@@ -2017,8 +2018,8 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         ))}
       </div>}
 
-      {error && <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">{error}</div>}
-      {notice && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">{notice}</div>}
+      {error && <div role="alert" className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">{error}</div>}
+      {notice && <div role="status" aria-live="polite" className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">{notice}</div>}
       {loading && <div className="text-sm text-dash-tertiary">Loading menu...</div>}
 
       {!loading && activeTab === 'items' && importing && (
@@ -2561,6 +2562,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           title="Modifiers"
           description="Individual add-ons and choices — Extra cheese, Ranch, Medium rare — organized into categories like Sauces or Temperatures. A modifier tax or sales-category override applies to that modifier's charged amount only. To reclassify part of a fixed-price combo without changing its total, price the base item and modifier portion separately."
         >
+          <div className="mb-4 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] p-3 text-sm text-emerald-100">
+            Modifier edits save automatically when you leave a field or change a selector. A green confirmation appears after each save.
+          </div>
           <datalist id="menu-modifier-categories">
             {Array.from(new Set([
               ...modifiers.map(modifierCategoryOf),
@@ -2748,12 +2752,12 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       allGroups={groups}
                       onAddToQuestion={group => void addModifierToQuestion(modifier, group)}
                       busy={busy}
-                      onRename={next => void updateModifier(modifier.id, { name: next })}
-                      onReprice={next => void updateModifier(modifier.id, { price_delta: next })}
+                      onRename={next => void updateModifier(modifier.id, { name: next }, 'Modifier name saved.')}
+                      onReprice={next => void updateModifier(modifier.id, { price_delta: next }, 'Modifier price saved.')}
                       onRecategorize={next => void recategorizeModifier(modifier, next)}
-                      onSetTaxRate={next => void updateModifier(modifier.id, { tax_rate_id: next })}
-                      onSetReportingCategory={next => void updateModifier(modifier.id, { reporting_category_id: next })}
-                      onSetPrint={shouldPrint => void updateModifier(modifier.id, { print_on_kitchen_ticket: shouldPrint })}
+                      onSetTaxRate={next => void updateModifier(modifier.id, { tax_rate_id: next }, 'Modifier tax setting saved.')}
+                      onSetReportingCategory={next => void updateModifier(modifier.id, { reporting_category_id: next }, 'Modifier sales category saved.')}
+                      onSetPrint={shouldPrint => void updateModifier(modifier.id, { print_on_kitchen_ticket: shouldPrint }, shouldPrint ? 'Modifier prints on kitchen tickets.' : 'Modifier hidden from kitchen tickets.')}
                       onSetKitchenRole={next => void setModifierKitchenRole(modifier.id, next)}
                       onReplaceItems={itemIds => void replaceModifierItems(modifier.id, itemIds)}
                       onDelete={() => void deleteModifier(modifier.id)}
@@ -2792,6 +2796,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           title="Allergies"
           description="The allergy pills servers can flag on any order line — Peanut, Gluten, Dairy. Every pill applies to every item automatically (including new items and new pills); narrow a pill off specific items below. Allergy flags always print on kitchen tickets and never block quick-add."
         >
+          <div className="mb-4 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] p-3 text-sm text-emerald-100">
+            Allergy pill edits save immediately. Use the green confirmation to verify the POS has the latest setup.
+          </div>
           {!allergyGroup ? (
             <MenuEmptyState title="Allergies aren't set up yet">
               One click creates the restaurant-wide allergy question the POS shows on every item.
@@ -3114,6 +3121,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
             title="Item Availability Schedule"
             description="Limit when regular items appear on the POS — brunch-only dishes, seasonal plates, late-night menus. Full editor lives inside each item."
           >
+            <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.025] p-3 text-sm text-dash-secondary">
+              Existing schedules are saved from each item's availability editor. Specials below use explicit Save controls or autosave toggles with confirmation.
+            </div>
             {mergedCategories.some(category => category.availability_mode === 'schedule') && (
               <div className="mb-5 space-y-2">
                 <p className="label-mono">Categories with visible hours</p>
@@ -3214,6 +3224,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
             title="Category Printing Defaults"
             description="Send whole categories to a station — every item follows its category unless it has its own override below."
           >
+            <div className="mb-4 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] p-3 text-sm text-emerald-100">
+              Printing route changes save immediately when you pick a station.
+            </div>
             <div className="space-y-2">
               {categoryNames.map(name => {
                 const category = categoriesByName[name]
