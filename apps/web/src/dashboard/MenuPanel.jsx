@@ -30,6 +30,7 @@ import {
 import { SortableRows, DragHandle } from './components/shared/SortableRows'
 import { fetchCategoryColors, fetchItemImages, setCategoryColor } from './data/menuExtras'
 import { fetchPosApi } from '../shared/api/posClient'
+import { DEFAULT_API_TIMEOUT_MS } from '../shared/api/requestDeadline'
 import {
   addAllergyPill,
   ensureAllergyGroup,
@@ -771,7 +772,10 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [routingItemSearch, setRoutingItemSearch] = useState('')
   const [showAllRoutingItems, setShowAllRoutingItems] = useState(true)
 
-  const api = (path, init) => fetchWithSupabaseAuth(path, init)
+  const api = (path, init = {}) => fetchWithSupabaseAuth(path, {
+    timeoutMs: DEFAULT_API_TIMEOUT_MS,
+    ...init,
+  })
   const routingApi = (path, init) => fetchPosApi(restaurantId, path, init)
 
   useEffect(() => {
@@ -883,7 +887,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
   const loadSpecials = async ({ soft = false } = {}) => {
     try {
-      const nextSpecials = await getPricingSpecials(restaurantId)
+      const nextSpecials = await getPricingSpecials(restaurantId, {
+        timeoutMs: DEFAULT_API_TIMEOUT_MS,
+      })
       setSpecials(nextSpecials)
       setSpecialsError('')
       return nextSpecials

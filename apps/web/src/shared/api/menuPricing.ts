@@ -84,8 +84,10 @@ export const archiveItemPriceRule = (restaurantId: string, itemId: string, ruleI
     { method: 'DELETE' },
   )
 
-export const getPricingSpecials = (restaurantId: string) =>
-  fetchWithSupabaseAuth<any[]>(`${base(restaurantId)}/specials`)
+export const getPricingSpecials = (
+  restaurantId: string,
+  options: RequestInit & { timeoutMs?: number } = {},
+) => fetchWithSupabaseAuth<any[]>(`${base(restaurantId)}/specials`, options)
 
 export const createPricingSpecial = (restaurantId: string, body: Record<string, unknown>) =>
   fetchWithSupabaseAuth<any>(`${base(restaurantId)}/specials`, {
