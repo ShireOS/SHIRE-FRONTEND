@@ -48,6 +48,12 @@ import {
   hasItemProductionOverride,
   resolveDraftProductionRoute,
 } from './menuRouting'
+import {
+  bucketItemsByCategoryIdentity,
+  categoryKeyForCategory,
+  effectiveItemCategoryName,
+  orphanCategoryBucketsFromIdentity,
+} from './menuCategoryIdentity.js'
 import { MenuEditor } from '../onboarding/components/MenuEditor'
 import { useAuth } from '../auth'
 import { PublishControls } from '../shared/components/PublishControls'
@@ -1104,11 +1110,15 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     () => categories.map(category => ({ ...category, color: categoryColors[category.id] ?? category.color ?? null })),
     [categories, categoryColors],
   )
+  const categoriesById = useMemo(
+    () => Object.fromEntries(mergedCategories.filter(category => category.id).map(category => [String(category.id), category])),
+    [mergedCategories],
+  )
   const categoryNames = useMemo(() => {
     const names = new Set(mergedCategories.map(category => category.name).filter(Boolean))
-    for (const item of menuItems) if (item.category) names.add(item.category)
+    for (const item of menuItems) names.add(effectiveItemCategoryName(item, categoriesById))
     return Array.from(names).sort()
-  }, [mergedCategories, menuItems])
+  }, [mergedCategories, menuItems, categoriesById])
   const categoriesByName = useMemo(
     () => Object.fromEntries(mergedCategories.filter(category => category.name).map(category => [category.name, category])),
     [mergedCategories],
@@ -1162,7 +1172,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const itemProductionRouting = (item) => {
     const rules = itemRouteRules(item)
     const exclusions = itemNoRouteRules(item)
-    const categoryRouting = categoryProductionRouting(item.category || '')
+    const categoryRouting = categoryProductionRouting(effectiveItemCategoryName(item, categoriesById))
     const inherited = categoryRouting.value === ROUTE_NO_PRODUCTION_VALUE
       ? 'Automatic · no kitchen ticket from category'
       : categoryRouting.rules.length > 0
@@ -1423,43 +1433,39 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const filteredItems = useMemo(() => {
     const needle = itemSearch.trim().toLowerCase()
     return mergedItems.filter(item => {
-      if (itemCategoryFilter !== 'all' && (item.category || 'Other') !== itemCategoryFilter) return false
+      const categoryName = effectiveItemCategoryName(item, categoriesById)
+      if (itemCategoryFilter !== 'all' && categoryName !== itemCategoryFilter) return false
       if (itemAvailabilityFilter === 'available' && item.is_available === false) return false
       if (itemAvailabilityFilter === '86d' && item.is_available !== false) return false
       if (itemAvailabilityFilter === 'specials' && !activeSpecialItemIds.has(item.id)) return false
       if (!needle) return true
       return item.name.toLowerCase().includes(needle)
         || (item.description || '').toLowerCase().includes(needle)
-        || (item.category || '').toLowerCase().includes(needle)
+        || categoryName.toLowerCase().includes(needle)
     })
-  }, [mergedItems, itemSearch, itemCategoryFilter, itemAvailabilityFilter, activeSpecialItemIds])
+  }, [mergedItems, itemSearch, itemCategoryFilter, itemAvailabilityFilter, activeSpecialItemIds, categoriesById])
 
   const itemsByCategory = useMemo(() => {
     const buckets = {}
     for (const item of filteredItems) {
-      ;(buckets[item.category || 'Other'] ||= []).push(item)
+      ;(buckets[effectiveItemCategoryName(item, categoriesById)] ||= []).push(item)
     }
     return Object.entries(buckets).sort(([a], [b]) => a.localeCompare(b))
-  }, [filteredItems])
+  }, [filteredItems, categoriesById])
 
   // Unfiltered per-category item buckets for the Categories tab drill-in
-  // (items reference categories by name string, not id).
-  const allItemsByCategoryName = useMemo(() => {
-    const buckets = {}
-    for (const item of mergedItems) {
-      ;(buckets[item.category || 'Other'] ||= []).push(item)
-    }
-    return buckets
-  }, [mergedItems])
+  // (newer rows follow stable category ids; older rows fall back to names).
+  const allItemsByCategoryKey = useMemo(
+    () => bucketItemsByCategoryIdentity(mergedItems, categoriesById),
+    [mergedItems, categoriesById],
+  )
 
   // Item category names that have no matching category card — items still show
   // on the POS, but inherit no color/tax/station defaults.
-  const orphanCategoryBuckets = useMemo(() => {
-    const known = new Set(mergedCategories.map(category => category.name).filter(Boolean))
-    return Object.entries(allItemsByCategoryName)
-      .filter(([name]) => !known.has(name))
-      .sort(([a], [b]) => a.localeCompare(b))
-  }, [allItemsByCategoryName, mergedCategories])
+  const orphanCategoryBuckets = useMemo(
+    () => orphanCategoryBucketsFromIdentity(mergedItems, mergedCategories, categoriesById),
+    [mergedItems, mergedCategories, categoriesById],
+  )
 
   const toggleCategoryExpanded = (name) => {
     if (!name) return
@@ -2127,7 +2133,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         <MenuItemDetail
           key={selectedItem.id}
           restaurantId={restaurantId}
-          item={selectedItem}
+          item={{ ...selectedItem, category: effectiveItemCategoryName(selectedItem, categoriesById) }}
           categories={mergedCategories}
           categoryNames={categoryNames}
           stations={routableStations}
@@ -2300,7 +2306,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           <div className="mb-4"><ScheduledChangesPanel /></div>
           <div className="space-y-3">
             {mergedCategories.map((category, index) => {
-              const categoryItems = allItemsByCategoryName[category.name] || []
+              const categoryItems = allItemsByCategoryKey[categoryKeyForCategory(category)] || []
               const isExpanded = Boolean(category.name) && expandedCategoryNames.has(category.name)
               const productionRouting = categoryProductionRouting(category.name)
               const categoryCardId = category.id ? (category.name || category.id) : (category.client_key || `new-${index}`)
