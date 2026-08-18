@@ -20,6 +20,7 @@ import {
   reorderCategoryGroups,
   reorderGroupOptions,
   replaceGroupItems,
+  setItemGroupOverride,
   setGroupAnswerSortMode,
   setModifierKitchenDisplayRole,
   updateGroupOption,
@@ -65,6 +66,10 @@ import { PropagationModal } from '../shared/components/PropagationModal'
 import { scheduleChange } from '../shared/api/scheduledChanges'
 import { fetchResellerPortfolioForUser } from '../reseller/data/resellerPortfolio'
 import { copyItemConfig } from './data/menuDuplicate'
+import {
+  directQuestionGroupsForItem,
+  inheritedQuestionIdsToOptOut,
+} from './data/menuDuplicateQuestions.js'
 import BulkPricingPanel from './BulkPricingPanel'
 import {
   cleanMoneyDraft,
@@ -1254,6 +1259,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     // "Extras" question; pending_group_options add a just-created modifier as
     // an option of an existing question (picker "category" matched its name).
     question_ids: [],
+    excluded_question_ids: [],
     extra_modifier_ids: [],
     pending_group_options: [],
   })
@@ -1274,6 +1280,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     availability_start_date: item.availability_start_date || '',
     availability_end_date: item.availability_end_date || '',
     availability_notes: item.availability_notes || '',
+    excluded_question_ids: groups
+      .filter(group => group.item_overrides?.[item.id]?.opted_out)
+      .map(group => group.id),
   })
 
   const startCreateItem = (source = null) => {
@@ -1342,6 +1351,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       })
       if (!created?.id) throw new Error('The item was not created.')
       const warnings = []
+      const excludedQuestionIds = draft.excluded_question_ids || []
       let full = created
       if (source) {
         warnings.push(...await copyItemConfig({
@@ -1353,6 +1363,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           sourceModifierOverrides: itemModifierOverrides[source.id] || {},
           sourceAllergyExclusions: allergyExclusions.filter(row => row.item_id === source.id),
           sourceSpecials: specials.filter(special => special.menu_item_id === source.id),
+          excludedQuestionIds,
         }))
       }
       // Staged question/modifier picks from the create screen.
@@ -1361,6 +1372,10 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         for (const groupId of draft.question_ids || []) {
           await attachGroupToItem(groupId, full.id, order)
           order += 1
+        }
+        const categoryId = categoriesByName[draft.category || '']?.id || null
+        for (const groupId of inheritedQuestionIdsToOptOut(groups, categoryId, excludedQuestionIds)) {
+          await setItemGroupOverride(groupId, full.id, { opted_out: true })
         }
         for (const pending of draft.pending_group_options || []) {
           const group = groups.find(candidate => candidate.id === pending.group_id)
@@ -1416,7 +1431,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       if (duplicate && published) {
         // Staged picks were just saved onto this item, so they now carry over
         // via the copy path — clear them to avoid double-attaching.
-        setCreating({ source: full, draft: { ...draft, name: '', question_ids: [], extra_modifier_ids: [], pending_group_options: [] } })
+        const categoryId = categoriesByName[draft.category || '']?.id || null
+        const inheritedExclusions = inheritedQuestionIdsToOptOut(groups, categoryId, excludedQuestionIds)
+        setCreating({ source: full, draft: { ...draft, name: '', question_ids: [], excluded_question_ids: inheritedExclusions, extra_modifier_ids: [], pending_group_options: [] } })
       } else {
         setCreating(null)
         setSelectedItemId(full.id)
@@ -2112,7 +2129,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           modifiers={modifiers}
           source={creating.source}
           sourceGroupIds={creating.source
-            ? (behaviorByItemId[creating.source.id]?.questions || []).filter(row => row.source === 'item').map(row => row.group.id)
+            ? directQuestionGroupsForItem(groups, creating.source.id).map(group => group.id)
             : []}
           onCreateModifier={createModifierForDraft}
           carryover={creating.source ? {

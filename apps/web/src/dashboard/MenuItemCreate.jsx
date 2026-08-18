@@ -18,6 +18,7 @@ import {
   ROUTE_MULTI_VALUE,
   ROUTE_NO_PRODUCTION_VALUE,
 } from './menuRouting'
+import { setQuestionExclusion } from './data/menuDuplicateQuestions.js'
 
 const AVAILABILITY_MODES = [
   { value: 'always', label: 'Always available' },
@@ -86,6 +87,7 @@ export function MenuItemCreate({
     () => sourceGroupIds.map(id => groups.find(group => group.id === id)).filter(Boolean),
     [sourceGroupIds, groups],
   )
+  const excludedQuestionIds = new Set(draft.excluded_question_ids || [])
   const category = categoriesByName[draft.category || ''] || null
   const inheritedGroups = useMemo(
     () => (category
@@ -93,10 +95,16 @@ export function MenuItemCreate({
       : []),
     [groups, category],
   )
+  const sourceGroupIdSet = new Set(sourceGroupIds)
+  const inheritedOnlyGroups = inheritedGroups.filter(group => !sourceGroupIdSet.has(group.id))
+  const activeSourceGroups = sourceGroups.filter(group => !excludedQuestionIds.has(group.id))
+  const activeInheritedGroups = inheritedOnlyGroups.filter(group => !excludedQuestionIds.has(group.id))
+  const excludedSourceGroups = sourceGroups.filter(group => excludedQuestionIds.has(group.id))
+  const excludedInheritedGroups = inheritedOnlyGroups.filter(group => excludedQuestionIds.has(group.id))
   const selectedGroups = (draft.question_ids || []).map(id => groups.find(group => group.id === id)).filter(Boolean)
   const takenGroupIds = new Set([
     ...(draft.question_ids || []),
-    ...inheritedGroups.map(group => group.id),
+    ...inheritedOnlyGroups.map(group => group.id),
     ...sourceGroupIds,
   ])
   const attachableGroups = groups
@@ -109,7 +117,7 @@ export function MenuItemCreate({
   const extrasModifiers = (draft.extra_modifier_ids || []).map(id => modifiersById[id]).filter(Boolean)
   const excludeModifierIds = new Set([
     ...(draft.extra_modifier_ids || []),
-    ...[...selectedGroups, ...inheritedGroups, ...sourceGroups].flatMap(group => (group.options || []).map(option => option.modifier_id)),
+    ...[...selectedGroups, ...activeInheritedGroups, ...activeSourceGroups].flatMap(group => (group.options || []).map(option => option.modifier_id)),
   ])
 
   const addQuestion = (groupId) => setDraft(prev => ({
@@ -120,6 +128,13 @@ export function MenuItemCreate({
     ...prev,
     question_ids: (prev.question_ids || []).filter(id => id !== groupId),
     pending_group_options: (prev.pending_group_options || []).filter(pending => pending.group_id !== groupId),
+  }))
+  const setQuestionExcluded = (groupId, excluded) => setDraft(prev => ({
+    ...prev,
+    excluded_question_ids: setQuestionExclusion(prev.excluded_question_ids, groupId, excluded),
+    pending_group_options: excluded
+      ? (prev.pending_group_options || []).filter(pending => pending.group_id !== groupId)
+      : (prev.pending_group_options || []),
   }))
   const addExtras = (modifierIds) => setDraft(prev => ({
     ...prev,
@@ -148,6 +163,7 @@ export function MenuItemCreate({
         return {
           ...prev,
           question_ids: alreadyAsked ? (prev.question_ids || []) : [...(prev.question_ids || []), match.id],
+          excluded_question_ids: (prev.excluded_question_ids || []).filter(id => id !== match.id),
           pending_group_options: [...(prev.pending_group_options || []), { group_id: match.id, modifier_id: created.id }],
         }
       })
@@ -156,11 +172,19 @@ export function MenuItemCreate({
     }
   }
 
-  const questionCount = sourceGroups.length + inheritedGroups.length + selectedGroups.length + (extrasModifiers.length > 0 ? 1 : 0)
+  const carriedQuestionIds = new Set([
+    ...activeSourceGroups.map(group => group.id),
+    ...activeInheritedGroups.map(group => group.id),
+  ])
+  const activeQuestionIds = new Set([
+    ...carriedQuestionIds,
+    ...selectedGroups.map(group => group.id),
+  ])
+  const questionCount = activeQuestionIds.size + (extrasModifiers.length > 0 ? 1 : 0)
 
   const carryoverBits = source ? [
     'category & price',
-    carryover?.questions ? `${carryover.questions} question${carryover.questions === 1 ? '' : 's'} & their mods` : null,
+    carriedQuestionIds.size ? `${carriedQuestionIds.size} question${carriedQuestionIds.size === 1 ? '' : 's'} & their mods` : null,
     carryover?.modOverrides ? 'modifier price/print overrides' : null,
     'printer routing',
     'availability schedule',
@@ -261,37 +285,63 @@ export function MenuItemCreate({
             hint="What the POS asks when this item is ordered. Attach existing questions or quick-add modifiers here — answers, ★ defaults, and follow-ups are fine-tuned on the item screen after saving."
           >
             <div className="space-y-4">
-              {sourceGroups.length > 0 && (
+              {activeSourceGroups.length > 0 && (
                 <div>
                   <p className="label-mono mb-2">Copied from “{source.name}”</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {sourceGroups.map(group => (
-                      <span
+                    {activeSourceGroups.map(group => (
+                      <button
                         key={group.id}
-                        title={`${groupRulesSummary(group)} — carries over with its per-item settings; adjust on the item screen after saving`}
-                        className="rounded-full border border-dash-gold/30 bg-dash-gold/10 px-3 py-1.5 text-sm text-dash-gold"
+                        type="button"
+                        disabled={busy}
+                        title={`${groupRulesSummary(group)} — click to leave this question off the duplicate`}
+                        onClick={() => setQuestionExcluded(group.id, true)}
+                        className="rounded-full border border-dash-gold/60 bg-dash-gold/15 px-3 py-1.5 text-sm font-medium text-dash-cream transition hover:border-red-400/60 hover:bg-red-400/10 disabled:opacity-50"
                       >
                         {group.name}
-                        <span className="ml-1.5 text-xs opacity-70">{group.options.length} option{group.options.length === 1 ? '' : 's'}</span>
-                      </span>
+                        <span className="ml-1.5 text-xs text-dash-tertiary">{group.options.length} option{group.options.length === 1 ? '' : 's'} · Remove</span>
+                      </button>
                     ))}
                   </div>
                 </div>
               )}
 
-              {inheritedGroups.length > 0 && (
+              {activeInheritedGroups.length > 0 && (
                 <div>
                   <p className="label-mono mb-2">Inherited from {draft.category || 'the category'} — asked automatically</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {inheritedGroups.map(group => (
-                      <span
+                    {activeInheritedGroups.map(group => (
+                      <button
                         key={group.id}
-                        title={`Every item in ${draft.category} asks this — including this one. Opt out on the item screen after saving.`}
-                        className="rounded-full border border-sky-300/30 bg-sky-300/10 px-3 py-1.5 text-sm text-sky-200"
+                        type="button"
+                        disabled={busy}
+                        title={`Every item in ${draft.category} asks this — click to opt this duplicate out`}
+                        onClick={() => setQuestionExcluded(group.id, true)}
+                        className="rounded-full border border-sky-300/40 bg-sky-300/10 px-3 py-1.5 text-sm text-sky-100 transition hover:border-red-400/60 hover:bg-red-400/10 disabled:opacity-50"
                       >
                         {group.name}
-                        <span className="ml-1.5 text-xs opacity-70">{group.options.length} option{group.options.length === 1 ? '' : 's'}</span>
-                      </span>
+                        <span className="ml-1.5 text-xs opacity-70">{group.options.length} option{group.options.length === 1 ? '' : 's'} · Opt out</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(excludedSourceGroups.length > 0 || excludedInheritedGroups.length > 0) && (
+                <div>
+                  <p className="label-mono mb-2">Not included on this item</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[...excludedSourceGroups, ...excludedInheritedGroups].map(group => (
+                      <button
+                        key={group.id}
+                        type="button"
+                        disabled={busy}
+                        title="Click to include this question again"
+                        onClick={() => setQuestionExcluded(group.id, false)}
+                        className="rounded-full border border-white/10 bg-white/[0.02] px-3 py-1.5 text-sm text-dash-tertiary line-through transition hover:border-dash-gold/60 hover:text-dash-cream hover:no-underline disabled:opacity-50"
+                      >
+                        {group.name}<span className="ml-1.5 text-xs no-underline">Restore</span>
+                      </button>
                     ))}
                   </div>
                 </div>

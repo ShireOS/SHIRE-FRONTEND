@@ -1,6 +1,7 @@
 import { supabase } from '../../shared/lib/supabase'
 import { attachGroupToItem, setItemGroupOverride, setItemModifierOverride } from './menuGroups'
 import { setItemPillExcluded } from './menuAllergies'
+import { copyableDirectQuestionGroups } from './menuDuplicateQuestions.js'
 
 // "Save & duplicate": after the new item row exists, re-key everything that
 // hangs off the source item's id onto the new one — question links (with
@@ -19,12 +20,13 @@ export async function copyItemConfig({
   sourceModifierOverrides = {},
   sourceAllergyExclusions = [],
   sourceSpecials = [],
+  excludedQuestionIds = [],
 }) {
   const warnings = []
+  const excludedQuestions = new Set(excludedQuestionIds)
 
   try {
-    for (const group of groups) {
-      if (!group.item_ids.includes(sourceItem.id)) continue
+    for (const group of copyableDirectQuestionGroups(groups, sourceItem.id, excludedQuestionIds)) {
       await attachGroupToItem(group.id, targetItem.id, group.item_display_orders?.[sourceItem.id] ?? 0)
     }
   } catch {
@@ -35,6 +37,7 @@ export async function copyItemConfig({
   // pointing at a question the new item doesn't ask is inert.
   try {
     for (const group of groups) {
+      if (excludedQuestions.has(group.id)) continue
       const override = group.item_overrides?.[sourceItem.id]
       if (!override) continue
       await setItemGroupOverride(group.id, targetItem.id, override)
