@@ -33,6 +33,11 @@
   permission; they never reuse voluntary-tip permission `can_adjust_tips`.
   Add/change/remove mutations require an unpaid editable check and write the
   durable manager-action audit with actor, reason, and before/after amounts.
+  New gift-card stored-value issuance requires manager authority, a stable
+  request ID, a reason, and an immutable requester/approver audit event. After
+  that mutation commits, an exact idempotent replay may be read by the original
+  requesting staff member or a current manager; this recovery exception cannot
+  create value or change the original code/amount fingerprint.
   Day-close permissions are separate: `can_close_day` closes the current day,
   while `can_reopen_business_day` authorizes the audited reopen workflow and
   defaults to owner-only until explicitly granted to another role.
