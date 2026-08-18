@@ -72,6 +72,10 @@ import {
   directQuestionGroupsForItem,
   inheritedQuestionIdsToOptOut,
 } from './data/menuDuplicateQuestions.js'
+import {
+  categoryQuestionGroups,
+  nextCategoryQuestionOrder,
+} from './data/menuCategoryQuestions.js'
 import BulkPricingPanel from './BulkPricingPanel'
 import {
   cleanMoneyDraft,
@@ -751,6 +755,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const categoryDraftKeyRef = useRef(0)
   editorPrefsRestaurantRef.current = restaurantId
   const [expandedCategoryNames, setExpandedCategoryNames] = useState(() => new Set())
+  const [editingCategoryKey, setEditingCategoryKey] = useState(null)
   const [categoryScrollTarget, setCategoryScrollTarget] = useState(null)
 
   const [allergyGroup, setAllergyGroup] = useState(null)
@@ -1035,6 +1040,8 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     setLoading(true)
     setError('')
     setSelectedItemId(null)
+    setEditingCategoryKey(null)
+    setExpandedCategoryNames(new Set())
     setComboManagerPasscode('')
     const loaders = [
       ['items', loadItems],
@@ -1659,6 +1666,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const addCategory = (name = '') => {
     const draft = categoryDraft(name)
     setCategories(prev => [...prev, draft])
+    setEditingCategoryKey(draft.client_key)
     setCategoryScrollTarget(draft.client_key)
     if (name) setExpandedCategoryNames(prev => new Set(prev).add(name))
   }
@@ -1668,11 +1676,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   // from their own editor.
   const toggleGroupInheritance = (group, category, shouldAttach) => run(async () => {
     if (shouldAttach) {
-      const categoryOrders = groups.flatMap(candidate =>
-        (candidate.category_links || [])
-          .filter(link => link.category_id === category.id)
-          .map(link => Number(link.display_order) || 0))
-      const nextCategoryOrder = categoryOrders.length > 0 ? Math.max(...categoryOrders) + 1 : 0
+      const nextCategoryOrder = nextCategoryQuestionOrder(groups, category.id)
       await attachGroupToCategory(restaurantId, group.id, category.id, nextCategoryOrder)
     } else {
       await detachGroupFromCategory(group.id, category.id)
@@ -2367,6 +2371,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
               const isExpanded = Boolean(category.name) && expandedCategoryNames.has(category.name)
               const productionRouting = categoryProductionRouting(category.name)
               const categoryCardId = category.id ? (category.name || category.id) : (category.client_key || `new-${index}`)
+              const categoryEditorKey = category.id || category.client_key || `new-${index}`
+              const isEditing = editingCategoryKey === categoryEditorKey
+              const inheritedGroups = categoryQuestionGroups(groups, category.id)
               return (
                 <div
                   key={category.id || category.client_key || `new-${index}`}
@@ -2382,12 +2389,22 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                         sublabel={`${categoryItems.length} item${categoryItems.length === 1 ? '' : 's'}`}
                       />
                     </div>
-                    <div className="min-w-52 flex-1">
+                    <div className="w-full sm:w-72">
                       <Field label="Category name">
                         <TextInput value={category.name || ''} onChange={event => updateCategory(index, { name: event.target.value })} placeholder="Appetizers" />
                       </Field>
                     </div>
-                    <div className="flex gap-2 pb-0.5">
+                    <div className="min-w-44 flex-1 pb-1 text-sm text-dash-tertiary">
+                      <p>{inheritedGroups.length} base question{inheritedGroups.length === 1 ? '' : 's'}</p>
+                      <p className="mt-0.5">{productionRouting.description}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 pb-0.5">
+                      <SmallButton
+                        variant={isEditing ? 'primary' : 'secondary'}
+                        onClick={() => setEditingCategoryKey(isEditing ? null : categoryEditorKey)}
+                      >
+                        {isEditing ? 'Close editor' : 'Edit category'}
+                      </SmallButton>
                       <SmallButton
                         onClick={() => toggleCategoryExpanded(category.name)}
                         disabled={!category.name}
@@ -2395,73 +2412,84 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       >
                         {isExpanded ? 'Hide items' : `View ${categoryItems.length} item${categoryItems.length === 1 ? '' : 's'}`}
                       </SmallButton>
-                      <SmallButton variant="danger" onClick={() => setCategories(prev => prev.filter((_, currentIndex) => currentIndex !== index))}>Remove</SmallButton>
+                      <SmallButton
+                        variant="danger"
+                        onClick={() => {
+                          if (isEditing) setEditingCategoryKey(null)
+                          setCategories(prev => prev.filter((_, currentIndex) => currentIndex !== index))
+                        }}
+                      >
+                        Remove
+                      </SmallButton>
                     </div>
                   </div>
 
-                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <Field label="Production route">
-                      <SelectInput
-                        value={productionRouting.value}
-                        disabled={!category.id || busy}
-                        onChange={event => {
-                          if (event.target.value === ROUTE_MULTI_VALUE) return
-                          void routeCategory(category.name, event.target.value)
-                        }}
-                      >
-                        <option value={ROUTE_INHERIT_VALUE}>Use restaurant fallback</option>
-                        <option value={ROUTE_NO_PRODUCTION_VALUE}>No kitchen ticket</option>
-                        {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
-                        {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
-                      </SelectInput>
-                    </Field>
-                    <Field label="Default course">
-                      <SelectInput value={category.default_course_type || ''} onChange={event => updateCategory(index, { default_course_type: event.target.value })}>
-                        {COURSE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </SelectInput>
-                    </Field>
-                    <Field label="Prep minutes">
-                      <TextInput
-                        value={category.prep_time_minutes == null ? '' : String(category.prep_time_minutes)}
-                        onChange={event => updateCategory(index, { prep_time_minutes: cleanDigits(event.target.value) })}
-                        placeholder="e.g. 12"
-                      />
-                    </Field>
-                    <Field label="Tax rate">
-                      <SelectInput
-                        title="Every item in this category is taxed at this rate on the POS"
-                        value={category.tax_rate_id || ''}
-                        onChange={event => updateCategory(index, { tax_rate_id: event.target.value || null })}
-                      >
-                        <option value="">Store default rate</option>
-                        {taxRates.map(rate => (
-                          <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
-                        ))}
-                      </SelectInput>
-                    </Field>
-                    <Field label="Fire timing">
-                      <SelectInput
-                        title="Default kitchen fire timing for new items in this category — individual items can override it"
-                        value={category.default_fire_mode || ''}
-                        onChange={event => updateCategory(index, { default_fire_mode: event.target.value || null })}
-                      >
-                        <option value="">Use order default</option>
-                        <option value="inherit">Use order default</option>
-                        <option value="immediate">Immediate</option>
-                        <option value="hold">Hold</option>
-                        <option value="manual">Manual</option>
-                        <option value="by_course">By course</option>
-                      </SelectInput>
-                    </Field>
-                    <Field label="KDS group">
-                      <TextInput
-                        title="Kitchen display grouping label for this category's tickets"
-                        value={category.kds_display_group || ''}
-                        onChange={event => updateCategory(index, { kds_display_group: event.target.value })}
-                        placeholder="Apps, Entrees, Bar…"
-                      />
-                    </Field>
-                  </div>
+                  {isEditing && (
+                    <div className="mt-4 border-t border-white/10 pt-4">
+                      <p className="label-mono mb-3">Category defaults</p>
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        <Field label="Production route">
+                          <SelectInput
+                            value={productionRouting.value}
+                            disabled={!category.id || busy}
+                            onChange={event => {
+                              if (event.target.value === ROUTE_MULTI_VALUE) return
+                              void routeCategory(category.name, event.target.value)
+                            }}
+                          >
+                            <option value={ROUTE_INHERIT_VALUE}>Use restaurant fallback</option>
+                            <option value={ROUTE_NO_PRODUCTION_VALUE}>No kitchen ticket</option>
+                            {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
+                            {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
+                          </SelectInput>
+                        </Field>
+                        <Field label="Default course">
+                          <SelectInput value={category.default_course_type || ''} onChange={event => updateCategory(index, { default_course_type: event.target.value })}>
+                            {COURSE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                          </SelectInput>
+                        </Field>
+                        <Field label="Prep minutes">
+                          <TextInput
+                            value={category.prep_time_minutes == null ? '' : String(category.prep_time_minutes)}
+                            onChange={event => updateCategory(index, { prep_time_minutes: cleanDigits(event.target.value) })}
+                            placeholder="e.g. 12"
+                          />
+                        </Field>
+                        <Field label="Tax rate">
+                          <SelectInput
+                            title="Every item in this category is taxed at this rate on the POS"
+                            value={category.tax_rate_id || ''}
+                            onChange={event => updateCategory(index, { tax_rate_id: event.target.value || null })}
+                          >
+                            <option value="">Store default rate</option>
+                            {taxRates.map(rate => (
+                              <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
+                            ))}
+                          </SelectInput>
+                        </Field>
+                        <Field label="Fire timing">
+                          <SelectInput
+                            title="Default kitchen fire timing for new items in this category — individual items can override it"
+                            value={category.default_fire_mode || ''}
+                            onChange={event => updateCategory(index, { default_fire_mode: event.target.value || null })}
+                          >
+                            <option value="">Use order default</option>
+                            <option value="inherit">Use order default</option>
+                            <option value="immediate">Immediate</option>
+                            <option value="hold">Hold</option>
+                            <option value="manual">Manual</option>
+                            <option value="by_course">By course</option>
+                          </SelectInput>
+                        </Field>
+                        <Field label="KDS group">
+                          <TextInput
+                            title="Kitchen display grouping label for this category's tickets"
+                            value={category.kds_display_group || ''}
+                            onChange={event => updateCategory(index, { kds_display_group: event.target.value })}
+                            placeholder="Apps, Entrees, Bar…"
+                          />
+                        </Field>
+                      </div>
 
                   <div className="mt-4">
                     <p className="label-mono mb-2">Visible hours</p>
@@ -2525,6 +2553,82 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                     {!category.id && <p className="mt-1.5 text-xs text-dash-tertiary">Save categories first to pick a color.</p>}
                   </div>
 
+                  <div className="mt-5 border-t border-white/10 pt-4">
+                    <p className="label-mono mb-1">Base questions</p>
+                    <p className="mb-2 text-xs text-dash-tertiary">
+                      These questions are inherited by every item in {category.name || 'this category'}, including items added later. Individual items can opt out or override their defaults.
+                    </p>
+                    {category.id ? (
+                      <>
+                        <div className="flex flex-wrap gap-1.5">
+                          {groups.map(group => {
+                            const inherited = (group.category_links || []).some(link => link.category_id === category.id)
+                            const optedOutCount = categoryItems.filter(row => group.item_overrides?.[row.id]?.opted_out).length
+                            const directCount = categoryItems.filter(row => group.item_ids.includes(row.id)).length
+                            return (
+                              <button
+                                key={group.id}
+                                type="button"
+                                disabled={busy}
+                                aria-pressed={inherited}
+                                title={groupRulesSummary(group)}
+                                onClick={() => void toggleGroupInheritance(group, category, !inherited)}
+                                className={[
+                                  'rounded-full border px-3 py-1.5 text-sm transition disabled:opacity-50',
+                                  inherited
+                                    ? 'border-dash-gold/60 bg-dash-gold/15 text-dash-cream'
+                                    : 'border-white/10 bg-white/[0.03] text-dash-secondary hover:border-dash-gold/60 hover:text-dash-cream',
+                                ].join(' ')}
+                              >
+                                {inherited ? 'Selected:' : 'Add:'} {group.name}
+                                <span className="ml-1.5 text-xs text-dash-tertiary">
+                                  {group.options.length} option{group.options.length === 1 ? '' : 's'}
+                                  {inherited && optedOutCount > 0 && ` · ${optedOutCount} opted out`}
+                                  {!inherited && directCount > 0 && ` · on ${directCount}/${categoryItems.length} directly`}
+                                </span>
+                              </button>
+                            )
+                          })}
+                          {groups.length === 0 && (
+                            <p className="text-sm text-dash-tertiary">No questions yet — build one on the Questions tab or inside any item.</p>
+                          )}
+                        </div>
+
+                        {inheritedGroups.length > 0 && (
+                          <div className="mt-4">
+                            <p className="label-mono mb-1">Asked in this order</p>
+                            <p className="mb-2 text-xs text-dash-tertiary">
+                              Drag to set the category-wide order. Each newly selected question is added at the bottom; individual item ordering can still override it.
+                            </p>
+                            <SortableRows
+                              ids={inheritedGroups.map(group => group.id)}
+                              className="max-w-xl space-y-1.5"
+                              disabled={busy || inheritedGroups.length < 2}
+                              onReorder={orderedIds => reorderCategoryQuestions(category, orderedIds)}
+                              renderRow={(groupId, { handleProps }) => {
+                                const group = inheritedGroups.find(candidate => candidate.id === groupId)
+                                if (!group) return null
+                                const position = inheritedGroups.indexOf(group) + 1
+                                return (
+                                  <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-2.5">
+                                    <DragHandle handleProps={handleProps} />
+                                    <span className="w-5 text-center text-[11px] font-bold text-dash-gold">{position}</span>
+                                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-dash-cream">{group.name}</span>
+                                    <span className="text-xs text-dash-tertiary">{group.options.length} option{group.options.length === 1 ? '' : 's'}</span>
+                                  </div>
+                                )
+                              }}
+                            />
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-xs text-dash-tertiary">Save categories first to set base questions.</p>
+                    )}
+                  </div>
+                    </div>
+                  )}
+
                   {isExpanded && (
                     <div className="mt-4 border-t border-white/10 pt-3">
                       <p className="label-mono mb-2">Items in {category.name}</p>
@@ -2548,86 +2652,6 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                         </div>
                       )}
 
-                      {category.id && (
-                        <div className="mt-4">
-                          <p className="label-mono mb-1">Base questions — inherited by every item here</p>
-                          <p className="mb-2 text-xs text-dash-tertiary">
-                            Click a question so all of {category.name} asks it — steaks ask "Temperature", drinks ask "Ice?". Items added to this category later inherit it automatically; any single item can opt out or override defaults from its own editor.
-                          </p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {groups.map(group => {
-                              const inherited = (group.category_links || []).some(link => link.category_id === category.id)
-                              const optedOutCount = categoryItems.filter(row => group.item_overrides?.[row.id]?.opted_out).length
-                              const directCount = categoryItems.filter(row => group.item_ids.includes(row.id)).length
-                              return (
-                                <button
-                                  key={group.id}
-                                  type="button"
-                                  disabled={busy}
-                                  title={groupRulesSummary(group)}
-                                  onClick={() => void toggleGroupInheritance(group, category, !inherited)}
-                                  className={[
-                                    'rounded-full border px-3 py-1.5 text-sm transition disabled:opacity-50',
-                                    inherited
-                                      ? 'border-dash-gold/60 bg-dash-gold/15 text-dash-cream'
-                                      : 'border-white/10 bg-white/[0.03] text-dash-secondary hover:border-dash-gold/60 hover:text-dash-cream',
-                                  ].join(' ')}
-                                >
-                                  {inherited ? '✓' : '+'} {group.name}
-                                  <span className="ml-1.5 text-xs text-dash-tertiary">
-                                    {group.options.length} option{group.options.length === 1 ? '' : 's'}
-                                    {inherited && optedOutCount > 0 && ` · ${optedOutCount} opted out`}
-                                    {!inherited && directCount > 0 && ` · on ${directCount}/${categoryItems.length} directly`}
-                                  </span>
-                                </button>
-                              )
-                            })}
-                            {groups.length === 0 && (
-                              <p className="text-sm text-dash-tertiary">No questions yet — build one on the Questions tab or inside any item.</p>
-                            )}
-                          </div>
-                          {(() => {
-                            const inheritedGroups = groups
-                              .filter(group => (group.category_links || []).some(link => link.category_id === category.id))
-                              .sort((a, b) => {
-                                const orderA = (a.category_links || []).find(link => link.category_id === category.id)?.display_order ?? 0
-                                const orderB = (b.category_links || []).find(link => link.category_id === category.id)?.display_order ?? 0
-                                return orderA - orderB || a.name.localeCompare(b.name)
-                              })
-                            if (inheritedGroups.length < 2) return null
-                            return (
-                              <div className="mt-3">
-                                <p className="label-mono mb-1">Asked in this order</p>
-                                <p className="mb-2 text-xs text-dash-tertiary">
-                                  Drag to set the order every item in {category.name} asks these — an individual item can still drag its own order in its editor.
-                                </p>
-                                <SortableRows
-                                  ids={inheritedGroups.map(group => group.id)}
-                                  className="max-w-xl space-y-1.5"
-                                  disabled={busy}
-                                  onReorder={orderedIds => reorderCategoryQuestions(category, orderedIds)}
-                                  renderRow={(groupId, { handleProps }) => {
-                                    const group = inheritedGroups.find(candidate => candidate.id === groupId)
-                                    if (!group) return null
-                                    const position = inheritedGroups.indexOf(group) + 1
-                                    return (
-                                      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-2.5">
-                                        <DragHandle handleProps={handleProps} />
-                                        <span className="w-5 text-center text-[11px] font-bold text-dash-gold">{position}</span>
-                                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-dash-cream">{group.name}</span>
-                                        <span className="text-xs text-dash-tertiary">{group.options.length} option{group.options.length === 1 ? '' : 's'}</span>
-                                      </div>
-                                    )
-                                  }}
-                                />
-                              </div>
-                            )
-                          })()}
-                        </div>
-                      )}
-                      {!category.id && (
-                        <p className="mt-4 text-xs text-dash-tertiary">Save categories first to set base questions.</p>
-                      )}
                     </div>
                   )}
                 </div>
