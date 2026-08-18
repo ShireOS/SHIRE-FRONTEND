@@ -1454,6 +1454,7 @@ export default function RestaurantSetupPanel({
   }, [allowedTabs])
   const visibleSetupTabIds = visibleSetupTabs.map(tab => tab.id).join(',')
   const [activeSetupTab, setActiveSetupTab] = useState(() => initialTab || visibleSetupTabs[0]?.id || 'basics')
+  const canEditTaxRates = auth?.accountType === 'admin'
   const [coverImageUrl, setCoverImageUrl] = useState(restaurant.cover_image_url || '')
   const [pendingCoverFile, setPendingCoverFile] = useState(null)
   const [pendingCoverPreviewUrl, setPendingCoverPreviewUrl] = useState('')
@@ -2226,11 +2227,45 @@ export default function RestaurantSetupPanel({
     setServiceCharges(prev => prev.map((row, currentIndex) => currentIndex === index ? { ...row, ...patch } : row))
   }
 
+  const updateAutoGratuityRule = (index, patch) => {
+    setAutoGratuity(prev => ({
+      ...prev,
+      rules: (prev.rules || []).map((row, currentIndex) => (
+        currentIndex === index ? { ...row, ...patch } : row
+      )),
+    }))
+  }
+
+  const addAutoGratuityRule = () => {
+    setAutoGratuity(prev => {
+      const rules = prev.rules?.length ? prev.rules : [{ party_threshold: prev.party_threshold || '6', percent: prev.percent || '18' }]
+      const lastThreshold = Math.max(...rules.map(rule => Number(rule.party_threshold) || 0), 0)
+      const lastPercent = rules.at(-1)?.percent || prev.percent || '18'
+      return {
+        ...prev,
+        rules: [...rules, { party_threshold: String(Math.max(1, lastThreshold + 1)), percent: lastPercent }],
+      }
+    })
+  }
+
+  const removeAutoGratuityRule = (index) => {
+    setAutoGratuity(prev => {
+      const rules = (prev.rules || []).filter((_, currentIndex) => currentIndex !== index)
+      return {
+        ...prev,
+        rules: rules.length ? rules : [{ party_threshold: prev.party_threshold || '6', percent: prev.percent || '18' }],
+      }
+    })
+  }
+
   const saveTaxesCharges = async (publication) => {
-    const payload = taxesChargesPayload(taxRates, serviceCharges, autoGratuity, taxCategoryAssignments)
+    const rawPayload = taxesChargesPayload(taxRates, serviceCharges, autoGratuity, taxCategoryAssignments)
+    const payload = canEditTaxRates
+      ? rawPayload
+      : (({ tax_rates, category_assignments, ...chargesOnlyPayload }) => chargesOnlyPayload)(rawPayload)
     const propagationPayload = {
       ...payload,
-      tax_rates: payload.tax_rates.map(({ id, ...row }) => row),
+      ...(payload.tax_rates ? { tax_rates: payload.tax_rates.map(({ id, ...row }) => row) } : {}),
       service_charges: payload.service_charges.map(({ id, ...row }) => row),
     }
     await saveWithPropagation({
@@ -2266,6 +2301,7 @@ export default function RestaurantSetupPanel({
   }
 
   const applyMyrtleBeachTaxes = () => {
+    if (!canEditTaxRates) return
     if (!window.confirm('Confirm this restaurant is inside Myrtle Beach city limits. This replaces the tax-rate draft and assigns Beer & Wine and Cocktails to their correct rates.')) return
     const preset = taxPresetDraft(MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET)
     setTaxRates(preset.tax_rates)
@@ -3284,26 +3320,32 @@ export default function RestaurantSetupPanel({
             <div className="space-y-4">
               <div>
                 <p className="label-mono">Tax Rates</p>
-                <p className="mt-2 text-sm text-dash-secondary">Add one or more tax categories. The default tax also syncs to legacy POS tax settings.</p>
-                <SmallButton onClick={applyMyrtleBeachTaxes} className="mt-3">Use Myrtle Beach city-limits rates</SmallButton>
+                <p className="mt-2 text-sm text-dash-secondary">
+                  {canEditTaxRates
+                    ? 'Tax categories are maintained by platform support from the restaurant address. The default tax also syncs to legacy POS tax settings.'
+                    : 'Tax categories are derived from the restaurant address and shown here for review. Platform support updates them when the address or jurisdiction changes.'}
+                </p>
+                {canEditTaxRates && <SmallButton onClick={applyMyrtleBeachTaxes} className="mt-3">Use Myrtle Beach city-limits rates</SmallButton>}
               </div>
               {normalizeTaxRates(taxRates).map((tax, index) => (
                 <div key={tax.id || `tax:${index}`} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
                   <div className="grid gap-3 md:grid-cols-[1.2fr_0.7fr_1fr]">
-                    <TextInput value={tax.name} onChange={event => updateTaxRate(index, { name: event.target.value })} placeholder="Sales Tax" />
-                    <TextInput inputMode="decimal" value={tax.rate} onChange={event => updateTaxRate(index, { rate: sanitizeNumber(event.target.value) })} placeholder="Rate %" />
-                    <SelectInput value={tax.applies_to} onChange={event => updateTaxRate(index, { applies_to: event.target.value })}>
+                    <TextInput value={tax.name} onChange={event => updateTaxRate(index, { name: event.target.value })} placeholder="Sales Tax" disabled={!canEditTaxRates} />
+                    <TextInput inputMode="decimal" value={tax.rate} onChange={event => updateTaxRate(index, { rate: sanitizeNumber(event.target.value) })} placeholder="Rate %" disabled={!canEditTaxRates} />
+                    <SelectInput value={tax.applies_to} onChange={event => updateTaxRate(index, { applies_to: event.target.value })} disabled={!canEditTaxRates}>
                       {taxAppliesToOptions(tax.applies_to).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </SelectInput>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <SmallButton variant={tax.is_default ? 'primary' : 'secondary'} onClick={() => updateTaxRate(index, { is_default: true })}>Default tax</SmallButton>
-                    <SmallButton variant={tax.is_inclusive ? 'primary' : 'secondary'} onClick={() => updateTaxRate(index, { is_inclusive: !tax.is_inclusive })}>Tax included in price</SmallButton>
-                    <SmallButton variant="danger" onClick={() => removeTaxRate(index)}>Remove</SmallButton>
-                  </div>
+                  {canEditTaxRates && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <SmallButton variant={tax.is_default ? 'primary' : 'secondary'} onClick={() => updateTaxRate(index, { is_default: true })}>Default tax</SmallButton>
+                      <SmallButton variant={tax.is_inclusive ? 'primary' : 'secondary'} onClick={() => updateTaxRate(index, { is_inclusive: !tax.is_inclusive })}>Tax included in price</SmallButton>
+                      <SmallButton variant="danger" onClick={() => removeTaxRate(index)}>Remove</SmallButton>
+                    </div>
+                  )}
                 </div>
               ))}
-              <SmallButton onClick={() => setTaxRates(prev => [...normalizeTaxRates(prev), { ...defaultTaxRate(), name: 'Additional Tax', is_default: false }])}>Add tax rate</SmallButton>
+              {canEditTaxRates && <SmallButton onClick={() => setTaxRates(prev => [...normalizeTaxRates(prev), { ...defaultTaxRate(), name: 'Additional Tax', is_default: false }])}>Add tax rate</SmallButton>}
             </div>
 
             <div className="space-y-4 border-t border-white/10 pt-6">
@@ -3343,19 +3385,31 @@ export default function RestaurantSetupPanel({
             <div className="space-y-4 border-t border-white/10 pt-6">
               <div>
                 <p className="label-mono">Large-Party Auto Gratuity</p>
-                <p className="mt-2 text-sm text-dash-secondary">Restaurant-wide default the POS applies when the party size is at or above the threshold. Section service-charge profiles override this rule for their tables.</p>
+                <p className="mt-2 text-sm text-dash-secondary">Restaurant-wide default the POS applies by party size. When multiple tiers apply, the POS uses the largest matching minimum. Section service-charge profiles override these rules for their tables.</p>
               </div>
               <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
                 <label className="flex items-center gap-3 text-sm text-dash-primary">
                   <input type="checkbox" checked={autoGratuity.enabled} onChange={event => setAutoGratuity(prev => ({ ...prev, enabled: event.target.checked }))} className="h-4 w-4 accent-dash-gold" />
                   Automatically apply gratuity to large parties
                 </label>
-                {autoGratuity.enabled && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 md:grid-cols-2 xl:grid-cols-4">
-                  <Field label="Minimum party size"><TextInput inputMode="numeric" value={autoGratuity.party_threshold} onChange={event => setAutoGratuity(prev => ({ ...prev, party_threshold: event.target.value.replace(/\D/g, '') }))} placeholder="6" /></Field>
-                  <Field label="Gratuity rate %"><TextInput inputMode="decimal" value={autoGratuity.percent} onChange={event => setAutoGratuity(prev => ({ ...prev, percent: sanitizeNumber(event.target.value) }))} placeholder="18" /></Field>
-                  <Field label="Receipt label"><TextInput value={autoGratuity.label} maxLength={40} onChange={event => setAutoGratuity(prev => ({ ...prev, label: event.target.value }))} placeholder="Gratuity" /></Field>
-                  <Field label="Who receives it"><SelectInput value={autoGratuity.assigned_to_employee ? 'employee' : 'restaurant'} onChange={event => setAutoGratuity(prev => ({ ...prev, assigned_to_employee: event.target.value === 'employee' }))}><option value="employee">Employee — tip earnings</option><option value="restaurant">Restaurant — service-charge revenue</option></SelectInput></Field>
-                  <p className="text-xs text-dash-tertiary md:col-span-2 xl:col-span-4">Employee-owned gratuity is shown separately from voluntary tips and is included exactly once in the employee settlement. Restaurant-owned charges never increase employee tip earnings.</p>
+                {autoGratuity.enabled && <div className="mt-4 space-y-4 border-t border-white/10 pt-4">
+                  <div className="space-y-3">
+                    {(autoGratuity.rules || [{ party_threshold: autoGratuity.party_threshold || '6', percent: autoGratuity.percent || '18' }]).map((rule, index) => (
+                      <div key={`auto-grat-rule:${index}`} className="grid gap-3 rounded-xl border border-white/10 bg-black/10 p-3 md:grid-cols-[1fr_1fr_auto]">
+                        <Field label="Minimum party size"><TextInput inputMode="numeric" value={rule.party_threshold} onChange={event => updateAutoGratuityRule(index, { party_threshold: event.target.value.replace(/\D/g, '') })} placeholder="6" /></Field>
+                        <Field label="Gratuity rate %"><TextInput inputMode="decimal" value={rule.percent} onChange={event => updateAutoGratuityRule(index, { percent: sanitizeNumber(event.target.value) })} placeholder="18" /></Field>
+                        <div className="flex items-end">
+                          <SmallButton variant="danger" disabled={(autoGratuity.rules || []).length <= 1} onClick={() => removeAutoGratuityRule(index)}>Remove</SmallButton>
+                        </div>
+                      </div>
+                    ))}
+                    <SmallButton onClick={addAutoGratuityRule}>Add tier</SmallButton>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <Field label="Receipt label"><TextInput value={autoGratuity.label} maxLength={40} onChange={event => setAutoGratuity(prev => ({ ...prev, label: event.target.value }))} placeholder="Gratuity" /></Field>
+                    <Field label="Who receives it"><SelectInput value={autoGratuity.assigned_to_employee ? 'employee' : 'restaurant'} onChange={event => setAutoGratuity(prev => ({ ...prev, assigned_to_employee: event.target.value === 'employee' }))}><option value="employee">Employee — tip earnings</option><option value="restaurant">Restaurant — service-charge revenue</option></SelectInput></Field>
+                    <p className="text-xs text-dash-tertiary md:col-span-2">Employee-owned gratuity is shown separately from voluntary tips and is included exactly once in the employee settlement. Restaurant-owned charges never increase employee tip earnings.</p>
+                  </div>
                 </div>}
               </div>
             </div>

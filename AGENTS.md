@@ -177,15 +177,19 @@ surface independently, while every mutation is also guarded by the ML backend.
   a recovery route and is shown only while a required domain is incomplete;
   `onboarding_completed_at` remains historical metadata and is not the source
   of truth. Permanent configuration ownership is Store Information (Basics and
-  Goals), Marketing (Branding), Store Settings (Legal, Payments, Cash/Closeout,
-  Check Workflow, Hours), Integrations (current tools/service model and
-  reservations), Menu (menu data, discounts, routing, and admin-only tax UI),
+  Goals), Marketing (Branding), Store Settings (Legal, Payments, Taxes & Charges,
+  Cash/Closeout, Check Workflow, Hours), Integrations (current tools/service model and
+  reservations), Menu (menu data, discounts, routing),
   Team (members/roles and Manager Controls), UI Editor (appearance, sections,
   floor plan), and Payroll & Tips. All of these pages reuse the Setup editor's
   canonical save contracts. Discount reads require `menu.view`; writes require
-  `menu.edit_items`. Taxes remain editable from onboarding/recovery Setup, but
-  their permanent Menu surface is shown only to platform admins (including the
-  configured Cameron admin account).
+  `menu.edit_items`. Taxes & Charges is visible from Store Settings to owners,
+  authorized managers, and authorized resellers through `settings.edit`;
+  service charges and large-party auto-gratuity tiers are editable there, while
+  tax rates/category assignments are address-derived, read-only for non-admins,
+  and guarded the same way by the ML backend. POS applies the largest
+  restaurant-wide auto-gratuity tier whose minimum party size is met, unless a
+  section/table service-charge rule overrides it.
 - Migrations (manual run): ML `supabase/migrations/0055_team_hub_access.sql`
   (restaurant_members + back_office_permissions + invitations alter), POS repo
   `0022_pos_timeclock_breaks_v1.sql` (pos_time_clock_breaks).

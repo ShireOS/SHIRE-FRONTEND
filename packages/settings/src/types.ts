@@ -32,12 +32,18 @@ export interface ServiceChargeData {
   is_active?: boolean
 }
 
+export interface AutoGratuityRuleData {
+  party_threshold: string
+  percent: string
+}
+
 export interface AutoGratuityData {
   enabled: boolean
   party_threshold: string
   percent: string
   label: string
   assigned_to_employee: boolean
+  rules: AutoGratuityRuleData[]
 }
 
 export interface SectionBehaviorData {

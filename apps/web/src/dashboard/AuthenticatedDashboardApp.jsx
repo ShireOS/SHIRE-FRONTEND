@@ -5265,7 +5265,7 @@ export function RestaurantWorkspace({
           <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['branding']} showHeader={false} />
         )}
         {activeTab === 'settings' && (
-          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['legal', 'payments', 'closeout', 'check_workflow', 'hours']} showHeader={false} />
+          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['legal', 'payments', 'taxes_charges', 'closeout', 'check_workflow', 'hours']} showHeader={false} />
         )}
         {activeTab === 'integrations' && (
           <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['service_model', 'reservation_timing', 'integrations']} showHeader={false} />
@@ -5293,7 +5293,6 @@ export function RestaurantWorkspace({
             { id: 'menu', label: 'Menu' },
             ...(backOfficeAccess.can('menu.edit_items') ? [{ id: 'discounts', label: 'Discounts' }] : []),
             ...(backOfficeAccess.can('settings.edit') ? [{ id: 'routing', label: 'Kitchen Routing' }] : []),
-            ...(auth.accountType === 'admin' ? [{ id: 'taxes', label: 'Taxes & Charges' }] : []),
           ]} initialTab="menu">
             {(section) => section === 'menu' ? (
               <MenuPanel restaurantId={restaurantId} canEditPrices={backOfficeAccess.can('menu.edit_prices')} />
