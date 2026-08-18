@@ -42,6 +42,8 @@ import {
 } from './data/menuAllergies'
 import { MenuItemDetail } from './MenuItemDetail'
 import { MenuItemCreate } from './MenuItemCreate'
+import { MenuCombosPanel } from './MenuCombosPanel'
+import { comboPayloadFromDraft } from './data/menuCombos.js'
 import {
   ROUTE_INHERIT_VALUE,
   ROUTE_MULTI_VALUE,
@@ -109,6 +111,7 @@ import {
 const MENU_TABS = [
   { id: 'items', label: 'Items' },
   { id: 'categories', label: 'Categories' },
+  { id: 'combos', label: 'Combos' },
   { id: 'modifiers', label: 'Modifiers' },
   { id: 'groups', label: 'Questions' },
   { id: 'allergies', label: 'Allergies' },
@@ -708,6 +711,8 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [savedCategories, setSavedCategories] = useState([])
   const [categoryColors, setCategoryColors] = useState({})
   const [taxRates, setTaxRates] = useState([])
+  const [combos, setCombos] = useState([])
+  const [comboManagerPasscode, setComboManagerPasscode] = useState('')
   const [modifiers, setModifiers] = useState([])
   const [groups, setGroups] = useState([])
   const [itemModifierOverrides, setItemModifierOverrides] = useState({})
@@ -843,6 +848,11 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
   const loadGroups = async () => {
     setGroups(await fetchModifierGroups(restaurantId))
+  }
+
+  const loadCombos = async () => {
+    const data = await fetchPosApi(restaurantId, '/manager/combos')
+    setCombos(Array.isArray(data?.combos) ? data.combos : [])
   }
 
   // { [itemId]: { [modifierId]: { price_delta, no_print } } } — per-item price
@@ -1025,12 +1035,14 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     setLoading(true)
     setError('')
     setSelectedItemId(null)
+    setComboManagerPasscode('')
     const loaders = [
       ['items', loadItems],
       ['images', loadImages],
       ['categories', loadCategories],
       ['modifiers', loadModifiers],
       ['questions', loadGroups],
+      ['combos', loadCombos],
       ['modifier overrides', loadItemModifierOverrides],
       ['allergies', loadAllergies],
       ['specials', () => loadSpecials({ soft: true })],
@@ -1942,6 +1954,33 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     await loadGroups()
   }, 'Modifier created and added.', 'Couldn’t create the modifier')
 
+  // ── Combos ───────────────────────────────────────────────────────────────
+
+  const createCombo = (draft) => run(async () => {
+    await fetchPosApi(restaurantId, '/manager/combos', {
+      method: 'POST',
+      body: JSON.stringify(comboPayloadFromDraft(draft, comboManagerPasscode)),
+    })
+    await loadCombos()
+  }, localSave('combo:new'), 'Couldn’t create the combo')
+
+  const updateCombo = (comboId, draft) => run(async () => {
+    await fetchPosApi(restaurantId, `/manager/combos/${comboId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(comboPayloadFromDraft(draft, comboManagerPasscode)),
+    })
+    await loadCombos()
+  }, localSave(`combo:${comboId}`), 'Couldn’t save the combo')
+
+  const archiveCombo = (comboId) => run(async () => {
+    if (!comboManagerPasscode.trim()) throw new Error('Manager PIN is required to archive combos.')
+    await fetchPosApi(restaurantId, `/manager/combos/${comboId}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ manager_passcode: comboManagerPasscode.trim() }),
+    })
+    await loadCombos()
+  }, 'Combo archived.', 'Couldn’t archive the combo')
+
   // ── Specials (tab-level scheduling) ──────────────────────────────────────
 
   const createSpecial = () => {
@@ -2069,6 +2108,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         </div>
         <div className="flex flex-wrap gap-2 text-sm text-dash-tertiary">
           <span className="rounded-full border border-white/10 px-3 py-1">{menuItems.length} items</span>
+          <span className="rounded-full border border-white/10 px-3 py-1">{combos.filter(combo => combo.is_available !== false).length} combos</span>
           <span className="rounded-full border border-white/10 px-3 py-1">{modifiers.length} modifiers</span>
           <span className="rounded-full border border-white/10 px-3 py-1">{groups.length} questions</span>
           <span className="rounded-full border border-white/10 px-3 py-1">{activeSpecials.length} live specials</span>
@@ -2626,6 +2666,20 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           )}
 
         </SectionShell>
+      )}
+
+      {!loading && activeTab === 'combos' && (
+        <MenuCombosPanel
+          combos={combos}
+          menuItems={mergedItems.map(item => ({ ...item, category: effectiveItemCategoryName(item, categoriesById) }))}
+          managerPasscode={comboManagerPasscode}
+          onManagerPasscodeChange={setComboManagerPasscode}
+          busy={busy}
+          statusFor={saved}
+          onCreateCombo={createCombo}
+          onUpdateCombo={updateCombo}
+          onArchiveCombo={archiveCombo}
+        />
       )}
 
       {!loading && activeTab === 'modifiers' && (
