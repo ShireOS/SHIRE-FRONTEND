@@ -1,4 +1,5 @@
 import { useId, useMemo, useState } from 'react'
+import { Check } from 'lucide-react'
 
 // Shared primitives for the Menu workspace (MenuPanel + MenuItemDetail),
 // mirroring the setup-panel visual idiom.
@@ -31,10 +32,30 @@ export const money = (value) => {
 export const cleanDecimal = (value) => value.replace(/[^\d.]/g, '').slice(0, 8)
 export const cleanDigits = (value, max = 3) => value.replace(/\D/g, '').slice(0, max)
 
-export function Field({ label, children }) {
+export function SaveStatus({ message }) {
+  return (
+    <span
+      role={message ? 'status' : undefined}
+      aria-live="polite"
+      aria-hidden={message ? undefined : true}
+      className={[
+        'inline-flex min-h-4 items-center gap-1 text-[11px] font-semibold leading-none transition-opacity',
+        message ? 'text-emerald-200 opacity-100' : 'pointer-events-none opacity-0',
+      ].join(' ')}
+    >
+      {message && <Check className="h-3 w-3" strokeWidth={2.5} aria-hidden="true" />}
+      {message || 'Saved'}
+    </span>
+  )
+}
+
+export function Field({ label, children, status }) {
   return (
     <label className="block space-y-2">
-      <span className="label-mono">{label}</span>
+      <span className="flex min-h-4 items-center justify-between gap-2">
+        <span className="label-mono">{label}</span>
+        {status !== undefined && <SaveStatus message={status} />}
+      </span>
       {children}
     </label>
   )

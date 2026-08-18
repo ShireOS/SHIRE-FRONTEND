@@ -34,6 +34,7 @@ import {
   MenuEmptyState,
   ModifierPicker,
   PosTilePreview,
+  SaveStatus,
   SelectInput,
   SmallButton,
   TextAreaInput,
@@ -290,6 +291,7 @@ function QuestionEditor({
   source = 'item', itemOverride = null, inheritedFromName = null,
   positionLabel = null, dragHandleProps = null,
   itemModOverrides = {}, saveItemModOverride = null,
+  saveKeyPrefix = '', saveStatuses = {},
   collapsed = false, onToggleCollapse = null,
 }) {
   const group = groups.find(candidate => candidate.id === groupId)
@@ -320,12 +322,15 @@ function QuestionEditor({
     : null
   const isDefaultHere = (option) => (overrideDefaults ? overrideDefaults.includes(option.modifier_id) : option.is_default)
 
-  const patchGroup = (patch, message = 'Question saved.') => run(async () => {
+  const localSave = (key, message = 'Saved') => ({ localKey: `${saveKeyPrefix}:${key}`, message })
+  const saved = key => saveStatuses[`${saveKeyPrefix}:${key}`] || ''
+
+  const patchGroup = (patch, message = localSave('question')) => run(async () => {
     await updateModifierGroup(group.id, patch)
     await reloadGroups()
   }, message)
 
-  const linkWork = (work, message = 'Question saved.') => run(async () => {
+  const linkWork = (work, message = localSave('question')) => run(async () => {
     await work()
     await reloadGroups()
   }, message)
@@ -335,7 +340,7 @@ function QuestionEditor({
       const next = isDefaultHere(option)
         ? overrideDefaults.filter(id => id !== option.modifier_id)
         : [...overrideDefaults, option.modifier_id]
-      return linkWork(() => setItemGroupOverride(group.id, itemId, { default_modifier_ids: next }), 'Defaults for this item saved.')
+      return linkWork(() => setItemGroupOverride(group.id, itemId, { default_modifier_ids: next }), localSave('defaults'))
     }
     return linkWork(() => updateGroupOption(group.id, option.modifier_id, { is_default: !option.is_default }))
   }
@@ -426,13 +431,18 @@ function QuestionEditor({
               <span className="text-[11px] font-bold text-dash-gold">{positionLabel}</span>
             </div>
           )}
-          <TextInput
-            defaultValue={group.name}
-            onBlur={event => {
-              const next = event.target.value.trim()
-              if (next && next !== group.name) void patchGroup({ name: next }, 'Question name saved.')
-            }}
-          />
+          <div className="min-w-0 flex-1">
+            <div className="mb-1 flex min-h-4 justify-end">
+              <SaveStatus message={saved('name')} />
+            </div>
+            <TextInput
+              defaultValue={group.name}
+              onBlur={event => {
+                const next = event.target.value.trim()
+                if (next && next !== group.name) void patchGroup({ name: next }, localSave('name'))
+              }}
+            />
+          </div>
           {source === 'category' && inheritedFromName && (
             <span className="whitespace-nowrap rounded-full border border-sky-300/30 bg-sky-300/10 px-2 py-1 text-[11px] font-semibold text-sky-200" title={`Every item in ${inheritedFromName} asks this — including items added later. Editing changes it category-wide.`}>
               Inherited · {inheritedFromName}
@@ -457,7 +467,7 @@ function QuestionEditor({
               title="Override only this item's behavior; the shared question remains unchanged elsewhere"
               onChange={event => void linkWork(
                 () => setItemGroupOverride(group.id, itemId, { prompt_mode: event.target.value || null }),
-                event.target.value ? 'Item-specific behavior saved.' : 'Using question default.',
+                localSave('behavior'),
               )}
             >
               <option value="">This item: question default ({effectiveMode === 'skip_defaults' ? 'skip w/ defaults' : effectiveMode === 'hidden' ? 'hidden' : 'ask'})</option>
@@ -473,7 +483,7 @@ function QuestionEditor({
               title="Override the entire question's kitchen hierarchy for this menu item"
               onChange={event => void linkWork(
                 () => setItemGroupOverride(group.id, itemId, { kitchen_display_role: event.target.value || null }),
-                event.target.value ? 'Item-specific kitchen hierarchy saved.' : 'Using the question hierarchy.',
+                localSave('kitchen'),
               )}
             >
               <option value="">This item: inherit hierarchy</option>
@@ -487,14 +497,14 @@ function QuestionEditor({
               is_required: !group.is_required,
               min_selections: !group.is_required ? Math.max(1, group.min_selections || 0) : group.min_selections,
               prompt_on_order: true,
-            })}
+            }, localSave('rules'))}
           >
             {group.is_required ? 'Required' : 'Optional'}
           </SmallButton>
           <SmallButton
             variant="secondary"
             title={group.no_print ? 'Currently hidden from kitchen tickets — click to print again' : 'Hide this whole question from kitchen tickets (receipts still show it)'}
-            onClick={() => void patchGroup({ no_print: !group.no_print }, group.no_print ? 'Question prints again.' : 'Question hidden from kitchen tickets.')}
+            onClick={() => void patchGroup({ no_print: !group.no_print }, localSave('print'))}
           >
             {group.no_print ? 'Print again' : 'No print'}
           </SmallButton>
@@ -547,7 +557,7 @@ function QuestionEditor({
           defaultValue={String(group.min_selections ?? 0)}
           onBlur={event => {
             const next = Number(cleanDigits(event.target.value)) || 0
-            if (next !== group.min_selections) void patchGroup({ min_selections: group.is_required ? Math.max(1, next) : next }, 'Minimum choices saved.')
+            if (next !== group.min_selections) void patchGroup({ min_selections: group.is_required ? Math.max(1, next) : next }, localSave('rules'))
           }}
         />
         <span>and at most</span>
@@ -559,7 +569,7 @@ function QuestionEditor({
           onBlur={event => {
             const raw = cleanDigits(event.target.value)
             const next = raw === '' ? null : Math.max(Number(raw), group.min_selections || 0)
-            if (next !== group.max_selections) void patchGroup({ max_selections: next }, 'Maximum choices saved.')
+            if (next !== group.max_selections) void patchGroup({ max_selections: next }, localSave('rules'))
           }}
         />
         <span className="text-dash-tertiary">·</span>
@@ -570,7 +580,7 @@ function QuestionEditor({
           defaultValue={String(group.included_count ?? 0)}
           onBlur={event => {
             const next = Number(cleanDigits(event.target.value)) || 0
-            if (next !== (group.included_count ?? 0)) void patchGroup({ included_count: next }, 'Included choices saved.')
+            if (next !== (group.included_count ?? 0)) void patchGroup({ included_count: next }, localSave('rules'))
           }}
         />
         <span>are free, then $</span>
@@ -582,10 +592,13 @@ function QuestionEditor({
           onBlur={event => {
             const raw = cleanDecimal(event.target.value)
             const next = raw === '' ? null : Number(raw)
-            if (next !== group.overage_price) void patchGroup({ overage_price: next }, 'Extra choice price saved.')
+            if (next !== group.overage_price) void patchGroup({ overage_price: next }, localSave('rules'))
           }}
         />
         <span>each extra</span>
+      </div>
+      <div className="flex min-h-4 justify-end">
+        <SaveStatus message={saved('rules') || saved('behavior') || saved('kitchen') || saved('print') || saved('defaults') || saved('question')} />
       </div>
       <p className="mt-2 text-xs font-semibold uppercase tracking-[0.08em] text-dash-gold/80">{groupRulesSummary(group)}</p>
 
@@ -752,7 +765,7 @@ function QuestionEditor({
                           title="Reuse a question that already exists instead of building a new one"
                           onChange={event => {
                             if (!event.target.value) return
-                            void linkWork(() => updateGroupOption(group.id, option.modifier_id, { child_group_id: event.target.value }), 'Follow-up question linked.')
+                            void linkWork(() => updateGroupOption(group.id, option.modifier_id, { child_group_id: event.target.value }), localSave('question'))
                             setExpandedChild(option.modifier_id)
                           }}
                         >
@@ -780,6 +793,8 @@ function QuestionEditor({
                   parentModifierName={modifier?.name || null}
                   itemModOverrides={itemModOverrides}
                   saveItemModOverride={saveItemModOverride}
+                  saveKeyPrefix={`${saveKeyPrefix}:child:${childGroup.id}`}
+                  saveStatuses={saveStatuses}
                   onUnlink={() => {
                     setExpandedChild(null)
                     void linkWork(() => updateGroupOption(group.id, option.modifier_id, { child_group_id: null }), 'Follow-up question unlinked.')
@@ -833,6 +848,7 @@ export function MenuItemDetail({
   itemModifierOverrides = {}, reloadItemModifierOverrides = null,
   canEditPrices = false, onDuplicate = null,
   editorPrefs = null, onSaveEditorPrefs = null,
+  saveStatuses = {},
 }) {
   const fileInputRef = useRef(null)
   const [newQuestion, setNewQuestion] = useState('')
@@ -848,6 +864,8 @@ export function MenuItemDetail({
 
   const modifiersById = Object.fromEntries(modifiers.map(m => [m.id, m]))
   const categoriesByName = Object.fromEntries(categories.filter(c => c.name).map(c => [c.name, c]))
+  const localSave = (key, message = 'Saved') => ({ localKey: `item:${item.id}:${key}`, message })
+  const saved = key => saveStatuses[`item:${item.id}:${key}`] || ''
 
   // Everything this item will ask, in POS order: direct questions + questions
   // inherited from the category, minus opt-outs.
@@ -1370,25 +1388,25 @@ export function MenuItemDetail({
     }
     switch (cardId) {
       case 'basics': return (
-          <DetailCard {...controls} title="Basics" hint="Regular item details autosave when you leave a field or change a selector. Optional special pricing has explicit add/archive controls.">
+          <DetailCard {...controls} title="Basics" hint="Item details and optional special pricing.">
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-[minmax(0,1.4fr)_130px_190px_minmax(0,1fr)]">
-              <Field label="Name">
+              <Field label="Name" status={saved('name')}>
                 <TextInput
                   defaultValue={item.name}
                   onBlur={event => {
                     const next = event.target.value.trim()
-                    if (next && next !== item.name) void patchItem(item.id, { name: next }, 'Item name saved.')
+                    if (next && next !== item.name) void patchItem(item.id, { name: next }, localSave('name'))
                   }}
                 />
               </Field>
-              <Field label="Regular price $">
+              <Field label="Regular price $" status={saved('price')}>
                 <TextInput
                   inputMode="decimal"
                   disabled={!canEditPrices || busy}
                   defaultValue={item.price != null ? String(item.price) : ''}
                   onBlur={event => {
                     const next = Number(cleanDecimal(event.target.value))
-                    if (Number.isFinite(next) && next !== Number(item.price)) void patchItem(item.id, { price: next }, 'Item price saved.')
+                    if (Number.isFinite(next) && next !== Number(item.price)) void patchItem(item.id, { price: next }, localSave('price'))
                   }}
                 />
               </Field>
@@ -1405,8 +1423,8 @@ export function MenuItemDetail({
                   {hasPriceRules ? `${itemPriceRules.length} configured` : 'Add a rule'}
                 </span>
               </label>
-              <Field label="Category">
-                <SelectInput value={item.category || 'Other'} onChange={event => void patchItem(item.id, { category: event.target.value }, 'Item category saved.')}>
+              <Field label="Category" status={saved('category')}>
+                <SelectInput value={item.category || 'Other'} onChange={event => void patchItem(item.id, { category: event.target.value }, localSave('category'))}>
                   {categoryNames.map(name => <option key={name} value={name}>{name}</option>)}
                   {!categoryNames.includes(item.category || 'Other') && <option value={item.category || 'Other'}>{item.category || 'Other'}</option>}
                 </SelectInput>
@@ -1414,13 +1432,13 @@ export function MenuItemDetail({
             </div>
             {specialPricingEditor}
             <div className="mt-3">
-              <Field label="Description">
+              <Field label="Description" status={saved('description')}>
                 <TextAreaInput
                   defaultValue={item.description || ''}
                   placeholder="What guests see under the item name..."
                   onBlur={event => {
                     const next = event.target.value.trim()
-                    if (next !== (item.description || '')) void patchItem(item.id, { description: next || null }, 'Item description saved.')
+                    if (next !== (item.description || '')) void patchItem(item.id, { description: next || null }, localSave('description'))
                   }}
                 />
               </Field>
@@ -1432,7 +1450,7 @@ export function MenuItemDetail({
             {...controls}
             actions={questionCollapseActions}
             title={`Questions & modifiers (${questionRows.length})`}
-            hint="Asked top to bottom when this item is ordered. Changes save immediately; drag the ⠿ grip to change the order. Questions inherited from the category apply to every item in it; opt out to skip one here."
+            hint="Asked top to bottom when this item is ordered. Drag the ⠿ grip to change the order. Questions inherited from the category apply to every item in it; opt out to skip one here."
           >
             {/* How this item behaves at the POS, in plain English. */}
             {questionRows.length > 0 && (
@@ -1497,6 +1515,8 @@ export function MenuItemDetail({
                     onToggleCollapse={onSaveEditorPrefs ? () => toggleQuestionCollapsed(row.group.id) : null}
                     itemModOverrides={itemModifierOverrides}
                     saveItemModOverride={saveItemModOverride}
+                    saveKeyPrefix={`item:${item.id}:question:${row.group.id}`}
+                    saveStatuses={saveStatuses}
                   />
                 )
               }}
@@ -1775,22 +1795,22 @@ export function MenuItemDetail({
                 </SelectInput>
                 {productionRouting?.description && <p className="mt-2 text-xs text-dash-tertiary">{productionRouting.description}</p>}
               </Field>
-              <Field label="Course">
+              <Field label="Course" status={saved('course')}>
                 <SelectInput
                   value={item.course_type || ''}
-                  onChange={event => void patchItem(item.id, { course_type: event.target.value || null }, event.target.value ? 'Item course saved.' : 'Item now inherits course.')}
+                  onChange={event => void patchItem(item.id, { course_type: event.target.value || null }, localSave('course'))}
                 >
                   {COURSE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </SelectInput>
               </Field>
-              <Field label="Prep minutes">
+              <Field label="Prep minutes" status={saved('prep')}>
                 <TextInput
                   inputMode="numeric"
                   defaultValue={item.prep_time_minutes == null ? '' : String(item.prep_time_minutes)}
                   onBlur={event => {
                     const raw = cleanDigits(event.target.value)
                     const next = raw === '' ? null : Number(raw)
-                    if (next !== item.prep_time_minutes) void patchItem(item.id, { prep_time_minutes: next }, next == null ? 'Prep time cleared.' : 'Prep time saved.')
+                    if (next !== item.prep_time_minutes) void patchItem(item.id, { prep_time_minutes: next }, localSave('prep'))
                   }}
                 />
               </Field>
