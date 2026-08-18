@@ -22,10 +22,14 @@ import ServerReceiptTemplateModal from './ServerReceiptTemplateModal'
 // report request is loading or recovering from a transport failure.
 const RECEIPT_GROUP_CATALOG = [
   { id: 'revenue', label: 'Revenue', description: 'Gross and net sales, discounts, tax, gratuity, service charges, pricing adjustments, and total collected.' },
+  { id: 'service_mode_sales', label: 'Sales by service type', description: 'Dine-in, to-go, delivery, drive-thru, and unclassified check performance.' },
   { id: 'tender_mix', label: 'Media / tender mix', description: 'Cash and card transaction counts, applied amounts, surcharges, tips, and tender percentages.' },
+  { id: 'media_tip_detail', label: 'Detailed media & tips', description: 'Tender totals by recorded card brand plus captured, declared, and tip-out amounts.' },
+  { id: 'cash_reconciliation', label: 'Cash reconciliation', description: 'Collected media, processor fees, expected cash, counted cash, and variance.' },
   { id: 'daily_sales', label: 'Daily sales', description: 'Net sales, checks, guests, discounts, and collected totals for each accounting business date.' },
   { id: 'key_metrics', label: 'Key metrics', description: 'Checks, guests, average checks, net sales per guest, sales per labor hour, and discount rate.' },
   { id: 'category_sales', label: 'Top categories', description: 'Category units, net sales, sales share, cost, and margin.' },
+  { id: 'department_detail', label: 'All departments', description: 'Every recorded menu department with sales value and share.' },
   { id: 'item_sales', label: 'Top & bottom items', description: 'Menu-item units, net sales, discounts, margin, and voided quantities.' },
   { id: 'discounts_voids', label: 'Discounts, voids & refunds', description: 'Discount totals and types, refunds, voided items, and voided checks.' },
   { id: 'employee_performance', label: 'Employee performance', description: 'Employee sales, checks, average check, table-turn time, and tip percentage.' },
@@ -33,6 +37,7 @@ const RECEIPT_GROUP_CATALOG = [
   { id: 'punch_log', label: 'Punch log', description: 'Clock entries, missed clock-outs, manager edits, voids, and edit reasons.' },
   { id: 'tax', label: 'Tax', description: 'Taxable and non-taxable sales, tax liability, service-charge tax, and rate details.' },
   { id: 'cash_closeout', label: 'Cash & closeout', description: 'Paid in/out, cash drops, expected and counted cash, variance, and daily closes.' },
+  { id: 'transaction_log', label: 'Transaction log', description: 'Completed cash, card, gift-card, and other tenders with timestamps and POS metadata.' },
   { id: 'server_summary', label: 'Server summary', description: 'Worked-server sales, checks, voluntary tips, gratuity, and cash due.' },
   { id: 'tip_settlement', label: 'Tips & tip-outs', description: 'Employee tips collected, tip-outs paid and received, and final payouts.' },
 ]
@@ -86,6 +91,10 @@ function periodRange(preset, now = new Date()) {
   return { start: dateKey(start), end: dateKey(end) }
 }
 
+function minuteTime(value, fallback) {
+  return typeof value === 'string' && /^\d{2}:\d{2}/.test(value) ? value.slice(0, 5) : fallback
+}
+
 function money(value) {
   const amount = Number(value || 0)
   const absolute = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Math.abs(amount))
@@ -96,13 +105,13 @@ function number(value, digits = 0) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(Number(value || 0))
 }
 
-function displayValue(value, format, digits = 0) {
+function displayValue(value, format, digits = 0, timezone = undefined) {
   if (value == null || value === '') return '—'
   if (format === 'money') return money(value)
   if (format === 'percent') return `${number(value, 2)}%`
   if (format === 'number') return number(value, digits)
   if (format === 'minutes') return `${number(value, 1)} min`
-  if (format === 'datetime') return new Date(value).toLocaleString()
+  if (format === 'datetime') return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short', timeZone: timezone }).format(new Date(value))
   if (format === 'date') return new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
   if (format === 'json' && typeof value === 'object') return JSON.stringify(value)
   if (typeof value === 'object') return JSON.stringify(value)
@@ -377,7 +386,7 @@ function EmailModal({ profileName, onClose, onSend }) {
   )
 }
 
-function ReceiptGroup({ group }) {
+function ReceiptGroup({ group, timezone }) {
   return (
     <section className="border-t border-black/20 py-5 first:border-t-0 first:pt-0">
       <h2 className="mb-3 font-mono text-sm font-bold uppercase text-stone-950">{group.label}</h2>
@@ -386,7 +395,7 @@ function ReceiptGroup({ group }) {
           {group.lines.map((line, index) => (
             <div key={`${line.label}-${index}`}>
               <div className={`grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-4 font-mono text-sm ${line.emphasis ? 'border-t border-black/30 pt-2 font-bold text-black' : 'text-stone-800'}`}>
-                <span className="min-w-0 break-words">{line.label}</span><span className="whitespace-nowrap text-right">{displayValue(line.value, line.format, line.digits)}</span>
+                <span className="min-w-0 break-words">{line.label}</span><span className="whitespace-nowrap text-right">{displayValue(line.value, line.format, line.digits, timezone)}</span>
               </div>
               {line.note && <p className="mt-1 max-w-3xl font-mono text-xs leading-5 text-stone-500">{line.note}</p>}
             </div>
@@ -397,7 +406,7 @@ function ReceiptGroup({ group }) {
         <div className="mt-3 overflow-x-auto border-y border-black/15">
           <table className="min-w-full font-mono text-xs text-stone-800">
             <thead className="border-b border-black/20 text-left text-[11px] uppercase text-stone-600"><tr>{group.columns.map((column) => <th key={column.key} className="whitespace-nowrap px-2 py-2 font-bold">{column.label}</th>)}</tr></thead>
-            <tbody className="divide-y divide-black/10">{group.rows.map((row, index) => <tr key={row.id || row.staff_id || row.breakdown || row.period || index}>{group.columns.map((column) => <td key={column.key} className="max-w-72 whitespace-nowrap px-2 py-2 align-top">{displayValue(row[column.key], column.format, column.digits || 0)}</td>)}</tr>)}</tbody>
+            <tbody className="divide-y divide-black/10">{group.rows.map((row, index) => <tr key={row.id || row.staff_id || row.breakdown || row.period || index}>{group.columns.map((column) => <td key={column.key} className="max-w-72 whitespace-nowrap px-2 py-2 align-top">{displayValue(row[column.key], column.format, column.digits || 0, timezone)}</td>)}</tr>)}</tbody>
           </table>
         </div>
       )}
@@ -410,17 +419,18 @@ function ReceiptGroup({ group }) {
 function DigitalReceipt({ snapshot, profile }) {
   const selected = new Set(profile.group_ids)
   const groups = (snapshot.groups || []).filter((group) => selected.has(group.id))
-  const period = snapshot.window.start_date === snapshot.window.end_date ? snapshot.window.start_date : `${snapshot.window.start_date} through ${snapshot.window.end_date}`
+  const period = `${snapshot.window.start_date} ${snapshot.window.start_time || '00:00'} through ${snapshot.window.end_date} ${snapshot.window.end_time || '23:59'}`
   return (
     <article className="mx-auto w-full max-w-5xl bg-stone-50 px-4 py-7 text-stone-950 shadow-[0_16px_60px_rgba(0,0,0,0.3)] sm:px-8 sm:py-10">
       <header className="mb-6 border-b-2 border-black pb-5 text-center font-mono">
         <h1 className="break-words text-xl font-bold uppercase sm:text-2xl">{snapshot.restaurant.name}</h1>
         <p className="mt-1 text-sm font-bold uppercase">{profile.name} POS report</p>
         <p className="mt-2 text-xs text-stone-600">{period}</p>
-        <p className="mt-1 text-xs text-stone-600">Accounting business date · {snapshot.restaurant.timezone}</p>
+        <p className="mt-1 text-xs text-stone-600">Restaurant local time · {snapshot.restaurant.timezone}</p>
         {snapshot.scope?.dimension !== 'none' && <p className="mt-1 text-xs text-stone-600">Scoped by {snapshot.scope.dimension.replaceAll('_', ' ')} · {snapshot.scope.mode}</p>}
+        {(snapshot.warnings || []).map((warning) => <p key={warning} className="mx-auto mt-2 max-w-3xl text-xs leading-5 text-stone-500">{warning}</p>)}
       </header>
-      {groups.map((group) => <ReceiptGroup key={group.id} group={group} />)}
+      {groups.map((group) => <ReceiptGroup key={group.id} group={group} timezone={snapshot.restaurant.timezone} />)}
       <footer className="mt-5 border-t-2 border-black pt-4 text-center font-mono text-[11px] text-stone-500">POS report contract {snapshot.contract_version}</footer>
     </article>
   )
@@ -428,6 +438,7 @@ function DigitalReceipt({ snapshot, profile }) {
 
 export default function RestaurantReportsPage({ restaurantId, canConfigureServerReceipt = false }) {
   const [dates, setDates] = useState(() => periodRange('week'))
+  const [times, setTimes] = useState({ start: '00:00', end: '23:59' })
   const [periodPreset, setPeriodPreset] = useState('week')
   const [scope, setScope] = useState({ scope_dimension: 'none', scope_mode: 'cumulative', scope_ids: [] })
   const [dimensions, setDimensions] = useState({ sections: [], devices: [] })
@@ -446,6 +457,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   const [emailDelivery, setEmailDelivery] = useState({ enabled: false, reason: '' })
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) || profiles[0]
   const scopeIdsKey = scope.scope_ids.join(',')
+  const groupIdsKey = activeProfile.group_ids.join(',')
   const catalog = snapshot?.catalog?.length ? snapshot.catalog : RECEIPT_GROUP_CATALOG
   const defaults = snapshot?.default_profiles || DEFAULT_PROFILES
 
@@ -465,6 +477,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       const preset = saved.period_preset || 'week'
       const range = preset === 'custom' && saved.custom_start_date && saved.custom_end_date ? { start: saved.custom_start_date, end: saved.custom_end_date } : periodRange(preset)
       setPeriodPreset(preset); setDates(range)
+      setTimes({ start: minuteTime(saved.start_time, '00:00'), end: minuteTime(saved.end_time, '23:59') })
       setScope({ scope_dimension: saved.scope_dimension || 'none', scope_mode: 'cumulative', scope_ids: saved.scope_ids || [] })
       setProfiles(saved.pos_report_profiles?.length ? saved.pos_report_profiles : DEFAULT_PROFILES)
       setActiveProfileId(saved.active_profile_id || 'long')
@@ -495,7 +508,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     try {
       const next = await fetchPosApi(restaurantId, '/manager/report-hub/snapshot', {
         method: 'POST',
-        body: JSON.stringify({ start_date: dates.start, end_date: dates.end, top_n: 10, ...scope }),
+        body: JSON.stringify({ start_date: dates.start, end_date: dates.end, start_time: times.start, end_time: times.end, top_n: 10, receipt_group_ids: activeProfile.group_ids, ...scope }),
       })
       setSnapshot(next)
       if (!profiles.length) setProfiles(next.default_profiles || DEFAULT_PROFILES)
@@ -506,12 +519,14 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     }
   }
 
-  useEffect(() => { void load() }, [restaurantId, hydrated, dates.start, dates.end, scope.scope_dimension, scope.scope_mode, scopeIdsKey])
+  useEffect(() => { void load() }, [restaurantId, hydrated, dates.start, dates.end, times.start, times.end, scope.scope_dimension, scope.scope_mode, scopeIdsKey, groupIdsKey])
 
   const preferencePayload = (nextProfiles = profiles, nextActiveId = activeProfileId) => ({
     period_preset: periodPreset,
     custom_start_date: periodPreset === 'custom' ? dates.start : null,
     custom_end_date: periodPreset === 'custom' ? dates.end : null,
+    start_time: times.start,
+    end_time: times.end,
     comparison_enabled: false,
     comparison_mode: 'previous_period',
     comparison_start_date: null,
@@ -537,13 +552,21 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     if (preset !== 'custom') setDates(periodRange(preset))
   }
 
-  const setCustomDate = (field, value) => {
+  const setCustomDateTime = (field, value) => {
+    if (!value.includes('T')) return
+    const [dateValue, timeValue] = value.split('T')
     setPeriodPreset('custom')
-    setDates((current) => {
-      const next = { ...current, [field]: value }
-      if (next.start > next.end) next[field === 'start' ? 'end' : 'start'] = value
-      return next
-    })
+    const nextDates = { ...dates, [field]: dateValue }
+    const nextTimes = { ...times, [field]: timeValue }
+    const other = field === 'start' ? 'end' : 'start'
+    const nextValue = `${nextDates[field]}T${nextTimes[field]}`
+    const otherValue = `${nextDates[other]}T${nextTimes[other]}`
+    if ((field === 'start' && nextValue > otherValue) || (field === 'end' && nextValue < otherValue)) {
+      nextDates[other] = dateValue
+      nextTimes[other] = timeValue
+    }
+    setDates(nextDates)
+    setTimes(nextTimes)
   }
 
   useEffect(() => {
@@ -556,17 +579,21 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
             period_preset: periodPreset,
             custom_start_date: periodPreset === 'custom' ? dates.start : null,
             custom_end_date: periodPreset === 'custom' ? dates.end : null,
+            start_time: times.start,
+            end_time: times.end,
             ...scope,
           },
         }),
       }).catch(() => undefined)
     }, 450)
     return () => window.clearTimeout(timeout)
-  }, [restaurantId, hydrated, periodPreset, dates.start, dates.end, scope.scope_dimension, scope.scope_mode, scopeIdsKey])
+  }, [restaurantId, hydrated, periodPreset, dates.start, dates.end, times.start, times.end, scope.scope_dimension, scope.scope_mode, scopeIdsKey])
 
   const artifactPayload = (format) => ({
     start_date: dates.start,
     end_date: dates.end,
+    start_time: times.start,
+    end_time: times.end,
     format,
     packet_name: `${activeProfile.name} POS report`,
     receipt_group_ids: activeProfile.group_ids,
@@ -619,7 +646,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       <header className="sticky top-0 z-30 -mx-3 border-b border-white/10 bg-dash-base/95 px-3 py-4 backdrop-blur-xl sm:-mx-5 sm:px-5">
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0"><h1 className="text-2xl font-semibold">POS reports</h1><p className="mt-1 text-xs text-dash-tertiary">Accounting business dates {dates.start} through {dates.end}</p></div>
+            <div className="min-w-0"><h1 className="text-2xl font-semibold">POS reports</h1><p className="mt-1 text-xs text-dash-tertiary">Restaurant local time {dates.start} {times.start} through {dates.end} {times.end}</p></div>
             <div className="flex flex-wrap gap-2 lg:justify-end">
               <IconButton label={scope.scope_dimension === 'none' ? 'Scope' : scope.scope_dimension === 'device' ? 'Devices' : 'Sections'} icon={Layers} onClick={() => setModal('scope')} />
               <IconButton label="Settings" icon={Settings2} onClick={() => setModal('settings')} />
@@ -632,8 +659,8 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
             </div>
             <div className="flex max-w-full flex-wrap items-end gap-2">
               <Field label="Period"><select value={periodPreset} onChange={(event) => selectPeriod(event.target.value)}>{PERIOD_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></Field>
-              <Field label="From"><input type="date" value={dates.start} onChange={(event) => setCustomDate('start', event.target.value)} /></Field>
-              <Field label="Through"><input type="date" value={dates.end} onChange={(event) => setCustomDate('end', event.target.value)} /></Field>
+              <Field label="From"><input type="datetime-local" value={`${dates.start}T${times.start}`} onChange={(event) => setCustomDateTime('start', event.target.value)} /></Field>
+              <Field label="Through"><input type="datetime-local" value={`${dates.end}T${times.end}`} onChange={(event) => setCustomDateTime('end', event.target.value)} /></Field>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">

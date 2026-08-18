@@ -26,9 +26,23 @@ test('POS report profiles remain configurable before a snapshot loads', () => {
   assert.match(reportsPage, />Select all</)
   assert.match(reportsPage, />Clear</)
   assert.match(reportsPage, /id: 'long'.*group_ids: \['revenue', 'tender_mix', 'daily_sales', 'key_metrics', 'category_sales', 'item_sales'/s)
+  for (const id of ['service_mode_sales', 'media_tip_detail', 'cash_reconciliation', 'department_detail', 'transaction_log']) {
+    assert.match(reportsPage, new RegExp(`id: '${id}'`))
+  }
+  const longProfile = reportsPage.match(/\{ id: 'long'[^\n]+/)?.[0] || ''
+  assert.doesNotMatch(longProfile, /service_mode_sales|media_tip_detail|cash_reconciliation|department_detail|transaction_log/)
+  assert.match(reportsPage, /receipt_group_ids: activeProfile\.group_ids/)
 })
 
 test('POS reports use a distinct analytics icon from the check ledger', () => {
   assert.match(dashboardShell, /\{ id: 'reports', label: 'POS Reports', icon: ChartNoAxesCombined \}/)
   assert.match(dashboardShell, /\{ id: 'checks', label: 'Checks', icon: ReceiptText \}/)
+})
+
+test('POS report range includes persisted local times in preview and exports', () => {
+  assert.match(reportsPage, /type="datetime-local"/)
+  assert.match(reportsPage, /start_time: times\.start/)
+  assert.match(reportsPage, /end_time: times\.end/)
+  assert.match(reportsPage, /minuteTime\(saved\.start_time, '00:00'\)/)
+  assert.match(reportsPage, /Restaurant local time/)
 })

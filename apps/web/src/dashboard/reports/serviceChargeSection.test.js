@@ -14,7 +14,7 @@ test('every built-in POS report includes the canonical revenue group', () => {
 
 test('receipt summary lines preserve backend labels, values, emphasis, and notes', () => {
   assert.match(reportsPage, /line\.label/)
-  assert.match(reportsPage, /displayValue\(line\.value, line\.format, line\.digits\)/)
+  assert.match(reportsPage, /displayValue\(line\.value, line\.format, line\.digits, timezone\)/)
   assert.match(reportsPage, /line\.emphasis/)
   assert.match(reportsPage, /line\.note/)
 })
