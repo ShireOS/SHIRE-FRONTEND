@@ -744,7 +744,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [specialDraft, setSpecialDraft] = useState(() => defaultSpecialDraft())
   const [scheduleItemId, setScheduleItemId] = useState('')
   const [routingItemSearch, setRoutingItemSearch] = useState('')
-  const [showAllRoutingItems, setShowAllRoutingItems] = useState(false)
+  const [showAllRoutingItems, setShowAllRoutingItems] = useState(true)
 
   const api = (path, init) => fetchWithSupabaseAuth(path, init)
   const routingApi = (path, init) => fetchPosApi(restaurantId, path, init)
@@ -1030,9 +1030,11 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     try {
       await work()
       if (successMessage) setNotice(successMessage)
+      return true
     } catch (err) {
       const reason = describeError(err)
       setError(failLabel ? `${failLabel} — ${reason}` : reason)
+      return false
     } finally {
       setBusy(false)
     }
@@ -1107,7 +1109,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     return ROUTE_INHERIT_VALUE
   }
   const routingDescriptionFor = (rules, exclusions, emptyLabel) => {
-    if (exclusions.length > 0) return 'No production needed · mark handled'
+    if (exclusions.length > 0) return 'No kitchen ticket'
     if (rules.length > 1) return `Routes to ${rules.map(routeRuleLabel).join(' + ')}`
     if (rules.length === 1) return `Routes to ${routeRuleLabel(rules[0])}`
     return emptyLabel
@@ -1133,7 +1135,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     const exclusions = itemNoRouteRules(item)
     const categoryRouting = categoryProductionRouting(item.category || '')
     const inherited = categoryRouting.value === ROUTE_NO_PRODUCTION_VALUE
-      ? 'Inherits no production route'
+      ? 'Automatic · no kitchen ticket from category'
       : categoryRouting.rules.length > 0
         ? `Inherits ${categoryRouting.description.replace(/^Routes to /, '')}`
         : routing?.fallback?.ok
@@ -1932,7 +1934,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     })
     invalidateCategories()
     await Promise.all([loadRouting(true), loadCategories(true)])
-  }, routeValue === ROUTE_NO_PRODUCTION_VALUE ? 'Category set to no production route.' : routeValue ? 'Category routed.' : 'Category now uses fallback/no explicit route.', 'Couldn’t route the category')
+  }, routeValue === ROUTE_NO_PRODUCTION_VALUE ? 'Category set to no kitchen ticket.' : routeValue ? 'Category routed.' : 'Category now uses fallback/no explicit route.', 'Couldn’t route the category')
 
   const routeItemProduction = (item, routeValue) => run(async () => {
     await routingApi(`/restaurants/${restaurantId}/kitchen-routing/items/${item.id}`, {
@@ -1940,7 +1942,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       body: JSON.stringify(routeSelectionPayload(routeValue)),
     })
     await Promise.all([loadRouting(true), loadItems(true)])
-  }, routeValue === ROUTE_NO_PRODUCTION_VALUE ? 'Item set to no production route.' : routeValue ? 'Item route saved.' : 'Item now inherits category/fallback.', 'Couldn’t route the item')
+  }, routeValue === ROUTE_NO_PRODUCTION_VALUE ? 'Item set to no kitchen ticket.' : routeValue ? 'Item route saved.' : 'Item now inherits category/fallback.', 'Couldn’t route the item')
 
   const createStation = (name) => run(async () => {
     await routingApi(`/restaurants/${restaurantId}/kitchen-routing/stations`, {
@@ -2293,7 +2295,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                         }}
                       >
                         <option value={ROUTE_INHERIT_VALUE}>Use restaurant fallback</option>
-                        <option value={ROUTE_NO_PRODUCTION_VALUE}>No production needed · mark handled</option>
+                        <option value={ROUTE_NO_PRODUCTION_VALUE}>No kitchen ticket</option>
                         {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
                         {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                       </SelectInput>
@@ -3207,7 +3209,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         <div className="space-y-5">
           <SectionShell
             title="Stations & Printers"
-            description="Stations are logical prep areas (Grill, Fry, Bar); printers and KDS screens are the physical targets attached to them."
+            description="Items choose a prep station. Each station sends its tickets to the printer or KDS display attached here."
           >
             {routing?.fallback && (
               <div className={`mb-4 rounded-xl border p-3 text-sm ${routing.fallback.ok ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100' : 'border-red-400/20 bg-red-400/10 text-red-200'}`}>
@@ -3222,7 +3224,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
           <SectionShell
             title="Category Printing Defaults"
-            description="Send whole categories to a station — every item follows its category unless it has its own override below."
+            description="Choose a prep station for the category, or choose No kitchen ticket when the entire category should never print."
           >
             <div className="mb-4 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.06] p-3 text-sm text-emerald-100">
               Printing route changes save immediately when you pick a station.
@@ -3248,7 +3250,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       }}
                     >
                       <option value={ROUTE_INHERIT_VALUE}>Use restaurant fallback</option>
-                      <option value={ROUTE_NO_PRODUCTION_VALUE}>No production needed · mark handled</option>
+                      <option value={ROUTE_NO_PRODUCTION_VALUE}>No kitchen ticket</option>
                       {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
                       {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                     </SelectInput>
@@ -3264,14 +3266,14 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           </SectionShell>
 
           <SectionShell
-            title="Item Overrides"
-            description="Only exceptions appear here. Every other item automatically follows its category, then the restaurant fallback."
+            title="Item Printing Rules"
+            description="Items normally follow their category. Choose No kitchen ticket or a different prep station only when an item is an exception."
           >
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <div className="min-w-64 flex-1">
               <TextInput value={routingItemSearch} onChange={event => setRoutingItemSearch(event.target.value)} placeholder="Search items..." />
               </div>
-              <SmallButton onClick={() => setShowAllRoutingItems(value => !value)}>{showAllRoutingItems ? 'Show exceptions only' : 'Add or view an override'}</SmallButton>
+              <SmallButton onClick={() => setShowAllRoutingItems(value => !value)}>{showAllRoutingItems ? 'Show exceptions only' : 'Show all items'}</SmallButton>
             </div>
             <div className="max-h-[480px] space-y-2 overflow-y-auto pr-1">
               {routingItems.map(item => {
@@ -3293,7 +3295,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       }}
                     >
                       <option value={ROUTE_INHERIT_VALUE}>Automatic · category or restaurant fallback</option>
-                      <option value={ROUTE_NO_PRODUCTION_VALUE}>No production needed · mark handled</option>
+                      <option value={ROUTE_NO_PRODUCTION_VALUE}>No kitchen ticket</option>
                       {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
                       {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                     </SelectInput>

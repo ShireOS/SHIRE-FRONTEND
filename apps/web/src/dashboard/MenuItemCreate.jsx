@@ -75,7 +75,8 @@ export function MenuItemCreate({
   const resolvedRoute = resolveRoutingForDraft?.(draft) || null
   const routingIssue = resolvedRoute?.error || ''
   const canSave = Boolean(draft.name.trim()) && draft.price !== '' && !routingIssue && !busy
-  const [routeOverrideOpen, setRouteOverrideOpen] = useState(() => Boolean(draft.routing))
+  const [routeOverrideOpen, setRouteOverrideOpen] = useState(() => Boolean(draft.routing && draft.routing !== ROUTE_NO_PRODUCTION_VALUE))
+  const noKitchenTicket = draft.routing === ROUTE_NO_PRODUCTION_VALUE
 
   const modifiersById = useMemo(() => Object.fromEntries(modifiers.map(m => [m.id, m])), [modifiers])
 
@@ -398,8 +399,23 @@ export function MenuItemCreate({
 
           <CreateCard
             title="Kitchen"
-            hint="The category chooses production automatically. Add an item override only when this item is an exception."
+            hint="The category chooses the prep station automatically unless this item has its own rule."
           >
+            <label className={`mb-4 flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition ${noKitchenTicket ? 'border-amber-300/30 bg-amber-300/10' : 'border-white/10 bg-white/[0.025]'}`}>
+              <input
+                type="checkbox"
+                checked={noKitchenTicket}
+                onChange={event => {
+                  set({ routing: event.target.checked ? ROUTE_NO_PRODUCTION_VALUE : ROUTE_INHERIT_VALUE })
+                  setRouteOverrideOpen(false)
+                }}
+                className="mt-0.5 h-4 w-4 accent-dash-gold"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-dash-cream">No kitchen ticket</span>
+                <span className="mt-1 block text-xs text-dash-tertiary">Keep this item on checks and reports without sending it to a kitchen or bar printer/display.</span>
+              </span>
+            </label>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.025] p-4">
               <div>
                 <p className="label-mono">Automatic destination</p>
@@ -408,6 +424,7 @@ export function MenuItemCreate({
               </div>
               <SmallButton
                 variant={routeOverrideOpen ? 'primary' : 'secondary'}
+                disabled={noKitchenTicket}
                 onClick={() => {
                   if (routeOverrideOpen) set({ routing: ROUTE_INHERIT_VALUE })
                   setRouteOverrideOpen(value => !value)
@@ -420,7 +437,7 @@ export function MenuItemCreate({
               <Field label="Item-specific destination">
                 <SelectInput value={draft.routing} onChange={event => set({ routing: event.target.value })}>
                   <option value={ROUTE_INHERIT_VALUE}>Automatic · category or restaurant fallback</option>
-                  <option value={ROUTE_NO_PRODUCTION_VALUE}>No production ticket</option>
+                  <option value={ROUTE_NO_PRODUCTION_VALUE}>No kitchen ticket</option>
                   {draft.routing === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations (same as source)</option>}
                   {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                 </SelectInput>

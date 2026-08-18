@@ -2,8 +2,12 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  ROUTE_INHERIT_VALUE,
+  ROUTE_MULTI_VALUE,
   ROUTE_NO_PRODUCTION_VALUE,
+  explicitProductionRouteValue,
   hasItemProductionOverride,
+  productionRouteSelectionPayload,
   resolveDraftProductionRoute,
 } from './menuRouting.js'
 
@@ -66,4 +70,23 @@ test('item override detection excludes automatically inherited items', () => {
 
   assert.equal(hasItemProductionOverride(inherited, rules, []), false)
   assert.equal(hasItemProductionOverride(exception, rules, []), true)
+})
+
+test('routing selections map to canonical inherit, station, and no-ticket payloads', () => {
+  assert.deepEqual(productionRouteSelectionPayload(ROUTE_INHERIT_VALUE), { mode: 'inherit', station_ids: [] })
+  assert.deepEqual(productionRouteSelectionPayload('bar'), { mode: 'stations', station_ids: ['bar'] })
+  assert.deepEqual(productionRouteSelectionPayload(ROUTE_NO_PRODUCTION_VALUE), { mode: 'no_production', station_ids: [] })
+  assert.throws(() => productionRouteSelectionPayload(ROUTE_MULTI_VALUE), /Choose one prep station/)
+})
+
+test('explicit route values prefer no-ticket exclusions over station rules', () => {
+  const rules = [
+    { source_type: 'category', category: 'Retail', station_id: 'kitchen', is_active: true },
+    { source_type: 'menu_item', source_id: 'gift-card', station_id: 'bar', is_active: true },
+  ]
+  const exclusions = [{ source_type: 'menu_item', source_id: 'gift-card', is_active: true }]
+
+  assert.equal(explicitProductionRouteValue({ sourceType: 'category', category: 'retail', rules }), 'kitchen')
+  assert.equal(explicitProductionRouteValue({ sourceType: 'menu_item', sourceId: 'gift-card', rules, exclusions }), ROUTE_NO_PRODUCTION_VALUE)
+  assert.equal(explicitProductionRouteValue({ sourceType: 'category', category: 'Other', projectedStationId: 'expo' }), 'expo')
 })

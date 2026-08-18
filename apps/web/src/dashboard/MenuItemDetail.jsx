@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Check, LoaderCircle } from 'lucide-react'
 import { supabase } from '../shared/lib/supabase'
 import { fetchCached, fetchWithSupabaseAuth, queryClient, queryKeys, STALE_TIMES } from '../shared/query'
 import { SmartTimeInput } from '../shared/components/SmartTimeInput'
@@ -839,7 +840,11 @@ export function MenuItemDetail({
   const [showQuickPicker, setShowQuickPicker] = useState(false)
   const [specialForm, setSpecialForm] = useState({ display_name: '', special_price: '', note: '', expires_at: '', suggested_tip_basis: 'after_discount' })
   const [schedule, setSchedule] = useState(() => availabilityDraft(item))
+  const [pendingProductionRouteValue, setPendingProductionRouteValue] = useState(null)
+  const [routeSaveState, setRouteSaveState] = useState('')
+  const routeSaveTimerRef = useRef(null)
   useEffect(() => setSchedule(availabilityDraft(item)), [item])
+  useEffect(() => () => clearTimeout(routeSaveTimerRef.current), [])
 
   const modifiersById = Object.fromEntries(modifiers.map(m => [m.id, m]))
   const categoriesByName = Object.fromEntries(categories.filter(c => c.name).map(c => [c.name, c]))
@@ -861,6 +866,34 @@ export function MenuItemDetail({
   const itemSpecials = specials.filter(special => special.menu_item_id === item.id)
   const category = categories.find(candidate => candidate.name === item.category)
   const stationName = (id) => stations.find(station => station.id === id)?.name
+  const serverProductionRouteValue = productionRouting?.value ?? item.routing_station_id ?? ROUTE_INHERIT_VALUE
+  const productionRouteValue = pendingProductionRouteValue ?? serverProductionRouteValue
+  const routeSaving = routeSaveState === 'saving'
+  useEffect(() => {
+    if (!routeSaving && pendingProductionRouteValue !== null && serverProductionRouteValue === pendingProductionRouteValue) {
+      setPendingProductionRouteValue(null)
+    }
+  }, [pendingProductionRouteValue, routeSaving, serverProductionRouteValue])
+
+  const changeProductionRoute = async (value) => {
+    if (value === ROUTE_MULTI_VALUE) return
+    clearTimeout(routeSaveTimerRef.current)
+    setPendingProductionRouteValue(value)
+    setRouteSaveState('saving')
+    let savedSuccessfully = true
+    if (onRouteItemProduction) {
+      savedSuccessfully = await onRouteItemProduction(item, value)
+    } else {
+      savedSuccessfully = await patchItem(item.id, { routing_station_id: value || null }, 'Route saved.')
+    }
+    if (savedSuccessfully === false) {
+      setPendingProductionRouteValue(null)
+      setRouteSaveState('')
+      return
+    }
+    setRouteSaveState('saved')
+    routeSaveTimerRef.current = setTimeout(() => setRouteSaveState(''), 2400)
+  }
 
   const saveItemModOverride = async (modifierId, patch) => {
     await setItemModifierOverride(restaurantId, item.id, modifierId, patch)
@@ -1708,22 +1741,35 @@ export function MenuItemDetail({
           </DetailCard>
       )
       case 'kitchen': return (
-          <DetailCard {...controls} title="Kitchen" hint={`${productionRouting?.categoryRouting?.description || (category?.routing_station_id ? `Category default: ${stationName(category.routing_station_id) || 'station'}` : 'No category default station set.')} Changes save immediately.`}>
+          <DetailCard {...controls} title="Kitchen" hint={productionRouting?.categoryRouting?.description || (category?.routing_station_id ? `Category default: ${stationName(category.routing_station_id) || 'station'}` : 'No category default station set.')}>
             <div className="space-y-3">
-              <Field label="Item route">
+              <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${productionRouteValue === ROUTE_NO_PRODUCTION_VALUE ? 'border-amber-300/30 bg-amber-300/10' : 'border-white/10 bg-white/[0.025]'}`}>
+                <input
+                  type="checkbox"
+                  checked={productionRouteValue === ROUTE_NO_PRODUCTION_VALUE}
+                  disabled={routeSaving}
+                  onChange={event => void changeProductionRoute(event.target.checked ? ROUTE_NO_PRODUCTION_VALUE : ROUTE_INHERIT_VALUE)}
+                  className="mt-0.5 h-4 w-4 accent-dash-gold"
+                />
+                <span className="flex min-w-0 flex-1 items-start justify-between gap-3">
+                  <span>
+                    <span className="block text-sm font-semibold text-dash-cream">No kitchen ticket</span>
+                    <span className="mt-1 block text-xs text-dash-tertiary">The sale remains on checks and reports, but no kitchen or bar ticket is sent.</span>
+                  </span>
+                  <span role="status" aria-live="polite" className={`mt-0.5 inline-flex min-w-16 items-center justify-end gap-1 text-[11px] font-semibold ${routeSaving ? 'text-dash-gold' : 'text-emerald-200'}`}>
+                    {routeSaving ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : routeSaveState === 'saved' ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                    {routeSaving ? 'Saving' : routeSaveState === 'saved' ? 'Saved' : ''}
+                  </span>
+                </span>
+              </label>
+              <Field label="Production station rule">
                 <SelectInput
-                  value={productionRouting?.value ?? item.routing_station_id ?? ''}
-                  onChange={event => {
-                    if (event.target.value === ROUTE_MULTI_VALUE) return
-                    if (onRouteItemProduction) {
-                      void onRouteItemProduction(item, event.target.value)
-                      return
-                    }
-                    void patchItem(item.id, { routing_station_id: event.target.value || null }, event.target.value ? 'Station override saved.' : 'Now inherits category station.')
-                  }}
+                  value={productionRouteValue}
+                  disabled={routeSaving}
+                  onChange={event => void changeProductionRoute(event.target.value)}
                 >
                   <option value={ROUTE_INHERIT_VALUE}>Automatic · category or restaurant fallback</option>
-                  <option value={ROUTE_NO_PRODUCTION_VALUE}>No production route</option>
+                  <option value={ROUTE_NO_PRODUCTION_VALUE}>No kitchen ticket</option>
                   {productionRouting?.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
                   {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                 </SelectInput>

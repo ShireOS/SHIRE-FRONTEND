@@ -2,6 +2,37 @@ export const ROUTE_INHERIT_VALUE = ''
 export const ROUTE_NO_PRODUCTION_VALUE = '__no_production_route__'
 export const ROUTE_MULTI_VALUE = '__multiple_production_routes__'
 
+const normalizeCategory = (value) => String(value || 'Other').trim().toLowerCase()
+
+export function productionRouteSelectionPayload(routeValue) {
+  if (routeValue === ROUTE_MULTI_VALUE) throw new Error('Choose one prep station before replacing a multi-station route.')
+  return {
+    mode: routeValue === ROUTE_NO_PRODUCTION_VALUE ? 'no_production' : routeValue ? 'stations' : 'inherit',
+    station_ids: routeValue && routeValue !== ROUTE_NO_PRODUCTION_VALUE ? [routeValue] : [],
+  }
+}
+
+export function explicitProductionRouteValue({
+  sourceType,
+  sourceId = '',
+  category = '',
+  rules = [],
+  exclusions = [],
+  projectedStationId = '',
+}) {
+  const matchesSource = row => {
+    if (row?.source_type !== sourceType || row?.is_active === false || row?.archived_at) return false
+    if (sourceType === 'category') return normalizeCategory(row.category) === normalizeCategory(category)
+    return String(row.source_id || '') === String(sourceId || '')
+  }
+  const matchingExclusions = exclusions.filter(matchesSource)
+  if (matchingExclusions.length) return ROUTE_NO_PRODUCTION_VALUE
+  const matchingRules = rules.filter(matchesSource)
+  if (matchingRules.length > 1) return ROUTE_MULTI_VALUE
+  if (matchingRules.length === 1) return String(matchingRules[0].station_id || '')
+  return sourceType === 'category' ? String(projectedStationId || '') : ROUTE_INHERIT_VALUE
+}
+
 function stationName(rule, stationsById) {
   return rule.station_name || stationsById[String(rule.station_id)]?.name || 'Unknown station'
 }
@@ -38,8 +69,8 @@ export function resolveDraftProductionRoute({
     return {
       kind: 'no_production',
       sourceLabel: 'Item exception',
-      label: 'No production ticket',
-      description: 'This item is intentionally marked as requiring no kitchen or bar production.',
+      label: 'No kitchen ticket',
+      description: 'This item stays on checks and reports but does not send a kitchen or bar ticket.',
       stationIds: [],
       valid: true,
       error: '',
@@ -68,8 +99,8 @@ export function resolveDraftProductionRoute({
     return {
       kind: 'no_production',
       sourceLabel: `${category || 'Other'} category default`,
-      label: 'No production ticket',
-      description: `The ${category || 'Other'} category is intentionally marked as requiring no production.`,
+      label: 'No kitchen ticket',
+      description: `The ${category || 'Other'} category does not send kitchen or bar tickets.`,
       stationIds: [],
       valid: true,
       error: '',
