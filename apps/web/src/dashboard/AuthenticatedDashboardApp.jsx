@@ -134,7 +134,7 @@ function EnterprisePage({ item, title, children }) {
 
 const TABS = [
   { id: 'analytics', label: 'Analytics' },
-  { id: 'reports', label: 'Reports' },
+  { id: 'reports', label: 'POS Reports' },
   { id: 'checks', label: 'Checks' },
   { id: 'close-day', label: 'Close Day' },
   { id: 'setup', label: 'Edit Setup' },
@@ -5338,7 +5338,7 @@ export function RestaurantWorkspace({
 
 const WORKSPACE_BREADCRUMB_LABELS = {
   analytics: 'Overview',
-  reports: 'Reports',
+  reports: 'POS Reports',
   checks: 'Checks',
   'close-day': 'Close Day',
   setup: 'Setup',
