@@ -732,6 +732,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const editorPrefsTimerRef = useRef(null)
   const editorPrefsPendingRef = useRef(null)
   const editorPrefsRestaurantRef = useRef(restaurantId)
+  const categoryDraftKeyRef = useRef(0)
   editorPrefsRestaurantRef.current = restaurantId
   const [expandedCategoryNames, setExpandedCategoryNames] = useState(() => new Set())
   const [categoryScrollTarget, setCategoryScrollTarget] = useState(null)
@@ -1608,6 +1609,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   }
 
   const categoryDraft = (name = '') => ({
+    client_key: `category-draft-${categoryDraftKeyRef.current++}`,
     name,
     tax_rate_id: '',
     routing_station_id: '',
@@ -1620,8 +1622,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   })
 
   const addCategory = (name = '') => {
-    setCategories(prev => [...prev, categoryDraft(name)])
-    setCategoryScrollTarget(name || `new-${categories.length}`)
+    const draft = categoryDraft(name)
+    setCategories(prev => [...prev, draft])
+    setCategoryScrollTarget(draft.client_key)
     if (name) setExpandedCategoryNames(prev => new Set(prev).add(name))
   }
 
@@ -2300,10 +2303,11 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
               const categoryItems = allItemsByCategoryName[category.name] || []
               const isExpanded = Boolean(category.name) && expandedCategoryNames.has(category.name)
               const productionRouting = categoryProductionRouting(category.name)
+              const categoryCardId = category.id ? (category.name || category.id) : (category.client_key || `new-${index}`)
               return (
                 <div
-                  key={category.id || `${category.name}:${index}`}
-                  id={`category-card-${encodeURIComponent(category.name || `new-${index}`)}`}
+                  key={category.id || category.client_key || `new-${index}`}
+                  id={`category-card-${encodeURIComponent(categoryCardId)}`}
                   className="rounded-xl border border-white/10 bg-white/[0.025] p-4"
                 >
                   <div className="flex flex-wrap items-end gap-4">
