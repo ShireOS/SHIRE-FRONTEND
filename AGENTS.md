@@ -247,13 +247,15 @@ surface independently, while every mutation is also guarded by the ML backend.
   through the POS backend. Native POS remains view/print only, and the required
   cash-settlement lines and their existing math are not configurable.
 - Cash drawer access is role-first: No Sale requires `can_no_sale` plus
-  `can_open_cash_drawer`; movements require `can_paid_in_out` plus
-  `can_open_cash_drawer`. The restaurant-wide
-  `require_manager_for_drawer_open` and role-level
-  `require_manager_pin_for_approval` each force manager approval. Paid Out is
-  always manager-approved, while Cash Drop also respects its configured
-  threshold. Employee add/edit surfaces preview inherited behavior; the POS
-  backend remains authoritative and posts movements only after drawer delivery.
+  `can_open_cash_drawer`; employee `pos_permissions_override` may explicitly
+  allow or deny those two keys. Movements require `can_paid_in_out` plus
+  `can_open_cash_drawer`. The restaurant-wide `require_manager_for_drawer_open`
+  forces manager approval for No Sale; the generic role approval flag continues
+  to protect movements and other sensitive actions. Every pulse still requires
+  a drawer assigned directly to the requesting terminal, even after manager
+  approval. Paid Out is always manager-approved, while Cash Drop also respects
+  its configured threshold. The POS backend remains authoritative and posts
+  movements only after drawer delivery.
 - Back-office Close Day uses the canonical POS close operation. Open checks are
   never overrideable; clocked-in employees require an explicit confirmation and
   retain the manager adjustment audit. Owner access uses

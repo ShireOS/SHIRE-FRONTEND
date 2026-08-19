@@ -24,6 +24,11 @@ import RolePermissionsPanel from '../components/team/RolePermissionsPanel'
 import PermissionEditor, { diffOverrides } from '../components/team/PermissionEditor'
 import { normalizeJobCodes, PERMISSION_TIER_OPTIONS } from '@shire/settings'
 import { cashDrawerRoleSummary } from '../utils/cashDrawerPermissions'
+import {
+  applyDrawerOverrides,
+  noSaleOverrideState,
+  withNoSaleOverride,
+} from '../utils/employeePosPermissionOverrides'
 
 const money = (value) =>
   value === null || value === undefined || value === ''
@@ -809,6 +814,15 @@ export default function TeamPage({ restaurantId }) {
             const override = waiter.hourly_rate
             const inherited = groupRate(waiter)
             const linkedMember = boMembers.find((member) => member.waiter_id === waiter.id)
+            const primaryRole = primaryStaffRole(waiter, roleOptions)
+            const rolePermission = rolePerms.find(
+              (item) => normalizeRoleCode(item.role_key) === primaryRole,
+            ) || {}
+            const noSaleOverride = noSaleOverrideState(waiter.pos_permissions_override)
+            const effectiveNoSale = cashDrawerRoleSummary(
+              applyDrawerOverrides(rolePermission, waiter.pos_permissions_override),
+              cashDrawerPolicy || {},
+            ).find((item) => item.key === 'no_sale')?.value
             const mayManageWaiter = canManageMembers
               && canManageStaffMember(access.authorityLevel, waiter, roleOptions)
             return (
@@ -842,6 +856,23 @@ export default function TeamPage({ restaurantId }) {
                   <span className="w-24 text-xs text-dash-tertiary">
                     {override != null && override !== '' ? 'override' : inherited != null ? `group ${money(inherited)}` : 'no rate'}
                   </span>
+                  <select
+                    value={noSaleOverride}
+                    disabled={!mayManageWaiter}
+                    aria-label={`${waiter.name} No Sale permission`}
+                    title={`No Sale: ${effectiveNoSale || 'manager only'}. A drawer assigned directly to the signed-in terminal is always required.`}
+                    onChange={(event) => void patchWaiter(waiter.id, {
+                      pos_permissions_override: withNoSaleOverride(
+                        waiter.pos_permissions_override,
+                        event.target.value,
+                      ),
+                    })}
+                    className="rounded-xl border border-dash-border bg-[var(--glass-bg)] px-2 py-1.5 text-[11px] font-semibold text-dash-secondary outline-none focus:border-shell-accent/60"
+                  >
+                    <option value="inherit">No Sale: role</option>
+                    <option value="allow">No Sale: allow</option>
+                    <option value="deny">No Sale: deny</option>
+                  </select>
                   {canManageMembers && !boUnavailable && (
                     linkedMember ? (
                       <span

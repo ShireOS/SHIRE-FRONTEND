@@ -19,7 +19,7 @@ export function defaultCloseoutSettings(): CloseoutSettingsData {
     track_deposit_at_close: false,
     blind_drawer_close: true,
     allow_paid_in_out: true,
-    require_manager_for_drawer_open: true,
+    require_manager_for_drawer_open: false,
     cash_drop_threshold: '',
     cash_variance_threshold: '',
     server_require_all_checks_closed: true,

@@ -95,7 +95,7 @@ function RoleCard({ role, busy, onPatch, cashDrawerPolicy }) {
           disabled={busy}
           onClick={() => onPatch(role, { require_manager_pin_for_approval: !role.require_manager_pin_for_approval })}
         >
-          Requires manager PIN
+          Manager PIN for other approvals
         </Toggle>
       </div>
 

@@ -3276,10 +3276,15 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   ['track_deposit_at_close', 'Deposit & float left in drawer'],
                   ['blind_drawer_close', 'Blind close'],
                   ['allow_paid_in_out', 'Paid in/out'],
-                  ['require_manager_for_drawer_open', 'Always require manager for drawer actions'],
                 ].map(([field, label]) => (
                   <SmallButton key={field} variant={closeoutSettings[field] ? 'primary' : 'secondary'} onClick={() => updateCloseoutSettings({ [field]: !closeoutSettings[field] })}>{label}</SmallButton>
                 ))}
+                <SmallButton
+                  variant={!closeoutSettings.require_manager_for_drawer_open ? 'primary' : 'secondary'}
+                  onClick={() => updateCloseoutSettings({ require_manager_for_drawer_open: !closeoutSettings.require_manager_for_drawer_open })}
+                >
+                  Assigned staff can use No Sale
+                </SmallButton>
               </div>
             </div>
 

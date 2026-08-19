@@ -193,7 +193,7 @@ export function CloseoutSettingsStep({ onboarding }: CloseoutSettingsStepProps) 
           <Toggle active={settings.track_deposit_at_close} help="Record the deposit and float left in the drawer at Close Day." onClick={() => update({ track_deposit_at_close: !settings.track_deposit_at_close })}>Track deposit at close</Toggle>
           <Toggle active={settings.blind_drawer_close} help="Cashiers enter counts without seeing expected cash first." onClick={() => update({ blind_drawer_close: !settings.blind_drawer_close })}>Use blind drawer close</Toggle>
           <Toggle active={settings.allow_paid_in_out} help="Allow cash to be added or removed for non-sale reasons." onClick={() => update({ allow_paid_in_out: !settings.allow_paid_in_out })}>Allow paid in/out</Toggle>
-          <Toggle active={settings.require_manager_for_drawer_open} help="Override role access and require a manager PIN for every No Sale, Paid In, and Cash Drop." onClick={() => update({ require_manager_for_drawer_open: !settings.require_manager_for_drawer_open })}>Always require manager for drawer actions</Toggle>
+          <Toggle active={!settings.require_manager_for_drawer_open} help="Authorized staff may use No Sale without a manager only on a terminal with its own assigned drawer. Paid Out and Cash Drop safeguards stay separate." onClick={() => update({ require_manager_for_drawer_open: !settings.require_manager_for_drawer_open })}>Allow authorized staff to open their assigned drawer</Toggle>
         </div>
       </section>
 
