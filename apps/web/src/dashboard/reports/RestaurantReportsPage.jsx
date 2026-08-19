@@ -21,6 +21,24 @@ import ServerReceiptTemplateModal from './ServerReceiptTemplateModal'
 // Presentation fallback for the canonical POS receipt contract. The snapshot
 // replaces this metadata when available, but settings remain usable while a
 // report request is loading or recovering from a transport failure.
+const ACTIVITY_GROUP_CATALOG = [
+  { id: 'activity_discount_void', label: 'Discounts, comps & voids', description: 'Discounts, comps, item voids, and check voids with staff and reason attribution.' },
+  { id: 'activity_refund_reversal', label: 'Refunds & reversals', description: 'Refunds, payment voids, tender voids, and reversed cash movements.' },
+  { id: 'activity_transaction_sequence', label: 'High-risk transaction sequences', description: 'Linked action sequences on one check that warrant manager review.' },
+  { id: 'activity_kitchen_loss', label: 'Kitchen loss & sent-item changes', description: 'Voids, edits, and unsends involving items already sent to production.' },
+  { id: 'activity_cash', label: 'Cash drawer & variance', description: 'No Sale, paid in/out, drops, reversals, and recorded cash variance.' },
+  { id: 'activity_tip_change', label: 'Tip changes', description: 'Tip and payout adjustments with actor and approval context.' },
+  { id: 'activity_manual_item', label: 'Manual & open items', description: 'Open-price or manually entered item activity.' },
+  { id: 'activity_tax_gratuity', label: 'Tax & gratuity exceptions', description: 'Tax-exempt checks and gratuity additions or removals.' },
+  { id: 'activity_check_exception', label: 'Check exceptions', description: 'Reopens, unusual closes, and business-day reopen activity.' },
+  { id: 'activity_payment_risk', label: 'Payment risk', description: 'Failed, duplicated, keyed, unresolved, or reconciliation-required payments.' },
+  { id: 'activity_gift_card', label: 'Gift-card activity', description: 'Gift-card issuance, redemption, cancellation, refund, and balance activity.' },
+  { id: 'activity_control_weakness', label: 'Control weaknesses', description: 'Missing actors or reasons, self-approval, and other control gaps.' },
+  { id: 'activity_timing_pattern', label: 'Timing patterns', description: 'Exceptions after hours, near close, or around reopened business days.' },
+  { id: 'activity_employee_pattern', label: 'Employee patterns', description: 'Explainable peer and prior-baseline changes that need review.' },
+]
+const ACTIVITY_GROUP_IDS = ACTIVITY_GROUP_CATALOG.map((group) => group.id)
+
 const RECEIPT_GROUP_CATALOG = [
   { id: 'revenue', label: 'Revenue', description: 'Gross and net sales, discounts, tax, gratuity, service charges, pricing adjustments, and total collected.' },
   { id: 'service_mode_sales', label: 'Sales by service type', description: 'Dine-in, to-go, delivery, drive-thru, and unclassified check performance.' },
@@ -41,13 +59,23 @@ const RECEIPT_GROUP_CATALOG = [
   { id: 'transaction_log', label: 'Transaction log', description: 'Completed cash, card, gift-card, and other tenders with timestamps and POS metadata.' },
   { id: 'server_summary', label: 'Server summary', description: 'Worked-server sales, checks, voluntary tips, gratuity, and cash due.' },
   { id: 'tip_settlement', label: 'Tips & tip-outs', description: 'Employee tips collected, tip-outs paid and received, and final payouts.' },
+  ...ACTIVITY_GROUP_CATALOG,
 ]
 
 const DEFAULT_PROFILES = [
   { id: 'long', name: 'Long', built_in: true, group_ids: ['revenue', 'tender_mix', 'daily_sales', 'key_metrics', 'category_sales', 'item_sales', 'discounts_voids', 'employee_performance', 'labor_payroll', 'punch_log', 'tax', 'cash_closeout', 'server_summary', 'tip_settlement'] },
   { id: 'short', name: 'Short', built_in: true, group_ids: ['revenue', 'tender_mix', 'daily_sales', 'key_metrics', 'category_sales', 'item_sales', 'discounts_voids', 'tax'] },
   { id: 'compact', name: 'Compact', built_in: true, group_ids: ['revenue', 'tender_mix', 'key_metrics'] },
+  { id: 'activity', name: 'Activity', built_in: true, group_ids: ACTIVITY_GROUP_IDS },
 ]
+
+function withRequiredBuiltInProfiles(savedProfiles, defaults = DEFAULT_PROFILES) {
+  const saved = (Array.isArray(savedProfiles) ? savedProfiles : [])
+    .map((profile) => ({ ...profile, group_ids: (Array.isArray(profile.group_ids) ? profile.group_ids : []).flatMap((groupId) => groupId === 'activity' ? ACTIVITY_GROUP_IDS : [groupId]) }))
+    .filter((profile) => profile.group_ids.length > 0)
+  const known = new Set(saved.map((profile) => profile.id))
+  return [...saved, ...defaults.filter((profile) => profile.built_in && !known.has(profile.id))]
+}
 
 const PERIOD_OPTIONS = [
   { id: 'week', label: 'This week' },
@@ -237,9 +265,16 @@ function ProfileSettingsModal({ profiles, activeId, catalog, defaults, scopeDime
   const [selectedId, setSelectedId] = useState(activeId)
   const [saving, setSaving] = useState(false)
   const selected = drafts.find((profile) => profile.id === selectedId) || drafts[0]
+  const selectedHasActivity = selected.group_ids.some((groupId) => groupId.startsWith('activity_'))
+  const selectedHasOperations = selected.group_ids.some((groupId) => !groupId.startsWith('activity_'))
+  const visibleCatalog = selected.id === 'activity' || (selectedHasActivity && !selectedHasOperations)
+    ? catalog.filter((group) => group.id.startsWith('activity_'))
+    : selected.built_in
+      ? catalog.filter((group) => !group.id.startsWith('activity_'))
+      : catalog
   const replaceSelected = (changes) => setDrafts((current) => current.map((profile) => profile.id === selected.id ? { ...profile, ...changes } : profile))
-  const toggle = (groupId) => replaceSelected({ group_ids: selected.group_ids.includes(groupId) ? selected.group_ids.filter((id) => id !== groupId) : catalog.map((item) => item.id).filter((id) => id === groupId || selected.group_ids.includes(id)) })
-  const selectAll = () => replaceSelected({ group_ids: catalog.map((group) => group.id) })
+  const toggle = (groupId) => replaceSelected({ group_ids: selected.group_ids.includes(groupId) ? selected.group_ids.filter((id) => id !== groupId) : visibleCatalog.map((item) => item.id).filter((id) => id === groupId || selected.group_ids.includes(id)) })
+  const selectAll = () => replaceSelected({ group_ids: visibleCatalog.map((group) => group.id) })
   const clearAll = () => replaceSelected({ group_ids: [] })
   const addProfile = () => {
     const id = `custom-${Date.now()}`
@@ -291,7 +326,7 @@ function ProfileSettingsModal({ profiles, activeId, catalog, defaults, scopeDime
             </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
-            {catalog.map((group) => (
+            {visibleCatalog.map((group) => (
               <label key={group.id} className="flex min-h-16 cursor-pointer items-start gap-3 rounded-md border border-white/10 px-3 py-3">
                 <input className="mt-1" type="checkbox" checked={selected.group_ids.includes(group.id)} onChange={() => toggle(group.id)} />
                 <span className="min-w-0"><span className="block text-sm font-semibold">{group.label}</span><span className="mt-0.5 block text-xs leading-5 text-dash-tertiary">{group.description}</span>{scopeDimension === 'employee' && group.employee_scope === 'unsupported' && <span className="mt-1 block text-xs font-semibold text-amber-200">Excluded from employee-scoped reports</span>}</span>
@@ -525,7 +560,7 @@ function ReceiptGroup({ group, timezone }) {
         <div className="mt-3 overflow-x-auto border-y border-black/15">
           <table className="min-w-full font-mono text-xs text-stone-800">
             <thead className="border-b border-black/20 text-left text-[11px] uppercase text-stone-600"><tr>{group.columns.map((column) => <th key={column.key} className="whitespace-nowrap px-2 py-2 font-bold">{column.label}</th>)}</tr></thead>
-            <tbody className="divide-y divide-black/10">{group.rows.map((row, index) => <tr key={row.id || row.staff_id || row.breakdown || row.period || index}>{group.columns.map((column) => <td key={column.key} className="max-w-72 whitespace-nowrap px-2 py-2 align-top">{displayValue(row[column.key], column.format, column.digits || 0, timezone)}</td>)}</tr>)}</tbody>
+            <tbody className="divide-y divide-black/10">{group.rows.map((row, index) => <tr key={row.id || row.staff_id || row.breakdown || row.period || index} className={row.emphasis ? row.severity_rank >= 2 ? 'bg-red-100 font-bold text-red-950' : 'bg-amber-100 font-semibold text-amber-950' : ''}>{group.columns.map((column) => <td key={column.key} className={`max-w-72 px-2 py-2 align-top ${column.key === 'why_flagged' ? 'min-w-72 whitespace-normal' : 'whitespace-nowrap'}`}>{displayValue(row[column.key], column.format, column.digits || 0, timezone)}</td>)}</tr>)}</tbody>
           </table>
         </div>
       )}
@@ -590,6 +625,11 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   const loadRequestRef = useRef(0)
   const loadAbortRef = useRef(null)
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) || profiles[0]
+  const backendScope = useMemo(() => ({
+    scope_dimension: scope.scope_dimension,
+    scope_mode: scope.scope_mode,
+    scope_ids: scope.scope_ids,
+  }), [scope.scope_dimension, scope.scope_ids, scope.scope_mode])
   const scopeIdsKey = scope.scope_ids.join(',')
   const catalog = snapshot?.catalog?.length ? snapshot.catalog : RECEIPT_GROUP_CATALOG
   const defaults = snapshot?.default_profiles || DEFAULT_PROFILES
@@ -621,9 +661,11 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       const range = preset === 'custom' && saved.custom_start_date && saved.custom_end_date ? { start: saved.custom_start_date, end: saved.custom_end_date } : periodRange(preset)
       setPeriodPreset(preset); setDates(range)
       setTimes({ start: minuteTime(saved.start_time, '00:00'), end: minuteTime(saved.end_time, '23:59') })
+      const nextProfiles = withRequiredBuiltInProfiles(saved.pos_report_profiles, DEFAULT_PROFILES)
+      const requestedActiveId = saved.report_scope === 'activity' ? 'activity' : saved.active_profile_id
       setScope({ scope_dimension: saved.scope_dimension || 'none', scope_mode: 'cumulative', scope_ids: saved.scope_ids || [] })
-      setProfiles(saved.pos_report_profiles?.length ? saved.pos_report_profiles : DEFAULT_PROFILES)
-      setActiveProfileId(saved.active_profile_id || 'long')
+      setProfiles(nextProfiles)
+      setActiveProfileId(nextProfiles.some((profile) => profile.id === requestedActiveId) ? requestedActiveId : 'long')
       setDimensions(nextDimensions)
     }).catch((nextError) => {
       if (!cancelled) setError(nextError instanceof Error ? nextError.message : 'Could not load POS report settings.')
@@ -647,7 +689,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
 
   const load = async (forceRefresh = false) => {
     if (!restaurantId || !hydrated) return
-    const requestPayload = { start_date: dates.start, end_date: dates.end, start_time: times.start, end_time: times.end, top_n: 10, receipt_group_ids: scopedGroupIds, ...scope }
+    const requestPayload = { start_date: dates.start, end_date: dates.end, start_time: times.start, end_time: times.end, top_n: 10, receipt_group_ids: scopedGroupIds, ...backendScope }
     const requestId = loadRequestRef.current + 1
     loadRequestRef.current = requestId
     loadAbortRef.current?.abort()
@@ -668,7 +710,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       })
       if (loadRequestRef.current !== requestId) return
       setSnapshot({ ...next, _request_context_key: receiptSnapshotContextKey(requestPayload) })
-      if (!profiles.length) setProfiles(next.default_profiles || DEFAULT_PROFILES)
+      if (!profiles.length) setProfiles(withRequiredBuiltInProfiles([], next.default_profiles || DEFAULT_PROFILES))
     } catch (nextError) {
       if (loadRequestRef.current === requestId && !controller.signal.aborted) {
         setError(nextError instanceof Error ? nextError.message : 'Could not load the POS report.')
@@ -711,7 +753,10 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
 
   const selectProfile = (id) => {
     setActiveProfileId(id)
-    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/view-preferences/reports`, { method: 'PUT', body: JSON.stringify({ settings: { active_profile_id: id } }) }).catch(() => undefined)
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/view-preferences/reports`, {
+      method: 'PUT',
+      body: JSON.stringify({ settings: { active_profile_id: id, pos_report_profiles: profiles } }),
+    }).catch(() => undefined)
   }
 
   const selectPeriod = (preset) => {
@@ -765,7 +810,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     packet_name: `${activeProfile.name} POS report`,
     receipt_group_ids: scopedGroupIds,
     top_n: 10,
-    ...scope,
+    ...backendScope,
   })
 
   const receiptPrintPayload = {
@@ -776,7 +821,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     receipt_group_ids: scopedGroupIds,
     top_n: 10,
     snapshot_id: snapshot?.print_snapshot_id || null,
-    ...scope,
+    ...backendScope,
   }
   const receiptPreviewRequestKey = JSON.stringify({ ...receiptPrintPayload, profile_name: activeProfile.name })
 
@@ -791,7 +836,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       end_time: times.end,
       top_n: 10,
       snapshot_id: snapshot.print_snapshot_id,
-      ...scope,
+      ...backendScope,
     }
     for (const profile of profiles.filter((candidate) => candidate.built_in)) {
       const profileGroupIds = profile.group_ids.filter((groupId) => scope.scope_dimension !== 'employee' || !employeeUnsupportedGroupIds.has(groupId))
@@ -865,9 +910,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
             </div>
           </div>
           <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-            <div className="flex max-w-full gap-1 overflow-x-auto rounded-md border border-white/10 bg-white/[0.025] p-1">
-              {profiles.map((profile) => <button key={profile.id} type="button" onClick={() => selectProfile(profile.id)} className={`shrink-0 rounded px-4 py-2 text-sm font-semibold ${activeProfile.id === profile.id ? 'bg-dash-cream text-dash-base' : 'text-dash-secondary hover:text-dash-cream'}`}>{profile.name}</button>)}
-            </div>
+            <div className="flex max-w-full gap-1 overflow-x-auto rounded-md border border-white/10 bg-white/[0.025] p-1">{profiles.map((profile) => <button key={profile.id} type="button" onClick={() => selectProfile(profile.id)} className={`shrink-0 rounded px-4 py-2 text-sm font-semibold ${activeProfile.id === profile.id ? 'bg-dash-cream text-dash-base' : 'text-dash-secondary hover:text-dash-cream'}`}>{profile.name}</button>)}</div>
             <div className="flex max-w-full flex-wrap items-end gap-2">
               <Field label="Period"><select value={periodPreset} onChange={(event) => selectPeriod(event.target.value)}>{PERIOD_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></Field>
               <Field label="From"><input type="datetime-local" value={`${dates.start}T${times.start}`} onChange={(event) => setCustomDateTime('start', event.target.value)} /></Field>

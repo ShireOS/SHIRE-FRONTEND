@@ -19,7 +19,6 @@ import {
 import {
   Bar,
   BarChart,
-  Cell,
   CartesianGrid,
   Line,
   LineChart,
@@ -61,7 +60,19 @@ const MONEY_IDS = new Set([
   'item_discounts', 'check_discounts', 'total_collected', 'card_collected',
   'cash_collected', 'other_collected', 'service_charges', 'employee_service_charges',
   'restaurant_service_charges', 'unclassified_service_charges',
+  'financial_impact', 'amount_under_review', 'cash_variance', 'impact_amount',
 ])
+const ACTIVITY_ACTION_OPTIONS = [
+  ['discount', 'Discount'], ['comp', 'Comp'], ['item_void', 'Item void'], ['check_void', 'Check void'],
+  ['refund', 'Refund'], ['payment_void', 'Payment void'], ['tender_void', 'Tender void'], ['check_reopen', 'Check reopen'],
+  ['sent_item_edit', 'Sent-item edit'], ['item_unsend', 'Item unsend'], ['no_sale', 'No Sale'], ['paid_in', 'Paid in'],
+  ['paid_out', 'Paid out'], ['cash_drop', 'Cash drop'], ['cash_movement_reversal', 'Cash reversal'], ['cash_variance', 'Cash variance'],
+  ['tip_adjustment', 'Tip change'], ['tip_payout_adjustment', 'Tip payout change'], ['open_item', 'Open item'],
+  ['gratuity_add', 'Gratuity added'], ['gratuity_remove', 'Gratuity removed'], ['tax_exempt_check', 'Tax-exempt check'],
+  ['check_exception', 'Check exception'], ['payment_reconciliation', 'Payment reconciliation'], ['payment_failure', 'Payment failure'], ['payment_risk', 'Payment risk'],
+  ['gift_card_activity', 'Gift-card activity'], ['business_day_reopen', 'Business-day reopen'], ['transaction_sequence', 'High-risk sequence'],
+]
+const ACTIVITY_ACTION_IDS = ACTIVITY_ACTION_OPTIONS.map(([id]) => id)
 const GRAIN_OPTIONS = [
   ['total', 'Total'], ['day', 'Daily'], ['week', 'Weekly'],
   ['month', 'Monthly'], ['detail', 'Detailed rows'],
@@ -81,6 +92,7 @@ function formatValue(value, kind) {
     return new Date(year, month - 1, day).toLocaleDateString()
   }
   if (kind === 'date') return new Date(value).toLocaleDateString()
+  if (kind === 'datetime') return new Date(value).toLocaleString()
   return String(value)
 }
 
@@ -236,7 +248,7 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, dashboa
     breakdown: widget.default_breakdown,
     columns: [...widget.default_columns], include_chart: widget.id === 'sales_trend',
     chart_type: widget.id === 'sales_trend' ? 'line' : 'bar', title: `${widget.label} report`,
-    employee_ids: [], action_types: ['discount', 'comp', 'item_void', 'check_void'],
+    employee_ids: [], action_types: [...ACTIVITY_ACTION_IDS],
     reason_codes: [], include_team_average: true,
     alert_z_score: settings.alert_z_score || 2, alert_min_actions: settings.alert_min_actions || 5,
     ...effectiveDisplayScope,
@@ -265,7 +277,7 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, dashboa
   const reasonOptions = [...new Map((widgetData?.reasons || []).map((reason) => [reason.reason_code, reason])).values()]
   const renderAuditOptions = () => <>
     <div><p className="label-mono mb-2">Employees</p><p className="mb-2 text-xs text-dash-tertiary">No selection includes every employee.</p><div className="grid gap-2 sm:grid-cols-2">{employeeOptions.map((employee) => <label key={employee.employee_id} className="flex min-h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm"><input type="checkbox" checked={report.employee_ids.includes(employee.employee_id)} onChange={() => toggleColumn('employee_ids', employee.employee_id, setReport)} /><span className="truncate">{employee.employee_name}<span className="ml-1 text-xs text-dash-tertiary">{employee.restaurant_name}</span></span></label>)}</div></div>
-    <div><p className="label-mono mb-2">Actions</p><div className="grid gap-2 sm:grid-cols-2">{[['discount', 'Discounts'], ['comp', 'Comps'], ['item_void', 'Item voids'], ['check_void', 'Check voids']].map(([id, label]) => <label key={id} className="flex min-h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm"><input type="checkbox" checked={report.action_types.includes(id)} onChange={() => toggleColumn('action_types', id, setReport)} />{label}</label>)}</div></div>
+    <div><p className="label-mono mb-2">Activity types</p><div className="grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">{ACTIVITY_ACTION_OPTIONS.map(([id, label]) => <label key={id} className="flex min-h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm"><input type="checkbox" checked={report.action_types.includes(id)} onChange={() => toggleColumn('action_types', id, setReport)} />{label}</label>)}</div></div>
     {reasonOptions.length > 0 && <div><p className="label-mono mb-2">Reason codes</p><p className="mb-2 text-xs text-dash-tertiary">No selection includes every reason.</p><div className="grid gap-2 sm:grid-cols-2">{reasonOptions.map((reason) => <label key={reason.reason_code} className="flex min-h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm"><input type="checkbox" checked={report.reason_codes.includes(reason.reason_code)} onChange={() => toggleColumn('reason_codes', reason.reason_code, setReport)} />{reason.reason_label}</label>)}</div></div>}
     <label className="flex min-h-11 items-center justify-between rounded-md border border-dash-border px-3 text-sm"><span>Include peer averages and outlier scores</span><input type="checkbox" checked={report.include_team_average} onChange={(event) => setReport({ ...report, include_team_average: event.target.checked })} /></label>
   </>
@@ -594,7 +606,7 @@ function WidgetDetailModal({ widget, data, period, anchorDate, dateRange, scope,
   const detailQuery = useQuery({
     queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'detail', period, anchorDate, dates.start, dates.end, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
     queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'detail', breakdown }), timeoutMs: DEFAULT_API_TIMEOUT_MS }),
-    enabled: (widget.grains || []).includes('detail') && widget.id !== 'discount_review',
+    enabled: widget.id === 'discount_review' || (widget.grains || []).includes('detail'),
   })
   const trendData = trendQuery.data
   const breakdownData = breakdownQuery.data
@@ -603,27 +615,32 @@ function WidgetDetailModal({ widget, data, period, anchorDate, dateRange, scope,
   const table = tableColumns(tableData, widget)
   const chartCopy = homepageWidgetChartCopy(widget, trendData || data, breakdownData?.breakdown || breakdown)
   if (widget.id === 'discount_review') {
-    const summary = data?.summary || {}
-    const employees = data?.employees || []
-    const reasons = data?.reasons || []
-    const events = data?.recent_events || []
+    const activityData = detailQuery.data || data || {}
+    const summary = activityData.summary || {}
+    const employees = activityData.employees || []
+    const categories = activityData.categories || []
+    const events = activityData.recent_events || []
     return (
       <Modal title={`${widget.label} details`} onClose={onClose} width="max-w-6xl">
         <div className="space-y-5 p-5">
           {widget.scopeLabel && <p className="inline-flex items-center gap-2 rounded-md border border-shell-accent/30 bg-shell-accent/10 px-3 py-2 text-xs font-semibold text-shell-accent"><Layers3 size={14} />{widget.scopeLabel}</p>}
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {[['Total impact', summary.total_amount, 'money'], ['Actions', summary.action_count, 'number'], ['Average action', summary.average_action_amount, 'money'], ['Flagged employees', summary.flagged_employees, 'number'], ['Unattributed actions', summary.unattributed_actions, 'number']].map(([label, value, kind]) => <div key={label} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(value, kind)}</p></div>)}
+          {detailQuery.isFetching && <p className="rounded-md border border-dash-border p-4 text-sm text-dash-tertiary">Loading full activity ledger...</p>}
+          {detailQuery.isError && <p role="alert" className="rounded-md border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-100">The full ledger could not load. The homepage summary is still shown.</p>}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[['Financial impact', summary.financial_impact, 'money'], ['Amount reviewed', summary.amount_under_review, 'money'], ['Activity events', summary.action_count, 'number'], ['Flagged events', summary.flagged_events, 'number'], ['Critical events', summary.critical_events, 'number'], ['Cash variance', summary.cash_variance, 'money'], ['High-risk sequences', summary.transaction_sequences, 'number'], ['Unattributed', summary.unattributed_actions, 'number']].map(([label, value, kind]) => <div key={label} className={`rounded-md border p-4 ${label === 'Critical events' && Number(value) > 0 ? 'border-red-500/50 bg-red-500/10' : 'border-dash-border'}`}><p className="label-mono !text-[9px]">{label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(value, kind)}</p></div>)}
           </div>
           <div className="grid gap-5 lg:grid-cols-2">
-            <section><p className="label-mono mb-3">Discount and void impact by employee</p><DetailChart ariaLabel="Discount and void impact by employee" data={{ rows: employees.slice(0, 12).map((row) => ({ ...row, breakdown: row.employee_name || row.employee || 'Unknown' })), measure_columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }], dimension_columns: ['breakdown'], breakdown: 'employee' }} widget={{ ...widget, columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }] }} /></section>
-            <section><p className="label-mono mb-3">Discount and void impact by reason code</p><DetailChart ariaLabel="Discount and void impact by reason code" data={{ rows: reasons.slice(0, 12).map((row) => ({ ...row, breakdown: row.reason_label || row.reason_code })), measure_columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }], dimension_columns: ['breakdown'], breakdown: 'reason' }} widget={{ ...widget, columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }] }} /></section>
+            <section><p className="label-mono mb-3">Activity by category</p><DetailChart ariaLabel="Activity by category" data={{ rows: categories.map((row) => ({ ...row, breakdown: row.label })), measure_columns: [{ id: 'event_count', label: 'Events', kind: 'number' }], dimension_columns: ['breakdown'], breakdown: 'category' }} widget={{ ...widget, columns: [{ id: 'event_count', label: 'Events', kind: 'number' }] }} /></section>
+            <section><p className="label-mono mb-3">Financial impact by employee</p><DetailChart ariaLabel="Financial impact by employee" data={{ rows: employees.filter((row) => row.action_count > 0).slice(0, 12).map((row) => ({ ...row, breakdown: row.employee_name || 'Unknown' })), measure_columns: [{ id: 'impact_amount', label: 'Financial impact', kind: 'money' }], dimension_columns: ['breakdown'], breakdown: 'employee' }} widget={{ ...widget, columns: [{ id: 'impact_amount', label: 'Financial impact', kind: 'money' }] }} /></section>
           </div>
+          {(activityData.alerts || []).length > 0 && <section><p className="label-mono mb-3">Employee patterns requiring review</p><div className="grid gap-3 md:grid-cols-2">{activityData.alerts.map((employee) => <div key={`${employee.restaurant_id}-${employee.employee_id}`} className="rounded-md border border-amber-300/30 bg-amber-300/[0.07] p-4"><div className="flex items-center justify-between gap-3"><p className="font-semibold">{employee.employee_name}</p><p className="font-mono text-sm">{money(employee.impact_amount)}</p></div><p className="mt-1 text-xs text-dash-tertiary">{number(employee.action_count)} events · {number(employee.actions_per_day)} per day vs {number(employee.own_28_day_actions_per_day)} prior baseline</p><ul className="mt-2 space-y-1 text-xs leading-5 text-dash-secondary">{employee.alert_reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div>)}</div></section>}
           <div className="overflow-x-auto rounded-md border border-dash-border">
-            <table className="w-full min-w-[860px] text-left text-sm">
-              <thead><tr className="border-b border-dash-border">{['When', 'Employee', 'Action', 'Reason', 'Amount', 'Restaurant'].map((label) => <th key={label} className="label-mono px-4 py-3 !text-[10px]">{label}</th>)}</tr></thead>
-              <tbody>{events.map((row, index) => <tr key={`${row.period || row.occurred_at || index}-${index}`} className="border-b border-dash-border last:border-0"><td className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row.period || row.occurred_at, 'date')}</td><td className="px-4 py-3 text-dash-secondary">{row.employee_name || row.employee || 'Unknown'}</td><td className="px-4 py-3 capitalize text-dash-secondary">{String(row.action_type || row.action || '').replaceAll('_', ' ')}</td><td className="px-4 py-3 text-dash-secondary">{row.reason_label || row.reason || row.reason_code || '—'}</td><td className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row.amount || row.total_amount, 'money')}</td><td className="px-4 py-3 text-dash-secondary">{row.restaurant_name || row.restaurant || '—'}</td></tr>)}{!events.length && <tr><td colSpan={6} className="px-4 py-10 text-center text-dash-tertiary">No discount or void events for this range.</td></tr>}</tbody>
+            <table className="w-full min-w-[1500px] text-left text-sm">
+              <thead><tr className="border-b border-dash-border">{['Risk', 'When', 'Category', 'Check', 'Check owner', 'Performed by', 'Approved by', 'Action', 'Reason', 'Reviewed', 'Impact', 'Why flagged'].map((label) => <th key={label} className="label-mono px-3 py-3 !text-[10px]">{label}</th>)}</tr></thead>
+              <tbody>{events.map((row, index) => <tr key={`${row.event_id || row.occurred_at || index}-${index}`} className={`border-b border-dash-border last:border-0 ${row.severity === 'critical' ? 'bg-red-500/15 font-semibold' : row.severity === 'warning' ? 'bg-amber-400/[0.08]' : ''}`}><td className="px-3 py-3 capitalize">{row.severity || 'info'}</td><td className="whitespace-nowrap px-3 py-3 font-mono text-dash-secondary">{formatValue(row.occurred_at, 'datetime')}</td><td className="px-3 py-3 text-dash-secondary">{row.category_label}</td><td className="px-3 py-3 font-mono text-dash-secondary">{row.order_number || '—'}</td><td className="px-3 py-3 text-dash-secondary">{row.employee_name || 'Unattributed'}</td><td className="px-3 py-3 text-dash-secondary">{row.actor_name || 'Unattributed'}</td><td className="px-3 py-3 text-dash-secondary">{row.approver_name || '—'}</td><td className="px-3 py-3 capitalize text-dash-secondary">{String(row.action_type || '').replaceAll('_', ' ')}</td><td className="px-3 py-3 text-dash-secondary">{row.reason_label || 'Unclassified'}</td><td className="px-3 py-3 font-mono text-dash-secondary">{money(row.amount)}</td><td className="px-3 py-3 font-mono text-dash-secondary">{money(row.impact_amount)}</td><td className="max-w-96 whitespace-normal px-3 py-3 text-dash-secondary">{row.why_flagged || '—'}</td></tr>)}{!events.length && <tr><td colSpan={12} className="px-4 py-10 text-center text-dash-tertiary">No recorded activity for this range.</td></tr>}</tbody>
             </table>
           </div>
+          <p className="text-xs leading-5 text-dash-tertiary">Flags are explainable prompts for manager review, not automatic findings of wrongdoing.</p>
         </div>
       </Modal>
     )
@@ -683,28 +700,21 @@ function WidgetDetailModal({ widget, data, period, anchorDate, dateRange, scope,
 
 function DiscountReviewWidget({ widget, data, onSettings, onOpenDetails }) {
   const summary = data?.summary || {}
-  const employees = (data?.employees || []).filter((employee) => employee.action_count > 0).slice(0, 10)
-  const alerts = data?.alerts || []
-  const reasons = data?.reasons || []
+  const categories = (data?.categories || []).filter((category) => category.event_count > 0)
+  const alerts = (data?.event_alerts || []).slice(0, 3)
   const scopeRows = data?.scope_breakdown || []
   const scopeName = scopeNoun(data)
-  return <section onClick={onOpenDetails} className="glass-card cursor-pointer rounded-lg p-5 transition hover:border-shell-accent/40 xl:col-span-4">
+  return <section onClick={onOpenDetails} className="glass-card cursor-pointer rounded-lg p-5 transition hover:border-shell-accent/40 xl:col-span-2">
     <WidgetHeader widget={widget} onSettings={onSettings} />
     {scopedBreakdown(data) && <div className="mb-5 rounded-md border border-dash-border p-4"><div className="mb-3 flex items-center gap-2"><Layers3 size={15} className="text-dash-secondary" /><h3 className="text-sm font-semibold capitalize">Impact by {scopeName}</h3></div>{scopeRows.length ? <div className="grid gap-2 md:grid-cols-2">{scopeRows.map((row) => <div key={row.breakdown} className="flex items-center justify-between gap-3 rounded-md bg-white/[0.03] p-3"><div className="min-w-0"><p className="truncate text-sm font-semibold">{row.breakdown}</p><p className="text-[10px] text-dash-tertiary">{number(row.action_count)} actions · {money(row.average_action_amount)} average</p></div><p className="shrink-0 font-mono text-sm">{money(row.total_amount)}</p></div>)}</div> : <p className="text-sm text-dash-tertiary">No attributed {scopeName} activity for this range.</p>}</div>}
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-      {[['Total impact', summary.total_amount, 'money'], ['Actions', summary.action_count, 'number'], ['Average action', summary.average_action_amount, 'money'], ['Flagged employees', summary.flagged_employees, 'number'], ['Unattributed actions', summary.unattributed_actions, 'number']].map(([label, value, kind]) => <div key={label} className={`rounded-md border p-3 ${label === 'Flagged employees' && Number(value) > 0 ? 'border-red-500/50 bg-red-500/10' : 'border-dash-border'}`}><p className="label-mono !text-[9px]">{label}</p><p className={`mt-1 font-mono text-lg ${label === 'Flagged employees' && Number(value) > 0 ? 'text-red-300' : 'text-dash-cream'}`}>{formatValue(value, kind)}</p></div>)}
+    <div className="grid gap-3 sm:grid-cols-4">
+      {[['Impact', summary.financial_impact, 'money'], ['Events', summary.action_count, 'number'], ['Flagged', summary.flagged_events, 'number'], ['Critical', summary.critical_events, 'number']].map(([label, value, kind]) => <div key={label} className={`rounded-md border p-3 ${label === 'Critical' && Number(value) > 0 ? 'border-red-500/50 bg-red-500/10' : 'border-dash-border'}`}><p className="label-mono !text-[9px]">{label}</p><p className="mt-1 font-mono text-lg text-dash-cream">{formatValue(value, kind)}</p></div>)}
     </div>
-    <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,.65fr)]">
-      <div>
-        <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold">Employee financial impact</h3><span className="text-xs text-dash-tertiary">Red indicates a statistical alert</span></div>
-        {employees.length ? <div className="h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={employees} layout="vertical" margin={{ left: 20, right: 20 }}><CartesianGrid stroke="rgba(168,162,158,.2)" horizontal={false} /><XAxis type="number" tickFormatter={(value) => `$${Math.round(value)}`} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis type="category" dataKey="employee_name" width={110} tick={{ fill: '#d6d3d1', fontSize: 10 }} /><Tooltip formatter={(value) => money(value)} labelFormatter={(label, payload) => payload?.[0]?.payload?.restaurant_name ? `${label} · ${payload[0].payload.restaurant_name}` : label} /><Bar dataKey="total_amount" radius={[0, 4, 4, 0]}>{employees.map((employee) => <Cell key={`${employee.restaurant_id}-${employee.employee_id || 'none'}`} fill={employee.is_flagged ? '#ef4444' : '#4f7ee8'} />)}</Bar></BarChart></ResponsiveContainer></div> : <p className="flex h-64 items-center justify-center text-sm text-dash-tertiary">No discount or void activity for this range.</p>}
-      </div>
-      <div>
-        <h3 className="text-sm font-semibold">Review alerts</h3>
-        {alerts.length ? <div className="mt-3 space-y-2">{alerts.map((employee) => <div key={`${employee.restaurant_id}-${employee.employee_id}`} className="rounded-md border border-red-500/40 bg-red-500/10 p-3"><div className="flex items-start gap-2"><AlertTriangle size={16} className="mt-0.5 shrink-0 text-red-300" /><div><p className="text-sm font-semibold text-red-200">{employee.employee_name}</p><p className="text-xs text-red-200/70">{employee.restaurant_name} · {money(employee.total_amount)} across {number(employee.action_count)} actions</p></div></div><ul className="mt-2 space-y-1 text-xs leading-5 text-red-100/80">{employee.alert_reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div>)}</div> : <p className="mt-3 rounded-md border border-dash-border p-4 text-sm text-dash-tertiary">No employees crossed the configured threshold.</p>}
-      </div>
+    <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(240px,.7fr)]">
+      <div><h3 className="mb-3 text-sm font-semibold">Activity by category</h3>{categories.length ? <div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={categories.slice(0, 8)} layout="vertical" margin={{ left: 8, right: 18 }}><CartesianGrid stroke="rgba(168,162,158,.2)" horizontal={false} /><XAxis type="number" allowDecimals={false} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis type="category" dataKey="label" width={125} tick={{ fill: '#d6d3d1', fontSize: 10 }} /><Tooltip formatter={(value) => number(value)} /><Bar dataKey="event_count" fill="#4f7ee8" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer></div> : <p className="flex h-56 items-center justify-center text-sm text-dash-tertiary">No activity for this range.</p>}</div>
+      <div><h3 className="text-sm font-semibold">Important activity</h3>{alerts.length ? <div className="mt-3 space-y-2">{alerts.map((event) => <div key={event.event_id} className={`rounded-md border p-3 ${event.severity === 'critical' ? 'border-red-500/40 bg-red-500/10' : 'border-amber-300/30 bg-amber-300/[0.07]'}`}><div className="flex items-start gap-2"><AlertTriangle size={16} className="mt-0.5 shrink-0" /><div className="min-w-0"><p className="truncate text-sm font-semibold capitalize">{String(event.action_type).replaceAll('_', ' ')}</p><p className="mt-1 text-xs leading-5 text-dash-secondary">{event.why_flagged || event.reason_label}</p></div></div></div>)}</div> : <p className="mt-3 rounded-md border border-dash-border p-4 text-sm text-dash-tertiary">No activity currently needs attention.</p>}</div>
     </div>
-    <div className="mt-5 overflow-x-auto border-t border-dash-border pt-5"><h3 className="mb-3 text-sm font-semibold">Reason-code activity</h3><table className="w-full min-w-[680px] text-left text-sm"><thead><tr className="border-y border-dash-border">{['Reason', 'Action', 'Restaurant', 'Count', 'Total', 'Average', 'Share'].map((label) => <th key={label} className="label-mono px-3 py-2 !text-[9px]">{label}</th>)}</tr></thead><tbody>{reasons.slice(0, 10).map((reason) => <tr key={`${reason.restaurant_id}-${reason.action_type}-${reason.reason_code}`} className="border-b border-dash-border"><td className="px-3 py-2"><span className="block font-semibold">{reason.reason_label}</span><span className="font-mono text-[10px] text-dash-tertiary">{reason.reason_code}</span></td><td className="px-3 py-2 capitalize text-dash-secondary">{reason.action_type.replaceAll('_', ' ')}</td><td className="px-3 py-2 text-dash-secondary">{reason.restaurant_name}</td><td className="px-3 py-2 font-mono">{number(reason.count)}</td><td className="px-3 py-2 font-mono">{money(reason.total_amount)}</td><td className="px-3 py-2 font-mono">{money(reason.average_amount)}</td><td className="px-3 py-2 font-mono">{number(reason.share_percent)}%</td></tr>)}</tbody></table></div>
+    <p className="mt-4 text-xs font-semibold text-shell-accent">Open the widget for the full event ledger and analysis.</p>
   </section>
 }
 
