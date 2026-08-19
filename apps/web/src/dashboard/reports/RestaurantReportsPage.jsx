@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  AlertTriangle,
   Download,
   FileSpreadsheet,
   FileText,
@@ -386,6 +387,112 @@ function EmailModal({ profileName, onClose, onSend }) {
   )
 }
 
+function ReceiptPrintModal({ restaurantId, profileName, requestPayload, initialPreview, onClose, onPrinted }) {
+  const [preview, setPreview] = useState(initialPreview || null)
+  const [loading, setLoading] = useState(!initialPreview)
+  const [printing, setPrinting] = useState(false)
+  const [confirmedLong, setConfirmedLong] = useState(false)
+  const [message, setMessage] = useState('')
+  const printLock = useRef(false)
+  const requestKey = JSON.stringify(requestPayload)
+
+  useEffect(() => {
+    if (initialPreview) {
+      setPreview(initialPreview)
+      setLoading(false)
+      setMessage('')
+      return undefined
+    }
+    let cancelled = false
+    const controller = new AbortController()
+    setLoading(true)
+    setMessage('')
+    fetchPosApi(restaurantId, '/manager/report-hub/receipt-preview', {
+      method: 'POST',
+      body: JSON.stringify({ ...requestPayload, profile_name: profileName }),
+      signal: controller.signal,
+    }).then((result) => {
+      if (!cancelled) setPreview(result)
+    }).catch((error) => {
+      if (!cancelled) setMessage(error instanceof Error ? error.message : 'Could not build the receipt preview.')
+    }).finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => { cancelled = true; controller.abort() }
+  }, [restaurantId, profileName, requestKey, initialPreview])
+
+  const print = async () => {
+    if (printLock.current) return
+    printLock.current = true
+    setPrinting(true)
+    setMessage('Queueing report…')
+    try {
+      const job = await fetchPosApi(restaurantId, '/manager/report-hub/receipt', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...requestPayload,
+          profile_name: profileName,
+          client_print_id: crypto.randomUUID(),
+          confirm_long_receipt: confirmedLong,
+          printer_context_id: preview?.printer_context_id || null,
+        }),
+      })
+      let latest = job
+      const deadline = Date.now() + 30_000
+      while (latest.progress !== 'printed' && latest.progress !== 'failed' && Date.now() < deadline) {
+        setMessage(latest.progress === 'writing' ? `Sending to ${latest.target_name || 'receipt printer'}…` : latest.progress === 'claimed' ? 'The POS device is delivering the report…' : `Queued to ${latest.target_name || 'receipt printer'}…`)
+        await new Promise((resolve) => window.setTimeout(resolve, 250))
+        latest = await fetchPosApi(restaurantId, `/manager/report-hub/receipt-jobs/${job.job_id}`)
+      }
+      if (latest.progress === 'printed') {
+        onPrinted(`Printed ${profileName} report to ${latest.target_name || 'the receipt printer'}.`)
+        onClose()
+      } else if (latest.progress === 'failed') {
+        setMessage(latest.error || 'The receipt printer could not confirm delivery. Check the POS print queue before retrying.')
+      } else {
+        setMessage(`The report remains queued to ${latest.target_name || 'the receipt printer'}. Keep a restaurant POS device online to finish delivery.`)
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not print the POS report.')
+    } finally {
+      printLock.current = false
+      setPrinting(false)
+    }
+  }
+
+  const capabilities = preview?.printer_capabilities
+  return (
+    <Modal title={`Print ${profileName} report`} onClose={onClose} maxWidth="max-w-2xl">
+      {loading && <div className="flex min-h-64 items-center justify-center"><RefreshCw className="h-6 w-6 animate-spin text-dash-gold" /></div>}
+      {!loading && preview && (
+        <>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="rounded-md border border-white/10 bg-white/[0.04] p-2"><Printer className="h-4 w-4 text-dash-gold" /></span>
+              <div className="min-w-0"><p className="truncate text-sm font-semibold">{preview.target?.name || 'Receipt printer'}</p><p className="text-xs text-dash-tertiary">{capabilities?.profile || 'Configured printer'} · {capabilities?.paper_width_mm || 80} mm · {preview.layout_columns || capabilities?.normal_columns || 48} columns</p></div>
+            </div>
+            <span className="text-xs text-dash-tertiary">About {preview.estimated_lines} lines</span>
+          </div>
+          <div className="mx-auto max-h-[52vh] max-w-[34rem] overflow-auto bg-white p-5 text-black shadow-inner">
+            <pre className="whitespace-pre font-mono text-[11px] leading-[1.35]">{preview.preview}</pre>
+          </div>
+          {preview.long_receipt && (
+            <label className="mt-4 flex items-start gap-3 rounded-md border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
+              <input className="mt-0.5" type="checkbox" checked={confirmedLong} onChange={(event) => setConfirmedLong(event.target.checked)} />
+              <span><span className="flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Confirm long receipt</span><span className="mt-1 block text-xs text-amber-100/75">This selection will use substantially more receipt paper. No report rows will be silently removed.</span></span>
+            </label>
+          )}
+        </>
+      )}
+      {message && <p className="mt-4 rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-secondary">{message}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <IconButton label="Cancel" icon={X} onClick={onClose} disabled={printing} />
+        <IconButton label={printing ? 'Printing' : 'Print receipt'} icon={printing ? RefreshCw : Printer} primary onClick={print} disabled={loading || printing || !preview || (preview.long_receipt && !confirmedLong)} />
+      </div>
+    </Modal>
+  )
+}
+
 function ReceiptGroup({ group, timezone }) {
   return (
     <section className="border-t border-black/20 py-5 first:border-t-0 first:pt-0">
@@ -436,6 +543,17 @@ function DigitalReceipt({ snapshot, profile }) {
   )
 }
 
+function receiptSnapshotContextKey(payload) {
+  const { receipt_group_ids: _groupIds, ...context } = payload
+  return JSON.stringify(context)
+}
+
+function snapshotCoversReceiptRequest(snapshot, payload) {
+  if (!snapshot?.print_snapshot_id || snapshot._request_context_key !== receiptSnapshotContextKey(payload)) return false
+  const available = new Set((snapshot.groups || []).map((group) => group.id))
+  return (payload.receipt_group_ids || []).every((groupId) => available.has(groupId))
+}
+
 export default function RestaurantReportsPage({ restaurantId, canConfigureServerReceipt = false }) {
   const [dates, setDates] = useState(() => periodRange('week'))
   const [times, setTimes] = useState({ start: '00:00', end: '23:59' })
@@ -445,6 +563,8 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   const [profiles, setProfiles] = useState(DEFAULT_PROFILES)
   const [activeProfileId, setActiveProfileId] = useState('long')
   const [snapshot, setSnapshot] = useState(null)
+  const [preloadedReceiptPreviews, setPreloadedReceiptPreviews] = useState({})
+  const [receiptPrintOpen, setReceiptPrintOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [hydrated, setHydrated] = useState(false)
   const [error, setError] = useState('')
@@ -455,6 +575,8 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   const [recipients, setRecipients] = useState([])
   const [canManageRecipients, setCanManageRecipients] = useState(false)
   const [emailDelivery, setEmailDelivery] = useState({ enabled: false, reason: '' })
+  const loadRequestRef = useRef(0)
+  const loadAbortRef = useRef(null)
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) || profiles[0]
   const scopeIdsKey = scope.scope_ids.join(',')
   const groupIdsKey = activeProfile.group_ids.join(',')
@@ -467,6 +589,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     setHydrated(false)
     setLoading(true)
     setSnapshot(null)
+    setPreloadedReceiptPreviews({})
     setError('')
     Promise.all([
       fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/view-preferences`),
@@ -502,24 +625,48 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     return () => { cancelled = true }
   }, [restaurantId])
 
-  const load = async () => {
+  const load = async (forceRefresh = false) => {
     if (!restaurantId || !hydrated) return
-    setLoading(true); setError('')
+    const requestPayload = { start_date: dates.start, end_date: dates.end, start_time: times.start, end_time: times.end, top_n: 10, receipt_group_ids: activeProfile.group_ids, ...scope }
+    const requestId = loadRequestRef.current + 1
+    loadRequestRef.current = requestId
+    loadAbortRef.current?.abort()
+    loadAbortRef.current = null
+    if (!forceRefresh && snapshotCoversReceiptRequest(snapshot, requestPayload)) {
+      setLoading(false)
+      setError('')
+      return
+    }
+    const controller = new AbortController()
+    loadAbortRef.current = controller
+    setLoading(true); setError(''); setPreloadedReceiptPreviews({})
     try {
       const next = await fetchPosApi(restaurantId, '/manager/report-hub/snapshot', {
         method: 'POST',
-        body: JSON.stringify({ start_date: dates.start, end_date: dates.end, start_time: times.start, end_time: times.end, top_n: 10, receipt_group_ids: activeProfile.group_ids, ...scope }),
+        body: JSON.stringify(requestPayload),
+        signal: controller.signal,
       })
-      setSnapshot(next)
+      if (loadRequestRef.current !== requestId) return
+      setSnapshot({ ...next, _request_context_key: receiptSnapshotContextKey(requestPayload) })
       if (!profiles.length) setProfiles(next.default_profiles || DEFAULT_PROFILES)
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Could not load the POS report.')
+      if (loadRequestRef.current === requestId && !controller.signal.aborted) {
+        setError(nextError instanceof Error ? nextError.message : 'Could not load the POS report.')
+      }
     } finally {
-      setLoading(false)
+      if (loadRequestRef.current === requestId) {
+        setLoading(false)
+        if (loadAbortRef.current === controller) loadAbortRef.current = null
+      }
     }
   }
 
-  useEffect(() => { void load() }, [restaurantId, hydrated, dates.start, dates.end, times.start, times.end, scope.scope_dimension, scope.scope_mode, scopeIdsKey, groupIdsKey])
+  useEffect(() => {
+    const timeout = window.setTimeout(() => { void load() }, 120)
+    return () => window.clearTimeout(timeout)
+  }, [restaurantId, hydrated, dates.start, dates.end, times.start, times.end, scope.scope_dimension, scope.scope_mode, scopeIdsKey, groupIdsKey])
+
+  useEffect(() => () => loadAbortRef.current?.abort(), [])
 
   const preferencePayload = (nextProfiles = profiles, nextActiveId = activeProfileId) => ({
     period_preset: periodPreset,
@@ -601,6 +748,49 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     ...scope,
   })
 
+  const receiptPrintPayload = {
+    start_date: dates.start,
+    end_date: dates.end,
+    start_time: times.start,
+    end_time: times.end,
+    receipt_group_ids: activeProfile.group_ids,
+    top_n: 10,
+    snapshot_id: snapshot?.print_snapshot_id || null,
+    ...scope,
+  }
+  const receiptPreviewRequestKey = JSON.stringify({ ...receiptPrintPayload, profile_name: activeProfile.name })
+
+  useEffect(() => {
+    if (!restaurantId || !snapshot?.print_snapshot_id) return undefined
+    let cancelled = false
+    const controllers = []
+    const basePayload = {
+      start_date: dates.start,
+      end_date: dates.end,
+      start_time: times.start,
+      end_time: times.end,
+      top_n: 10,
+      snapshot_id: snapshot.print_snapshot_id,
+      ...scope,
+    }
+    for (const profile of profiles.filter((candidate) => candidate.built_in)) {
+      const payload = { ...basePayload, receipt_group_ids: profile.group_ids }
+      if (!snapshotCoversReceiptRequest(snapshot, payload)) continue
+      const key = JSON.stringify({ ...payload, profile_name: profile.name })
+      if (preloadedReceiptPreviews[key]) continue
+      const controller = new AbortController()
+      controllers.push(controller)
+      fetchPosApi(restaurantId, '/manager/report-hub/receipt-preview', {
+        method: 'POST',
+        body: key,
+        signal: controller.signal,
+      }).then((preview) => {
+        if (!cancelled) setPreloadedReceiptPreviews((current) => ({ ...current, [key]: preview }))
+      }).catch(() => undefined)
+    }
+    return () => { cancelled = true; controllers.forEach((controller) => controller.abort()) }
+  }, [restaurantId, snapshot?.print_snapshot_id, profiles])
+
   const downloadArtifact = async (format) => {
     setWorking(format); setStatus('')
     try {
@@ -650,7 +840,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
             <div className="flex flex-wrap gap-2 lg:justify-end">
               <IconButton label={scope.scope_dimension === 'none' ? 'Scope' : scope.scope_dimension === 'device' ? 'Devices' : 'Sections'} icon={Layers} onClick={() => setModal('scope')} />
               <IconButton label="Settings" icon={Settings2} onClick={() => setModal('settings')} />
-              <IconButton label="Refresh" icon={RefreshCw} onClick={load} disabled={loading} />
+              <IconButton label="Refresh" icon={RefreshCw} onClick={() => { void load(true) }} disabled={loading} />
             </div>
           </div>
           <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
@@ -668,7 +858,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
             <IconButton label="CSV" icon={Download} onClick={() => downloadSnapshotCsv(snapshot, activeProfile.group_ids, activeProfile.name)} disabled={!snapshot || Boolean(working)} />
             <IconButton label="Excel" icon={FileSpreadsheet} onClick={() => downloadArtifact('xlsx')} disabled={!snapshot || Boolean(working)} />
             <IconButton label="Email" icon={Mail} onClick={() => setModal('email')} disabled={!snapshot || Boolean(working)} />
-            <IconButton label="Receipt printing is coming soon" icon={Printer} disabled />
+            <IconButton label="Print receipt" icon={Printer} onClick={() => setReceiptPrintOpen(true)} disabled={!snapshot || loading || Boolean(working)} />
             <span className="ml-auto text-xs text-dash-tertiary">{selectedGroupCount} section{selectedGroupCount === 1 ? '' : 's'}</span>
           </div>
         </div>
@@ -684,6 +874,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       {modal === 'email' && <EmailModal profileName={activeProfile.name} onClose={() => setModal(null)} onSend={emailReport} />}
       {modal === 'schedules' && <ScheduledReportsModal recipients={recipients} canManage={canManageRecipients} deliveryEnabled={emailDelivery.enabled} disabledReason={emailDelivery.reason} defaultTimezone={snapshot?.restaurant?.timezone} onClose={() => setModal(null)} onSave={saveRecipient} onDelete={deleteRecipient} onTest={testRecipient} />}
       {serverReceiptOpen && <ServerReceiptTemplateModal restaurantId={restaurantId} onClose={() => setServerReceiptOpen(false)} onSaved={() => setStatus('Server receipt layout saved restaurant-wide.')} />}
+      {receiptPrintOpen && <ReceiptPrintModal restaurantId={restaurantId} profileName={activeProfile.name} requestPayload={receiptPrintPayload} initialPreview={preloadedReceiptPreviews[receiptPreviewRequestKey] || null} onClose={() => setReceiptPrintOpen(false)} onPrinted={setStatus} />}
     </div>
   )
 }
