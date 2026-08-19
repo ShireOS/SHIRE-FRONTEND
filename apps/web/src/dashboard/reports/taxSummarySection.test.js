@@ -34,7 +34,7 @@ test('settings are driven by the backend catalog instead of a second tax schema'
 test('profile selection is persisted and controls every generated artifact', () => {
   assert.match(reportsPage, /active_profile_id: nextActiveId/)
   assert.match(reportsPage, /pos_report_profiles: nextProfiles/)
-  assert.match(reportsPage, /receipt_group_ids: activeProfile\.group_ids/)
+  assert.match(reportsPage, /receipt_group_ids: scopedGroupIds/)
 })
 
 const ALL = ['sales_revenue', 'z_report', 'tax_summary', 'daily_summary']

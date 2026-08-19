@@ -26,7 +26,7 @@ const RECEIPT_GROUP_CATALOG = [
   { id: 'service_mode_sales', label: 'Sales by service type', description: 'Dine-in, to-go, delivery, drive-thru, and unclassified check performance.' },
   { id: 'tender_mix', label: 'Media / tender mix', description: 'Cash and card transaction counts, applied amounts, surcharges, tips, and tender percentages.' },
   { id: 'media_tip_detail', label: 'Detailed media & tips', description: 'Tender totals by recorded card brand plus captured, declared, and tip-out amounts.' },
-  { id: 'cash_reconciliation', label: 'Cash reconciliation', description: 'Collected media, processor fees, expected cash, counted cash, and variance.' },
+  { id: 'cash_reconciliation', label: 'Cash reconciliation', description: 'Collected media, processor fees, expected cash, counted cash, and variance.', employee_scope: 'unsupported' },
   { id: 'daily_sales', label: 'Daily sales', description: 'Net sales, checks, guests, discounts, and collected totals for each accounting business date.' },
   { id: 'key_metrics', label: 'Key metrics', description: 'Checks, guests, average checks, net sales per guest, sales per labor hour, and discount rate.' },
   { id: 'category_sales', label: 'Top categories', description: 'Category units, net sales, sales share, cost, and margin.' },
@@ -37,7 +37,7 @@ const RECEIPT_GROUP_CATALOG = [
   { id: 'labor_payroll', label: 'Labor & payroll', description: 'Paid and overtime hours, recorded wages, missing pay rates, and labor percentage.' },
   { id: 'punch_log', label: 'Punch log', description: 'Clock entries, missed clock-outs, manager edits, voids, and edit reasons.' },
   { id: 'tax', label: 'Tax', description: 'Taxable and non-taxable sales, tax liability, service-charge tax, and rate details.' },
-  { id: 'cash_closeout', label: 'Cash & closeout', description: 'Paid in/out, cash drops, expected and counted cash, variance, and daily closes.' },
+  { id: 'cash_closeout', label: 'Cash & closeout', description: 'Paid in/out, cash drops, expected and counted cash, variance, and daily closes.', employee_scope: 'unsupported' },
   { id: 'transaction_log', label: 'Transaction log', description: 'Completed cash, card, gift-card, and other tenders with timestamps and POS metadata.' },
   { id: 'server_summary', label: 'Server summary', description: 'Worked-server sales, checks, voluntary tips, gratuity, and cash due.' },
   { id: 'tip_settlement', label: 'Tips & tip-outs', description: 'Employee tips collected, tip-outs paid and received, and final payouts.' },
@@ -194,12 +194,19 @@ function Modal({ title, onClose, children, maxWidth = 'max-w-3xl' }) {
 
 function ScopeModal({ value, dimensions, onClose, onApply }) {
   const [draft, setDraft] = useState(() => ({ ...value, scope_mode: 'cumulative', scope_ids: [...value.scope_ids] }))
-  const options = draft.scope_dimension === 'revenue_center' ? dimensions.sections || [] : draft.scope_dimension === 'device' ? dimensions.devices || [] : []
+  const options = draft.scope_dimension === 'revenue_center'
+    ? dimensions.sections || []
+    : draft.scope_dimension === 'device'
+      ? dimensions.devices || []
+      : draft.scope_dimension === 'employee'
+        ? dimensions.employees || []
+        : []
   const toggle = (id) => setDraft((current) => ({ ...current, scope_ids: current.scope_ids.includes(id) ? current.scope_ids.filter((item) => item !== id) : [...current.scope_ids, id] }))
+  const canApply = draft.scope_dimension === 'none' || draft.scope_ids.length > 0
   return (
     <Modal title="Report scope" onClose={onClose}>
       <div className="flex flex-wrap gap-2">
-        {[['none', 'Whole restaurant'], ['revenue_center', 'Sections'], ['device', 'Devices']].map(([id, label]) => (
+        {[['none', 'Whole restaurant'], ['revenue_center', 'Sections'], ['device', 'Devices'], ['employee', 'Employees']].map(([id, label]) => (
           <button key={id} type="button" onClick={() => setDraft({ ...draft, scope_dimension: id, scope_ids: [], scope_mode: 'cumulative' })} className={`h-10 rounded-md border px-3 text-sm font-semibold ${draft.scope_dimension === id ? 'border-dash-gold bg-dash-gold/10 text-dash-cream' : 'border-white/10 text-dash-secondary'}`}>{label}</button>
         ))}
       </div>
@@ -209,18 +216,23 @@ function ScopeModal({ value, dimensions, onClose, onApply }) {
             {options.map((option) => (
               <label key={option.id} className="flex min-h-11 items-center gap-3 rounded-md border border-white/10 px-3 text-sm">
                 <input type="checkbox" checked={draft.scope_ids.includes(option.id)} onChange={() => toggle(option.id)} />
-                <span>{option.name}{draft.scope_dimension === 'device' && option.section_name ? <span className="ml-1 text-xs text-dash-tertiary">({option.section_name})</span> : null}</span>
+                <span className="min-w-0">
+                  <span className="block break-words">{option.name}{draft.scope_dimension === 'device' && option.section_name ? <span className="ml-1 text-xs text-dash-tertiary">({option.section_name})</span> : null}</span>
+                  {draft.scope_dimension === 'employee' && <span className="block text-xs text-dash-tertiary">{option.role || 'Staff'}{option.is_active === false ? ' · inactive with report history' : ''}</span>}
+                </span>
               </label>
             ))}
           </div>
+          {draft.scope_dimension === 'employee' && <p className="mt-3 text-xs leading-5 text-dash-tertiary">Sales and menu activity follow checks assigned to each employee. Drawer reconciliation and day-close totals are excluded because those records are not employee-owned.</p>}
+          {!options.length && <p className="mt-4 text-sm text-dash-tertiary">No reportable values are available for this scope.</p>}
         </>
       )}
-      <div className="mt-5 flex justify-end gap-2"><IconButton label="Cancel" icon={X} onClick={onClose} /><IconButton label="Apply scope" icon={Layers} primary onClick={() => onApply(draft)} /></div>
+      <div className="mt-5 flex justify-end gap-2"><IconButton label="Cancel" icon={X} onClick={onClose} /><IconButton label="Apply scope" icon={Layers} primary disabled={!canApply} onClick={() => onApply(draft)} /></div>
     </Modal>
   )
 }
 
-function ProfileSettingsModal({ profiles, activeId, catalog, defaults, canConfigureReceipt, onConfigureReceipt, onManageSchedules, onClose, onSave }) {
+function ProfileSettingsModal({ profiles, activeId, catalog, defaults, scopeDimension, canConfigureReceipt, onConfigureReceipt, onManageSchedules, onClose, onSave }) {
   const [drafts, setDrafts] = useState(() => profiles.map((profile) => ({ ...profile, group_ids: [...profile.group_ids] })))
   const [selectedId, setSelectedId] = useState(activeId)
   const [saving, setSaving] = useState(false)
@@ -282,7 +294,7 @@ function ProfileSettingsModal({ profiles, activeId, catalog, defaults, canConfig
             {catalog.map((group) => (
               <label key={group.id} className="flex min-h-16 cursor-pointer items-start gap-3 rounded-md border border-white/10 px-3 py-3">
                 <input className="mt-1" type="checkbox" checked={selected.group_ids.includes(group.id)} onChange={() => toggle(group.id)} />
-                <span className="min-w-0"><span className="block text-sm font-semibold">{group.label}</span><span className="mt-0.5 block text-xs leading-5 text-dash-tertiary">{group.description}</span></span>
+                <span className="min-w-0"><span className="block text-sm font-semibold">{group.label}</span><span className="mt-0.5 block text-xs leading-5 text-dash-tertiary">{group.description}</span>{scopeDimension === 'employee' && group.employee_scope === 'unsupported' && <span className="mt-1 block text-xs font-semibold text-amber-200">Excluded from employee-scoped reports</span>}</span>
               </label>
             ))}
           </div>
@@ -534,7 +546,7 @@ function DigitalReceipt({ snapshot, profile }) {
         <p className="mt-1 text-sm font-bold uppercase">{profile.name} POS report</p>
         <p className="mt-2 text-xs text-stone-600">{period}</p>
         <p className="mt-1 text-xs text-stone-600">Restaurant local time · {snapshot.restaurant.timezone}</p>
-        {snapshot.scope?.dimension !== 'none' && <p className="mt-1 text-xs text-stone-600">Scoped by {snapshot.scope.dimension.replaceAll('_', ' ')} · {snapshot.scope.mode}</p>}
+        {snapshot.scope?.dimension !== 'none' && <p className="mt-1 break-words text-xs text-stone-600">{snapshot.scope.dimension === 'employee' ? `Employees · ${(snapshot.scope.values || []).map((value) => value.name).filter(Boolean).join(', ') || 'Selected employees'}` : `Scoped by ${snapshot.scope.dimension.replaceAll('_', ' ')} · ${snapshot.scope.mode}`}</p>}
         {(snapshot.warnings || []).map((warning) => <p key={warning} className="mx-auto mt-2 max-w-3xl text-xs leading-5 text-stone-500">{warning}</p>)}
       </header>
       {groups.map((group) => <ReceiptGroup key={group.id} group={group} timezone={snapshot.restaurant.timezone} />)}
@@ -559,7 +571,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   const [times, setTimes] = useState({ start: '00:00', end: '23:59' })
   const [periodPreset, setPeriodPreset] = useState('week')
   const [scope, setScope] = useState({ scope_dimension: 'none', scope_mode: 'cumulative', scope_ids: [] })
-  const [dimensions, setDimensions] = useState({ sections: [], devices: [] })
+  const [dimensions, setDimensions] = useState({ sections: [], devices: [], employees: [] })
   const [profiles, setProfiles] = useState(DEFAULT_PROFILES)
   const [activeProfileId, setActiveProfileId] = useState('long')
   const [snapshot, setSnapshot] = useState(null)
@@ -579,9 +591,17 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   const loadAbortRef = useRef(null)
   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) || profiles[0]
   const scopeIdsKey = scope.scope_ids.join(',')
-  const groupIdsKey = activeProfile.group_ids.join(',')
   const catalog = snapshot?.catalog?.length ? snapshot.catalog : RECEIPT_GROUP_CATALOG
   const defaults = snapshot?.default_profiles || DEFAULT_PROFILES
+  const employeeUnsupportedGroupIds = useMemo(
+    () => new Set(catalog.filter((group) => group.employee_scope === 'unsupported').map((group) => group.id)),
+    [catalog],
+  )
+  const scopedGroupIds = useMemo(
+    () => activeProfile.group_ids.filter((groupId) => scope.scope_dimension !== 'employee' || !employeeUnsupportedGroupIds.has(groupId)),
+    [activeProfile, employeeUnsupportedGroupIds, scope.scope_dimension],
+  )
+  const groupIdsKey = scopedGroupIds.join(',')
 
   useEffect(() => {
     if (!restaurantId) return
@@ -627,7 +647,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
 
   const load = async (forceRefresh = false) => {
     if (!restaurantId || !hydrated) return
-    const requestPayload = { start_date: dates.start, end_date: dates.end, start_time: times.start, end_time: times.end, top_n: 10, receipt_group_ids: activeProfile.group_ids, ...scope }
+    const requestPayload = { start_date: dates.start, end_date: dates.end, start_time: times.start, end_time: times.end, top_n: 10, receipt_group_ids: scopedGroupIds, ...scope }
     const requestId = loadRequestRef.current + 1
     loadRequestRef.current = requestId
     loadAbortRef.current?.abort()
@@ -743,7 +763,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     end_time: times.end,
     format,
     packet_name: `${activeProfile.name} POS report`,
-    receipt_group_ids: activeProfile.group_ids,
+    receipt_group_ids: scopedGroupIds,
     top_n: 10,
     ...scope,
   })
@@ -753,7 +773,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     end_date: dates.end,
     start_time: times.start,
     end_time: times.end,
-    receipt_group_ids: activeProfile.group_ids,
+    receipt_group_ids: scopedGroupIds,
     top_n: 10,
     snapshot_id: snapshot?.print_snapshot_id || null,
     ...scope,
@@ -774,7 +794,8 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       ...scope,
     }
     for (const profile of profiles.filter((candidate) => candidate.built_in)) {
-      const payload = { ...basePayload, receipt_group_ids: profile.group_ids }
+      const profileGroupIds = profile.group_ids.filter((groupId) => scope.scope_dimension !== 'employee' || !employeeUnsupportedGroupIds.has(groupId))
+      const payload = { ...basePayload, receipt_group_ids: profileGroupIds }
       if (!snapshotCoversReceiptRequest(snapshot, payload)) continue
       const key = JSON.stringify({ ...payload, profile_name: profile.name })
       if (preloadedReceiptPreviews[key]) continue
@@ -789,7 +810,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       }).catch(() => undefined)
     }
     return () => { cancelled = true; controllers.forEach((controller) => controller.abort()) }
-  }, [restaurantId, snapshot?.print_snapshot_id, profiles])
+  }, [restaurantId, snapshot?.print_snapshot_id, profiles, scope.scope_dimension, employeeUnsupportedGroupIds])
 
   const downloadArtifact = async (format) => {
     setWorking(format); setStatus('')
@@ -829,7 +850,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     return result
   }
 
-  const selectedGroupCount = useMemo(() => (snapshot?.groups || []).filter((group) => activeProfile.group_ids.includes(group.id)).length, [snapshot, activeProfile])
+  const selectedGroupCount = useMemo(() => (snapshot?.groups || []).filter((group) => scopedGroupIds.includes(group.id)).length, [snapshot, scopedGroupIds])
 
   return (
     <div className="mx-auto w-full max-w-7xl overflow-x-hidden pb-12">
@@ -838,7 +859,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0"><h1 className="text-2xl font-semibold">POS reports</h1><p className="mt-1 text-xs text-dash-tertiary">Restaurant local time {dates.start} {times.start} through {dates.end} {times.end}</p></div>
             <div className="flex flex-wrap gap-2 lg:justify-end">
-              <IconButton label={scope.scope_dimension === 'none' ? 'Scope' : scope.scope_dimension === 'device' ? 'Devices' : 'Sections'} icon={Layers} onClick={() => setModal('scope')} />
+              <IconButton label={scope.scope_dimension === 'none' ? 'Scope' : scope.scope_dimension === 'device' ? 'Devices' : scope.scope_dimension === 'employee' ? 'Employees' : 'Sections'} icon={Layers} onClick={() => setModal('scope')} />
               <IconButton label="Settings" icon={Settings2} onClick={() => setModal('settings')} />
               <IconButton label="Refresh" icon={RefreshCw} onClick={() => { void load(true) }} disabled={loading} />
             </div>
@@ -855,7 +876,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <IconButton label="PDF" icon={FileText} onClick={() => downloadArtifact('pdf')} disabled={!snapshot || Boolean(working)} />
-            <IconButton label="CSV" icon={Download} onClick={() => downloadSnapshotCsv(snapshot, activeProfile.group_ids, activeProfile.name)} disabled={!snapshot || Boolean(working)} />
+            <IconButton label="CSV" icon={Download} onClick={() => downloadSnapshotCsv(snapshot, scopedGroupIds, activeProfile.name)} disabled={!snapshot || Boolean(working)} />
             <IconButton label="Excel" icon={FileSpreadsheet} onClick={() => downloadArtifact('xlsx')} disabled={!snapshot || Boolean(working)} />
             <IconButton label="Email" icon={Mail} onClick={() => setModal('email')} disabled={!snapshot || Boolean(working)} />
             <IconButton label="Print receipt" icon={Printer} onClick={() => setReceiptPrintOpen(true)} disabled={!snapshot || loading || Boolean(working)} />
@@ -870,7 +891,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       {snapshot && <div className="py-6 sm:py-8"><DigitalReceipt snapshot={snapshot} profile={activeProfile} /></div>}
 
       {modal === 'scope' && <ScopeModal value={scope} dimensions={dimensions} onClose={() => setModal(null)} onApply={(next) => { setScope(next); setModal(null) }} />}
-      {modal === 'settings' && <ProfileSettingsModal profiles={profiles} activeId={activeProfileId} catalog={catalog} defaults={defaults} canConfigureReceipt={canConfigureServerReceipt} onConfigureReceipt={() => { setModal(null); setServerReceiptOpen(true) }} onManageSchedules={() => setModal('schedules')} onClose={() => setModal(null)} onSave={savePreferences} />}
+      {modal === 'settings' && <ProfileSettingsModal profiles={profiles} activeId={activeProfileId} catalog={catalog} defaults={defaults} scopeDimension={scope.scope_dimension} canConfigureReceipt={canConfigureServerReceipt} onConfigureReceipt={() => { setModal(null); setServerReceiptOpen(true) }} onManageSchedules={() => setModal('schedules')} onClose={() => setModal(null)} onSave={savePreferences} />}
       {modal === 'email' && <EmailModal profileName={activeProfile.name} onClose={() => setModal(null)} onSend={emailReport} />}
       {modal === 'schedules' && <ScheduledReportsModal recipients={recipients} canManage={canManageRecipients} deliveryEnabled={emailDelivery.enabled} disabledReason={emailDelivery.reason} defaultTimezone={snapshot?.restaurant?.timezone} onClose={() => setModal(null)} onSave={saveRecipient} onDelete={deleteRecipient} onTest={testRecipient} />}
       {serverReceiptOpen && <ServerReceiptTemplateModal restaurantId={restaurantId} onClose={() => setServerReceiptOpen(false)} onSaved={() => setStatus('Server receipt layout saved restaurant-wide.')} />}

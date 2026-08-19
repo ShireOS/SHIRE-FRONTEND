@@ -32,8 +32,8 @@ test('cash tip declaration copy distinguishes optional skip from a zero declarat
 test('POS reports use a restaurant-local time window and shared output groups', () => {
   assert.match(reportsPage, /Restaurant local time/)
   assert.match(reportsPage, /\/manager\/report-hub\/snapshot/)
-  assert.match(reportsPage, /receipt_group_ids: activeProfile\.group_ids/)
-  assert.match(reportsPage, /downloadSnapshotCsv\(snapshot, activeProfile\.group_ids/)
+  assert.match(reportsPage, /receipt_group_ids: scopedGroupIds/)
+  assert.match(reportsPage, /downloadSnapshotCsv\(snapshot, scopedGroupIds/)
   assert.match(reportsPage, /type="datetime-local"/)
   assert.match(reportsPage, />Scheduled delivery</)
   assert.match(reportsPage, /\/reports\/recipients/)

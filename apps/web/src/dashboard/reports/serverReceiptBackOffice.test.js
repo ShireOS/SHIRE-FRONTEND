@@ -31,7 +31,7 @@ test('POS report profiles remain configurable before a snapshot loads', () => {
   }
   const longProfile = reportsPage.match(/\{ id: 'long'[^\n]+/)?.[0] || ''
   assert.doesNotMatch(longProfile, /service_mode_sales|media_tip_detail|cash_reconciliation|department_detail|transaction_log/)
-  assert.match(reportsPage, /receipt_group_ids: activeProfile\.group_ids/)
+  assert.match(reportsPage, /receipt_group_ids: scopedGroupIds/)
 })
 
 test('POS reports use a distinct analytics icon from the check ledger', () => {
@@ -45,6 +45,14 @@ test('POS report range includes persisted local times in preview and exports', (
   assert.match(reportsPage, /end_time: times\.end/)
   assert.match(reportsPage, /minuteTime\(saved\.start_time, '00:00'\)/)
   assert.match(reportsPage, /Restaurant local time/)
+})
+
+test('POS reports expose employee scope with honest section semantics', () => {
+  assert.match(reportsPage, /\['employee', 'Employees'\]/)
+  assert.match(reportsPage, /dimensions\.employees/)
+  assert.match(reportsPage, /Sales and menu activity follow checks assigned to each employee/)
+  assert.match(reportsPage, /Excluded from employee-scoped reports/)
+  assert.match(reportsPage, /snapshot\.scope\.values/)
 })
 
 test('POS report printing previews thermal output and follows physical delivery', () => {

@@ -22,5 +22,5 @@ test('receipt summary lines preserve backend labels, values, emphasis, and notes
 test('CSV uses only the active profile groups from the displayed snapshot', () => {
   assert.match(reportsPage, /const selected = new Set\(groupIds\)/)
   assert.match(reportsPage, /if \(!selected\.has\(group\.id\)\) continue/)
-  assert.match(reportsPage, /downloadSnapshotCsv\(snapshot, activeProfile\.group_ids/)
+  assert.match(reportsPage, /downloadSnapshotCsv\(snapshot, scopedGroupIds/)
 })
