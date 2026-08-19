@@ -33,13 +33,14 @@ const SECTION_META = [
   ['top_bottom_sellers', 'Top & bottom sellers'],
   ['average_check', 'Average check'],
   ['employee_reports', 'Employee reports'],
-  ['payroll_support', 'Payroll support'],
+  ['payroll_timecards', 'Payroll & timecards'],
+  ['tip_settlement', 'Tips & tip-outs'],
   ['punch_log', 'Punch log'],
   ['z_report', 'End-of-day Z report'],
   ['tax_summary', 'Tax'],
   ['daily_summary', 'Daily summary'],
 ]
-const SECTION_LABELS = Object.fromEntries(SECTION_META)
+const SECTION_LABELS = { ...Object.fromEntries(SECTION_META), payroll_support: 'Payroll support (legacy mixed)' }
 const ALL_SECTION_IDS = SECTION_META.map(([id]) => id)
 const resolvePreference = (preference) => effectivePreference(preference, ALL_SECTION_IDS)
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -118,6 +119,19 @@ function percent(value) {
 
 function duration(value) {
   return value == null ? '—' : `${number(value, 1)} min`
+}
+
+function minutesDuration(value) {
+  if (value == null || value === '') return 'Review'
+  const minutes = Math.max(0, Math.round(Number(value)))
+  if (!Number.isFinite(minutes)) return '—'
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`
+}
+
+function dateTimeLabel(value) {
+  if (!value) return 'Missing'
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString()
 }
 
 function downloadCsv(filename, rows) {
@@ -397,6 +411,7 @@ function EmailModal({ recipients, canManage, deliveryEnabled, disabledReason, de
             <p className="mb-2 text-xs font-semibold uppercase text-dash-tertiary">Sections</p>
             <div className="grid gap-2 sm:grid-cols-2">
               {SECTION_META.map(([id, label]) => <label key={id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.sections.includes(id)} onChange={() => setDraft({ ...draft, sections: draft.sections.includes(id) ? draft.sections.filter((section) => section !== id) : [...draft.sections, id] })} />{label}</label>)}
+              {draft.sections.includes('payroll_support') && <label className="flex items-center gap-2 text-sm text-amber-100"><input type="checkbox" checked onChange={() => setDraft({ ...draft, sections: draft.sections.filter((section) => section !== 'payroll_support') })} />Payroll support (legacy mixed; remove and select the separated reports above)</label>}
             </div>
           </div>
           <div>
@@ -792,7 +807,8 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     top_bottom_sellers: () => <TopBottom section={sections.top_bottom_sellers} filters={filters} setFilters={setFilters} />,
     average_check: () => <AverageCheck section={sections.average_check} comparisonEnabled={comparisonEnabled} />,
     employee_reports: () => <EmployeeReports section={sections.employee_reports} insights={insights} onInsight={generateInsight} />,
-    payroll_support: () => <Payroll section={sections.payroll_support} comparisonEnabled={comparisonEnabled} />,
+    payroll_timecards: () => <PayrollTimecards section={sections.payroll_timecards} />,
+    tip_settlement: () => <TipSettlement section={sections.tip_settlement} />,
     punch_log: () => <PunchLog section={sections.punch_log} />,
     z_report: () => <ZReport section={sections.z_report} />,
     tax_summary: () => <TaxSummary section={sections.tax_summary} comparisonEnabled={comparisonEnabled} />,
@@ -993,49 +1009,96 @@ function EmployeeReports({ section = {}, insights, onInsight }) {
   return <Section id="employee-reports" title="Employee reports" subtitle={section.quality?.upsell_metric} exportRows={rows}><div className="mb-4"><label className="text-sm text-dash-secondary">Sort by <select value={sort} onChange={(event) => setSort(event.target.value)} className="ml-2 h-9 rounded-md border border-white/10 bg-dash-surface px-2"><option value="revenue">Revenue</option><option value="ticket_count">Tickets</option><option value="average_check">Average check</option><option value="average_tip_percentage">Tip %</option><option value="quick_index">Quick index</option></select></label></div><Table columns={[{ key: 'staff_name', label: 'Employee' }, { key: 'role', label: 'Role' }, { key: 'revenue', label: 'Revenue', render: money }, { key: 'ticket_count', label: 'Tickets', render: number }, { key: 'average_check', label: 'Avg check', render: money }, { key: 'average_turn_minutes', label: 'Turn', render: duration }, { key: 'upsell_attachment_rate', label: 'Add-on %', render: percent }, { key: 'average_tip_percentage', label: 'Tip %', render: percent }, { key: 'quick_index', label: 'Quick index', render: (v) => number(v, 1) }, { key: 'staff_id', label: 'AI summary', render: (id) => <button type="button" onClick={() => onInsight(id)} disabled={insights[id]?.loading} className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2 py-1 text-xs font-semibold"><Sparkles className="h-3 w-3" />{insights[id]?.loading ? 'Working' : 'Generate'}</button> }]} rows={rows} />{Object.entries(insights).map(([id, insight]) => <StaffInsight key={id} employee={rows.find((row) => String(row.staff_id) === String(id))} insight={insight} />)}</Section>
 }
 
-function Payroll({ section = {}, comparisonEnabled }) {
+function PayrollTimecards({ section = {} }) {
   const totals = section.totals || {}
-  const comparison = comparisonEnabled ? section.comparison || {} : {}
-  const voluntaryTips = Number(totals.voluntary_tips ?? 0)
-  const unattributedVoluntaryTips = totals.unattributed_voluntary_tips == null ? null : Number(totals.unattributed_voluntary_tips)
-  const employeeGratuity = totals.employee_gratuity == null ? null : Number(totals.employee_gratuity)
-  const unattributedEmployeeGratuity = totals.unattributed_employee_gratuity == null ? null : Number(totals.unattributed_employee_gratuity)
-  const totalTipEarnings = totals.total_tip_earnings == null
-    ? (employeeGratuity == null ? null : voluntaryTips + employeeGratuity)
-    : Number(totals.total_tip_earnings)
-  const gratuityPayrollOwed = totals.gratuity_payroll_owed == null ? null : Number(totals.gratuity_payroll_owed)
-  const unclassifiedServiceCharges = Number(totals.unclassified_service_charges ?? 0)
+  const employees = section.employees || []
+  const entries = employees.flatMap((employee) => (employee.entries || []).map((entry) => ({
+    ...entry,
+    staff_name: employee.staff_name,
+    role: employee.role,
+  })))
+  const reviewItems = entries.filter((entry) => entry.status === 'review')
   return (
-    <Section id="payroll-support" title="Payroll support" subtitle={section.overtime_rule} exportRows={section.employees || []}>
-      <p className="mb-3 text-sm text-dash-secondary">Final allocated tips are reportable earnings and may include declared cash the employee already kept. They are not automatically a new payroll disbursement. “Gratuity owed through payroll” is the explicit unpaid gratuity liability.</p>
-      {(section.warnings || []).map((warning, index) => <p key={`${warning?.code || 'warning'}-${index}`} className="mb-3 rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{typeof warning === 'string' ? warning : warning.message || warning.code}</p>)}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <Stat label="Regular hours" value={number(totals.regular_hours, 1)} comparison={comparison.regular_hours} comparisonFormat={(value) => number(value, 1)} invertDelta />
-        <Stat label="Overtime" value={number(totals.overtime_hours, 1)} comparison={comparison.overtime_hours} comparisonFormat={(value) => number(value, 1)} invertDelta />
-        <Stat label="Wages owed" value={money(totals.wages_owed)} comparison={comparison.wages_owed} comparisonFormat={money} invertDelta />
-        <Stat label="Voluntary tips" value={money(voluntaryTips)} comparison={comparison.voluntary_tips} comparisonFormat={money} />
-        {unattributedVoluntaryTips !== null && unattributedVoluntaryTips !== 0 && <Stat label="Voluntary tips needing attribution" value={money(unattributedVoluntaryTips)} comparison={comparison.unattributed_voluntary_tips} comparisonFormat={money} />}
-        <Stat label="Employee gratuity" value={employeeGratuity == null ? 'Unavailable' : money(employeeGratuity)} comparison={comparison.employee_gratuity} comparisonFormat={money} />
-        {unattributedEmployeeGratuity !== null && unattributedEmployeeGratuity !== 0 && <Stat label="Employee gratuity needing attribution" value={money(unattributedEmployeeGratuity)} comparison={comparison.unattributed_employee_gratuity} comparisonFormat={money} />}
-        <Stat label="Total tip earnings" value={totalTipEarnings == null ? 'Unavailable' : money(totalTipEarnings)} comparison={comparison.total_tip_earnings} comparisonFormat={money} />
-        <Stat label="Gratuity owed through payroll" value={gratuityPayrollOwed == null ? 'Unavailable' : money(gratuityPayrollOwed)} comparison={comparison.gratuity_payroll_owed} comparisonFormat={money} />
-        {unclassifiedServiceCharges !== 0 && <Stat label="Unclassified legacy charges" value={money(unclassifiedServiceCharges)} comparison={comparison.unclassified_service_charges} comparisonFormat={money} />}
+    <Section id="payroll-timecards" title="Payroll & timecards" subtitle="Wages only. Tips and tip-outs are shown in their own report." exportRows={entries}>
+      <div className="mb-4 rounded-md border border-white/10 bg-white/[0.035] px-4 py-3 text-sm text-dash-secondary">
+        <p>{section.minute_rounding}</p>
+        <p className="mt-1">{section.overtime_rule}</p>
+        <p className="mt-1">{section.open_shift_policy}</p>
       </div>
-      <div className="mt-4">
-        <Table columns={[
-          { key: 'staff_name', label: 'Employee' },
-          { key: 'role', label: 'Role' },
-          { key: 'regular_hours', label: 'Regular', render: (value) => number(value, 1) },
-          { key: 'overtime_hours', label: 'OT', render: (value) => number(value, 1) },
-          { key: 'wages_owed', label: 'Wages', render: money },
-          { key: 'voluntary_tips', label: 'Voluntary tips', render: money },
-          { key: 'employee_gratuity', label: 'Employee gratuity', render: (value) => value == null ? 'Unavailable' : money(value) },
-          { key: 'total_tip_earnings', label: 'Total tip earnings', render: (value) => value == null ? 'Unavailable' : money(value) },
-          { key: 'gratuity_payroll_owed', label: 'Gratuity owed in payroll', render: (value) => value == null ? 'Unavailable' : money(value) },
-          { key: 'tips_earned', label: 'Final allocated tips', render: (value, row) => `${money(value)}${row.finalized === false || row.payout_source === 'live_estimate' ? ' estimate' : ''}` },
-          { key: 'tips_declared', label: 'Declared cash tips', render: (value) => value == null ? 'Not recorded' : money(value) },
-        ]} rows={section.employees || []} />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <Stat label="Regular hours" value={minutesDuration(totals.regular_minutes)} />
+        <Stat label="Overtime" value={minutesDuration(totals.overtime_minutes)} />
+        <Stat label="Total hours" value={minutesDuration(totals.total_minutes)} />
+        <Stat label="Gross wages" value={money(totals.gross_wages)} />
+        <Stat label="Review items" value={number(totals.review_items)} />
       </div>
+      {section.reconciled !== true && <p className="mt-4 rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">Displayed closed-shift minutes do not reconcile to the payroll totals. Review the flagged entries before export.</p>}
+      <div className="mt-6"><h3 className="mb-2 text-sm font-semibold">Employee payroll totals</h3><Table columns={[
+        { key: 'staff_name', label: 'Employee' },
+        { key: 'role', label: 'Role' },
+        { key: 'regular_minutes', label: 'Regular', render: minutesDuration },
+        { key: 'overtime_minutes', label: 'OT', render: minutesDuration },
+        { key: 'total_minutes', label: 'Total', render: minutesDuration },
+        { key: 'regular_wages', label: 'Regular wages', render: money },
+        { key: 'overtime_wages', label: 'OT wages', render: money },
+        { key: 'gross_wages', label: 'Gross wages', render: money },
+        { key: 'review_count', label: 'Review', render: number },
+      ]} rows={employees} /></div>
+      <div className="mt-6"><h3 className="mb-2 text-sm font-semibold">Every clock-in and clock-out</h3><Table columns={[
+        { key: 'staff_name', label: 'Employee' },
+        { key: 'business_date', label: 'Business date' },
+        { key: 'clock_in_at', label: 'Clock in', render: dateTimeLabel },
+        { key: 'clock_out_at', label: 'Clock out', render: dateTimeLabel },
+        { key: 'unpaid_break_minutes', label: 'Unpaid break', render: minutesDuration },
+        { key: 'worked_minutes', label: 'Worked', render: minutesDuration },
+        { key: 'status', label: 'Status', render: (value, row) => (row.review_codes || []).length ? `Review · ${row.review_codes.join(', ').replaceAll('_', ' ')}` : value },
+      ]} rows={entries} /></div>
+      {reviewItems.length > 0 && <div className="mt-6"><Disclosure title="Entries requiring review" count={reviewItems.length}><Table columns={[
+        { key: 'staff_name', label: 'Employee' },
+        { key: 'business_date', label: 'Business date' },
+        { key: 'review_codes', label: 'Reason', render: (value) => (value || []).join(', ').replaceAll('_', ' ') },
+        { key: 'edited_by_manager_name', label: 'Edited by' },
+        { key: 'edit_reason', label: 'Edit reason' },
+        { key: 'void_reason', label: 'Void reason' },
+      ]} rows={reviewItems} /></Disclosure></div>}
+    </Section>
+  )
+}
+
+function TipSettlement({ section = {} }) {
+  const totals = section.totals || {}
+  const settings = section.settings || {}
+  const warnings = section.warnings || []
+  return (
+    <Section id="tip-settlement" title="Tips & tip-outs" subtitle="Tip settlement only. These amounts are never included in the payroll wage total." exportRows={section.employees || []}>
+      <div className="mb-4 grid gap-3 rounded-md border border-white/10 bg-white/[0.035] p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div><p className="label-mono">Credit-tip payout</p><p className="mt-1 capitalize">{String(settings.credit_tip_payout_timing || 'payroll').replaceAll('_', ' ')}</p></div>
+        <div><p className="label-mono">Distribution</p><p className="mt-1 capitalize">{String(settings.tip_distribution_mode || 'individual').replaceAll('_', ' ')}</p></div>
+        <div><p className="label-mono">Pooling</p><p className="mt-1">{settings.tip_pooling_enabled ? `On · ${String(settings.tip_pool_reset || 'day').replaceAll('_', ' ')}` : 'Off'}</p></div>
+        <div><p className="label-mono">Cash declaration</p><p className="mt-1 capitalize">{String(settings.cash_tip_declaration_mode || 'declared_by_employee').replaceAll('_', ' ')}</p></div>
+      </div>
+      <p className="mb-4 text-sm text-dash-secondary">{section.settlement_note}</p>
+      {warnings.map((warning, index) => <p key={`${typeof warning === 'string' ? warning : warning?.code || 'warning'}-${index}`} className="mb-3 rounded-md border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{typeof warning === 'string' ? warning : warning?.message || warning?.code}</p>)}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat label="Voluntary tips" value={totals.voluntary_tips == null ? 'Unavailable' : money(totals.voluntary_tips)} />
+        <Stat label="Tip-outs paid" value={totals.tipout_paid == null ? 'Unavailable' : money(totals.tipout_paid)} />
+        <Stat label="Tip-outs received" value={totals.tipout_received == null ? 'Unavailable' : money(totals.tipout_received)} />
+        <Stat label="Tip-outs pending" value={totals.tipout_pending == null ? 'Unavailable' : money(totals.tipout_pending)} />
+        <Stat label="Employee gratuity" value={totals.employee_gratuity == null ? 'Unavailable' : money(totals.employee_gratuity)} />
+        <Stat label="Gratuity via payroll" value={totals.employee_gratuity_payroll_owed == null ? 'Unavailable' : money(totals.employee_gratuity_payroll_owed)} />
+        <Stat label="Final allocation / estimate" value={totals.allocated_tip_payout == null ? 'Unavailable' : money(totals.allocated_tip_payout)} />
+      </div>
+      <div className="mt-6"><Table columns={[
+        { key: 'staff_name', label: 'Employee' },
+        { key: 'role', label: 'Role' },
+        { key: 'voluntary_tips', label: 'Voluntary tips', render: (value) => value == null ? 'Unavailable' : money(value) },
+        { key: 'cash_tips_declared', label: 'Cash declared', render: (value) => value == null ? 'Not recorded' : money(value) },
+        { key: 'tipout_paid', label: 'Tip-out paid', render: (value) => value == null ? 'Unavailable' : money(value) },
+        { key: 'tipout_received', label: 'Tip-out received', render: (value) => value == null ? 'Unavailable' : money(value) },
+        { key: 'tipout_pending', label: 'Tip-out pending', render: (value) => value == null ? 'Unavailable' : money(value) },
+        { key: 'employee_gratuity_payroll_owed', label: 'Gratuity via payroll', render: (value) => value == null ? 'Unavailable' : money(value) },
+        { key: 'allocated_tip_payout', label: 'Final allocation / estimate', render: (value, row) => value == null ? 'Unavailable' : `${money(value)}${row.allocation_is_estimate ? ' estimate' : ''}` },
+      ]} rows={section.employees || []} /></div>
     </Section>
   )
 }

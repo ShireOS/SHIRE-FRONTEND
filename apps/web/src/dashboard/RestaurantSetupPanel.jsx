@@ -1028,10 +1028,10 @@ function TipInvariantNote() {
     <div className="flex items-start gap-2 rounded-xl border border-dash-gold/30 bg-dash-gold/[0.06] px-4 py-3 text-xs text-dash-secondary">
       <span className="text-dash-gold">◱</span>
       <p>
-        <span className="font-semibold text-dash-gold">Tipouts always come out of tips.</span>{' '}
-        Whether tips are pooled or kept individually, a tipout is pulled from the paying role’s tips before pay is
-        totaled. The <span className="font-semibold">%</span> sets how much leaves; <span className="font-semibold">Split received</span> on
-        the getting role sets how it’s divided among them.
+        <span className="font-semibold text-dash-gold">Tipouts are employee obligations.</span>{' '}
+        A tip-based rule cannot exceed recorded tips. A sales-based rule is fully owed even when recorded tips are
+        lower. The <span className="font-semibold">%</span> sets how much leaves; <span className="font-semibold">Split received</span> on
+        the receiving role sets how it is divided among them.
       </p>
     </div>
   )
@@ -1221,11 +1221,11 @@ export function TipRulesFields({
                     <div className="rounded-lg border border-dash-gold/25 bg-dash-gold/[0.05] px-3 py-2 text-xs text-dash-secondary">
                       {tipsPct > 0 ? (
                         <>Reserves <span className="font-semibold text-dash-gold">{+tipsPct.toFixed(2)}%</span> of tips
-                          {salesPct > 0 ? <> plus <span className="font-semibold text-dash-gold">{+salesPct.toFixed(2)}% of net sales</span> (pulled from tips)</> : null}
-                          {' · '}{roleLabel} keeps {salesPct > 0 ? <span className="font-semibold text-dash-cream">the remaining tips</span> : <span className="font-semibold text-dash-cream">{+(100 - tipsPct).toFixed(2)}%</span>}
+                          {salesPct > 0 ? <> plus a full <span className="font-semibold text-dash-gold">{+salesPct.toFixed(2)}% of net sales</span> obligation</> : null}
+                          {' · '}{roleLabel} keeps what remains after those obligations
                         </>
                       ) : (
-                        <><span className="font-semibold text-dash-gold">{+salesPct.toFixed(2)}% of net sales</span> is pulled from {roleLabel}’s tips · they keep the rest of their tips</>
+                        <>{roleLabel} owes <span className="font-semibold text-dash-gold">{+salesPct.toFixed(2)}% of net sales</span>, even when recorded tips are lower</>
                       )}
                       {contributesToPool ? <> — then the remainder goes into the pool</> : null}
                     </div>

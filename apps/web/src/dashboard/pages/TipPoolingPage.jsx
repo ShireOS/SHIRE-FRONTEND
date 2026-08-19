@@ -18,6 +18,7 @@ import EmailPayrollModal from '../components/payroll/EmailPayrollModal'
 import IntervalControls from '../components/payroll/IntervalControls'
 import TipRulesEditor from '../components/payroll/TipRulesEditor'
 import { buildPayrollRows, payrollTotals, exportPayrollCsv, exportPayrollPdf } from './payrollExport'
+import { employeeGratuityView, mergeEmployeeGratuityPreviews } from './employeeGratuity'
 import { addDays, closedPayrollInterval, dateKeyOf, intervalDays, intervalLabel, isSingleDay, isoWindow } from '../utils/payrollIntervals'
 
 const MODE_LABELS = {
@@ -69,6 +70,13 @@ function yesterdayISO() {
   return d.toISOString().slice(0, 10)
 }
 
+function localDateISO(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function isRangeUnsupported(err) {
   return err?.status === 400 || err?.status === 422 || /window_start|window_end|business_date|validation/i.test(err?.message || '')
 }
@@ -111,44 +119,6 @@ function numericRate(value) {
   return Number.isFinite(num) ? num : null
 }
 
-function mergePreviewPayouts(previews, interval) {
-  const byPerson = new Map()
-  const totals = {}
-  previews.filter(Boolean).forEach((preview) => {
-    Object.entries(preview.totals || {}).forEach(([key, value]) => {
-      totals[key] = (totals[key] || 0) + Number(value || 0)
-    })
-    ;(preview.payouts || []).forEach((payout) => {
-      const key = `${payout.staff_id || payout.staff_name || 'staff'}:${payout.role_key || ''}`
-      const row = byPerson.get(key) || {
-        ...payout,
-        id: null,
-        hours_worked: 0,
-        tips_collected: 0,
-        pool_share: 0,
-        tipout_paid: 0,
-        tipout_received: 0,
-        adjustment: 0,
-        final_amount: 0,
-        sales_total: 0,
-      }
-      ;['hours_worked', 'tips_collected', 'pool_share', 'tipout_paid', 'tipout_received', 'adjustment', 'final_amount', 'sales_total'].forEach((field) => {
-        row[field] = Number(row[field] || 0) + Number(payout[field] || 0)
-      })
-      byPerson.set(key, row)
-    })
-  })
-  return {
-    mode: previews.find(Boolean)?.mode || 'individual',
-    distribution_mode: previews.find(Boolean)?.distribution_mode || previews.find(Boolean)?.mode || 'individual',
-    totals,
-    payouts: [...byPerson.values()],
-    window_start: `${interval.start}T00:00:00`,
-    window_end: `${interval.end}T23:59:59`,
-    range_fallback: true,
-  }
-}
-
 async function fetchPreviewForInterval(restaurantId, interval) {
   if (isSingleDay(interval)) {
     return fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tip-pools/preview?business_date=${interval.start}`)
@@ -163,7 +133,7 @@ async function fetchPreviewForInterval(restaurantId, interval) {
     )
     const successful = previews.filter(Boolean)
     if (!successful.length) throw err
-    return mergePreviewPayouts(successful, interval)
+    return mergeEmployeeGratuityPreviews(successful, interval)
   }
 }
 
@@ -183,7 +153,7 @@ function PayRunTable({ payouts, rateFor, editable, onAdjust }) {
   const totals = payrollTotals(rows)
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[860px] text-sm">
+      <table className="w-full min-w-[980px] text-sm">
         <thead>
           <tr className="border-b border-dash-border text-right font-mono text-[10px] uppercase tracking-[0.08em] text-dash-tertiary">
             <th className="py-2 pr-3 text-left">Employee</th>
@@ -194,7 +164,8 @@ function PayRunTable({ payouts, rateFor, editable, onAdjust }) {
             <th className="py-2 pr-3">Pool</th>
             <th className="py-2 pr-3">Tipout −/+</th>
             <th className="py-2 pr-3">Adjust</th>
-            <th className="py-2 pr-3">Tips net</th>
+            <th className="py-2 pr-3">Vol. tips net</th>
+            <th className="py-2 pr-3">Grat. payroll</th>
             <th className="py-2 text-right">Gross pay</th>
           </tr>
         </thead>
@@ -236,7 +207,8 @@ function PayRunTable({ payouts, rateFor, editable, onAdjust }) {
                     <span className="text-dash-secondary">{r.adjustment !== 0 ? money(r.adjustment) : '—'}</span>
                   )}
                 </td>
-                <td className="py-2 pr-3 tabular-nums">{money(r.tips_net)}</td>
+                <td className="py-2 pr-3 tabular-nums">{money(r.voluntary_tips_net)}</td>
+                <td className="py-2 pr-3 font-medium tabular-nums text-dash-gold">{money(r.gratuity_payroll_due)}</td>
                 <td className="py-2 text-right font-semibold tabular-nums">{money(r.gross_pay)}</td>
               </tr>
             )
@@ -252,7 +224,8 @@ function PayRunTable({ payouts, rateFor, editable, onAdjust }) {
             <td className="py-2.5 pr-3 tabular-nums">{money(totals.pool_share)}</td>
             <td className="py-2.5 pr-3" />
             <td className="py-2.5 pr-3" />
-            <td className="py-2.5 pr-3 tabular-nums">{money(totals.tips_net)}</td>
+            <td className="py-2.5 pr-3 tabular-nums">{money(totals.voluntary_tips_net)}</td>
+            <td className="py-2.5 pr-3 tabular-nums text-dash-gold">{money(totals.gratuity_payroll_due)}</td>
             <td className="py-2.5 text-right tabular-nums">{money(totals.gross_pay)}</td>
           </tr>
         </tfoot>
@@ -318,6 +291,103 @@ function StatCard({ label, value, sub, muted }) {
       <p className={`mt-2 text-2xl font-semibold tabular-nums ${muted ? 'text-dash-secondary' : 'text-dash-cream'}`}>{value}</p>
       {sub ? <p className="mt-1 text-xs text-dash-secondary">{sub}</p> : null}
     </div>
+  )
+}
+
+function EmployeeGratuityPanel({ preview, businessDate, loading, error, onBusinessDateChange, onRetry }) {
+  const view = employeeGratuityView(preview)
+  return (
+    <section className="rounded-2xl border border-dash-gold/40 bg-dash-panel p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="label-mono text-dash-gold">Employee gratuity</p>
+          <h2 className="mt-1 text-lg font-semibold text-dash-cream">Earned, settled, and still due</h2>
+          <p className="mt-1 max-w-3xl text-sm text-dash-secondary">
+            One daily view for every employee. Employee-owned gratuity currently stays with the employee who earned it and is excluded from pooling and tip-outs.
+          </p>
+        </div>
+        <label className="flex items-center gap-2 text-xs text-dash-secondary">
+          Business date
+          <input
+            type="date"
+            value={businessDate}
+            onChange={event => onBusinessDateChange(event.target.value)}
+            className="rounded-lg border border-dash-border bg-dash-bg px-3 py-2 text-sm text-dash-cream"
+          />
+        </label>
+      </div>
+
+      {loading && !preview ? <p className="mt-5 text-sm text-dash-secondary">Calculating employee gratuity…</p> : null}
+      {error && !preview ? (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
+          <span>{error}</span>
+          <button type="button" onClick={onRetry} className="rounded-lg border border-red-300/40 px-3 py-1.5">Retry</button>
+        </div>
+      ) : null}
+
+      {preview ? (
+        <>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <StatCard label="Gratuity earned" value={money(view.earned)} sub="Employee-owned total" />
+            <StatCard label="Cash already kept" value={money(view.cashKept)} sub="Already in employees’ hands" />
+            <StatCard label="Noncash gratuity" value={money(view.nonCash)} sub="Card and other noncash funding" />
+            <StatCard label="Payroll still due" value={money(view.payrollDue)} sub="Include in employee payout" />
+            <StatCard label="Tip-out from gratuity" value={money(view.gratuityTipout)} sub="Excluded by current policy" muted />
+          </div>
+
+          {view.unattributed > 0 ? (
+            <p className="mt-4 rounded-xl border border-amber-400/40 bg-amber-400/10 p-3 text-sm text-amber-100">
+              {money(view.unattributed)} is employee-owned but has no employee attached. A manager must attribute it before payroll.
+            </p>
+          ) : null}
+
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[820px] text-sm">
+              <thead>
+                <tr className="border-b border-dash-border text-right font-mono text-[10px] uppercase tracking-[0.08em] text-dash-tertiary">
+                  <th className="py-2 pr-3 text-left">Employee</th>
+                  <th className="py-2 pr-3">Earned</th>
+                  <th className="py-2 pr-3">Cash kept</th>
+                  <th className="py-2 pr-3">Noncash</th>
+                  <th className="py-2 pr-3">Already settled</th>
+                  <th className="py-2 pr-3">Grat. tip-out</th>
+                  <th className="py-2 text-right">Payroll due</th>
+                </tr>
+              </thead>
+              <tbody>
+                {view.rows.length ? view.rows.map((row, index) => (
+                  <tr key={`${row.staff_id || row.staff_name}-${row.role_key}-${index}`} className="border-b border-dash-border/50 text-right text-dash-cream">
+                    <td className="py-2.5 pr-3 text-left">
+                      <div className="font-medium">{row.staff_name}</div>
+                      <div className="font-mono text-[10px] uppercase tracking-[0.05em] text-dash-tertiary">{row.role_key || 'unassigned'}</div>
+                    </td>
+                    <td className="py-2.5 pr-3 tabular-nums">{money(row.earned)}</td>
+                    <td className="py-2.5 pr-3 text-dash-secondary tabular-nums">{money(row.cashKept)}</td>
+                    <td className="py-2.5 pr-3 text-dash-secondary tabular-nums">{money(row.nonCash)}</td>
+                    <td className="py-2.5 pr-3 text-dash-secondary tabular-nums">{money(row.settled)}</td>
+                    <td className="py-2.5 pr-3 text-dash-secondary"><span className="tabular-nums">{money(row.gratuityTipout)}</span><span className="ml-1 text-[10px] uppercase">excluded</span></td>
+                    <td className="py-2.5 text-right font-semibold tabular-nums">{money(row.payrollDue)}</td>
+                  </tr>
+                )) : (
+                  <tr><td colSpan="7" className="py-5 text-center text-dash-secondary">No clocked employees or employee gratuity for this business date.</td></tr>
+                )}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-dash-border text-right font-semibold text-dash-cream">
+                  <td className="py-2.5 pr-3 text-left font-mono text-[10px] uppercase tracking-[0.08em] text-dash-secondary">Restaurant total</td>
+                  <td className="py-2.5 pr-3 tabular-nums">{money(view.earned)}</td>
+                  <td className="py-2.5 pr-3 tabular-nums">{money(view.cashKept)}</td>
+                  <td className="py-2.5 pr-3 tabular-nums">{money(view.nonCash)}</td>
+                  <td className="py-2.5 pr-3 tabular-nums">{money(view.settled)}</td>
+                  <td className="py-2.5 pr-3 tabular-nums">{money(view.gratuityTipout)}</td>
+                  <td className="py-2.5 text-right tabular-nums">{money(view.payrollDue)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </>
+      ) : null}
+    </section>
   )
 }
 
@@ -448,6 +518,11 @@ export default function TipPoolingPage({ restaurantId }) {
   const [closeoutRecipients, setCloseoutRecipients] = useState([])
   const [overview, setOverview] = useState(null)
   const [overviewLoading, setOverviewLoading] = useState(false)
+  const [gratuityDate, setGratuityDate] = useState(() => localDateISO())
+  const [gratuityPreview, setGratuityPreview] = useState(null)
+  const [gratuityLoading, setGratuityLoading] = useState(false)
+  const [gratuityError, setGratuityError] = useState('')
+  const [gratuityRetry, setGratuityRetry] = useState(0)
   const [loading, setLoading] = useState(true)
   const [configLoading, setConfigLoading] = useState(true)
   const [configReady, setConfigReady] = useState(false)
@@ -564,6 +639,9 @@ export default function TipPoolingPage({ restaurantId }) {
     setSelectedRun(null)
     setPreview(null)
     setOverview(null)
+    setGratuityDate(localDateISO())
+    setGratuityPreview(null)
+    setGratuityError('')
     setWaiters([])
     setMenuItems([])
     setTipoutExceptionData(null)
@@ -577,6 +655,25 @@ export default function TipPoolingPage({ restaurantId }) {
     if (!shouldShowTipoutExceptions(activeSubTab)) return
     void loadTipoutExceptions()
   }, [activeSubTab, restaurantId])
+
+  useEffect(() => {
+    if (activeSubTab !== 'overview' || configLoading || !gratuityDate) return undefined
+    let cancelled = false
+    setGratuityLoading(true)
+    setGratuityError('')
+    setGratuityPreview(null)
+    fetchPreviewForInterval(restaurantId, { start: gratuityDate, end: gratuityDate })
+      .then((data) => {
+        if (!cancelled) setGratuityPreview(data)
+      })
+      .catch((err) => {
+        if (!cancelled) setGratuityError(err?.message || 'Could not calculate employee gratuity for this business date')
+      })
+      .finally(() => {
+        if (!cancelled) setGratuityLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [activeSubTab, configLoading, gratuityDate, gratuityRetry, restaurantId])
 
   // Build the weekly labor-cost aggregate by fetching detail for recent runs.
   const loadOverview = async (runList, codes) => {
@@ -922,6 +1019,14 @@ export default function TipPoolingPage({ restaurantId }) {
       {/* ---------- OVERVIEW ---------- */}
       {activeSubTab === 'overview' ? (
         <div className="space-y-4">
+          <EmployeeGratuityPanel
+            preview={gratuityPreview}
+            businessDate={gratuityDate}
+            loading={gratuityLoading}
+            error={gratuityError}
+            onBusinessDateChange={setGratuityDate}
+            onRetry={() => setGratuityRetry(value => value + 1)}
+          />
           {runsUnavailable ? (
             <BackendNotice />
           ) : loading ? (
@@ -1045,6 +1150,7 @@ export default function TipPoolingPage({ restaurantId }) {
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <p className="label-mono text-dash-tertiary">
                   Preview · {intervalLabel(runInterval)} · {MODE_LABELS[preview.mode] || preview.mode} · {money(preview.totals?.total_tips)} tips
+                  {Number(preview.totals?.total_employee_gratuity) > 0 ? ` · ${money(preview.totals.total_employee_gratuity)} employee gratuity` : ''}
                   {Number(preview.totals?.total_card_fees_withheld) > 0 ? ` · ${money(preview.totals.total_card_fees_withheld)} card fees withheld` : ''}
                 </p>
                 <span className="text-xs text-dash-tertiary">Not saved — create a draft to finalize and export.</span>

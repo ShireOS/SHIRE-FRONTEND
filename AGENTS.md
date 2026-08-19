@@ -100,6 +100,11 @@ list must stay in sync.
   compatibility proxy only.
 - Tip reads use `payroll.view`; settings/payout edits use
   `payroll.adjust_tips`; run create/finalize/void uses `payroll.run`.
+- Payroll & Tips -> Overview uses `payroll.view` for its daily employee-gratuity
+  ledger. It keeps earned gratuity, cash already kept, noncash funding, payroll
+  still due, and unattributed amounts separate for the restaurant and every
+  returned employee. Employee gratuity remains excluded from pooling and
+  tip-outs until the POS-owned engine implements an explicit audited policy.
 - Receiving-role tipouts default to an even split. Optional Monday-Sunday
   exceptions are saved in `weekday_tipout_overrides`: missing days inherit the
   restaurant default, while a day may disable tipouts or replace only its
