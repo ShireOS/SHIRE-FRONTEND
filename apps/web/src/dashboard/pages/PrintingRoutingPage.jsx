@@ -516,7 +516,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <h2 className="text-lg font-semibold">Receipt presentation</h2>
-                <p className="mt-1 text-sm text-dash-tertiary">Medium is the readable default. Compact fits more per line; Large increases line height.</p>
+                <p className="mt-1 text-sm text-dash-tertiary">Medium is the readable receipt default with comfortable spacing and modest total emphasis. Compact fits more per line; Large increases line height.</p>
                 <div className="mt-4"><Select label="Text size" value={config.customer?.size || 'medium'} onChange={value => patchCustomer({ size: value })}><option value="compact">Compact</option><option value="medium">Medium</option><option value="large">Large</option></Select></div>
               </div>
 
