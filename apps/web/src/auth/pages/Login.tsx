@@ -19,9 +19,12 @@ export function LoginPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const sessionEnded = searchParams.get('reason') === 'session-ended'
+  const requestedNext = searchParams.get('next')
+  const invitedEmail = searchParams.get('email') || ''
+  const safeNext = requestedNext?.startsWith('/') && !requestedNext.startsWith('//') ? requestedNext : '/'
 
   const [mode, setMode] = useState<'manager' | 'employee'>('manager')
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(invitedEmail)
   const [password, setPassword] = useState('')
   const [restaurants, setRestaurants] = useState<EmployeeRestaurant[]>([])
   const [restaurantSearch, setRestaurantSearch] = useState('')
@@ -125,7 +128,7 @@ export function LoginPage() {
       return
     }
 
-    navigate('/', { replace: true })
+    navigate(safeNext, { replace: true })
   }
 
   const handleGoogleSignIn = async () => {

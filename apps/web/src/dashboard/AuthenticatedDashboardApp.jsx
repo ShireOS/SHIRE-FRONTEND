@@ -24,7 +24,6 @@ import DashboardShell from './shell/DashboardShell'
 import StoresPage from './pages/StoresPage'
 import RatesPage from './pages/RatesPage'
 import UsersPage from './pages/UsersPage'
-import ResellerAccessCard from './pages/ResellerAccessCard'
 import OverviewPage from './pages/OverviewPage'
 import { normalizeReportingScope, WHOLE_RESTAURANT_SCOPE } from './components/homepageWidgetMath'
 import SettingsPage from './pages/SettingsPage'
@@ -72,6 +71,11 @@ function OwnerGate() {
 
   if (!auth.isAuthenticated) {
     return <Navigate to="/auth/login" replace />
+  }
+
+  const pendingAccessInvite = localStorage.getItem('shire_pending_access_invite_token')
+  if (pendingAccessInvite) {
+    return <Navigate to={`/invite?token=${encodeURIComponent(pendingAccessInvite)}`} replace />
   }
 
   // A claim link survives the signup/login round-trip via localStorage.
@@ -5251,7 +5255,6 @@ export function RestaurantWorkspace({
       >
         {activeTab === 'analytics' && (
           <>
-            <ResellerAccessCard restaurant={restaurant} />
             <AnalyticsDashboard restaurant={restaurant} />
           </>
         )}
@@ -5311,7 +5314,7 @@ export function RestaurantWorkspace({
         {activeTab === 'feedback' && <GuestFeedbackPanel restaurantId={restaurantId} />}
         {activeTab === 'team' && (
           <ConfigurationHub tabs={[
-            { id: 'members', label: 'Members & Roles' },
+            { id: 'members', label: 'Team & Access' },
             ...(backOfficeAccess.can('settings.edit') ? [{ id: 'manager-controls', label: 'Manager Controls' }] : []),
           ]} initialTab="members">
             {(section) => section === 'members' ? <TeamPage restaurantId={restaurantId} /> : <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['manager_controls']} showHeader={false} />}

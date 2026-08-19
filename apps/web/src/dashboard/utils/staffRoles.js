@@ -47,6 +47,20 @@ export function canManageStaffMember(authorityLevel, waiter, jobCodes = []) {
   })
 }
 
+export function manageableTeamAccountTypes(
+  authorityLevel,
+  { isDirectReseller = false, canManageMembers = false } = {},
+) {
+  const types = ['employee']
+  if (staffAuthorityRank(authorityLevel) >= staffAuthorityRank('manager')) {
+    types.push('manager')
+  }
+  if (staffAuthorityRank(authorityLevel) >= staffAuthorityRank('owner') || (isDirectReseller && canManageMembers)) {
+    types.push('owner', 'reseller')
+  }
+  return types
+}
+
 export function staffRoleLabel(jobCode) {
   const code = roleCodeFromJobCode(jobCode)
   if (code === 'server') return 'Server'

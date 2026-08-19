@@ -9,13 +9,27 @@ const POS_OWNED_RESTAURANT_ROUTE =
 
 export async function fetchWithSupabaseAuth<T = any>(
   endpoint: string,
-  options: RequestInit & { timeoutMs?: number } = {},
+  options: RequestInit & { timeoutMs?: number; auth?: boolean } = {},
 ): Promise<T> {
   const posRoute = endpoint.match(POS_OWNED_RESTAURANT_ROUTE)
   if (posRoute) {
     return fetchPosApi<T>(decodeURIComponent(posRoute[1]), endpoint, options)
   }
-  const { timeoutMs, ...init } = options
+  const { timeoutMs, auth = true, ...init } = options
+  if (!auth) {
+    const response = await withOptionalRequestDeadline(
+      (requestSignal) => fetch(`${API_CONFIG.baseUrl}${endpoint}`, { ...init, signal: requestSignal }),
+      { signal: init.signal, timeoutMs, message: 'The request took too long. Try again.' },
+    )
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      const detail = body.detail || body.message
+      const error = new Error(typeof detail === 'string' ? detail : `Request failed (${response.status})`) as Error & { status?: number }
+      error.status = response.status
+      throw error
+    }
+    return response.json() as Promise<T>
+  }
   const response = await withOptionalRequestDeadline(
     (requestSignal) => requestWithPosSession({
       auth: supabase.auth,

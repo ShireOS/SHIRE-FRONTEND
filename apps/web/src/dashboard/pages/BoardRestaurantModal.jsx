@@ -3,6 +3,7 @@ import { Check, Copy, Link2, Mail, X } from 'lucide-react'
 import { useAuth } from '../../auth'
 import { PRICING_MODES, TENDER_OPTIONS, DEFAULT_RATE_PLAN } from '../data/ratePlans'
 import { createQuickInvite, createDraftInvite, claimUrl } from '../data/boarding'
+import { backOfficeApi } from '../../shared/api/backOfficeApi'
 
 const PAYOUT_SCHEDULES = ['daily', 'weekly', 'biweekly', 'monthly']
 
@@ -188,9 +189,11 @@ function InviteResult({ invite, email, onDone }) {
 
   return (
     <div className="space-y-4 text-center">
-      <p className="text-sm font-semibold text-dash-cream">Invite ready</p>
+      <p className="text-sm font-semibold text-dash-cream">{invite.email_sent ? 'Invite sent' : 'Invite ready'}</p>
       <p className="text-xs text-dash-secondary">
-        Send this claim link to {email || 'the owner'} — it expires in 30 days.
+        {invite.email_sent
+          ? `An email was sent to ${email}. The claim link expires in 30 days.`
+          : `Send this claim link to ${email || 'the owner'} — it expires in 30 days.`}
       </p>
       <div className="flex items-center gap-2">
         <input
@@ -267,7 +270,10 @@ export default function BoardRestaurantModal({ onClose, onBoarded }) {
           restaurantName: draft.name.trim() || null,
           ratePlan: { ...plan, payout_schedule: draft.payout_schedule },
         })
-        setResult(invite)
+        const delivery = email.trim()
+          ? await backOfficeApi.sendStoreInvite(invite.id).catch(() => ({ email_sent: false }))
+          : { email_sent: false }
+        setResult({ ...invite, ...delivery })
       } else {
         const { invite } = await createDraftInvite({
           userId: auth.user.id,
@@ -279,7 +285,10 @@ export default function BoardRestaurantModal({ onClose, onBoarded }) {
           },
           ratePlan: plan,
         })
-        setResult(invite)
+        const delivery = email.trim()
+          ? await backOfficeApi.sendStoreInvite(invite.id).catch(() => ({ email_sent: false }))
+          : { email_sent: false }
+        setResult({ ...invite, ...delivery })
         onBoarded?.()
       }
     } catch (submitError) {

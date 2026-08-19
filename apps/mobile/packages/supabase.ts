@@ -451,21 +451,20 @@ export async function getUserRole(userId?: string): Promise<userRole> {
   );
 
   const accountType = profileRows[0]?.account_type;
-  if (accountType === 'owner' || accountType === 'reseller' || accountType === 'reseller_employee' || accountType === 'admin') {
+  if (accountType === 'reseller' || accountType === 'reseller_employee' || accountType === 'admin') {
     return accountType;
   }
 
-  if (roleRows[0]?.restaraunt_role) {
-    return roleRows[0].restaraunt_role as userRole;
+  const membership = memberships?.[0];
+  if (membership) {
+    const membershipRole = membership.role?.toLowerCase();
+    if (membershipRole === 'owner' || membershipRole === 'admin' || membershipRole === 'manager') return 'owner';
+    if (membershipRole === 'developer') return 'developer';
+    return 'employee';
   }
 
-  const membership = memberships?.[0];
-  if (!membership) return null;
-
-  const membershipRole = membership.role?.toLowerCase();
-  if (membershipRole === 'owner' || membershipRole === 'admin' || membershipRole === 'manager') return 'owner';
-  if (membershipRole === 'developer') return 'developer';
-  return 'employee';
+  if (roleRows[0]?.restaraunt_role) return roleRows[0].restaraunt_role as userRole;
+  return accountType === 'owner' ? 'owner' : null;
 }
 
 export async function getOwnerRestaurant(): Promise<OwnerRestaurant | null> {
@@ -696,17 +695,16 @@ export async function fetchResellerEmployees(resellerId: string): Promise<Resell
 
 export async function createResellerEmployee(input: {
   name: string;
-  email?: string;
+  email: string;
   username?: string;
-  password: string;
   restaurant_ids: string[];
   group_ids: string[];
   permissions: Record<string, boolean>;
-}): Promise<ResellerEmployee> {
+}): Promise<{ email_sent: boolean; accept_url?: string }> {
   const session = await getSessionSnapshot('Creating reseller employee');
   if (!session) throw new Error('Not signed in.');
 
-  const response = await fetch(`${getMobileApiBaseUrl()}/reseller/employees`, {
+  const response = await fetch(`${getMobileApiBaseUrl()}/reseller/employee-invites`, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
@@ -717,14 +715,9 @@ export async function createResellerEmployee(input: {
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(typeof body.detail === 'string' ? body.detail : `Could not create reseller employee (${response.status})`);
+    throw new Error(typeof body.detail === 'string' ? body.detail : `Could not invite reseller employee (${response.status})`);
   }
-  return {
-    ...body,
-    permissions: { ...DEFAULT_RESELLER_PERMISSIONS, ...(body.permissions || {}) },
-    restaurant_ids: body.restaurant_ids || input.restaurant_ids || [],
-    group_ids: body.group_ids || input.group_ids || [],
-  } as ResellerEmployee;
+  return body;
 }
 
 export async function createResellerGroup(input: { name: string; color: string }): Promise<ResellerGroup> {
@@ -769,5 +762,3 @@ export async function moveRestaurantsToResellerGroup(restaurantIds: string[], gr
     .upsert(rows, { onConflict: 'reseller_id,restaurant_id' });
   if (error) throw error;
 }
-
-

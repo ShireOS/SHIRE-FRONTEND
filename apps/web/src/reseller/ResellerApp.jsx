@@ -8,13 +8,16 @@ import {
   ListFilter,
   LogOut,
   MoveRight,
+  RefreshCw,
   Settings,
   Square,
   Store,
+  Trash2,
   Users,
 } from 'lucide-react'
 import { useAuth } from '../auth'
 import { fetchWithSupabaseAuth } from '../shared/query'
+import { backOfficeApi } from '../shared/api/backOfficeApi'
 import { supabase } from '../shared/lib/supabase'
 import ModernRestaurantSetupPanel, {
   buildSetupWarnings,
@@ -547,11 +550,11 @@ function ResellerProfileEditor({ onboarding = false }) {
   const [profile, setProfile] = useState(() => normalizeResellerProfile(null))
   const [savedProfile, setSavedProfile] = useState(() => normalizeResellerProfile(null))
   const [employees, setEmployees] = useState([])
+  const [pendingInvites, setPendingInvites] = useState([])
   const [employeeDraft, setEmployeeDraft] = useState(() => ({
     name: '',
     email: '',
     username: '',
-    password: '11111111',
     restaurant_ids: [],
     group_ids: [],
     permissions: { ...DEFAULT_RESELLER_PERMISSIONS },
@@ -569,13 +572,15 @@ function ResellerProfileEditor({ onboarding = false }) {
     setLoading(true)
     setError('')
     try {
-      const [profileRow, employeeRows] = await Promise.all([
+      const [profileRow, employeeRows, inviteRows] = await Promise.all([
         fetchResellerProfile(resellerId),
         canManage ? fetchResellerEmployees(resellerId) : Promise.resolve([]),
+        canManage ? fetchWithSupabaseAuth('/reseller/employee-invites') : Promise.resolve([]),
       ])
       setProfile(profileRow)
       setSavedProfile(profileRow)
       setEmployees(employeeRows)
+      setPendingInvites(inviteRows)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load reseller profile.')
     } finally {
@@ -690,27 +695,60 @@ function ResellerProfileEditor({ onboarding = false }) {
       setError('Employee name is required.')
       return
     }
-    if (employeeDraft.password.length < 8) {
-      setError('Employee password must be at least 8 characters.')
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(employeeDraft.email.trim())) {
+      setError('A valid employee email is required.')
       return
     }
     setSaving(true)
     setError('')
     try {
-      await createResellerEmployee(employeeDraft)
+      const response = await createResellerEmployee(employeeDraft)
+      setPendingInvites((current) => [response.invitation, ...current.filter((item) => item.email !== response.invitation.email)])
       setEmployeeDraft({
         name: '',
         email: '',
         username: '',
-        password: '11111111',
         restaurant_ids: [],
         group_ids: [],
         permissions: { ...DEFAULT_RESELLER_PERMISSIONS },
       })
-      await load()
-      setMessage('Reseller employee added.')
+      if (!response.email_sent && response.accept_url) {
+        await navigator.clipboard.writeText(response.accept_url).catch(() => undefined)
+      }
+      setMessage(response.email_sent
+        ? `Invitation sent to ${employeeDraft.email.trim()}.`
+        : 'Invitation created. Email is not configured, so the link was copied.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add reseller employee.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const resendEmployeeInvite = async (invite) => {
+    setSaving(true)
+    setError('')
+    try {
+      const response = await backOfficeApi.resendInvite(invite.id)
+      if (!response.email_sent && response.accept_url) {
+        await navigator.clipboard.writeText(response.accept_url).catch(() => undefined)
+      }
+      setMessage(response.email_sent ? `Invitation resent to ${invite.email}.` : 'A fresh invitation link was copied.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not resend this invitation.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const revokeEmployeeInvite = async (invite) => {
+    setSaving(true)
+    setError('')
+    try {
+      await backOfficeApi.revokeAccessInvite(invite.id)
+      setPendingInvites((current) => current.filter((item) => item.id !== invite.id))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not revoke this invitation.')
     } finally {
       setSaving(false)
     }
@@ -793,9 +831,8 @@ function ResellerProfileEditor({ onboarding = false }) {
           <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1.2fr]">
             <div className="space-y-3 rounded-xl border border-white/10 bg-black/20 p-4">
               <Field label="Name"><TextInput value={employeeDraft.name} onChange={event => setEmployeeDraft(current => ({ ...current, name: event.target.value }))} placeholder="Jordan Lee" /></Field>
-              <Field label="Email (optional)"><TextInput value={employeeDraft.email} onChange={event => setEmployeeDraft(current => ({ ...current, email: event.target.value }))} placeholder="jordan@example.com" /></Field>
+              <Field label="Email"><TextInput value={employeeDraft.email} onChange={event => setEmployeeDraft(current => ({ ...current, email: event.target.value }))} placeholder="jordan@example.com" /></Field>
               <Field label="Username (optional)"><TextInput value={employeeDraft.username} onChange={event => setEmployeeDraft(current => ({ ...current, username: event.target.value }))} placeholder="jordan_shire" /></Field>
-              <Field label="Temporary Password"><TextInput value={employeeDraft.password} onChange={event => setEmployeeDraft(current => ({ ...current, password: event.target.value }))} placeholder="At least 8 characters" /></Field>
               <div className="flex flex-wrap gap-2">
                 {[
                   ['edit_setup', 'Edit setup'],
@@ -815,7 +852,7 @@ function ResellerProfileEditor({ onboarding = false }) {
                   </SmallButton>
                 ))}
               </div>
-              <SmallButton variant="primary" onClick={() => void addEmployee()} disabled={saving}>{saving ? 'Saving...' : 'Add employee'}</SmallButton>
+              <SmallButton variant="primary" onClick={() => void addEmployee()} disabled={saving}>{saving ? 'Sending...' : 'Invite employee'}</SmallButton>
             </div>
             <div className="space-y-3">
               <div className="rounded-xl border border-white/10 bg-black/20 p-4">
@@ -851,6 +888,16 @@ function ResellerProfileEditor({ onboarding = false }) {
                 </div>
               </div>
               <div className="grid gap-2">
+                {pendingInvites.map((invite) => (
+                  <div key={invite.id} className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/20 p-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold">{invite.name || invite.email}</p>
+                      <p className="mt-1 truncate text-xs text-dash-secondary">{invite.email} · pending</p>
+                    </div>
+                    <button type="button" title="Resend invitation" aria-label="Resend invitation" disabled={saving} onClick={() => void resendEmployeeInvite(invite)} className="text-dash-secondary hover:text-white disabled:opacity-50"><RefreshCw size={15} /></button>
+                    <button type="button" title="Revoke invitation" aria-label="Revoke invitation" disabled={saving} onClick={() => void revokeEmployeeInvite(invite)} className="text-red-300 hover:text-red-200 disabled:opacity-50"><Trash2 size={15} /></button>
+                  </div>
+                ))}
                 {employees.map((employee) => (
                   <div key={employee.id} className="rounded-xl border border-white/10 bg-black/20 p-4">
                     <div className="flex items-start justify-between gap-3">
@@ -864,7 +911,7 @@ function ResellerProfileEditor({ onboarding = false }) {
                     </div>
                   </div>
                 ))}
-                {employees.length === 0 && <p className="text-sm text-dash-secondary">No reseller employees yet.</p>}
+                {employees.length === 0 && pendingInvites.length === 0 && <p className="text-sm text-dash-secondary">No reseller employees yet.</p>}
               </div>
             </div>
           </div>

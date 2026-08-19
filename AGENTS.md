@@ -54,14 +54,20 @@
   the position catalog editor. A position can be archived only when no employee
   is assigned through either `waiters.job_code_id` or `employee_job_codes`;
   recreating the same code reactivates the existing row and preserves history.
-- **Back-office access by invite (being built):** an owner/manager can grant any
-  employee dashboard access by entering their email. This sends an invite email
-  backed by the existing `staff_invitations` table (ML migration
-  `0002_integrations_jobs_invitations.sql`: email, token, status, restaurant_id).
-  Accepting creates a Supabase auth user linked to their `waiters` row; what they
-  see in the dashboard is gated by the dynamic role permission system, configured
-  by the owner. TeamPage currently shows a "Member invites — coming soon"
-  placeholder where this lands.
+- **Account access is invitation-only and email-bound:** Restaurant Team is the
+  single surface for inviting employees, managers, owners, and reseller
+  connections according to the caller's authority. Reseller principals can
+  invite scoped reseller employees; and platform admins can invite owner,
+  reseller, or admin accounts. All four use ML-owned `access_invitations`, store
+  only a SHA-256 token hash, expire after seven days, and recheck inviter authority,
+  grant caps, target hierarchy, and the accepting Supabase account email inside
+  the acceptance transaction. `restaurant_members`, `reseller_restaurants`, and
+  `reseller_employees` remain operational truth. Raw links are returned only when
+  created/resend so local deployments without Resend can share them manually.
+  Accepting a restaurant invitation returns to the invite after authentication
+  and opens the existing restaurant; only New Restaurant starts onboarding.
+  Store-owner claims remain in `store_invites`, are also email-bound, and use the
+  same mail provider. Temporary-password account creation is not a supported UI path.
 - **Time clock adjustments** are manager/owner actions. POS backend already has
   the manager CRUD (`/manager/timeclock/entries` GET/POST/PATCH + `/void`) and
   records `manager_id`, `manager_name`, `reason` as the audit trail. The dashboard

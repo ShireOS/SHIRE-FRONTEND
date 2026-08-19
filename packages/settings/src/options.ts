@@ -173,11 +173,11 @@ export const MANAGER_PERMISSION_OPTIONS = [
 ] as const
 
 export const PERMISSION_TIER_OPTIONS: readonly SettingsOption<'owner' | 'manager' | 'waiter' | 'normal' | 'limited'>[] = [
-  { value: 'owner', label: 'Owner' },
-  { value: 'manager', label: 'Manager' },
-  { value: 'waiter', label: 'Waiter' },
-  { value: 'normal', label: 'Normal' },
-  { value: 'limited', label: 'Limited' },
+  { value: 'owner', label: 'Owner access' },
+  { value: 'manager', label: 'Manager access' },
+  { value: 'waiter', label: 'Service access' },
+  { value: 'normal', label: 'Standard access' },
+  { value: 'limited', label: 'Limited access' },
 ]
 
 // --- Closeout ---------------------------------------------------------------

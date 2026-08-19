@@ -8,6 +8,7 @@ import {
   canManageStaffMember,
   defaultStaffRole,
   jobCodeAuthority,
+  manageableTeamAccountTypes,
   normalizeRoleCode,
   normalizeStaffRoleOptions,
   primaryStaffRole,
@@ -88,4 +89,17 @@ test('staff authority uses the highest assigned role, not only the primary role'
   const waiter = { role: 'manager', roles: ['manager', 'owner'] }
   assert.equal(canManageStaffMember('manager', waiter, jobCodes), false)
   assert.equal(canManageStaffMember('owner', waiter, jobCodes), true)
+})
+
+test('team account types follow peer-or-below authority', () => {
+  assert.deepEqual(manageableTeamAccountTypes('manager'), ['employee', 'manager'])
+  assert.deepEqual(manageableTeamAccountTypes('owner'), ['employee', 'manager', 'owner', 'reseller'])
+  assert.deepEqual(
+    manageableTeamAccountTypes('manager', { isDirectReseller: true, canManageMembers: true }),
+    ['employee', 'manager', 'owner', 'reseller'],
+  )
+  assert.deepEqual(
+    manageableTeamAccountTypes('manager', { isDirectReseller: false, canManageMembers: true }),
+    ['employee', 'manager'],
+  )
 })

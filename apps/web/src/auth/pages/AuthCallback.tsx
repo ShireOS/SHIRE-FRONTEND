@@ -6,6 +6,9 @@ import type { EmailOtpType } from '@supabase/supabase-js'
 import type { Restaurant } from '@shire/db'
 import { isAbortError } from '../utils/authErrors'
 
+const PENDING_INVITE_STORAGE_KEY = 'shire_pending_access_invite_token'
+const PENDING_CLAIM_STORAGE_KEY = 'shire_pending_claim_token'
+
 const SUPPORTED_EMAIL_OTP_TYPES: EmailOtpType[] = [
   'recovery',
   'invite',
@@ -178,6 +181,18 @@ export function AuthCallbackPage() {
 
     if (!auth.isAuthenticated) {
       navigate('/auth/login', { replace: true })
+      return
+    }
+
+    const pendingInvite = localStorage.getItem(PENDING_INVITE_STORAGE_KEY)
+    if (pendingInvite) {
+      navigate(`/invite?token=${encodeURIComponent(pendingInvite)}`, { replace: true })
+      return
+    }
+
+    const pendingClaim = localStorage.getItem(PENDING_CLAIM_STORAGE_KEY)
+    if (pendingClaim) {
+      navigate(`/claim/${encodeURIComponent(pendingClaim)}`, { replace: true })
       return
     }
 

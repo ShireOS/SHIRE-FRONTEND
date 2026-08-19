@@ -24,9 +24,11 @@ import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Modal,
   Pressable,
+  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -55,7 +57,6 @@ type ResellerEmployeeDraft = {
   name: string;
   email: string;
   username: string;
-  password: string;
   restaurant_ids: string[];
   group_ids: string[];
   permissions: Record<string, boolean>;
@@ -104,7 +105,6 @@ export default function ResellerPortfolio() {
     name: '',
     email: '',
     username: '',
-    password: '11111111',
     restaurant_ids: [] as string[],
     group_ids: [] as string[],
     permissions: { ...DEFAULT_RESELLER_PERMISSIONS },
@@ -593,24 +593,27 @@ function ResellerProfilePanel({
       onError('Employee name is required.');
       return;
     }
-    if (employeeDraft.password.length < 8) {
-      onError('Employee password must be at least 8 characters.');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(employeeDraft.email.trim())) {
+      onError('A valid employee email is required.');
       return;
     }
     onSavingChange(true);
     onError(null);
     try {
-      await createResellerEmployee(employeeDraft);
+      const response = await createResellerEmployee(employeeDraft);
       onDraftChange({
         name: '',
         email: '',
         username: '',
-        password: '11111111',
         restaurant_ids: [],
         group_ids: [],
         permissions: { ...DEFAULT_RESELLER_PERMISSIONS },
       });
-      await onReload();
+      if (response.email_sent) {
+        Alert.alert('Invitation sent', `An invitation was sent to ${employeeDraft.email.trim()}.`);
+      } else if (response.accept_url) {
+        await Share.share({ message: response.accept_url });
+      }
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Could not add reseller employee.');
     } finally {
@@ -681,11 +684,10 @@ function ResellerProfilePanel({
       {canManage && (
         <View style={styles.profileCard}>
           <Text style={styles.cardTitle}>Reseller employees</Text>
-          <Text style={styles.cardMeta}>Create a username/password and choose which restaurants they can oversee.</Text>
+          <Text style={styles.cardMeta}>Invite by email and choose which restaurants they can oversee.</Text>
           <ProfileInput label="Name" value={employeeDraft.name} onChangeText={(value) => updateDraft({ name: value })} />
-          <ProfileInput label="Email optional" value={employeeDraft.email} onChangeText={(value) => updateDraft({ email: value })} />
+          <ProfileInput label="Email" value={employeeDraft.email} onChangeText={(value) => updateDraft({ email: value })} />
           <ProfileInput label="Username optional" value={employeeDraft.username} onChangeText={(value) => updateDraft({ username: value })} />
-          <ProfileInput label="Temporary password" value={employeeDraft.password} onChangeText={(value) => updateDraft({ password: value })} />
           <View style={styles.chipRow}>
             {[
               ['edit_setup', 'Edit setup'],
