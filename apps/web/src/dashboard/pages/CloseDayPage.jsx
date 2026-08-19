@@ -130,33 +130,52 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const [clockOutEntryIds, setClockOutEntryIds] = useState([])
   const [recentActivityConfirmed, setRecentActivityConfirmed] = useState(false)
   const [recon, setRecon] = useState(null)
+  const [reconLoading, setReconLoading] = useState(false)
+  const [cashCountStatus, setCashCountStatus] = useState('counted')
+  const [uncountedCashReason, setUncountedCashReason] = useState('')
+  const [verificationReason, setVerificationReason] = useState('')
+  const [verificationExceptionStatus, setVerificationExceptionStatus] = useState(null)
   const attemptId = useRef(newAttemptId())
-  const initializedCash = useRef(false)
+  const cashBusinessDate = useRef(null)
 
-  const loadPreview = useCallback(async () => {
+  const loadPreview = useCallback(async (businessDate) => {
     setLoading(true)
     setError('')
     try {
-      const next = await posCloseDayApi.preview(restaurantId)
+      const next = await posCloseDayApi.preview(restaurantId, businessDate)
       setPreview(next)
-      // Independent verification of the preview's money totals — advisory
-      // only; the preview numbers stay authoritative either way.
       if (next?.business_date) {
-        fetchReconciliation(restaurantId, next.business_date, next.business_date)
-          .then(setRecon)
-          .catch(() => setRecon(null))
+        setReconLoading(true)
+        try {
+          setRecon(await fetchReconciliation(restaurantId, next.business_date, next.business_date))
+        } catch {
+          setRecon(null)
+        } finally {
+          setReconLoading(false)
+        }
       }
       setClockOutEntryIds((next.open_timeclock_entries || []).map((entry) => entry.id))
-      if (!initializedCash.current) {
+      if (cashBusinessDate.current !== next.business_date) {
         const reconciliation = next.cash_reconciliation || {}
+        cashBusinessDate.current = next.business_date
+        attemptId.current = newAttemptId()
+        setRecentActivityConfirmed(false)
+        setResult(null)
+        setCashCountStatus('counted')
+        setUncountedCashReason('')
+        setVerificationReason('')
+        setVerificationExceptionStatus(null)
         setCash((current) => ({
           ...current,
           opening_bank: Number(reconciliation.opening_bank || 0).toFixed(2),
           paid_in: Number(reconciliation.paid_in || 0).toFixed(2),
           paid_out: Number(reconciliation.paid_out || 0).toFixed(2),
           cash_refunds: Number(reconciliation.cash_refunds || 0).toFixed(2),
+          counted_cash: '',
+          retained_bank: '0.00',
+          deposit_amount: '0.00',
+          variance_reason: '',
         }))
-        initializedCash.current = true
       }
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Could not load close-day readiness.')
@@ -166,9 +185,13 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   }, [restaurantId])
 
   useEffect(() => {
-    initializedCash.current = false
+    cashBusinessDate.current = null
     attemptId.current = newAttemptId()
     setCash(INITIAL_CASH)
+    setCashCountStatus('counted')
+    setUncountedCashReason('')
+    setVerificationReason('')
+    setVerificationExceptionStatus(null)
     setResult(null)
     void loadPreview()
   }, [loadPreview])
@@ -180,14 +203,16 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const trackDeposit = Boolean(closeoutSettings?.track_deposit_at_close)
   const showRetainedBank = trackDeposit || openingBankPolicy?.source === 'previous_retained'
   const expectedCash = numberValue(preview?.cash_reconciliation?.expected_cash)
-  const cashCountEntered = String(cash.counted_cash).trim() !== ''
-  const revealExpected = !closeoutSettings?.blind_drawer_close || cashCountEntered
-  const variance = numberValue(cash.counted_cash) - expectedCash
+  const cashCountEntered = cashCountStatus === 'not_counted' || String(cash.counted_cash).trim() !== ''
+  const revealExpected = !closeoutSettings?.blind_drawer_close || (cashCountStatus === 'counted' && cashCountEntered)
+  const variance = cashCountStatus === 'counted' ? numberValue(cash.counted_cash) - expectedCash : null
   const threshold = Number(preview?.closeout_settings?.cash_variance_threshold || 0)
   const openEmployees = preview?.open_timeclock_entries || []
   const isClosed = preview?.business_day?.status === 'closed'
   const unresolvedExceptions = Number(preview?.exception_count || 0)
+  const blockingExceptions = Number(preview?.blocking_exception_count || 0)
   const pendingPrintJobs = Number(preview?.pending_print_jobs || 0)
+  const overdueCloseAlerts = preview?.overdue_close_alerts || []
 
   const updateCash = (key, value) => setCash((current) => ({ ...current, [key]: value }))
 
@@ -219,6 +244,25 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       })
   })()
   const reconMismatches = failedChecks(recon, reconExtraChecks)
+  const verificationChecks = [...(recon?.checks || []), ...reconExtraChecks].slice(0, 50)
+  const advisoryVerificationStatus = reconMismatches.length > 0
+    ? 'mismatch'
+    : recon?.status === 'verified'
+      && recon?.complete === true
+      && verificationChecks.length > 0
+      && verificationChecks.every((check) => check.ok === true)
+      ? 'verified'
+      : 'unavailable'
+  const cashVerificationMismatch = cashCountStatus === 'counted'
+    && cashCountEntered
+    && Math.abs(variance) > 0.009
+  const verificationMismatchCount = reconMismatches.length + (cashVerificationMismatch ? 1 : 0)
+  const computedVerificationStatus = cashCountStatus !== 'counted' || !cashCountEntered
+    ? 'unavailable'
+    : cashVerificationMismatch || advisoryVerificationStatus === 'mismatch'
+      ? 'mismatch'
+      : advisoryVerificationStatus
+  const verificationStatus = verificationExceptionStatus || computedVerificationStatus
 
   const handleConflict = (nextError) => {
     const detail = nextError?.detail
@@ -232,6 +276,15 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         setModal('employees')
         return
       }
+      if (detail.code === 'invalid_verification_claim') {
+        // The report reconciliation is advisory. If the canonical POS close
+        // cannot independently attest the cash/card/total checks, require an
+        // explicit exception instead of retrying the same verified claim.
+        setVerificationExceptionStatus('unavailable')
+        setVerificationReason('')
+        setModal('verification')
+        return
+      }
       if (detail.message) {
         setError(detail.message)
         return
@@ -242,30 +295,20 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
 
   const submitClose = async (confirmAutoClockOut) => {
     if (!preview) return
-    if (!cashCountEntered) {
+    if (cashCountStatus === 'counted' && !cashCountEntered) {
       setError('Count the physical cash in the drawer before closing the day.')
       setModal(null)
       return
     }
-    if (Math.abs(variance) > threshold && !cash.variance_reason.trim()) {
-      setError(`Explain the ${money(variance)} cash variance before closing.`)
+    if (cashCountStatus === 'not_counted' && uncountedCashReason.trim().length < 5) {
+      setError('Explain why the drawer could not be physically counted.')
       setModal(null)
       return
     }
-    // Verification mismatches never block the close — but finalizing over
-    // them is an explicit, logged decision.
-    if (reconMismatches.length > 0) {
-      const proceed = window.confirm(
-        `Verification found ${reconMismatches.length} mismatch${reconMismatches.length === 1 ? '' : 'es'} between this close-out and the raw transactions ` +
-        `(e.g. ${reconMismatches[0].label}). The close will use the numbers shown. Finalize anyway?`,
-      )
-      if (!proceed) return
-      acknowledgeReconciliation(restaurantId, {
-        context: 'close_day',
-        start_date: preview.business_date,
-        end_date: preview.business_date,
-        mismatches: reconMismatches.slice(0, 20),
-      }).catch(() => {}) // audit logging must never block the close
+    if (variance != null && Math.abs(variance) > threshold && !cash.variance_reason.trim()) {
+      setError(`Explain the ${money(variance)} cash variance before closing.`)
+      setModal(null)
+      return
     }
     setClosing(true)
     setError('')
@@ -282,10 +325,20 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         clock_out_entry_ids: clockOutEntryIds,
         confirm_recent_activity: recentActivityConfirmed,
         opening_bank: effectiveOpeningBank,
-        counted_cash: numberValue(cash.counted_cash),
-        retained_bank: numberValue(cash.retained_bank),
-        deposit_amount: numberValue(cash.deposit_amount),
-        variance_reason: cash.variance_reason.trim() || undefined,
+        cash_count_status: cashCountStatus,
+        counted_cash: cashCountStatus === 'counted' ? numberValue(cash.counted_cash) : null,
+        confirm_uncounted_cash: cashCountStatus === 'not_counted',
+        uncounted_cash_reason: cashCountStatus === 'not_counted' ? uncountedCashReason.trim() : undefined,
+        retained_bank: cashCountStatus === 'counted' ? numberValue(cash.retained_bank) : 0,
+        deposit_amount: cashCountStatus === 'counted' ? numberValue(cash.deposit_amount) : 0,
+        variance_reason: cashCountStatus === 'counted' ? cash.variance_reason.trim() || undefined : undefined,
+        verification_status: verificationStatus,
+        // A verified claim is recomputed entirely by POS from its own cash and
+        // batch evidence. Report-service checks are retained only as context
+        // for an explicitly confirmed mismatch/unavailable close.
+        verification_checks: verificationStatus === 'verified' ? [] : verificationChecks,
+        confirm_verification_exception: verificationStatus !== 'verified',
+        verification_reason: verificationStatus !== 'verified' ? verificationReason.trim() : undefined,
       })
       setResult(closed)
       setPreview({
@@ -300,6 +353,14 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         },
       })
       setModal('success')
+      if (reconMismatches.length > 0) {
+        acknowledgeReconciliation(restaurantId, {
+          context: 'close_day',
+          start_date: preview.business_date,
+          end_date: preview.business_date,
+          mismatches: reconMismatches.slice(0, 20),
+        }).catch(() => {})
+      }
       try {
         setPreview(await posCloseDayApi.preview(restaurantId, closed.business_date))
       } catch {
@@ -316,18 +377,26 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     }
   }
 
-  const beginClose = () => {
+  const beginClose = (verificationReviewed = false) => {
     setError('')
     if (Number(preview?.open_checks || 0) > 0) {
       setModal('open-checks')
       return
     }
-    if (unresolvedExceptions > 0) {
-      setError('Resolve all close-day payment and check exceptions before closing remotely.')
+    if (blockingExceptions > 0) {
+      setError('Resolve the blocking close-day payment and check exceptions before closing remotely.')
       return
     }
     if (pendingPrintJobs > 0) {
       setError('Resolve pending print work on the POS before closing remotely.')
+      return
+    }
+    if (reconLoading) {
+      setError('Wait for independent financial verification to finish before closing.')
+      return
+    }
+    if (verificationStatus !== 'verified' && !verificationReviewed) {
+      setModal('verification')
       return
     }
     if (preview?.close_period?.recent_activity && !recentActivityConfirmed) {
@@ -364,6 +433,12 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         </div>
       )}
 
+      {overdueCloseAlerts.length > 0 && (
+        <section className="border border-amber-400/40 bg-amber-500/10 p-4">
+          <div className="flex items-start gap-3"><AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-300" aria-hidden="true" /><div className="min-w-0 flex-1"><h2 className="font-semibold text-amber-100">Close Day overdue</h2><p className="mt-1 text-sm text-amber-100/75">The backend watchdog found business activity that crossed the restaurant’s day boundary without a completed close.</p><div className="mt-3 flex flex-wrap gap-2">{overdueCloseAlerts.map((alert) => <button type="button" key={alert.id} onClick={() => void loadPreview(alert.business_date)} className="border border-amber-300/35 px-3 py-2 text-xs font-semibold text-amber-100">Review {alert.business_date}</button>)}</div></div></div>
+        </section>
+      )}
+
       <section className="border-y border-dash-border sm:grid sm:grid-cols-4">
         <Metric icon={CalendarCheck} label={`Business date · Close ${preview?.close_period?.sequence || 1}`} value={preview?.business_date || '—'} />
         <Metric icon={ReceiptText} label="Open checks" value={preview?.open_checks || 0} tone={preview?.open_checks ? 'danger' : 'default'} />
@@ -387,6 +462,9 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             <p className="mt-1 text-sm text-emerald-100/75">
               Closed {preview?.business_day?.closed_at ? new Date(preview.business_day.closed_at).toLocaleString() : 'successfully'}{preview?.business_day?.closed_by_name ? ` by ${preview.business_day.closed_by_name}` : ''}.
             </p>
+            {preview?.financial_verification?.status && preview.financial_verification.status !== 'verified' && (
+              <p className="mt-2 text-sm font-semibold text-amber-200">Financial verification exception recorded: {preview.financial_verification.status.replaceAll('_', ' ')}.</p>
+            )}
           </div>
         </section>
       ) : (
@@ -397,6 +475,10 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
               <h2 className="text-lg font-semibold text-dash-cream">Cash reconciliation</h2>
             </div>
             <p className="mt-1 text-sm text-dash-secondary">Enter the actual drawer values. These become the finalized close record.</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button type="button" onClick={() => setCashCountStatus('counted')} className={`min-h-[38px] border px-3 text-xs font-semibold ${cashCountStatus === 'counted' ? 'border-dash-cream bg-dash-cream text-dash-base' : 'border-dash-border text-dash-secondary'}`}>Drawer counted</button>
+              <button type="button" onClick={() => setCashCountStatus('not_counted')} className={`min-h-[38px] border px-3 text-xs font-semibold ${cashCountStatus === 'not_counted' ? 'border-amber-300 bg-amber-300 text-black' : 'border-dash-border text-dash-secondary'}`}>Not physically counted</button>
+            </div>
             {openingBankPolicy?.warning && (
               <div className="mt-4 flex items-start gap-3 border border-amber-400/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
                 <AlertTriangle size={17} className="mt-0.5 shrink-0" aria-hidden="true" />
@@ -417,16 +499,22 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
                   </p>
                 </div>
               )}
-              <CashInput label="Counted cash" value={cash.counted_cash} onChange={(value) => updateCash('counted_cash', value)} />
-              {showRetainedBank && (
+              {cashCountStatus === 'counted' && <CashInput label="Counted cash" value={cash.counted_cash} onChange={(value) => updateCash('counted_cash', value)} />}
+              {cashCountStatus === 'counted' && showRetainedBank && (
                 <CashInput label="Float left in drawer" value={cash.retained_bank} onChange={(value) => updateCash('retained_bank', value)} />
               )}
-              {trackDeposit && (
+              {cashCountStatus === 'counted' && trackDeposit && (
                 <>
                   <CashInput label="Deposit amount" value={cash.deposit_amount} onChange={(value) => updateCash('deposit_amount', value)} />
                 </>
               )}
             </div>
+            {cashCountStatus === 'not_counted' && (
+              <label className="mt-4 block border border-amber-400/35 bg-amber-500/10 p-4">
+                <span className="label-mono text-amber-100">Why was the drawer not counted?</span>
+                <textarea value={uncountedCashReason} onChange={(event) => setUncountedCashReason(event.target.value)} rows={3} placeholder="Required. This close will not claim a $0 count or calculate a variance." className="mt-2 w-full resize-none border border-amber-300/30 bg-transparent px-3 py-2 text-sm text-amber-50 outline-none" />
+              </label>
+            )}
             <div className="mt-5 grid gap-3 border-y border-dash-border py-4 sm:grid-cols-3 xl:grid-cols-5">
               <div><p className="label-mono">Cash sales</p><p className="mt-1 font-semibold text-dash-cream">{money(preview?.cash_reconciliation?.cash_sales ?? preview?.cash_collected)}</p></div>
               <div><p className="label-mono">Paid in</p><p className="mt-1 font-semibold text-dash-cream">{money(preview?.cash_reconciliation?.paid_in)}</p></div>
@@ -436,19 +524,20 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             </div>
             <div className="grid gap-3 border-b border-dash-border py-4 sm:grid-cols-2">
               <div><p className="label-mono">Expected cash</p><p className="mt-1 font-semibold text-dash-cream">{revealExpected ? money(expectedCash) : 'Hidden until count is entered'}</p></div>
-              <div><p className="label-mono">Variance</p><p className={`mt-1 font-semibold ${revealExpected && Math.abs(variance) > threshold ? 'text-amber-300' : 'text-dash-cream'}`}>{revealExpected ? money(variance) : 'Hidden until count is entered'}</p></div>
+              <div><p className="label-mono">Variance</p><p className={`mt-1 font-semibold ${variance != null && revealExpected && Math.abs(variance) > threshold ? 'text-amber-300' : 'text-dash-cream'}`}>{cashCountStatus === 'not_counted' ? 'Not available — drawer uncounted' : revealExpected ? money(variance) : 'Hidden until count is entered'}</p></div>
             </div>
-            <label className="mt-4 block">
+            {cashCountStatus === 'counted' && <label className="mt-4 block">
               <span className="label-mono">Variance reason</span>
               <textarea value={cash.variance_reason} onChange={(event) => updateCash('variance_reason', event.target.value)} rows={3} placeholder="Required when variance exceeds the configured threshold" className="mt-1.5 w-full resize-none border border-dash-border bg-[var(--glass-bg)] px-3 py-2 text-sm text-dash-cream outline-none focus:border-shell-accent/70" />
-            </label>
+            </label>}
           </section>
 
           <section className="border border-dash-border bg-[var(--glass-bg)] p-5">
             <h2 className="text-lg font-semibold text-dash-cream">Readiness</h2>
             <div className="mt-4 space-y-4">
               <ReadinessRow ready={!preview?.open_checks} label="Checks" detail={preview?.open_checks ? `${preview.open_checks} must be closed on POS` : 'All checks are closed'} />
-              <ReadinessRow ready={!unresolvedExceptions} label="Exceptions" detail={unresolvedExceptions ? `${unresolvedExceptions} require review` : 'No payment or check exceptions'} />
+              <ReadinessRow ready={!blockingExceptions} label="Exceptions" detail={blockingExceptions ? `${blockingExceptions} block close (${unresolvedExceptions} total for review)` : unresolvedExceptions ? `${unresolvedExceptions} audit item(s), none blocking` : 'No payment or check exceptions'} />
+              <ReadinessRow ready={verificationStatus === 'verified'} warning={verificationStatus !== 'mismatch'} label="Financial verification" detail={reconLoading ? 'Independent recompute still running' : verificationStatus === 'verified' ? 'Totals match raw transactions' : verificationStatus === 'mismatch' ? `${verificationMismatchCount} mismatch(es) require an override reason` : 'Independent verifier unavailable; close will be marked unverified'} />
               <ReadinessRow ready={!pendingPrintJobs} label="Print work" detail={pendingPrintJobs ? `${pendingPrintJobs} jobs still pending` : 'No pending print work'} />
               <ReadinessRow ready={!openEmployees.length} warning={Boolean(openEmployees.length)} label="Employees" detail={openEmployees.length ? `${openEmployees.length} will require confirmation` : 'Everyone is clocked out'} />
             </div>
@@ -476,11 +565,28 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         <ActionModal
           title="Open checks block close day"
           onClose={() => setModal(null)}
-          footer={<><button type="button" onClick={() => setModal(null)} className="min-h-[40px] border border-dash-border px-4 text-sm font-semibold text-dash-secondary">Dismiss</button><button type="button" onClick={() => navigate(`/restaurants/${restaurantId}/reports`)} className="min-h-[40px] bg-dash-cream px-4 text-sm font-bold text-dash-base">Review checks</button></>}
+          footer={<><button type="button" onClick={() => setModal(null)} className="min-h-[40px] border border-dash-border px-4 text-sm font-semibold text-dash-secondary">Dismiss</button><button type="button" onClick={() => navigate('../checks', { relative: 'path' })} className="min-h-[40px] bg-dash-cream px-4 text-sm font-bold text-dash-base">Open check ledger</button></>}
         >
           <div className="flex gap-3">
             <AlertTriangle size={22} className="shrink-0 text-red-300" aria-hidden="true" />
             <div><p className="font-semibold text-dash-cream">Close all checks before closing the day.</p><p className="mt-2 text-sm text-dash-secondary">There is no override. The POS must finish or void all {preview?.open_checks || 0} open check{preview?.open_checks === 1 ? '' : 's'} first.</p></div>
+          </div>
+        </ActionModal>
+      )}
+
+      {modal === 'verification' && (
+        <ActionModal
+          title={verificationStatus === 'mismatch' ? 'Financial totals do not match' : 'Independent verification unavailable'}
+          onClose={() => setModal(null)}
+          footer={<><button type="button" onClick={() => setModal(null)} className="min-h-[40px] border border-dash-border px-4 text-sm font-semibold text-dash-secondary">Cancel</button><button type="button" onClick={() => { if (verificationReason.trim().length < 5) { setError('Record a reason for the financial verification exception.'); return } beginClose(true) }} className="min-h-[40px] bg-amber-300 px-4 text-sm font-bold text-black">Record exception & continue</button></>}
+        >
+          <div className="flex gap-3">
+            <AlertTriangle size={22} className="shrink-0 text-amber-300" aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-dash-cream">This close will be marked unverified.</p>
+              <p className="mt-2 text-sm text-dash-secondary">{verificationStatus === 'mismatch' ? `${verificationMismatchCount} independent check${verificationMismatchCount === 1 ? '' : 's'} disagree with the Close Day totals. Review the deltas before continuing.` : 'The independent transaction recompute could not complete. Continuing records that limitation; it does not claim the totals matched.'}</p>
+              <label className="mt-4 block"><span className="label-mono">Manager reason</span><textarea value={verificationReason} onChange={(event) => setVerificationReason(event.target.value)} rows={3} placeholder="What was reviewed, and why is closing still appropriate?" className="mt-1.5 w-full resize-none border border-dash-border bg-[var(--glass-bg)] px-3 py-2 text-sm text-dash-cream outline-none focus:border-shell-accent/70" /></label>
+            </div>
           </div>
         </ActionModal>
       )}
@@ -522,7 +628,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
 
       {modal === 'success' && result && (
         <ActionModal title="Day closed" onClose={() => setModal(null)} footer={<button type="button" onClick={() => setModal(null)} className="min-h-[40px] bg-dash-cream px-4 text-sm font-bold text-dash-base">Done</button>}>
-          <div className="flex gap-3"><CheckCircle2 size={24} className="shrink-0 text-emerald-300" aria-hidden="true" /><div><p className="font-semibold text-dash-cream">{result.business_date} is finalized.</p><p className="mt-2 text-sm text-dash-secondary">{result.auto_clocked_out?.length ? `${result.auto_clocked_out.length} employee${result.auto_clocked_out.length === 1 ? '' : 's'} were clocked out and audited.` : 'No employee clock-outs were required.'}</p></div></div>
+          <div className="flex gap-3"><CheckCircle2 size={24} className="shrink-0 text-emerald-300" aria-hidden="true" /><div><p className="font-semibold text-dash-cream">{result.business_date} is finalized.</p><p className="mt-2 text-sm text-dash-secondary">{result.auto_clocked_out?.length ? `${result.auto_clocked_out.length} employee${result.auto_clocked_out.length === 1 ? '' : 's'} were clocked out and audited.` : 'No employee clock-outs were required.'}</p>{result.totals?.financial_verification?.status !== 'verified' && <p className="mt-2 text-sm font-semibold text-amber-200">Saved with an explicit financial verification exception.</p>}</div></div>
         </ActionModal>
       )}
     </div>
