@@ -16,7 +16,7 @@
 // -------------------------------------------
 export const TICKET_TOP_STARTER = {
   header: [
-    { type: 'field', field: 'order_type', align: 'center', size: 'large', bold: true },
+    { type: 'field', field: 'order_type', align: 'center', size: 'double', bold: true, color: 'red' },
     {
       type: 'pair',
       left: { parts: [{ field: 'station_name' }, { field: 'server_name' }], join: ' · ' },

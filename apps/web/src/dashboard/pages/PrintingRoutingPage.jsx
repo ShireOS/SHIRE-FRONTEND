@@ -33,7 +33,7 @@ const DEFAULT_CONFIG = {
     modifier_name_mode: 'alias', modifier_size: 'large', modifier_color: 'black', modifier_bold: true,
     note_size: 'large', note_color: 'red', note_bold: true,
     check_number_format: 'chk', time_format: 'meridiem', seat_format: 'short',
-    note_style: 'stars', item_separator: 'dashes',
+    note_style: 'stars', item_separator: 'dashes', modifier_marker: 'indent', line_density: 'tight',
   },
   aliases: { items: {}, modifiers: {} },
   stations: {},
@@ -209,7 +209,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
           signal: controller.signal,
           cache: 'no-store',
         })
-        if (!['printing-v5', 'printing-v6', 'printing-v7'].includes(result.renderer_version)) {
+        if (!['printing-v5', 'printing-v6', 'printing-v7', 'printing-v8'].includes(result.renderer_version)) {
           throw new Error('Receipt preview version is not supported. Refresh this page after the POS backend finishes updating.')
         }
         if (requestId === previewRequestRef.current) {
@@ -408,6 +408,12 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const previewTitle = output === 'kitchen_ticket' ? 'Kitchen ticket' : output === 'server_report' ? 'Server report' : 'Customer receipt'
   const previewSize = output === 'kitchen_ticket' ? effectiveKitchen.size : output === 'server_report' ? config.report?.size : config.customer?.size
   const previewLines = preview.split('\n')
+  const displayedNormalColumns = output === 'kitchen_ticket'
+    ? displayedCapabilities?.kitchen_normal_columns ?? displayedCapabilities?.normal_columns
+    : displayedCapabilities?.normal_columns
+  const displayedCompactColumns = output === 'kitchen_ticket'
+    ? displayedCapabilities?.kitchen_compact_columns ?? displayedCapabilities?.condensed_columns
+    : displayedCapabilities?.condensed_columns
   const firstPreviewItemIndex = previewLines.findIndex(line => /^\d+(?:\.\d+)?\s{2}\S/.test(line))
   const memoPreviewValues = kitchenMemo.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
 
@@ -636,7 +642,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-xl border border-white/10 bg-black/20 p-3"><p className="label-mono">Model</p><p className="mt-1 text-sm font-semibold">{displayedCapabilities.profile || selectedTarget.config?.profile || 'Unknown'}</p></div>
                 <div className="rounded-xl border border-white/10 bg-black/20 p-3"><p className="label-mono">Roll width</p><p className="mt-1 text-sm font-semibold">{displayedCapabilities.paper_width_mm} mm</p></div>
-                <div className="rounded-xl border border-white/10 bg-black/20 p-3"><p className="label-mono">Columns</p><p className="mt-1 text-sm font-semibold">{displayedCapabilities.normal_columns} normal · {displayedCapabilities.condensed_columns} compact</p></div>
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3"><p className="label-mono">Columns</p><p className="mt-1 text-sm font-semibold">{displayedNormalColumns} normal · {displayedCompactColumns} compact</p></div>
               </div>
               {!displayedCapabilities.known_profile && <p className="mt-3 text-xs text-amber-200">Unknown model: using the conservative 42-column fallback.</p>}
               {paperWidthOptions.length > 1 && <div className="mt-4 max-w-xs"><Select label="Installed paper roll" value={String(selectedTarget.config?.paper_width_mm || displayedCapabilities.paper_width_mm)} onChange={patchTargetPaperWidth}>{paperWidthOptions.map(width => <option key={width} value={width}>{width} mm</option>)}</Select></div>}
@@ -684,6 +690,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
                 (isModifier || isNote || isCheckMemo) && requestedSize === 'standard' ? 'text-[0.86em]' : '',
                 (isModifier || isNote || isCheckMemo) && requestedSize === 'large' ? 'text-[1em]' : '',
                 isCheckMemo && requestedSize === 'double' ? 'text-[1.15em]' : '',
+                isMethod && methodStyle.color === 'red' && supportsRed === true ? 'text-red-700' : '',
                 isMethod && methodStyle.bold ? 'font-bold' : '',
                 isMethod && methodStyle.size === 'large' ? 'text-[1.35em] leading-[2.1]' : '',
                 isMethod && methodStyle.size === 'double' ? 'text-[1.7em] leading-[2.1]' : '',
