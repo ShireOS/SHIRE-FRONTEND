@@ -10,8 +10,10 @@ import {
 const PERSONAL_FALLBACK = {
   idle_lock_seconds: 600,
   manager_idle_lock_seconds: 60,
+  idle_lock_seconds_open_check: 300,
   absolute_ttl_seconds: 32400,
   lock_after_check_save: false,
+  print_completion_action_override: null,
 }
 const SHARED_RE = /terminal|station|shared|desktop|kiosk|fixed|^pos$/
 
@@ -20,8 +22,10 @@ export function fallbackSessionPolicy(deviceType) {
     ? {
         idle_lock_seconds: 45,
         manager_idle_lock_seconds: 15,
+        idle_lock_seconds_open_check: 300,
         absolute_ttl_seconds: 32400,
         lock_after_check_save: true,
+        print_completion_action_override: null,
       }
     : PERSONAL_FALLBACK
 }
@@ -40,15 +44,19 @@ const secondsLabel = (seconds) => {
 const toTypeDraft = (policy) => ({
   idle: String(policy.idle_lock_seconds),
   managerIdle: String(policy.manager_idle_lock_seconds),
+  operationalIdleMinutes: String(Math.round(policy.idle_lock_seconds_open_check / 60)),
   ttlMinutes: String(Math.round(policy.absolute_ttl_seconds / 60)),
   leave: policy.lock_after_check_save ? 'lock' : 'stay',
+  printCompletion: policy.print_completion_action_override || 'employee_default',
 })
 
 const toOverrideDraft = (device) => ({
   idle: device.idle_lock_seconds == null ? '' : String(device.idle_lock_seconds),
   managerIdle: device.manager_idle_lock_seconds == null ? '' : String(device.manager_idle_lock_seconds),
+  operationalIdleMinutes: device.idle_lock_seconds_open_check == null ? '' : String(Math.round(device.idle_lock_seconds_open_check / 60)),
   ttlMinutes: device.absolute_ttl_seconds == null ? '' : String(Math.round(device.absolute_ttl_seconds / 60)),
   leave: device.lock_after_check_save == null ? 'inherit' : device.lock_after_check_save ? 'lock' : 'stay',
+  printCompletion: device.print_completion_action_override || 'inherit',
 })
 
 const parseNumber = (value, minimum) => Math.max(minimum, Math.round(Number(value) || 0))
@@ -72,14 +80,18 @@ function PolicyFields({ draft, setDraft, inherited = null, busy }) {
     ? {
         idle_lock_seconds: draft.idle === '' ? inherited.idle_lock_seconds : Number(draft.idle),
         manager_idle_lock_seconds: draft.managerIdle === '' ? inherited.manager_idle_lock_seconds : Number(draft.managerIdle),
+        idle_lock_seconds_open_check: draft.operationalIdleMinutes === '' ? inherited.idle_lock_seconds_open_check : Number(draft.operationalIdleMinutes) * 60,
         absolute_ttl_seconds: draft.ttlMinutes === '' ? inherited.absolute_ttl_seconds : Number(draft.ttlMinutes) * 60,
         lock_after_check_save: draft.leave === 'inherit' ? inherited.lock_after_check_save : draft.leave === 'lock',
+        print_completion_action_override: draft.printCompletion === 'inherit'
+          ? inherited.print_completion_action_override
+          : draft.printCompletion === 'employee_default' ? null : draft.printCompletion,
       }
     : null
   const source = (overridden) => overridden ? 'individual override' : 'inherited from device type'
 
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
       <Field
         label="Server idle"
         hint={inherited ? `Effective ${secondsLabel(effective.idle_lock_seconds)} · ${source(draft.idle !== '')}` : 'seconds · 0 = never'}
@@ -109,6 +121,20 @@ function PolicyFields({ draft, setDraft, inherited = null, busy }) {
         />
       </Field>
       <Field
+        label="Order & payment protection"
+        hint={inherited ? `Effective ${secondsLabel(effective.idle_lock_seconds_open_check)} · ${source(draft.operationalIdleMinutes !== '')}` : 'minutes · minimum 5 · applies to every role'}
+      >
+        <input
+          type="number"
+          min="5"
+          value={draft.operationalIdleMinutes}
+          placeholder={inherited ? String(Math.round(inherited.idle_lock_seconds_open_check / 60)) : undefined}
+          disabled={busy}
+          className={inputCls}
+          onChange={(event) => setDraft((current) => ({ ...current, operationalIdleMinutes: event.target.value }))}
+        />
+      </Field>
+      <Field
         label="Absolute session limit"
         hint={inherited ? `Effective ${secondsLabel(effective.absolute_ttl_seconds)} · ${source(draft.ttlMinutes !== '')}` : 'minutes · applies even while active'}
       >
@@ -135,6 +161,24 @@ function PolicyFields({ draft, setDraft, inherited = null, busy }) {
           {inherited ? <option value="inherit">Inherit from device type</option> : null}
           <option value="lock">Return to PIN pad</option>
           <option value="stay">Stay signed in</option>
+        </select>
+      </Field>
+      <Field
+        label="After Print"
+        hint={inherited
+          ? `${effective.print_completion_action_override ? 'Forced for all employees' : 'Employee/shared default'} · ${source(draft.printCompletion !== 'inherit')}`
+          : 'Optional manager override for all employees'}
+      >
+        <select
+          value={draft.printCompletion}
+          disabled={busy}
+          className={inputCls}
+          onChange={(event) => setDraft((current) => ({ ...current, printCompletion: event.target.value }))}
+        >
+          {inherited ? <option value="inherit">Inherit from device type</option> : null}
+          {!inherited ? <option value="employee_default">Employee / terminal default</option> : null}
+          <option value="return_to_pin">Force Print &amp; Leave</option>
+          <option value="stay_on_check">Force Print &amp; Stay</option>
         </select>
       </Field>
     </div>
@@ -177,16 +221,20 @@ function TypePolicyRow({ deviceType, policy, onSave, busy }) {
   useEffect(() => setDraft(toTypeDraft(effective)), [
     effective.idle_lock_seconds,
     effective.manager_idle_lock_seconds,
+    effective.idle_lock_seconds_open_check,
     effective.absolute_ttl_seconds,
     effective.lock_after_check_save,
+    effective.print_completion_action_override,
   ])
 
   const save = () => {
     onSave({
       idle_lock_seconds: parseNumber(draft.idle, 0),
       manager_idle_lock_seconds: parseNumber(draft.managerIdle, 1),
+      idle_lock_seconds_open_check: parseNumber(draft.operationalIdleMinutes, 5) * 60,
       absolute_ttl_seconds: parseNumber(draft.ttlMinutes, 1) * 60,
       lock_after_check_save: draft.leave === 'lock',
+      print_completion_action_override: draft.printCompletion === 'employee_default' ? null : draft.printCompletion,
     }, reason.trim())
     setReason('')
   }
@@ -213,21 +261,29 @@ function DeviceOverrideRow({ device, policyByType, onSave, busy }) {
   useEffect(() => setDraft(toOverrideDraft(device)), [
     device.idle_lock_seconds,
     device.manager_idle_lock_seconds,
+    device.idle_lock_seconds_open_check,
     device.absolute_ttl_seconds,
     device.lock_after_check_save,
+    device.print_completion_action_override,
   ])
 
   const policyFromDraft = () => ({
     idle_lock_seconds: nullableNumber(draft.idle, 0),
     manager_idle_lock_seconds: nullableNumber(draft.managerIdle, 1),
+    idle_lock_seconds_open_check: nullableNumber(draft.operationalIdleMinutes, 5, 60),
     absolute_ttl_seconds: nullableNumber(draft.ttlMinutes, 1, 60),
     lock_after_check_save: draft.leave === 'inherit' ? null : draft.leave === 'lock',
+    print_completion_action_override: ['return_to_pin', 'stay_on_check'].includes(draft.printCompletion)
+      ? draft.printCompletion
+      : null,
   })
   const resetPolicy = {
     idle_lock_seconds: null,
     manager_idle_lock_seconds: null,
+    idle_lock_seconds_open_check: null,
     absolute_ttl_seconds: null,
     lock_after_check_save: null,
+    print_completion_action_override: null,
   }
 
   return (
@@ -276,7 +332,7 @@ export default function DeviceSessionPolicySection({ restaurantId, config, mutat
       <CardHeader>
         <div className="flex items-center gap-2">
           <Clock size={17} strokeWidth={1.75} className="text-shell-accent" aria-hidden="true" />
-          <h2 className="text-base font-semibold text-dash-cream">Session &amp; auto-lock</h2>
+          <h2 className="text-base font-semibold text-dash-cream">Session, auto-lock &amp; Print</h2>
         </div>
         <p className="mt-1 text-xs text-dash-tertiary">
           Device-type defaults are only starting points. Override any named terminal or handheld below.

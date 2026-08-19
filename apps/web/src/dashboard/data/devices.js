@@ -86,7 +86,7 @@ export async function fetchStoreDeviceConfig(restaurantId) {
   const [devices, legacyShims, outputTargets, stations, categories, typePolicies, printerEndpoints, sections] = await Promise.all([
     supabase
       .from('pos_devices')
-      .select('id, restaurant_id, name, device_type, status, last_seen_at, created_at, revenue_center_id, idle_lock_seconds, manager_idle_lock_seconds, absolute_ttl_seconds, lock_after_check_save, persist_manager_session, observed_capabilities, hardware_config, capabilities_reported_at, printers:pos_device_printers(role, target_id)')
+      .select('id, restaurant_id, name, device_type, status, last_seen_at, created_at, revenue_center_id, idle_lock_seconds, manager_idle_lock_seconds, idle_lock_seconds_open_check, absolute_ttl_seconds, lock_after_check_save, persist_manager_session, print_completion_action_override, observed_capabilities, hardware_config, capabilities_reported_at, printers:pos_device_printers(role, target_id)')
       .eq('restaurant_id', restaurantId)
       .order('name'),
     // Transitional, read-only: assignments written before the registry
@@ -116,7 +116,7 @@ export async function fetchStoreDeviceConfig(restaurantId) {
       .order('name'),
     supabase
       .from('pos_device_type_policies')
-      .select('id, device_type, idle_lock_seconds, manager_idle_lock_seconds, absolute_ttl_seconds, lock_after_check_save, persist_manager_session')
+      .select('id, device_type, idle_lock_seconds, manager_idle_lock_seconds, idle_lock_seconds_open_check, absolute_ttl_seconds, lock_after_check_save, persist_manager_session, print_completion_action_override')
       .eq('restaurant_id', restaurantId)
       .order('device_type'),
     supabase
