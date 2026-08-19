@@ -2,6 +2,7 @@
 // so the same resource fetched from different panels shares one cache entry.
 export const queryKeys = {
   restaurant: (restaurantId: string) => ['restaurant', restaurantId] as const,
+  setupStatus: (restaurantId: string) => ['restaurant', restaurantId, 'setup-status'] as const,
 
   waiters: (restaurantId: string) => ['restaurant', restaurantId, 'waiters'] as const,
   tables: (restaurantId: string) => ['restaurant', restaurantId, 'tables'] as const,

@@ -225,6 +225,12 @@ export function useRedirectIfAuthenticated(redirectTo = '/') {
     if (auth.isLoading || auth.restaurant.isLoading) return
 
     if (auth.isAuthenticated) {
+      const queryNext = new URLSearchParams(location.search).get('next')
+      const safeNext = queryNext?.startsWith('/') && !queryNext.startsWith('//') ? queryNext : null
+      if (safeNext) {
+        navigate(safeNext, { replace: true })
+        return
+      }
       if (auth.accountType === 'reseller') {
         navigate('/reseller/onboarding', { replace: true })
         return

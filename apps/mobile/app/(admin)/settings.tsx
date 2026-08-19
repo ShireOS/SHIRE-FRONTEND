@@ -188,6 +188,7 @@ const MANAGER_PERMISSION_FIELDS = [
   ['can_no_sale', 'No-sale'],
   ['can_paid_in_out', 'Paid in/out'],
   ['can_adjust_tips', 'Tip edits'],
+  ['can_adjust_gratuity', 'Adjust gratuity'],
   ['can_edit_menu', 'Menu edits'],
   ['can_edit_employees', 'Employee edits'],
   ['can_edit_schedules', 'Schedule edits'],

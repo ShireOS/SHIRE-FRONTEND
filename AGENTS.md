@@ -14,6 +14,13 @@
   employee is allowed to work. At clock-in the employee (or manager) picks one of
   their allowed roles; that role is snapshotted onto `pos_time_clock_entries.role`
   and is what payroll/tip-out groups by.
+- **Pay is per employee-position assignment.** `job_codes.default_hourly_rate`
+  is the restaurant default and `employee_job_codes.hourly_rate_override` is an
+  optional employee-specific rate for that one position. Team -> Employees ->
+  Members edits the structured assignment set; a legacy `waiters.hourly_rate`
+  value mirrors only the primary position and must never be spread across all
+  assigned jobs. Clock-in snapshots the selected job code and effective rate so
+  later configuration changes do not rewrite historical labor or payroll.
 - **Server and Waiter are one working role.** `waiter` is a legacy alias that the
   dashboard renders as `Server`; new assignments prefer the active `server` job
   code while waiter-only restaurants remain compatible. `waiters.pos_role` is a
@@ -22,6 +29,15 @@
   the built-in roles.
 - **POS-side auth:** PIN identify → staff token (`get_current_waiter` →
   `WaiterContext` in Shire_POS_backend). Manager-gated routes check `is_manager(ctx)`.
+  Per-check gratuity overrides use the distinct `can_adjust_gratuity` role
+  permission; they never reuse voluntary-tip permission `can_adjust_tips`.
+  Add/change/remove mutations require an unpaid editable check and write the
+  durable manager-action audit with actor, reason, and before/after amounts.
+  New gift-card stored-value issuance requires manager authority, a stable
+  request ID, a reason, and an immutable requester/approver audit event. After
+  that mutation commits, an exact idempotent replay may be read by the original
+  requesting staff member or a current manager; this recovery exception cannot
+  create value or change the original code/amount fingerprint.
   Day-close permissions are separate: `can_close_day` closes the current day,
   while `can_reopen_business_day` authorizes the audited reopen workflow and
   defaults to owner-only until explicitly granted to another role.
@@ -38,14 +54,20 @@
   the position catalog editor. A position can be archived only when no employee
   is assigned through either `waiters.job_code_id` or `employee_job_codes`;
   recreating the same code reactivates the existing row and preserves history.
-- **Back-office access by invite (being built):** an owner/manager can grant any
-  employee dashboard access by entering their email. This sends an invite email
-  backed by the existing `staff_invitations` table (ML migration
-  `0002_integrations_jobs_invitations.sql`: email, token, status, restaurant_id).
-  Accepting creates a Supabase auth user linked to their `waiters` row; what they
-  see in the dashboard is gated by the dynamic role permission system, configured
-  by the owner. TeamPage currently shows a "Member invites — coming soon"
-  placeholder where this lands.
+- **Account access is invitation-only and email-bound:** Restaurant Team is the
+  single surface for inviting employees, managers, owners, and reseller
+  connections according to the caller's authority. Reseller principals can
+  invite scoped reseller employees; and platform admins can invite owner,
+  reseller, or admin accounts. All four use ML-owned `access_invitations`, store
+  only a SHA-256 token hash, expire after seven days, and recheck inviter authority,
+  grant caps, target hierarchy, and the accepting Supabase account email inside
+  the acceptance transaction. `restaurant_members`, `reseller_restaurants`, and
+  `reseller_employees` remain operational truth. Raw links are returned only when
+  created/resend so local deployments without Resend can share them manually.
+  Accepting a restaurant invitation returns to the invite after authentication
+  and opens the existing restaurant; only New Restaurant starts onboarding.
+  Store-owner claims remain in `store_invites`, are also email-bound, and use the
+  same mail provider. Temporary-password account creation is not a supported UI path.
 - **Time clock adjustments** are manager/owner actions. POS backend already has
   the manager CRUD (`/manager/timeclock/entries` GET/POST/PATCH + `/void`) and
   records `manager_id`, `manager_name`, `reason` as the audit trail. The dashboard
@@ -150,8 +172,9 @@ surface independently, while every mutation is also guarded by the ML backend.
   theme-loading failures inside the dialog.
   Reseller sidebar visibility comes from one grant-to-route map used by every
   store route, including the specialized Setup and UI Editor shells. The
-  owner-controlled `setup` grant covers Setup, UI Editor, Taxes, POS Settings,
-  and Printing & Routing; `team` covers Members, Time Clock, and Alerts; report,
+  owner-controlled `setup` grant covers conditional Setup, Store Information,
+  Marketing, Store Settings, Integrations, UI Editor, POS Settings, and Printing
+  & Routing; `team` covers Members, Time Clock, and Alerts; report,
   check, labor-cost, and payroll/tip surfaces remain mandatory. Route changes
   reuse the resolved store grants so the sidebar does not change composition.
   POS Settings reason-preset reads and mutations use the same portal-aware
@@ -165,6 +188,24 @@ surface independently, while every mutation is also guarded by the ML backend.
   UI previews default to the same-origin Expo exports under
   `apps/web/public/previews`; environment URLs may explicitly override them.
   Never add an implicit localhost or developer-machine fallback.
+- Store setup completeness (2026-08-11) is derived by the ML backend from the
+  canonical restaurant, POS, menu, hours, floor, and staffing records. Setup is
+  a recovery route and is shown only while a required domain is incomplete;
+  `onboarding_completed_at` remains historical metadata and is not the source
+  of truth. Permanent configuration ownership is Store Information (Basics and
+  Goals), Marketing (Branding), Store Settings (Legal, Payments, Taxes & Charges,
+  Cash/Closeout, Check Workflow, Hours), Integrations (current tools/service model and
+  reservations), Menu (menu data, discounts, routing),
+  Team (members/roles and Manager Controls), UI Editor (appearance, sections,
+  floor plan), and Payroll & Tips. All of these pages reuse the Setup editor's
+  canonical save contracts. Discount reads require `menu.view`; writes require
+  `menu.edit_items`. Taxes & Charges is visible from Store Settings to owners,
+  authorized managers, and authorized resellers through `settings.edit`;
+  service charges and large-party auto-gratuity tiers are editable there, while
+  tax rates/category assignments are address-derived, read-only for non-admins,
+  and guarded the same way by the ML backend. POS applies the largest
+  restaurant-wide auto-gratuity tier whose minimum party size is met, unless a
+  section/table service-charge rule overrides it.
 - Migrations (manual run): ML `supabase/migrations/0055_team_hub_access.sql`
   (restaurant_members + back_office_permissions + invitations alter), POS repo
   `0022_pos_timeclock_breaks_v1.sql` (pos_time_clock_breaks).
@@ -182,6 +223,10 @@ surface independently, while every mutation is also guarded by the ML backend.
   guards on tips_payroll + waiters mutations. ML-owned employee, invite, alert,
   and settings endpoints mirror the same reseller store/employee grant
   translation; reseller read access does not imply mutation access.
+  Team loads use the authorized `/restaurants/:id/team-workspace` aggregate so
+  employees, positions, permissions, drawer policy, members, and invites share
+  one access resolution and one data query; individual endpoints remain the
+  compatibility fallback. Employee-position writes bulk-sync assignments.
 - Manager alerts: the store bell and Alerts page merge existing scheduling
   requests with durable missed-clock-out alerts. Desktop and mobile call the
   same ML-backend action API; time corrections write the existing POS
@@ -274,7 +319,15 @@ surface independently, while every mutation is also guarded by the ML backend.
 - Supabase-direct menu writes use `can_manage_store_menu()` RLS. Category-question,
   item-modifier override, and item price-allocation policies also verify that every
   referenced row belongs to the submitted restaurant, preventing cross-tenant
-  record links.
+  record links. Item-level recurring price rules are read and written through
+  the ML pricing API under `menu.view` / `menu.edit_prices`; rule and
+  actor-attributed audit writes commit transactionally, while browser roles
+  cannot access those tables directly. The POS backend remains authoritative for
+  the effective price charged to a check.
+- The store Menu workspace exposes Kitchen Routing only to members with
+  `settings.edit`; the existing POS-backend routing guards remain authoritative.
+  Setup keeps the same routing editor while setup is incomplete, so completing
+  onboarding changes navigation placement rather than the persisted contract.
 - Server Quick Menu, Fast Bar, department ranking, and bartender home preferences
   use existing `menu.view` for Back Office visibility and `menu.edit_items` for
   mutation. Owners and authorized resellers share the audited POS-backend

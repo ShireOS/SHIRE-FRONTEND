@@ -116,6 +116,11 @@ function RatePlanCard({ restaurant, plan, userId, onSaved, restaurantBase }) {
     }
   }
 
+  const discard = () => {
+    setForm(planToForm(plan))
+    setFeedback({ tone: 'success', text: 'Changes discarded.' })
+  }
+
   return (
     <section className="glass-card rounded-2xl">
       <button
@@ -315,7 +320,8 @@ function RatePlanCard({ restaurant, plan, userId, onSaved, restaurantBase }) {
             </p>
           )}
 
-          <div className="flex justify-end">
+          <div className="flex flex-wrap justify-end gap-2">
+            <button type="button" onClick={discard} disabled={saving} className="h-9 rounded-xl border border-dash-border px-5 text-sm font-medium text-dash-secondary transition hover:text-dash-cream disabled:opacity-50">Cancel</button>
             <button
               type="button"
               onClick={() => void save()}

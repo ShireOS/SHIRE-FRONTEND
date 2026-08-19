@@ -20,6 +20,9 @@ const supabaseUrl =
 const supabasePublishableKey =
   normalizeEnvValue(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) ??
   normalizeEnvValue(__SHIRE_SUPABASE_PUBLISHABLE_KEY__)
+const resolvedSupabaseUrl = supabaseUrl || FALLBACK_SUPABASE_URL
+
+export const supabaseAuthStorageKey = `sb-${new URL(resolvedSupabaseUrl).hostname.split('.')[0]}-auth-token`
 
 export const isSupabaseConfigured = Boolean(
   supabaseUrl &&
@@ -40,7 +43,7 @@ if (!isSupabaseConfigured) {
 
 // Using 'any' for now - generate proper types with: npx supabase gen types typescript
 export const supabase = createClient(
-  supabaseUrl || FALLBACK_SUPABASE_URL,
+  resolvedSupabaseUrl,
   supabasePublishableKey || FALLBACK_SUPABASE_KEY,
   {
     auth: {
@@ -48,6 +51,7 @@ export const supabase = createClient(
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false,
+      storageKey: supabaseAuthStorageKey,
     },
   }
 )

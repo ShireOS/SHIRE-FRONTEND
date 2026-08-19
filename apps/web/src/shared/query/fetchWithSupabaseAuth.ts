@@ -1,28 +1,48 @@
 import { supabase } from '../lib/supabase'
 import { API_CONFIG } from '../api/config'
 import { fetchPosApi } from '../api/posClient'
+import { requestWithPosSession } from '../api/posSession'
+import { withOptionalRequestDeadline } from '../api/requestDeadline'
 
 const POS_OWNED_RESTAURANT_ROUTE =
   /^\/restaurants\/([^/]+)\/(?:tips-payroll-settings|pay-periods|tip-pools(?:\/|$)|job-codes(?:\/|$))/
 
 export async function fetchWithSupabaseAuth<T = any>(
   endpoint: string,
-  options: RequestInit = {},
+  options: RequestInit & { timeoutMs?: number; auth?: boolean } = {},
 ): Promise<T> {
   const posRoute = endpoint.match(POS_OWNED_RESTAURANT_ROUTE)
   if (posRoute) {
     return fetchPosApi<T>(decodeURIComponent(posRoute[1]), endpoint, options)
   }
-  const { data: sessionData } = await supabase.auth.getSession()
-  const token = sessionData?.session?.access_token
-  const headers = new Headers(options.headers || {})
-  if (!(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
-  if (token) headers.set('Authorization', `Bearer ${token}`)
-
-  const response = await fetch(`${API_CONFIG.baseUrl}${endpoint}`, {
-    ...options,
-    headers,
-  })
+  const { timeoutMs, auth = true, ...init } = options
+  if (!auth) {
+    const response = await withOptionalRequestDeadline(
+      (requestSignal) => fetch(`${API_CONFIG.baseUrl}${endpoint}`, { ...init, signal: requestSignal }),
+      { signal: init.signal, timeoutMs, message: 'The request took too long. Try again.' },
+    )
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      const detail = body.detail || body.message
+      const error = new Error(typeof detail === 'string' ? detail : `Request failed (${response.status})`) as Error & { status?: number }
+      error.status = response.status
+      throw error
+    }
+    return response.json() as Promise<T>
+  }
+  const response = await withOptionalRequestDeadline(
+    (requestSignal) => requestWithPosSession({
+      auth: supabase.auth,
+      signal: requestSignal,
+      request: (accessToken) => {
+        const headers = new Headers(init.headers || {})
+        if (!(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
+        headers.set('Authorization', `Bearer ${accessToken}`)
+        return fetch(`${API_CONFIG.baseUrl}${endpoint}`, { ...init, headers, signal: requestSignal })
+      },
+    }),
+    { signal: init.signal, timeoutMs, message: 'The dashboard took too long to load. Try again.' },
+  )
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
     const detail = body.detail || body.message

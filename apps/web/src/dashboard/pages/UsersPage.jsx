@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { Check, ChevronDown, Search } from 'lucide-react'
+import { Check, ChevronDown, Copy, Mail, RefreshCw, Search, Trash2 } from 'lucide-react'
 import { useAuth } from '../../auth'
 import { supabase } from '../../shared/lib/supabase'
 import { backOfficeApi } from '../../shared/api/backOfficeApi'
@@ -64,6 +64,9 @@ export default function UsersPage({ fallbackPath = '/enterprise/stores' }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [busyKey, setBusyKey] = useState(null)
+  const [invites, setInvites] = useState([])
+  const [inviteDraft, setInviteDraft] = useState({ email: '', name: '', account_type: 'owner' })
+  const [lastInvite, setLastInvite] = useState(null)
 
   useEffect(() => {
     if (auth.accountType !== 'admin') return
@@ -72,8 +75,9 @@ export default function UsersPage({ fallbackPath = '/enterprise/stores' }) {
     Promise.all([
       supabase.from('profiles').select('*').order('created_at', { ascending: false }),
       supabase.from('reseller_restaurants').select('reseller_id, restaurant_id').eq('status', 'active'),
+      backOfficeApi.listPlatformInvites(),
     ])
-      .then(([profileResult, assignmentResult]) => {
+      .then(([profileResult, assignmentResult, pendingInvites]) => {
         if (cancelled) return
         if (profileResult.error) throw profileResult.error
         if (assignmentResult.error) throw assignmentResult.error
@@ -84,6 +88,7 @@ export default function UsersPage({ fallbackPath = '/enterprise/stores' }) {
           map[row.reseller_id].add(row.restaurant_id)
         }
         setAssignments(map)
+        setInvites(pendingInvites)
         setError(null)
       })
       .catch((loadError) => {
@@ -165,6 +170,48 @@ export default function UsersPage({ fallbackPath = '/enterprise/stores' }) {
     }
   }
 
+  const sendInvite = async () => {
+    setBusyKey('invite')
+    setError(null)
+    try {
+      const response = await backOfficeApi.invitePlatformAccount({
+        email: inviteDraft.email.trim().toLowerCase(),
+        name: inviteDraft.name.trim() || undefined,
+        account_type: inviteDraft.account_type,
+      })
+      setInvites((prev) => [response.invitation, ...prev.filter((item) => item.email !== response.invitation.email)])
+      setLastInvite(response)
+      setInviteDraft((prev) => ({ ...prev, email: '', name: '' }))
+    } catch (inviteError) {
+      setError(inviteError?.message || 'Could not send the invitation.')
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  const resendInvite = async (invite) => {
+    setBusyKey(`resend:${invite.id}`)
+    try {
+      setLastInvite(await backOfficeApi.resendInvite(invite.id))
+    } catch (inviteError) {
+      setError(inviteError?.message || 'Could not resend the invitation.')
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  const revokeInvite = async (invite) => {
+    setBusyKey(`revoke:${invite.id}`)
+    try {
+      await backOfficeApi.revokeAccessInvite(invite.id)
+      setInvites((prev) => prev.filter((item) => item.id !== invite.id))
+    } catch (inviteError) {
+      setError(inviteError?.message || 'Could not revoke the invitation.')
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <header>
@@ -174,6 +221,39 @@ export default function UsersPage({ fallbackPath = '/enterprise/stores' }) {
           Promote accounts to reseller or admin, and assign stores to a reseller's portfolio.
         </p>
       </header>
+
+      <section className="glass-card p-4">
+        <div className="flex items-center gap-2">
+          <Mail size={15} className="text-dash-tertiary" aria-hidden="true" />
+          <h2 className="text-sm font-semibold text-dash-cream">Invite an account</h2>
+        </div>
+        <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_150px_auto]">
+          <input type="email" value={inviteDraft.email} onChange={(event) => setInviteDraft((prev) => ({ ...prev, email: event.target.value }))} placeholder="email@example.com" className="h-9 rounded-lg border border-dash-border bg-[var(--glass-bg)] px-3 text-sm text-dash-cream outline-none focus:border-shell-accent/60" />
+          <input value={inviteDraft.name} onChange={(event) => setInviteDraft((prev) => ({ ...prev, name: event.target.value }))} placeholder="Name (optional)" className="h-9 rounded-lg border border-dash-border bg-[var(--glass-bg)] px-3 text-sm text-dash-cream outline-none focus:border-shell-accent/60" />
+          <select value={inviteDraft.account_type} onChange={(event) => setInviteDraft((prev) => ({ ...prev, account_type: event.target.value }))} className="h-9 rounded-lg border border-dash-border bg-[var(--glass-bg)] px-2 text-sm text-dash-cream outline-none">
+            {ACCOUNT_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+          </select>
+          <button type="button" disabled={busyKey === 'invite'} onClick={() => void sendInvite()} className="h-9 rounded-lg bg-shell-cta px-4 text-sm font-semibold text-shell-cta-text disabled:opacity-50">{busyKey === 'invite' ? 'Sending' : 'Send invite'}</button>
+        </div>
+        {lastInvite?.accept_url && !lastInvite.email_sent && (
+          <div className="mt-3 flex items-center gap-2 text-xs text-dash-warning">
+            <span className="flex-1">Email is not configured. Share the generated invitation link.</span>
+            <button type="button" title="Copy invitation link" aria-label="Copy invitation link" onClick={() => navigator.clipboard.writeText(lastInvite.accept_url)}><Copy size={14} /></button>
+          </div>
+        )}
+        {invites.length > 0 && (
+          <div className="mt-3 divide-y divide-dash-border border-t border-dash-border">
+            {invites.map((invite) => (
+              <div key={invite.id} className="flex items-center gap-2 py-2 text-xs">
+                <span className="min-w-0 flex-1 truncate text-dash-secondary">{invite.email}</span>
+                <span className="capitalize text-dash-tertiary">{String(invite.account_type || '').replace(/_/g, ' ')}</span>
+                <button type="button" title="Resend invitation" aria-label="Resend invitation" onClick={() => void resendInvite(invite)} disabled={busyKey === `resend:${invite.id}`} className="text-dash-tertiary hover:text-dash-cream disabled:opacity-50"><RefreshCw size={13} /></button>
+                <button type="button" title="Revoke invitation" aria-label="Revoke invitation" onClick={() => void revokeInvite(invite)} disabled={busyKey === `revoke:${invite.id}`} className="text-dash-danger/80 hover:text-dash-danger disabled:opacity-50"><Trash2 size={13} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <label className="flex h-9 max-w-xs items-center gap-2 rounded-full glass-panel border border-dash-border px-3 focus-within:border-shell-accent/60">
         <Search size={14} strokeWidth={1.75} className="text-dash-tertiary" aria-hidden="true" />

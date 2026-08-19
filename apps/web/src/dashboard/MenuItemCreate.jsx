@@ -13,10 +13,12 @@ import {
   groupRulesSummary,
   money,
 } from './components/menuUi'
-
-const ROUTE_INHERIT_VALUE = ''
-const ROUTE_NO_PRODUCTION_VALUE = '__no_production_route__'
-const ROUTE_MULTI_VALUE = '__multiple_production_routes__'
+import {
+  ROUTE_INHERIT_VALUE,
+  ROUTE_MULTI_VALUE,
+  ROUTE_NO_PRODUCTION_VALUE,
+} from './menuRouting'
+import { setQuestionExclusion } from './data/menuDuplicateQuestions.js'
 
 const AVAILABILITY_MODES = [
   { value: 'always', label: 'Always available' },
@@ -65,14 +67,17 @@ export function MenuItemCreate({
   onCancel,
   onSave,
   onCreateModifier = null,
-  routingIssueForDraft = null,
+  resolveRoutingForDraft = null,
 }) {
   const [draft, setDraft] = useState(initialDraft)
   const [showModifierPicker, setShowModifierPicker] = useState(false)
   const [questionSearch, setQuestionSearch] = useState('')
   const set = (patch) => setDraft(prev => ({ ...prev, ...patch }))
-  const routingIssue = routingIssueForDraft?.(draft) || ''
+  const resolvedRoute = resolveRoutingForDraft?.(draft) || null
+  const routingIssue = resolvedRoute?.error || ''
   const canSave = Boolean(draft.name.trim()) && draft.price !== '' && !routingIssue && !busy
+  const [routeOverrideOpen, setRouteOverrideOpen] = useState(() => Boolean(draft.routing && draft.routing !== ROUTE_NO_PRODUCTION_VALUE))
+  const noKitchenTicket = draft.routing === ROUTE_NO_PRODUCTION_VALUE
 
   const modifiersById = useMemo(() => Object.fromEntries(modifiers.map(m => [m.id, m])), [modifiers])
 
@@ -82,6 +87,7 @@ export function MenuItemCreate({
     () => sourceGroupIds.map(id => groups.find(group => group.id === id)).filter(Boolean),
     [sourceGroupIds, groups],
   )
+  const excludedQuestionIds = new Set(draft.excluded_question_ids || [])
   const category = categoriesByName[draft.category || ''] || null
   const inheritedGroups = useMemo(
     () => (category
@@ -89,10 +95,16 @@ export function MenuItemCreate({
       : []),
     [groups, category],
   )
+  const sourceGroupIdSet = new Set(sourceGroupIds)
+  const inheritedOnlyGroups = inheritedGroups.filter(group => !sourceGroupIdSet.has(group.id))
+  const activeSourceGroups = sourceGroups.filter(group => !excludedQuestionIds.has(group.id))
+  const activeInheritedGroups = inheritedOnlyGroups.filter(group => !excludedQuestionIds.has(group.id))
+  const excludedSourceGroups = sourceGroups.filter(group => excludedQuestionIds.has(group.id))
+  const excludedInheritedGroups = inheritedOnlyGroups.filter(group => excludedQuestionIds.has(group.id))
   const selectedGroups = (draft.question_ids || []).map(id => groups.find(group => group.id === id)).filter(Boolean)
   const takenGroupIds = new Set([
     ...(draft.question_ids || []),
-    ...inheritedGroups.map(group => group.id),
+    ...inheritedOnlyGroups.map(group => group.id),
     ...sourceGroupIds,
   ])
   const attachableGroups = groups
@@ -105,7 +117,7 @@ export function MenuItemCreate({
   const extrasModifiers = (draft.extra_modifier_ids || []).map(id => modifiersById[id]).filter(Boolean)
   const excludeModifierIds = new Set([
     ...(draft.extra_modifier_ids || []),
-    ...[...selectedGroups, ...inheritedGroups, ...sourceGroups].flatMap(group => (group.options || []).map(option => option.modifier_id)),
+    ...[...selectedGroups, ...activeInheritedGroups, ...activeSourceGroups].flatMap(group => (group.options || []).map(option => option.modifier_id)),
   ])
 
   const addQuestion = (groupId) => setDraft(prev => ({
@@ -116,6 +128,13 @@ export function MenuItemCreate({
     ...prev,
     question_ids: (prev.question_ids || []).filter(id => id !== groupId),
     pending_group_options: (prev.pending_group_options || []).filter(pending => pending.group_id !== groupId),
+  }))
+  const setQuestionExcluded = (groupId, excluded) => setDraft(prev => ({
+    ...prev,
+    excluded_question_ids: setQuestionExclusion(prev.excluded_question_ids, groupId, excluded),
+    pending_group_options: excluded
+      ? (prev.pending_group_options || []).filter(pending => pending.group_id !== groupId)
+      : (prev.pending_group_options || []),
   }))
   const addExtras = (modifierIds) => setDraft(prev => ({
     ...prev,
@@ -144,6 +163,7 @@ export function MenuItemCreate({
         return {
           ...prev,
           question_ids: alreadyAsked ? (prev.question_ids || []) : [...(prev.question_ids || []), match.id],
+          excluded_question_ids: (prev.excluded_question_ids || []).filter(id => id !== match.id),
           pending_group_options: [...(prev.pending_group_options || []), { group_id: match.id, modifier_id: created.id }],
         }
       })
@@ -152,11 +172,19 @@ export function MenuItemCreate({
     }
   }
 
-  const questionCount = sourceGroups.length + inheritedGroups.length + selectedGroups.length + (extrasModifiers.length > 0 ? 1 : 0)
+  const carriedQuestionIds = new Set([
+    ...activeSourceGroups.map(group => group.id),
+    ...activeInheritedGroups.map(group => group.id),
+  ])
+  const activeQuestionIds = new Set([
+    ...carriedQuestionIds,
+    ...selectedGroups.map(group => group.id),
+  ])
+  const questionCount = activeQuestionIds.size + (extrasModifiers.length > 0 ? 1 : 0)
 
   const carryoverBits = source ? [
     'category & price',
-    carryover?.questions ? `${carryover.questions} question${carryover.questions === 1 ? '' : 's'} & their mods` : null,
+    carriedQuestionIds.size ? `${carriedQuestionIds.size} question${carriedQuestionIds.size === 1 ? '' : 's'} & their mods` : null,
     carryover?.modOverrides ? 'modifier price/print overrides' : null,
     'printer routing',
     'availability schedule',
@@ -257,37 +285,63 @@ export function MenuItemCreate({
             hint="What the POS asks when this item is ordered. Attach existing questions or quick-add modifiers here — answers, ★ defaults, and follow-ups are fine-tuned on the item screen after saving."
           >
             <div className="space-y-4">
-              {sourceGroups.length > 0 && (
+              {activeSourceGroups.length > 0 && (
                 <div>
                   <p className="label-mono mb-2">Copied from “{source.name}”</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {sourceGroups.map(group => (
-                      <span
+                    {activeSourceGroups.map(group => (
+                      <button
                         key={group.id}
-                        title={`${groupRulesSummary(group)} — carries over with its per-item settings; adjust on the item screen after saving`}
-                        className="rounded-full border border-dash-gold/30 bg-dash-gold/10 px-3 py-1.5 text-sm text-dash-gold"
+                        type="button"
+                        disabled={busy}
+                        title={`${groupRulesSummary(group)} — click to leave this question off the duplicate`}
+                        onClick={() => setQuestionExcluded(group.id, true)}
+                        className="rounded-full border border-dash-gold/60 bg-dash-gold/15 px-3 py-1.5 text-sm font-medium text-dash-cream transition hover:border-red-400/60 hover:bg-red-400/10 disabled:opacity-50"
                       >
                         {group.name}
-                        <span className="ml-1.5 text-xs opacity-70">{group.options.length} option{group.options.length === 1 ? '' : 's'}</span>
-                      </span>
+                        <span className="ml-1.5 text-xs text-dash-tertiary">{group.options.length} option{group.options.length === 1 ? '' : 's'} · Remove</span>
+                      </button>
                     ))}
                   </div>
                 </div>
               )}
 
-              {inheritedGroups.length > 0 && (
+              {activeInheritedGroups.length > 0 && (
                 <div>
                   <p className="label-mono mb-2">Inherited from {draft.category || 'the category'} — asked automatically</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {inheritedGroups.map(group => (
-                      <span
+                    {activeInheritedGroups.map(group => (
+                      <button
                         key={group.id}
-                        title={`Every item in ${draft.category} asks this — including this one. Opt out on the item screen after saving.`}
-                        className="rounded-full border border-sky-300/30 bg-sky-300/10 px-3 py-1.5 text-sm text-sky-200"
+                        type="button"
+                        disabled={busy}
+                        title={`Every item in ${draft.category} asks this — click to opt this duplicate out`}
+                        onClick={() => setQuestionExcluded(group.id, true)}
+                        className="rounded-full border border-sky-300/40 bg-sky-300/10 px-3 py-1.5 text-sm text-sky-100 transition hover:border-red-400/60 hover:bg-red-400/10 disabled:opacity-50"
                       >
                         {group.name}
-                        <span className="ml-1.5 text-xs opacity-70">{group.options.length} option{group.options.length === 1 ? '' : 's'}</span>
-                      </span>
+                        <span className="ml-1.5 text-xs opacity-70">{group.options.length} option{group.options.length === 1 ? '' : 's'} · Opt out</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(excludedSourceGroups.length > 0 || excludedInheritedGroups.length > 0) && (
+                <div>
+                  <p className="label-mono mb-2">Not included on this item</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[...excludedSourceGroups, ...excludedInheritedGroups].map(group => (
+                      <button
+                        key={group.id}
+                        type="button"
+                        disabled={busy}
+                        title="Click to include this question again"
+                        onClick={() => setQuestionExcluded(group.id, false)}
+                        className="rounded-full border border-white/10 bg-white/[0.02] px-3 py-1.5 text-sm text-dash-tertiary line-through transition hover:border-dash-gold/60 hover:text-dash-cream hover:no-underline disabled:opacity-50"
+                      >
+                        {group.name}<span className="ml-1.5 text-xs no-underline">Restore</span>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -395,20 +449,52 @@ export function MenuItemCreate({
 
           <CreateCard
             title="Kitchen"
-            hint="Where this item prints and how it courses. Inherit follows the category."
+            hint="The category chooses the prep station automatically unless this item has its own rule."
           >
-            <div className="grid gap-3 md:grid-cols-3">
-              <Field label="Production route">
+            <label className={`mb-4 flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition ${noKitchenTicket ? 'border-amber-300/30 bg-amber-300/10' : 'border-white/10 bg-white/[0.025]'}`}>
+              <input
+                type="checkbox"
+                checked={noKitchenTicket}
+                onChange={event => {
+                  set({ routing: event.target.checked ? ROUTE_NO_PRODUCTION_VALUE : ROUTE_INHERIT_VALUE })
+                  setRouteOverrideOpen(false)
+                }}
+                className="mt-0.5 h-4 w-4 accent-dash-gold"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-dash-cream">No kitchen ticket</span>
+                <span className="mt-1 block text-xs text-dash-tertiary">Keep this item on checks and reports without sending it to a kitchen or bar printer/display.</span>
+              </span>
+            </label>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.025] p-4">
+              <div>
+                <p className="label-mono">Automatic destination</p>
+                <p className={`mt-1 text-base font-semibold ${routingIssue ? 'text-amber-200' : 'text-dash-cream'}`}>{resolvedRoute?.label || 'Resolving route...'}</p>
+                <p className="mt-1 text-xs text-dash-tertiary">{resolvedRoute?.description || 'Choose a category to preview where this item will print.'}</p>
+              </div>
+              <SmallButton
+                variant={routeOverrideOpen ? 'primary' : 'secondary'}
+                disabled={noKitchenTicket}
+                onClick={() => {
+                  if (routeOverrideOpen) set({ routing: ROUTE_INHERIT_VALUE })
+                  setRouteOverrideOpen(value => !value)
+                }}
+              >
+                {routeOverrideOpen ? 'Use automatic route' : 'Add item override'}
+              </SmallButton>
+            </div>
+            {routeOverrideOpen && <div className="mb-4 max-w-md">
+              <Field label="Item-specific destination">
                 <SelectInput value={draft.routing} onChange={event => set({ routing: event.target.value })}>
-                  <option value={ROUTE_INHERIT_VALUE}>Inherit category/fallback</option>
-                  <option value={ROUTE_NO_PRODUCTION_VALUE}>No production route</option>
-                  {draft.routing === ROUTE_MULTI_VALUE && (
-                    <option value={ROUTE_MULTI_VALUE}>Multiple stations (same as source)</option>
-                  )}
+                  <option value={ROUTE_INHERIT_VALUE}>Automatic · category or restaurant fallback</option>
+                  <option value={ROUTE_NO_PRODUCTION_VALUE}>No kitchen ticket</option>
+                  {draft.routing === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations (same as source)</option>}
                   {stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
                 </SelectInput>
-                {routingIssue && <p className="mt-1 text-xs text-amber-300">{routingIssue}</p>}
               </Field>
+            </div>}
+            {routingIssue && <p className="mb-4 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 text-xs text-amber-200">{routingIssue}</p>}
+            <div className="grid gap-3 md:grid-cols-2">
               <Field label="Course">
                 <SelectInput value={draft.course_type} onChange={event => set({ course_type: event.target.value })}>
                   {COURSE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}

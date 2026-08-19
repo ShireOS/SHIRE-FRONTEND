@@ -3,8 +3,9 @@
     {
       "align": "center",
       "bold": true,
+      "color": "red",
       "field": "order_type",
-      "size": "large",
+      "size": "double",
       "type": "field"
     },
     {

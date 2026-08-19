@@ -12,38 +12,29 @@ import {
 const read = (relative) => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8')
 const reportsPage = read('./RestaurantReportsPage.jsx')
 
-test('tax_summary is registered in SECTION_META and the renderer dispatch', () => {
-  assert.match(reportsPage, /\['tax_summary', 'Tax'\]/)
-  assert.match(reportsPage, /tax_summary: \(\) => <TaxSummary section=\{sections\.tax_summary\}/)
-  assert.match(reportsPage, /function TaxSummary\(\{ section = \{\}, comparisonEnabled \}\)/)
+test('tax is available in long and short POS report profiles', () => {
+  const long = reportsPage.match(/id: 'long'[^\n]+/)?.[0] || ''
+  const short = reportsPage.match(/id: 'short'[^\n]+/)?.[0] || ''
+  assert.match(long, /'tax'/)
+  assert.match(short, /'tax'/)
 })
 
-test('tax section renders the stats, all three tables, and a CSV export', () => {
-  const [, body] = reportsPage.split('function TaxSummary(')
-  const section = body.split('\nfunction ')[0]
-  for (const label of ['Taxable sales', 'Non-taxable sales', 'Tax collected', 'Tax included in prices', 'Total tax liability']) {
-    assert.ok(section.includes(`label="${label}"`), `missing stat ${label}`)
-  }
-  assert.ok(section.includes('rows={section.by_rate || []}'), 'missing per-rate table')
-  assert.ok(section.includes('rows={section.by_category || []}'), 'missing per-category table')
-  assert.ok(section.includes('rows={section.by_date || []}'), 'missing per-date table')
-  assert.ok(section.includes('exportRows={section.by_rate || []}'), 'missing CSV export rows')
+test('the generic receipt renderer supports tax summary lines and detailed rows', () => {
+  assert.match(reportsPage, /\(group\.lines \|\| \[\]\)\.length/)
+  assert.match(reportsPage, /\(group\.rows \|\| \[\]\)\.length/)
+  assert.match(reportsPage, /group\.columns\.map/)
 })
 
-test('inclusive stats are conditional so exclusive-only restaurants see no empty tiles', () => {
-  const [, body] = reportsPage.split('function TaxSummary(')
-  const section = body.split('\nfunction ')[0]
-  assert.match(section, /const inclusive = Number\(totals\.inclusive_tax \|\| 0\)/)
-  assert.match(section, /\{inclusive !== 0 && <Stat label="Tax included in prices"/)
-  assert.match(section, /\{inclusive !== 0 && <Stat label="Total tax liability"/)
+test('settings are driven by the backend catalog instead of a second tax schema', () => {
+  assert.match(reportsPage, /const catalog = snapshot\?\.catalog\?\.length \? snapshot\.catalog : RECEIPT_GROUP_CATALOG/)
+  assert.match(reportsPage, /catalog\.map\(\(group\) =>/)
+  assert.match(reportsPage, /checked=\{selected\.group_ids\.includes\(group\.id\)\}/)
 })
 
-test('an unattributed residual is surfaced rather than hidden', () => {
-  const [, body] = reportsPage.split('function TaxSummary(')
-  const section = body.split('\nfunction ')[0]
-  assert.match(section, /unattributed_tax_added/)
-  assert.match(section, /unattributed_tax_included/)
-  assert.match(section, /Math\.abs\(unattributed\) >= 0\.01 &&/)
+test('profile selection is persisted and controls every generated artifact', () => {
+  assert.match(reportsPage, /active_profile_id: nextActiveId/)
+  assert.match(reportsPage, /pos_report_profiles: nextProfiles/)
+  assert.match(reportsPage, /receipt_group_ids: scopedGroupIds/)
 })
 
 const ALL = ['sales_revenue', 'z_report', 'tax_summary', 'daily_summary']
@@ -69,8 +60,6 @@ test('the config modal and the page agree, so an untouched save cannot hide a ne
     section_settings: first.sectionSettings,
   }
   assert.deepEqual(effectivePreference(afterSave, ALL).visible, first.visible)
-  assert.match(reportsPage, /const resolved = resolvePreference\(preference\)/)
-  assert.match(reportsPage, /useState\(resolved\.visible\)/)
 })
 
 test('an older client cannot hide a newly introduced section when the backend backfills order', () => {

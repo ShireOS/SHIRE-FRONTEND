@@ -26,7 +26,7 @@ const DEFAULT_PATH = new URL('./ticketTopDefault.json', import.meta.url)
 
 // Mirror of this file in the backend repo: Shire_POS_backend/tests/ticket_top_default.json
 // Update both, then update this digest and DEFAULT_SHA256 there.
-const EXPECTED_SHA256 = '5f736007e0216735084f2e73a3a8c25ea68cd0a03706c26754585c961695dfed'
+const EXPECTED_SHA256 = '6309247bc2910692d092e7d2d706f569b7f71759cd28baa5d6d7747dd3a82c43'
 
 test('the starter is exactly what the printer renders by default', () => {
   const shipped = JSON.parse(readFileSync(DEFAULT_PATH, 'utf8'))
@@ -43,11 +43,11 @@ test('default checksum is pinned', () => {
       + 'and DEFAULT_SHA256 in the backend, then re-run both suites.',
   )
 })
-test('the starter centers method and table around the service identity row', () => {
+test('the starter centers the method and narrower table above the item hierarchy', () => {
   const [method, identity, beforeTable, table, afterTable] = TICKET_TOP_STARTER.header
   assert.deepEqual(
-    [method.type, method.field, method.align, method.size, method.bold],
-    ['field', 'order_type', 'center', 'large', true],
+    [method.type, method.field, method.align, method.size, method.bold, method.color],
+    ['field', 'order_type', 'center', 'double', true, 'red'],
   )
   assert.equal(identity.type, 'pair')
   assert.deepEqual(identity.left.parts.map(part => part.field), ['station_name', 'server_name'])
@@ -117,7 +117,7 @@ test('a bare field is read as a one-part column', () => {
 
 test('preview presentation follows stock and customized field sizing', () => {
   assert.deepEqual(ticketTopFieldPresentation(TICKET_TOP_STARTER.header, 'order_type'), {
-    type: 'field', field: 'order_type', align: 'center', size: 'large', bold: true, pair: false,
+    type: 'field', field: 'order_type', align: 'center', size: 'double', bold: true, color: 'red', pair: false,
   })
   assert.deepEqual(ticketTopFieldPresentation(TICKET_TOP_STARTER.header, 'location'), {
     type: 'field', field: 'location', align: 'center', size: 'large', bold: true, pair: false,

@@ -24,8 +24,8 @@ import DashboardShell from './shell/DashboardShell'
 import StoresPage from './pages/StoresPage'
 import RatesPage from './pages/RatesPage'
 import UsersPage from './pages/UsersPage'
-import ResellerAccessCard from './pages/ResellerAccessCard'
 import OverviewPage from './pages/OverviewPage'
+import { normalizeReportingScope, WHOLE_RESTAURANT_SCOPE } from './components/homepageWidgetMath'
 import SettingsPage from './pages/SettingsPage'
 import PosSettingsPage from './pages/PosSettingsPage'
 import PrintingRoutingPage from './pages/PrintingRoutingPage'
@@ -33,7 +33,6 @@ import TipPoolingPage from './pages/TipPoolingPage'
 import LaborCostPage from './pages/LaborCostPage'
 import TeamPage from './pages/TeamPage'
 import TimeClockPage from './pages/TimeClockPage'
-import TaxesPage from './pages/TaxesPage'
 import AcceptInvitePage from './pages/AcceptInvitePage'
 import ClaimStorePage from './pages/ClaimStorePage'
 import DevicesPage from './pages/DevicesPage'
@@ -72,6 +71,11 @@ function OwnerGate() {
 
   if (!auth.isAuthenticated) {
     return <Navigate to="/auth/login" replace />
+  }
+
+  const pendingAccessInvite = localStorage.getItem('shire_pending_access_invite_token')
+  if (pendingAccessInvite) {
+    return <Navigate to={`/invite?token=${encodeURIComponent(pendingAccessInvite)}`} replace />
   }
 
   // A claim link survives the signup/login round-trip via localStorage.
@@ -134,10 +138,14 @@ function EnterprisePage({ item, title, children }) {
 
 const TABS = [
   { id: 'analytics', label: 'Analytics' },
-  { id: 'reports', label: 'Reports' },
+  { id: 'reports', label: 'POS Reports' },
   { id: 'checks', label: 'Checks' },
   { id: 'close-day', label: 'Close Day' },
   { id: 'setup', label: 'Edit Setup' },
+  { id: 'store-information', label: 'Store Information' },
+  { id: 'marketing', label: 'Marketing' },
+  { id: 'settings', label: 'Store Settings' },
+  { id: 'integrations', label: 'Integrations' },
   { id: 'ui', label: 'UI Editor' },
   { id: 'menu', label: 'Menu' },
   { id: 'menu-workspace', label: 'POS Menus' },
@@ -203,6 +211,30 @@ function PlaceholderPanel({ title, eyebrow, children }) {
       <h2 className="text-3xl font-semibold tracking-tight">{title}</h2>
       <div className="mt-4 max-w-3xl text-dash-secondary">{children}</div>
     </section>
+  )
+}
+
+function ConfigurationHub({ tabs, initialTab, children }) {
+  const [active, setActive] = useState(initialTab || tabs[0]?.id)
+  useEffect(() => {
+    if (!tabs.some(tab => tab.id === active)) setActive(tabs[0]?.id)
+  }, [active, tabs])
+  return (
+    <div className="space-y-5">
+      <nav className="flex flex-wrap gap-2 border-b border-white/10 pb-4" aria-label="Configuration sections">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActive(tab.id)}
+            className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${active === tab.id ? 'bg-dash-gold text-black' : 'border border-white/10 text-dash-secondary hover:border-white/20 hover:text-dash-cream'}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+      {children(active)}
+    </div>
   )
 }
 
@@ -347,8 +379,24 @@ const ANALYTICS_PERIODS = [
   { id: 'week', label: 'Week' },
   { id: 'month', label: 'Month' },
   { id: 'year', label: 'Year' },
-  { id: 'full', label: 'Full' },
+  { id: 'full', label: 'All' },
 ]
+
+function analyticsDateKey(value) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+}
+
+// Mirrors the backend homepage window semantics (period_window): week starts
+// Monday, month on the 1st, year on Jan 1, full since 2000 — through today.
+function analyticsPeriodRange(preset) {
+  const end = new Date()
+  const start = new Date(end)
+  if (preset === 'week') start.setDate(end.getDate() - ((end.getDay() + 6) % 7))
+  else if (preset === 'month') start.setDate(1)
+  else if (preset === 'year') { start.setMonth(0); start.setDate(1) }
+  else if (preset === 'full') start.setFullYear(2000, 0, 1)
+  return { start: analyticsDateKey(start), end: analyticsDateKey(end) }
+}
 
 const formatCurrency = (value) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
@@ -437,18 +485,43 @@ function MiniTable({ columns, rows }) {
 }
 
 function AnalyticsDashboard({ restaurant }) {
-  const [period, setPeriod] = useState('week')
+  const [periodPreset, setPeriodPreset] = useState('week')
+  const [dates, setDates] = useState(() => analyticsPeriodRange('week'))
+  const [reportingScope, setReportingScope] = useState(() => ({ ...WHOLE_RESTAURANT_SCOPE }))
   const [viewHydrated, setViewHydrated] = useState(false)
   const [viewPersistenceReady, setViewPersistenceReady] = useState(false)
+  const selectPeriod = (preset) => {
+    setPeriodPreset(preset)
+    setDates(analyticsPeriodRange(preset))
+  }
+  const setCustomDate = (field, value) => {
+    if (!value) return
+    const range = { start: dates.start, end: dates.end, [field]: value }
+    if (field === 'start' && value > range.end) range.end = value
+    if (field === 'end' && value < range.start) range.start = value
+    setPeriodPreset('custom')
+    setDates(range)
+  }
   useEffect(() => {
     if (!restaurant?.id) return
     let cancelled = false
     setViewHydrated(false)
     setViewPersistenceReady(false)
+    setReportingScope({ ...WHOLE_RESTAURANT_SCOPE })
     fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/reports/view-preferences`)
       .then((payload) => {
         if (!cancelled) {
-          setPeriod(payload.settings?.homepage?.period || 'week')
+          const saved = payload.settings?.homepage
+          const preset = saved?.period || 'week'
+          if (preset === 'custom' && saved?.custom_start_date && saved?.custom_end_date) {
+            setPeriodPreset('custom')
+            setDates({ start: saved.custom_start_date, end: saved.custom_end_date })
+          } else {
+            const resolved = preset === 'custom' ? 'week' : preset
+            setPeriodPreset(resolved)
+            setDates(analyticsPeriodRange(resolved))
+          }
+          setReportingScope(normalizeReportingScope(saved))
           setViewPersistenceReady(true)
         }
       })
@@ -460,11 +533,18 @@ function AnalyticsDashboard({ restaurant }) {
     if (!restaurant?.id || !viewHydrated || !viewPersistenceReady) return
     const timeout = window.setTimeout(() => {
       fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/reports/view-preferences/homepage`, {
-        method: 'PUT', body: JSON.stringify({ settings: { period, anchor_date: null } }),
+        method: 'PUT',
+        body: JSON.stringify({ settings: {
+          period: periodPreset,
+          anchor_date: null,
+          custom_start_date: periodPreset === 'custom' ? dates.start : null,
+          custom_end_date: periodPreset === 'custom' ? dates.end : null,
+          ...reportingScope,
+        } }),
       }).catch(() => undefined)
     }, 450)
     return () => window.clearTimeout(timeout)
-  }, [restaurant?.id, viewHydrated, viewPersistenceReady, period])
+  }, [restaurant?.id, viewHydrated, viewPersistenceReady, periodPreset, dates, reportingScope])
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-5 border-b border-white/10 pb-5 lg:flex-row lg:items-end lg:justify-between">
@@ -473,13 +553,25 @@ function AnalyticsDashboard({ restaurant }) {
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">{restaurant?.name || 'Restaurant'}</h1>
           <p className="mt-2 text-sm text-dash-secondary">Live restaurant performance and operational reporting.</p>
         </div>
-        <nav className="grid grid-cols-5 rounded-xl border border-white/10 p-1">
-          {ANALYTICS_PERIODS.map((item) => (
-            <button key={item.id} type="button" onClick={() => setPeriod(item.id)} className={`rounded-lg px-3 py-2 text-sm font-semibold ${period === item.id ? 'bg-dash-gold text-black' : 'text-dash-secondary hover:text-dash-cream'}`}>{item.label}</button>
-          ))}
-        </nav>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <nav className="grid grid-cols-5 self-start rounded-xl border border-white/10 p-1 sm:self-auto">
+            {ANALYTICS_PERIODS.map((item) => (
+              <button key={item.id} type="button" onClick={() => selectPeriod(item.id)} className={`rounded-lg px-3 py-2 text-sm font-semibold ${periodPreset === item.id ? 'bg-dash-gold text-black' : 'text-dash-secondary hover:text-dash-cream'}`}>{item.label}</button>
+            ))}
+          </nav>
+          <div className="flex items-end gap-2">
+            <label className="block text-sm text-dash-secondary">
+              <span className="mb-1 block text-xs font-semibold uppercase text-dash-tertiary">From</span>
+              <input type="date" value={dates.start} max={dates.end} onChange={(event) => setCustomDate('start', event.target.value)} className="h-10 rounded-md border border-white/10 bg-white/[0.04] px-3 text-sm [color-scheme:dark]" />
+            </label>
+            <label className="block text-sm text-dash-secondary">
+              <span className="mb-1 block text-xs font-semibold uppercase text-dash-tertiary">Through</span>
+              <input type="date" value={dates.end} min={dates.start} onChange={(event) => setCustomDate('end', event.target.value)} className="h-10 rounded-md border border-white/10 bg-white/[0.04] px-3 text-sm [color-scheme:dark]" />
+            </label>
+          </div>
+        </div>
       </header>
-      {viewHydrated && <HomepageWidgets scope="restaurant" restaurantId={restaurant?.id} period={period} />}
+      {viewHydrated && <HomepageWidgets scope="restaurant" restaurantId={restaurant?.id} period={periodPreset} dateRange={dates} dashboardScope={reportingScope} onDashboardScopeChange={setReportingScope} />}
       {viewHydrated && <CheckLedgerSection restaurantId={restaurant?.id} />}
     </div>
   )
@@ -1050,6 +1142,19 @@ function normalizeRoleCounts(roles = {}) {
   }, {})
 }
 
+function shiftToForm(item) {
+  if (!item) return null
+  return {
+    waiter_id: item.waiter_id,
+    role: item.role,
+    shift_date: item.shift_date,
+    shift_start: String(item.shift_start).slice(0, 5),
+    shift_end: String(item.shift_end).slice(0, 5),
+    is_locked: Boolean(item.is_locked),
+    notes: item.notes || '',
+  }
+}
+
 function blockDurationMinutes(block) {
   const start = timeToMinutes(block?.start_time, 0)
   const end = timeToMinutes(block?.end_time, start)
@@ -1194,6 +1299,7 @@ function SchedulingPanel({ restaurantId }) {
   const [shiftTradeRequests, setShiftTradeRequests] = useState([])
   const [shiftTradeView, setShiftTradeView] = useState('pending')
   const [requestPolicy, setRequestPolicy] = useState(null)
+  const [savedRequestPolicy, setSavedRequestPolicy] = useState(null)
   const [optimizationWeights, setOptimizationWeights] = useState(DEFAULT_OPTIMIZATION_WEIGHTS)
   const [scheduleRoleFilter, setScheduleRoleFilter] = useState('all')
   const [scheduleEmployeeFilter, setScheduleEmployeeFilter] = useState('all')
@@ -1268,6 +1374,7 @@ function SchedulingPanel({ restaurantId }) {
       force,
     )
     setRequestPolicy(data)
+    setSavedRequestPolicy(structuredClone(data))
     setOptimizationWeights({
       ...DEFAULT_OPTIMIZATION_WEIGHTS,
       ...(data?.manager_settings?.optimization_weights || {}),
@@ -1659,15 +1766,7 @@ function SchedulingPanel({ restaurantId }) {
   const selectShift = (item) => {
     setSelectedShift(item)
     setSelectedDiagnostic(null)
-    setShiftForm({
-      waiter_id: item.waiter_id,
-      role: item.role,
-      shift_date: item.shift_date,
-      shift_start: String(item.shift_start).slice(0, 5),
-      shift_end: String(item.shift_end).slice(0, 5),
-      is_locked: Boolean(item.is_locked),
-      notes: item.notes || '',
-    })
+    setShiftForm(shiftToForm(item))
   }
 
   const selectDiagnostic = (item) => {
@@ -2024,6 +2123,7 @@ function SchedulingPanel({ restaurantId }) {
         }),
       })
       setRequestPolicy(saved)
+      setSavedRequestPolicy(structuredClone(saved))
       setOptimizationWeights({
         ...DEFAULT_OPTIMIZATION_WEIGHTS,
         ...(saved?.manager_settings?.optimization_weights || {}),
@@ -2032,6 +2132,17 @@ function SchedulingPanel({ restaurantId }) {
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Could not save request limits')
     }
+  }
+
+  const discardRequestPolicy = () => {
+    if (!savedRequestPolicy) return
+    const restored = structuredClone(savedRequestPolicy)
+    setRequestPolicy(restored)
+    setOptimizationWeights({
+      ...DEFAULT_OPTIMIZATION_WEIGHTS,
+      ...(restored?.manager_settings?.optimization_weights || {}),
+    })
+    setStatus('Changes discarded.')
   }
 
   const scheduleTimelineWidth = ((calendarBounds.end - calendarBounds.start) / 60) * SCHEDULE_TIMELINE_PIXELS_PER_HOUR
@@ -2350,8 +2461,9 @@ function SchedulingPanel({ restaurantId }) {
                   placeholder="Notes optional"
                   className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary"
                 />
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button type="button" onClick={() => void saveSelectedShift()} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90">Save</button>
+                  <button type="button" onClick={() => setShiftForm(shiftToForm(selectedShift))} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Cancel</button>
                   <button type="button" onClick={() => void deleteSelectedShift()} className="rounded-xl border border-red-400/30 px-4 py-2 text-sm font-semibold text-red-100 transition hover:border-red-300/70">Remove</button>
                 </div>
               </div>
@@ -2709,8 +2821,19 @@ function SchedulingPanel({ restaurantId }) {
                   placeholder="Notes optional"
                   className="w-full rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary"
                 />
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button type="button" onClick={() => void saveCoverageBlock()} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90">Save block</button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const savedBlock = displayedBlocks.find(block => block.key === coverageForm.key)
+                      setCoverageForm(savedBlock ? blockToForm(savedBlock) : emptyCoverageBlockForm)
+                      setStatus('Changes discarded.')
+                    }}
+                    className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream"
+                  >
+                    Cancel
+                  </button>
                   <button
                     type="button"
                     onClick={() => void deleteCoverageBlock()}
@@ -2813,7 +2936,10 @@ function SchedulingPanel({ restaurantId }) {
                     <span className="font-semibold text-emerald-200">Required</span>
                   </div>
                 </div>
-                <button type="button" onClick={() => void saveRequestPolicy()} className="mt-3 w-full rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Save limits</button>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button type="button" onClick={discardRequestPolicy} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Cancel</button>
+                  <button type="button" onClick={() => void saveRequestPolicy()} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Save limits</button>
+                </div>
               </div>
             )}
           </aside>
@@ -2826,7 +2952,10 @@ function SchedulingPanel({ restaurantId }) {
                 Tune how strongly the draft scheduler balances coverage, target hours, requests, preferences, fairness, and prime-shift spread.
               </p>
             </div>
-            <button type="button" onClick={() => void saveRequestPolicy()} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90">Save weights</button>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={discardRequestPolicy} className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary transition hover:border-dash-gold/60 hover:text-dash-cream">Cancel</button>
+              <button type="button" onClick={() => void saveRequestPolicy()} className="rounded-xl bg-dash-gold px-4 py-2 text-sm font-semibold text-black transition hover:opacity-90">Save weights</button>
+            </div>
           </div>
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {OPTIMIZATION_WEIGHT_FIELDS.map(([field, label]) => (
@@ -4354,7 +4483,7 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
   const [sectionRecords, setSectionRecords] = useState([])
   const [menuItems, setMenuItems] = useState([])
   const [setupError, setSetupError] = useState('')
-  const [staffForm, setStaffForm] = useState({ name: '', email: '', role: 'server', pin: '1111', employee_login_id: '' })
+  const [staffForm, setStaffForm] = useState({ name: '', email: '', role: '', pin: '1111', employee_login_id: '' })
   const [tableForm, setTableForm] = useState({ table_number: '', capacity: '2', table_type: 'standard', location: 'inside', section_id: '' })
   const [menuForm, setMenuForm] = useState({ name: '', category: '', price: '', cost: '', description: '' })
 
@@ -4448,6 +4577,10 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
       setSetupError('Employee name is required.')
       return
     }
+    if (!staffForm.role) {
+      setSetupError('Choose an employee role.')
+      return
+    }
     setSetupError('')
     const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters`, {
       method: 'POST',
@@ -4460,7 +4593,7 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
       }),
     })
     setWaiters(prev => [...prev, created])
-    setStaffForm({ name: '', email: '', role: 'server', pin: '1111', employee_login_id: '' })
+    setStaffForm({ name: '', email: '', role: '', pin: '1111', employee_login_id: '' })
     onSetupChanged?.()
   }
 
@@ -4893,6 +5026,7 @@ function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings, o
                 <TextInput placeholder="Name" value={staffForm.name} onChange={event => setStaffForm(prev => ({ ...prev, name: event.target.value, employee_login_id: prev.employee_login_id || defaultEmployeeId(event.target.value) }))} />
                 <TextInput placeholder="Email optional" value={staffForm.email} onChange={event => setStaffForm(prev => ({ ...prev, email: event.target.value }))} />
                 <select value={staffForm.role} onChange={event => setStaffForm(prev => ({ ...prev, role: event.target.value }))} className="rounded-xl border border-white/10 bg-white/[0.035] px-3 py-3 text-sm text-dash-cream outline-none focus:border-dash-gold/70">
+                  <option value="">Choose role</option>
                   <option value="server">Server</option>
                   <option value="bartender">Bartender</option>
                   <option value="host">Host</option>
@@ -4965,11 +5099,24 @@ export function RestaurantWorkspace({
   const [setupRefreshKey, setSetupRefreshKey] = useState(0)
   const allowedStoreTabs = useAllowedStoreTabs(restaurant)
   const backOfficeAccess = useBackOfficeAccess(auth, restaurantId)
-
   const setupWarnings = useMemo(
     () => buildModernSetupWarnings(restaurant || {}, waiterCount, floorPlanStatus, jobCodeCount),
     [restaurant, waiterCount, floorPlanStatus, jobCodeCount]
   )
+  const setupStatusQuery = useQuery({
+    queryKey: queryKeys.setupStatus(restaurantId || ''),
+    queryFn: () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/setup-status`),
+    enabled: Boolean(restaurantId && restaurant && (backOfficeAccess.loading || backOfficeAccess.can('settings.edit'))),
+    staleTime: STALE_TIMES.setup,
+    refetchInterval: query => query.state.data?.complete ? false : 15_000,
+  })
+  const showSetup = setupStatusQuery.isLoading || Boolean(setupStatusQuery.error) || setupStatusQuery.data?.complete !== true
+  const setupWarningCount = setupStatusQuery.data?.missing_count ?? modernWarningCount(setupWarnings || {})
+
+  const handleSetupChanged = () => {
+    setSetupRefreshKey(key => key + 1)
+    void queryClient.invalidateQueries({ queryKey: queryKeys.setupStatus(restaurantId) })
+  }
 
   useEffect(() => {
     if (!restaurantId || !restaurant) return
@@ -5043,6 +5190,10 @@ export function RestaurantWorkspace({
     return <Navigate to={`${restaurantBase}/${restaurantId}/analytics`} replace />
   }
 
+  if (activeTab === 'setup' && !setupStatusQuery.isLoading && !setupStatusQuery.error && setupStatusQuery.data?.complete) {
+    return <Navigate to={`${restaurantBase}/${restaurantId}/store-information`} replace />
+  }
+
   // Back-office members only reach permitted tabs (owners bypass; server
   // guards remain the real enforcement).
   const requiredPermission = TAB_PERMISSIONS[activeTab]
@@ -5072,7 +5223,8 @@ export function RestaurantWorkspace({
           breadcrumb={breadcrumb}
           restaurant={restaurant}
           restaurantId={restaurantId}
-          setupWarningCount={modernWarningCount(setupWarnings || {})}
+          setupWarningCount={setupWarningCount}
+          showSetup={showSetup}
           allowedStoreTabs={allowedStoreTabs}
           routes={shellRoutes}
         >
@@ -5081,7 +5233,7 @@ export function RestaurantWorkspace({
             restaurantId={restaurantId}
             auth={auth}
             setupWarnings={setupWarnings}
-            onSetupChanged={() => setSetupRefreshKey(key => key + 1)}
+            onSetupChanged={handleSetupChanged}
           />
         </DashboardShell>
       </ProtectedRoute>
@@ -5096,36 +5248,61 @@ export function RestaurantWorkspace({
         breadcrumb={breadcrumb}
         restaurant={restaurant}
         restaurantId={restaurantId}
-        setupWarningCount={modernWarningCount(setupWarnings || {})}
+        setupWarningCount={setupWarningCount}
+        showSetup={showSetup}
         allowedStoreTabs={allowedStoreTabs}
         routes={shellRoutes}
       >
         {activeTab === 'analytics' && (
           <>
-            <ResellerAccessCard restaurant={restaurant} />
             <AnalyticsDashboard restaurant={restaurant} />
           </>
         )}
         {activeTab === 'checks' && <CheckLedgerSection restaurantId={restaurantId} />}
         {activeTab === 'reports' && <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurant?.name} canConfigureServerReceipt={backOfficeAccess.can('settings.edit')} />}
         {activeTab === 'close-day' && <CloseDayPage restaurantId={restaurantId} restaurantName={restaurant?.name} />}
+        {activeTab === 'store-information' && (
+          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['basics', 'goals']} showHeader={false} />
+        )}
+        {activeTab === 'marketing' && (
+          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['branding']} showHeader={false} />
+        )}
+        {activeTab === 'settings' && (
+          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['legal', 'payments', 'taxes_charges', 'closeout', 'check_workflow', 'hours']} showHeader={false} />
+        )}
+        {activeTab === 'integrations' && (
+          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['service_model', 'reservation_timing', 'integrations']} showHeader={false} />
+        )}
         {activeTab === 'ui' && (
-          <ResellerUiEditor
-            restaurants={restaurant ? [{
-              ...restaurant,
-              reseller_group_id: 'ungrouped',
-              reseller_group_name: 'Current store',
-              reseller_group_color: '#9CA3AF',
-            }] : []}
-            groups={[]}
-            initialRestaurantId={restaurantId}
-          />
+          <ConfigurationHub tabs={[{ id: 'appearance', label: 'Appearance' }, { id: 'sections', label: 'Sections' }, { id: 'floor-plan', label: 'Floor Plan' }]} initialTab="appearance">
+            {(section) => section === 'appearance' ? (
+              <ResellerUiEditor
+                restaurants={restaurant ? [{
+                  ...restaurant,
+                  reseller_group_id: 'ungrouped',
+                  reseller_group_name: 'Current store',
+                  reseller_group_color: '#9CA3AF',
+                }] : []}
+                groups={[]}
+                initialRestaurantId={restaurantId}
+              />
+            ) : (
+              <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[section === 'sections' ? 'sections' : 'capacity']} showHeader={false} />
+            )}
+          </ConfigurationHub>
         )}
         {activeTab === 'menu' && (
-          <MenuPanel
-            restaurantId={restaurantId}
-            canEditPrices={backOfficeAccess.can('menu.edit_prices')}
-          />
+          <ConfigurationHub tabs={[
+            { id: 'menu', label: 'Menu' },
+            ...(backOfficeAccess.can('menu.edit_items') ? [{ id: 'discounts', label: 'Discounts' }] : []),
+            ...(backOfficeAccess.can('settings.edit') ? [{ id: 'routing', label: 'Kitchen Routing' }] : []),
+          ]} initialTab="menu">
+            {(section) => section === 'menu' ? (
+              <MenuPanel restaurantId={restaurantId} canEditPrices={backOfficeAccess.can('menu.edit_prices')} />
+            ) : (
+              <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[section === 'taxes' ? 'taxes_charges' : section]} showHeader={false} />
+            )}
+          </ConfigurationHub>
         )}
         {activeTab === 'menu-workspace' && (
           <MenuWorkspaceEditor
@@ -5133,9 +5310,16 @@ export function RestaurantWorkspace({
             canEdit={backOfficeAccess.can('menu.edit_items')}
           />
         )}
-        {activeTab === 'taxes' && <TaxesPage restaurantId={restaurantId} />}
+        {activeTab === 'taxes' && <Navigate to={`${restaurantBase}/${restaurantId}/menu`} replace />}
         {activeTab === 'feedback' && <GuestFeedbackPanel restaurantId={restaurantId} />}
-        {activeTab === 'team' && <TeamPage restaurantId={restaurantId} />}
+        {activeTab === 'team' && (
+          <ConfigurationHub tabs={[
+            { id: 'members', label: 'Team & Access' },
+            ...(backOfficeAccess.can('settings.edit') ? [{ id: 'manager-controls', label: 'Manager Controls' }] : []),
+          ]} initialTab="members">
+            {(section) => section === 'members' ? <TeamPage restaurantId={restaurantId} /> : <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['manager_controls']} showHeader={false} />}
+          </ConfigurationHub>
+        )}
         {activeTab === 'time-clock' && <TimeClockPage restaurantId={restaurantId} />}
         {activeTab === 'labor-cost' && <LaborCostPage restaurantId={restaurantId} />}
         {activeTab === 'devices' && <StoreDevicesPanel restaurantId={restaurantId} />}
@@ -5157,10 +5341,14 @@ export function RestaurantWorkspace({
 
 const WORKSPACE_BREADCRUMB_LABELS = {
   analytics: 'Overview',
-  reports: 'Reports',
+  reports: 'POS Reports',
   checks: 'Checks',
   'close-day': 'Close Day',
   setup: 'Setup',
+  'store-information': 'Store Information',
+  marketing: 'Marketing',
+  settings: 'Store Settings',
+  integrations: 'Integrations',
   'menu-workspace': 'POS Menus',
   ui: 'UI Editor',
   menu: 'Menu',

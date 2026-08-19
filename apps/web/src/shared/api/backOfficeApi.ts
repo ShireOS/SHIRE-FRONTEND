@@ -9,6 +9,7 @@ export interface BackOfficeAccess {
   is_owner: boolean
   is_admin?: boolean
   is_reseller?: boolean
+  is_direct_reseller?: boolean
   authority_level: 'staff' | 'manager' | 'owner' | 'platform_admin'
   permissions: PermissionMap
   member_id: string | null
@@ -22,9 +23,21 @@ export interface BackOfficeMember {
   email: string
   display_name: string | null
   waiter_id: string | null
+  role: 'server' | 'manager' | 'owner'
   status: 'active' | 'suspended'
   permission_overrides: PermissionMap
   created_at: string
+}
+
+export interface ConnectedReseller {
+  id: string
+  reseller_id: string
+  restaurant_id: string
+  status: 'active'
+  permissions: Record<string, boolean>
+  organization_name: string | null
+  first_name: string | null
+  last_name: string | null
 }
 
 export interface BackOfficeInvitation {
@@ -36,6 +49,42 @@ export interface BackOfficeInvitation {
   status: string
   created_at: string
   expires_at: string
+  role?: 'server' | 'manager' | 'owner'
+  kind?: string
+}
+
+export interface AccessInvitationPreview {
+  id: string
+  kind: 'restaurant_member' | 'reseller_connection' | 'reseller_employee' | 'platform_account'
+  email: string
+  name: string | null
+  role: string | null
+  account_type: string | null
+  status: string
+  expires_at: string
+  restaurant_name: string | null
+  reseller_name: string | null
+}
+
+export interface InvitationCreateResult {
+  invitation: BackOfficeInvitation
+  email_sent: boolean
+  accept_url: string
+}
+
+export interface TeamWorkspaceResponse {
+  waiters: Record<string, unknown>[]
+  job_codes: Record<string, unknown>[]
+  role_permissions: Record<string, unknown>[]
+  cash_drawer_policy: Record<string, unknown>
+  members: BackOfficeMember[]
+  resellers: ConnectedReseller[]
+  invitations: BackOfficeInvitation[]
+}
+
+export interface TeamMemberCreateResult {
+  waiter: Record<string, unknown> | null
+  invitation_result: InvitationCreateResult | null
 }
 
 export type ManagerInboxSource = 'operational' | 'employee_request' | 'shift_trade'
@@ -64,7 +113,7 @@ export interface ManagerInboxResponse {
 export const backOfficeApi = {
   updatePlatformAccountType: (
     profileId: string,
-    accountType: 'owner' | 'reseller' | 'reseller_employee' | 'admin',
+    accountType: 'owner' | 'reseller' | 'admin',
   ): Promise<{ id: string; account_type: string; is_superuser: boolean }> =>
     fetchWithSupabaseAuth(`/platform/users/${profileId}/account-type`, {
       method: 'PATCH',
@@ -87,22 +136,71 @@ export const backOfficeApi = {
   myAccess: (restaurantId: string): Promise<BackOfficeAccess> =>
     fetchWithSupabaseAuth(`/restaurants/${restaurantId}/back-office/my-access`),
 
-  listMembers: (restaurantId: string): Promise<{ members: BackOfficeMember[]; invitations: BackOfficeInvitation[] }> =>
+  listMembers: (restaurantId: string): Promise<{ members: BackOfficeMember[]; resellers: ConnectedReseller[]; invitations: BackOfficeInvitation[] }> =>
     fetchWithSupabaseAuth(`/restaurants/${restaurantId}/back-office/members`),
+
+  teamWorkspace: (restaurantId: string): Promise<TeamWorkspaceResponse> =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/team-workspace`),
 
   invite: (
     restaurantId: string,
-    input: { email: string; name?: string; waiter_id?: string | null; permissions: PermissionMap },
+    input: { email: string; name?: string; waiter_id?: string | null; role: 'server' | 'manager' | 'owner'; permissions: PermissionMap },
   ): Promise<{ invitation: BackOfficeInvitation; email_sent: boolean; accept_url: string }> =>
     fetchWithSupabaseAuth(`/restaurants/${restaurantId}/back-office/invites`, {
       method: 'POST',
       body: JSON.stringify(input),
     }),
 
-  acceptInvite: (token: string): Promise<{ member: BackOfficeMember; restaurant: { id: string; name: string } }> =>
-    fetchWithSupabaseAuth('/back-office/invites/accept', {
+  createTeamMember: (
+    restaurantId: string,
+    input: {
+      account_type: 'employee' | 'manager' | 'owner'
+      email?: string | null
+      name?: string | null
+      waiter_id?: string | null
+      pos_profile?: {
+        name: string
+        pin?: string | null
+        job_assignments: Record<string, unknown>[]
+      } | null
+      permissions: PermissionMap
+    },
+  ): Promise<TeamMemberCreateResult> =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/team-members`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  previewInvite: (token: string): Promise<AccessInvitationPreview> =>
+    fetchWithSupabaseAuth(`/access-invitations/preview?token=${encodeURIComponent(token)}`, { auth: false }),
+
+  acceptInvite: (token: string): Promise<Record<string, unknown>> =>
+    fetchWithSupabaseAuth('/access-invitations/accept', {
       method: 'POST',
       body: JSON.stringify({ token }),
+    }),
+
+  resendInvite: (invitationId: string): Promise<{ invitation: BackOfficeInvitation; email_sent: boolean; accept_url: string }> =>
+    fetchWithSupabaseAuth(`/access-invitations/${invitationId}/resend`, { method: 'POST' }),
+
+  revokeAccessInvite: (invitationId: string): Promise<{ id: string; status: string }> =>
+    fetchWithSupabaseAuth(`/access-invitations/${invitationId}`, { method: 'DELETE' }),
+
+  invitePlatformAccount: (
+    input: { email: string; name?: string; account_type: 'owner' | 'reseller' | 'admin' },
+  ): Promise<InvitationCreateResult> =>
+    fetchWithSupabaseAuth('/platform/invites', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  listPlatformInvites: (): Promise<BackOfficeInvitation[]> =>
+    fetchWithSupabaseAuth('/platform/invites'),
+
+  sendStoreInvite: (inviteId: string): Promise<{ email_sent: boolean }> =>
+    fetchWithSupabaseAuth('/store-invites/send', {
+      method: 'POST',
+      body: JSON.stringify({ invite_id: inviteId }),
     }),
 
   updateMember: (

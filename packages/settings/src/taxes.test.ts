@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET,
   normalizeCategoryTaxAssignments,
+  normalizeAutoGratuity,
   normalizeTaxRates,
   taxesChargesPayload,
   taxAppliesToOptions,
@@ -24,6 +25,31 @@ test('Myrtle Beach city-limits preset separates beer/wine from liquor', () => {
   ])
   assert.notEqual(draft.tax_rates, MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET.rates)
   assert.notEqual(draft.category_assignments, MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET.category_assignments)
+})
+
+test('auto gratuity payload preserves sorted tier thresholds', () => {
+  const gratuity = normalizeAutoGratuity({
+    enabled: true,
+    label: 'Gratuity',
+    assigned_to_employee: true,
+    rules: [
+      { party_threshold: 12, percent: 25 },
+      { party_threshold: 6, percent: 20 },
+    ],
+  })
+
+  assert.deepEqual(gratuity.rules, [
+    { party_threshold: '6', percent: '20' },
+    { party_threshold: '12', percent: '25' },
+  ])
+
+  const payload = taxesChargesPayload([], [], gratuity)
+  assert.deepEqual(payload.auto_gratuity.rules, [
+    { party_threshold: 6, percent: 20 },
+    { party_threshold: 12, percent: 25 },
+  ])
+  assert.equal(payload.auto_gratuity.party_threshold, 6)
+  assert.equal(payload.auto_gratuity.percent, 20)
 })
 
 test('legacy alcohol rows survive normalization until a restaurant splits them', () => {

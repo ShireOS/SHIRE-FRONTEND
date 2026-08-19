@@ -42,6 +42,7 @@ export function defaultRolePermission(roleKey: string, permissionTier?: string):
     can_no_sale: elevated || cashier || key === 'bartender',
     can_paid_in_out: elevated || cashier,
     can_adjust_tips: elevated,
+    can_adjust_gratuity: elevated,
     can_edit_menu: elevated,
     can_edit_employees: elevated,
     can_edit_schedules: elevated,

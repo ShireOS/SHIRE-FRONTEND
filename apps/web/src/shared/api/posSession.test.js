@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   PosSessionError,
   getValidPosAccessToken,
+  isUnrecoverableSessionError,
   requestWithPosSession,
   sessionExpiresSoon,
 } from './posSession.ts'
@@ -37,6 +38,14 @@ test('detects only sessions inside the refresh window', () => {
   assert.equal(sessionExpiresSoon(expiringSession(), NOW), true)
   assert.equal(sessionExpiresSoon(futureSession(), NOW), false)
   assert.equal(sessionExpiresSoon({ access_token: 'legacy-token' }, NOW), false)
+})
+
+test('recognizes only definitive missing or invalid refresh-session errors', () => {
+  assert.equal(isUnrecoverableSessionError({ code: 'refresh_token_not_found' }), true)
+  assert.equal(isUnrecoverableSessionError({ code: 'invalid_refresh_token' }), true)
+  assert.equal(isUnrecoverableSessionError({ message: 'Invalid Refresh Token: Refresh Token Not Found' }), true)
+  assert.equal(isUnrecoverableSessionError({ code: 'over_request_rate_limit' }), false)
+  assert.equal(isUnrecoverableSessionError({ message: 'Failed to fetch' }), false)
 })
 
 test('refreshes proactively when the access token is close to expiry', async () => {
@@ -202,6 +211,26 @@ test('surfaces refresh failures as an actionable session error', async () => {
       request: async () => new Response(null, { status: 401 }),
     }),
     error => error instanceof PosSessionError && error.status === 401 && error.message === 'Refresh token revoked',
+  )
+})
+
+test('marks a missing refresh token as an unrecoverable session', async () => {
+  const auth = createAuth(futureSession(), {
+    refreshError: {
+      code: 'refresh_token_not_found',
+      message: 'Invalid Refresh Token: Refresh Token Not Found',
+    },
+  })
+
+  await assert.rejects(
+    requestWithPosSession({
+      auth,
+      nowMs: NOW,
+      request: async () => new Response(null, { status: 401 }),
+    }),
+    error => error instanceof PosSessionError
+      && error.unrecoverable
+      && error.message === 'Invalid Refresh Token: Refresh Token Not Found',
   )
 })
 

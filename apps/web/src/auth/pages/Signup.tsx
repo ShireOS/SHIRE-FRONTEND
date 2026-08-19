@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useRedirectIfAuthenticated } from '../hooks/useRequireAuth'
 import { AuthLayout } from '../components/AuthLayout'
@@ -9,10 +9,15 @@ export function SignupPage() {
   const { signUp, signInWithGoogle } = useAuth()
   const { isReady } = useRedirectIfAuthenticated()
 
+  const [searchParams] = useSearchParams()
+  const invited = searchParams.get('invited') === '1'
+  const invitedEmail = searchParams.get('email') || ''
+  const next = searchParams.get('next')
+  const loginHref = next ? `/auth/login?next=${encodeURIComponent(next)}` : '/auth/login'
   const [firstName, setFirstName] = useState('')
   const lastName = ''
   const [accountType, setAccountType] = useState<'owner' | 'reseller'>('owner')
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(invitedEmail)
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -32,7 +37,7 @@ export function SignupPage() {
     const result = await signUp(email, password, {
       first_name: firstName,
       last_name: lastName,
-      account_type: accountType,
+      account_type: invited ? 'owner' : accountType,
     })
 
     if (!result.success) {
@@ -105,7 +110,7 @@ export function SignupPage() {
           </div>
 
           <Link
-            to="/auth/login"
+            to={loginHref}
             className="block text-secondary hover:text-primary text-sm font-medium transition-colors mt-4"
           >
             ← Back to login
@@ -128,7 +133,7 @@ export function SignupPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
+          {!invited && <div className="grid grid-cols-2 gap-2">
             {[
               { id: 'owner', label: 'Owner', copy: 'One restaurant or company account' },
               { id: 'reseller', label: 'Enterprise', copy: 'Agency, chain, or reseller portfolio' },
@@ -147,7 +152,7 @@ export function SignupPage() {
                 <span className="mt-1 block text-xs text-tertiary">{option.copy}</span>
               </button>
             ))}
-          </div>
+          </div>}
 
           <div className="space-y-1.5">
             <label htmlFor="firstName" className="block text-sm font-semibold text-primary">
@@ -174,6 +179,7 @@ export function SignupPage() {
               type="email"
               autoComplete="email"
               required
+              readOnly={invited}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full px-4 py-3 rounded-xl bg-white dark:bg-white/10 border border-black/10 dark:border-white/10 text-primary placeholder:text-tertiary/50 focus:outline-none focus:ring-2 focus:ring-[#36454F]/20 dark:focus:ring-white/20 transition-all text-[15px]"
@@ -234,7 +240,7 @@ export function SignupPage() {
 
         <p className="mt-8 text-center text-sm font-medium text-tertiary">
           Already have an account?{' '}
-          <Link to="/auth/login" className="text-secondary hover:text-primary transition-all">
+          <Link to={loginHref} className="text-secondary hover:text-primary transition-all">
             Sign in
           </Link>
         </p>

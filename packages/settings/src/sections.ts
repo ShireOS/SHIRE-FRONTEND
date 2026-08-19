@@ -1,6 +1,6 @@
 import { isOptionValue, TAX_APPLIES_TO_VALUES, CHARGE_APPLIES_TO_OPTIONS } from './options'
 import { sanitizeInteger, sanitizeNumber, asEnum } from './helpers'
-import type { AutoGratuityData, CategoryTaxAssignmentData, SectionBehaviorData, ServiceChargeData, TaxRateData } from './types'
+import type { AutoGratuityData, AutoGratuityRuleData, CategoryTaxAssignmentData, SectionBehaviorData, ServiceChargeData, TaxRateData } from './types'
 
 /**
  * 'Table' is always first and deduped case-insensitively; blank names drop.
@@ -109,23 +109,59 @@ export function normalizeServiceCharges(rows: unknown): ServiceChargeData[] {
 }
 
 export function defaultAutoGratuity(): AutoGratuityData {
-  return { enabled: true, party_threshold: '6', percent: '18', label: 'Gratuity', assigned_to_employee: true }
+  return {
+    enabled: true,
+    party_threshold: '6',
+    percent: '18',
+    label: 'Gratuity',
+    assigned_to_employee: true,
+    rules: [{ party_threshold: '6', percent: '18' }],
+  }
+}
+
+export function normalizeAutoGratuityRules(rows: unknown, fallback: Pick<AutoGratuityData, 'party_threshold' | 'percent'> = { party_threshold: '6', percent: '18' }): AutoGratuityRuleData[] {
+  const source = Array.isArray(rows) ? rows : []
+  const normalized = new Map<string, AutoGratuityRuleData>()
+  for (const row of source) {
+    const threshold = sanitizeInteger((row as any)?.party_threshold ?? (row as any)?.threshold)
+    const rawPercent = (row as any)?.percent
+    const percent = rawPercent == null
+      ? sanitizeNumber(Number((row as any)?.rate || 0) * 100)
+      : sanitizeNumber(rawPercent)
+    if (!threshold) continue
+    normalized.set(String(Math.max(1, Number(threshold) || 1)), {
+      party_threshold: String(Math.max(1, Number(threshold) || 1)),
+      percent,
+    })
+  }
+  if (normalized.size === 0) {
+    normalized.set(String(Math.max(1, Number(fallback.party_threshold) || 6)), {
+      party_threshold: String(Math.max(1, Number(fallback.party_threshold) || 6)),
+      percent: sanitizeNumber(fallback.percent) || '18',
+    })
+  }
+  return [...normalized.values()].sort((a, b) => Number(a.party_threshold) - Number(b.party_threshold))
 }
 
 export function normalizeAutoGratuity(row: unknown): AutoGratuityData {
   const fallback = defaultAutoGratuity()
   if (!row || typeof row !== 'object') return fallback
   const source = row as any
+  const party_threshold = source.party_threshold == null ? fallback.party_threshold : sanitizeInteger(source.party_threshold) || fallback.party_threshold
+  const percent = source.percent == null ? fallback.percent : sanitizeNumber(source.percent)
+  const rules = normalizeAutoGratuityRules(source.rules, { party_threshold, percent })
+  const [primaryRule] = rules
   return {
     enabled: source.enabled !== false,
-    party_threshold: source.party_threshold == null ? fallback.party_threshold : sanitizeInteger(source.party_threshold) || fallback.party_threshold,
-    percent: source.percent == null ? fallback.percent : sanitizeNumber(source.percent),
+    party_threshold: primaryRule?.party_threshold || party_threshold,
+    percent: primaryRule?.percent || percent,
     label: String(source.label || '').trim() || fallback.label,
     assigned_to_employee: typeof source.assigned_to_employee === 'boolean'
       ? source.assigned_to_employee
       : typeof source.auto_gratuity_assigned_to_employee === 'boolean'
         ? source.auto_gratuity_assigned_to_employee
         : fallback.assigned_to_employee,
+    rules,
   }
 }
 
@@ -148,13 +184,18 @@ export function taxesChargesPayload(
   categoryAssignments?: unknown,
 ) {
   const gratuity = normalizeAutoGratuity(autoGratuity)
+  const [primaryRule] = gratuity.rules
   return {
     auto_gratuity: {
       enabled: gratuity.enabled,
-      party_threshold: Math.max(1, Number(gratuity.party_threshold) || 6),
-      percent: Math.min(100, Number(gratuity.percent) || 0),
+      party_threshold: Math.max(1, Number(primaryRule?.party_threshold ?? gratuity.party_threshold) || 6),
+      percent: Math.min(100, Number(primaryRule?.percent ?? gratuity.percent) || 0),
       label: gratuity.label,
       assigned_to_employee: gratuity.assigned_to_employee,
+      rules: gratuity.rules.map(row => ({
+        party_threshold: Math.max(1, Number(row.party_threshold) || 1),
+        percent: Math.min(100, Number(row.percent) || 0),
+      })),
     },
     tax_rates: normalizeTaxRates(taxRates).map(row => ({
       id: row.id || undefined,

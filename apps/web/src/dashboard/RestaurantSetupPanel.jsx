@@ -95,9 +95,9 @@ const SETUP_TABS = [
   { id: 'manager_controls', label: 'Manager Controls' },
   { id: 'closeout', label: 'Cash & Closeout' },
   { id: 'check_workflow', label: 'Check Workflow' },
-  // Tips & Payroll now lives in the dedicated "Payroll & Tips" hub (single source
-  // of truth). The render block + propagation handler below remain for reuse but
-  // the tab is intentionally not surfaced here to avoid duplicate config.
+  { id: 'tips_payroll', label: 'Tips & Payroll' },
+  { id: 'goals', label: 'Goals' },
+  { id: 'service_model', label: 'Tools & Service Model' },
   { id: 'sections', label: 'Sections' },
   { id: 'hours', label: 'Hours' },
   { id: 'reservation_timing', label: 'Reservations' },
@@ -300,10 +300,38 @@ const pricingPolicyPayload = (policy) => {
 const initialServiceModel = (restaurant) => {
   const config = restaurant.config && typeof restaurant.config === 'object' ? restaurant.config : {}
   return {
+    current_pos: config.current_pos ?? '',
+    current_scheduling: config.current_scheduling ?? '',
+    current_reservations: config.current_reservations ?? '',
     service_modes: Array.isArray(config.service_modes) && config.service_modes.length > 0 ? config.service_modes : ['dine_in'],
     default_guest_flow: config.default_guest_flow || 'seat_first',
   }
 }
+
+const initialGoals = (restaurant) => {
+  const config = restaurant.config && typeof restaurant.config === 'object' ? restaurant.config : {}
+  return {
+    challenges: Array.isArray(config.challenges) ? config.challenges : [],
+    daily_covers_range: config.daily_covers_range ?? '',
+    team_size_range: config.team_size_range ?? '',
+    primary_goal: config.primary_goal ?? '',
+  }
+}
+
+const CURRENT_TOOL_OPTIONS = {
+  current_pos: [['', 'None selected'], ['toast', 'Toast'], ['square', 'Square'], ['clover', 'Clover'], ['lightspeed', 'Lightspeed'], ['other', 'Other'], ['none', 'None']],
+  current_scheduling: [['', 'None selected'], ['7shifts', '7shifts'], ['hotschedules', 'HotSchedules'], ['wheniwork', 'When I Work'], ['deputy', 'Deputy'], ['spreadsheet', 'Spreadsheet'], ['none', 'None']],
+  current_reservations: [['', 'None selected'], ['opentable', 'OpenTable'], ['resy', 'Resy'], ['yelp', 'Yelp'], ['walkins', 'Walk-ins only'], ['other', 'Other']],
+}
+
+const GOAL_CHALLENGES = [
+  ['table_turnover', 'Table turnover'],
+  ['floor_visibility', 'Floor visibility'],
+  ['scheduling', 'Scheduling'],
+  ['performance_data', 'Performance data'],
+  ['waitlist', 'Waitlist management'],
+  ['communication', 'Team communication'],
+]
 
 function WarningTriangle({ className = '' }) {
   return (
@@ -753,8 +781,15 @@ function KitchenRoutingSetup({ restaurantId }) {
           {(config?.menu_items || []).map(item => (
             <div key={item.id} className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-sm md:grid-cols-[1fr_auto]">
               <span>{item.name}</span>
-              <span className={item.routing_publishable ? 'text-emerald-200' : 'text-amber-200'}>
-                {item.routing_publishable ? 'Confirmed' : 'Needs confirmation'}
+              <span className={(item.routing_covered ?? item.routing_publishable) ? 'text-emerald-200' : 'text-amber-200'}>
+                {(item.routing_covered ?? item.routing_publishable)
+                  ? item.routing_confirmed
+                    ? 'Ready · confirmed'
+                    : item.routing_source === 'category' ? 'Ready · category default'
+                      : item.routing_source === 'fallback' ? 'Ready · restaurant fallback'
+                        : item.routing_source?.includes('no_production') ? 'Ready · no production'
+                          : 'Ready · item override'
+                  : 'Missing route'}
               </span>
             </div>
           ))}
@@ -1401,8 +1436,25 @@ export function warningCount(warnings) {
   return Object.values(warnings || {}).reduce((sum, items) => sum + items.length, 0)
 }
 
-export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, setupWarnings = {}, onSetupChanged, propagationContext = null }) {
-  const [activeSetupTab, setActiveSetupTab] = useState('basics')
+export default function RestaurantSetupPanel({
+  restaurant,
+  restaurantId,
+  auth,
+  setupWarnings = {},
+  onSetupChanged,
+  propagationContext = null,
+  allowedTabs = null,
+  initialTab = null,
+  showHeader = true,
+}) {
+  const visibleSetupTabs = useMemo(() => {
+    if (!Array.isArray(allowedTabs)) return SETUP_TABS
+    const allowed = new Set(allowedTabs)
+    return SETUP_TABS.filter(tab => allowed.has(tab.id))
+  }, [allowedTabs])
+  const visibleSetupTabIds = visibleSetupTabs.map(tab => tab.id).join(',')
+  const [activeSetupTab, setActiveSetupTab] = useState(() => initialTab || visibleSetupTabs[0]?.id || 'basics')
+  const canEditTaxRates = auth?.accountType === 'admin'
   const [coverImageUrl, setCoverImageUrl] = useState(restaurant.cover_image_url || '')
   const [pendingCoverFile, setPendingCoverFile] = useState(null)
   const [pendingCoverPreviewUrl, setPendingCoverPreviewUrl] = useState('')
@@ -1422,6 +1474,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [payments, setPayments] = useState(() => initialPayments(restaurant))
   const [pricingPolicy, setPricingPolicy] = useState(() => normalizePricingPolicy({ jurisdiction_state: restaurant.state || 'SC' }))
   const [serviceModel, setServiceModel] = useState(() => initialServiceModel(restaurant))
+  const [goals, setGoals] = useState(() => initialGoals(restaurant))
   const [taxRates, setTaxRates] = useState([defaultTaxRate()])
   const [taxCategoryAssignments, setTaxCategoryAssignments] = useState(undefined)
   const [serviceCharges, setServiceCharges] = useState([])
@@ -1443,15 +1496,80 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   const [jobCodeDraft, setJobCodeDraft] = useState({ code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 100, is_active: true })
   const [rateEdits, setRateEdits] = useState({})
   const [savingRateId, setSavingRateId] = useState('')
-  const [staffForm, setStaffForm] = useState({ name: '', email: '', role: 'server', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
+  const [staffForm, setStaffForm] = useState({ name: '', email: '', role: '', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
   const [pinEdits, setPinEdits] = useState({})
   const [pinSaving, setPinSaving] = useState({})
   const [pinSaved, setPinSaved] = useState({})
   const [setupError, setSetupError] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const savedDraftsRef = useRef({})
 
   const isPropagationEnabled = Boolean(propagationContext?.requestTargets)
+
+  const rememberSavedDraft = (sectionId, value) => {
+    savedDraftsRef.current[sectionId] = value == null ? value : structuredClone(value)
+  }
+
+  const savedDraft = (sectionId) => {
+    const value = savedDraftsRef.current[sectionId]
+    return value == null ? value : structuredClone(value)
+  }
+
+  const discardSetupChanges = (sectionId) => {
+    const baseline = savedDraft(sectionId)
+    if (baseline === undefined) return
+    setSetupError('')
+    setSaveMessage('Changes discarded.')
+    switch (sectionId) {
+      case 'basics':
+        setProfile(current => ({ ...current, ...baseline }))
+        break
+      case 'goals': setGoals(baseline); break
+      case 'service_model': setServiceModel(baseline); break
+      case 'branding': setPendingCoverFile(null); break
+      case 'legal': setLegal(baseline); break
+      case 'payments': setPayments(baseline); break
+      case 'pricing_policy': setPricingPolicy(baseline); break
+      case 'taxes_charges':
+        setTaxRates(baseline.taxRates)
+        setTaxCategoryAssignments(baseline.taxCategoryAssignments)
+        setServiceCharges(baseline.serviceCharges)
+        setAutoGratuity(baseline.autoGratuity)
+        break
+      case 'discounts': setDiscountRules(baseline); break
+      case 'manager_controls': setRolePermissions(baseline); break
+      case 'closeout': setCloseoutSettings(baseline); break
+      case 'check_workflow': setCheckWorkflowSettings(baseline); break
+      case 'tips_payroll': setTipPayrollSettings(baseline); break
+      case 'sections':
+        setSections(baseline.sections)
+        setSectionProfiles(baseline.sectionProfiles)
+        break
+      case 'hours':
+        setHours(baseline.hours)
+        setSameHours(baseline.sameHours)
+        break
+      case 'reservation_timing': setReservationTiming(baseline); break
+      case 'capacity': setProfile(current => ({ ...current, ...baseline })); break
+      case 'employees':
+        setJobCodes(baseline.jobCodes)
+        setRateEdits(baseline.rateEdits)
+        setJobCodeDraft(baseline.jobCodeDraft)
+        setStaffForm(baseline.staffForm)
+        setPinEdits({})
+        setPinSaved({})
+        break
+      default:
+        break
+    }
+  }
+
+  useEffect(() => {
+    if (!visibleSetupTabs.some(tab => tab.id === activeSetupTab)) {
+      setActiveSetupTab(initialTab || visibleSetupTabs[0]?.id || 'basics')
+    }
+  }, [activeSetupTab, initialTab, visibleSetupTabs])
 
   const updateRestaurantRow = async (targetRestaurantId, patch) => {
     const { data, error } = await supabase
@@ -1698,18 +1816,21 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     }
   }
 
-  const publishControls = (label, handler) => (
-    <PublishControls
-      label={label}
-      busy={isSaving}
-      disabled={isSaving}
-      onPublishNow={() => handler()}
-      onSchedule={(scheduledFor, timezone) => handler({ scheduledFor, timezone })}
-    />
+  const publishControls = (label, handler, sectionId) => (
+    <div className="flex flex-wrap items-center gap-2">
+      <SmallButton onClick={() => discardSetupChanges(sectionId)} disabled={isSaving}>Cancel</SmallButton>
+      <PublishControls
+        label={label}
+        busy={isSaving}
+        disabled={isSaving}
+        onPublishNow={() => handler()}
+        onSchedule={(scheduledFor, timezone) => handler({ scheduledFor, timezone })}
+      />
+    </div>
   )
 
   useEffect(() => {
-    setProfile({
+    const nextProfile = {
       name: restaurant.name || '',
       address: restaurant.address || '',
       city: restaurant.city || '',
@@ -1720,15 +1841,42 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       cuisine_types: Array.isArray(restaurant.cuisine_types) ? restaurant.cuisine_types : [],
       seating_capacity: restaurant.seating_capacity || '',
       table_count: restaurant.table_count || '',
-    })
-    setLegal(initialLegal(restaurant))
-    setPayments(initialPayments(restaurant))
+    }
+    const nextLegal = initialLegal(restaurant)
+    const nextPayments = initialPayments(restaurant)
+    const nextServiceModel = initialServiceModel(restaurant)
+    const nextGoals = initialGoals(restaurant)
+    const nextReservationTiming = normalizeReservationTiming(restaurant.config)
+    setProfile(nextProfile)
+    setLegal(nextLegal)
+    setPayments(nextPayments)
     setPricingPolicy(prev => normalizePricingPolicy({ ...prev, jurisdiction_state: prev.jurisdiction_state || restaurant.state || 'SC' }))
-    setServiceModel(initialServiceModel(restaurant))
-    setReservationTiming(normalizeReservationTiming(restaurant.config))
+    setServiceModel(nextServiceModel)
+    setGoals(nextGoals)
+    setReservationTiming(nextReservationTiming)
     setCoverImageUrl(restaurant.cover_image_url || '')
     setPendingCoverFile(null)
     setSaveMessage('')
+    rememberSavedDraft('basics', {
+      name: nextProfile.name,
+      address: nextProfile.address,
+      city: nextProfile.city,
+      state: nextProfile.state,
+      postal_code: nextProfile.postal_code,
+      phone: nextProfile.phone,
+      type: nextProfile.type,
+      cuisine_types: nextProfile.cuisine_types,
+    })
+    rememberSavedDraft('capacity', {
+      seating_capacity: nextProfile.seating_capacity,
+      table_count: nextProfile.table_count,
+    })
+    rememberSavedDraft('legal', nextLegal)
+    rememberSavedDraft('payments', nextPayments)
+    rememberSavedDraft('service_model', nextServiceModel)
+    rememberSavedDraft('goals', nextGoals)
+    rememberSavedDraft('reservation_timing', nextReservationTiming)
+    rememberSavedDraft('branding', { coverImageUrl: restaurant.cover_image_url || '' })
   }, [restaurant])
 
   useEffect(() => {
@@ -1754,11 +1902,16 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         return { label, value: fallback, error: err }
       }
     }
+    const scopedFor = (tabIds, label, read, fallback) => (
+      tabIds.some(tabId => visibleSetupTabs.some(tab => tab.id === tabId))
+        ? scoped(label, read, fallback)
+        : Promise.resolve({ label, value: fallback, error: null })
+    )
     try {
       const results = await Promise.all([
-        scoped('Employees', () => fetchCached(queryKeys.waiters(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`), 0), []),
-        scoped('Roles', () => fetchCached(queryKeys.jobCodes(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`), 0), []),
-        scoped('Hours', () => cached(queryKeys.operatingHours(restaurantId), async () => {
+        scopedFor(['employees'], 'Employees', () => fetchCached(queryKeys.waiters(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`), 0), []),
+        scopedFor(['employees', 'manager_controls', 'tips_payroll'], 'Roles', () => fetchCached(queryKeys.jobCodes(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`), 0), []),
+        scopedFor(['hours'], 'Hours', () => cached(queryKeys.operatingHours(restaurantId), async () => {
           const { data, error } = await supabase
             .from('operating_hours')
             .select('day_of_week, open_time, close_time, is_closed')
@@ -1767,16 +1920,16 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
           if (error) throw error
           return data
         }), []),
-        scoped('Sections', () => cached(queryKeys.sections(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`)), []),
-        scoped('Floor plan', () => cached(queryKeys.floorPlan(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`)), null),
-        scoped('Taxes and charges', () => cached(queryKeys.taxesCharges(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/taxes-charges`)), null),
-        scoped('Discounts', () => cached(queryKeys.discountRules(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/discount-rules`)), null),
-        scoped('Manager controls', () => cached(queryKeys.managerControls(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-controls`)), null),
-        scoped('Closeout', () => cached(queryKeys.closeoutSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`)), null),
-        scoped('Check workflow', () => cached(queryKeys.checkWorkflowSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/check-workflow-settings`)), null),
-        scoped('Tips and payroll', () => cached(queryKeys.tipsPayrollSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`)), null),
-        scoped('Pricing policy', () => cached(queryKeys.pricingPolicy(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pricing-policy`)), null),
-        scoped('Reservation timing', () => fetchReservationSettings(restaurantId), null),
+        scopedFor(['sections'], 'Sections', () => cached(queryKeys.sections(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`)), []),
+        scopedFor(['capacity'], 'Floor plan', () => cached(queryKeys.floorPlan(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`)), null),
+        scopedFor(['taxes_charges'], 'Taxes and charges', () => cached(queryKeys.taxesCharges(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/taxes-charges`)), null),
+        scopedFor(['discounts'], 'Discounts', () => cached(queryKeys.discountRules(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/discount-rules`)), null),
+        scopedFor(['manager_controls'], 'Manager controls', () => cached(queryKeys.managerControls(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-controls`)), null),
+        scopedFor(['closeout'], 'Closeout', () => cached(queryKeys.closeoutSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`)), null),
+        scopedFor(['check_workflow'], 'Check workflow', () => cached(queryKeys.checkWorkflowSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/check-workflow-settings`)), null),
+        scopedFor(['tips_payroll'], 'Tips and payroll', () => cached(queryKeys.tipsPayrollSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`)), null),
+        scopedFor(['payments'], 'Pricing policy', () => cached(queryKeys.pricingPolicy(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pricing-policy`)), null),
+        scopedFor(['reservation_timing'], 'Reservation timing', () => fetchReservationSettings(restaurantId), null),
       ])
       const [
         staffRows,
@@ -1795,30 +1948,59 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       ] = results.map(result => result.value)
 
       const normalized = normalizeHours(hoursRows)
+      const nextSameHours = deriveSameHours(normalized)
       setHours(normalized)
-      setSameHours(deriveSameHours(normalized))
+      setSameHours(nextSameHours)
       setWaiters(Array.isArray(staffRows) ? staffRows : [])
       const normalizedJobCodes = normalizeJobCodes(jobCodeRows)
+      const nextRateEdits = Object.fromEntries(normalizedJobCodes.map(code => [code.id, String(code.default_hourly_rate ?? '')]))
       setJobCodes(normalizedJobCodes)
-      setRateEdits(Object.fromEntries(normalizedJobCodes.map(code => [code.id, String(code.default_hourly_rate ?? '')])))
+      setRateEdits(nextRateEdits)
       const sectionNames = normalizeSectionNames((Array.isArray(sectionRows) ? sectionRows : []).map(section => section.name))
+      const nextSectionProfiles = normalizeSectionProfiles(sectionRows, sectionNames)
       setSections(sectionNames)
-      setSectionProfiles(normalizeSectionProfiles(sectionRows, sectionNames))
+      setSectionProfiles(nextSectionProfiles)
       setFloorTables(mapFloorPlanTables(floorPlan))
-      setTaxRates(normalizeTaxRates(taxesCharges?.tax_rates))
+      const nextTaxRates = normalizeTaxRates(taxesCharges?.tax_rates)
+      const nextServiceCharges = normalizeServiceCharges(taxesCharges?.service_charges)
+      const nextAutoGratuity = normalizeAutoGratuity(taxesCharges?.auto_gratuity)
+      const nextDiscountRules = normalizeDiscountRules(discountData?.discount_rules)
+      const nextRolePermissions = normalizeRolePermissions(managerControls?.role_permissions, normalizedJobCodes)
+      const nextCloseoutSettings = normalizeCloseoutSettings(closeoutData)
+      const nextCheckWorkflowSettings = normalizeCheckWorkflowSettings(checkWorkflowData)
+      const nextTipPayrollSettings = normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes)
+      const nextPricingPolicy = normalizePricingPolicy(pricingPolicyData || { jurisdiction_state: restaurant.state || 'SC' })
+      setTaxRates(nextTaxRates)
       setTaxCategoryAssignments(undefined)
-      setServiceCharges(normalizeServiceCharges(taxesCharges?.service_charges))
-      setAutoGratuity(normalizeAutoGratuity(taxesCharges?.auto_gratuity))
-      setDiscountRules(normalizeDiscountRules(discountData?.discount_rules))
-      setRolePermissions(normalizeRolePermissions(managerControls?.role_permissions, normalizedJobCodes))
-      setCloseoutSettings(normalizeCloseoutSettings(closeoutData))
-      setCheckWorkflowSettings(normalizeCheckWorkflowSettings(checkWorkflowData))
-      setTipPayrollSettings(normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes))
-      setPricingPolicy(normalizePricingPolicy(pricingPolicyData || { jurisdiction_state: restaurant.state || 'SC' }))
+      setServiceCharges(nextServiceCharges)
+      setAutoGratuity(nextAutoGratuity)
+      setDiscountRules(nextDiscountRules)
+      setRolePermissions(nextRolePermissions)
+      setCloseoutSettings(nextCloseoutSettings)
+      setCheckWorkflowSettings(nextCheckWorkflowSettings)
+      setTipPayrollSettings(nextTipPayrollSettings)
+      setPricingPolicy(nextPricingPolicy)
+      rememberSavedDraft('hours', { hours: normalized, sameHours: nextSameHours })
+      rememberSavedDraft('sections', { sections: sectionNames, sectionProfiles: nextSectionProfiles })
+      rememberSavedDraft('taxes_charges', { taxRates: nextTaxRates, taxCategoryAssignments: undefined, serviceCharges: nextServiceCharges, autoGratuity: nextAutoGratuity })
+      rememberSavedDraft('discounts', nextDiscountRules)
+      rememberSavedDraft('manager_controls', nextRolePermissions)
+      rememberSavedDraft('closeout', nextCloseoutSettings)
+      rememberSavedDraft('check_workflow', nextCheckWorkflowSettings)
+      rememberSavedDraft('tips_payroll', nextTipPayrollSettings)
+      rememberSavedDraft('pricing_policy', nextPricingPolicy)
+      rememberSavedDraft('employees', {
+        jobCodes: normalizedJobCodes,
+        rateEdits: nextRateEdits,
+        jobCodeDraft: { code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 100, is_active: true },
+        staffForm: { name: '', email: '', role: '', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' },
+      })
       {
         const configReservationTiming = normalizeReservationTiming(restaurant.config)
         const serviceReservationTiming = reservationTimingFromSettings(reservationSettingsData)
-        setReservationTiming(serviceReservationTiming ? { ...configReservationTiming, ...serviceReservationTiming } : configReservationTiming)
+        const nextReservationTiming = serviceReservationTiming ? { ...configReservationTiming, ...serviceReservationTiming } : configReservationTiming
+        setReservationTiming(nextReservationTiming)
+        rememberSavedDraft('reservation_timing', nextReservationTiming)
       }
       const failedLabels = results.filter(result => result.error).map(result => result.label)
       if (failedLabels.length > 0) {
@@ -1831,7 +2013,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
 
   useEffect(() => {
     void loadSetupData()
-  }, [restaurantId])
+  }, [restaurantId, visibleSetupTabIds])
 
   const referenceHours = useMemo(() => hours.find(day => !day.is_closed) || hours[1] || DEFAULT_HOURS[1], [hours])
 
@@ -1874,8 +2056,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       cuisine_types: profile.cuisine_types,
     }
     const saveRestaurantBasics = async (targetId) => {
-      await updateRestaurantRow(targetId, payload)
-      return mergeRestaurantConfig(targetId, serviceModel)
+      return updateRestaurantRow(targetId, payload)
     }
     await saveWithPropagation({
       sectionId: 'basics',
@@ -1884,13 +2065,44 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       successMessage: 'Saved basics.',
       saveSource: saveRestaurantBasics,
       saveTarget: saveRestaurantBasics,
+      onSourceSaved: (saved) => rememberSavedDraft('basics', {
+        name: saved?.name || '',
+        address: saved?.address || '',
+        city: saved?.city || '',
+        state: saved?.state || '',
+        postal_code: saved?.postal_code || '',
+        phone: saved?.phone || '',
+        type: saved?.type || 'casual',
+        cuisine_types: Array.isArray(saved?.cuisine_types) ? saved.cuisine_types : [],
+      }),
       publication,
-      buildCommand: (targetId) => [
-        { method: 'PATCH', path: `/restaurants/${targetId}/setup-profile`, body: { patch: payload }, target_type: 'restaurant', target_id: targetId },
-        { method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: serviceModel }, target_type: 'restaurant', target_id: targetId },
-      ],
+      buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-profile`, body: { patch: payload }, target_type: 'restaurant', target_id: targetId }),
     })
   }
+
+  const saveGoals = async (publication) => saveWithPropagation({
+    sectionId: 'goals',
+    label: 'Goals',
+    propagation: 'specified',
+    successMessage: 'Saved goals.',
+    saveSource: (targetId) => mergeRestaurantConfig(targetId, goals),
+    saveTarget: (targetId) => mergeRestaurantConfig(targetId, goals),
+    onSourceSaved: () => rememberSavedDraft('goals', goals),
+    publication,
+    buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: goals }, target_type: 'restaurant', target_id: targetId }),
+  })
+
+  const saveServiceModel = async (publication) => saveWithPropagation({
+    sectionId: 'service_model',
+    label: 'Tools & Service Model',
+    propagation: SETUP_PROPAGATION.service_model,
+    successMessage: 'Saved tools and service model.',
+    saveSource: (targetId) => mergeRestaurantConfig(targetId, serviceModel),
+    saveTarget: (targetId) => mergeRestaurantConfig(targetId, serviceModel),
+    onSourceSaved: () => rememberSavedDraft('service_model', serviceModel),
+    publication,
+    buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: serviceModel }, target_type: 'restaurant', target_id: targetId }),
+  })
 
   const updateRestaurantConfig = async (patch, successMessage) => {
     return saveWithPropagation({
@@ -1929,6 +2141,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         ...legal,
         tos_version: 'shire-placeholder-tos-v1',
       }),
+      onSourceSaved: () => rememberSavedDraft('legal', legal),
       publication,
       buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: { ...legal, tos_version: 'shire-placeholder-tos-v1' } }, target_type: 'restaurant', target_id: targetId }),
     })
@@ -1942,6 +2155,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       successMessage: 'Saved payment setup.',
       saveSource: (targetId) => mergeRestaurantConfig(targetId, payments),
       saveTarget: (targetId) => mergeRestaurantConfig(targetId, payments),
+      onSourceSaved: () => rememberSavedDraft('payments', payments),
       publication,
       buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: payments }, target_type: 'restaurant', target_id: targetId }),
     })
@@ -1984,7 +2198,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/pricing-policy', payload),
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/pricing-policy', { ...payload, expected_version: undefined }),
       onSourceSaved: (saved) => {
-        setPricingPolicy(normalizePricingPolicy(saved))
+        const normalized = normalizePricingPolicy(saved)
+        setPricingPolicy(normalized)
+        rememberSavedDraft('pricing_policy', normalized)
         queryClient.setQueryData(queryKeys.pricingPolicy(restaurantId), saved)
       },
     })
@@ -2011,11 +2227,45 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     setServiceCharges(prev => prev.map((row, currentIndex) => currentIndex === index ? { ...row, ...patch } : row))
   }
 
+  const updateAutoGratuityRule = (index, patch) => {
+    setAutoGratuity(prev => ({
+      ...prev,
+      rules: (prev.rules || []).map((row, currentIndex) => (
+        currentIndex === index ? { ...row, ...patch } : row
+      )),
+    }))
+  }
+
+  const addAutoGratuityRule = () => {
+    setAutoGratuity(prev => {
+      const rules = prev.rules?.length ? prev.rules : [{ party_threshold: prev.party_threshold || '6', percent: prev.percent || '18' }]
+      const lastThreshold = Math.max(...rules.map(rule => Number(rule.party_threshold) || 0), 0)
+      const lastPercent = rules.at(-1)?.percent || prev.percent || '18'
+      return {
+        ...prev,
+        rules: [...rules, { party_threshold: String(Math.max(1, lastThreshold + 1)), percent: lastPercent }],
+      }
+    })
+  }
+
+  const removeAutoGratuityRule = (index) => {
+    setAutoGratuity(prev => {
+      const rules = (prev.rules || []).filter((_, currentIndex) => currentIndex !== index)
+      return {
+        ...prev,
+        rules: rules.length ? rules : [{ party_threshold: prev.party_threshold || '6', percent: prev.percent || '18' }],
+      }
+    })
+  }
+
   const saveTaxesCharges = async (publication) => {
-    const payload = taxesChargesPayload(taxRates, serviceCharges, autoGratuity, taxCategoryAssignments)
+    const rawPayload = taxesChargesPayload(taxRates, serviceCharges, autoGratuity, taxCategoryAssignments)
+    const payload = canEditTaxRates
+      ? rawPayload
+      : (({ tax_rates, category_assignments, ...chargesOnlyPayload }) => chargesOnlyPayload)(rawPayload)
     const propagationPayload = {
       ...payload,
-      tax_rates: payload.tax_rates.map(({ id, ...row }) => row),
+      ...(payload.tax_rates ? { tax_rates: payload.tax_rates.map(({ id, ...row }) => row) } : {}),
       service_charges: payload.service_charges.map(({ id, ...row }) => row),
     }
     await saveWithPropagation({
@@ -2026,10 +2276,14 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/taxes-charges', payload),
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/taxes-charges', propagationPayload),
       onSourceSaved: (saved) => {
-        setTaxRates(normalizeTaxRates(saved?.tax_rates))
-        setServiceCharges(normalizeServiceCharges(saved?.service_charges))
-        setAutoGratuity(normalizeAutoGratuity(saved?.auto_gratuity))
+        const nextTaxRates = normalizeTaxRates(saved?.tax_rates)
+        const nextServiceCharges = normalizeServiceCharges(saved?.service_charges)
+        const nextAutoGratuity = normalizeAutoGratuity(saved?.auto_gratuity)
+        setTaxRates(nextTaxRates)
+        setServiceCharges(nextServiceCharges)
+        setAutoGratuity(nextAutoGratuity)
         setTaxCategoryAssignments(undefined)
+        rememberSavedDraft('taxes_charges', { taxRates: nextTaxRates, taxCategoryAssignments: undefined, serviceCharges: nextServiceCharges, autoGratuity: nextAutoGratuity })
         queryClient.setQueryData(queryKeys.taxesCharges(restaurantId), saved)
         if (saved?.category_assignment_warnings?.length) {
           setSetupError(saved.category_assignment_warnings.join(' '))
@@ -2047,6 +2301,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   }
 
   const applyMyrtleBeachTaxes = () => {
+    if (!canEditTaxRates) return
     if (!window.confirm('Confirm this restaurant is inside Myrtle Beach city limits. This replaces the tax-rate draft and assigns Beer & Wine and Cocktails to their correct rates.')) return
     const preset = taxPresetDraft(MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET)
     setTaxRates(preset.tax_rates)
@@ -2077,7 +2332,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/discount-rules', payload),
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/discount-rules', propagationPayload),
       onSourceSaved: (saved) => {
-        setDiscountRules(normalizeDiscountRules(saved?.discount_rules))
+        const normalized = normalizeDiscountRules(saved?.discount_rules)
+        setDiscountRules(normalized)
+        rememberSavedDraft('discounts', normalized)
         queryClient.setQueryData(queryKeys.discountRules(restaurantId), saved)
       },
       publication,
@@ -2099,7 +2356,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/manager-controls', payload),
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/manager-controls', payload),
       onSourceSaved: (saved) => {
-        setRolePermissions(normalizeRolePermissions(saved?.role_permissions, jobCodes))
+        const normalized = normalizeRolePermissions(saved?.role_permissions, jobCodes)
+        setRolePermissions(normalized)
+        rememberSavedDraft('manager_controls', normalized)
         queryClient.setQueryData(queryKeys.managerControls(restaurantId), saved)
       },
       publication,
@@ -2125,7 +2384,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/closeout-settings', payload),
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/closeout-settings', payload),
       onSourceSaved: (saved) => {
-        setCloseoutSettings(normalizeCloseoutSettings(saved))
+        const normalized = normalizeCloseoutSettings(saved)
+        setCloseoutSettings(normalized)
+        rememberSavedDraft('closeout', normalized)
         queryClient.setQueryData(queryKeys.closeoutSettings(restaurantId), saved)
       },
       publication,
@@ -2143,7 +2404,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/check-workflow-settings', payload),
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/check-workflow-settings', payload),
       onSourceSaved: (saved) => {
-        setCheckWorkflowSettings(normalizeCheckWorkflowSettings(saved))
+        const normalized = normalizeCheckWorkflowSettings(saved)
+        setCheckWorkflowSettings(normalized)
+        rememberSavedDraft('check_workflow', normalized)
         queryClient.setQueryData(queryKeys.checkWorkflowSettings(restaurantId), saved)
       },
       publication,
@@ -2172,7 +2435,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       saveSource: (targetId) => putRestaurantEndpoint(targetId, '/tips-payroll-settings', payload),
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/tips-payroll-settings', payload),
       onSourceSaved: (saved) => {
-        setTipPayrollSettings(normalizeTipPayrollSettings(saved, jobCodes))
+        const normalized = normalizeTipPayrollSettings(saved, jobCodes)
+        setTipPayrollSettings(normalized)
+        rememberSavedDraft('tips_payroll', normalized)
         queryClient.setQueryData(queryKeys.tipsPayrollSettings(restaurantId), saved)
       },
       publication,
@@ -2223,11 +2488,19 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         ? jobCodes.map(code => code.id === saved.id ? saved : code)
         : [...jobCodes, saved]
       const normalized = normalizeJobCodes(nextCodes)
+      const nextRateEdits = Object.fromEntries(normalized.map(code => [code.id, String(code.default_hourly_rate ?? '')]))
+      const nextJobCodeDraft = { code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: Math.max(100, ...normalized.map(code => Number(code.sort_order) || 0)) + 10, is_active: true }
       setJobCodes(normalized)
-      setRateEdits(Object.fromEntries(normalized.map(code => [code.id, String(code.default_hourly_rate ?? '')])))
+      setRateEdits(nextRateEdits)
       setTipPayrollSettings(prev => normalizeTipPayrollSettings(prev, normalized))
       setRolePermissions(prev => normalizeRolePermissions(prev, normalized))
-      setJobCodeDraft({ code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: Math.max(100, ...normalized.map(code => Number(code.sort_order) || 0)) + 10, is_active: true })
+      setJobCodeDraft(nextJobCodeDraft)
+      rememberSavedDraft('employees', {
+        ...(savedDraft('employees') || {}),
+        jobCodes: normalized,
+        rateEdits: nextRateEdits,
+        jobCodeDraft: nextJobCodeDraft,
+      })
       void queryClient.invalidateQueries({ queryKey: queryKeys.jobCodes(restaurantId) })
       setSaveMessage('Saved role.')
       onSetupChanged?.()
@@ -2248,10 +2521,16 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         body: JSON.stringify(jobCodePayload({ ...jobCode, is_active: false })),
       })
       const normalized = normalizeJobCodes(jobCodes.filter(code => code.id !== jobCode.id))
+      const nextRateEdits = Object.fromEntries(normalized.map(code => [code.id, String(code.default_hourly_rate ?? '')]))
       setJobCodes(normalized)
-      setRateEdits(Object.fromEntries(normalized.map(code => [code.id, String(code.default_hourly_rate ?? '')])))
+      setRateEdits(nextRateEdits)
       setTipPayrollSettings(prev => normalizeTipPayrollSettings(prev, normalized))
       setRolePermissions(prev => normalizeRolePermissions(prev, normalized))
+      rememberSavedDraft('employees', {
+        ...(savedDraft('employees') || {}),
+        jobCodes: normalized,
+        rateEdits: nextRateEdits,
+      })
       void queryClient.invalidateQueries({ queryKey: queryKeys.jobCodes(restaurantId) })
       setSaveMessage('Removed role.')
       onSetupChanged?.()
@@ -2281,8 +2560,10 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       saveTarget: (targetId) => putRestaurantEndpoint(targetId, '/sections', payload),
       onSourceSaved: (saved) => {
         const savedNames = normalizeSectionNames((Array.isArray(saved) ? saved : []).map(section => section.name))
+        const savedProfiles = normalizeSectionProfiles(saved, savedNames)
         setSections(savedNames)
-        setSectionProfiles(normalizeSectionProfiles(saved, savedNames))
+        setSectionProfiles(savedProfiles)
+        rememberSavedDraft('sections', { sections: savedNames, sectionProfiles: savedProfiles })
         queryClient.setQueryData(queryKeys.sections(restaurantId), saved)
         setFloorTables(prev => prev.map(table => {
           if (table.section_id) return table
@@ -2303,6 +2584,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       saveSource: (targetId) => saveHoursForRestaurant(targetId, hours),
       saveTarget: (targetId) => saveHoursForRestaurant(targetId, hours),
       onSourceSaved: () => {
+        rememberSavedDraft('hours', { hours, sameHours })
         void queryClient.invalidateQueries({ queryKey: queryKeys.operatingHours(restaurantId) })
       },
       publication,
@@ -2364,7 +2646,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         return mergeRestaurantConfig(targetId, configPatch)
       },
       onSourceSaved: () => {
-        setReservationTiming(normalizeReservationTiming(configPatch))
+        const normalized = normalizeReservationTiming(configPatch)
+        setReservationTiming(normalized)
+        rememberSavedDraft('reservation_timing', normalized)
       },
       publication,
     })
@@ -2386,6 +2670,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       saveTarget: (targetId) => updateRestaurantRow(targetId, payload),
       onSourceSaved: () => {
         setProfile(prev => ({ ...prev, seating_capacity: nextCapacity, table_count: nextCount }))
+        rememberSavedDraft('capacity', { seating_capacity: nextCapacity, table_count: nextCount })
       },
       publication,
       buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-profile`, body: { patch: payload }, target_type: 'restaurant', target_id: targetId }),
@@ -2406,6 +2691,10 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       setSetupError('Employee name is required.')
       return
     }
+    if (!staffForm.role) {
+      setSetupError('Choose an employee role.')
+      return
+    }
     setSetupError('')
     const roleUpdate = buildStaffRoleUpdate(staffForm.role, [staffForm.role], jobCodes)
     const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters`, {
@@ -2422,7 +2711,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     })
     setWaiters(prev => [...prev, created])
     queryClient.setQueryData(queryKeys.waiters(restaurantId), prev => Array.isArray(prev) ? [...prev, created] : prev)
-    setStaffForm({ name: '', email: '', role: 'server', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
+    setStaffForm({ name: '', email: '', role: '', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
     onSetupChanged?.()
   }
 
@@ -2468,6 +2757,16 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
     } finally {
       setSavingRateId('')
     }
+  }
+
+  const discardJobCodeChanges = (jobCodeId) => {
+    const baseline = savedDraft('employees')
+    const original = baseline?.jobCodes?.find(code => code.id === jobCodeId)
+    if (!original) return
+    setJobCodes(current => current.map(code => code.id === jobCodeId ? original : code))
+    setRateEdits(current => ({ ...current, [jobCodeId]: baseline.rateEdits?.[jobCodeId] ?? String(original.default_hourly_rate ?? '') }))
+    setSetupError('')
+    setSaveMessage('Changes discarded.')
   }
 
   const saveEditedPin = async (waiterId) => {
@@ -2518,7 +2817,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
   return (
     <div className="space-y-6">
       <ScheduledChangesPanel />
-      <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+      {showHeader && <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="label-mono">Restaurant Setup</p>
@@ -2536,7 +2835,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         </div>
 
         <nav className="mt-6 flex flex-wrap gap-2">
-          {SETUP_TABS.map(item => (
+          {visibleSetupTabs.map(item => (
             <button
               key={item.id}
               type="button"
@@ -2553,7 +2852,28 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
             </button>
           ))}
         </nav>
-      </section>
+      </section>}
+
+      {!showHeader && visibleSetupTabs.length > 1 && (
+        <nav className="flex flex-wrap gap-2 border-b border-white/10 pb-4">
+          {visibleSetupTabs.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setActiveSetupTab(item.id)}
+              className={[
+                'rounded-lg px-3 py-2 text-sm font-semibold transition',
+                activeSetupTab === item.id
+                  ? 'bg-dash-gold text-black'
+                  : 'border border-white/10 text-dash-secondary hover:border-white/20 hover:text-dash-cream',
+              ].join(' ')}
+            >
+              {item.label}
+              {setupWarnings[item.id]?.length > 0 && <WarningTriangle className="ml-2 align-middle" />}
+            </button>
+          ))}
+        </nav>
+      )}
 
       {setupError && (
         <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">
@@ -2570,7 +2890,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         <SectionShell
           title="Basics"
           description="Restaurant profile, service modes, and default guest flow from Stage 1 onboarding."
-          actions={publishControls('Save basics', saveBasics)}
+          actions={publishControls('Save basics', saveBasics, 'basics')}
         >
           {setupWarnings.basics?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
@@ -2629,46 +2949,55 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                 ))}
               </div>
             </Field>
-            <div className="border-t border-white/10 pt-6">
-              <div className="mb-4">
-                <p className="label-mono">Service Modes</p>
-                <p className="mt-2 text-sm text-dash-secondary">Select every service style this location will operate.</p>
+          </div>
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'goals' && (
+        <SectionShell
+          title="Goals"
+          description="Operating priorities and restaurant profile ranges captured during onboarding."
+          actions={publishControls('Save goals', saveGoals, 'goals')}
+        >
+          <div className="space-y-6">
+            <Field label="Biggest Challenges">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {GOAL_CHALLENGES.map(([value, label]) => {
+                  const selected = goals.challenges.includes(value)
+                  return <button key={value} type="button" onClick={() => setGoals(prev => ({ ...prev, challenges: selected ? prev.challenges.filter(item => item !== value) : [...prev.challenges, value] }))} className={`rounded-xl border p-4 text-left text-sm font-semibold transition ${selected ? 'border-dash-gold bg-dash-gold/10 text-dash-cream' : 'border-white/10 bg-white/[0.03] text-dash-secondary hover:border-white/20'}`}>{label}</button>
+                })}
               </div>
+            </Field>
+            <div className="grid gap-4 md:grid-cols-3">
+              <Field label="Daily Covers"><SelectInput value={goals.daily_covers_range} onChange={event => setGoals(prev => ({ ...prev, daily_covers_range: event.target.value }))}><option value="">Not specified</option><option value="under_50">Under 50</option><option value="50_150">50 - 150</option><option value="150_300">150 - 300</option><option value="300_plus">300+</option></SelectInput></Field>
+              <Field label="Team Size"><SelectInput value={goals.team_size_range} onChange={event => setGoals(prev => ({ ...prev, team_size_range: event.target.value }))}><option value="">Not specified</option><option value="1_5">1 - 5</option><option value="6_15">6 - 15</option><option value="16_30">16 - 30</option><option value="30_plus">30+</option></SelectInput></Field>
+              <Field label="Primary Goal"><SelectInput value={goals.primary_goal} onChange={event => setGoals(prev => ({ ...prev, primary_goal: event.target.value }))}><option value="">Not specified</option><option value="revenue">Increase revenue</option><option value="costs">Reduce costs</option><option value="guest_experience">Guest experience</option><option value="data">Better data</option><option value="replace_tools">Replace current tools</option></SelectInput></Field>
+            </div>
+          </div>
+        </SectionShell>
+      )}
+
+      {activeSetupTab === 'service_model' && (
+        <SectionShell
+          title="Tools & Service Model"
+          description="Current operating systems, service styles, and the default guest flow captured during onboarding."
+          actions={publishControls('Save tools & service model', saveServiceModel, 'service_model')}
+        >
+          <div className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-3">
+              <Field label="Current POS"><SelectInput value={serviceModel.current_pos} onChange={event => setServiceModel(prev => ({ ...prev, current_pos: event.target.value }))}>{CURRENT_TOOL_OPTIONS.current_pos.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</SelectInput></Field>
+              <Field label="Scheduling Tool"><SelectInput value={serviceModel.current_scheduling} onChange={event => setServiceModel(prev => ({ ...prev, current_scheduling: event.target.value }))}>{CURRENT_TOOL_OPTIONS.current_scheduling.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</SelectInput></Field>
+              <Field label="Reservations Tool"><SelectInput value={serviceModel.current_reservations} onChange={event => setServiceModel(prev => ({ ...prev, current_reservations: event.target.value }))}>{CURRENT_TOOL_OPTIONS.current_reservations.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</SelectInput></Field>
+            </div>
+            <Field label="Service Modes">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {SERVICE_MODE_OPTIONS.map(option => {
                   const selected = serviceModel.service_modes.includes(option.id)
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setServiceModel(prev => ({
-                        ...prev,
-                        service_modes: selected
-                          ? prev.service_modes.filter(item => item !== option.id)
-                          : [...prev.service_modes, option.id],
-                      }))}
-                      className={[
-                        'rounded-xl border p-4 text-left text-sm font-semibold transition',
-                        selected
-                          ? 'border-dash-gold bg-dash-gold/10 text-dash-cream'
-                          : 'border-white/10 bg-white/[0.03] text-dash-secondary hover:border-white/20 hover:text-dash-cream',
-                      ].join(' ')}
-                    >
-                      {option.label}
-                    </button>
-                  )
+                  return <button key={option.id} type="button" onClick={() => setServiceModel(prev => ({ ...prev, service_modes: selected ? prev.service_modes.filter(item => item !== option.id) : [...prev.service_modes, option.id] }))} className={`rounded-xl border p-4 text-left text-sm font-semibold transition ${selected ? 'border-dash-gold bg-dash-gold/10 text-dash-cream' : 'border-white/10 bg-white/[0.03] text-dash-secondary hover:border-white/20'}`}>{option.label}</button>
                 })}
               </div>
-              <Field label="Default Guest Flow">
-                <SelectInput
-                  value={serviceModel.default_guest_flow}
-                  onChange={event => setServiceModel(prev => ({ ...prev, default_guest_flow: event.target.value }))}
-                  className="mt-3"
-                >
-                  {GUEST_FLOW_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
-                </SelectInput>
-              </Field>
-            </div>
+            </Field>
+            <Field label="Default Guest Flow"><SelectInput value={serviceModel.default_guest_flow} onChange={event => setServiceModel(prev => ({ ...prev, default_guest_flow: event.target.value }))}>{GUEST_FLOW_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</SelectInput></Field>
           </div>
         </SectionShell>
       )}
@@ -2678,9 +3007,12 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
           title="POS Branding"
           description={`Choose the background shown on ${restaurant.name}'s PIN screen and restaurant-selection card.`}
           actions={(
-            <SmallButton variant="primary" onClick={() => void saveCoverImage()} disabled={isSaving || !pendingCoverFile}>
-              {isSaving ? 'Saving...' : 'Save background'}
-            </SmallButton>
+            <div className="flex flex-wrap gap-2">
+              <SmallButton onClick={() => discardSetupChanges('branding')} disabled={isSaving || !pendingCoverFile}>Cancel</SmallButton>
+              <SmallButton variant="primary" onClick={() => void saveCoverImage()} disabled={isSaving || !pendingCoverFile}>
+                {isSaving ? 'Saving...' : 'Save background'}
+              </SmallButton>
+            </div>
           )}
         >
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
@@ -2769,7 +3101,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         <SectionShell
           title="Business & Legal"
           description="Legal entity details and the placeholder Shire agreement signature captured during Stage 1 onboarding."
-          actions={publishControls('Save legal', saveLegal)}
+          actions={publishControls('Save legal', saveLegal, 'legal')}
         >
           {setupWarnings.legal?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
@@ -2819,7 +3151,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         <SectionShell
           title="Payments & Payouts"
           description="Bank account readiness and default processing behavior for refunds, tips, and batch close."
-          actions={publishControls('Save payments', savePayments)}
+          actions={publishControls('Save payments', savePayments, 'payments')}
         >
           {setupWarnings.payments?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
@@ -2879,7 +3211,10 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   Dual pricing prints cash and electronic options before payment, then receipts show the selected tender outcome.
                 </p>
               </div>
-              <SmallButton variant="primary" onClick={() => void savePricingPolicy()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save pricing policy'}</SmallButton>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <SmallButton onClick={() => discardSetupChanges('pricing_policy')} disabled={isSaving}>Cancel</SmallButton>
+                <SmallButton variant="primary" onClick={() => void savePricingPolicy()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save pricing policy'}</SmallButton>
+              </div>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -2979,32 +3314,38 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         <SectionShell
           title="Taxes & Charges"
           description="Tax categories and service charges used by the POS for order totals, refunds, closeout, and reports."
-          actions={publishControls('Save taxes & charges', saveTaxesCharges)}
+          actions={publishControls('Save taxes & charges', saveTaxesCharges, 'taxes_charges')}
         >
           <div className="space-y-8">
             <div className="space-y-4">
               <div>
                 <p className="label-mono">Tax Rates</p>
-                <p className="mt-2 text-sm text-dash-secondary">Add one or more tax categories. The default tax also syncs to legacy POS tax settings.</p>
-                <SmallButton onClick={applyMyrtleBeachTaxes} className="mt-3">Use Myrtle Beach city-limits rates</SmallButton>
+                <p className="mt-2 text-sm text-dash-secondary">
+                  {canEditTaxRates
+                    ? 'Tax categories are maintained by platform support from the restaurant address. The default tax also syncs to legacy POS tax settings.'
+                    : 'Tax categories are derived from the restaurant address and shown here for review. Platform support updates them when the address or jurisdiction changes.'}
+                </p>
+                {canEditTaxRates && <SmallButton onClick={applyMyrtleBeachTaxes} className="mt-3">Use Myrtle Beach city-limits rates</SmallButton>}
               </div>
               {normalizeTaxRates(taxRates).map((tax, index) => (
                 <div key={tax.id || `tax:${index}`} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
                   <div className="grid gap-3 md:grid-cols-[1.2fr_0.7fr_1fr]">
-                    <TextInput value={tax.name} onChange={event => updateTaxRate(index, { name: event.target.value })} placeholder="Sales Tax" />
-                    <TextInput inputMode="decimal" value={tax.rate} onChange={event => updateTaxRate(index, { rate: sanitizeNumber(event.target.value) })} placeholder="Rate %" />
-                    <SelectInput value={tax.applies_to} onChange={event => updateTaxRate(index, { applies_to: event.target.value })}>
+                    <TextInput value={tax.name} onChange={event => updateTaxRate(index, { name: event.target.value })} placeholder="Sales Tax" disabled={!canEditTaxRates} />
+                    <TextInput inputMode="decimal" value={tax.rate} onChange={event => updateTaxRate(index, { rate: sanitizeNumber(event.target.value) })} placeholder="Rate %" disabled={!canEditTaxRates} />
+                    <SelectInput value={tax.applies_to} onChange={event => updateTaxRate(index, { applies_to: event.target.value })} disabled={!canEditTaxRates}>
                       {taxAppliesToOptions(tax.applies_to).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </SelectInput>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <SmallButton variant={tax.is_default ? 'primary' : 'secondary'} onClick={() => updateTaxRate(index, { is_default: true })}>Default tax</SmallButton>
-                    <SmallButton variant={tax.is_inclusive ? 'primary' : 'secondary'} onClick={() => updateTaxRate(index, { is_inclusive: !tax.is_inclusive })}>Tax included in price</SmallButton>
-                    <SmallButton variant="danger" onClick={() => removeTaxRate(index)}>Remove</SmallButton>
-                  </div>
+                  {canEditTaxRates && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <SmallButton variant={tax.is_default ? 'primary' : 'secondary'} onClick={() => updateTaxRate(index, { is_default: true })}>Default tax</SmallButton>
+                      <SmallButton variant={tax.is_inclusive ? 'primary' : 'secondary'} onClick={() => updateTaxRate(index, { is_inclusive: !tax.is_inclusive })}>Tax included in price</SmallButton>
+                      <SmallButton variant="danger" onClick={() => removeTaxRate(index)}>Remove</SmallButton>
+                    </div>
+                  )}
                 </div>
               ))}
-              <SmallButton onClick={() => setTaxRates(prev => [...normalizeTaxRates(prev), { ...defaultTaxRate(), name: 'Additional Tax', is_default: false }])}>Add tax rate</SmallButton>
+              {canEditTaxRates && <SmallButton onClick={() => setTaxRates(prev => [...normalizeTaxRates(prev), { ...defaultTaxRate(), name: 'Additional Tax', is_default: false }])}>Add tax rate</SmallButton>}
             </div>
 
             <div className="space-y-4 border-t border-white/10 pt-6">
@@ -3044,19 +3385,31 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
             <div className="space-y-4 border-t border-white/10 pt-6">
               <div>
                 <p className="label-mono">Large-Party Auto Gratuity</p>
-                <p className="mt-2 text-sm text-dash-secondary">Restaurant-wide default the POS applies when the party size is at or above the threshold. Section service-charge profiles override this rule for their tables.</p>
+                <p className="mt-2 text-sm text-dash-secondary">Restaurant-wide default the POS applies by party size. When multiple tiers apply, the POS uses the largest matching minimum. Section service-charge profiles override these rules for their tables.</p>
               </div>
               <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
                 <label className="flex items-center gap-3 text-sm text-dash-primary">
                   <input type="checkbox" checked={autoGratuity.enabled} onChange={event => setAutoGratuity(prev => ({ ...prev, enabled: event.target.checked }))} className="h-4 w-4 accent-dash-gold" />
                   Automatically apply gratuity to large parties
                 </label>
-                {autoGratuity.enabled && <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 md:grid-cols-2 xl:grid-cols-4">
-                  <Field label="Minimum party size"><TextInput inputMode="numeric" value={autoGratuity.party_threshold} onChange={event => setAutoGratuity(prev => ({ ...prev, party_threshold: event.target.value.replace(/\D/g, '') }))} placeholder="6" /></Field>
-                  <Field label="Gratuity rate %"><TextInput inputMode="decimal" value={autoGratuity.percent} onChange={event => setAutoGratuity(prev => ({ ...prev, percent: sanitizeNumber(event.target.value) }))} placeholder="18" /></Field>
-                  <Field label="Receipt label"><TextInput value={autoGratuity.label} maxLength={40} onChange={event => setAutoGratuity(prev => ({ ...prev, label: event.target.value }))} placeholder="Gratuity" /></Field>
-                  <Field label="Who receives it"><SelectInput value={autoGratuity.assigned_to_employee ? 'employee' : 'restaurant'} onChange={event => setAutoGratuity(prev => ({ ...prev, assigned_to_employee: event.target.value === 'employee' }))}><option value="employee">Employee — tip earnings</option><option value="restaurant">Restaurant — service-charge revenue</option></SelectInput></Field>
-                  <p className="text-xs text-dash-tertiary md:col-span-2 xl:col-span-4">Employee-owned gratuity is shown separately from voluntary tips and is included exactly once in the employee settlement. Restaurant-owned charges never increase employee tip earnings.</p>
+                {autoGratuity.enabled && <div className="mt-4 space-y-4 border-t border-white/10 pt-4">
+                  <div className="space-y-3">
+                    {(autoGratuity.rules || [{ party_threshold: autoGratuity.party_threshold || '6', percent: autoGratuity.percent || '18' }]).map((rule, index) => (
+                      <div key={`auto-grat-rule:${index}`} className="grid gap-3 rounded-xl border border-white/10 bg-black/10 p-3 md:grid-cols-[1fr_1fr_auto]">
+                        <Field label="Minimum party size"><TextInput inputMode="numeric" value={rule.party_threshold} onChange={event => updateAutoGratuityRule(index, { party_threshold: event.target.value.replace(/\D/g, '') })} placeholder="6" /></Field>
+                        <Field label="Gratuity rate %"><TextInput inputMode="decimal" value={rule.percent} onChange={event => updateAutoGratuityRule(index, { percent: sanitizeNumber(event.target.value) })} placeholder="18" /></Field>
+                        <div className="flex items-end">
+                          <SmallButton variant="danger" disabled={(autoGratuity.rules || []).length <= 1} onClick={() => removeAutoGratuityRule(index)}>Remove</SmallButton>
+                        </div>
+                      </div>
+                    ))}
+                    <SmallButton onClick={addAutoGratuityRule}>Add tier</SmallButton>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <Field label="Receipt label"><TextInput value={autoGratuity.label} maxLength={40} onChange={event => setAutoGratuity(prev => ({ ...prev, label: event.target.value }))} placeholder="Gratuity" /></Field>
+                    <Field label="Who receives it"><SelectInput value={autoGratuity.assigned_to_employee ? 'employee' : 'restaurant'} onChange={event => setAutoGratuity(prev => ({ ...prev, assigned_to_employee: event.target.value === 'employee' }))}><option value="employee">Employee — tip earnings</option><option value="restaurant">Restaurant — service-charge revenue</option></SelectInput></Field>
+                    <p className="text-xs text-dash-tertiary md:col-span-2">Employee-owned gratuity is shown separately from voluntary tips and is included exactly once in the employee settlement. Restaurant-owned charges never increase employee tip earnings.</p>
+                  </div>
                 </div>}
               </div>
             </div>
@@ -3068,7 +3421,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         <SectionShell
           title="Discounts, Comps & Promos"
           description="Preset POS rules for item discounts, whole-check discounts, comps, employee meals, promos, and service recovery."
-          actions={publishControls('Save discounts', saveDiscountRules)}
+          actions={publishControls('Save discounts', saveDiscountRules, 'discounts')}
         >
           <div className="space-y-5">
             {discountRules.length === 0 && (
@@ -3197,7 +3550,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         <SectionShell
           title="Manager Controls"
           description="Role permissions for manager-level POS actions. Employee roles are assigned in the Employees tab; this controls what each role can do during service."
-          actions={publishControls('Save controls', saveManagerControls)}
+          actions={publishControls('Save controls', saveManagerControls, 'manager_controls')}
         >
           <div className="space-y-4">
             {rolePermissions.map((role, index) => (
@@ -3246,7 +3599,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         <SectionShell
           title="Cash & Closeout"
           description="Cash drawer handling, server checkout requirements, and end-of-day close rules."
-          actions={publishControls('Save closeout', saveCloseoutSettings)}
+          actions={publishControls('Save closeout', saveCloseoutSettings, 'closeout')}
         >
           <div className="space-y-5">
             <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
@@ -3353,7 +3706,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         <SectionShell
           title="Check Workflow"
           description="Seat numbers, order fire and hold rules, split-by-seat/item, bar tabs, preauthorization, and reopen approval."
-          actions={publishControls('Save workflow', saveCheckWorkflowSettings)}
+          actions={publishControls('Save workflow', saveCheckWorkflowSettings, 'check_workflow')}
         >
           <div className="space-y-5">
             <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
@@ -3436,7 +3789,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         <SectionShell
           title="Tips & Payroll"
           description="Tip ownership, pooling, tipout rules, cash declarations, credit tip payout, and payroll export defaults."
-          actions={publishControls('Save tips & payroll', saveTipPayrollSettings)}
+          actions={publishControls('Save tips & payroll', saveTipPayrollSettings, 'tips_payroll')}
         >
           <TipPayrollSettingsFields
             settings={tipPayrollSettings}
@@ -3451,7 +3804,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         <SectionShell
           title="Sections"
           description="Sections are areas in your restaurant, such as Bar, Patio, Outdoor, or Main Dining. Tables in the floor plan are assigned to one of these categories, and unassigned tables default to Table."
-          actions={publishControls('Save sections', saveSections)}
+          actions={publishControls('Save sections', saveSections, 'sections')}
         >
           {setupWarnings.sections?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
@@ -3522,7 +3875,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         <SectionShell
           title="Hours"
           description="Actual operating hours, matching the original onboarding hours editor."
-          actions={publishControls('Save hours', saveHours)}
+          actions={publishControls('Save hours', saveHours, 'hours')}
         >
           <div className="mb-5 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] p-4">
             <span className="text-sm text-dash-secondary">Same hours every day?</span>
@@ -3600,9 +3953,12 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
           title="Reservation Timing"
           description="Booking windows, party limits, turn time, and whether online and staff-created reservations share the same timing."
           actions={
-            <SmallButton variant="primary" onClick={() => void saveReservationTiming()} disabled={isSaving}>
-              {isSaving ? 'Saving...' : 'Save reservations'}
-            </SmallButton>
+            <div className="flex flex-wrap gap-2">
+              <SmallButton onClick={() => discardSetupChanges('reservation_timing')} disabled={isSaving}>Cancel</SmallButton>
+              <SmallButton variant="primary" onClick={() => void saveReservationTiming()} disabled={isSaving}>
+                {isSaving ? 'Saving...' : 'Save reservations'}
+              </SmallButton>
+            </div>
           }
         >
           <div className="space-y-5">
@@ -3693,7 +4049,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
         <SectionShell
           title="Capacity / Floor Plan"
           description="Seating capacity plus the visual table editor from onboarding. Use this to add, move, resize, and edit table seats."
-          actions={publishControls('Save capacity', (publication) => saveCapacity({}, publication))}
+          actions={publishControls('Save capacity', (publication) => saveCapacity({}, publication), 'capacity')}
         >
           {setupWarnings.capacity?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
@@ -3829,6 +4185,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
             <TextInput placeholder="Name" value={staffForm.name} onChange={event => setStaffForm(prev => ({ ...prev, name: event.target.value, employee_login_id: prev.employee_login_id || defaultEmployeeId(event.target.value) }))} />
             <TextInput placeholder="Email optional" value={staffForm.email} onChange={event => setStaffForm(prev => ({ ...prev, email: event.target.value }))} />
             <SelectInput value={staffForm.role} onChange={event => setStaffForm(prev => ({ ...prev, role: event.target.value }))}>
+              <option value="">Choose role</option>
               {normalizeStaffRoleOptions(jobCodes).map(role => <option key={role.id || role.code} value={roleCodeFromJobCode(role)}>{staffRoleLabel(role)}</option>)}
             </SelectInput>
             <TextInput placeholder="Hrs/week" value={staffForm.suggested_weekly_hours} onChange={event => setStaffForm(prev => ({ ...prev, suggested_weekly_hours: event.target.value.replace(/[^\d.]/g, '').slice(0, 5) }))} />
@@ -3851,7 +4208,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
             ) : (
               <div className="grid gap-3">
                 {normalizeStaffRoleOptions(jobCodes.filter(code => code.is_active !== false)).map(code => (
-                  <div key={code.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto_auto]">
+                  <div key={code.id} className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto_auto_auto]">
                     <TextInput
                       value={code.label || code.code}
                       onChange={event => setJobCodes(prev => prev.map(item => item.id === code.id ? { ...item, label: event.target.value } : item))}
@@ -3869,6 +4226,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                     <SmallButton variant={code.is_tipped ? 'primary' : 'secondary'} onClick={() => setJobCodes(prev => prev.map(item => item.id === code.id ? { ...item, is_tipped: !item.is_tipped } : item))}>
                       {code.is_tipped ? 'Tipped' : 'Hourly'}
                     </SmallButton>
+                    <SmallButton onClick={() => discardJobCodeChanges(code.id)} disabled={Boolean(savingRateId)}>Cancel</SmallButton>
                     <PublishControls
                       label="Save role"
                       busy={savingRateId === code.id}
@@ -3879,7 +4237,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                     <SmallButton variant="danger" onClick={() => void removeJobCode(code)} disabled={Boolean(savingRateId)}>Remove</SmallButton>
                   </div>
                 ))}
-                <div className="grid gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto]">
+                <div className="grid gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto_auto]">
                   <TextInput value={jobCodeDraft.label} onChange={event => setJobCodeDraft(prev => ({ ...prev, label: event.target.value, code: slugRoleCode(event.target.value) }))} placeholder="New role" />
                   <TextInput value={jobCodeDraft.default_hourly_rate} onChange={event => setJobCodeDraft(prev => ({ ...prev, default_hourly_rate: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))} placeholder="0.00" />
                   <SelectInput value={jobCodeDraft.permission_tier} onChange={event => setJobCodeDraft(prev => ({ ...prev, permission_tier: event.target.value }))}>
@@ -3888,6 +4246,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                   <SmallButton variant={jobCodeDraft.is_tipped ? 'primary' : 'secondary'} onClick={() => setJobCodeDraft(prev => ({ ...prev, is_tipped: !prev.is_tipped }))}>
                     {jobCodeDraft.is_tipped ? 'Tipped' : 'Hourly'}
                   </SmallButton>
+                  <SmallButton onClick={() => setJobCodeDraft(savedDraft('employees')?.jobCodeDraft || { code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 100, is_active: true })} disabled={Boolean(savingRateId)}>Cancel</SmallButton>
                   <SmallButton variant="primary" onClick={() => void saveJobCode(jobCodeDraft)} disabled={!jobCodeDraft.label.trim() || Boolean(savingRateId)}>Add role</SmallButton>
                 </div>
               </div>
@@ -3917,7 +4276,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                       />
                     </Field>
                   </div>
-                  <div className="grid items-end gap-3 md:grid-cols-[120px_120px_minmax(150px,1fr)_minmax(150px,1fr)_auto_auto]">
+                  <div className="grid items-end gap-3 md:grid-cols-[120px_120px_minmax(150px,1fr)_minmax(150px,1fr)_auto_auto_auto]">
                     <Field label="Hrs/week">
                       <TextInput className="px-3 text-center" defaultValue={waiter.suggested_weekly_hours ?? ''} placeholder="0" onBlur={event => void updateStaff(waiter.id, { suggested_weekly_hours: event.target.value === '' ? null : Number(event.target.value) })} />
                     </Field>
@@ -3945,6 +4304,7 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
                     >
                       {pinSaving[waiter.id] ? 'Saving...' : pinSaved[waiter.id] ? 'Saved' : 'Save PIN'}
                     </SmallButton>
+                    <SmallButton onClick={() => { setPinEdits(prev => ({ ...prev, [waiter.id]: '' })); setPinSaved(prev => ({ ...prev, [waiter.id]: false })) }} disabled={!pinEdits[waiter.id] || pinSaving[waiter.id]}>Cancel</SmallButton>
                     <SmallButton variant="danger" onClick={() => void removeStaff(waiter.id)}>Remove</SmallButton>
                   </div>
                 </div>
@@ -3955,11 +4315,9 @@ export default function RestaurantSetupPanel({ restaurant, restaurantId, auth, s
       )}
 
       {activeSetupTab === 'integrations' && (
-        <SectionShell title="Integrations" description="Connections used by the live deployment. These controls are still placeholders.">
-          <div className="grid gap-4 md:grid-cols-3">
-            <OptionCard title="POS" description="Toast, Square, Clover, or manual imports." disabled />
-            <OptionCard title="Scheduling" description="7shifts, Homebase, or SHIRE native scheduling." disabled />
-            <OptionCard title="Reservations" description="Booking links, reservation providers, and sync settings." disabled />
+        <SectionShell title="Integrations" description="Provider connections are managed from the Tools & Service Model and Reservations sections above.">
+          <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4 text-sm leading-6 text-dash-secondary">
+            Declared POS, scheduling, and reservation providers are saved as restaurant configuration. OAuth connection records remain provider-managed and are never replaced by this screen.
           </div>
         </SectionShell>
       )}

@@ -3,7 +3,7 @@ import { fetchWithSupabaseAuth } from '../../shared/query/fetchWithSupabaseAuth'
 
 // POS role permission matrix (pos_role_permissions). One row per (restaurant, role_key).
 // The POS apps hydrate the signed-in staffer's row at PIN validation and gate
-// sensitive actions (void / refund / comp / discount / no-sale / drawer) from it.
+// sensitive actions (void / refund / comp / discount / gratuity / no-sale / drawer) from it.
 
 export const PERMISSION_TOGGLES = [
   { key: 'can_void', label: 'Void items / checks' },
@@ -14,6 +14,7 @@ export const PERMISSION_TOGGLES = [
   { key: 'can_open_cash_drawer', label: 'Open cash drawer' },
   { key: 'can_paid_in_out', label: 'Paid in / out' },
   { key: 'can_adjust_tips', label: 'Adjust tips' },
+  { key: 'can_adjust_gratuity', label: 'Adjust gratuity' },
   { key: 'can_close_drawer', label: 'Close drawer' },
   { key: 'can_close_day', label: 'Close day' },
   { key: 'can_reopen_business_day', label: 'Reopen business day' },

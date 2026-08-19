@@ -513,6 +513,7 @@ export default function TipPoolingPage({ restaurantId }) {
   const [menuCategories, setMenuCategories] = useState([])
   const [menuItems, setMenuItems] = useState([])
   const [tipPayrollSettings, setTipPayrollSettings] = useState(defaultTipPayrollSettings())
+  const [savedTipPayrollSettings, setSavedTipPayrollSettings] = useState(defaultTipPayrollSettings())
   const [payPeriodCalendar, setPayPeriodCalendar] = useState(null)
   const [payPeriodNavigationPending, setPayPeriodNavigationPending] = useState(false)
   const [closeoutRecipients, setCloseoutRecipients] = useState([])
@@ -619,6 +620,7 @@ export default function TipPoolingPage({ restaurantId }) {
       setMenuCategories(Array.isArray(menuCategoryData?.categories) ? menuCategoryData.categories.filter(c => c?.is_active !== false) : [])
       setMenuItems(Array.isArray(menuItemData?.items) ? menuItemData.items.filter(item => item?.is_active !== false) : Array.isArray(menuItemData) ? menuItemData.filter(item => item?.is_active !== false) : [])
       setTipPayrollSettings(normalizedTipPayroll)
+      setSavedTipPayrollSettings(normalizedTipPayroll)
       setPayPeriodCalendar(resolvedPeriods)
       setRunPreset('pay_period')
       setRunInterval(intervalFromPayPeriodCalendar(resolvedPeriods, normalizedTipPayroll.payroll_export_frequency))
@@ -774,6 +776,7 @@ export default function TipPoolingPage({ restaurantId }) {
         throw new Error('The server responded, but the saved tipout rules did not match what you entered. Nothing was marked saved.')
       }
       setTipPayrollSettings(confirmedSettings)
+      setSavedTipPayrollSettings(confirmedSettings)
       const resolvedPeriods = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pay-periods`).catch(() => null)
       setPayPeriodCalendar(resolvedPeriods)
       if (resolvedPeriods?.available) {
@@ -789,6 +792,12 @@ export default function TipPoolingPage({ restaurantId }) {
     } finally {
       setConfigSaving(false)
     }
+  }
+
+  const discardTipConfig = () => {
+    setTipPayrollSettings(structuredClone(savedTipPayrollSettings))
+    setConfigError('')
+    setConfigMessage('Changes discarded')
   }
 
   const openRun = async (runId) => {
@@ -1189,7 +1198,10 @@ export default function TipPoolingPage({ restaurantId }) {
         <section className="rounded-2xl border border-dash-border bg-dash-panel p-5 shadow-sm">
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-2xl text-sm text-dash-secondary">Changes apply to future runs. Nothing saves until you hit Save.</p>
-            <button type="button" onClick={() => void saveTipConfig()} disabled={saveDisabled} title={!canAdjustTips ? 'Requires payroll.adjust_tips permission' : undefined} className="rounded-lg border border-dash-gold bg-dash-gold/10 px-3 py-1.5 text-sm font-medium text-dash-gold hover:bg-dash-gold/20 disabled:opacity-50">{configSaving ? 'Saving…' : 'Save rules'}</button>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={discardTipConfig} disabled={configSaving || configLoading || !configReady} className="rounded-lg border border-dash-border px-3 py-1.5 text-sm font-medium text-dash-secondary hover:text-dash-cream disabled:opacity-50">Cancel</button>
+              <button type="button" onClick={() => void saveTipConfig()} disabled={saveDisabled} title={!canAdjustTips ? 'Requires payroll.adjust_tips permission' : undefined} className="rounded-lg border border-dash-gold bg-dash-gold/10 px-3 py-1.5 text-sm font-medium text-dash-gold hover:bg-dash-gold/20 disabled:opacity-50">{configSaving ? 'Saving…' : 'Save rules'}</button>
+            </div>
           </div>
           {configLoading ? (
             <div className="rounded-xl border border-dash-border bg-white/[0.025] p-4 text-sm text-dash-secondary">Loading configuration…</div>
@@ -1217,7 +1229,10 @@ export default function TipPoolingPage({ restaurantId }) {
         <section className="rounded-2xl border border-dash-border bg-dash-panel p-5 shadow-sm">
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-2xl text-sm text-dash-secondary">Provider, export cadence, cash &amp; credit tip handling, and card fees.</p>
-            <button type="button" onClick={() => void saveTipConfig()} disabled={saveDisabled} className="rounded-lg border border-dash-gold bg-dash-gold/10 px-3 py-1.5 text-sm font-medium text-dash-gold hover:bg-dash-gold/20 disabled:opacity-50">{configSaving ? 'Saving…' : 'Save payroll setup'}</button>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={discardTipConfig} disabled={configSaving || configLoading || !configReady} className="rounded-lg border border-dash-border px-3 py-1.5 text-sm font-medium text-dash-secondary hover:text-dash-cream disabled:opacity-50">Cancel</button>
+              <button type="button" onClick={() => void saveTipConfig()} disabled={saveDisabled} className="rounded-lg border border-dash-gold bg-dash-gold/10 px-3 py-1.5 text-sm font-medium text-dash-gold hover:bg-dash-gold/20 disabled:opacity-50">{configSaving ? 'Saving…' : 'Save payroll setup'}</button>
+            </div>
           </div>
           {configLoading ? (
             <div className="rounded-xl border border-dash-border bg-white/[0.025] p-4 text-sm text-dash-secondary">Loading configuration…</div>

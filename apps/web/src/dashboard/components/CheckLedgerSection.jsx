@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQuery, keepPreviousData } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Maximize2,
   Minimize2,
+  LoaderCircle,
   ReceiptText,
+  RefreshCw,
   Search,
 } from 'lucide-react'
 import { useAuth } from '../../auth'
@@ -14,6 +16,7 @@ import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import { posCheckLedgerApi, posRefundApi } from '../../shared/api/posClient'
 import { queryKeys } from '../../shared/query'
 import { activityTitle, activityWho, groupActivityIntoSessions } from './checkActivity'
+import { buildCheckLedgerQuery, ledgerCheckCount } from './checkLedgerQuery'
 
 const LIVE_REFRESH_MS = 15000
 
@@ -545,44 +548,26 @@ export default function CheckLedgerSection({ restaurantId }) {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [fullscreen, selectedOrderId])
 
-  const query = useMemo(() => {
-    if (tab === 'history') {
-      return {
-        date_from: dateFrom,
-        date_to: dateTo,
-        status: historyStatus || undefined,
-        search: search || undefined,
-        page,
-        page_size: 25,
-      }
-    }
-    return {
-      business_date: businessDate || undefined,
-      status: tab === 'active' ? 'open' : 'closed',
-      search: search || undefined,
-      page,
-      page_size: 25,
-    }
-  }, [tab, businessDate, dateFrom, dateTo, historyStatus, search, page])
+  const query = useMemo(() => buildCheckLedgerQuery({
+    tab,
+    businessDate,
+    dateFrom,
+    dateTo,
+    historyStatus,
+    search,
+    page,
+  }), [tab, businessDate, dateFrom, dateTo, historyStatus, search, page])
 
   const canView = access.can('reports.view')
   const ledgerQuery = useQuery({
     queryKey: queryKeys.checkLedger(restaurantId, query),
     queryFn: ({ signal }) => posCheckLedgerApi.list(restaurantId, query, signal),
     enabled: Boolean(restaurantId) && canView,
-    placeholderData: keepPreviousData,
     staleTime: 10000,
     // Open checks are live; history doesn't need polling.
     refetchInterval: tab === 'active' && !selectedOrderId ? LIVE_REFRESH_MS : false,
     retry: 1,
   })
-
-  useEffect(() => {
-    const canonicalBusinessDate = ledgerQuery.data?.business_date
-    if (!businessDate && !ledgerQuery.isPlaceholderData && canonicalBusinessDate) {
-      setBusinessDate(canonicalBusinessDate)
-    }
-  }, [businessDate, ledgerQuery.data?.business_date, ledgerQuery.isPlaceholderData])
 
   if (access.loading || !canView) return null
 
@@ -681,7 +666,7 @@ export default function CheckLedgerSection({ restaurantId }) {
             ) : (
               <input
                 type="date"
-                value={businessDate}
+                value={businessDate || payload?.business_date || ''}
                 onChange={(event) => setBusinessDate(event.target.value)}
                 className="h-9 rounded-lg border border-white/10 bg-transparent px-2.5 text-sm text-dash-cream focus:border-shell-accent focus:outline-none"
               />
@@ -690,7 +675,7 @@ export default function CheckLedgerSection({ restaurantId }) {
 
           {payload && (
             <div className="mt-3 flex flex-wrap gap-2">
-              <SummaryChip label="checks" value={Number(summary.checks ?? payload.total ?? 0).toLocaleString('en-US')} />
+              <SummaryChip label="checks" value={ledgerCheckCount(payload).toLocaleString('en-US')} />
               <SummaryChip label="gross" value={money(summary.gross_total)} />
               <SummaryChip label="payments" value={money(summary.transaction_total)} />
               {Number(summary.needs_attention) > 0 && (
@@ -699,16 +684,25 @@ export default function CheckLedgerSection({ restaurantId }) {
               {tab === 'active' && Number(summary.carryover_open) > 0 && (
                 <SummaryChip label="carried over" value={Number(summary.carryover_open).toLocaleString('en-US')} />
               )}
+              {Number(summary.discount_total) > 0 && <SummaryChip label="discounts" value={money(summary.discount_total)} />}
+              {Number(summary.voided_item_amount) > 0 && <SummaryChip label="item voids" value={money(summary.voided_item_amount)} />}
+              {Number(summary.voided_checks) > 0 && <SummaryChip label="voided checks" value={Number(summary.voided_checks).toLocaleString('en-US')} />}
             </div>
           )}
 
           {ledgerQuery.isError && (
-            <p className="mt-4 rounded-xl border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">
-              {ledgerQuery.error instanceof Error ? ledgerQuery.error.message : 'Could not load checks.'}
-            </p>
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">
+              <span>{ledgerQuery.error instanceof Error ? ledgerQuery.error.message : 'Could not load checks.'}</span>
+              <button type="button" onClick={() => ledgerQuery.refetch()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-red-300/30 px-2.5 py-1.5 text-xs font-semibold">
+                <RefreshCw size={13} aria-hidden="true" />Retry
+              </button>
+            </div>
           )}
           {ledgerQuery.isPending && (
-            <p className="mt-4 text-sm text-dash-tertiary">Loading checks…</p>
+            <div role="status" className="mt-4 flex min-h-24 items-center justify-center gap-2 rounded-md border border-dash-border bg-white/[0.015] text-sm text-dash-tertiary">
+              <LoaderCircle size={15} className="animate-spin text-shell-accent" aria-hidden="true" />
+              Loading {tab === 'active' ? 'active' : tab === 'closed' ? 'closed' : 'check history'} checks...
+            </div>
           )}
           {!ledgerQuery.isPending && !ledgerQuery.isError && items.length === 0 && (
             <p className="mt-4 text-sm text-dash-tertiary">
@@ -744,6 +738,12 @@ export default function CheckLedgerSection({ restaurantId }) {
                           #{item.order_number ?? '—'}
                           {item.needs_attention && <span className="ml-1.5 text-red-300" title={(item.attention_reasons || []).join(', ')}>●</span>}
                           {item.is_carryover && <span className="ml-1.5 text-[10px] text-dash-tertiary">carryover</span>}
+                          {(Number(item.discount_amount) > 0 || Number(item.voided_item_count) > 0) && (
+                            <span className="mt-1.5 flex flex-wrap gap-1 text-[10px]">
+                              {Number(item.discount_amount) > 0 && <span className="rounded bg-amber-400/10 px-1.5 py-0.5 text-amber-200">{money(item.discount_amount)} discount</span>}
+                              {Number(item.voided_item_count) > 0 && <span className="rounded bg-red-400/10 px-1.5 py-0.5 text-red-200">{item.voided_item_count} item void{Number(item.voided_item_count) === 1 ? '' : 's'}</span>}
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-2.5 text-dash-secondary">
                           {item.table_number ? `Table ${item.table_number}` : item.guest_name || '—'}

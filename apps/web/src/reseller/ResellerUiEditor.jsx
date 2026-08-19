@@ -389,6 +389,19 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
     setPickerOpen(true)
   }
 
+  const discardCurrentChanges = () => {
+    if (previewMode === 'quick-menu') {
+      const saved = savedQuickMenus[quickRestaurantId]
+      if (saved) setQuickMenus((current) => ({ ...current, [quickRestaurantId]: structuredClone(saved) }))
+    } else {
+      setDrafts((current) => ({ ...current, [service]: structuredClone(savedDrafts[service]) }))
+      setComponentDrafts((current) => ({ ...current, [service]: structuredClone(savedComponents[service]) }))
+      setPreviewDrafts((current) => ({ ...current, [service]: structuredClone(savedDrafts[service]) }))
+      setPreviewComponents((current) => ({ ...current, [service]: structuredClone(savedComponents[service]) }))
+    }
+    setStatus({ tone: 'success', text: 'Changes discarded.' })
+  }
+
   return <>
     {pickerOpen && <ScopePicker restaurants={restaurants} groups={groups} initialRestaurantIds={selectedIds.length ? selectedIds : [initialRestaurantId].filter(Boolean)} onCancel={() => setPickerOpen(false)} onApply={(ids) => void load(ids)} loading={loading} error={status.tone === 'error' ? status.text : ''} />}
     <div className="space-y-5">
@@ -396,6 +409,7 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
         <div><p className="label-mono">Reseller UI editor</p><h1 className="mt-1 text-2xl font-semibold">Application colors</h1><p className="mt-2 max-w-2xl text-sm text-dash-secondary">Edit the runtime theme delivered to each selected restaurant's POS and Host applications.</p></div>
         <div className="flex flex-wrap justify-end gap-2">
           <button type="button" onClick={openPicker} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-dash-border px-4 text-sm font-semibold"><RefreshCw size={15} />Change selection</button>
+          {((previewMode === 'quick-menu' && quickDirty) || (previewMode !== 'quick-menu' && dirty[service])) && <button type="button" onClick={discardCurrentChanges} disabled={loading} className="inline-flex h-10 items-center justify-center rounded-lg border border-dash-border px-4 text-sm font-semibold text-dash-secondary disabled:opacity-40">Cancel</button>}
           {previewMode === 'quick-menu'
             ? quickDirty && <PublishControls label="Push to iPads" busy={loading} onPublishNow={() => pushQuickMenu()} onSchedule={(scheduledFor, timezone) => pushQuickMenu({ scheduledFor, timezone })} />
             : dirty[service] && <PublishControls label="Push to iPads" busy={loading} onPublishNow={() => pushToIpads()} onSchedule={(scheduledFor, timezone) => pushToIpads({ scheduledFor, timezone })} />}
@@ -429,7 +443,7 @@ export default function ResellerUiEditor({ restaurants, groups, initialRestauran
         <div className="flex items-start justify-between gap-3"><div><p className="label-mono">Edit component</p><h2 className="mt-1 text-xl font-semibold">{componentSelection.label}</h2><p className="mt-1 break-all font-mono text-xs text-dash-tertiary">{componentSelection.componentId}</p></div><button type="button" title="Close" onClick={() => setComponentSelection(null)} className="grid h-9 w-9 place-items-center rounded-md border border-dash-border"><X size={16} /></button></div>
         <div className="mt-5 grid grid-cols-[48px_1fr] items-center gap-3"><input type="color" aria-label="Choose component color" value={pickerHex(componentColor)} onChange={(event) => setComponentColor(event.target.value)} className="h-11 w-11 cursor-pointer border-0 bg-transparent p-0" /><div><label className="text-xs font-semibold" htmlFor="component-color-property">Color property</label><select id="component-color-property" value={componentProperty} onChange={(event) => { const next = componentSelection.properties.find((item) => item.property === event.target.value); setComponentProperty(event.target.value); if (next) setComponentColor(next.value) }} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-transparent px-3 text-sm">{componentSelection.properties.map((item) => <option key={item.property} value={item.property}>{item.label}</option>)}</select></div></div>
         <input aria-label="Component color code" value={componentColor} onChange={(event) => setComponentColor(event.target.value)} className="mt-3 h-10 w-full rounded-md border border-dash-border bg-transparent px-3 font-mono text-sm outline-none" />
-        <div className="mt-5 grid gap-2 sm:grid-cols-2"><button type="button" disabled={!componentSelection.registered} title={componentSelection.registered ? 'Override only this component' : 'This component has not been registered for individual overrides'} onClick={() => saveComponentColor('component')} className="rounded-lg border border-dash-border px-3 py-3 text-sm font-semibold disabled:opacity-40">Save to component</button><button type="button" disabled={!componentSelection.properties.find((item) => item.property === componentProperty)?.tokenKey} title="Update the shared theme token used by this component" onClick={() => saveComponentColor('theme')} className="rounded-lg bg-shell-cta px-3 py-3 text-sm font-semibold text-shell-cta-text disabled:opacity-40">Update theme</button></div>
+        <div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setComponentSelection(null)} className="rounded-lg border border-dash-border px-3 py-3 text-sm font-semibold">Cancel</button><button type="button" disabled={!componentSelection.registered} title={componentSelection.registered ? 'Override only this component' : 'This component has not been registered for individual overrides'} onClick={() => saveComponentColor('component')} className="rounded-lg border border-dash-border px-3 py-3 text-sm font-semibold disabled:opacity-40">Save to component</button><button type="button" disabled={!componentSelection.properties.find((item) => item.property === componentProperty)?.tokenKey} title="Update the shared theme token used by this component" onClick={() => saveComponentColor('theme')} className="rounded-lg bg-shell-cta px-3 py-3 text-sm font-semibold text-shell-cta-text disabled:opacity-40">Update theme</button></div>
         {componentSelection.registered && componentDrafts[service][componentSelection.componentId]?.[componentProperty] && <button type="button" onClick={removeComponentOverride} className="mt-3 w-full text-center text-xs font-semibold text-red-300">Remove component override</button>}
         <p className="mt-4 text-xs text-dash-tertiary">Both choices update only the sandbox draft. Use Push to iPads after reviewing the result.</p>
       </div>

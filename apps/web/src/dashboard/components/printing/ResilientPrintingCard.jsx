@@ -107,7 +107,10 @@ export default function ResilientPrintingCard({ restaurantId }) {
             <label><span className="label-mono">Agent LAN IP</span><input value={form.agent_host} onChange={e => setForm({ ...form, agent_host: e.target.value })} placeholder="Auto-detected on terminal" className="mt-2 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm" /></label>
           </>}
         </div>
-        <button disabled={saving || !form.target_id} className="mt-4 rounded-lg bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">{saving ? 'Saving…' : 'Add path'}</button>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button type="button" onClick={() => setForm(current => ({ ...emptyForm, target_id: current.target_id }))} disabled={saving} className="rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">Cancel</button>
+          <button disabled={saving || !form.target_id} className="rounded-lg bg-dash-gold px-4 py-2 text-sm font-semibold text-black disabled:opacity-50">{saving ? 'Saving…' : 'Add path'}</button>
+        </div>
       </form>
       <p className="mt-4 text-xs text-dash-tertiary">Internet can be down while Ethernet printing still works if the local switch/AP and printer remain powered. USB protects against the printer Ethernet path failing; it does not protect against printer power, paper, or mechanical failure.</p>
 

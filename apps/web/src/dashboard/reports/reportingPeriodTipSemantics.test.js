@@ -5,7 +5,6 @@ import test from 'node:test'
 import { cashSettlementDisplay } from './reportDisplay.js'
 
 const reportsPage = await readFile(new URL('./RestaurantReportsPage.jsx', import.meta.url), 'utf8')
-const reconciliationBanner = await readFile(new URL('../../shared/components/ReconciliationBanner.jsx', import.meta.url), 'utf8')
 const setupPanel = await readFile(new URL('../RestaurantSetupPanel.jsx', import.meta.url), 'utf8')
 const settingsOptions = await readFile(new URL('../../../../../packages/settings/src/options.ts', import.meta.url), 'utf8')
 const settingsSections = await readFile(new URL('../../../../../packages/settings/src/sections.ts', import.meta.url), 'utf8')
@@ -30,22 +29,15 @@ test('cash tip declaration copy distinguishes optional skip from a zero declarat
   }
 })
 
-test('money reports keep accounting dates and employee gratuity explicit', () => {
-  assert.match(reportsPage, /Accounting business dates/)
-  assert.match(reportsPage, /Payment completed/)
-  assert.match(reportsPage, /Voluntary tips/)
-  assert.match(reportsPage, /Employee gratuity/)
-  assert.match(reportsPage, /Employee gratuity needing attribution/)
-  assert.match(reportsPage, /Voluntary tips needing attribution/)
-  assert.match(reportsPage, /remains unpaid until a manager attributes it/)
-  assert.match(reportsPage, /Unclassified legacy charges/)
-  assert.match(reportsPage, /Gratuity owed through payroll/)
-  assert.match(reportsPage, /Total tip earnings/)
-  assert.match(reportsPage, /Independent transaction verification is unavailable/)
-  assert.match(reportsPage, /whole-restaurant green result cannot be mistaken as verification of the visible subset/)
-  assert.match(reportsPage, /reconciliationCoversCurrentView \? <ReconciliationBanner/)
-  assert.match(reconciliationBanner, /recon\.status === 'verified' && recon\.complete === true/)
-  assert.doesNotMatch(reportsPage, /Stat label="Tips"/)
+test('POS reports use a restaurant-local time window and shared output groups', () => {
+  assert.match(reportsPage, /Restaurant local time/)
+  assert.match(reportsPage, /\/manager\/report-hub\/snapshot/)
+  assert.match(reportsPage, /receipt_group_ids: scopedGroupIds/)
+  assert.match(reportsPage, /downloadSnapshotCsv\(snapshot, scopedGroupIds/)
+  assert.match(reportsPage, /type="datetime-local"/)
+  assert.match(reportsPage, />Scheduled delivery</)
+  assert.match(reportsPage, /\/reports\/recipients/)
+  assert.doesNotMatch(reportsPage, /business_date: dates\.end/)
 })
 
 test('server cash settlement labels follow the signed authoritative amount', () => {

@@ -157,6 +157,7 @@ export const MANAGER_PERMISSION_OPTIONS = [
   { key: 'can_no_sale', label: 'No-sale' },
   { key: 'can_paid_in_out', label: 'Paid in/out' },
   { key: 'can_adjust_tips', label: 'Tip edits' },
+  { key: 'can_adjust_gratuity', label: 'Adjust gratuity' },
   { key: 'can_edit_menu', label: 'Menu edits' },
   { key: 'can_edit_employees', label: 'Employee edits' },
   { key: 'can_edit_schedules', label: 'Schedule edits' },
@@ -172,11 +173,11 @@ export const MANAGER_PERMISSION_OPTIONS = [
 ] as const
 
 export const PERMISSION_TIER_OPTIONS: readonly SettingsOption<'owner' | 'manager' | 'waiter' | 'normal' | 'limited'>[] = [
-  { value: 'owner', label: 'Owner' },
-  { value: 'manager', label: 'Manager' },
-  { value: 'waiter', label: 'Waiter' },
-  { value: 'normal', label: 'Normal' },
-  { value: 'limited', label: 'Limited' },
+  { value: 'owner', label: 'Owner access' },
+  { value: 'manager', label: 'Manager access' },
+  { value: 'waiter', label: 'Service access' },
+  { value: 'normal', label: 'Standard access' },
+  { value: 'limited', label: 'Limited access' },
 ]
 
 // --- Closeout ---------------------------------------------------------------

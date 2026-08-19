@@ -7,7 +7,14 @@ const at = (minute) => `2026-08-07T18:${String(minute).padStart(2, '0')}:00Z`
 
 test('labels: known types are friendly, unknown types humanize', () => {
   assert.equal(activityLabel('item_sent'), 'Sent to kitchen')
+  assert.equal(activityLabel('add_gratuity'), 'Gratuity added or changed')
+  assert.equal(activityLabel('remove_gratuity'), 'Gratuity removed')
   assert.equal(activityLabel('some_new_event'), 'Some new event')
+})
+
+test('gratuity manager actions include their amount', () => {
+  assert.equal(activityTitle({ action: 'add_gratuity', amount: 12.5 }), 'Gratuity added or changed — $12.50')
+  assert.equal(activityTitle({ action: 'remove_gratuity', amount: 0 }), 'Gratuity removed — $0.00')
 })
 
 test('title includes item snapshot with quantity', () => {

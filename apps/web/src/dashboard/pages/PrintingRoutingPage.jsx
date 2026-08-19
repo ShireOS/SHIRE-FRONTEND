@@ -112,11 +112,13 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const location = useLocation()
   const section = sectionFromHash(location.hash)
   const [config, setConfig] = useState(DEFAULT_CONFIG)
+  const [savedConfig, setSavedConfig] = useState(DEFAULT_CONFIG)
   const [savedAutoPrintAfterPayment, setSavedAutoPrintAfterPayment] = useState(true)
   const [savedExternalCardSignedSlip, setSavedExternalCardSignedSlip] = useState(false)
   const [savedKitchenPresentation, setSavedKitchenPresentation] = useState({ modifier_marker: 'indent', line_density: 'tight' })
   const [receiptPolicyReason, setReceiptPolicyReason] = useState('')
   const [routing, setRouting] = useState({ stations: [], targets: [] })
+  const [savedRouting, setSavedRouting] = useState({ stations: [], targets: [] })
   const [catalog, setCatalog] = useState([])
   const [scope, setScope] = useState('whole')
   const [output, setOutput] = useState('kitchen_ticket')
@@ -172,7 +174,9 @@ export default function PrintingRoutingPage({ restaurantId }) {
           report: { ...clone(DEFAULT_CONFIG.report), ...(printing?.report || {}) },
           kitchen: { ...clone(DEFAULT_CONFIG.kitchen), ...(printing?.kitchen || {}) },
         }
+        const normalizedRouting = routes || { stations: [], targets: [] }
         setConfig(mergedPrinting)
+        setSavedConfig(mergedPrinting)
         loadedConfigRef.current = clone(mergedPrinting)
         setSavedAutoPrintAfterPayment(mergedPrinting.auto_print_after_payment !== false)
         setSavedExternalCardSignedSlip(mergedPrinting.customer?.signed_tip_slip?.external_card === true)
@@ -182,7 +186,9 @@ export default function PrintingRoutingPage({ restaurantId }) {
         })
         setReceiptPolicyReason('')
         setLoadedRestaurantId(String(restaurantId))
-        setRouting(routes || { stations: [], targets: [] })
+        setRouting(normalizedRouting)
+        setSavedRouting(normalizedRouting)
+        setDirtyTargetIds(new Set())
         setCatalog([
           ...(itemsResult.data || []).map(row => ({ ...row, kind: 'items', type: 'Item' })),
           ...(modifiersResult.data || []).map(row => ({ ...row, kind: 'modifiers', type: 'Modifier', category: row.group_name })),
@@ -405,6 +411,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
         body: JSON.stringify({ ...rebasedConfig, ...(auditedBehaviorChanged ? { change_reason: reason } : {}) }),
       })
       setConfig(saved)
+      setSavedConfig(saved)
       loadedConfigRef.current = clone(saved)
       setSavedAutoPrintAfterPayment(saved.auto_print_after_payment !== false)
       setSavedExternalCardSignedSlip(saved.customer?.signed_tip_slip?.external_card === true)
@@ -431,13 +438,25 @@ export default function PrintingRoutingPage({ restaurantId }) {
       }
       if (dirtyTargetIds.size) {
         const routes = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing`)
-        setRouting(routes || { stations: [], targets: [] })
+        const normalizedRouting = routes || { stations: [], targets: [] }
+        setRouting(normalizedRouting)
+        setSavedRouting(normalizedRouting)
         setDirtyTargetIds(new Set())
       }
       setMessage('Printing configuration saved and active on POS print jobs.')
     } catch (err) {
       setError(err?.message || 'Could not save printing configuration')
     } finally { setSaving(false) }
+  }
+
+  const discard = () => {
+    if (saving || loading) return
+    setConfig(clone(savedConfig))
+    setRouting(clone(savedRouting))
+    setDirtyTargetIds(new Set())
+    setReceiptPolicyReason('')
+    setError('')
+    setMessage('Changes discarded.')
   }
 
   if (section === 'routing') return <div className="space-y-5"><ProductionWorkflowCard restaurantId={restaurantId} /><MenuPanel restaurantId={restaurantId} initialTab="printing" onlyTab="printing" /></div>
@@ -450,6 +469,12 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const previewTitle = output === 'kitchen_ticket' ? 'Kitchen ticket' : output === 'server_report' ? 'Server report' : 'Customer receipt'
   const previewSize = output === 'kitchen_ticket' ? effectiveKitchen.size : output === 'server_report' ? config.report?.size : config.customer?.size
   const previewLines = preview.split('\n')
+  const displayedNormalColumns = output === 'kitchen_ticket'
+    ? displayedCapabilities?.kitchen_normal_columns ?? displayedCapabilities?.normal_columns
+    : displayedCapabilities?.normal_columns
+  const displayedCompactColumns = output === 'kitchen_ticket'
+    ? displayedCapabilities?.kitchen_compact_columns ?? displayedCapabilities?.condensed_columns
+    : displayedCapabilities?.condensed_columns
   const firstPreviewItemIndex = previewLines.findIndex(line => /^\d+(?:\.\d+)?\s{2}\S/.test(line))
   const memoPreviewValues = kitchenMemo.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
 
@@ -725,13 +750,16 @@ export default function PrintingRoutingPage({ restaurantId }) {
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-xl border border-white/10 bg-black/20 p-3"><p className="label-mono">Model</p><p className="mt-1 text-sm font-semibold">{displayedCapabilities.profile || selectedTarget.config?.profile || 'Unknown'}</p></div>
                 <div className="rounded-xl border border-white/10 bg-black/20 p-3"><p className="label-mono">Roll width</p><p className="mt-1 text-sm font-semibold">{displayedCapabilities.paper_width_mm} mm</p></div>
-                <div className="rounded-xl border border-white/10 bg-black/20 p-3"><p className="label-mono">Columns</p><p className="mt-1 text-sm font-semibold">{displayedCapabilities.normal_columns} normal · {displayedCapabilities.condensed_columns} compact</p></div>
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3"><p className="label-mono">Columns</p><p className="mt-1 text-sm font-semibold">{displayedNormalColumns} normal · {displayedCompactColumns} compact</p></div>
               </div>
               {!displayedCapabilities.known_profile && <p className="mt-3 text-xs text-amber-200">Unknown model: using the conservative 42-column fallback.</p>}
               {paperWidthOptions.length > 1 && <div className="mt-4 max-w-xs"><Select label="Installed paper roll" value={String(selectedTarget.config?.paper_width_mm || displayedCapabilities.paper_width_mm)} onChange={patchTargetPaperWidth}>{paperWidthOptions.map(width => <option key={width} value={width}>{width} mm</option>)}</Select></div>}
             </> : <p className="mt-2 text-sm text-dash-tertiary">Choose a compatible printer to calculate its usable paper width.</p>}
           </div>
-          <button onClick={save} disabled={saving || loading || loadedRestaurantId !== String(restaurantId)} className="rounded-xl bg-dash-gold px-5 py-3 text-sm font-semibold text-black disabled:opacity-50">{saving ? 'Saving…' : 'Save changes'}</button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={discard} disabled={saving || loading || loadedRestaurantId !== String(restaurantId)} className="rounded-xl border border-white/10 px-5 py-3 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">Cancel</button>
+            <button type="button" onClick={save} disabled={saving || loading || loadedRestaurantId !== String(restaurantId)} className="rounded-xl bg-dash-gold px-5 py-3 text-sm font-semibold text-black disabled:opacity-50">{saving ? 'Saving…' : 'Save changes'}</button>
+          </div>
         </div>
 
         <div className="h-fit rounded-2xl border border-white/10 bg-white/[0.035] p-5 xl:sticky xl:top-20">
@@ -770,6 +798,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
                 (isModifier || isNote || isCheckMemo) && requestedSize === 'standard' ? 'text-[0.86em]' : '',
                 (isModifier || isNote || isCheckMemo) && requestedSize === 'large' ? 'text-[1em]' : '',
                 isCheckMemo && requestedSize === 'double' ? 'text-[1.15em]' : '',
+                isMethod && methodStyle.color === 'red' && supportsRed === true ? 'text-red-700' : '',
                 isMethod && methodStyle.bold ? 'font-bold' : '',
                 isMethod && methodStyle.size === 'large' ? 'text-[1.35em] leading-[2.1]' : '',
                 isMethod && methodStyle.size === 'double' ? 'text-[1.7em] leading-[2.1]' : '',

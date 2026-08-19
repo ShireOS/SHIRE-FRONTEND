@@ -126,7 +126,7 @@ export async function fetchResellerEmployees(resellerId) {
 }
 
 export async function createResellerEmployee(input) {
-  return fetchWithSupabaseAuth('/reseller/employees', {
+  return fetchWithSupabaseAuth('/reseller/employee-invites', {
     method: 'POST',
     body: JSON.stringify(input),
   })

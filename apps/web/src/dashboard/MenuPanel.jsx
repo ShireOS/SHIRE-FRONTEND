@@ -20,6 +20,7 @@ import {
   reorderCategoryGroups,
   reorderGroupOptions,
   replaceGroupItems,
+  setItemGroupOverride,
   setGroupAnswerSortMode,
   setModifierKitchenDisplayRole,
   updateGroupOption,
@@ -29,6 +30,7 @@ import {
 import { SortableRows, DragHandle } from './components/shared/SortableRows'
 import { fetchCategoryColors, fetchItemImages, setCategoryColor } from './data/menuExtras'
 import { fetchPosApi } from '../shared/api/posClient'
+import { DEFAULT_API_TIMEOUT_MS } from '../shared/api/requestDeadline'
 import {
   addAllergyPill,
   ensureAllergyGroup,
@@ -41,6 +43,21 @@ import {
 } from './data/menuAllergies'
 import { MenuItemDetail } from './MenuItemDetail'
 import { MenuItemCreate } from './MenuItemCreate'
+import { MenuCombosPanel } from './MenuCombosPanel'
+import { comboPayloadFromDraft } from './data/menuCombos.js'
+import {
+  ROUTE_INHERIT_VALUE,
+  ROUTE_MULTI_VALUE,
+  ROUTE_NO_PRODUCTION_VALUE,
+  hasItemProductionOverride,
+  resolveDraftProductionRoute,
+} from './menuRouting'
+import {
+  bucketItemsByCategoryIdentity,
+  categoryKeyForCategory,
+  effectiveItemCategoryName,
+  orphanCategoryBucketsFromIdentity,
+} from './menuCategoryIdentity.js'
 import { MenuEditor } from '../onboarding/components/MenuEditor'
 import { useAuth } from '../auth'
 import { PublishControls } from '../shared/components/PublishControls'
@@ -52,6 +69,14 @@ import { PropagationModal } from '../shared/components/PropagationModal'
 import { scheduleChange } from '../shared/api/scheduledChanges'
 import { fetchResellerPortfolioForUser } from '../reseller/data/resellerPortfolio'
 import { copyItemConfig } from './data/menuDuplicate'
+import {
+  directQuestionGroupsForItem,
+  inheritedQuestionIdsToOptOut,
+} from './data/menuDuplicateQuestions.js'
+import {
+  categoryQuestionGroups,
+  nextCategoryQuestionOrder,
+} from './data/menuCategoryQuestions.js'
 import BulkPricingPanel from './BulkPricingPanel'
 import {
   cleanMoneyDraft,
@@ -74,6 +99,7 @@ import {
   MenuEmptyState,
   ModifierPicker,
   PosTilePreview,
+  SaveStatus,
   SectionShell,
   SelectInput,
   SmallButton,
@@ -90,6 +116,7 @@ import {
 const MENU_TABS = [
   { id: 'items', label: 'Items' },
   { id: 'categories', label: 'Categories' },
+  { id: 'combos', label: 'Combos' },
   { id: 'modifiers', label: 'Modifiers' },
   { id: 'groups', label: 'Questions' },
   { id: 'allergies', label: 'Allergies' },
@@ -98,9 +125,18 @@ const MENU_TABS = [
   { id: 'printing', label: 'Printing & Routing' },
 ]
 
-const ROUTE_INHERIT_VALUE = ''
-const ROUTE_NO_PRODUCTION_VALUE = '__no_production_route__'
-const ROUTE_MULTI_VALUE = '__multiple_production_routes__'
+const MENU_SOURCE_TIMEOUT_MS = 45_000
+
+const loadMenuSource = (label, loader) => new Promise((resolve, reject) => {
+  const timer = window.setTimeout(
+    () => reject(new Error(`${label} timed out`)),
+    MENU_SOURCE_TIMEOUT_MS,
+  )
+  Promise.resolve()
+    .then(loader)
+    .then(resolve, reject)
+    .finally(() => window.clearTimeout(timer))
+})
 
 const routeCategoryKey = (value) => String(value || '').trim().toLowerCase()
 
@@ -251,22 +287,25 @@ function GroupTree({ groupId, groupsById, modifiersById, depth = 0, seen }) {
 
 // ── Modifier group editor card (Groups tab power view) ─────────────────────
 
+const groupFieldsDraft = (group) => ({
+  name: group.name,
+  min_selections: String(group.min_selections ?? 0),
+  max_selections: group.max_selections == null ? '' : String(group.max_selections),
+  is_required: Boolean(group.is_required),
+  prompt_on_order: group.prompt_on_order !== false,
+  included_count: String(group.included_count ?? 0),
+  overage_price: group.overage_price == null ? '' : String(group.overage_price),
+  prompt_mode: normalizedPromptMode(group.prompt_mode),
+  pre_modifiers: Array.isArray(group.pre_modifiers) ? group.pre_modifiers : [],
+  pre_modifier_prices: moneyValuesToDraft(group.pre_modifier_prices),
+  no_print: Boolean(group.no_print),
+  kitchen_display_role: group.kitchen_display_role || (group.type === 'side' ? 'side' : ''),
+})
+
 function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy, onSave, onArchive, onLink, onAddModifiers, onCreateModifier, onToggleCategory = null }) {
   const [expanded, setExpanded] = useState(false)
-  const [draft, setDraft] = useState(() => ({
-    name: group.name,
-    min_selections: String(group.min_selections ?? 0),
-    max_selections: group.max_selections == null ? '' : String(group.max_selections),
-    is_required: Boolean(group.is_required),
-    prompt_on_order: group.prompt_on_order !== false,
-    included_count: String(group.included_count ?? 0),
-    overage_price: group.overage_price == null ? '' : String(group.overage_price),
-    prompt_mode: normalizedPromptMode(group.prompt_mode),
-    pre_modifiers: Array.isArray(group.pre_modifiers) ? group.pre_modifiers : [],
-    pre_modifier_prices: moneyValuesToDraft(group.pre_modifier_prices),
-    no_print: Boolean(group.no_print),
-    kitchen_display_role: group.kitchen_display_role || (group.type === 'side' ? 'side' : ''),
-  }))
+  const [draft, setDraft] = useState(() => groupFieldsDraft(group))
+  useEffect(() => setDraft(groupFieldsDraft(group)), [group])
   const modifiersById = useMemo(() => Object.fromEntries(modifiers.map(m => [m.id, m])), [modifiers])
   const groupsById = useMemo(() => Object.fromEntries(groups.map(g => [g.id, g])), [groups])
   const attachedIds = useMemo(() => new Set(group.item_ids), [group])
@@ -367,6 +406,7 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
               >
                 {draft.is_required ? 'Required' : 'Optional'}
               </SmallButton>
+              <SmallButton onClick={() => setDraft(groupFieldsDraft(group))} disabled={busy}>Cancel</SmallButton>
               <SmallButton variant="primary" onClick={saveFields} disabled={busy}>Save</SmallButton>
             </div>
             <div className="grid gap-3 rounded-xl border border-white/10 bg-black/10 p-3 md:grid-cols-2">
@@ -673,8 +713,11 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [menuItems, setMenuItems] = useState([])
   const [itemImages, setItemImages] = useState({})
   const [categories, setCategories] = useState([])
+  const [savedCategories, setSavedCategories] = useState([])
   const [categoryColors, setCategoryColors] = useState({})
   const [taxRates, setTaxRates] = useState([])
+  const [combos, setCombos] = useState([])
+  const [comboManagerPasscode, setComboManagerPasscode] = useState('')
   const [modifiers, setModifiers] = useState([])
   const [groups, setGroups] = useState([])
   const [itemModifierOverrides, setItemModifierOverrides] = useState({})
@@ -686,6 +729,8 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [saveStatuses, setSaveStatuses] = useState({})
+  const saveStatusTimersRef = useRef({})
   const [selectedItemId, setSelectedItemId] = useState(null)
 
   const [itemSearch, setItemSearch] = useState('')
@@ -708,8 +753,10 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const editorPrefsTimerRef = useRef(null)
   const editorPrefsPendingRef = useRef(null)
   const editorPrefsRestaurantRef = useRef(restaurantId)
+  const categoryDraftKeyRef = useRef(0)
   editorPrefsRestaurantRef.current = restaurantId
   const [expandedCategoryNames, setExpandedCategoryNames] = useState(() => new Set())
+  const [editingCategoryKey, setEditingCategoryKey] = useState(null)
   const [categoryScrollTarget, setCategoryScrollTarget] = useState(null)
 
   const [allergyGroup, setAllergyGroup] = useState(null)
@@ -723,8 +770,12 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [specialDraft, setSpecialDraft] = useState(() => defaultSpecialDraft())
   const [scheduleItemId, setScheduleItemId] = useState('')
   const [routingItemSearch, setRoutingItemSearch] = useState('')
+  const [showAllRoutingItems, setShowAllRoutingItems] = useState(true)
 
-  const api = (path, init) => fetchWithSupabaseAuth(path, init)
+  const api = (path, init = {}) => fetchWithSupabaseAuth(path, {
+    timeoutMs: DEFAULT_API_TIMEOUT_MS,
+    ...init,
+  })
   const routingApi = (path, init) => fetchPosApi(restaurantId, path, init)
 
   useEffect(() => {
@@ -732,6 +783,28 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     const timer = setTimeout(() => setNotice(''), 3000)
     return () => clearTimeout(timer)
   }, [notice])
+
+  useEffect(() => () => {
+    Object.values(saveStatusTimersRef.current).forEach(clearTimeout)
+  }, [])
+
+  const markSaved = (key, message = 'Saved') => {
+    if (!key) return
+    clearTimeout(saveStatusTimersRef.current[key])
+    setSaveStatuses(current => ({ ...current, [key]: message }))
+    saveStatusTimersRef.current[key] = setTimeout(() => {
+      setSaveStatuses(current => {
+        if (!current[key]) return current
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
+      delete saveStatusTimersRef.current[key]
+    }, 2400)
+  }
+
+  const localSave = (key, message = 'Saved') => ({ localKey: key, message })
+  const saved = key => saveStatuses[key] || ''
 
   const loadItems = async (force = false) => {
     const rows = await fetchCached(
@@ -758,7 +831,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       () => api(`/restaurants/${restaurantId}/menu/categories`),
       force ? 0 : STALE_TIMES.setup,
     )
-    setCategories(Array.isArray(data) ? data : (data?.categories || []))
+    const next = Array.isArray(data) ? data : (data?.categories || [])
+    setCategories(next)
+    setSavedCategories(next)
     setTaxRates(Array.isArray(data?.tax_rates) ? data.tax_rates : [])
     try {
       setCategoryColors(await fetchCategoryColors(restaurantId))
@@ -784,6 +859,11 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     setGroups(await fetchModifierGroups(restaurantId))
   }
 
+  const loadCombos = async () => {
+    const data = await fetchPosApi(restaurantId, '/manager/combos')
+    setCombos(Array.isArray(data?.combos) ? data.combos : [])
+  }
+
   // { [itemId]: { [modifierId]: { price_delta, no_print } } } — per-item price
   // and kitchen-print overrides for modifiers. Fails soft pre-migration.
   const loadItemModifierOverrides = async () => {
@@ -807,7 +887,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
   const loadSpecials = async ({ soft = false } = {}) => {
     try {
-      const nextSpecials = await getPricingSpecials(restaurantId)
+      const nextSpecials = await getPricingSpecials(restaurantId, {
+        timeoutMs: DEFAULT_API_TIMEOUT_MS,
+      })
       setSpecials(nextSpecials)
       setSpecialsError('')
       return nextSpecials
@@ -964,12 +1046,16 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     setLoading(true)
     setError('')
     setSelectedItemId(null)
+    setEditingCategoryKey(null)
+    setExpandedCategoryNames(new Set())
+    setComboManagerPasscode('')
     const loaders = [
       ['items', loadItems],
       ['images', loadImages],
       ['categories', loadCategories],
       ['modifiers', loadModifiers],
       ['questions', loadGroups],
+      ['combos', loadCombos],
       ['modifier overrides', loadItemModifierOverrides],
       ['allergies', loadAllergies],
       ['specials', () => loadSpecials({ soft: true })],
@@ -978,7 +1064,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       ['kitchen routing', loadRouting],
       ['printing config', loadPrintingConfig],
     ]
-    Promise.allSettled(loaders.map(([, load]) => load())).then(results => {
+    Promise.allSettled(loaders.map(([label, load]) => loadMenuSource(label, load))).then(results => {
       if (cancelled) return
       const failures = results.flatMap((result, index) => (
         result.status === 'rejected'
@@ -1000,14 +1086,20 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const invalidateCategories = () => queryClient.invalidateQueries({ queryKey: queryKeys.menuCategories(restaurantId) })
 
   const run = async (work, successMessage, failLabel) => {
+    const success = typeof successMessage === 'object' && successMessage !== null ? successMessage : null
     setBusy(true)
     setError('')
+    if (!success?.localKey) setNotice('')
     try {
       await work()
-      if (successMessage) setNotice(successMessage)
+      if (success?.localKey) markSaved(success.localKey, success.message)
+      else if (success?.globalMessage) setNotice(success.globalMessage)
+      else if (successMessage) setNotice(successMessage)
+      return true
     } catch (err) {
       const reason = describeError(err)
       setError(failLabel ? `${failLabel} — ${reason}` : reason)
+      return false
     } finally {
       setBusy(false)
     }
@@ -1048,11 +1140,15 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     () => categories.map(category => ({ ...category, color: categoryColors[category.id] ?? category.color ?? null })),
     [categories, categoryColors],
   )
+  const categoriesById = useMemo(
+    () => Object.fromEntries(mergedCategories.filter(category => category.id).map(category => [String(category.id), category])),
+    [mergedCategories],
+  )
   const categoryNames = useMemo(() => {
     const names = new Set(mergedCategories.map(category => category.name).filter(Boolean))
-    for (const item of menuItems) if (item.category) names.add(item.category)
+    for (const item of menuItems) names.add(effectiveItemCategoryName(item, categoriesById))
     return Array.from(names).sort()
-  }, [mergedCategories, menuItems])
+  }, [mergedCategories, menuItems, categoriesById])
   const categoriesByName = useMemo(
     () => Object.fromEntries(mergedCategories.filter(category => category.name).map(category => [category.name, category])),
     [mergedCategories],
@@ -1082,7 +1178,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     return ROUTE_INHERIT_VALUE
   }
   const routingDescriptionFor = (rules, exclusions, emptyLabel) => {
-    if (exclusions.length > 0) return 'No production needed · mark handled'
+    if (exclusions.length > 0) return 'No kitchen ticket'
     if (rules.length > 1) return `Routes to ${rules.map(routeRuleLabel).join(' + ')}`
     if (rules.length === 1) return `Routes to ${routeRuleLabel(rules[0])}`
     return emptyLabel
@@ -1094,18 +1190,26 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       rules,
       exclusions,
       value: routingValueFor(rules, exclusions),
-      description: routingDescriptionFor(rules, exclusions, 'Uses fallback/no explicit route'),
+      description: routingDescriptionFor(
+        rules,
+        exclusions,
+        routing?.fallback?.ok
+          ? `Uses restaurant fallback · ${routing.fallback.station?.name || 'station'}`
+          : 'No category route or working restaurant fallback',
+      ),
     }
   }
   const itemProductionRouting = (item) => {
     const rules = itemRouteRules(item)
     const exclusions = itemNoRouteRules(item)
-    const categoryRouting = categoryProductionRouting(item.category || '')
+    const categoryRouting = categoryProductionRouting(effectiveItemCategoryName(item, categoriesById))
     const inherited = categoryRouting.value === ROUTE_NO_PRODUCTION_VALUE
-      ? 'Inherits no production route'
+      ? 'Automatic · no kitchen ticket from category'
       : categoryRouting.rules.length > 0
         ? `Inherits ${categoryRouting.description.replace(/^Routes to /, '')}`
-        : 'Inherits category/fallback'
+        : routing?.fallback?.ok
+          ? `Automatic · ${routing.fallback.station?.name || 'station'} via restaurant fallback`
+          : 'No working automatic route'
     return {
       rules,
       exclusions,
@@ -1115,27 +1219,18 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     }
   }
 
-  const routingIssueForDraft = (draft, sourceItem = null) => {
-    if (draft.routing === ROUTE_NO_PRODUCTION_VALUE) return ''
-    if (draft.routing === ROUTE_MULTI_VALUE) {
-      const rules = sourceItem ? itemRouteRules(sourceItem) : []
-      if (rules.length > 0 && rules.every(rule => routableStationIds.has(rule.station_id))) return ''
-      return 'The source item has a route without an active kitchen output. Choose a working station.'
-    }
-    if (draft.routing) {
-      return routableStationIds.has(draft.routing)
-        ? ''
-        : 'That station has no active kitchen output. Assign a printer/display or choose another route.'
-    }
-    const inherited = categoryProductionRouting(draft.category || 'Other')
-    if (inherited.exclusions.length > 0) return ''
-    if (inherited.rules.length > 0) {
-      return inherited.rules.every(rule => routableStationIds.has(rule.station_id))
-        ? ''
-        : 'This category route has no active kitchen output. Fix it or choose an item route.'
-    }
-    if (routing?.fallback?.ok) return ''
-    return 'This category has no working route or fallback. Choose a production station or “No production route”.'
+  const resolveRoutingForDraft = (draft, sourceItem = null) => {
+    const categoryRouting = categoryProductionRouting(draft.category || 'Other')
+    return resolveDraftProductionRoute({
+      routing: draft.routing,
+      category: draft.category || 'Other',
+      categoryRules: categoryRouting.rules,
+      categoryExcluded: categoryRouting.exclusions.length > 0,
+      sourceItemRules: sourceItem ? itemRouteRules(sourceItem) : [],
+      stations,
+      routableStationIds,
+      fallback: routing?.fallback,
+    })
   }
 
   // ── Items ────────────────────────────────────────────────────────────────
@@ -1189,6 +1284,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     // "Extras" question; pending_group_options add a just-created modifier as
     // an option of an existing question (picker "category" matched its name).
     question_ids: [],
+    excluded_question_ids: [],
     extra_modifier_ids: [],
     pending_group_options: [],
   })
@@ -1209,6 +1305,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     availability_start_date: item.availability_start_date || '',
     availability_end_date: item.availability_end_date || '',
     availability_notes: item.availability_notes || '',
+    excluded_question_ids: groups
+      .filter(group => group.item_overrides?.[item.id]?.opted_out)
+      .map(group => group.id),
   })
 
   const startCreateItem = (source = null) => {
@@ -1277,6 +1376,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       })
       if (!created?.id) throw new Error('The item was not created.')
       const warnings = []
+      const excludedQuestionIds = draft.excluded_question_ids || []
       let full = created
       if (source) {
         warnings.push(...await copyItemConfig({
@@ -1288,6 +1388,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           sourceModifierOverrides: itemModifierOverrides[source.id] || {},
           sourceAllergyExclusions: allergyExclusions.filter(row => row.item_id === source.id),
           sourceSpecials: specials.filter(special => special.menu_item_id === source.id),
+          excludedQuestionIds,
         }))
       }
       // Staged question/modifier picks from the create screen.
@@ -1296,6 +1397,10 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         for (const groupId of draft.question_ids || []) {
           await attachGroupToItem(groupId, full.id, order)
           order += 1
+        }
+        const categoryId = categoriesByName[draft.category || '']?.id || null
+        for (const groupId of inheritedQuestionIdsToOptOut(groups, categoryId, excludedQuestionIds)) {
+          await setItemGroupOverride(groupId, full.id, { opted_out: true })
         }
         for (const pending of draft.pending_group_options || []) {
           const group = groups.find(candidate => candidate.id === pending.group_id)
@@ -1351,7 +1456,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       if (duplicate && published) {
         // Staged picks were just saved onto this item, so they now carry over
         // via the copy path — clear them to avoid double-attaching.
-        setCreating({ source: full, draft: { ...draft, name: '', question_ids: [], extra_modifier_ids: [], pending_group_options: [] } })
+        const categoryId = categoriesByName[draft.category || '']?.id || null
+        const inheritedExclusions = inheritedQuestionIdsToOptOut(groups, categoryId, excludedQuestionIds)
+        setCreating({ source: full, draft: { ...draft, name: '', question_ids: [], excluded_question_ids: inheritedExclusions, extra_modifier_ids: [], pending_group_options: [] } })
       } else {
         setCreating(null)
         setSelectedItemId(full.id)
@@ -1368,43 +1475,39 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const filteredItems = useMemo(() => {
     const needle = itemSearch.trim().toLowerCase()
     return mergedItems.filter(item => {
-      if (itemCategoryFilter !== 'all' && (item.category || 'Other') !== itemCategoryFilter) return false
+      const categoryName = effectiveItemCategoryName(item, categoriesById)
+      if (itemCategoryFilter !== 'all' && categoryName !== itemCategoryFilter) return false
       if (itemAvailabilityFilter === 'available' && item.is_available === false) return false
       if (itemAvailabilityFilter === '86d' && item.is_available !== false) return false
       if (itemAvailabilityFilter === 'specials' && !activeSpecialItemIds.has(item.id)) return false
       if (!needle) return true
       return item.name.toLowerCase().includes(needle)
         || (item.description || '').toLowerCase().includes(needle)
-        || (item.category || '').toLowerCase().includes(needle)
+        || categoryName.toLowerCase().includes(needle)
     })
-  }, [mergedItems, itemSearch, itemCategoryFilter, itemAvailabilityFilter, activeSpecialItemIds])
+  }, [mergedItems, itemSearch, itemCategoryFilter, itemAvailabilityFilter, activeSpecialItemIds, categoriesById])
 
   const itemsByCategory = useMemo(() => {
     const buckets = {}
     for (const item of filteredItems) {
-      ;(buckets[item.category || 'Other'] ||= []).push(item)
+      ;(buckets[effectiveItemCategoryName(item, categoriesById)] ||= []).push(item)
     }
     return Object.entries(buckets).sort(([a], [b]) => a.localeCompare(b))
-  }, [filteredItems])
+  }, [filteredItems, categoriesById])
 
   // Unfiltered per-category item buckets for the Categories tab drill-in
-  // (items reference categories by name string, not id).
-  const allItemsByCategoryName = useMemo(() => {
-    const buckets = {}
-    for (const item of mergedItems) {
-      ;(buckets[item.category || 'Other'] ||= []).push(item)
-    }
-    return buckets
-  }, [mergedItems])
+  // (newer rows follow stable category ids; older rows fall back to names).
+  const allItemsByCategoryKey = useMemo(
+    () => bucketItemsByCategoryIdentity(mergedItems, categoriesById),
+    [mergedItems, categoriesById],
+  )
 
   // Item category names that have no matching category card — items still show
   // on the POS, but inherit no color/tax/station defaults.
-  const orphanCategoryBuckets = useMemo(() => {
-    const known = new Set(mergedCategories.map(category => category.name).filter(Boolean))
-    return Object.entries(allItemsByCategoryName)
-      .filter(([name]) => !known.has(name))
-      .sort(([a], [b]) => a.localeCompare(b))
-  }, [allItemsByCategoryName, mergedCategories])
+  const orphanCategoryBuckets = useMemo(
+    () => orphanCategoryBucketsFromIdentity(mergedItems, mergedCategories, categoriesById),
+    [mergedItems, mergedCategories, categoriesById],
+  )
 
   const toggleCategoryExpanded = (name) => {
     if (!name) return
@@ -1539,7 +1642,9 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           body: JSON.stringify(categoriesBodyFor(targetId, categories)),
         })
         if (targetId === restaurantId) {
-          setCategories(Array.isArray(saved) ? saved : (saved?.categories || []))
+          const next = Array.isArray(saved) ? saved : (saved?.categories || [])
+          setCategories(next)
+          setSavedCategories(next)
           invalidateCategories()
         }
       }
@@ -1551,16 +1656,33 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     setCategories(prev => prev.map((category, currentIndex) => (currentIndex === index ? { ...category, ...patch } : category)))
   }
 
+  const categoryDraft = (name = '') => ({
+    client_key: `category-draft-${categoryDraftKeyRef.current++}`,
+    name,
+    tax_rate_id: '',
+    routing_station_id: '',
+    routing_station_name: '',
+    default_course_type: '',
+    default_fire_mode: 'inherit',
+    prep_time_minutes: '',
+    kds_display_group: '',
+    is_active: true,
+  })
+
+  const addCategory = (name = '') => {
+    const draft = categoryDraft(name)
+    setCategories(prev => [...prev, draft])
+    setEditingCategoryKey(draft.client_key)
+    setCategoryScrollTarget(draft.client_key)
+    if (name) setExpandedCategoryNames(prev => new Set(prev).add(name))
+  }
+
   // True inheritance: link a question to the CATEGORY. Every item in it asks
   // the question — including items created later. Items opt out individually
   // from their own editor.
   const toggleGroupInheritance = (group, category, shouldAttach) => run(async () => {
     if (shouldAttach) {
-      const categoryOrders = groups.flatMap(candidate =>
-        (candidate.category_links || [])
-          .filter(link => link.category_id === category.id)
-          .map(link => Number(link.display_order) || 0))
-      const nextCategoryOrder = categoryOrders.length > 0 ? Math.max(...categoryOrders) + 1 : 0
+      const nextCategoryOrder = nextCategoryQuestionOrder(groups, category.id)
       await attachGroupToCategory(restaurantId, group.id, category.id, nextCategoryOrder)
     } else {
       await detachGroupFromCategory(group.id, category.id)
@@ -1685,18 +1807,18 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     await loadGroups()
   }, `"${modifier.name}" is now an answer in "${group.name}".`, 'Couldn’t attach the modifier')
 
-  const updateModifier = (modifierId, patch) => run(async () => {
+  const updateModifier = (modifierId, patch, message = 'Modifier saved.') => run(async () => {
     await api(`/restaurants/${restaurantId}/menu/modifiers/${modifierId}`, {
       method: 'PUT',
       body: JSON.stringify(patch),
     })
     await loadModifiers()
-  }, undefined, 'Couldn’t update the modifier')
+  }, message, 'Couldn’t update the modifier')
 
-  const setModifierKitchenRole = (modifierId, role) => run(async () => {
+  const setModifierKitchenRole = (modifierId, role, message) => run(async () => {
     await setModifierKitchenDisplayRole(modifierId, role)
     await loadModifiers()
-  }, role ? 'Kitchen hierarchy saved.' : 'Kitchen hierarchy now inherits.', 'Couldn’t save kitchen hierarchy')
+  }, message || (role ? 'Kitchen hierarchy saved.' : 'Kitchen hierarchy now inherits.'), 'Couldn’t save kitchen hierarchy')
 
   const recategorizeModifier = (modifier, nextCategory) => {
     const matchingGroup = groupMatchingCategory(nextCategory)
@@ -1711,16 +1833,16 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         await loadGroups()
       }
       await loadModifiers()
-    }, matchingGroup && !alreadyInGroup ? `Also added to the "${matchingGroup.name}" question.` : undefined, 'Couldn’t update the modifier')
+    }, matchingGroup && !alreadyInGroup ? `Also added to the "${matchingGroup.name}" question.` : localSave(`modifier:${modifier.id}:category`), 'Couldn’t update the modifier')
   }
 
-  const replaceModifierItems = (modifierId, itemIds) => run(async () => {
+  const replaceModifierItems = (modifierId, itemIds, message = 'Modifier item list saved.') => run(async () => {
     await api(`/restaurants/${restaurantId}/menu/modifiers/${modifierId}/items`, {
       method: 'PUT',
       body: JSON.stringify({ item_ids: itemIds }),
     })
     await loadModifiers()
-  }, undefined, 'Couldn’t update the modifier’s items')
+  }, message, 'Couldn’t update the modifier’s items')
 
   const deleteModifier = (modifierId) => run(async () => {
     await api(`/restaurants/${restaurantId}/menu/modifiers/${modifierId}`, { method: 'DELETE' })
@@ -1757,17 +1879,17 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const renamePill = (pill, name) => run(async () => {
     await renameAllergyPill(pill.id, name)
     await loadAllergies()
-  }, undefined, 'Couldn’t rename the pill')
+  }, localSave(`allergy:${pill.id}:name`), 'Couldn’t rename the pill')
 
   const togglePill = (pill) => run(async () => {
     await setAllergyPillActive(pill.id, pill.is_available === false)
     await loadAllergies()
-  }, pill.is_available === false ? 'Pill restored.' : 'Pill hidden everywhere.', 'Couldn’t update the pill')
+  }, localSave(`allergy:${pill.id}:active`), 'Couldn’t update the pill')
 
   const togglePillOnItem = (pill, itemId, hide) => run(async () => {
     await setItemPillExcluded(restaurantId, itemId, pill.id, hide)
     await loadAllergies()
-  }, undefined, 'Couldn’t update the item')
+  }, localSave(`allergy:${pill.id}:items`), 'Couldn’t update the item')
 
   const bulkPillOnItems = (pill, itemIds, hide) => run(async () => {
     for (const itemId of itemIds) {
@@ -1775,7 +1897,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       if (currentlyHidden !== hide) await setItemPillExcluded(restaurantId, itemId, pill.id, hide)
     }
     await loadAllergies()
-  }, undefined, 'Couldn’t update the items')
+  }, localSave(`allergy:${pill.id}:items`), 'Couldn’t update the items')
 
   // ── Modifier groups ──────────────────────────────────────────────────────
 
@@ -1818,7 +1940,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const runGroupLink = (work) => run(async () => {
     await work()
     await loadGroups()
-  }, undefined, 'Couldn’t update the question')
+  }, 'Question links saved.', 'Couldn’t update the question')
 
   const addModifiersToGroup = (group, modifierIds) => run(async () => {
     let order = group.options.length
@@ -1841,6 +1963,33 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     await loadModifiers()
     await loadGroups()
   }, 'Modifier created and added.', 'Couldn’t create the modifier')
+
+  // ── Combos ───────────────────────────────────────────────────────────────
+
+  const createCombo = (draft) => run(async () => {
+    await fetchPosApi(restaurantId, '/manager/combos', {
+      method: 'POST',
+      body: JSON.stringify(comboPayloadFromDraft(draft, comboManagerPasscode)),
+    })
+    await loadCombos()
+  }, localSave('combo:new'), 'Couldn’t create the combo')
+
+  const updateCombo = (comboId, draft) => run(async () => {
+    await fetchPosApi(restaurantId, `/manager/combos/${comboId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(comboPayloadFromDraft(draft, comboManagerPasscode)),
+    })
+    await loadCombos()
+  }, localSave(`combo:${comboId}`), 'Couldn’t save the combo')
+
+  const archiveCombo = (comboId) => run(async () => {
+    if (!comboManagerPasscode.trim()) throw new Error('Manager PIN is required to archive combos.')
+    await fetchPosApi(restaurantId, `/manager/combos/${comboId}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ manager_passcode: comboManagerPasscode.trim() }),
+    })
+    await loadCombos()
+  }, 'Combo archived.', 'Couldn’t archive the combo')
 
   // ── Specials (tab-level scheduling) ──────────────────────────────────────
 
@@ -1880,10 +2029,10 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     }, 'Special saved.', 'Couldn’t save the special')
   }
 
-  const updateSpecial = (special, patch) => run(async () => {
+  const updateSpecial = (special, patch, message) => run(async () => {
     await updatePricingSpecial(restaurantId, special.id, patch)
     await loadSpecials()
-  }, undefined, 'Couldn’t update the special')
+  }, message || localSave(`special:${special.id}:settings`), 'Couldn’t update the special')
 
   const archiveSpecial = (special) => run(async () => {
     await archivePricingSpecial(restaurantId, special.id)
@@ -1906,7 +2055,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     })
     invalidateCategories()
     await Promise.all([loadRouting(true), loadCategories(true)])
-  }, routeValue === ROUTE_NO_PRODUCTION_VALUE ? 'Category set to no production route.' : routeValue ? 'Category routed.' : 'Category now uses fallback/no explicit route.', 'Couldn’t route the category')
+  }, localSave(`route:category:${categoryName}`), 'Couldn’t route the category')
 
   const routeItemProduction = (item, routeValue) => run(async () => {
     await routingApi(`/restaurants/${restaurantId}/kitchen-routing/items/${item.id}`, {
@@ -1914,7 +2063,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       body: JSON.stringify(routeSelectionPayload(routeValue)),
     })
     await Promise.all([loadRouting(true), loadItems(true)])
-  }, routeValue === ROUTE_NO_PRODUCTION_VALUE ? 'Item set to no production route.' : routeValue ? 'Item route saved.' : 'Item now inherits category/fallback.', 'Couldn’t route the item')
+  }, localSave(`route:item:${item.id}`), 'Couldn’t route the item')
 
   const createStation = (name) => run(async () => {
     await routingApi(`/restaurants/${restaurantId}/kitchen-routing/stations`, {
@@ -1948,9 +2097,12 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
   const routingItems = useMemo(() => {
     const needle = routingItemSearch.trim().toLowerCase()
-    if (!needle) return mergedItems
-    return mergedItems.filter(item => item.name.toLowerCase().includes(needle) || (item.category || '').toLowerCase().includes(needle))
-  }, [mergedItems, routingItemSearch])
+    const visible = showAllRoutingItems
+      ? mergedItems
+      : mergedItems.filter(item => hasItemProductionOverride(item, activeRoutingRules, activeRoutingExclusions))
+    if (!needle) return visible
+    return visible.filter(item => item.name.toLowerCase().includes(needle) || (item.category || '').toLowerCase().includes(needle))
+  }, [mergedItems, routingItemSearch, showAllRoutingItems, activeRoutingRules, activeRoutingExclusions])
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -1966,6 +2118,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         </div>
         <div className="flex flex-wrap gap-2 text-sm text-dash-tertiary">
           <span className="rounded-full border border-white/10 px-3 py-1">{menuItems.length} items</span>
+          <span className="rounded-full border border-white/10 px-3 py-1">{combos.filter(combo => combo.is_available !== false).length} combos</span>
           <span className="rounded-full border border-white/10 px-3 py-1">{modifiers.length} modifiers</span>
           <span className="rounded-full border border-white/10 px-3 py-1">{groups.length} questions</span>
           <span className="rounded-full border border-white/10 px-3 py-1">{activeSpecials.length} live specials</span>
@@ -1989,8 +2142,8 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         ))}
       </div>}
 
-      {error && <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">{error}</div>}
-      {notice && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">{notice}</div>}
+      {error && <div role="alert" className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">{error}</div>}
+      {notice && <div role="status" aria-live="polite" className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">{notice}</div>}
       {loading && <div className="text-sm text-dash-tertiary">Loading menu...</div>}
 
       {!loading && activeTab === 'items' && importing && (
@@ -2026,7 +2179,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           modifiers={modifiers}
           source={creating.source}
           sourceGroupIds={creating.source
-            ? (behaviorByItemId[creating.source.id]?.questions || []).filter(row => row.source === 'item').map(row => row.group.id)
+            ? directQuestionGroupsForItem(groups, creating.source.id).map(group => group.id)
             : []}
           onCreateModifier={createModifierForDraft}
           carryover={creating.source ? {
@@ -2039,7 +2192,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           busy={busy}
           onCancel={() => setCreating(null)}
           onSave={saveNewItem}
-          routingIssueForDraft={draft => routingIssueForDraft(draft, creating.source)}
+          resolveRoutingForDraft={draft => resolveRoutingForDraft(draft, creating.source)}
         />
       )}
 
@@ -2047,7 +2200,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         <MenuItemDetail
           key={selectedItem.id}
           restaurantId={restaurantId}
-          item={selectedItem}
+          item={{ ...selectedItem, category: effectiveItemCategoryName(selectedItem, categoriesById) }}
           categories={mergedCategories}
           categoryNames={categoryNames}
           stations={routableStations}
@@ -2059,6 +2212,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           busy={busy}
           onBack={() => setSelectedItemId(null)}
           patchItem={patchItem}
+          saveStatuses={saveStatuses}
           deleteItem={deleteItem}
           run={run}
           reloadGroups={loadGroups}
@@ -2203,25 +2357,33 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           title="Categories"
           description="How the menu is organized on the POS. Each category card shows exactly how its button will look on the device, and sets the tax rate, prep station, and course its items inherit. Click an item count to see what's inside."
           actions={(
-            <PublishControls
-              label={propagationReady ? 'Save categories…' : 'Save categories'}
-              busy={busy}
-              disabled={busy}
-              onPublishNow={() => void publishCategories()}
-              onSchedule={(scheduledFor, timezone) => void publishCategories({ scheduledFor, timezone })}
-            />
+            <div className="flex flex-wrap gap-2">
+              <SmallButton onClick={() => { setCategories(structuredClone(savedCategories)); setError(''); setNotice('Changes discarded.') }} disabled={busy}>Cancel</SmallButton>
+              <SmallButton onClick={() => addCategory()} disabled={busy}>Add category</SmallButton>
+              <PublishControls
+                label={propagationReady ? 'Save categories…' : 'Save categories'}
+                busy={busy}
+                disabled={busy}
+                onPublishNow={() => void publishCategories()}
+                onSchedule={(scheduledFor, timezone) => void publishCategories({ scheduledFor, timezone })}
+              />
+            </div>
           )}
         >
           <div className="mb-4"><ScheduledChangesPanel /></div>
           <div className="space-y-3">
             {mergedCategories.map((category, index) => {
-              const categoryItems = allItemsByCategoryName[category.name] || []
+              const categoryItems = allItemsByCategoryKey[categoryKeyForCategory(category)] || []
               const isExpanded = Boolean(category.name) && expandedCategoryNames.has(category.name)
               const productionRouting = categoryProductionRouting(category.name)
+              const categoryCardId = category.id ? (category.name || category.id) : (category.client_key || `new-${index}`)
+              const categoryEditorKey = category.id || category.client_key || `new-${index}`
+              const isEditing = editingCategoryKey === categoryEditorKey
+              const inheritedGroups = categoryQuestionGroups(groups, category.id)
               return (
                 <div
-                  key={category.id || `${category.name}:${index}`}
-                  id={`category-card-${encodeURIComponent(category.name || `new-${index}`)}`}
+                  key={category.id || category.client_key || `new-${index}`}
+                  id={`category-card-${encodeURIComponent(categoryCardId)}`}
                   className="rounded-xl border border-white/10 bg-white/[0.025] p-4"
                 >
                   <div className="flex flex-wrap items-end gap-4">
@@ -2233,12 +2395,22 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                         sublabel={`${categoryItems.length} item${categoryItems.length === 1 ? '' : 's'}`}
                       />
                     </div>
-                    <div className="min-w-52 flex-1">
+                    <div className="w-full sm:w-72">
                       <Field label="Category name">
                         <TextInput value={category.name || ''} onChange={event => updateCategory(index, { name: event.target.value })} placeholder="Appetizers" />
                       </Field>
                     </div>
-                    <div className="flex gap-2 pb-0.5">
+                    <div className="min-w-44 flex-1 pb-1 text-sm text-dash-tertiary">
+                      <p>{inheritedGroups.length} base question{inheritedGroups.length === 1 ? '' : 's'}</p>
+                      <p className="mt-0.5">{productionRouting.description}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 pb-0.5">
+                      <SmallButton
+                        variant={isEditing ? 'primary' : 'secondary'}
+                        onClick={() => setEditingCategoryKey(isEditing ? null : categoryEditorKey)}
+                      >
+                        {isEditing ? 'Close editor' : 'Edit category'}
+                      </SmallButton>
                       <SmallButton
                         onClick={() => toggleCategoryExpanded(category.name)}
                         disabled={!category.name}
@@ -2246,73 +2418,84 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       >
                         {isExpanded ? 'Hide items' : `View ${categoryItems.length} item${categoryItems.length === 1 ? '' : 's'}`}
                       </SmallButton>
-                      <SmallButton variant="danger" onClick={() => setCategories(prev => prev.filter((_, currentIndex) => currentIndex !== index))}>Remove</SmallButton>
+                      <SmallButton
+                        variant="danger"
+                        onClick={() => {
+                          if (isEditing) setEditingCategoryKey(null)
+                          setCategories(prev => prev.filter((_, currentIndex) => currentIndex !== index))
+                        }}
+                      >
+                        Remove
+                      </SmallButton>
                     </div>
                   </div>
 
-                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <Field label="Production route">
-                      <SelectInput
-                        value={productionRouting.value}
-                        disabled={!category.id || busy}
-                        onChange={event => {
-                          if (event.target.value === ROUTE_MULTI_VALUE) return
-                          void routeCategory(category.name, event.target.value)
-                        }}
-                      >
-                        <option value={ROUTE_INHERIT_VALUE}>Use fallback/no explicit route</option>
-                        <option value={ROUTE_NO_PRODUCTION_VALUE}>No production needed · mark handled</option>
-                        {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
-                        {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
-                      </SelectInput>
-                    </Field>
-                    <Field label="Default course">
-                      <SelectInput value={category.default_course_type || ''} onChange={event => updateCategory(index, { default_course_type: event.target.value })}>
-                        {COURSE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </SelectInput>
-                    </Field>
-                    <Field label="Prep minutes">
-                      <TextInput
-                        value={category.prep_time_minutes == null ? '' : String(category.prep_time_minutes)}
-                        onChange={event => updateCategory(index, { prep_time_minutes: cleanDigits(event.target.value) })}
-                        placeholder="e.g. 12"
-                      />
-                    </Field>
-                    <Field label="Tax rate">
-                      <SelectInput
-                        title="Every item in this category is taxed at this rate on the POS"
-                        value={category.tax_rate_id || ''}
-                        onChange={event => updateCategory(index, { tax_rate_id: event.target.value || null })}
-                      >
-                        <option value="">Store default rate</option>
-                        {taxRates.map(rate => (
-                          <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
-                        ))}
-                      </SelectInput>
-                    </Field>
-                    <Field label="Fire timing">
-                      <SelectInput
-                        title="Default kitchen fire timing for new items in this category — individual items can override it"
-                        value={category.default_fire_mode || ''}
-                        onChange={event => updateCategory(index, { default_fire_mode: event.target.value || null })}
-                      >
-                        <option value="">Use order default</option>
-                        <option value="inherit">Use order default</option>
-                        <option value="immediate">Immediate</option>
-                        <option value="hold">Hold</option>
-                        <option value="manual">Manual</option>
-                        <option value="by_course">By course</option>
-                      </SelectInput>
-                    </Field>
-                    <Field label="KDS group">
-                      <TextInput
-                        title="Kitchen display grouping label for this category's tickets"
-                        value={category.kds_display_group || ''}
-                        onChange={event => updateCategory(index, { kds_display_group: event.target.value })}
-                        placeholder="Apps, Entrees, Bar…"
-                      />
-                    </Field>
-                  </div>
+                  {isEditing && (
+                    <div className="mt-4 border-t border-white/10 pt-4">
+                      <p className="label-mono mb-3">Category defaults</p>
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        <Field label="Production route">
+                          <SelectInput
+                            value={productionRouting.value}
+                            disabled={!category.id || busy}
+                            onChange={event => {
+                              if (event.target.value === ROUTE_MULTI_VALUE) return
+                              void routeCategory(category.name, event.target.value)
+                            }}
+                          >
+                            <option value={ROUTE_INHERIT_VALUE}>Use restaurant fallback</option>
+                            <option value={ROUTE_NO_PRODUCTION_VALUE}>No kitchen ticket</option>
+                            {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
+                            {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
+                          </SelectInput>
+                        </Field>
+                        <Field label="Default course">
+                          <SelectInput value={category.default_course_type || ''} onChange={event => updateCategory(index, { default_course_type: event.target.value })}>
+                            {COURSE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                          </SelectInput>
+                        </Field>
+                        <Field label="Prep minutes">
+                          <TextInput
+                            value={category.prep_time_minutes == null ? '' : String(category.prep_time_minutes)}
+                            onChange={event => updateCategory(index, { prep_time_minutes: cleanDigits(event.target.value) })}
+                            placeholder="e.g. 12"
+                          />
+                        </Field>
+                        <Field label="Tax rate">
+                          <SelectInput
+                            title="Every item in this category is taxed at this rate on the POS"
+                            value={category.tax_rate_id || ''}
+                            onChange={event => updateCategory(index, { tax_rate_id: event.target.value || null })}
+                          >
+                            <option value="">Store default rate</option>
+                            {taxRates.map(rate => (
+                              <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
+                            ))}
+                          </SelectInput>
+                        </Field>
+                        <Field label="Fire timing">
+                          <SelectInput
+                            title="Default kitchen fire timing for new items in this category — individual items can override it"
+                            value={category.default_fire_mode || ''}
+                            onChange={event => updateCategory(index, { default_fire_mode: event.target.value || null })}
+                          >
+                            <option value="">Use order default</option>
+                            <option value="inherit">Use order default</option>
+                            <option value="immediate">Immediate</option>
+                            <option value="hold">Hold</option>
+                            <option value="manual">Manual</option>
+                            <option value="by_course">By course</option>
+                          </SelectInput>
+                        </Field>
+                        <Field label="KDS group">
+                          <TextInput
+                            title="Kitchen display grouping label for this category's tickets"
+                            value={category.kds_display_group || ''}
+                            onChange={event => updateCategory(index, { kds_display_group: event.target.value })}
+                            placeholder="Apps, Entrees, Bar…"
+                          />
+                        </Field>
+                      </div>
 
                   <div className="mt-4">
                     <p className="label-mono mb-2">Visible hours</p>
@@ -2376,6 +2559,82 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                     {!category.id && <p className="mt-1.5 text-xs text-dash-tertiary">Save categories first to pick a color.</p>}
                   </div>
 
+                  <div className="mt-5 border-t border-white/10 pt-4">
+                    <p className="label-mono mb-1">Base questions</p>
+                    <p className="mb-2 text-xs text-dash-tertiary">
+                      These questions are inherited by every item in {category.name || 'this category'}, including items added later. Individual items can opt out or override their defaults.
+                    </p>
+                    {category.id ? (
+                      <>
+                        <div className="flex flex-wrap gap-1.5">
+                          {groups.map(group => {
+                            const inherited = (group.category_links || []).some(link => link.category_id === category.id)
+                            const optedOutCount = categoryItems.filter(row => group.item_overrides?.[row.id]?.opted_out).length
+                            const directCount = categoryItems.filter(row => group.item_ids.includes(row.id)).length
+                            return (
+                              <button
+                                key={group.id}
+                                type="button"
+                                disabled={busy}
+                                aria-pressed={inherited}
+                                title={groupRulesSummary(group)}
+                                onClick={() => void toggleGroupInheritance(group, category, !inherited)}
+                                className={[
+                                  'rounded-full border px-3 py-1.5 text-sm transition disabled:opacity-50',
+                                  inherited
+                                    ? 'border-dash-gold/60 bg-dash-gold/15 text-dash-cream'
+                                    : 'border-white/10 bg-white/[0.03] text-dash-secondary hover:border-dash-gold/60 hover:text-dash-cream',
+                                ].join(' ')}
+                              >
+                                {inherited ? 'Selected:' : 'Add:'} {group.name}
+                                <span className="ml-1.5 text-xs text-dash-tertiary">
+                                  {group.options.length} option{group.options.length === 1 ? '' : 's'}
+                                  {inherited && optedOutCount > 0 && ` · ${optedOutCount} opted out`}
+                                  {!inherited && directCount > 0 && ` · on ${directCount}/${categoryItems.length} directly`}
+                                </span>
+                              </button>
+                            )
+                          })}
+                          {groups.length === 0 && (
+                            <p className="text-sm text-dash-tertiary">No questions yet — build one on the Questions tab or inside any item.</p>
+                          )}
+                        </div>
+
+                        {inheritedGroups.length > 0 && (
+                          <div className="mt-4">
+                            <p className="label-mono mb-1">Asked in this order</p>
+                            <p className="mb-2 text-xs text-dash-tertiary">
+                              Drag to set the category-wide order. Each newly selected question is added at the bottom; individual item ordering can still override it.
+                            </p>
+                            <SortableRows
+                              ids={inheritedGroups.map(group => group.id)}
+                              className="max-w-xl space-y-1.5"
+                              disabled={busy || inheritedGroups.length < 2}
+                              onReorder={orderedIds => reorderCategoryQuestions(category, orderedIds)}
+                              renderRow={(groupId, { handleProps }) => {
+                                const group = inheritedGroups.find(candidate => candidate.id === groupId)
+                                if (!group) return null
+                                const position = inheritedGroups.indexOf(group) + 1
+                                return (
+                                  <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-2.5">
+                                    <DragHandle handleProps={handleProps} />
+                                    <span className="w-5 text-center text-[11px] font-bold text-dash-gold">{position}</span>
+                                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-dash-cream">{group.name}</span>
+                                    <span className="text-xs text-dash-tertiary">{group.options.length} option{group.options.length === 1 ? '' : 's'}</span>
+                                  </div>
+                                )
+                              }}
+                            />
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-xs text-dash-tertiary">Save categories first to set base questions.</p>
+                    )}
+                  </div>
+                    </div>
+                  )}
+
                   {isExpanded && (
                     <div className="mt-4 border-t border-white/10 pt-3">
                       <p className="label-mono mb-2">Items in {category.name}</p>
@@ -2399,86 +2658,6 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                         </div>
                       )}
 
-                      {category.id && (
-                        <div className="mt-4">
-                          <p className="label-mono mb-1">Base questions — inherited by every item here</p>
-                          <p className="mb-2 text-xs text-dash-tertiary">
-                            Click a question so all of {category.name} asks it — steaks ask "Temperature", drinks ask "Ice?". Items added to this category later inherit it automatically; any single item can opt out or override defaults from its own editor.
-                          </p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {groups.map(group => {
-                              const inherited = (group.category_links || []).some(link => link.category_id === category.id)
-                              const optedOutCount = categoryItems.filter(row => group.item_overrides?.[row.id]?.opted_out).length
-                              const directCount = categoryItems.filter(row => group.item_ids.includes(row.id)).length
-                              return (
-                                <button
-                                  key={group.id}
-                                  type="button"
-                                  disabled={busy}
-                                  title={groupRulesSummary(group)}
-                                  onClick={() => void toggleGroupInheritance(group, category, !inherited)}
-                                  className={[
-                                    'rounded-full border px-3 py-1.5 text-sm transition disabled:opacity-50',
-                                    inherited
-                                      ? 'border-dash-gold/60 bg-dash-gold/15 text-dash-cream'
-                                      : 'border-white/10 bg-white/[0.03] text-dash-secondary hover:border-dash-gold/60 hover:text-dash-cream',
-                                  ].join(' ')}
-                                >
-                                  {inherited ? '✓' : '+'} {group.name}
-                                  <span className="ml-1.5 text-xs text-dash-tertiary">
-                                    {group.options.length} option{group.options.length === 1 ? '' : 's'}
-                                    {inherited && optedOutCount > 0 && ` · ${optedOutCount} opted out`}
-                                    {!inherited && directCount > 0 && ` · on ${directCount}/${categoryItems.length} directly`}
-                                  </span>
-                                </button>
-                              )
-                            })}
-                            {groups.length === 0 && (
-                              <p className="text-sm text-dash-tertiary">No questions yet — build one on the Questions tab or inside any item.</p>
-                            )}
-                          </div>
-                          {(() => {
-                            const inheritedGroups = groups
-                              .filter(group => (group.category_links || []).some(link => link.category_id === category.id))
-                              .sort((a, b) => {
-                                const orderA = (a.category_links || []).find(link => link.category_id === category.id)?.display_order ?? 0
-                                const orderB = (b.category_links || []).find(link => link.category_id === category.id)?.display_order ?? 0
-                                return orderA - orderB || a.name.localeCompare(b.name)
-                              })
-                            if (inheritedGroups.length < 2) return null
-                            return (
-                              <div className="mt-3">
-                                <p className="label-mono mb-1">Asked in this order</p>
-                                <p className="mb-2 text-xs text-dash-tertiary">
-                                  Drag to set the order every item in {category.name} asks these — an individual item can still drag its own order in its editor.
-                                </p>
-                                <SortableRows
-                                  ids={inheritedGroups.map(group => group.id)}
-                                  className="max-w-xl space-y-1.5"
-                                  disabled={busy}
-                                  onReorder={orderedIds => reorderCategoryQuestions(category, orderedIds)}
-                                  renderRow={(groupId, { handleProps }) => {
-                                    const group = inheritedGroups.find(candidate => candidate.id === groupId)
-                                    if (!group) return null
-                                    const position = inheritedGroups.indexOf(group) + 1
-                                    return (
-                                      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-2.5">
-                                        <DragHandle handleProps={handleProps} />
-                                        <span className="w-5 text-center text-[11px] font-bold text-dash-gold">{position}</span>
-                                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-dash-cream">{group.name}</span>
-                                        <span className="text-xs text-dash-tertiary">{group.options.length} option{group.options.length === 1 ? '' : 's'}</span>
-                                      </div>
-                                    )
-                                  }}
-                                />
-                              </div>
-                            )
-                          })()}
-                        </div>
-                      )}
-                      {!category.id && (
-                        <p className="mt-4 text-xs text-dash-tertiary">Save categories first to set base questions.</p>
-                      )}
                     </div>
                   )}
                 </div>
@@ -2505,8 +2684,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                     <span className="flex-1" />
                     <SmallButton
                       onClick={() => {
-                        setCategories(prev => [...prev, { name, tax_rate_id: '', routing_station_id: '', routing_station_name: '', default_course_type: '', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: '', is_active: true }])
-                        setExpandedCategoryNames(prev => new Set(prev).add(name))
+                        addCategory(name)
                       }}
                     >
                       Create "{name}" category
@@ -2517,12 +2695,21 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
             </div>
           )}
 
-          <div className="mt-4">
-            <SmallButton onClick={() => setCategories(prev => [...prev, { name: '', tax_rate_id: '', routing_station_id: '', routing_station_name: '', default_course_type: '', default_fire_mode: 'inherit', prep_time_minutes: '', kds_display_group: '', is_active: true }])}>
-              Add category
-            </SmallButton>
-          </div>
         </SectionShell>
+      )}
+
+      {!loading && activeTab === 'combos' && (
+        <MenuCombosPanel
+          combos={combos}
+          menuItems={mergedItems.map(item => ({ ...item, category: effectiveItemCategoryName(item, categoriesById) }))}
+          managerPasscode={comboManagerPasscode}
+          onManagerPasscodeChange={setComboManagerPasscode}
+          busy={busy}
+          statusFor={saved}
+          onCreateCombo={createCombo}
+          onUpdateCombo={updateCombo}
+          onArchiveCombo={archiveCombo}
+        />
       )}
 
       {!loading && activeTab === 'modifiers' && (
@@ -2717,14 +2904,15 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       allGroups={groups}
                       onAddToQuestion={group => void addModifierToQuestion(modifier, group)}
                       busy={busy}
-                      onRename={next => void updateModifier(modifier.id, { name: next })}
-                      onReprice={next => void updateModifier(modifier.id, { price_delta: next })}
+                      statusFor={key => saved(`modifier:${modifier.id}:${key}`)}
+                      onRename={next => void updateModifier(modifier.id, { name: next }, localSave(`modifier:${modifier.id}:name`))}
+                      onReprice={next => void updateModifier(modifier.id, { price_delta: next }, localSave(`modifier:${modifier.id}:price`))}
                       onRecategorize={next => void recategorizeModifier(modifier, next)}
-                      onSetTaxRate={next => void updateModifier(modifier.id, { tax_rate_id: next })}
-                      onSetReportingCategory={next => void updateModifier(modifier.id, { reporting_category_id: next })}
-                      onSetPrint={shouldPrint => void updateModifier(modifier.id, { print_on_kitchen_ticket: shouldPrint })}
-                      onSetKitchenRole={next => void setModifierKitchenRole(modifier.id, next)}
-                      onReplaceItems={itemIds => void replaceModifierItems(modifier.id, itemIds)}
+                      onSetTaxRate={next => void updateModifier(modifier.id, { tax_rate_id: next }, localSave(`modifier:${modifier.id}:tax`))}
+                      onSetReportingCategory={next => void updateModifier(modifier.id, { reporting_category_id: next }, localSave(`modifier:${modifier.id}:sales`))}
+                      onSetPrint={shouldPrint => void updateModifier(modifier.id, { print_on_kitchen_ticket: shouldPrint }, localSave(`modifier:${modifier.id}:print`))}
+                      onSetKitchenRole={next => void setModifierKitchenRole(modifier.id, next, localSave(`modifier:${modifier.id}:kitchen`))}
+                      onReplaceItems={itemIds => void replaceModifierItems(modifier.id, itemIds, localSave(`modifier:${modifier.id}:items`))}
                       onDelete={() => void deleteModifier(modifier.id)}
                     />
                   ))}
@@ -2793,6 +2981,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                     menuItems={mergedItems}
                     hiddenItemIds={exclusionsByPill[pill.id] || new Set()}
                     busy={busy}
+                    statusFor={key => saved(`allergy:${pill.id}:${key}`)}
                     onRename={name => void renamePill(pill, name)}
                     onToggle={() => void togglePill(pill)}
                     onToggleItem={(itemId, hide) => void togglePillOnItem(pill, itemId, hide)}
@@ -2917,16 +3106,16 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
               </div>
             )}
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px]">
-	              <div className="space-y-3">
-	                <p className="label-mono">Current specials</p>
-	                {specialsError && (
-	                  <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">
-	                    Specials could not load: {specialsError}
-	                  </div>
-	                )}
-	                {specials.length === 0 && (
-	                  <MenuEmptyState title="No specials yet">
-	                    Pin today's special or build a schedule on the right.
+              <div className="space-y-3">
+                <p className="label-mono">Current specials</p>
+                {specialsError && (
+                  <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">
+                    Specials could not load: {specialsError}
+                  </div>
+                )}
+                {specials.length === 0 && (
+                  <MenuEmptyState title="No specials yet">
+                    Pin today's special or build a schedule on the right.
                   </MenuEmptyState>
                 )}
                 {specials.map(special => {
@@ -2958,21 +3147,24 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                           <div className="text-lg font-semibold">{special.special_price != null ? money(special.special_price) : money(baseItem?.price)}</div>
                           <SelectInput
                             value={special.suggested_tip_basis || 'after_discount'}
-                            onChange={event => void updateSpecial(special, { suggested_tip_basis: event.target.value })}
+                            onChange={event => void updateSpecial(special, { suggested_tip_basis: event.target.value }, localSave(`special:${special.id}:basis`))}
                           >
                             <option value="after_discount">Tips on special price</option>
                             <option value="before_discount">Tips on regular price</option>
                           </SelectInput>
                           <div className="flex gap-2">
-                            <SmallButton variant={special.is_active ? 'primary' : 'secondary'} onClick={() => void updateSpecial(special, { is_active: !special.is_active })}>
+                            <SmallButton variant={special.is_active ? 'primary' : 'secondary'} onClick={() => void updateSpecial(special, { is_active: !special.is_active }, localSave(`special:${special.id}:active`))}>
                               {special.is_active ? 'Active' : 'Paused'}
                             </SmallButton>
                             <SmallButton variant="danger" onClick={() => void archiveSpecial(special)}>Archive</SmallButton>
                           </div>
                           <label className="flex items-center gap-2 text-xs text-dash-secondary">
-                            <input type="checkbox" checked={special.preserve_gratuity_basis !== false} onChange={event => void updateSpecial(special, { preserve_gratuity_basis: event.target.checked })} className="h-4 w-4 accent-dash-gold" />
+                            <input type="checkbox" checked={special.preserve_gratuity_basis !== false} onChange={event => void updateSpecial(special, { preserve_gratuity_basis: event.target.checked }, localSave(`special:${special.id}:gratuity`))} className="h-4 w-4 accent-dash-gold" />
                             Regular-price gratuity
                           </label>
+                          <div className="flex min-h-4 justify-end">
+                            <SaveStatus message={saved(`special:${special.id}:basis`) || saved(`special:${special.id}:active`) || saved(`special:${special.id}:gratuity`)} />
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -3067,7 +3259,10 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                     <input type="checkbox" checked={specialDraft.preserve_gratuity_basis} onChange={event => setSpecialDraft(prev => ({ ...prev, preserve_gratuity_basis: event.target.checked }))} className="h-4 w-4 accent-dash-gold" />
                     <span>Calculate gratuity using the regular price</span>
                   </label>
-                  <SmallButton variant="primary" onClick={() => void createSpecial()} disabled={busy}>Save special</SmallButton>
+                  <div className="flex flex-wrap gap-2">
+                    <SmallButton onClick={() => setSpecialDraft(defaultSpecialDraft())} disabled={busy}>Cancel</SmallButton>
+                    <SmallButton variant="primary" onClick={() => void createSpecial()} disabled={busy}>Save special</SmallButton>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3163,7 +3358,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         <div className="space-y-5">
           <SectionShell
             title="Stations & Printers"
-            description="Stations are logical prep areas (Grill, Fry, Bar); printers and KDS screens are the physical targets attached to them."
+            description="Items choose a prep station. Each station sends its tickets to the printer or KDS display attached here."
           >
             {routing?.fallback && (
               <div className={`mb-4 rounded-xl border p-3 text-sm ${routing.fallback.ok ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100' : 'border-red-400/20 bg-red-400/10 text-red-200'}`}>
@@ -3178,7 +3373,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
           <SectionShell
             title="Category Printing Defaults"
-            description="Send whole categories to a station — every item follows its category unless it has its own override below."
+            description="Choose a prep station for the category, or choose No kitchen ticket when the entire category should never print."
           >
             <div className="space-y-2">
               {categoryNames.map(name => {
@@ -3193,18 +3388,23 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       </span>
                       <p className="mt-1 text-xs text-dash-tertiary">{productionRouting.description}</p>
                     </div>
-                    <SelectInput
-                      value={productionRouting.value}
-                      onChange={event => {
-                        if (event.target.value === ROUTE_MULTI_VALUE) return
-                        void routeCategory(name, event.target.value)
-                      }}
-                    >
-                      <option value={ROUTE_INHERIT_VALUE}>Use fallback/no explicit route</option>
-                      <option value={ROUTE_NO_PRODUCTION_VALUE}>No production needed · mark handled</option>
-                      {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
-                      {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
-                    </SelectInput>
+                    <div>
+                      <SelectInput
+                        value={productionRouting.value}
+                        onChange={event => {
+                          if (event.target.value === ROUTE_MULTI_VALUE) return
+                          void routeCategory(name, event.target.value)
+                        }}
+                      >
+                        <option value={ROUTE_INHERIT_VALUE}>Use restaurant fallback</option>
+                        <option value={ROUTE_NO_PRODUCTION_VALUE}>No kitchen ticket</option>
+                        {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
+                        {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
+                      </SelectInput>
+                      <div className="mt-1 flex justify-end">
+                        <SaveStatus message={saved(`route:category:${name}`)} />
+                      </div>
+                    </div>
                   </div>
                 )
               })}
@@ -3217,11 +3417,14 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           </SectionShell>
 
           <SectionShell
-            title="Item Overrides"
-            description="Route individual items somewhere different from their category — e.g. the seafood tower to the raw bar printer."
+            title="Item Printing Rules"
+            description="Items normally follow their category. Choose No kitchen ticket or a different prep station only when an item is an exception."
           >
-            <div className="mb-3">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <div className="min-w-64 flex-1">
               <TextInput value={routingItemSearch} onChange={event => setRoutingItemSearch(event.target.value)} placeholder="Search items..." />
+              </div>
+              <SmallButton onClick={() => setShowAllRoutingItems(value => !value)}>{showAllRoutingItems ? 'Show exceptions only' : 'Show all items'}</SmallButton>
             </div>
             <div className="max-h-[480px] space-y-2 overflow-y-auto pr-1">
               {routingItems.map(item => {
@@ -3235,21 +3438,27 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                     <span className="text-sm text-dash-tertiary">
                       {productionRouting.description}
                     </span>
-                    <SelectInput
-                      value={productionRouting.value}
-                      onChange={event => {
-                        if (event.target.value === ROUTE_MULTI_VALUE) return
-                        void routeItemProduction(item, event.target.value)
-                      }}
-                    >
-                      <option value={ROUTE_INHERIT_VALUE}>Inherit category/fallback</option>
-                      <option value={ROUTE_NO_PRODUCTION_VALUE}>No production needed · mark handled</option>
-                      {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
-                      {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
-                    </SelectInput>
+                    <div>
+                      <SelectInput
+                        value={productionRouting.value}
+                        onChange={event => {
+                          if (event.target.value === ROUTE_MULTI_VALUE) return
+                          void routeItemProduction(item, event.target.value)
+                        }}
+                      >
+                        <option value={ROUTE_INHERIT_VALUE}>Automatic · category or restaurant fallback</option>
+                        <option value={ROUTE_NO_PRODUCTION_VALUE}>No kitchen ticket</option>
+                        {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
+                        {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
+                      </SelectInput>
+                      <div className="mt-1 flex justify-end">
+                        <SaveStatus message={saved(`route:item:${item.id}`)} />
+                      </div>
+                    </div>
                   </div>
                 )
               })}
+              {routingItems.length === 0 && <MenuEmptyState title={routingItemSearch ? 'No matching items' : 'No item-specific routes'}>{routingItemSearch ? 'Try another item or category name.' : 'All items are using their category or the restaurant fallback automatically.'}</MenuEmptyState>}
             </div>
           </SectionShell>
         </div>
@@ -3260,7 +3469,19 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
 // ── Modifier list row ───────────────────────────────────────────────────────
 
-function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitchenAlias, askedByGroups = [], allGroups = [], onAddToQuestion = null, busy, onRename, onReprice, onRecategorize, onSetTaxRate, onSetReportingCategory, onSetPrint, onSetKitchenRole, onReplaceItems, onDelete }) {
+function ModifierRowField({ label, children, status }) {
+  return (
+    <div className="min-w-0">
+      <span className="mb-1.5 flex min-h-4 items-center justify-between gap-2">
+        <span className="text-[9px] font-semibold uppercase tracking-[0.08em] text-dash-tertiary">{label}</span>
+        {status !== undefined && <SaveStatus message={status} />}
+      </span>
+      {children}
+    </div>
+  )
+}
+
+function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitchenAlias, askedByGroups = [], allGroups = [], onAddToQuestion = null, busy, statusFor = () => '', onRename, onReprice, onRecategorize, onSetTaxRate, onSetReportingCategory, onSetPrint, onSetKitchenRole, onReplaceItems, onDelete }) {
   const [expanded, setExpanded] = useState(false)
   const selectedIds = useMemo(() => new Set(modifier.item_ids || []), [modifier])
   const neverPrints = modifier.print_on_kitchen_ticket === false
@@ -3269,73 +3490,109 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitch
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
-      <div className="grid gap-3 lg:grid-cols-[1.2fr_110px_150px_150px_150px_150px_auto_auto_auto_auto_auto] lg:items-center">
-        <TextInput
-          defaultValue={modifier.name}
-          onBlur={event => {
-            const next = event.target.value.trim()
-            if (next && next !== modifier.name) onRename(next)
-          }}
-        />
-        <TextInput
-          inputMode="decimal"
-          defaultValue={modifier.price_delta != null ? String(modifier.price_delta) : '0'}
-          onBlur={event => {
-            const next = Number(cleanDecimal(event.target.value)) || 0
-            if (next !== Number(modifier.price_delta)) onReprice(next)
-          }}
-        />
-        <TextInput
-          list="menu-modifier-categories"
-          title="Category — type a new name to create one"
-          defaultValue={modifierCategoryOf(modifier)}
-          onBlur={event => {
-            const next = event.target.value.trim() || 'Add-ons'
-            if (next !== modifierCategoryOf(modifier)) onRecategorize(next)
-          }}
-        />
-        <SelectInput
-          title="Tax this modifier's charge at its own rate instead of the item's"
-          value={modifier.tax_rate_id || ''}
-          onChange={event => onSetTaxRate(event.target.value || null)}
-        >
-          <option value="">Follows item</option>
-          {taxRates.map(rate => (
-            <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
-          ))}
-        </SelectInput>
-        <SelectInput
-          title="Report this modifier's sales under its own department instead of the item's"
-          value={modifier.reporting_category_id || ''}
-          onChange={event => onSetReportingCategory(event.target.value || null)}
-        >
-          <option value="">Item's category</option>
-          {reportingCategories.map(category => (
-            <option key={category.id} value={category.id}>{category.name}</option>
-          ))}
-        </SelectInput>
-        <SelectInput
-          title="Legacy fallback used only when the group and item do not override it"
-          value={modifier.kitchen_display_role || ''}
-          onChange={event => onSetKitchenRole(event.target.value || null)}
-        >
-          <option value="">Hierarchy: inherit</option>
-          <option value="ingredient">Ingredient</option>
-          <option value="side">Side / non-ingredient</option>
-        </SelectInput>
-        <SmallButton
-          variant={neverPrints ? 'primary' : 'secondary'}
-          title={neverPrints
-            ? 'Hidden from kitchen tickets everywhere it’s used — click to print again'
-            : 'Prints on kitchen tickets — click to never print it (e.g. FOH-only notes, upsells the kitchen doesn’t need)'}
-          onClick={() => onSetPrint(neverPrints)}
-        >
-          {neverPrints ? 'Never prints' : 'Prints'}
-        </SmallButton>
-        <span className="text-sm text-dash-tertiary">{(modifier.item_ids || []).length} item{(modifier.item_ids || []).length === 1 ? '' : 's'}</span>
-        <a href="./printing-routing#receipts" className="rounded-lg border border-dash-gold/25 bg-dash-gold/10 px-2 py-2 text-center text-xs font-semibold text-dash-gold" title="Open Receipts & Tickets">Kitchen: {kitchenAlias || 'Full name'}</a>
-        <SmallButton onClick={() => setExpanded(current => !current)}>{expanded ? 'Close' : 'Items'}</SmallButton>
-        <SmallButton variant="danger" onClick={onDelete} disabled={busy}>Remove</SmallButton>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 2xl:items-end">
+        <ModifierRowField label="Modifier name" status={statusFor('name')}>
+          <TextInput
+            aria-label="Modifier name"
+            className="min-w-0"
+            defaultValue={modifier.name}
+            onBlur={event => {
+              const next = event.target.value.trim()
+              if (next && next !== modifier.name) onRename(next)
+            }}
+          />
+        </ModifierRowField>
+        <ModifierRowField label="Price adjustment" status={statusFor('price')}>
+          <TextInput
+            aria-label="Price adjustment"
+            className="min-w-0"
+            inputMode="decimal"
+            defaultValue={modifier.price_delta != null ? String(modifier.price_delta) : '0'}
+            onBlur={event => {
+              const next = Number(cleanDecimal(event.target.value)) || 0
+              if (next !== Number(modifier.price_delta)) onReprice(next)
+            }}
+          />
+        </ModifierRowField>
+        <ModifierRowField label="Modifier category" status={statusFor('category')}>
+          <TextInput
+            aria-label="Modifier category"
+            className="min-w-0"
+            list="menu-modifier-categories"
+            title="Category — type a new name to create one"
+            defaultValue={modifierCategoryOf(modifier)}
+            onBlur={event => {
+              const next = event.target.value.trim() || 'Add-ons'
+              if (next !== modifierCategoryOf(modifier)) onRecategorize(next)
+            }}
+          />
+        </ModifierRowField>
+        <ModifierRowField label="Tax rate" status={statusFor('tax')}>
+          <SelectInput
+            aria-label="Modifier tax rate"
+            className="min-w-0"
+            title="Tax this modifier's charge at its own rate instead of the item's"
+            value={modifier.tax_rate_id || ''}
+            onChange={event => onSetTaxRate(event.target.value || null)}
+          >
+            <option value="">Follows item</option>
+            {taxRates.map(rate => (
+              <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
+            ))}
+          </SelectInput>
+        </ModifierRowField>
+        <ModifierRowField label="Sales category" status={statusFor('sales')}>
+          <SelectInput
+            aria-label="Modifier sales category"
+            className="min-w-0"
+            title="Report this modifier's sales under its own department instead of the item's"
+            value={modifier.reporting_category_id || ''}
+            onChange={event => onSetReportingCategory(event.target.value || null)}
+          >
+            <option value="">Item's category</option>
+            {reportingCategories.map(category => (
+              <option key={category.id} value={category.id}>{category.name}</option>
+            ))}
+          </SelectInput>
+        </ModifierRowField>
+        <ModifierRowField label="Kitchen hierarchy" status={statusFor('kitchen')}>
+          <SelectInput
+            aria-label="Modifier kitchen hierarchy"
+            className="min-w-0"
+            title="Legacy fallback used only when the group and item do not override it"
+            value={modifier.kitchen_display_role || ''}
+            onChange={event => onSetKitchenRole(event.target.value || null)}
+          >
+            <option value="">Hierarchy: inherit</option>
+            <option value="ingredient">Ingredient</option>
+            <option value="side">Side / non-ingredient</option>
+          </SelectInput>
+        </ModifierRowField>
+        <ModifierRowField label="Kitchen ticket" status={statusFor('print')}>
+          <SmallButton
+            variant={neverPrints ? 'primary' : 'secondary'}
+            title={neverPrints
+              ? 'Hidden from kitchen tickets everywhere it’s used — click to print again'
+              : 'Prints on kitchen tickets — click to never print it (e.g. FOH-only notes, upsells the kitchen doesn’t need)'}
+            onClick={() => onSetPrint(neverPrints)}
+          >
+            {neverPrints ? 'Never prints' : 'Prints'}
+          </SmallButton>
+        </ModifierRowField>
+        <ModifierRowField label="Applied items" status={statusFor('items')}>
+          <span className="flex min-h-10 items-center rounded-xl border border-white/10 bg-white/[0.025] px-3 text-sm text-dash-tertiary">
+            {(modifier.item_ids || []).length} item{(modifier.item_ids || []).length === 1 ? '' : 's'}
+          </span>
+        </ModifierRowField>
+        <ModifierRowField label="Ticket name">
+          <a href="./printing-routing#receipts" className="flex min-h-10 items-center justify-center rounded-lg border border-dash-gold/25 bg-dash-gold/10 px-2 py-2 text-center text-xs font-semibold text-dash-gold" title="Open Receipts & Tickets">{kitchenAlias || 'Full name'}</a>
+        </ModifierRowField>
+        <ModifierRowField label="Actions">
+          <div className="flex flex-wrap gap-2">
+            <SmallButton onClick={() => setExpanded(current => !current)}>{expanded ? 'Close' : 'Items'}</SmallButton>
+            <SmallButton variant="danger" onClick={onDelete} disabled={busy}>Remove</SmallButton>
+          </div>
+        </ModifierRowField>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
         {askedByGroups.length > 0 ? (
@@ -3395,7 +3652,7 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitch
 
 // One allergy pill: rename, hide-everywhere toggle, and per-item narrowing
 // (checked = servers see the pill on that item; unchecked = hidden there).
-function AllergyPillRow({ pill, menuItems, hiddenItemIds, busy, onRename, onToggle, onToggleItem, onBulkItems }) {
+function AllergyPillRow({ pill, menuItems, hiddenItemIds, busy, statusFor = () => '', onRename, onToggle, onToggleItem, onBulkItems }) {
   const [expanded, setExpanded] = useState(false)
   const shownIds = useMemo(
     () => new Set(menuItems.filter(item => !hiddenItemIds.has(item.id)).map(item => item.id)),
@@ -3407,6 +3664,9 @@ function AllergyPillRow({ pill, menuItems, hiddenItemIds, busy, onRename, onTogg
     <div className="rounded-xl border border-white/10 bg-white/[0.025] p-3">
       <div className="flex flex-wrap items-center gap-3">
         <div className="w-56">
+          <div className="mb-1 flex min-h-4 justify-end">
+            <SaveStatus message={statusFor('name')} />
+          </div>
           <TextInput
             defaultValue={pill.name}
             onBlur={event => {
@@ -3415,20 +3675,30 @@ function AllergyPillRow({ pill, menuItems, hiddenItemIds, busy, onRename, onTogg
             }}
           />
         </div>
-        <SmallButton
-          variant={pill.is_available === false ? 'danger' : 'secondary'}
-          title={pill.is_available === false ? 'Hidden on every item — tap to restore' : 'Hide this pill everywhere without deleting it'}
-          onClick={onToggle}
-        >
-          {pill.is_available === false ? 'Hidden — restore' : 'Active'}
-        </SmallButton>
+        <div>
+          <div className="mb-1 flex min-h-4 justify-end">
+            <SaveStatus message={statusFor('active')} />
+          </div>
+          <SmallButton
+            variant={pill.is_available === false ? 'danger' : 'secondary'}
+            title={pill.is_available === false ? 'Hidden on every item — tap to restore' : 'Hide this pill everywhere without deleting it'}
+            onClick={onToggle}
+          >
+            {pill.is_available === false ? 'Hidden — restore' : 'Active'}
+          </SmallButton>
+        </div>
         <span className="text-sm text-dash-tertiary">
           {hiddenCount === 0 ? 'On all items' : `Hidden on ${hiddenCount} item${hiddenCount === 1 ? '' : 's'}`}
         </span>
         <span className="flex-1" />
-        <SmallButton onClick={() => setExpanded(current => !current)} disabled={busy}>
-          {expanded ? 'Close' : 'Narrow by item'}
-        </SmallButton>
+        <div>
+          <div className="mb-1 flex min-h-4 justify-end">
+            <SaveStatus message={statusFor('items')} />
+          </div>
+          <SmallButton onClick={() => setExpanded(current => !current)} disabled={busy}>
+            {expanded ? 'Close' : 'Narrow by item'}
+          </SmallButton>
+        </div>
       </div>
       {expanded && (
         <div className="mt-3 border-t border-white/10 pt-3">

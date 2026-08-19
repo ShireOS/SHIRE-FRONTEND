@@ -1,6 +1,7 @@
 import { supabase } from '../../shared/lib/supabase'
 import { attachGroupToItem, setItemGroupOverride, setItemModifierOverride } from './menuGroups'
 import { setItemPillExcluded } from './menuAllergies'
+import { copyableDirectQuestionGroups } from './menuDuplicateQuestions.js'
 
 // "Save & duplicate": after the new item row exists, re-key everything that
 // hangs off the source item's id onto the new one — question links (with
@@ -19,12 +20,13 @@ export async function copyItemConfig({
   sourceModifierOverrides = {},
   sourceAllergyExclusions = [],
   sourceSpecials = [],
+  excludedQuestionIds = [],
 }) {
   const warnings = []
+  const excludedQuestions = new Set(excludedQuestionIds)
 
   try {
-    for (const group of groups) {
-      if (!group.item_ids.includes(sourceItem.id)) continue
+    for (const group of copyableDirectQuestionGroups(groups, sourceItem.id, excludedQuestionIds)) {
       await attachGroupToItem(group.id, targetItem.id, group.item_display_orders?.[sourceItem.id] ?? 0)
     }
   } catch {
@@ -35,6 +37,7 @@ export async function copyItemConfig({
   // pointing at a question the new item doesn't ask is inert.
   try {
     for (const group of groups) {
+      if (excludedQuestions.has(group.id)) continue
       const override = group.item_overrides?.[sourceItem.id]
       if (!override) continue
       await setItemGroupOverride(group.id, targetItem.id, override)
@@ -98,28 +101,10 @@ export async function copyItemConfig({
   }
 
   try {
-    const { data: rules, error } = await supabase
-      .from('pos_menu_price_rules')
-      .select('*')
-      .eq('restaurant_id', restaurantId)
-      .eq('menu_item_id', sourceItem.id)
-      .is('archived_at', null)
-    if (error) throw error
-    for (const rule of rules || []) {
-      const { id, created_at, updated_at, archived_at, ...rest } = rule
-      const { data: createdRule, error: insertError } = await supabase
-        .from('pos_menu_price_rules')
-        .insert({ ...rest, menu_item_id: targetItem.id })
-        .select('*')
-        .single()
-      if (insertError) throw insertError
-      await supabase.from('pos_menu_price_rule_events').insert({
-        restaurant_id: restaurantId,
-        price_rule_id: createdRule.id,
-        event_type: 'created',
-        after_data: createdRule,
-      }).then(() => null, () => null)
-    }
+    await api(`/restaurants/${restaurantId}/menu/pricing/items/${sourceItem.id}/rules/copy`, {
+      method: 'POST',
+      body: JSON.stringify({ target_menu_item_id: targetItem.id }),
+    })
   } catch {
     warnings.push('happy hour price rules')
   }

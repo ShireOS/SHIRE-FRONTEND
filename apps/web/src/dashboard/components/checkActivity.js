@@ -24,6 +24,8 @@ const EVENT_LABELS = {
   reopen_order: 'Check reopened',
   refund_payment: 'Refund',
   void_payment: 'Payment voided',
+  add_gratuity: 'Gratuity added or changed',
+  remove_gratuity: 'Gratuity removed',
   fast_bar_walkup_attached: 'Walk-up tab attached',
   fast_bar_walkup_attachment_removed: 'Walk-up tab detached',
   fast_bar_walkup_attachment_undone: 'Walk-up attach undone',
@@ -51,7 +53,7 @@ export function activityTitle(entry) {
     const qty = Number(snapshot.quantity) > 1 ? `${Number(snapshot.quantity)}× ` : ''
     return `${base} — ${qty}${snapshot.name}`
   }
-  if (entry.amount != null && ['refund_payment', 'void_payment'].includes(entry.action)) {
+  if (entry.amount != null && ['refund_payment', 'void_payment', 'add_gratuity', 'remove_gratuity'].includes(entry.action)) {
     return `${base} — $${Number(entry.amount).toFixed(2)}`
   }
   return base

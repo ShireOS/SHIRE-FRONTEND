@@ -36,7 +36,7 @@ export default function ClaimStorePage() {
       const restaurantId = await claimStore(token)
       localStorage.removeItem(PENDING_CLAIM_STORAGE_KEY)
       await auth.refreshRestaurants(restaurantId)
-      navigate('/onboarding')
+      navigate(`/restaurants/${restaurantId}/analytics`, { replace: true })
     } catch (claimError) {
       setError(claimError?.message || 'Could not claim this store.')
     } finally {
@@ -86,8 +86,8 @@ export default function ClaimStorePage() {
               <p className="mt-2 text-sm leading-6 text-dash-secondary">
                 Your reseller set up this workspace for you.
                 {invite.kind === 'draft'
-                  ? ' Review what’s below, take ownership, and finish the remaining onboarding steps — nothing you see here needs re-entering.'
-                  : ' Accept to create your store and continue with onboarding.'}
+                  ? ' Review what’s below and take ownership. The restaurant will open exactly as it was configured.'
+                  : ' Accept to connect this restaurant to your account.'}
               </p>
 
               <dl className="mt-4 space-y-1.5 text-sm">
@@ -151,13 +151,13 @@ export default function ClaimStorePage() {
                 ) : (
                   <div className="flex flex-col gap-2">
                     <Link
-                      to="/auth/signup"
+                      to={`/auth/signup?invited=1&email=${encodeURIComponent(invite.email || '')}&next=${encodeURIComponent(`/claim/${token}`)}`}
                       className="w-full rounded-xl bg-shell-cta py-3 text-center text-sm font-semibold text-shell-cta-text transition hover:opacity-90"
                     >
                       Create an account to claim
                     </Link>
                     <Link
-                      to="/auth/login"
+                      to={`/auth/login?email=${encodeURIComponent(invite.email || '')}&next=${encodeURIComponent(`/claim/${token}`)}`}
                       className="w-full rounded-xl border border-dash-border py-3 text-center text-sm font-semibold text-dash-secondary transition hover:text-dash-cream"
                     >
                       I already have an account

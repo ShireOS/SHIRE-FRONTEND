@@ -251,6 +251,25 @@ export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
         </button>
       </section>
 
+      <section className="space-y-4 border-t border-[rgba(255,255,255,0.1)] pt-6">
+        <div>
+          <p className="label-mono text-[rgb(var(--gold))]">Large-Party Auto Gratuity</p>
+          <p className="mt-2 text-sm leading-6 text-[rgb(var(--text-secondary))]">This restaurant-wide rule applies when a section does not define its own service-charge behavior.</p>
+        </div>
+        <label className="flex items-center gap-3 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] px-4 py-3 text-sm text-[rgb(var(--text-primary))]">
+          <input type="checkbox" checked={data.auto_gratuity.enabled} onChange={(event) => updateData({ auto_gratuity: { ...data.auto_gratuity, enabled: event.target.checked } })} />
+          Automatically apply gratuity to large parties
+        </label>
+        {data.auto_gratuity.enabled && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="block space-y-2"><span className="label-mono text-[rgb(var(--gold))]">Minimum Party Size</span><input inputMode="numeric" value={data.auto_gratuity.party_threshold} onChange={(event) => updateData({ auto_gratuity: { ...data.auto_gratuity, party_threshold: event.target.value.replace(/\D/g, '') } })} className={inputClass} placeholder="6" /></label>
+            <label className="block space-y-2"><span className="label-mono text-[rgb(var(--gold))]">Gratuity Rate %</span><input inputMode="decimal" value={data.auto_gratuity.percent} onChange={(event) => updateData({ auto_gratuity: { ...data.auto_gratuity, percent: sanitizeNumber(event.target.value) } })} className={inputClass} placeholder="18" /></label>
+            <label className="block space-y-2"><span className="label-mono text-[rgb(var(--gold))]">Receipt Label</span><input value={data.auto_gratuity.label} onChange={(event) => updateData({ auto_gratuity: { ...data.auto_gratuity, label: event.target.value.slice(0, 40) } })} className={inputClass} placeholder="Gratuity" /></label>
+            <label className="block space-y-2"><span className="label-mono text-[rgb(var(--gold))]">Who Receives It</span><select value={data.auto_gratuity.assigned_to_employee ? 'employee' : 'restaurant'} onChange={(event) => updateData({ auto_gratuity: { ...data.auto_gratuity, assigned_to_employee: event.target.value === 'employee' } })} className={inputClass}><option value="employee">Employee tip earnings</option><option value="restaurant">Restaurant service-charge revenue</option></select></label>
+          </div>
+        )}
+      </section>
+
       <button
         type="submit"
         disabled={isLoading}

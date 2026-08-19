@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../shared/lib/supabase'
 import { useAuth } from '../../auth'
+import { fetchWithSupabaseAuth } from '../../shared/query'
 import {
   allowedTabsForResellerPermissions,
   normalizeResellerPermissions,
@@ -62,12 +63,22 @@ export async function fetchResellerAssignments(restaurantId) {
   return data || []
 }
 
-export async function updateResellerPermissions(assignmentId, permissions) {
-  const { error } = await supabase
-    .from('reseller_restaurants')
-    .update({ permissions })
-    .eq('id', assignmentId)
-  if (error) throw error
+export async function updateResellerPermissions(restaurantId, assignmentId, permissions) {
+  return fetchWithSupabaseAuth(`/restaurants/${restaurantId}/resellers/${assignmentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ permissions }),
+  })
+}
+
+export async function fetchResellerInvites(restaurantId) {
+  return fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reseller-invites`)
+}
+
+export async function inviteReseller(restaurantId, email, permissions) {
+  return fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reseller-invites`, {
+    method: 'POST',
+    body: JSON.stringify({ email, permissions }),
+  })
 }
 
 /**
@@ -85,7 +96,7 @@ export function useAllowedStoreTabs(restaurant) {
     : null
   const [allowed, setAllowed] = useState(() => (
     cacheKey
-      ? allowedTabsCache.get(cacheKey) || allowedTabsForResellerPermissions(null)
+      ? allowedTabsCache.get(cacheKey) || null
       : null
   )) // null = everything for owners, members, and admins
 
@@ -95,7 +106,7 @@ export function useAllowedStoreTabs(restaurant) {
       return
     }
     const nextCacheKey = `${auth.user.id}:${restaurantId}`
-    setAllowed(allowedTabsCache.get(nextCacheKey) || allowedTabsForResellerPermissions(null))
+    setAllowed(allowedTabsCache.get(nextCacheKey) || null)
     let cancelled = false
     const load = async () => {
       let resellerId = auth.user.id

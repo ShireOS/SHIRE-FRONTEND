@@ -10,6 +10,7 @@ import {
   FileText,
   LineChart as LineChartIcon,
   Layers3,
+  RefreshCw,
   Settings2,
   TrendingDown,
   TrendingUp,
@@ -18,7 +19,6 @@ import {
 import {
   Bar,
   BarChart,
-  Cell,
   CartesianGrid,
   Line,
   LineChart,
@@ -29,6 +29,20 @@ import {
   YAxis,
 } from 'recharts'
 import { fetchWithSupabaseAuth } from '../../shared/query'
+import { DEFAULT_API_TIMEOUT_MS } from '../../shared/api/requestDeadline'
+import {
+  aggregateWidgetRows,
+  effectiveHomepageWidgetSettings,
+  normalizeReportingScope,
+  pruneReportingScope,
+  WHOLE_RESTAURANT_SCOPE,
+} from './homepageWidgetMath'
+import {
+  homepageWidgetChartCopy,
+  widgetPurposeMeasure,
+  widgetSupportingMeasures,
+  withWidgetPurposeColumn,
+} from './homepageWidgetPresentation'
 
 const KPI_WIDGETS = new Set([
   'net_sales', 'orders', 'covers', 'labor_cost', 'profit_after_labor',
@@ -38,14 +52,27 @@ const MONEY_IDS = new Set([
   'net_sales', 'gross_sales', 'tips', 'discounts', 'average_check',
   'labor_cost', 'profit_after_labor', 'gross_amount', 'processor_fees',
   'expected_deposit', 'settled_deposit', 'pending_deposit', 'revenue',
-  'cost', 'margin', 'declared_cash', 'declared_card', 'declared_other',
+  'gross_revenue', 'cost', 'margin', 'declared_cash', 'declared_card', 'declared_other',
   'tips_collected', 'tipout_paid', 'tipout_received', 'final_payout',
   'refunds', 'voided_items',
   'total_amount', 'discount_amount', 'comp_amount', 'item_void_amount', 'check_void_amount',
   'non_taxable_net', 'taxable_net', 'gross_voids', 'tax', 'grand_total',
   'item_discounts', 'check_discounts', 'total_collected', 'card_collected',
-  'cash_collected', 'other_collected',
+  'cash_collected', 'other_collected', 'service_charges', 'employee_service_charges',
+  'restaurant_service_charges', 'unclassified_service_charges',
+  'financial_impact', 'amount_under_review', 'cash_variance', 'impact_amount',
 ])
+const ACTIVITY_ACTION_OPTIONS = [
+  ['discount', 'Discount'], ['comp', 'Comp'], ['item_void', 'Item void'], ['check_void', 'Check void'],
+  ['refund', 'Refund'], ['payment_void', 'Payment void'], ['tender_void', 'Tender void'], ['check_reopen', 'Check reopen'],
+  ['sent_item_edit', 'Sent-item edit'], ['item_unsend', 'Item unsend'], ['no_sale', 'No Sale'], ['paid_in', 'Paid in'],
+  ['paid_out', 'Paid out'], ['cash_drop', 'Cash drop'], ['cash_movement_reversal', 'Cash reversal'], ['cash_variance', 'Cash variance'],
+  ['tip_adjustment', 'Tip change'], ['tip_payout_adjustment', 'Tip payout change'], ['open_item', 'Open item'],
+  ['gratuity_add', 'Gratuity added'], ['gratuity_remove', 'Gratuity removed'], ['tax_exempt_check', 'Tax-exempt check'],
+  ['check_exception', 'Check exception'], ['payment_reconciliation', 'Payment reconciliation'], ['payment_failure', 'Payment failure'], ['payment_risk', 'Payment risk'],
+  ['gift_card_activity', 'Gift-card activity'], ['business_day_reopen', 'Business-day reopen'], ['transaction_sequence', 'High-risk sequence'],
+]
+const ACTIVITY_ACTION_IDS = ACTIVITY_ACTION_OPTIONS.map(([id]) => id)
 const GRAIN_OPTIONS = [
   ['total', 'Total'], ['day', 'Daily'], ['week', 'Weekly'],
   ['month', 'Monthly'], ['detail', 'Detailed rows'],
@@ -65,6 +92,7 @@ function formatValue(value, kind) {
     return new Date(year, month - 1, day).toLocaleDateString()
   }
   if (kind === 'date') return new Date(value).toLocaleDateString()
+  if (kind === 'datetime') return new Date(value).toLocaleString()
   return String(value)
 }
 
@@ -173,13 +201,35 @@ function ReportingScopeFields({ widget, dimensions, value, onChange }) {
   </div>
 }
 
-function WidgetSettingsModal({ widget, widgetData, dimensions, settings, pdfSettings, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave, onSavePdf }) {
-  const dates = periodDates(period, anchorDate)
+function scopeControlLabel(value) {
+  const scope = normalizeReportingScope(value)
+  if (scope.scope_dimension === 'none') return 'Whole restaurant'
+  const noun = scope.scope_dimension === 'device' ? 'device' : 'section'
+  if (!scope.scope_ids.length) return `All ${noun}s`
+  return `${scope.scope_ids.length} ${noun}${scope.scope_ids.length === 1 ? '' : 's'}`
+}
+
+function DashboardScopeModal({ dimensions, value, onClose, onSave }) {
+  const [draft, setDraft] = useState(() => normalizeReportingScope(value))
+  const scopeWidget = { reporting_dimensions: ['revenue_center', 'device'] }
+  return <Modal title="Dashboard scope" onClose={onClose}>
+    <div className="space-y-4 p-5">
+      <p className="text-sm leading-6 text-dash-secondary">This filter applies to every widget whose source data can be reliably assigned to a section or device. Labor and other restaurant-wide records remain unfiltered.</p>
+      <ReportingScopeFields widget={scopeWidget} dimensions={dimensions} value={draft} onChange={setDraft} />
+    </div>
+    <footer className="sticky bottom-0 flex justify-end gap-2 border-t border-dash-border bg-dash-elevated p-5"><button type="button" onClick={onClose} className="h-10 rounded-md border border-dash-border px-4 text-sm">Cancel</button><button type="button" onClick={() => onSave(normalizeReportingScope(draft))} className="h-10 rounded-md bg-shell-cta px-4 text-sm font-semibold text-shell-cta-text">Apply scope</button></footer>
+  </Modal>
+}
+
+function WidgetSettingsModal({ widget, widgetData, dimensions, settings, dashboardScope, pdfSettings, period, anchorDate, dateRange, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave, onSavePdf }) {
+  const dates = dateRange?.start && dateRange?.end ? dateRange : periodDates(period, anchorDate)
   const [tab, setTab] = useState('display')
+  const explicitWidgetScope = settings.scope_source === 'widget'
+  const effectiveDisplayScope = explicitWidgetScope ? normalizeReportingScope(settings) : normalizeReportingScope(dashboardScope)
   const [draft, setDraft] = useState(() => ({
     display_grain: settings.display_grain || (widget.id === 'sales_trend' ? 'day' : 'total'),
     display_breakdown: settings.display_breakdown || widget.default_breakdown,
-    display_columns: settings.display_columns || widget.default_columns,
+    display_columns: withWidgetPurposeColumn(widget, settings.display_columns || widget.default_columns),
     chart_type: settings.chart_type || (widget.id === 'sales_trend' ? 'line' : 'bar'),
     display_mode: settings.display_mode || (widget.id === 'sales_trend' ? 'chart' : 'table'),
     sort_by: settings.sort_by || widget.default_columns[0],
@@ -187,7 +237,10 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, pdfSett
     limit: settings.limit || 12,
     alert_z_score: settings.alert_z_score || 2,
     alert_min_actions: settings.alert_min_actions || 5,
-    scope_dimension: settings.scope_dimension || 'none', scope_mode: settings.scope_mode || 'cumulative', scope_ids: settings.scope_ids || [],
+    scope_source: explicitWidgetScope ? 'widget' : 'global',
+    scope_dimension: explicitWidgetScope ? settings.scope_dimension || 'none' : 'none',
+    scope_mode: explicitWidgetScope ? settings.scope_mode || 'cumulative' : 'cumulative',
+    scope_ids: explicitWidgetScope ? settings.scope_ids || [] : [],
   }))
   const [report, setReport] = useState(() => ({
     start_date: dates.start, end_date: dates.end,
@@ -195,10 +248,10 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, pdfSett
     breakdown: widget.default_breakdown,
     columns: [...widget.default_columns], include_chart: widget.id === 'sales_trend',
     chart_type: widget.id === 'sales_trend' ? 'line' : 'bar', title: `${widget.label} report`,
-    employee_ids: [], action_types: ['discount', 'comp', 'item_void', 'check_void'],
+    employee_ids: [], action_types: [...ACTIVITY_ACTION_IDS],
     reason_codes: [], include_team_average: true,
     alert_z_score: settings.alert_z_score || 2, alert_min_actions: settings.alert_min_actions || 5,
-    scope_dimension: settings.scope_dimension || 'none', scope_mode: settings.scope_mode || 'cumulative', scope_ids: settings.scope_ids || [],
+    ...effectiveDisplayScope,
     ...(pdfSettings || {}),
   }))
   const [working, setWorking] = useState(false)
@@ -216,12 +269,15 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, pdfSett
     } catch (nextError) { setError(nextError instanceof Error ? nextError.message : 'Could not generate this PDF.') }
     finally { setWorking(false) }
   }
-  const renderColumns = (state, setter, key) => <div className="grid gap-2 sm:grid-cols-2">{widget.columns.map((column) => <label key={column.id} className="flex min-h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm"><input type="checkbox" checked={state[key].includes(column.id)} onChange={() => toggleColumn(key, column.id, setter)} />{column.label}</label>)}</div>
+  const renderColumns = (state, setter, key) => <div className="grid gap-2 sm:grid-cols-2">{widget.columns.map((column) => {
+    const isPurpose = key === 'display_columns' && column.id === widget.primary_column
+    return <label key={column.id} className="flex min-h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm"><input type="checkbox" checked={state[key].includes(column.id)} disabled={isPurpose} onChange={() => toggleColumn(key, column.id, setter)} /><span>{column.label}{isPurpose && <span className="ml-1 text-xs text-dash-tertiary">Primary</span>}</span></label>
+  })}</div>
   const employeeOptions = (widgetData?.employees || []).filter((employee) => employee.employee_id)
   const reasonOptions = [...new Map((widgetData?.reasons || []).map((reason) => [reason.reason_code, reason])).values()]
   const renderAuditOptions = () => <>
     <div><p className="label-mono mb-2">Employees</p><p className="mb-2 text-xs text-dash-tertiary">No selection includes every employee.</p><div className="grid gap-2 sm:grid-cols-2">{employeeOptions.map((employee) => <label key={employee.employee_id} className="flex min-h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm"><input type="checkbox" checked={report.employee_ids.includes(employee.employee_id)} onChange={() => toggleColumn('employee_ids', employee.employee_id, setReport)} /><span className="truncate">{employee.employee_name}<span className="ml-1 text-xs text-dash-tertiary">{employee.restaurant_name}</span></span></label>)}</div></div>
-    <div><p className="label-mono mb-2">Actions</p><div className="grid gap-2 sm:grid-cols-2">{[['discount', 'Discounts'], ['comp', 'Comps'], ['item_void', 'Item voids'], ['check_void', 'Check voids']].map(([id, label]) => <label key={id} className="flex min-h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm"><input type="checkbox" checked={report.action_types.includes(id)} onChange={() => toggleColumn('action_types', id, setReport)} />{label}</label>)}</div></div>
+    <div><p className="label-mono mb-2">Activity types</p><div className="grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">{ACTIVITY_ACTION_OPTIONS.map(([id, label]) => <label key={id} className="flex min-h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm"><input type="checkbox" checked={report.action_types.includes(id)} onChange={() => toggleColumn('action_types', id, setReport)} />{label}</label>)}</div></div>
     {reasonOptions.length > 0 && <div><p className="label-mono mb-2">Reason codes</p><p className="mb-2 text-xs text-dash-tertiary">No selection includes every reason.</p><div className="grid gap-2 sm:grid-cols-2">{reasonOptions.map((reason) => <label key={reason.reason_code} className="flex min-h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm"><input type="checkbox" checked={report.reason_codes.includes(reason.reason_code)} onChange={() => toggleColumn('reason_codes', reason.reason_code, setReport)} />{reason.reason_label}</label>)}</div></div>}
     <label className="flex min-h-11 items-center justify-between rounded-md border border-dash-border px-3 text-sm"><span>Include peer averages and outlier scores</span><input type="checkbox" checked={report.include_team_average} onChange={(event) => setReport({ ...report, include_team_average: event.target.checked })} /></label>
   </>
@@ -229,7 +285,10 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, pdfSett
     <Modal title={widget.label} onClose={onClose}>
       <div className="flex border-b border-dash-border px-5"><button type="button" onClick={() => setTab('display')} className={`h-11 border-b-2 px-4 text-sm font-semibold ${tab === 'display' ? 'border-shell-accent' : 'border-transparent text-dash-tertiary'}`}>Display</button><button type="button" onClick={() => setTab('pdf')} className={`h-11 border-b-2 px-4 text-sm font-semibold ${tab === 'pdf' ? 'border-shell-accent' : 'border-transparent text-dash-tertiary'}`}>PDF report</button></div>
       {tab === 'display' ? <div className="space-y-5 p-5">
-        <ReportingScopeFields widget={widget} dimensions={dimensions} value={draft} onChange={setDraft} />
+        {(widget.reporting_dimensions || []).length ? <div className="space-y-3">
+          <div><p className="label-mono mb-2">Filter behavior</p><div className="flex flex-wrap gap-2"><Choice selected={draft.scope_source !== 'widget'} onClick={() => setDraft({ ...draft, scope_source: 'global', scope_dimension: 'none', scope_mode: 'cumulative', scope_ids: [] })}>Use dashboard scope</Choice><Choice selected={draft.scope_source === 'widget'} onClick={() => setDraft({ ...draft, scope_source: 'widget', scope_dimension: 'none', scope_mode: 'cumulative', scope_ids: [] })}>Custom scope</Choice></div><p className="mt-2 text-xs text-dash-tertiary">Dashboard scope: {scopeControlLabel(dashboardScope)}</p></div>
+          {draft.scope_source === 'widget' && <ReportingScopeFields widget={widget} dimensions={dimensions} value={draft} onChange={setDraft} />}
+        </div> : <ReportingScopeFields widget={widget} dimensions={dimensions} value={draft} onChange={setDraft} />}
         {widget.id === 'discount_review' ? <>
           <p className="text-sm leading-6 text-dash-secondary">Employees are flagged only after meeting the minimum sample and exceeding the selected number of standard deviations above peers at the same restaurant.</p>
           <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">Outlier threshold<input type="number" min="1" max="5" step="0.1" value={draft.alert_z_score} onChange={(event) => setDraft({ ...draft, alert_z_score: Number(event.target.value) })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-3" /><span className="mt-1 block text-xs text-dash-tertiary">Standard deviations above peers</span></label><label className="text-sm">Minimum actions<input type="number" min="1" max="100" value={draft.alert_min_actions} onChange={(event) => setDraft({ ...draft, alert_min_actions: Number(event.target.value) })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-3" /><span className="mt-1 block text-xs text-dash-tertiary">Prevents one-off false alerts</span></label></div>
@@ -259,7 +318,7 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, pdfSett
 }
 
 function WidgetHeader({ widget, onSettings }) {
-  return <header className="mb-4 flex items-start justify-between gap-3"><div><p className="label-mono">Homepage widget</p><h2 className="mt-1 text-lg font-semibold">{widget.label}</h2><p className="mt-1 text-xs text-dash-tertiary">{widget.description}</p></div><button type="button" onClick={(event) => { event.stopPropagation(); onSettings() }} title={`Configure ${widget.label}`} aria-label={`Configure ${widget.label}`} className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-dash-border text-dash-secondary hover:text-dash-cream"><Settings2 size={16} /></button></header>
+  return <header className="mb-4 flex items-start justify-between gap-3"><div><p className="label-mono">Homepage widget</p><h2 className="mt-1 text-lg font-semibold">{widget.label}</h2><p className="mt-1 text-xs text-dash-tertiary">{widget.description}</p>{widget.scopeLabel && <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-shell-accent"><Layers3 size={13} />{widget.scopeLabel}</p>}</div><button type="button" onClick={(event) => { event.stopPropagation(); onSettings() }} title={`Configure ${widget.label}`} aria-label={`Configure ${widget.label}`} className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-dash-border text-dash-secondary hover:text-dash-cream"><Settings2 size={16} /></button></header>
 }
 
 function measureColumns(data, widget) {
@@ -281,14 +340,15 @@ function tableColumns(data, widget) {
 }
 
 function primaryMeasure(data, widget) {
-  return measureColumns(data, widget)[0] || widget.columns?.[0]
+  return widgetPurposeMeasure(widget, data)
 }
 
 const SALES_SUM_FIELDS = [
   'gross_sales', 'item_discounts', 'check_discounts', 'discounts', 'net_sales',
   'non_taxable_net', 'taxable_net', 'gross_voids', 'void_receipts', 'receipts',
   'covers', 'tax', 'tips', 'grand_total', 'total_collected', 'card_collected',
-  'cash_collected', 'other_collected',
+  'cash_collected', 'other_collected', 'service_charges', 'employee_service_charges',
+  'restaurant_service_charges', 'unclassified_service_charges',
 ]
 
 function aggregateSalesRows(rows = []) {
@@ -296,6 +356,25 @@ function aggregateSalesRows(rows = []) {
   rows.forEach((row) => SALES_SUM_FIELDS.forEach((id) => { summary[id] += Number(row[id] || 0) }))
   summary.average_check = summary.receipts > 0 ? summary.net_sales / summary.receipts : 0
   return summary
+}
+
+function reportingScopeLabel(data, dimensions) {
+  const scope = data?.reporting_scope || {}
+  if (!scope.dimension || scope.dimension === 'none') return null
+  const noun = scope.dimension === 'device' ? 'devices' : 'sections'
+  const options = scope.dimension === 'device' ? dimensions?.devices || [] : dimensions?.sections || []
+  const selected = new Set((scope.ids || []).map(String))
+  const names = options.filter((item) => selected.has(String(item.id))).map((item) => item.restaurant_name && options.some((other) => other.name === item.name && other.restaurant_id !== item.restaurant_id) ? `${item.restaurant_name} / ${item.name}` : item.name)
+  if (names.length) return `Filtered: ${names.join(' + ')}`
+  return scope.mode === 'breakdown' ? `All ${noun}, broken down` : `All ${noun}`
+}
+
+function widgetScopeLabel(widget, data, dimensions, dashboardScope) {
+  const applied = reportingScopeLabel(data, dimensions)
+  if (applied) return applied
+  const globalScope = normalizeReportingScope(dashboardScope)
+  if (globalScope.scope_dimension === 'none' || (widget.reporting_dimensions || []).includes(globalScope.scope_dimension)) return null
+  return `Whole restaurant · ${globalScope.scope_dimension === 'device' ? 'device' : 'section'} attribution unavailable`
 }
 
 function salesTrendRows(rows = []) {
@@ -316,7 +395,7 @@ function MiniBarList({ rows, measure, limit = 5 }) {
   return <div className="mt-4 space-y-2">{visible.map((row, index) => <div key={`${row.breakdown || row.period || index}-${index}`}><div className="mb-1 flex items-center justify-between gap-3 text-[11px]"><span className="truncate text-dash-secondary">{row.breakdown || row.period || `Row ${index + 1}`}</span><span className="shrink-0 font-mono text-dash-cream">{formatValue(row[measure.id], measure.kind)}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/5"><div className="h-full rounded-full bg-shell-accent" style={{ width: `${Math.max(2, Math.abs(Number(row[measure.id] || 0)) / max * 100)}%` }} /></div></div>)}</div>
 }
 
-function DetailChart({ data, widget, height = 260 }) {
+function DetailChart({ data, widget, height = 260, ariaLabel }) {
   let rows = data?.rows || []
   const measure = primaryMeasure(data, widget)
   if (!rows.length || !measure) return null
@@ -336,25 +415,47 @@ function DetailChart({ data, widget, height = 260 }) {
   if (!dataKey) return null
   const tick = measure.kind === 'money' ? (value) => `$${Math.round(Number(value) / 1000)}k` : number
   const tooltip = (value) => formatValue(value, measure.kind)
-  return <div className="h-[260px] min-w-0 rounded-md border border-dash-border p-3" style={{ height }}><ResponsiveContainer width="100%" height="100%">{hasPeriod ? <LineChart data={rows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey={dataKey} tickFormatter={(value) => String(value).slice(5, 10)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis tickFormatter={tick} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={tooltip} /><Line type="monotone" dataKey={measure.id} stroke="#4f7ee8" strokeWidth={2.5} dot={{ r: 2 }} connectNulls /></LineChart> : <BarChart data={rows.slice(0, 12)}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey={dataKey} tick={{ fill: '#a8a29e', fontSize: 10 }} interval={0} angle={-18} textAnchor="end" height={60} /><YAxis tickFormatter={tick} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={tooltip} /><Bar dataKey={measure.id} fill="#4f7ee8" radius={[3, 3, 0, 0]} /></BarChart>}</ResponsiveContainer></div>
+  return <div aria-label={ariaLabel} className="h-[260px] min-w-0 rounded-md border border-dash-border p-3" style={{ height }}><ResponsiveContainer width="100%" height="100%">{hasPeriod ? <LineChart data={rows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey={dataKey} tickFormatter={(value) => String(value).slice(5, 10)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis tickFormatter={tick} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={tooltip} /><Line name={measure.label} type="monotone" dataKey={measure.id} stroke="#4f7ee8" strokeWidth={2.5} dot={{ r: 2 }} connectNulls /></LineChart> : <BarChart data={rows.slice(0, 12)}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey={dataKey} tick={{ fill: '#a8a29e', fontSize: 10 }} interval={0} angle={-18} textAnchor="end" height={60} /><YAxis tickFormatter={tick} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={tooltip} /><Bar name={measure.label} dataKey={measure.id} fill="#4f7ee8" radius={[3, 3, 0, 0]} /></BarChart>}</ResponsiveContainer></div>
 }
 
 function KpiWidget({ widget, data, onOpenDetails, onSettings }) {
-  const column = data?.measure_columns?.[0] || widget.columns[0]
-  const row = data?.rows?.[0] || {}
-  const secondary = (data?.measure_columns || []).slice(1, 3)
+  const column = widgetPurposeMeasure(widget, data)
+  const row = data?.summary || aggregateWidgetRows(data?.rows || [])
+  const secondary = widgetSupportingMeasures(widget, data)
+  const missingRates = widget.id === 'profit_after_labor' ? Number(row.missing_rate_entries || 0) : 0
   return <section onClick={onOpenDetails} className="glass-card min-w-0 cursor-pointer rounded-lg p-5 transition hover:-translate-y-px hover:border-shell-accent/40">
     <WidgetHeader widget={widget} onSettings={onSettings} />
     <p className="truncate font-mono text-3xl tabular-nums text-dash-cream">{formatValue(row[column.id], column.kind)}</p>
     <p className="mt-1 text-xs text-dash-tertiary">{column.label}</p>
     {secondary.length > 0 && <div className="mt-4 grid grid-cols-2 gap-2 border-t border-dash-border pt-3">{secondary.map((item) => <div key={item.id}><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-1 font-mono text-sm text-dash-secondary">{formatValue(row[item.id], item.kind)}</p></div>)}</div>}
+    {missingRates > 0 && <p className="mt-3 text-xs text-amber-200">Estimate excludes {number(missingRates)} time entr{missingRates === 1 ? 'y' : 'ies'} without a wage rate.</p>}
+  </section>
+}
+
+function CardDepositWidget({ widget, data, onOpenDetails, onSettings }) {
+  const row = data?.summary || aggregateWidgetRows(data?.rows || [])
+  const purpose = widgetPurposeMeasure(widget, data)
+  const availableMeasures = data?.measure_columns?.length ? data.measure_columns : (widget.columns || [])
+  const metric = (id) => availableMeasures.find((column) => column.id === id)
+  const supporting = ['total_collected', 'processor_fees', 'settled_deposit', 'pending_deposit'].map(metric).filter(Boolean)
+  const showsSettlement = Boolean(metric('settled_deposit'))
+  const expected = Number(row.expected_deposit || 0)
+  const settled = Number(row.settled_deposit || 0)
+  const settledPercent = expected > 0 ? Math.min(100, Math.max(0, settled / expected * 100)) : 0
+  return <section onClick={onOpenDetails} className="glass-card min-w-0 cursor-pointer rounded-lg p-5 transition hover:-translate-y-px hover:border-shell-accent/40 xl:col-span-2">
+    <WidgetHeader widget={widget} onSettings={onSettings} />
+    <p className="font-mono text-3xl tabular-nums text-dash-cream">{formatValue(row[purpose.id], purpose.kind)}</p>
+    <p className="mt-1 text-xs text-dash-tertiary">Expected bank deposit</p>
+    {showsSettlement && <><div className="mt-4 h-2 overflow-hidden rounded-full bg-white/5"><div className="h-full rounded-full bg-dash-success" style={{ width: `${settledPercent}%` }} /></div><div className="mt-2 flex justify-between gap-3 text-[10px] text-dash-tertiary"><span>{number(settledPercent)}% settled</span><span>{formatValue(settled, 'money')} received</span></div></>}
+    <div className="mt-4 grid grid-cols-2 gap-3 border-t border-dash-border pt-3">{supporting.map((item) => <div key={item.id}><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-1 font-mono text-sm text-dash-secondary">{formatValue(row[item.id], item.kind)}</p></div>)}</div>
+    {Number(row.unknown_fee_payments || 0) > 0 && <p className="mt-3 text-xs text-amber-200">{number(row.unknown_fee_payments)} card payment{Number(row.unknown_fee_payments) === 1 ? '' : 's'} still awaiting processor fees.</p>}
   </section>
 }
 
 function SalesWidget({ widget, data, onOpenDetails, onSettings }) {
   const rows = data?.rows || []
-  const summary = aggregateSalesRows(rows)
-  const measures = (data?.measure_columns || widget.default_columns.map((id) => widget.columns.find((column) => column.id === id)).filter(Boolean)).slice(0, 6)
+  const summary = data?.summary || aggregateSalesRows(rows)
+  const measures = (data?.measure_columns || widget.default_columns.map((id) => widget.columns.find((column) => column.id === id)).filter(Boolean)).slice(0, 8)
   const trend = salesTrendRows(rows)
   const trendData = {
     rows: trend,
@@ -365,9 +466,14 @@ function SalesWidget({ widget, data, onOpenDetails, onSettings }) {
     <WidgetHeader widget={widget} onSettings={onSettings} />
     <div className={`grid gap-5 ${trend.length > 1 ? 'xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,.95fr)]' : ''}`}>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{measures.map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-xl text-dash-cream">{formatValue(summary[item.id], item.kind)}</p></div>)}</div>
-      {trend.length > 1 && <div><p className="label-mono mb-3">Net sales trend</p><DetailChart data={trendData} widget={widget} height={230} /></div>}
+      {trend.length > 1 && <div><p className="label-mono mb-3">Net sales trend</p><SalesTrendChart rows={trendData.rows} /></div>}
     </div>
   </section>
+}
+
+function SalesTrendChart({ rows }) {
+  const chartRows = rows.map((row) => ({ ...row, net_sales: Number(row.net_sales || 0) }))
+  return <div className="h-[230px] min-w-0 rounded-md border border-dash-border p-3"><ResponsiveContainer width="100%" height="100%"><LineChart data={chartRows}><CartesianGrid stroke="rgba(168,162,158,.2)" vertical={false} /><XAxis dataKey="period" tickFormatter={(value) => String(value).slice(5, 10)} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis domain={['auto', 'auto']} tickFormatter={(value) => `$${Math.round(Number(value) / 1000)}k`} tick={{ fill: '#a8a29e', fontSize: 10 }} /><Tooltip formatter={(value) => money(value)} /><Line type="monotone" dataKey="net_sales" stroke="#4f7ee8" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls isAnimationActive={false} /></LineChart></ResponsiveContainer></div>
 }
 
 const SCOPE_COLORS = ['#4f7ee8', '#22c55e', '#f59e0b', '#ec4899', '#14b8a6', '#a78bfa', '#f97316', '#06b6d4']
@@ -384,7 +490,7 @@ function scopeNoun(data) {
 function ScopedBreakdownWidget({ widget, data, settings, onSettings, onOpenDetails }) {
   const rows = data?.rows || []
   const measures = data?.measure_columns || []
-  const primary = measures[0] || widget.columns[0]
+  const primary = widgetPurposeMeasure(widget, data)
   const noun = scopeNoun(data)
   const hasPeriods = rows.some((row) => row.period != null)
   const names = [...new Set(rows.map((row) => String(row.breakdown || `Unassigned ${noun}`)))]
@@ -414,7 +520,7 @@ function ScopedBreakdownWidget({ widget, data, settings, onSettings, onOpenDetai
 }
 
 function ChartWidget({ widget, data, settings, onSettings, onOpenDetails }) {
-  const measure = data?.measure_columns?.[0] || widget.columns[0]
+  const measure = widgetPurposeMeasure(widget, data)
   const rows = data?.rows || []
   const chartType = settings.chart_type || 'line'
   const dataKey = (row) => row.period || row.breakdown || 'Total'
@@ -436,7 +542,7 @@ function MenuPerformanceWidget({ widget, data, settings, onSettings, onOpenDetai
 }
 
 function SummaryWidget({ widget, data, onSettings, onOpenDetails }) {
-  const row = data?.rows?.[0] || {}
+  const row = data?.summary || aggregateWidgetRows(data?.rows || [])
   const measures = data?.measure_columns || []
   const preview = measures.slice(0, 6)
   return <section onClick={onOpenDetails} className="glass-card cursor-pointer rounded-lg p-5 transition hover:border-shell-accent/40 xl:col-span-2"><WidgetHeader widget={widget} onSettings={onSettings} /><div className="grid gap-3 sm:grid-cols-2">{preview.map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-xl text-dash-cream">{formatValue(row[item.id], item.kind)}</p></div>)}</div>{measures.length > preview.length && <p className="mt-3 text-xs font-semibold text-shell-accent">View all details</p>}</section>
@@ -449,7 +555,7 @@ function TableWidget({ widget, data, onSettings, onOpenDetails }) {
   return <section onClick={onOpenDetails} className="glass-card cursor-pointer overflow-hidden rounded-lg transition hover:border-shell-accent/40 xl:col-span-2"><div className="p-5 pb-1"><WidgetHeader widget={widget} onSettings={onSettings} /></div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-y border-dash-border">{columns.map((column) => <th key={column.id} className="label-mono px-4 py-3 !text-[10px] capitalize">{column.label}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={`${row.period || ''}-${row.breakdown || ''}-${index}`} className="border-b border-dash-border last:border-0">{columns.map((column) => <td key={column.id} className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row[column.id], column.kind)}</td>)}</tr>)}{!data?.rows?.length && <tr><td colSpan={Math.max(1, columns.length)} className="px-4 py-8 text-center text-dash-tertiary">No data for this range.</td></tr>}</tbody></table></div><div className="px-5 pb-4"><MiniBarList rows={data?.rows || []} measure={measure} /></div>{(data?.rows || []).length > rows.length && <div className="border-t border-dash-border px-5 py-3"><p className="text-xs font-semibold text-shell-accent">View all details</p></div>}</section>
 }
 
-function DrilldownResult({ query, data, widget, loadingLabel, emptyLabel }) {
+function DrilldownResult({ query, data, widget, loadingLabel, emptyLabel, chartLabel }) {
   if (query.isFetching) {
     return <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">{loadingLabel}</p>
   }
@@ -461,15 +567,15 @@ function DrilldownResult({ query, data, widget, loadingLabel, emptyLabel }) {
       </div>
     )
   }
-  if (data?.rows?.length) return <DetailChart data={data} widget={widget} />
+  if (data?.rows?.length) return <DetailChart data={data} widget={widget} ariaLabel={chartLabel} />
   return <p className="rounded-md border border-dash-border p-5 text-sm text-dash-tertiary">{emptyLabel}</p>
 }
 
-function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurantId, groupIds, includeUngrouped, settings, onClose }) {
-  const dates = periodDates(period, anchorDate)
+function WidgetDetailModal({ widget, data, period, anchorDate, dateRange, scope, restaurantId, groupIds, includeUngrouped, settings, onClose }) {
+  const dates = dateRange?.start && dateRange?.end ? dateRange : periodDates(period, anchorDate)
   const measures = widget.id === 'sales_summary' ? widget.columns || [] : measureColumns(data, widget)
   const rows = data?.rows || []
-  const summaryRow = widget.id === 'sales_summary' ? aggregateSalesRows(rows) : rows[0] || {}
+  const summaryRow = data?.summary || (widget.id === 'sales_summary' ? aggregateSalesRows(rows) : aggregateWidgetRows(rows))
   const commonBody = {
     start_date: dates.start,
     end_date: dates.end,
@@ -487,47 +593,54 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
   const trendBreakdown = (widget.breakdowns || []).includes('none') ? 'none' : defaultBreakdown
   const canTrend = (widget.grains || []).includes('day') && widget.id !== 'discount_review'
   const trendQuery = useQuery({
-    queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'trend', period, anchorDate, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
-    queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'day', breakdown: trendBreakdown }) }),
+    queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'trend', period, anchorDate, dates.start, dates.end, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
+    queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'day', breakdown: trendBreakdown }), timeoutMs: DEFAULT_API_TIMEOUT_MS }),
     enabled: canTrend,
   })
   const breakdown = defaultBreakdown
   const breakdownQuery = useQuery({
-    queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'breakdown', period, anchorDate, breakdown, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
-    queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'total', breakdown }) }),
+    queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'breakdown', period, anchorDate, dates.start, dates.end, breakdown, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
+    queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'total', breakdown }), timeoutMs: DEFAULT_API_TIMEOUT_MS }),
     enabled: widget.id !== 'discount_review',
   })
   const detailQuery = useQuery({
-    queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'detail', period, anchorDate, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
-    queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'detail', breakdown }) }),
-    enabled: (widget.grains || []).includes('detail') && widget.id !== 'discount_review',
+    queryKey: ['homepage-widget-drilldown', scope, restaurantId, widget.id, 'detail', period, anchorDate, dates.start, dates.end, (groupIds || []).join(','), includeUngrouped, JSON.stringify(settings || {})],
+    queryFn: () => fetchWithSupabaseAuth(path, { method: 'POST', body: JSON.stringify({ ...commonBody, grain: 'detail', breakdown }), timeoutMs: DEFAULT_API_TIMEOUT_MS }),
+    enabled: widget.id === 'discount_review' || (widget.grains || []).includes('detail'),
   })
   const trendData = trendQuery.data
   const breakdownData = breakdownQuery.data
   const detailData = detailQuery.data
   const tableData = detailData?.rows?.length ? detailData : breakdownData?.rows?.length ? breakdownData : data
   const table = tableColumns(tableData, widget)
+  const chartCopy = homepageWidgetChartCopy(widget, trendData || data, breakdownData?.breakdown || breakdown)
   if (widget.id === 'discount_review') {
-    const summary = data?.summary || {}
-    const employees = data?.employees || []
-    const reasons = data?.reasons || []
-    const events = data?.recent_events || []
+    const activityData = detailQuery.data || data || {}
+    const summary = activityData.summary || {}
+    const employees = activityData.employees || []
+    const categories = activityData.categories || []
+    const events = activityData.recent_events || []
     return (
       <Modal title={`${widget.label} details`} onClose={onClose} width="max-w-6xl">
         <div className="space-y-5 p-5">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {[['Total impact', summary.total_amount, 'money'], ['Actions', summary.action_count, 'number'], ['Average action', summary.average_action_amount, 'money'], ['Flagged employees', summary.flagged_employees, 'number'], ['Unattributed actions', summary.unattributed_actions, 'number']].map(([label, value, kind]) => <div key={label} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(value, kind)}</p></div>)}
+          {widget.scopeLabel && <p className="inline-flex items-center gap-2 rounded-md border border-shell-accent/30 bg-shell-accent/10 px-3 py-2 text-xs font-semibold text-shell-accent"><Layers3 size={14} />{widget.scopeLabel}</p>}
+          {detailQuery.isFetching && <p className="rounded-md border border-dash-border p-4 text-sm text-dash-tertiary">Loading full activity ledger...</p>}
+          {detailQuery.isError && <p role="alert" className="rounded-md border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-100">The full ledger could not load. The homepage summary is still shown.</p>}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[['Financial impact', summary.financial_impact, 'money'], ['Amount reviewed', summary.amount_under_review, 'money'], ['Activity events', summary.action_count, 'number'], ['Flagged events', summary.flagged_events, 'number'], ['Critical events', summary.critical_events, 'number'], ['Cash variance', summary.cash_variance, 'money'], ['High-risk sequences', summary.transaction_sequences, 'number'], ['Unattributed', summary.unattributed_actions, 'number']].map(([label, value, kind]) => <div key={label} className={`rounded-md border p-4 ${label === 'Critical events' && Number(value) > 0 ? 'border-red-500/50 bg-red-500/10' : 'border-dash-border'}`}><p className="label-mono !text-[9px]">{label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(value, kind)}</p></div>)}
           </div>
           <div className="grid gap-5 lg:grid-cols-2">
-            <section><p className="label-mono mb-3">Employee impact</p><DetailChart data={{ rows: employees.slice(0, 12).map((row) => ({ ...row, breakdown: row.employee_name || row.employee || 'Unknown' })), measure_columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }], dimension_columns: ['breakdown'], breakdown: 'employee' }} widget={{ ...widget, columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }] }} /></section>
-            <section><p className="label-mono mb-3">Reason codes</p><DetailChart data={{ rows: reasons.slice(0, 12).map((row) => ({ ...row, breakdown: row.reason_label || row.reason_code })), measure_columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }], dimension_columns: ['breakdown'], breakdown: 'reason' }} widget={{ ...widget, columns: [{ id: 'total_amount', label: 'Total impact', kind: 'money' }] }} /></section>
+            <section><p className="label-mono mb-3">Activity by category</p><DetailChart ariaLabel="Activity by category" data={{ rows: categories.map((row) => ({ ...row, breakdown: row.label })), measure_columns: [{ id: 'event_count', label: 'Events', kind: 'number' }], dimension_columns: ['breakdown'], breakdown: 'category' }} widget={{ ...widget, columns: [{ id: 'event_count', label: 'Events', kind: 'number' }] }} /></section>
+            <section><p className="label-mono mb-3">Financial impact by employee</p><DetailChart ariaLabel="Financial impact by employee" data={{ rows: employees.filter((row) => row.action_count > 0).slice(0, 12).map((row) => ({ ...row, breakdown: row.employee_name || 'Unknown' })), measure_columns: [{ id: 'impact_amount', label: 'Financial impact', kind: 'money' }], dimension_columns: ['breakdown'], breakdown: 'employee' }} widget={{ ...widget, columns: [{ id: 'impact_amount', label: 'Financial impact', kind: 'money' }] }} /></section>
           </div>
+          {(activityData.alerts || []).length > 0 && <section><p className="label-mono mb-3">Employee patterns requiring review</p><div className="grid gap-3 md:grid-cols-2">{activityData.alerts.map((employee) => <div key={`${employee.restaurant_id}-${employee.employee_id}`} className="rounded-md border border-amber-300/30 bg-amber-300/[0.07] p-4"><div className="flex items-center justify-between gap-3"><p className="font-semibold">{employee.employee_name}</p><p className="font-mono text-sm">{money(employee.impact_amount)}</p></div><p className="mt-1 text-xs text-dash-tertiary">{number(employee.action_count)} events · {number(employee.actions_per_day)} per day vs {number(employee.own_28_day_actions_per_day)} prior baseline</p><ul className="mt-2 space-y-1 text-xs leading-5 text-dash-secondary">{employee.alert_reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div>)}</div></section>}
           <div className="overflow-x-auto rounded-md border border-dash-border">
-            <table className="w-full min-w-[860px] text-left text-sm">
-              <thead><tr className="border-b border-dash-border">{['When', 'Employee', 'Action', 'Reason', 'Amount', 'Restaurant'].map((label) => <th key={label} className="label-mono px-4 py-3 !text-[10px]">{label}</th>)}</tr></thead>
-              <tbody>{events.map((row, index) => <tr key={`${row.period || row.occurred_at || index}-${index}`} className="border-b border-dash-border last:border-0"><td className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row.period || row.occurred_at, 'date')}</td><td className="px-4 py-3 text-dash-secondary">{row.employee_name || row.employee || 'Unknown'}</td><td className="px-4 py-3 capitalize text-dash-secondary">{String(row.action_type || row.action || '').replaceAll('_', ' ')}</td><td className="px-4 py-3 text-dash-secondary">{row.reason_label || row.reason || row.reason_code || '—'}</td><td className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row.amount || row.total_amount, 'money')}</td><td className="px-4 py-3 text-dash-secondary">{row.restaurant_name || row.restaurant || '—'}</td></tr>)}{!events.length && <tr><td colSpan={6} className="px-4 py-10 text-center text-dash-tertiary">No discount or void events for this range.</td></tr>}</tbody>
+            <table className="w-full min-w-[1500px] text-left text-sm">
+              <thead><tr className="border-b border-dash-border">{['Risk', 'When', 'Category', 'Check', 'Check owner', 'Performed by', 'Approved by', 'Action', 'Reason', 'Reviewed', 'Impact', 'Why flagged'].map((label) => <th key={label} className="label-mono px-3 py-3 !text-[10px]">{label}</th>)}</tr></thead>
+              <tbody>{events.map((row, index) => <tr key={`${row.event_id || row.occurred_at || index}-${index}`} className={`border-b border-dash-border last:border-0 ${row.severity === 'critical' ? 'bg-red-500/15 font-semibold' : row.severity === 'warning' ? 'bg-amber-400/[0.08]' : ''}`}><td className="px-3 py-3 capitalize">{row.severity || 'info'}</td><td className="whitespace-nowrap px-3 py-3 font-mono text-dash-secondary">{formatValue(row.occurred_at, 'datetime')}</td><td className="px-3 py-3 text-dash-secondary">{row.category_label}</td><td className="px-3 py-3 font-mono text-dash-secondary">{row.order_number || '—'}</td><td className="px-3 py-3 text-dash-secondary">{row.employee_name || 'Unattributed'}</td><td className="px-3 py-3 text-dash-secondary">{row.actor_name || 'Unattributed'}</td><td className="px-3 py-3 text-dash-secondary">{row.approver_name || '—'}</td><td className="px-3 py-3 capitalize text-dash-secondary">{String(row.action_type || '').replaceAll('_', ' ')}</td><td className="px-3 py-3 text-dash-secondary">{row.reason_label || 'Unclassified'}</td><td className="px-3 py-3 font-mono text-dash-secondary">{money(row.amount)}</td><td className="px-3 py-3 font-mono text-dash-secondary">{money(row.impact_amount)}</td><td className="max-w-96 whitespace-normal px-3 py-3 text-dash-secondary">{row.why_flagged || '—'}</td></tr>)}{!events.length && <tr><td colSpan={12} className="px-4 py-10 text-center text-dash-tertiary">No recorded activity for this range.</td></tr>}</tbody>
             </table>
           </div>
+          <p className="text-xs leading-5 text-dash-tertiary">Flags are explainable prompts for manager review, not automatic findings of wrongdoing.</p>
         </div>
       </Modal>
     )
@@ -537,9 +650,9 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
     const groups = [
       ['Sales', ['gross_sales', 'item_discounts', 'check_discounts', 'discounts', 'net_sales', 'non_taxable_net', 'taxable_net', 'gross_voids']],
       ['Checks and guests', ['receipts', 'void_receipts', 'covers', 'average_check']],
-      ['Tax, tips, and tenders', ['tax', 'tips', 'grand_total', 'total_collected', 'card_collected', 'cash_collected', 'other_collected']],
+      ['Tax, service charges, tips, and tenders', ['tax', 'service_charges', 'employee_service_charges', 'restaurant_service_charges', 'unclassified_service_charges', 'tips', 'grand_total', 'total_collected', 'card_collected', 'cash_collected', 'other_collected']],
     ]
-    const netSalesWidget = { ...widget, columns: [metric('net_sales'), ...widget.columns.filter((column) => column.id !== 'net_sales')].filter(Boolean) }
+    const netSalesWidget = { ...widget, primary_column: 'net_sales', columns: [metric('net_sales'), ...widget.columns.filter((column) => column.id !== 'net_sales')].filter(Boolean) }
     const tenderData = {
       rows: [
         { breakdown: 'Card', total_collected: summaryRow.card_collected },
@@ -552,11 +665,12 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
     }
     return <Modal title="Sales details" onClose={onClose} width="max-w-6xl">
       <div className="space-y-6 p-5">
+        {widget.scopeLabel && <p className="inline-flex items-center gap-2 rounded-md border border-shell-accent/30 bg-shell-accent/10 px-3 py-2 text-xs font-semibold text-shell-accent"><Layers3 size={14} />{widget.scopeLabel}</p>}
         {groups.map(([title, ids]) => <section key={title}><p className="label-mono mb-3">{title}</p><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{ids.map(metric).filter(Boolean).map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(summaryRow[item.id], item.kind)}</p></div>)}</div></section>)}
         <div className="grid gap-5 xl:grid-cols-3">
-          <section><p className="label-mono mb-3">Net sales trend</p><DrilldownResult query={trendQuery} data={trendData} widget={netSalesWidget} loadingLabel="Loading trend..." emptyLabel="No trend available." /></section>
-          <section><p className="label-mono mb-3 capitalize">Net sales by {defaultBreakdown.replaceAll('_', ' ')}</p><DrilldownResult query={breakdownQuery} data={breakdownData} widget={netSalesWidget} loadingLabel="Loading breakdown..." emptyLabel="No breakdown available." /></section>
-          <section><p className="label-mono mb-3">Tender mix</p><DetailChart data={tenderData} widget={{ ...widget, columns: tenderData.measure_columns }} /></section>
+          <section><p className="label-mono mb-3">Sales: net sales by business day</p><DrilldownResult chartLabel="Sales: net sales by business day" query={trendQuery} data={trendData} widget={netSalesWidget} loadingLabel="Loading daily net sales..." emptyLabel="No daily net sales available." /></section>
+          <section><p className="label-mono mb-3 capitalize">Sales: net sales by {defaultBreakdown.replaceAll('_', ' ')}</p><DrilldownResult chartLabel={`Sales: net sales by ${defaultBreakdown.replaceAll('_', ' ')}`} query={breakdownQuery} data={breakdownData} widget={netSalesWidget} loadingLabel={`Loading net sales by ${defaultBreakdown.replaceAll('_', ' ')}...`} emptyLabel={`No net sales by ${defaultBreakdown.replaceAll('_', ' ')} available.`} /></section>
+          <section><p className="label-mono mb-3">Sales: collected tenders by payment method</p><DetailChart ariaLabel="Sales: collected tenders by payment method" data={tenderData} widget={{ ...widget, columns: tenderData.measure_columns }} /></section>
         </div>
         <section><p className="label-mono mb-3">Order activity</p><div className="max-h-[480px] overflow-auto rounded-md border border-dash-border"><table className="w-full min-w-[1500px] text-left text-sm"><thead className="sticky top-0 bg-dash-elevated"><tr className="border-b border-dash-border">{table.map((column) => <th key={column.id} className="label-mono px-4 py-3 !text-[10px] capitalize">{column.label}</th>)}</tr></thead><tbody>{(tableData?.rows || []).map((row, index) => <tr key={`${row.period || ''}-${row.order_number || ''}-${index}`} className="border-b border-dash-border last:border-0">{table.map((column) => <td key={column.id} className="px-4 py-3 font-mono text-dash-secondary">{formatValue(row[column.id], column.kind)}</td>)}</tr>)}{!(tableData?.rows || []).length && <tr><td colSpan={Math.max(1, table.length)} className="px-4 py-10 text-center text-dash-tertiary">No sales or voided checks for this range.</td></tr>}</tbody></table></div></section>
       </div>
@@ -565,12 +679,13 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
   return (
     <Modal title={`${widget.label} details`} onClose={onClose} width="max-w-6xl">
       <div className="space-y-5 p-5">
+        {widget.scopeLabel && <p className="inline-flex items-center gap-2 rounded-md border border-shell-accent/30 bg-shell-accent/10 px-3 py-2 text-xs font-semibold text-shell-accent"><Layers3 size={14} />{widget.scopeLabel}</p>}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {measures.map((item) => <div key={item.id} className="rounded-md border border-dash-border p-4"><p className="label-mono !text-[9px]">{item.label}</p><p className="mt-2 font-mono text-lg text-dash-cream">{formatValue(summaryRow[item.id], item.kind)}</p></div>)}
         </div>
-        <div className="grid gap-5 lg:grid-cols-2">
-          <section><p className="label-mono mb-3">Trend</p><DrilldownResult query={trendQuery} data={trendData} widget={widget} loadingLabel="Loading trend..." emptyLabel="No trend available for this widget." /></section>
-          <section><p className="label-mono mb-3">Breakdown</p><DrilldownResult query={breakdownQuery} data={breakdownData} widget={widget} loadingLabel="Loading breakdown..." emptyLabel="No breakdown available for this widget." /></section>
+        <div className={`grid gap-5 ${canTrend ? 'lg:grid-cols-2' : ''}`}>
+          {canTrend && <section><p className="label-mono">{chartCopy.trend.title}</p><p className="mb-3 mt-1 text-xs text-dash-tertiary">{chartCopy.trend.description}</p><DrilldownResult chartLabel={chartCopy.trend.title} query={trendQuery} data={trendData} widget={widget} loadingLabel={`Loading ${chartCopy.trend.title.toLowerCase()}...`} emptyLabel={`No ${chartCopy.trend.title.toLowerCase()} available.`} /></section>}
+          <section><p className="label-mono">{chartCopy.breakdown.title}</p><p className="mb-3 mt-1 text-xs text-dash-tertiary">{chartCopy.breakdown.description}</p><DrilldownResult chartLabel={chartCopy.breakdown.title} query={breakdownQuery} data={breakdownData} widget={widget} loadingLabel={`Loading ${chartCopy.breakdown.title.toLowerCase()}...`} emptyLabel={`No ${chartCopy.breakdown.title.toLowerCase()} available.`} /></section>
         </div>
         <div className="overflow-x-auto rounded-md border border-dash-border">
           <table className="w-full min-w-[760px] text-left text-sm">
@@ -585,52 +700,60 @@ function WidgetDetailModal({ widget, data, period, anchorDate, scope, restaurant
 
 function DiscountReviewWidget({ widget, data, onSettings, onOpenDetails }) {
   const summary = data?.summary || {}
-  const employees = (data?.employees || []).filter((employee) => employee.action_count > 0).slice(0, 10)
-  const alerts = data?.alerts || []
-  const reasons = data?.reasons || []
+  const categories = (data?.categories || []).filter((category) => category.event_count > 0)
+  const alerts = (data?.event_alerts || []).slice(0, 3)
   const scopeRows = data?.scope_breakdown || []
   const scopeName = scopeNoun(data)
-  return <section onClick={onOpenDetails} className="glass-card cursor-pointer rounded-lg p-5 transition hover:border-shell-accent/40 xl:col-span-4">
+  return <section onClick={onOpenDetails} className="glass-card cursor-pointer rounded-lg p-5 transition hover:border-shell-accent/40 xl:col-span-2">
     <WidgetHeader widget={widget} onSettings={onSettings} />
     {scopedBreakdown(data) && <div className="mb-5 rounded-md border border-dash-border p-4"><div className="mb-3 flex items-center gap-2"><Layers3 size={15} className="text-dash-secondary" /><h3 className="text-sm font-semibold capitalize">Impact by {scopeName}</h3></div>{scopeRows.length ? <div className="grid gap-2 md:grid-cols-2">{scopeRows.map((row) => <div key={row.breakdown} className="flex items-center justify-between gap-3 rounded-md bg-white/[0.03] p-3"><div className="min-w-0"><p className="truncate text-sm font-semibold">{row.breakdown}</p><p className="text-[10px] text-dash-tertiary">{number(row.action_count)} actions · {money(row.average_action_amount)} average</p></div><p className="shrink-0 font-mono text-sm">{money(row.total_amount)}</p></div>)}</div> : <p className="text-sm text-dash-tertiary">No attributed {scopeName} activity for this range.</p>}</div>}
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-      {[['Total impact', summary.total_amount, 'money'], ['Actions', summary.action_count, 'number'], ['Average action', summary.average_action_amount, 'money'], ['Flagged employees', summary.flagged_employees, 'number'], ['Unattributed actions', summary.unattributed_actions, 'number']].map(([label, value, kind]) => <div key={label} className={`rounded-md border p-3 ${label === 'Flagged employees' && Number(value) > 0 ? 'border-red-500/50 bg-red-500/10' : 'border-dash-border'}`}><p className="label-mono !text-[9px]">{label}</p><p className={`mt-1 font-mono text-lg ${label === 'Flagged employees' && Number(value) > 0 ? 'text-red-300' : 'text-dash-cream'}`}>{formatValue(value, kind)}</p></div>)}
+    <div className="grid gap-3 sm:grid-cols-4">
+      {[['Impact', summary.financial_impact, 'money'], ['Events', summary.action_count, 'number'], ['Flagged', summary.flagged_events, 'number'], ['Critical', summary.critical_events, 'number']].map(([label, value, kind]) => <div key={label} className={`rounded-md border p-3 ${label === 'Critical' && Number(value) > 0 ? 'border-red-500/50 bg-red-500/10' : 'border-dash-border'}`}><p className="label-mono !text-[9px]">{label}</p><p className="mt-1 font-mono text-lg text-dash-cream">{formatValue(value, kind)}</p></div>)}
     </div>
-    <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,.65fr)]">
-      <div>
-        <div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold">Employee financial impact</h3><span className="text-xs text-dash-tertiary">Red indicates a statistical alert</span></div>
-        {employees.length ? <div className="h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={employees} layout="vertical" margin={{ left: 20, right: 20 }}><CartesianGrid stroke="rgba(168,162,158,.2)" horizontal={false} /><XAxis type="number" tickFormatter={(value) => `$${Math.round(value)}`} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis type="category" dataKey="employee_name" width={110} tick={{ fill: '#d6d3d1', fontSize: 10 }} /><Tooltip formatter={(value) => money(value)} labelFormatter={(label, payload) => payload?.[0]?.payload?.restaurant_name ? `${label} · ${payload[0].payload.restaurant_name}` : label} /><Bar dataKey="total_amount" radius={[0, 4, 4, 0]}>{employees.map((employee) => <Cell key={`${employee.restaurant_id}-${employee.employee_id || 'none'}`} fill={employee.is_flagged ? '#ef4444' : '#4f7ee8'} />)}</Bar></BarChart></ResponsiveContainer></div> : <p className="flex h-64 items-center justify-center text-sm text-dash-tertiary">No discount or void activity for this range.</p>}
-      </div>
-      <div>
-        <h3 className="text-sm font-semibold">Review alerts</h3>
-        {alerts.length ? <div className="mt-3 space-y-2">{alerts.map((employee) => <div key={`${employee.restaurant_id}-${employee.employee_id}`} className="rounded-md border border-red-500/40 bg-red-500/10 p-3"><div className="flex items-start gap-2"><AlertTriangle size={16} className="mt-0.5 shrink-0 text-red-300" /><div><p className="text-sm font-semibold text-red-200">{employee.employee_name}</p><p className="text-xs text-red-200/70">{employee.restaurant_name} · {money(employee.total_amount)} across {number(employee.action_count)} actions</p></div></div><ul className="mt-2 space-y-1 text-xs leading-5 text-red-100/80">{employee.alert_reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></div>)}</div> : <p className="mt-3 rounded-md border border-dash-border p-4 text-sm text-dash-tertiary">No employees crossed the configured threshold.</p>}
-      </div>
+    <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(240px,.7fr)]">
+      <div><h3 className="mb-3 text-sm font-semibold">Activity by category</h3>{categories.length ? <div className="h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={categories.slice(0, 8)} layout="vertical" margin={{ left: 8, right: 18 }}><CartesianGrid stroke="rgba(168,162,158,.2)" horizontal={false} /><XAxis type="number" allowDecimals={false} tick={{ fill: '#a8a29e', fontSize: 10 }} /><YAxis type="category" dataKey="label" width={125} tick={{ fill: '#d6d3d1', fontSize: 10 }} /><Tooltip formatter={(value) => number(value)} /><Bar dataKey="event_count" fill="#4f7ee8" radius={[0, 4, 4, 0]} /></BarChart></ResponsiveContainer></div> : <p className="flex h-56 items-center justify-center text-sm text-dash-tertiary">No activity for this range.</p>}</div>
+      <div><h3 className="text-sm font-semibold">Important activity</h3>{alerts.length ? <div className="mt-3 space-y-2">{alerts.map((event) => <div key={event.event_id} className={`rounded-md border p-3 ${event.severity === 'critical' ? 'border-red-500/40 bg-red-500/10' : 'border-amber-300/30 bg-amber-300/[0.07]'}`}><div className="flex items-start gap-2"><AlertTriangle size={16} className="mt-0.5 shrink-0" /><div className="min-w-0"><p className="truncate text-sm font-semibold capitalize">{String(event.action_type).replaceAll('_', ' ')}</p><p className="mt-1 text-xs leading-5 text-dash-secondary">{event.why_flagged || event.reason_label}</p></div></div></div>)}</div> : <p className="mt-3 rounded-md border border-dash-border p-4 text-sm text-dash-tertiary">No activity currently needs attention.</p>}</div>
     </div>
-    <div className="mt-5 overflow-x-auto border-t border-dash-border pt-5"><h3 className="mb-3 text-sm font-semibold">Reason-code activity</h3><table className="w-full min-w-[680px] text-left text-sm"><thead><tr className="border-y border-dash-border">{['Reason', 'Action', 'Restaurant', 'Count', 'Total', 'Average', 'Share'].map((label) => <th key={label} className="label-mono px-3 py-2 !text-[9px]">{label}</th>)}</tr></thead><tbody>{reasons.slice(0, 10).map((reason) => <tr key={`${reason.restaurant_id}-${reason.action_type}-${reason.reason_code}`} className="border-b border-dash-border"><td className="px-3 py-2"><span className="block font-semibold">{reason.reason_label}</span><span className="font-mono text-[10px] text-dash-tertiary">{reason.reason_code}</span></td><td className="px-3 py-2 capitalize text-dash-secondary">{reason.action_type.replaceAll('_', ' ')}</td><td className="px-3 py-2 text-dash-secondary">{reason.restaurant_name}</td><td className="px-3 py-2 font-mono">{number(reason.count)}</td><td className="px-3 py-2 font-mono">{money(reason.total_amount)}</td><td className="px-3 py-2 font-mono">{money(reason.average_amount)}</td><td className="px-3 py-2 font-mono">{number(reason.share_percent)}%</td></tr>)}</tbody></table></div>
+    <p className="mt-4 text-xs font-semibold text-shell-accent">Open the widget for the full event ledger and analysis.</p>
   </section>
 }
 
-export default function HomepageWidgets({ scope, restaurantId, period, anchorDate, groupIds = null, includeUngrouped = false, onScopeLoaded = null }) {
+export default function HomepageWidgets({ scope, restaurantId, period, anchorDate, dateRange = null, dashboardScope = WHOLE_RESTAURANT_SCOPE, onDashboardScopeChange = null, groupIds = null, includeUngrouped = false, onScopeLoaded = null }) {
   const queryClient = useQueryClient()
   const [configureOpen, setConfigureOpen] = useState(false)
+  const [scopeOpen, setScopeOpen] = useState(false)
   const [settingsId, setSettingsId] = useState(null)
   const [detailId, setDetailId] = useState(null)
   const [saving, setSaving] = useState(false)
   const preferencePath = scope === 'portfolio' ? '/portfolio-reports/homepage/preferences' : `/restaurants/${restaurantId}/reports/homepage/preferences`
-  const preferenceQuery = useQuery({ queryKey: ['homepage-preferences', scope, restaurantId], queryFn: () => fetchWithSupabaseAuth(preferencePath), enabled: scope === 'portfolio' || Boolean(restaurantId) })
+  const preferenceQuery = useQuery({ queryKey: ['homepage-preferences', scope, restaurantId], queryFn: () => fetchWithSupabaseAuth(preferencePath, { timeoutMs: DEFAULT_API_TIMEOUT_MS }), enabled: scope === 'portfolio' || Boolean(restaurantId) })
   const preference = preferenceQuery.data || { visible_widgets: [], widget_order: [], widget_settings: {}, widget_pdf_settings: {}, catalog: [] }
   const dimensionPath = scope === 'portfolio'
     ? `/portfolio-reports/dimensions?${new URLSearchParams({ ...(groupIds?.length ? { group_ids: groupIds.join(',') } : {}), include_ungrouped: String(includeUngrouped) })}`
     : `/restaurants/${restaurantId}/reports/dimensions`
-  const dimensionQuery = useQuery({ queryKey: ['reporting-dimensions', scope, restaurantId, (groupIds || []).join(','), includeUngrouped], queryFn: () => fetchWithSupabaseAuth(dimensionPath), enabled: scope === 'portfolio' || Boolean(restaurantId) })
+  const dimensionQuery = useQuery({ queryKey: ['reporting-dimensions', scope, restaurantId, (groupIds || []).join(','), includeUngrouped], queryFn: () => fetchWithSupabaseAuth(dimensionPath, { timeoutMs: DEFAULT_API_TIMEOUT_MS }), enabled: scope === 'portfolio' || Boolean(restaurantId) })
+  const resolvedDashboardScope = useMemo(
+    () => pruneReportingScope(dashboardScope, dimensionQuery.data),
+    [dashboardScope, dimensionQuery.data],
+  )
+  useEffect(() => {
+    if (!dimensionQuery.data || !onDashboardScopeChange) return
+    if (JSON.stringify(resolvedDashboardScope) !== JSON.stringify(normalizeReportingScope(dashboardScope))) {
+      onDashboardScopeChange(resolvedDashboardScope)
+    }
+  }, [dashboardScope, dimensionQuery.data, onDashboardScopeChange, resolvedDashboardScope])
   const orderedVisible = useMemo(() => (preference.widget_order || []).filter((id) => (preference.visible_widgets || []).includes(id)), [preference])
+  const effectiveSettings = useMemo(
+    () => effectiveHomepageWidgetSettings(preference.widget_settings || {}, orderedVisible, resolvedDashboardScope),
+    [preference.widget_settings, orderedVisible, resolvedDashboardScope],
+  )
   const dataPath = scope === 'portfolio' ? '/portfolio-reports/homepage/data' : `/restaurants/${restaurantId}/reports/homepage/data`
   const portfolioScope = scope === 'portfolio'
     ? { ...(groupIds?.length ? { group_ids: groupIds } : {}), include_ungrouped: includeUngrouped }
     : {}
   const dataQuery = useQuery({
-    queryKey: ['homepage-data', scope, restaurantId, period, anchorDate, (groupIds || []).join(','), includeUngrouped, orderedVisible.join(','), JSON.stringify(preference.widget_settings || {})],
-    queryFn: () => fetchWithSupabaseAuth(dataPath, { method: 'POST', body: JSON.stringify({ period, anchor_date: anchorDate || null, widget_ids: orderedVisible, widget_settings: preference.widget_settings || {}, ...portfolioScope }) }),
+    queryKey: ['homepage-data', scope, restaurantId, period, anchorDate, dateRange?.start, dateRange?.end, (groupIds || []).join(','), includeUngrouped, orderedVisible.join(','), JSON.stringify(effectiveSettings)],
+    queryFn: () => fetchWithSupabaseAuth(dataPath, { method: 'POST', body: JSON.stringify({ period, anchor_date: anchorDate || null, ...(dateRange?.start && dateRange?.end ? { start_date: dateRange.start, end_date: dateRange.end } : {}), widget_ids: orderedVisible, widget_settings: effectiveSettings, ...portfolioScope }), timeoutMs: DEFAULT_API_TIMEOUT_MS }),
     enabled: orderedVisible.length > 0,
   })
   useEffect(() => {
@@ -658,20 +781,24 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
   }
   const saveSettings = async (settings) => saveWidgetPreference('display', settings)
   const selectedWidget = (preference.catalog || []).find((widget) => widget.id === settingsId)
+  const detailWidget = (preference.catalog || []).find((widget) => widget.id === detailId) || { label: 'Widget', columns: [] }
   if (preferenceQuery.isPending) return <p className="p-6 text-sm text-dash-tertiary">Loading homepage...</p>
+  if (preferenceQuery.isError) return <div className="flex items-center justify-between gap-3 rounded-md border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger"><span>{preferenceQuery.error?.message || 'Could not load homepage settings.'}</span><button type="button" onClick={() => preferenceQuery.refetch()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-dash-danger/30 px-2.5 py-1.5 text-xs font-semibold"><RefreshCw size={13} />Retry</button></div>
   return <div className="space-y-4">
-    <div className="flex justify-end"><button type="button" onClick={() => setConfigureOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm font-semibold text-dash-secondary hover:text-dash-cream"><Settings2 size={15} />Customize homepage</button></div>
-    {dataQuery.isError && <p className="rounded-md border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger">{dataQuery.error?.message || 'Could not load homepage widgets.'}</p>}
+    <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setScopeOpen(true)} className={`inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-semibold ${resolvedDashboardScope.scope_dimension === 'none' ? 'border-dash-border text-dash-secondary hover:text-dash-cream' : 'border-shell-accent bg-shell-accent/10 text-dash-cream'}`}><Layers3 size={15} />{scopeControlLabel(resolvedDashboardScope)}</button><button type="button" onClick={() => setConfigureOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm font-semibold text-dash-secondary hover:text-dash-cream"><Settings2 size={15} />Customize homepage</button></div>
+    {dataQuery.isError && <div className="flex items-center justify-between gap-3 rounded-md border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger"><span>{dataQuery.error?.message || 'Could not load homepage widgets.'}</span><button type="button" onClick={() => dataQuery.refetch()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-dash-danger/30 px-2.5 py-1.5 text-xs font-semibold"><RefreshCw size={13} />Retry</button></div>}
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {orderedVisible.map((id) => {
-        const widget = preference.catalog.find((item) => item.id === id)
-        if (!widget) return null
+        const catalogWidget = preference.catalog.find((item) => item.id === id)
+        if (!catalogWidget) return null
         const data = dataQuery.data?.widgets?.[id]
+        const widget = { ...catalogWidget, scopeLabel: widgetScopeLabel(catalogWidget, data, dimensionQuery.data, resolvedDashboardScope) }
         const onSettings = () => setSettingsId(id)
         const onOpenDetails = () => setDetailId(id)
-        const settings = preference.widget_settings?.[id] || {}
+        const settings = effectiveSettings[id] || {}
         if (id === 'sales_summary') return <SalesWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
         if (scopedBreakdown(data) && id !== 'discount_review') return <ScopedBreakdownWidget key={id} widget={widget} data={data} settings={settings} onSettings={onSettings} onOpenDetails={onOpenDetails} />
+        if (id === 'credit_card_deposit' && settings.display_mode !== 'chart') return <CardDepositWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
         if (KPI_WIDGETS.has(id)) return <KpiWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
         if (id === 'discount_review') return <DiscountReviewWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
         if (id === 'menu_performance') return <MenuPerformanceWidget key={id} widget={widget} data={data} settings={settings} onSettings={onSettings} onOpenDetails={onOpenDetails} />
@@ -681,8 +808,9 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
       })}
     </div>
     {!orderedVisible.length && <div className="rounded-md border border-dash-border p-8 text-center"><FileText className="mx-auto text-dash-tertiary" /><p className="mt-3 text-sm text-dash-secondary">Choose widgets to build this homepage.</p></div>}
+    {scopeOpen && <DashboardScopeModal dimensions={dimensionQuery.data} value={resolvedDashboardScope} onClose={() => setScopeOpen(false)} onSave={(next) => { onDashboardScopeChange?.(next); setScopeOpen(false) }} />}
     {configureOpen && <ConfigureModal catalog={preference.catalog || []} visible={preference.visible_widgets || []} order={preference.widget_order || []} saving={saving} onClose={() => setConfigureOpen(false)} onSave={(visible, order) => savePreference({ visible_widgets: visible, widget_order: order, widget_settings: preference.widget_settings || {} })} />}
-    {selectedWidget && <WidgetSettingsModal widget={selectedWidget} widgetData={dataQuery.data?.widgets?.[settingsId]} dimensions={dimensionQuery.data} settings={preference.widget_settings?.[settingsId] || {}} pdfSettings={preference.widget_pdf_settings?.[settingsId] || {}} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={saveSettings} onSavePdf={(settings) => saveWidgetPreference('pdf', settings)} />}
-    {detailId && <WidgetDetailModal widget={(preference.catalog || []).find((widget) => widget.id === detailId) || { label: 'Widget', columns: [] }} data={dataQuery.data?.widgets?.[detailId]} period={period} anchorDate={anchorDate} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} settings={preference.widget_settings?.[detailId] || {}} onClose={() => setDetailId(null)} />}
+    {selectedWidget && <WidgetSettingsModal widget={selectedWidget} widgetData={dataQuery.data?.widgets?.[settingsId]} dimensions={dimensionQuery.data} settings={preference.widget_settings?.[settingsId] || {}} dashboardScope={resolvedDashboardScope} pdfSettings={preference.widget_pdf_settings?.[settingsId] || {}} period={period} anchorDate={anchorDate} dateRange={dateRange} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={saveSettings} onSavePdf={(settings) => saveWidgetPreference('pdf', settings)} />}
+    {detailId && <WidgetDetailModal widget={{ ...detailWidget, scopeLabel: widgetScopeLabel(detailWidget, dataQuery.data?.widgets?.[detailId], dimensionQuery.data, resolvedDashboardScope) }} data={dataQuery.data?.widgets?.[detailId]} period={period} anchorDate={anchorDate} dateRange={dateRange} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} settings={effectiveSettings[detailId] || {}} onClose={() => setDetailId(null)} />}
   </div>
 }
