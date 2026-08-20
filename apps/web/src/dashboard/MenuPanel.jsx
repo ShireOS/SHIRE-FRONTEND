@@ -31,6 +31,7 @@ import { SortableRows, DragHandle } from './components/shared/SortableRows'
 import { fetchCategoryColors, fetchItemImages, setCategoryColor } from './data/menuExtras'
 import { fetchPosApi } from '../shared/api/posClient'
 import { DEFAULT_API_TIMEOUT_MS } from '../shared/api/requestDeadline'
+import { viewVisible } from '../shared/backOfficeView'
 import {
   addAllergyPill,
   ensureAllergyGroup,
@@ -708,8 +709,22 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
 
 // ── Main panel ──────────────────────────────────────────────────────────────
 
-export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, canEditPrices = false }) {
+export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, canEditPrices = false, viewPolicy = null }) {
   const [activeTab, setActiveTab] = useState(initialTab)
+  const visibleMenuTabs = useMemo(() => MENU_TABS.filter((tab) => {
+    const capability = {
+      items: 'menu.items', categories: 'menu.categories', combos: 'menu.combos',
+      modifiers: 'menu.modifiers', groups: 'menu.modifiers', allergies: 'menu.allergies',
+      pricing: 'menu.pricing', specials: 'menu.availability', printing: 'menu.routing',
+    }[tab.id]
+    return !viewPolicy || !capability || viewVisible(viewPolicy, capability)
+  }), [viewPolicy])
+
+  useEffect(() => {
+    if (!visibleMenuTabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab(visibleMenuTabs[0]?.id || 'items')
+    }
+  }, [activeTab, visibleMenuTabs])
   const [menuItems, setMenuItems] = useState([])
   const [itemImages, setItemImages] = useState({})
   const [categories, setCategories] = useState([])
@@ -2126,7 +2141,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       </div>
 
       {!onlyTab && <div className="flex flex-wrap gap-2">
-        {MENU_TABS.map(tab => (
+        {visibleMenuTabs.map(tab => (
           <SmallButton
             key={tab.id}
             variant={activeTab === tab.id ? 'primary' : 'secondary'}

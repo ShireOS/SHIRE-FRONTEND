@@ -143,7 +143,7 @@ export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All ch
   const payments = detail?.payments || []
   const activity = detail?.activity || []
   const sessions = useMemo(() => groupActivityIntoSessions(activity), [activity])
-  const canRefund = access.can('payments.refund')
+  const canRefund = access.can('payments.refund') && access.viewVisible('checks.refunds')
   const refundReasonsQuery = useQuery({
     queryKey: ['pos-refund-reason-presets', restaurantId],
     queryFn: ({ signal }) => posRefundApi.reasonPresets(restaurantId, signal),
@@ -248,7 +248,7 @@ export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All ch
           </div>
 
           <div className="mt-4 flex w-fit gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1">
-            {[['receipt', 'Receipt'], ['log', `Activity log${activity.length ? ` (${activity.length})` : ''}`]].map(([id, text]) => (
+            {[['receipt', 'Receipt'], ...(access.viewVisible('checks.activity') ? [['log', `Activity log${activity.length ? ` (${activity.length})` : ''}`]] : [])].map(([id, text]) => (
               <button
                 key={id}
                 type="button"
@@ -510,6 +510,10 @@ export default function CheckLedgerSection({ restaurantId }) {
   }), [tab, businessDate, dateFrom, dateTo, historyStatus, search, page])
 
   const canView = access.can('reports.view')
+  const visibleTabs = access.viewVisible('checks.history') ? TABS : TABS.filter((item) => item.id !== 'history')
+  useEffect(() => {
+    if (tab === 'history' && !access.viewVisible('checks.history')) setTab('active')
+  }, [access.viewPolicy, tab])
   const ledgerQuery = useQuery({
     queryKey: queryKeys.checkLedger(restaurantId, query),
     queryFn: ({ signal }) => posCheckLedgerApi.list(restaurantId, query, signal),
@@ -561,7 +565,7 @@ export default function CheckLedgerSection({ restaurantId }) {
         <>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <nav className="grid grid-cols-3 rounded-xl border border-white/10 p-1">
-              {TABS.map((item) => (
+              {visibleTabs.map((item) => (
                 <button
                   key={item.id}
                   type="button"

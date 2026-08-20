@@ -7,6 +7,8 @@ import { Modal } from '../shared/Modal'
 import DeviceSessionPolicySection from './DeviceSessionPolicySection'
 import HardwareChainGuide from '../printing/HardwareChainGuide'
 import PrinterEndpointEditModal from '../printing/PrinterEndpointEditModal'
+import { useAuth } from '../../../auth'
+import { useBackOfficeAccess } from '../../../shared/hooks/useBackOfficeAccess'
 import {
   CONNECTION_TYPES,
   DEVICE_TYPE_LABELS,
@@ -84,7 +86,7 @@ function TextField({ label, value, onChange, placeholder, className = '' }) {
   )
 }
 
-function DeviceRow({ device, receiptTargets, printerEndpoints, sections, onRename, onSectionChange, onPrinterChange, onHardwareChange, onToggleStatus, busy }) {
+function DeviceRow({ device, receiptTargets, printerEndpoints, sections, showAssignments, showHardware, onRename, onSectionChange, onPrinterChange, onHardwareChange, onToggleStatus, busy }) {
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState(device.name || '')
   const online = isDeviceOnline(device)
@@ -171,7 +173,7 @@ function DeviceRow({ device, receiptTargets, printerEndpoints, sections, onRenam
       </div>
       {!revoked && (
         <>
-          <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+          {showAssignments && <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
             <SelectField
               label="Section (revenue center)"
               value={device.revenue_center_id || ''}
@@ -204,18 +206,18 @@ function DeviceRow({ device, receiptTargets, printerEndpoints, sections, onRenam
                 ))}
               </SelectField>
             ))}
-          </div>
-          {receiptTargets.length === 0 && (
+          </div>}
+          {showAssignments && receiptTargets.length === 0 && (
             <p className="mt-2 text-xs text-dash-warning">
               No receipt-capable printer is configured. Add one under Printer Setup and mark its usage as Receipts or Both.
             </p>
           )}
-          {staleAssignments.length > 0 && (
+          {showAssignments && staleAssignments.length > 0 && (
             <p className="mt-2 text-xs text-dash-warning">
               Legacy assignment {staleAssignments.map((assignment) => assignment.legacy_target_name || assignment.target_id).join(', ')} is not linked to a current receipt printer and is intentionally excluded.
             </p>
           )}
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-dash-border pt-3 text-xs text-dash-secondary">
+          {showHardware && <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 border-t border-dash-border pt-3 text-xs text-dash-secondary">
             <span>
               Observed: {observed.platform || 'not reported'} · USB {observed.usb_printer_module_available ? 'available' : 'unavailable'}
               {device.capabilities_reported_at ? ` · ${new Date(device.capabilities_reported_at).toLocaleString()}` : ''}
@@ -236,8 +238,8 @@ function DeviceRow({ device, receiptTargets, printerEndpoints, sections, onRenam
               <input type="checkbox" checked={autoOpenDrawer} disabled={busy || !acceptsCash || !assignments.cash_drawer} onChange={(event) => onHardwareChange(device, { ...hardware, cash: { ...cash, accepts_cash: acceptsCash, auto_open: event.target.checked } })} />
               Auto-open assigned drawer
             </label>
-          </div>
-          {discoveredPrinters.length > 0 && (
+          </div>}
+          {showHardware && discoveredPrinters.length > 0 && (
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {discoveredPrinters.map((printer) => {
                 const endpoint = endpointFor(printer)
@@ -511,6 +513,8 @@ function PairingModal({ restaurantId, isOpen, onClose }) {
 // (drill-in) and the store-zone Devices tab. Three linked layers on one page:
 // menu categories → print groups → printers, plus per-device printer roles.
 export default function StoreDevicesPanel({ restaurantId }) {
+  const auth = useAuth()
+  const access = useBackOfficeAccess(auth, restaurantId)
   const [config, setConfig] = useState(null)
   const [failoverStatus, setFailoverStatus] = useState(null)
   const [legacyConfig, setLegacyConfig] = useState(null)
@@ -680,25 +684,25 @@ export default function StoreDevicesPanel({ restaurantId }) {
         </div>
       )}
 
-      <HardwareChainGuide />
+      {access.viewVisible('devices.hardware') && <HardwareChainGuide />}
 
-      <PrinterFailoverSection
+      {access.viewVisible('devices.failover') && <PrinterFailoverSection
         status={failoverStatus}
         busy={busy}
         onRefresh={loadFailover}
         onSave={mutateFailover}
-      />
+      />}
 
-      <Card>
+      {(access.viewVisible('devices.health') || access.viewVisible('devices.pairing') || access.viewVisible('devices.assignments') || access.viewVisible('devices.hardware')) && <Card>
         <CardHeader className="flex flex-wrap items-center justify-between gap-3">
           <SectionTitle icon={Monitor} title="Devices" count={devices.length} />
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={load} icon={<RefreshCw size={14} aria-hidden="true" />}>
               Refresh
             </Button>
-            <Button size="sm" onClick={() => setPairingOpen(true)} icon={<Plus size={14} aria-hidden="true" />}>
+            {access.viewVisible('devices.pairing') && <Button size="sm" onClick={() => setPairingOpen(true)} icon={<Plus size={14} aria-hidden="true" />}>
               Add device
-            </Button>
+            </Button>}
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -714,6 +718,8 @@ export default function StoreDevicesPanel({ restaurantId }) {
               receiptTargets={receiptTargets}
               printerEndpoints={config.printerEndpoints}
               sections={sections}
+              showAssignments={access.viewVisible('devices.assignments')}
+              showHardware={access.viewVisible('devices.hardware')}
               busy={busy}
               onRename={(d, name) => mutate(() => updateDevice(d.id, { name }))}
               onSectionChange={(d, sectionId) => mutate(() => updateDevice(d.id, { revenue_center_id: sectionId }))}
@@ -735,16 +741,16 @@ export default function StoreDevicesPanel({ restaurantId }) {
             />
           ))}
         </CardContent>
-      </Card>
+      </Card>}
 
-      <DeviceSessionPolicySection restaurantId={restaurantId} config={config} mutate={mutate} busy={busy} />
+      {access.viewVisible('devices.sessions') && <DeviceSessionPolicySection restaurantId={restaurantId} config={config} mutate={mutate} busy={busy} summary={access.viewMode('devices.sessions') === 'summary'} />}
 
-      <Card>
+      {(access.viewVisible('devices.assignments') || access.viewVisible('devices.network')) && <Card>
         <CardHeader>
           <SectionTitle icon={Printer} title="Printers & screens" count={targets.length} />
         </CardHeader>
         <CardContent className="space-y-3">
-          {networkPrinterEndpoints.length > 0 && (
+          {access.viewVisible('devices.network') && networkPrinterEndpoints.length > 0 && (
             <div className="rounded-xl border border-dash-border bg-[var(--glass-bg)] p-4">
               <p className="label-mono">Network printer IPs</p>
               <div className="mt-3 space-y-2">
@@ -886,7 +892,7 @@ export default function StoreDevicesPanel({ restaurantId }) {
               </div>
             </div>
           )}
-          <div className="grid grid-cols-2 items-end gap-2 rounded-xl border border-dashed border-dash-border p-4 md:grid-cols-6">
+          {access.viewVisible('devices.network') && <div className="grid grid-cols-2 items-end gap-2 rounded-xl border border-dashed border-dash-border p-4 md:grid-cols-6">
             <TextField
               label="Name"
               value={printerDraft.name}
@@ -930,11 +936,11 @@ export default function StoreDevicesPanel({ restaurantId }) {
             >
               Add
             </Button>
-          </div>
+          </div>}
         </CardContent>
-      </Card>
+      </Card>}
 
-      <Card>
+      {access.viewVisible('devices.print_groups') && <Card>
         <CardHeader>
           <SectionTitle icon={Layers} title="Print groups" count={stations.length} />
         </CardHeader>
@@ -1020,19 +1026,19 @@ export default function StoreDevicesPanel({ restaurantId }) {
             )}
           </div>
         </CardContent>
-      </Card>
+      </Card>}
 
-      <PairingModal
+      {access.viewVisible('devices.pairing') && <PairingModal
         restaurantId={restaurantId}
         isOpen={pairingOpen}
         onClose={() => { setPairingOpen(false); load() }}
-      />
-      <PrinterEndpointEditModal
+      />}
+      {access.viewVisible('devices.network') && <PrinterEndpointEditModal
         restaurantId={restaurantId}
         endpoint={editingPrinterEndpoint}
         onClose={() => setEditingPrinterEndpoint(null)}
         onSaved={load}
-      />
+      />}
     </div>
   )
 }

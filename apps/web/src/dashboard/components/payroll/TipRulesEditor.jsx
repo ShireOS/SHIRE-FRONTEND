@@ -935,6 +935,7 @@ export default function TipRulesEditor({
   menuCategories,
   menuItems,
   readOnly = false,
+  showAdvanced = true,
   onUpdateSettings,
   onUpdateRoleRule,
   onSaveWaiterOverride,
@@ -1303,7 +1304,7 @@ export default function TipRulesEditor({
           + Add a tipout
         </button>
 
-        {splitControlRoles.length ? (
+        {showAdvanced && splitControlRoles.length ? (
           <details className="rounded-xl border border-dash-border bg-black/15">
             <summary className="cursor-pointer px-3 py-2.5 text-sm text-dash-cream">Recipient split <span className="ml-1 text-xs text-dash-tertiary">Uniform / even by default</span></summary>
             <div className="space-y-2 border-t border-dash-border p-3 text-xs text-dash-tertiary">
@@ -1321,10 +1322,10 @@ export default function TipRulesEditor({
             </div>
           </details>
         ) : null}
-        <WeekdayTipoutExceptions settings={settings} jobCodes={jobCodes} waiters={waiters} onChange={weekday_tipout_overrides => onUpdateSettings({ weekday_tipout_overrides })} />
+        {showAdvanced && <WeekdayTipoutExceptions settings={settings} jobCodes={jobCodes} waiters={waiters} onChange={weekday_tipout_overrides => onUpdateSettings({ weekday_tipout_overrides })} />}
       </SectionCard>
 
-      <CategoryTipProfiles
+      {showAdvanced && <CategoryTipProfiles
         profiles={settings.category_tip_profiles || []}
         menuCategories={menuCategories}
         menuItems={menuItems}
@@ -1332,7 +1333,7 @@ export default function TipRulesEditor({
         jobCodes={jobCodes}
         waiters={waiters}
         onChange={category_tip_profiles => onUpdateSettings({ category_tip_profiles })}
-      />
+      />}
 
       {/* ---- Check the math ---- */}
       <SectionCard>

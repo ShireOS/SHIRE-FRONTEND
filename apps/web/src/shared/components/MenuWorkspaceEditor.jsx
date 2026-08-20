@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, Check, Plus, Search, X } from 'lucide-react'
 import { applyPosMenuWorkspace, fetchPosMenuWorkspace } from '../api/menuWorkspace'
+import { viewVisible } from '../backOfficeView'
 
 const TABS = [
   ['navigation', 'Navigation'],
@@ -154,8 +155,14 @@ function ShortcutEditor({ title, description, profile, items, onChange, disabled
   </div>
 }
 
-export default function MenuWorkspaceEditor({ restaurantId, canEdit = true, compact = false, onPreviewChange }) {
+export default function MenuWorkspaceEditor({ restaurantId, canEdit = true, compact = false, onPreviewChange, viewPolicy = null }) {
   const [tab, setTab] = useState('navigation')
+  const visibleTabs = useMemo(() => TABS.filter(([id]) => viewVisible(viewPolicy, {
+    navigation: 'pos_menu.navigation',
+    server: 'pos_menu.quick_menu',
+    bartender: 'pos_menu.fast_bar',
+    homes: 'pos_menu.bartender_defaults',
+  }[id])), [viewPolicy])
   const [workspace, setWorkspace] = useState(null)
   const [saved, setSaved] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -182,6 +189,10 @@ export default function MenuWorkspaceEditor({ restaurantId, canEdit = true, comp
   useEffect(() => {
     onPreviewChange?.(workspace)
   }, [onPreviewChange, workspace])
+
+  useEffect(() => {
+    if (!visibleTabs.some(([id]) => id === tab)) setTab(visibleTabs[0]?.[0] || 'navigation')
+  }, [tab, visibleTabs])
 
   const updateNodes = (updater) => setWorkspace((current) => {
     const nextNodes = rankNavigationNodes(typeof updater === 'function' ? updater(current.navigation_nodes) : updater)
@@ -273,7 +284,7 @@ export default function MenuWorkspaceEditor({ restaurantId, canEdit = true, comp
     {!canEdit && <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">You can view this configuration. Editing requires Menu: Edit items & modifiers.</div>}
     {configurationBlocked && <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">{emptyFamilies.length ? 'Assign at least one department to every family before saving.' : 'Family modes require every department to belong to a family.'}</div>}
     {status.text && <div className={`rounded-lg border p-3 text-sm ${status.tone === 'error' ? 'border-red-500/30 bg-red-500/10 text-red-200' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'}`}>{status.text}</div>}
-    <div className="flex flex-wrap rounded-lg border border-dash-border p-1">{TABS.map(([id, label]) => <button key={id} type="button" onClick={() => setTab(id)} className={`min-w-[150px] flex-1 rounded-md px-3 py-2.5 text-sm font-semibold ${tab === id ? 'bg-shell-cta text-shell-cta-text' : 'text-dash-secondary'}`}>{label}</button>)}</div>
+    <div className="flex flex-wrap rounded-lg border border-dash-border p-1">{visibleTabs.map(([id, label]) => <button key={id} type="button" onClick={() => setTab(id)} className={`min-w-[150px] flex-1 rounded-md px-3 py-2.5 text-sm font-semibold ${tab === id ? 'bg-shell-cta text-shell-cta-text' : 'text-dash-secondary'}`}>{label}</button>)}</div>
     <section className="rounded-lg border border-dash-border bg-[var(--glass-bg)] p-4 sm:p-5">
       {tab === 'navigation' && <div className="space-y-6">
         <div><h3 className="text-lg font-semibold">Navigation modes</h3><p className="mt-1 text-sm text-dash-secondary">Compact uses one interchangeable rail, Compound keeps Overall Groups and Departments visible together, Classic preserves the original Department shelf, and Items Only removes navigation. Smart uses the configured structure and never invents Food, Beer, or Wine.</p><div className="mt-4 grid gap-3 md:grid-cols-3"><label className="text-sm font-semibold">Restaurant default<select disabled={!canEdit} value={workspace.navigation.default_mode} onChange={(event) => setWorkspace((current) => ({ ...current, navigation: { ...current.navigation, default_mode: event.target.value } }))} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-transparent px-3">{NAVIGATION_MODES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><label className="text-sm font-semibold">Server Menu<select disabled={!canEdit} value={workspace.navigation.server_mode} onChange={(event) => setWorkspace((current) => ({ ...current, navigation: { ...current.navigation, server_mode: event.target.value } }))} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-transparent px-3">{SURFACE_MODES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><label className="text-sm font-semibold">Fast Bar<select disabled={!canEdit} value={workspace.navigation.bartender_mode} onChange={(event) => setWorkspace((current) => ({ ...current, navigation: { ...current.navigation, bartender_mode: event.target.value } }))} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-transparent px-3">{SURFACE_MODES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label></div></div>

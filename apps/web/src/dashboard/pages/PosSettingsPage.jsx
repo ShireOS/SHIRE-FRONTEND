@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { BarChart3, CalendarDays, Clock3, FileText, ListChecks, Phone, Plus, Printer, ReceiptText, ShieldCheck, Trash2, UserRoundCheck, Utensils } from 'lucide-react'
 import { fetchPosApi } from '../../shared/api/posClient'
+import { useAuth } from '../../auth'
+import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 
 const ACTION_LABELS = {
   discount: 'Discounts',
@@ -605,6 +607,8 @@ function ManagerApprovalSettings({ restaurantId }) {
 }
 
 export default function PosSettingsPage({ restaurantId }) {
+  const auth = useAuth()
+  const access = useBackOfficeAccess(auth, restaurantId)
   const [presets, setPresets] = useState([])
   const [actionType, setActionType] = useState('discount')
   const [label, setLabel] = useState('')
@@ -636,9 +640,13 @@ export default function PosSettingsPage({ restaurantId }) {
   }
 
   useEffect(() => {
+    if (!access.viewVisible('pos_settings.reasons')) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     void load()
-  }, [restaurantId])
+  }, [restaurantId, access.viewPolicy])
 
   const beginEdit = (preset) => {
     setEditingId(preset.id)
@@ -696,7 +704,7 @@ export default function PosSettingsPage({ restaurantId }) {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-dash-border bg-dash-panel p-5 shadow-sm">
+      {access.viewVisible('pos_settings.reasons') && <section className="rounded-2xl border border-dash-border bg-dash-panel p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="label-mono text-dash-tertiary">POS controls</p>
@@ -706,17 +714,17 @@ export default function PosSettingsPage({ restaurantId }) {
             </p>
           </div>
         </div>
-      </section>
+      </section>}
 
-      {loading ? <div className="rounded-xl border border-dash-border bg-dash-panel p-4 text-sm text-dash-secondary">Loading presets...</div> : null}
+      {access.viewVisible('pos_settings.reasons') && loading ? <div className="rounded-xl border border-dash-border bg-dash-panel p-4 text-sm text-dash-secondary">Loading presets...</div> : null}
       {error ? <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{error}</div> : null}
       {message ? <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{message}</div> : null}
 
-      <TerminalHomeDesigner restaurantId={restaurantId} />
+      {access.viewVisible('pos_settings.terminal_home') && <TerminalHomeDesigner restaurantId={restaurantId} />}
 
-      <ManagerApprovalSettings restaurantId={restaurantId} />
+      {access.viewVisible('pos_settings.approvals') && <ManagerApprovalSettings restaurantId={restaurantId} />}
 
-      <section className="rounded-2xl border border-dash-border bg-dash-panel p-5">
+      {access.viewVisible('pos_settings.reasons') && <section className="rounded-2xl border border-dash-border bg-dash-panel p-5">
         <div className="grid gap-3 md:grid-cols-[180px_1fr_auto_auto]">
           <select
             value={actionType}
@@ -741,9 +749,9 @@ export default function PosSettingsPage({ restaurantId }) {
             {editingId ? 'Update' : 'Add'}
           </button>
         </div>
-      </section>
+      </section>}
 
-      <section className="grid gap-4 lg:grid-cols-2">
+      {access.viewVisible('pos_settings.reasons') && <section className="grid gap-4 lg:grid-cols-2">
         {ACTION_ORDER.map((action) => (
           <div key={action} className="rounded-2xl border border-dash-border bg-dash-panel p-5">
             <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-dash-secondary">{ACTION_LABELS[action]}</h2>
@@ -764,7 +772,7 @@ export default function PosSettingsPage({ restaurantId }) {
             </div>
           </div>
         ))}
-      </section>
+      </section>}
     </div>
   )
 }

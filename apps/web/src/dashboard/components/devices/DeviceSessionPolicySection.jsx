@@ -266,7 +266,7 @@ function DeviceOverrideRow({ device, policyByType, onSave, busy }) {
   )
 }
 
-export default function DeviceSessionPolicySection({ restaurantId, config, mutate, busy }) {
+export default function DeviceSessionPolicySection({ restaurantId, config, mutate, busy, summary = false }) {
   const devices = config?.devices || []
   const typePolicies = config?.typePolicies || []
   const policyByType = useMemo(
@@ -280,6 +280,29 @@ export default function DeviceSessionPolicySection({ restaurantId, config, mutat
   }, [typePolicies, devices])
 
   if (!config) return null
+
+  if (summary) {
+    const overriddenDevices = devices.filter((device) => (
+      device.idle_lock_seconds != null
+      || device.manager_idle_lock_seconds != null
+      || device.absolute_ttl_seconds != null
+      || device.lock_after_check_save != null
+    )).length
+    return (
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Clock size={17} strokeWidth={1.75} className="text-shell-accent" aria-hidden="true" />
+            <h2 className="text-base font-semibold text-dash-cream">Session &amp; auto-lock</h2>
+          </div>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2 text-xs text-dash-secondary">
+          <span className="rounded-lg border border-dash-border px-3 py-2">{deviceTypes.length} device-type defaults</span>
+          <span className="rounded-lg border border-dash-border px-3 py-2">{overriddenDevices} individual overrides</span>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card>

@@ -364,12 +364,12 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         </div>
       )}
 
-      <section className="border-y border-dash-border sm:grid sm:grid-cols-4">
+      {access.viewVisible('close_day.readiness') && <section className="border-y border-dash-border sm:grid sm:grid-cols-4">
         <Metric icon={CalendarCheck} label={`Business date · Close ${preview?.close_period?.sequence || 1}`} value={preview?.business_date || '—'} />
         <Metric icon={ReceiptText} label="Open checks" value={preview?.open_checks || 0} tone={preview?.open_checks ? 'danger' : 'default'} />
         <Metric icon={Users} label="Clocked in" value={openEmployees.length} tone={openEmployees.length ? 'warning' : 'default'} />
         <Metric icon={Banknote} label="Collected" value={money(preview?.total_collected)} />
-      </section>
+      </section>}
 
       {!isClosed && recon && (
         <ReconciliationBanner
@@ -391,7 +391,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         </section>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(300px,0.8fr)]">
-          <section className="border border-dash-border bg-[var(--glass-bg)] p-5">
+          {access.viewVisible('close_day.cash') && <section className="border border-dash-border bg-[var(--glass-bg)] p-5">
             <div className="flex items-center gap-2">
               <Banknote size={17} className="text-dash-tertiary" aria-hidden="true" />
               <h2 className="text-lg font-semibold text-dash-cream">Cash reconciliation</h2>
@@ -442,9 +442,9 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
               <span className="label-mono">Variance reason</span>
               <textarea value={cash.variance_reason} onChange={(event) => updateCash('variance_reason', event.target.value)} rows={3} placeholder="Required when variance exceeds the configured threshold" className="mt-1.5 w-full resize-none border border-dash-border bg-[var(--glass-bg)] px-3 py-2 text-sm text-dash-cream outline-none focus:border-shell-accent/70" />
             </label>
-          </section>
+          </section>}
 
-          <section className="border border-dash-border bg-[var(--glass-bg)] p-5">
+          {access.viewVisible('close_day.readiness') && <section className="border border-dash-border bg-[var(--glass-bg)] p-5">
             <h2 className="text-lg font-semibold text-dash-cream">Readiness</h2>
             <div className="mt-4 space-y-4">
               <ReadinessRow ready={!preview?.open_checks} label="Checks" detail={preview?.open_checks ? `${preview.open_checks} must be closed on POS` : 'All checks are closed'} />
@@ -462,15 +462,15 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
                 ))}
               </div>
             )}
-            <button type="button" onClick={beginClose} disabled={closing || !preview} className="mt-6 flex min-h-[44px] w-full items-center justify-center gap-2 bg-dash-cream px-4 text-sm font-bold text-dash-base transition hover:opacity-90 disabled:opacity-50">
+            {access.viewVisible('close_day.finalize') && <button type="button" onClick={beginClose} disabled={closing || !preview} className="mt-6 flex min-h-[44px] w-full items-center justify-center gap-2 bg-dash-cream px-4 text-sm font-bold text-dash-base transition hover:opacity-90 disabled:opacity-50">
               <CalendarCheck size={17} aria-hidden="true" />
               {closing ? 'Closing day...' : 'Close business day'}
-            </button>
-          </section>
+            </button>}
+          </section>}
         </div>
       )}
 
-      {access.can('settings.edit') && <CashCloseDaySettings restaurantId={restaurantId} />}
+      {access.can('settings.edit') && access.viewMode('close_day.cash') === 'full' && <CashCloseDaySettings restaurantId={restaurantId} />}
 
       {modal === 'open-checks' && (
         <ActionModal

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   AuthProvider,
   useAuth,
@@ -41,6 +41,8 @@ import MenuPanel from './MenuPanel'
 import { useAllowedStoreTabs } from './data/resellerAccess'
 import { useBackOfficeAccess } from '../shared/hooks/useBackOfficeAccess'
 import { TAB_PERMISSIONS } from '../shared/permissions'
+import { SECTION_VIEW_CAPABILITIES, TAB_VIEW_CAPABILITIES } from '../shared/backOfficeView'
+import { backOfficeApi } from '../shared/api/backOfficeApi'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
 import SalesTiles from './components/SalesTiles'
 import CheckLedgerSection from './components/CheckLedgerSection'
@@ -485,6 +487,8 @@ function MiniTable({ columns, rows }) {
 }
 
 function AnalyticsDashboard({ restaurant }) {
+  const auth = useAuth()
+  const access = useBackOfficeAccess(auth, restaurant?.id)
   const [periodPreset, setPeriodPreset] = useState('week')
   const [dates, setDates] = useState(() => analyticsPeriodRange('week'))
   const [reportingScope, setReportingScope] = useState(() => ({ ...WHOLE_RESTAURANT_SCOPE }))
@@ -571,8 +575,11 @@ function AnalyticsDashboard({ restaurant }) {
           </div>
         </div>
       </header>
-      {viewHydrated && <HomepageWidgets scope="restaurant" restaurantId={restaurant?.id} period={periodPreset} dateRange={dates} dashboardScope={reportingScope} onDashboardScopeChange={setReportingScope} />}
-      {viewHydrated && <CheckLedgerSection restaurantId={restaurant?.id} />}
+      {viewHydrated && access.viewVisible('home.analytics') && !access.viewVisible('home.widgets') && (
+        <SalesTiles restaurantId={restaurant?.id} period={periodPreset} />
+      )}
+      {viewHydrated && access.viewVisible('home.widgets') && <HomepageWidgets scope="restaurant" restaurantId={restaurant?.id} period={periodPreset} dateRange={dates} dashboardScope={reportingScope} onDashboardScopeChange={setReportingScope} />}
+      {viewHydrated && access.viewVisible('home.check_ledger') && <CheckLedgerSection restaurantId={restaurant?.id} />}
     </div>
   )
 }
@@ -1289,7 +1296,20 @@ function isUpcomingApprovedShiftTrade(request) {
 }
 
 function SchedulingPanel({ restaurantId }) {
+  const auth = useAuth()
+  const access = useBackOfficeAccess(auth, restaurantId)
   const [activeSchedulingTab, setActiveSchedulingTab] = useState('schedule')
+  const schedulingTabs = [
+    ...(access.viewVisible('scheduling.calendar') ? [['schedule', 'Schedule']] : []),
+    ...(access.viewVisible('scheduling.coverage') ? [['config', 'Calendar Config']] : []),
+    ...(access.viewVisible('scheduling.approvals') ? [['requests', 'Requests']] : []),
+  ]
+
+  useEffect(() => {
+    if (!schedulingTabs.some(([id]) => id === activeSchedulingTab)) {
+      setActiveSchedulingTab(schedulingTabs[0]?.[0] || 'schedule')
+    }
+  }, [activeSchedulingTab, access.viewPolicy])
   const [weekStart, setWeekStart] = useState('')
   const [coverageBlocks, setCoverageBlocks] = useState([])
   const [suggestedBlocks, setSuggestedBlocks] = useState([])
@@ -2175,11 +2195,7 @@ function SchedulingPanel({ restaurantId }) {
           </div>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">
-          {[
-            ['schedule', 'Schedule'],
-            ['config', 'Calendar Config'],
-            ['requests', 'Requests'],
-          ].map(([id, label]) => (
+          {schedulingTabs.map(([id, label]) => (
             <button
               key={id}
               type="button"
@@ -2470,7 +2486,7 @@ function SchedulingPanel({ restaurantId }) {
             )}
           </aside>
         </section>
-        <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+        {access.viewMode('scheduling.optimization') === 'full' && <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="text-lg font-semibold">Target Hours</h3>
@@ -2493,7 +2509,7 @@ function SchedulingPanel({ restaurantId }) {
               ))
             )}
           </div>
-        </section>
+        </section>}
         </div>
       )}
 
@@ -4011,6 +4027,8 @@ function EmployeePortal() {
 }
 
 function ManagerMessagingPanel({ restaurantId }) {
+  const auth = useAuth()
+  const access = useBackOfficeAccess(auth, restaurantId)
   const [contacts, setContacts] = useState([])
   const [conversations, setConversations] = useState([])
   const [selectedConversationId, setSelectedConversationId] = useState('')
@@ -4024,6 +4042,16 @@ function ManagerMessagingPanel({ restaurantId }) {
   const [announcementForm, setAnnouncementForm] = useState({ title: '', body: '' })
   const [status, setStatus] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const messagingTabs = [
+    ...(access.viewVisible('messaging.chats') ? [['messages', 'Messages']] : []),
+    ...(access.viewVisible('messaging.announcements') ? [['announcements', 'Announcements']] : []),
+  ]
+
+  useEffect(() => {
+    if (!messagingTabs.some(([id]) => id === activeSubtab)) {
+      setActiveSubtab(messagingTabs[0]?.[0] || 'messages')
+    }
+  }, [activeSubtab, access.viewPolicy])
 
   const loadMessaging = async () => {
     const [staffRows, conversationRows, announcementRows] = await Promise.all([
@@ -4201,10 +4229,7 @@ function ManagerMessagingPanel({ restaurantId }) {
       </div>
       {status && <div className="rounded-xl border border-white/10 bg-white/[0.035] p-3 text-sm text-dash-secondary">{status}</div>}
       <div className="flex gap-2">
-        {[
-          ['messages', 'Messages'],
-          ['announcements', 'Announcements'],
-        ].map(([id, label]) => (
+        {messagingTabs.map(([id, label]) => (
           <button key={id} type="button" onClick={() => setActiveSubtab(id)} className={['rounded-xl px-4 py-2 text-sm font-semibold transition', activeSubtab === id ? 'bg-white text-black' : 'border border-white/10 text-dash-secondary'].join(' ')}>
             {label}
           </button>
@@ -5090,6 +5115,7 @@ export function RestaurantWorkspace({
 }) {
   const auth = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const { restaurantId, tab = 'analytics' } = useParams()
   const restaurant = auth.restaurant.restaurants.find((item) => item.id === restaurantId) ?? null
   const activeTab = TABS.some((item) => item.id === tab) ? tab : 'analytics'
@@ -5099,6 +5125,13 @@ export function RestaurantWorkspace({
   const [setupRefreshKey, setSetupRefreshKey] = useState(0)
   const allowedStoreTabs = useAllowedStoreTabs(restaurant)
   const backOfficeAccess = useBackOfficeAccess(auth, restaurantId)
+  const activeSection = (location.hash || '').replace(/^#/, '') || 'overview'
+  const viewCapability = SECTION_VIEW_CAPABILITIES[`${activeTab}#${activeSection}`]
+    || TAB_VIEW_CAPABILITIES[activeTab]
+  const presentationHidden = activeTab !== 'setup'
+    && !backOfficeAccess.loading
+    && Boolean(viewCapability)
+    && !backOfficeAccess.viewVisible(viewCapability)
   const setupWarnings = useMemo(
     () => buildModernSetupWarnings(restaurant || {}, waiterCount, floorPlanStatus, jobCodeCount),
     [restaurant, waiterCount, floorPlanStatus, jobCodeCount]
@@ -5206,6 +5239,15 @@ export function RestaurantWorkspace({
     { label: WORKSPACE_BREADCRUMB_LABELS[activeTab] || 'Overview' },
   ]
 
+  const showCurrentSurface = async () => {
+    if (!viewCapability) return
+    await backOfficeApi.updateMyViewPolicy(restaurantId, {
+      ...backOfficeAccess.viewPolicy,
+      overrides: { ...backOfficeAccess.viewPolicy.overrides, [viewCapability]: 'standard' },
+    })
+    await queryClient.invalidateQueries({ queryKey: queryKeys.backOfficeAccess(restaurantId) })
+  }
+
   if (activeTab === 'setup') {
     if (auth.restaurant.currentRestaurant?.id !== restaurantId) {
       return (
@@ -5240,6 +5282,36 @@ export function RestaurantWorkspace({
     )
   }
 
+  if (presentationHidden) {
+    return (
+      <ProtectedRoute>
+        <DashboardShell
+          context="store"
+          activeItem={activeTab}
+          breadcrumb={breadcrumb}
+          restaurant={restaurant}
+          restaurantId={restaurantId}
+          setupWarningCount={setupWarningCount}
+          showSetup={showSetup}
+          allowedStoreTabs={allowedStoreTabs}
+          routes={shellRoutes}
+        >
+          <section className="border-y border-dash-border py-12 text-center">
+            <p className="label-mono">Hidden in your view</p>
+            <h1 className="mt-2 text-xl font-semibold text-dash-cream">{WORKSPACE_BREADCRUMB_LABELS[activeTab] || 'Back Office'}</h1>
+            <button
+              type="button"
+              onClick={() => void showCurrentSurface()}
+              className="mt-5 rounded-lg bg-shell-cta px-4 py-2 text-sm font-semibold text-shell-cta-text"
+            >
+              Show in my view
+            </button>
+          </section>
+        </DashboardShell>
+      </ProtectedRoute>
+    )
+  }
+
   return (
     <ProtectedRoute>
       <DashboardShell
@@ -5259,22 +5331,54 @@ export function RestaurantWorkspace({
           </>
         )}
         {activeTab === 'checks' && <CheckLedgerSection restaurantId={restaurantId} />}
-        {activeTab === 'reports' && <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurant?.name} canConfigureServerReceipt={backOfficeAccess.can('settings.edit')} />}
+        {activeTab === 'reports' && <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurant?.name} canConfigureServerReceipt={backOfficeAccess.can('settings.edit')} viewPolicy={backOfficeAccess.viewPolicy} />}
         {activeTab === 'close-day' && <CloseDayPage restaurantId={restaurantId} restaurantName={restaurant?.name} />}
         {activeTab === 'store-information' && (
-          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['basics', 'goals']} showHeader={false} />
+          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[
+            ...(backOfficeAccess.viewVisible('store.basics') ? ['basics'] : []),
+            ...(backOfficeAccess.viewVisible('store.goals') ? ['goals'] : []),
+          ]} summaryTabs={[
+            ...(backOfficeAccess.viewMode('store.basics') === 'summary' ? ['basics'] : []),
+            ...(backOfficeAccess.viewMode('store.goals') === 'summary' ? ['goals'] : []),
+          ]} showHeader={false} />
         )}
         {activeTab === 'marketing' && (
           <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['branding']} showHeader={false} />
         )}
         {activeTab === 'settings' && (
-          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['legal', 'payments', 'taxes_charges', 'closeout', 'check_workflow', 'hours']} showHeader={false} />
+          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[
+            ...(backOfficeAccess.viewVisible('settings.legal') ? ['legal'] : []),
+            ...(backOfficeAccess.viewVisible('settings.payments') ? ['payments'] : []),
+            ...(backOfficeAccess.viewVisible('settings.taxes') || backOfficeAccess.viewVisible('settings.charges') ? ['taxes_charges'] : []),
+            ...(backOfficeAccess.viewVisible('settings.closeout') ? ['closeout'] : []),
+            ...(backOfficeAccess.viewVisible('settings.check_workflow') ? ['check_workflow'] : []),
+            ...(backOfficeAccess.viewVisible('settings.hours') ? ['hours'] : []),
+          ]} summaryTabs={[
+            ...(backOfficeAccess.viewMode('settings.legal') === 'summary' ? ['legal'] : []),
+            ...(backOfficeAccess.viewMode('settings.payments') === 'summary' ? ['payments'] : []),
+            ...(backOfficeAccess.viewMode('settings.taxes') === 'summary' && backOfficeAccess.viewMode('settings.charges') === 'summary' ? ['taxes_charges'] : []),
+            ...(backOfficeAccess.viewMode('settings.closeout') === 'summary' ? ['closeout'] : []),
+            ...(backOfficeAccess.viewMode('settings.check_workflow') === 'summary' ? ['check_workflow'] : []),
+            ...(backOfficeAccess.viewMode('settings.hours') === 'summary' ? ['hours'] : []),
+          ]} showHeader={false} />
         )}
         {activeTab === 'integrations' && (
-          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['service_model', 'reservation_timing', 'integrations']} showHeader={false} />
+          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[
+            ...(backOfficeAccess.viewVisible('integrations.service_model') ? ['service_model'] : []),
+            ...(backOfficeAccess.viewVisible('integrations.reservations') ? ['reservation_timing'] : []),
+            ...(backOfficeAccess.viewVisible('integrations.providers') ? ['integrations'] : []),
+          ]} summaryTabs={[
+            ...(backOfficeAccess.viewMode('integrations.service_model') === 'summary' ? ['service_model'] : []),
+            ...(backOfficeAccess.viewMode('integrations.reservations') === 'summary' ? ['reservation_timing'] : []),
+            ...(backOfficeAccess.viewMode('integrations.providers') === 'summary' ? ['integrations'] : []),
+          ]} showHeader={false} />
         )}
         {activeTab === 'ui' && (
-          <ConfigurationHub tabs={[{ id: 'appearance', label: 'Appearance' }, { id: 'sections', label: 'Sections' }, { id: 'floor-plan', label: 'Floor Plan' }]} initialTab="appearance">
+          <ConfigurationHub tabs={[
+            ...(backOfficeAccess.viewVisible('ui.appearance') ? [{ id: 'appearance', label: 'Appearance' }] : []),
+            ...(backOfficeAccess.viewVisible('ui.sections') ? [{ id: 'sections', label: 'Sections' }] : []),
+            ...(backOfficeAccess.viewVisible('ui.floor_plan') ? [{ id: 'floor-plan', label: 'Floor Plan' }] : []),
+          ]} initialTab={backOfficeAccess.viewVisible('ui.appearance') ? 'appearance' : backOfficeAccess.viewVisible('ui.sections') ? 'sections' : 'floor-plan'}>
             {(section) => section === 'appearance' ? (
               <ResellerUiEditor
                 restaurants={restaurant ? [{
@@ -5287,20 +5391,20 @@ export function RestaurantWorkspace({
                 initialRestaurantId={restaurantId}
               />
             ) : (
-              <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[section === 'sections' ? 'sections' : 'capacity']} showHeader={false} />
+              <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[section === 'sections' ? 'sections' : 'capacity']} summaryTabs={backOfficeAccess.viewMode(section === 'sections' ? 'ui.sections' : 'ui.floor_plan') === 'summary' ? [section === 'sections' ? 'sections' : 'capacity'] : []} showHeader={false} />
             )}
           </ConfigurationHub>
         )}
         {activeTab === 'menu' && (
           <ConfigurationHub tabs={[
-            { id: 'menu', label: 'Menu' },
-            ...(backOfficeAccess.can('menu.edit_items') ? [{ id: 'discounts', label: 'Discounts' }] : []),
-            ...(backOfficeAccess.can('settings.edit') ? [{ id: 'routing', label: 'Kitchen Routing' }] : []),
-          ]} initialTab="menu">
+            ...(backOfficeAccess.viewVisible('menu.items') ? [{ id: 'menu', label: 'Menu' }] : []),
+            ...(backOfficeAccess.can('menu.edit_items') && backOfficeAccess.viewVisible('menu.discounts') ? [{ id: 'discounts', label: 'Discounts' }] : []),
+            ...(backOfficeAccess.can('settings.edit') && backOfficeAccess.viewVisible('menu.routing') ? [{ id: 'routing', label: 'Kitchen Routing' }] : []),
+          ]} initialTab={backOfficeAccess.viewVisible('menu.items') ? 'menu' : backOfficeAccess.viewVisible('menu.discounts') ? 'discounts' : 'routing'}>
             {(section) => section === 'menu' ? (
-              <MenuPanel restaurantId={restaurantId} canEditPrices={backOfficeAccess.can('menu.edit_prices')} />
+              <MenuPanel restaurantId={restaurantId} canEditPrices={backOfficeAccess.can('menu.edit_prices')} viewPolicy={backOfficeAccess.viewPolicy} />
             ) : (
-              <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[section === 'taxes' ? 'taxes_charges' : section]} showHeader={false} />
+              <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[section === 'taxes' ? 'taxes_charges' : section]} summaryTabs={backOfficeAccess.viewMode(section === 'discounts' ? 'menu.discounts' : 'menu.routing') === 'summary' ? [section] : []} showHeader={false} />
             )}
           </ConfigurationHub>
         )}
@@ -5308,16 +5412,17 @@ export function RestaurantWorkspace({
           <MenuWorkspaceEditor
             restaurantId={restaurantId}
             canEdit={backOfficeAccess.can('menu.edit_items')}
+            viewPolicy={backOfficeAccess.viewPolicy}
           />
         )}
         {activeTab === 'taxes' && <Navigate to={`${restaurantBase}/${restaurantId}/menu`} replace />}
         {activeTab === 'feedback' && <GuestFeedbackPanel restaurantId={restaurantId} />}
         {activeTab === 'team' && (
           <ConfigurationHub tabs={[
-            { id: 'members', label: 'Team & Access' },
-            ...(backOfficeAccess.can('settings.edit') ? [{ id: 'manager-controls', label: 'Manager Controls' }] : []),
-          ]} initialTab="members">
-            {(section) => section === 'members' ? <TeamPage restaurantId={restaurantId} /> : <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['manager_controls']} showHeader={false} />}
+            ...(backOfficeAccess.viewVisible('team.employees') || backOfficeAccess.viewVisible('team.access') ? [{ id: 'members', label: 'Team & Access' }] : []),
+            ...(backOfficeAccess.can('settings.edit') && backOfficeAccess.viewVisible('team.manager_controls') ? [{ id: 'manager-controls', label: 'Manager Controls' }] : []),
+          ]} initialTab={backOfficeAccess.viewVisible('team.employees') || backOfficeAccess.viewVisible('team.access') ? 'members' : 'manager-controls'}>
+            {(section) => section === 'members' ? <TeamPage restaurantId={restaurantId} /> : <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['manager_controls']} summaryTabs={backOfficeAccess.viewMode('team.manager_controls') === 'summary' ? ['manager_controls'] : []} showHeader={false} />}
           </ConfigurationHub>
         )}
         {activeTab === 'time-clock' && <TimeClockPage restaurantId={restaurantId} />}

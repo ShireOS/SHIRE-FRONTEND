@@ -17,6 +17,7 @@ import {
 import { fetchWithSupabaseAuth } from '../../shared/query'
 import { fetchPosApi } from '../../shared/api/posClient'
 import ServerReceiptTemplateModal from './ServerReceiptTemplateModal'
+import { viewVisible } from '../../shared/backOfficeView'
 
 // Presentation fallback for the canonical POS receipt contract. The snapshot
 // replaces this metadata when available, but settings remain usable while a
@@ -260,7 +261,7 @@ function ScopeModal({ value, dimensions, onClose, onApply }) {
   )
 }
 
-function ProfileSettingsModal({ profiles, activeId, catalog, defaults, scopeDimension, canConfigureReceipt, onConfigureReceipt, onManageSchedules, onClose, onSave }) {
+function ProfileSettingsModal({ profiles, activeId, catalog, defaults, scopeDimension, canConfigureReceipt, canManageSchedules, onConfigureReceipt, onManageSchedules, onClose, onSave }) {
   const [drafts, setDrafts] = useState(() => profiles.map((profile) => ({ ...profile, group_ids: [...profile.group_ids] })))
   const [selectedId, setSelectedId] = useState(activeId)
   const [saving, setSaving] = useState(false)
@@ -314,7 +315,7 @@ function ProfileSettingsModal({ profiles, activeId, catalog, defaults, scopeDime
           </div>
           <button type="button" onClick={addProfile} className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-white/10 text-sm font-semibold text-dash-secondary hover:bg-white/[0.05]"><Plus className="h-4 w-4" />Add profile</button>
           {canConfigureReceipt && <button type="button" onClick={onConfigureReceipt} className="mt-2 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-white/10 text-sm font-semibold text-dash-secondary hover:bg-white/[0.05]"><Printer className="h-4 w-4" />Server receipt</button>}
-          <button type="button" onClick={onManageSchedules} className="mt-2 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-white/10 text-sm font-semibold text-dash-secondary hover:bg-white/[0.05]"><Mail className="h-4 w-4" />Scheduled delivery</button>
+          {canManageSchedules && <button type="button" onClick={onManageSchedules} className="mt-2 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-white/10 text-sm font-semibold text-dash-secondary hover:bg-white/[0.05]"><Mail className="h-4 w-4" />Scheduled delivery</button>}
         </div>
         <div className="min-w-0">
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -601,7 +602,7 @@ function snapshotCoversReceiptRequest(snapshot, payload) {
   return (payload.receipt_group_ids || []).every((groupId) => available.has(groupId))
 }
 
-export default function RestaurantReportsPage({ restaurantId, canConfigureServerReceipt = false }) {
+export default function RestaurantReportsPage({ restaurantId, canConfigureServerReceipt = false, viewPolicy = null }) {
   const [dates, setDates] = useState(() => periodRange('week'))
   const [times, setTimes] = useState({ start: '00:00', end: '23:59' })
   const [periodPreset, setPeriodPreset] = useState('week')
@@ -624,7 +625,14 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   const [emailDelivery, setEmailDelivery] = useState({ enabled: false, reason: '' })
   const loadRequestRef = useRef(0)
   const loadAbortRef = useRef(null)
-  const activeProfile = profiles.find((profile) => profile.id === activeProfileId) || profiles[0]
+  const visibleProfiles = viewVisible(viewPolicy, 'reports.activity')
+    ? profiles
+    : profiles.filter((profile) => profile.id !== 'activity')
+  const activeProfile = visibleProfiles.find((profile) => profile.id === activeProfileId) || visibleProfiles[0] || profiles[0]
+
+  useEffect(() => {
+    if (activeProfile?.id && activeProfile.id !== activeProfileId) setActiveProfileId(activeProfile.id)
+  }, [activeProfile?.id, activeProfileId])
   const backendScope = useMemo(() => ({
     scope_dimension: scope.scope_dimension,
     scope_mode: scope.scope_mode,
@@ -904,27 +912,29 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0"><h1 className="text-2xl font-semibold">POS reports</h1><p className="mt-1 text-xs text-dash-tertiary">Restaurant local time {dates.start} {times.start} through {dates.end} {times.end}</p></div>
             <div className="flex flex-wrap gap-2 lg:justify-end">
-              <IconButton label={scope.scope_dimension === 'none' ? 'Scope' : scope.scope_dimension === 'device' ? 'Devices' : scope.scope_dimension === 'employee' ? 'Employees' : 'Sections'} icon={Layers} onClick={() => setModal('scope')} />
-              <IconButton label="Settings" icon={Settings2} onClick={() => setModal('settings')} />
+              {viewVisible(viewPolicy, 'reports.scope') && <IconButton label={scope.scope_dimension === 'none' ? 'Scope' : scope.scope_dimension === 'device' ? 'Devices' : scope.scope_dimension === 'employee' ? 'Employees' : 'Sections'} icon={Layers} onClick={() => setModal('scope')} />}
+              {viewVisible(viewPolicy, 'reports.profiles') && <IconButton label="Settings" icon={Settings2} onClick={() => setModal('settings')} />}
+              {viewVisible(viewPolicy, 'reports.schedules') && <IconButton label="Schedules" icon={Mail} onClick={() => setModal('schedules')} />}
+              {canConfigureServerReceipt && viewVisible(viewPolicy, 'reports.receipt_template') && <IconButton label="Server receipt" icon={Printer} onClick={() => setServerReceiptOpen(true)} />}
               <IconButton label="Refresh" icon={RefreshCw} onClick={() => { void load(true) }} disabled={loading} />
             </div>
           </div>
           <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-            <div className="flex max-w-full gap-1 overflow-x-auto rounded-md border border-white/10 bg-white/[0.025] p-1">{profiles.map((profile) => <button key={profile.id} type="button" onClick={() => selectProfile(profile.id)} className={`shrink-0 rounded px-4 py-2 text-sm font-semibold ${activeProfile.id === profile.id ? 'bg-dash-cream text-dash-base' : 'text-dash-secondary hover:text-dash-cream'}`}>{profile.name}</button>)}</div>
+            <div className="flex max-w-full gap-1 overflow-x-auto rounded-md border border-white/10 bg-white/[0.025] p-1">{visibleProfiles.map((profile) => <button key={profile.id} type="button" onClick={() => selectProfile(profile.id)} className={`shrink-0 rounded px-4 py-2 text-sm font-semibold ${activeProfile.id === profile.id ? 'bg-dash-cream text-dash-base' : 'text-dash-secondary hover:text-dash-cream'}`}>{profile.name}</button>)}</div>
             <div className="flex max-w-full flex-wrap items-end gap-2">
               <Field label="Period"><select value={periodPreset} onChange={(event) => selectPeriod(event.target.value)}>{PERIOD_OPTIONS.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select></Field>
               <Field label="From"><input type="datetime-local" value={`${dates.start}T${times.start}`} onChange={(event) => setCustomDateTime('start', event.target.value)} /></Field>
               <Field label="Through"><input type="datetime-local" value={`${dates.end}T${times.end}`} onChange={(event) => setCustomDateTime('end', event.target.value)} /></Field>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          {viewVisible(viewPolicy, 'reports.exports') && <div className="flex flex-wrap items-center gap-2">
             <IconButton label="PDF" icon={FileText} onClick={() => downloadArtifact('pdf')} disabled={!snapshot || Boolean(working)} />
             <IconButton label="CSV" icon={Download} onClick={() => downloadSnapshotCsv(snapshot, scopedGroupIds, activeProfile.name)} disabled={!snapshot || Boolean(working)} />
             <IconButton label="Excel" icon={FileSpreadsheet} onClick={() => downloadArtifact('xlsx')} disabled={!snapshot || Boolean(working)} />
             <IconButton label="Email" icon={Mail} onClick={() => setModal('email')} disabled={!snapshot || Boolean(working)} />
             <IconButton label="Print receipt" icon={Printer} onClick={() => setReceiptPrintOpen(true)} disabled={!snapshot || loading || Boolean(working)} />
             <span className="ml-auto text-xs text-dash-tertiary">{selectedGroupCount} section{selectedGroupCount === 1 ? '' : 's'}</span>
-          </div>
+          </div>}
         </div>
       </header>
 
@@ -934,7 +944,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       {snapshot && <div className="py-6 sm:py-8"><DigitalReceipt snapshot={snapshot} profile={activeProfile} /></div>}
 
       {modal === 'scope' && <ScopeModal value={scope} dimensions={dimensions} onClose={() => setModal(null)} onApply={(next) => { setScope(next); setModal(null) }} />}
-      {modal === 'settings' && <ProfileSettingsModal profiles={profiles} activeId={activeProfileId} catalog={catalog} defaults={defaults} scopeDimension={scope.scope_dimension} canConfigureReceipt={canConfigureServerReceipt} onConfigureReceipt={() => { setModal(null); setServerReceiptOpen(true) }} onManageSchedules={() => setModal('schedules')} onClose={() => setModal(null)} onSave={savePreferences} />}
+      {modal === 'settings' && <ProfileSettingsModal profiles={profiles} activeId={activeProfileId} catalog={catalog} defaults={defaults} scopeDimension={scope.scope_dimension} canConfigureReceipt={canConfigureServerReceipt && viewVisible(viewPolicy, 'reports.receipt_template')} canManageSchedules={viewVisible(viewPolicy, 'reports.schedules')} onConfigureReceipt={() => { setModal(null); setServerReceiptOpen(true) }} onManageSchedules={() => setModal('schedules')} onClose={() => setModal(null)} onSave={savePreferences} />}
       {modal === 'email' && <EmailModal profileName={activeProfile.name} onClose={() => setModal(null)} onSend={emailReport} />}
       {modal === 'schedules' && <ScheduledReportsModal recipients={recipients} canManage={canManageRecipients} deliveryEnabled={emailDelivery.enabled} disabledReason={emailDelivery.reason} defaultTimezone={snapshot?.restaurant?.timezone} onClose={() => setModal(null)} onSave={saveRecipient} onDelete={deleteRecipient} onTest={testRecipient} />}
       {serverReceiptOpen && <ServerReceiptTemplateModal restaurantId={restaurantId} onClose={() => setServerReceiptOpen(false)} onSaved={() => setStatus('Server receipt layout saved restaurant-wide.')} />}

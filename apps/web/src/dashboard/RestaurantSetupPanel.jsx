@@ -1444,6 +1444,7 @@ export default function RestaurantSetupPanel({
   onSetupChanged,
   propagationContext = null,
   allowedTabs = null,
+  summaryTabs = [],
   initialTab = null,
   showHeader = true,
 }) {
@@ -1454,6 +1455,7 @@ export default function RestaurantSetupPanel({
   }, [allowedTabs])
   const visibleSetupTabIds = visibleSetupTabs.map(tab => tab.id).join(',')
   const [activeSetupTab, setActiveSetupTab] = useState(() => initialTab || visibleSetupTabs[0]?.id || 'basics')
+  const activeTabIsSummary = summaryTabs.includes(activeSetupTab)
   const canEditTaxRates = auth?.accountType === 'admin'
   const [coverImageUrl, setCoverImageUrl] = useState(restaurant.cover_image_url || '')
   const [pendingCoverFile, setPendingCoverFile] = useState(null)
@@ -2886,6 +2888,23 @@ export default function RestaurantSetupPanel({
         </div>
       )}
 
+      {activeTabIsSummary ? (
+        <SectionShell
+          title={visibleSetupTabs.find((tab) => tab.id === activeSetupTab)?.label || 'Configuration'}
+          description="Current configuration status"
+        >
+          {setupWarnings[activeSetupTab]?.length > 0 ? (
+            <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-4">
+              <p className="text-sm font-semibold text-amber-100">Needs attention</p>
+              <p className="mt-1 text-sm text-amber-100/80">{setupWarnings[activeSetupTab].join(', ')}</p>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/[0.06] p-4 text-sm font-semibold text-emerald-100">
+              Configured
+            </div>
+          )}
+        </SectionShell>
+      ) : <>
       {activeSetupTab === 'basics' && (
         <SectionShell
           title="Basics"
@@ -4316,6 +4335,7 @@ export default function RestaurantSetupPanel({
           </div>
         </SectionShell>
       )}
+      </>}
     </div>
   )
 }

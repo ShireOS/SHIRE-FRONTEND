@@ -9,6 +9,8 @@ import ProductionWorkflowCard from '../components/printing/ProductionWorkflowCar
 import HardwareChainGuide from '../components/printing/HardwareChainGuide'
 import TicketTopBuilder from '../components/printing/TicketTopBuilder'
 import { TICKET_TOP_STARTER, ticketTopFieldPresentation } from '../components/printing/ticketTopPolicy'
+import { useAuth } from '../../auth'
+import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import {
   isKitchenPreviewItemLine,
   isKitchenPreviewLocationLine,
@@ -86,6 +88,8 @@ function Select({ label, value, onChange, children }) {
 }
 
 export default function PrintingRoutingPage({ restaurantId }) {
+  const auth = useAuth()
+  const access = useBackOfficeAccess(auth, restaurantId)
   const location = useLocation()
   const section = sectionFromHash(location.hash)
   const [config, setConfig] = useState(DEFAULT_CONFIG)
@@ -398,7 +402,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
     setMessage('Changes discarded.')
   }
 
-  if (section === 'routing') return <div className="space-y-5"><ProductionWorkflowCard restaurantId={restaurantId} /><MenuPanel restaurantId={restaurantId} initialTab="printing" onlyTab="printing" /></div>
+  if (section === 'routing') return <div className="space-y-5"><ProductionWorkflowCard restaurantId={restaurantId} /><MenuPanel restaurantId={restaurantId} initialTab="printing" onlyTab="printing" viewPolicy={access.viewPolicy} /></div>
 
   const filtered = catalog.filter(row => `${row.name} ${row.category || ''} ${row.type}`.toLowerCase().includes(search.trim().toLowerCase()))
   const stations = (routing.stations || []).filter(station => station.is_active !== false)
@@ -541,7 +545,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
             </div>
           ) : (
             <>
-              {loadedRestaurantId === String(restaurantId) ? (
+              {access.viewVisible('printing.ticket_layout') && (loadedRestaurantId === String(restaurantId) ? (
                 <TicketTopBuilder
                   key={`${restaurantId}:${scope}:${ticketTopResetKey}`}
                   header={effectiveKitchen.header}
@@ -558,7 +562,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
                 <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 text-sm text-dash-tertiary">
                   Loading ticket configuration…
                 </div>
-              )}
+              ))}
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <h2 className="text-lg font-semibold">Ticket detail</h2>
                 <div className="mt-4 grid gap-4 md:grid-cols-3">

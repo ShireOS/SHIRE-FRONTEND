@@ -1107,6 +1107,7 @@ export default function TipPoolingPage({ restaurantId }) {
               menuCategories={menuCategories}
               menuItems={menuItems}
               readOnly={!canAdjustTips}
+              showAdvanced={access.viewMode('payroll.advanced_rules') === 'full'}
               onUpdateSettings={updateTipPayrollSettings}
               onUpdateRoleRule={updateTipRoleRule}
               onSaveWaiterOverride={saveWaiterOverride}

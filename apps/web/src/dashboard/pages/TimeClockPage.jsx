@@ -18,6 +18,8 @@ import { Button } from '../components/shared/Button'
 import { Modal, ModalFooter } from '../components/shared/Modal'
 import TimeEventModal from '../components/timeclock/TimeEventModal'
 import { SmartTimeInput } from '../../shared/components/SmartTimeInput'
+import { useAuth } from '../../auth'
+import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 
 // ---------- date helpers (everything displayed in the browser's local tz) ----------
 
@@ -229,6 +231,10 @@ function PosBackendNotice({ error }) {
 
 export default function TimeClockPage({ restaurantId }) {
   const navigate = useNavigate()
+  const auth = useAuth()
+  const access = useBackOfficeAccess(auth, restaurantId)
+  const showEntries = access.viewVisible('time_clock.entries')
+  const showAdjustments = access.viewVisible('time_clock.adjustments')
 
   const [anchorKey, setAnchorKey] = useState(() => dateKeyOf(new Date()))
   const [view, setView] = useState('week') // 'day' | 'week'
@@ -495,6 +501,7 @@ export default function TimeClockPage({ restaurantId }) {
             iso={e.clock_in_at}
             baseIso={e.clock_in_at}
             onCommit={(iso, reason) => commitTimeEdit(e, { clock_in_at: iso }, reason)}
+            disabled={!showAdjustments}
           />
         </td>
         <td className="py-2 pr-3">
@@ -503,6 +510,7 @@ export default function TimeClockPage({ restaurantId }) {
               iso={e.clock_out_at}
               baseIso={e.clock_out_at || e.clock_in_at}
               onCommit={(iso, reason) => commitTimeEdit(e, { clock_out_at: iso }, reason)}
+              disabled={!showAdjustments}
             />
             {e.status === 'open' ? (
               <Badge variant="warning" dot className="!px-1.5 !py-0.5 !text-[10px]">still clocked in</Badge>
@@ -510,20 +518,20 @@ export default function TimeClockPage({ restaurantId }) {
           </div>
         </td>
         <td className="py-2 pr-3">
-          <button
+          {showAdjustments ? <button
             type="button"
             onClick={() => openEdit(e)}
             title="Edit breaks"
             className="rounded px-1 py-0.5 font-mono text-xs tabular-nums text-dash-secondary hover:bg-dash-cream/10 hover:text-dash-cream"
           >
             {breakMins > 0 ? `${breakMins}m` : '—'}
-          </button>
+          </button> : <span className="font-mono text-xs text-dash-secondary">{breakMins > 0 ? `${breakMins}m` : '—'}</span>}
         </td>
         <td className="py-2 pr-3"><RoleChip role={e.role} /></td>
         <td className="py-2 pr-3 text-right font-mono text-xs tabular-nums text-dash-cream">{hoursOf(e.worked_minutes)}</td>
         <td className="py-2 pr-3 text-right text-xs"><EstPayCell laborCost={e.labor_cost} /></td>
         <td className="py-2 text-right">
-          <div className="inline-flex items-center gap-1">
+          {showAdjustments && <div className="inline-flex items-center gap-1">
             <button
               type="button"
               onClick={() => openEdit(e)}
@@ -543,7 +551,7 @@ export default function TimeClockPage({ restaurantId }) {
             >
               <Ban size={13} />
             </button>
-          </div>
+          </div>}
         </td>
       </>
     )
@@ -553,13 +561,13 @@ export default function TimeClockPage({ restaurantId }) {
     <tr key={key} className="border-b border-dash-border/30">
       {leading}
       <td colSpan={columns} className="py-1.5 pr-3">
-        <button
+        {showAdjustments ? <button
           type="button"
           onClick={() => openCreate(staffId, dateKey)}
           className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 text-xs text-dash-tertiary hover:text-dash-gold"
         >
           no punch · <Plus size={11} /> add
-        </button>
+        </button> : <span className="text-xs text-dash-tertiary">no punch</span>}
       </td>
     </tr>
   )
@@ -629,9 +637,9 @@ export default function TimeClockPage({ restaurantId }) {
               Fix missed punches, force clock-ins and clock-outs, and keep an audit trail. Times shown in your local timezone.
             </p>
           </div>
-          <Button icon={<Plus size={15} />} onClick={() => openCreate(undefined, anchorKey)}>
+          {showAdjustments && <Button icon={<Plus size={15} />} onClick={() => openCreate(undefined, anchorKey)}>
             Time Event
-          </Button>
+          </Button>}
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2.5">
@@ -698,7 +706,7 @@ export default function TimeClockPage({ restaurantId }) {
       ) : null}
 
       {/* body */}
-      {permissionDenied ? (
+      {!showEntries ? null : permissionDenied ? (
         <PermissionNotice />
       ) : loadError ? (
         <PosBackendNotice error={loadError} />
@@ -711,9 +719,9 @@ export default function TimeClockPage({ restaurantId }) {
               ? 'Nothing matches these filters.'
               : `No punches ${view === 'week' ? 'this week' : 'on this day'}.`}
           </p>
-          <Button className="mt-4" variant="outline" size="sm" icon={<Plus size={14} />} onClick={() => openCreate(undefined, anchorKey)}>
+          {showAdjustments && <Button className="mt-4" variant="outline" size="sm" icon={<Plus size={14} />} onClick={() => openCreate(undefined, anchorKey)}>
             Add a time event
-          </Button>
+          </Button>}
         </div>
       ) : view === 'day' ? (
         /* ---------- DAY VIEW: flat list ---------- */
@@ -828,7 +836,7 @@ export default function TimeClockPage({ restaurantId }) {
       )}
 
       {/* totals footer */}
-      {!loading && !loadError && cards.length ? (
+      {access.viewVisible('time_clock.totals') && !loading && !loadError && cards.length ? (
         <section className="glass-card flex flex-wrap items-center justify-between gap-3 rounded-2xl px-5 py-3.5">
           <p className="label-mono">{view === 'week' ? 'Week totals' : 'Day totals'}</p>
           <div className="flex items-center gap-5 text-sm">
