@@ -8,8 +8,19 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 const SCRIPT_DIR = fileURLToPath(new URL('.', import.meta.url))
 const FRONTEND_ROOT = resolve(SCRIPT_DIR, '..')
-const DEFAULT_BACKEND_ROOT = resolve(FRONTEND_ROOT, '..', 'Shire_POS_backend')
-const DEFAULT_ML_BACKEND_ROOT = resolve(FRONTEND_ROOT, '..', 'Documents', 'Restuarant_ML-Backend')
+
+function firstExistingPath(candidates) {
+  return candidates.find(candidate => existsSync(candidate)) || candidates[0]
+}
+
+const DEFAULT_BACKEND_ROOT = firstExistingPath([
+  resolve(FRONTEND_ROOT, '..', 'POS_backend', 'Shire_POS_backend'),
+  resolve(FRONTEND_ROOT, '..', 'Shire_POS_backend'),
+])
+const DEFAULT_ML_BACKEND_ROOT = firstExistingPath([
+  resolve(FRONTEND_ROOT, '..', 'Restuarant_ML-Backend'),
+  resolve(FRONTEND_ROOT, '..', 'Documents', 'Restuarant_ML-Backend'),
+])
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 const VALUE_FLAGS = new Set([

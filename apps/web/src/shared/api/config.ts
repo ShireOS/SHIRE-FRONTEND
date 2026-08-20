@@ -2,7 +2,9 @@
 // Reads from environment variables set in .env.development or .env.production
 
 export const API_CONFIG = {
-  baseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1',
+  // Keep dashboard traffic same-origin by default. Vite and Vercel proxy this
+  // mount to Restaurant ML, avoiding browser CORS and localhost build leaks.
+  baseUrl: import.meta.env.VITE_API_BASE_URL || '/ml-api',
   publicSiteUrl: import.meta.env.VITE_PUBLIC_SITE_URL || '',
   timeout: 10000, // 10 seconds
   useMockData: import.meta.env.VITE_USE_MOCK_DATA === 'true',

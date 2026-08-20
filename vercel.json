@@ -4,6 +4,7 @@
   "buildCommand": "pnpm --filter web build",
   "outputDirectory": "apps/web/dist",
   "rewrites": [
+    { "source": "/ml-api/(.*)", "destination": "https://web-production-5c5b4.up.railway.app/api/v1/$1" },
     { "source": "/pos-api/(.*)", "destination": "https://shire-pos-api-production.up.railway.app/api/v1/$1" },
     { "source": "/book/(.*)", "destination": "/book/index.html" },
     { "source": "/fake-host-ui/(.*)", "destination": "/index.html" },

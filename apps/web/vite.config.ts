@@ -100,6 +100,8 @@ export default defineConfig(({ mode }) => {
     env.VITE_SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_PUBLISHABLE_KEY || ''
   const posApiProxyTarget =
     env.VITE_POS_API_PROXY_TARGET || 'https://shire-pos-api-production.up.railway.app'
+  const mlApiProxyTarget =
+    env.VITE_ML_API_PROXY_TARGET || 'https://web-production-5c5b4.up.railway.app'
 
   return {
     envDir: rootEnvDir,
@@ -117,6 +119,12 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       proxy: {
+        '/ml-api': {
+          target: mlApiProxyTarget,
+          changeOrigin: true,
+          secure: true,
+          rewrite: path => path.replace(/^\/ml-api/, '/api/v1'),
+        },
         '/pos-api': {
           target: posApiProxyTarget,
           changeOrigin: true,

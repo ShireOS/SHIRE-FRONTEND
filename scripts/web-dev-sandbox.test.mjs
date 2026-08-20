@@ -11,6 +11,12 @@ import {
   sanitizedBackendFailure,
 } from './web-dev-sandbox.mjs'
 
+test('default repository paths resolve within the Shire workspace', () => {
+  const options = parseArguments([])
+  assert.match(options.backendRoot, /POS_backend\/Shire_POS_backend$/)
+  assert.match(options.mlBackendRoot, /Restuarant_ML-Backend$/)
+})
+
 const safeRuntime = {
   schema_version: 1,
   sandbox: true,
