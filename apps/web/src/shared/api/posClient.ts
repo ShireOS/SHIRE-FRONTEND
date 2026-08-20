@@ -124,9 +124,9 @@ export interface CheckLedgerQuery {
   page_size?: number
 }
 
-// Read-only manager check ledger (active/closed/history + per-check detail).
-// Same POS endpoints the in-store manager ledger uses; card data is brand +
-// last four only and no mutations are exposed to the dashboard.
+// Manager check ledger (active/closed/history + per-check detail). Card data is
+// brand + last four only. The sole close-rescue mutation remains server-gated,
+// audited, and refuses to rewrite tender history or close a non-zero balance.
 export const posCheckLedgerApi = {
   list: (restaurantId: string, query: CheckLedgerQuery = {}, signal?: AbortSignal) => {
     const params = new URLSearchParams()
@@ -144,6 +144,11 @@ export const posCheckLedgerApi = {
       signal,
       timeoutMs: DEFAULT_API_TIMEOUT_MS,
     }),
+  repairStaleSplitAndClose: (restaurantId: string, orderId: string, reason: string) =>
+    fetchPosApi(restaurantId, `/manager/check-ledger/${encodeURIComponent(orderId)}/repair-stale-split`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
 }
 
 export interface CloseDayFinalizeInput {
@@ -156,10 +161,17 @@ export interface CloseDayFinalizeInput {
   paid_in: number
   paid_out: number
   cash_refunds: number
-  counted_cash: number
+  cash_count_status?: 'counted' | 'not_counted'
+  counted_cash: number | null
+  confirm_uncounted_cash?: boolean
+  uncounted_cash_reason?: string
   retained_bank: number
   deposit_amount: number
   variance_reason?: string
+  verification_status?: 'verified' | 'mismatch' | 'unavailable' | 'not_performed'
+  verification_checks?: Array<Record<string, unknown>>
+  confirm_verification_exception?: boolean
+  verification_reason?: string
   decisions: Array<Record<string, unknown>>
 }
 
@@ -226,7 +238,16 @@ export interface CloseDayPreview {
   active_business_date?: string
   open_checks: number
   exception_count?: number
+  blocking_exception_count?: number
   exceptions?: Array<Record<string, unknown>>
+  overdue_close_alerts?: Array<{
+    id: string
+    code: 'close_day_overdue'
+    business_date: string
+    title: string
+    message: string
+    detected_at: string
+  }>
   gross_subtotal: number
   discounts: number
   tax: number
@@ -245,6 +266,13 @@ export interface CloseDayPreview {
     closed_at?: string | null
     closed_by_name?: string | null
   }
+  financial_verification?: {
+    status: 'verified' | 'mismatch' | 'unavailable' | 'not_performed'
+    complete: boolean
+    exception_confirmed?: boolean
+    reason?: string | null
+    failing_check_count?: number
+  }
   closeout_settings?: {
     cash_tracking_mode?: string
     require_starting_bank?: boolean
@@ -259,6 +287,8 @@ export interface CloseDayPreview {
   close_period?: {
     id?: string
     sequence: number
+    next_sequence?: number
+    last_completed_sequence?: number | null
     opened_at?: string | null
     last_activity_at?: string | null
     activity_count: number
@@ -280,6 +310,10 @@ export interface CloseDayPreview {
     paid_out: number
     cash_refunds: number
     expected_cash: number
+    cash_count_status?: 'counted' | 'not_counted'
+    counted_cash?: number | null
+    variance?: number | null
+    uncounted_cash_reason?: string | null
   }
 }
 
@@ -294,10 +328,17 @@ export interface CloseDayInput {
   paid_in: number
   paid_out: number
   cash_refunds: number
-  counted_cash: number
+  cash_count_status?: 'counted' | 'not_counted'
+  counted_cash?: number | null
+  confirm_uncounted_cash?: boolean
+  uncounted_cash_reason?: string
   retained_bank: number
   deposit_amount: number
   variance_reason?: string
+  verification_status?: 'verified' | 'mismatch' | 'unavailable' | 'not_performed'
+  verification_checks?: Array<Record<string, unknown>>
+  confirm_verification_exception?: boolean
+  verification_reason?: string
 }
 
 export interface CloseDayResult {

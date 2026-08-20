@@ -32,6 +32,11 @@ import { VIEW_LEVELS, defaultViewPolicy, normalizeViewPolicy } from '../../share
 import { normalizeJobCodes, PERMISSION_TIER_OPTIONS } from '@shire/settings'
 import { cashDrawerRoleSummary } from '../utils/cashDrawerPermissions'
 import {
+  applyDrawerOverrides,
+  noSaleOverrideState,
+  withNoSaleOverride,
+} from '../utils/employeePosPermissionOverrides'
+import {
   DEFAULT_RESELLER_PERMISSIONS,
   RESELLER_TOGGLEABLE_TABS,
   inviteReseller,
@@ -1325,6 +1330,15 @@ export default function TeamPage({ restaurantId }) {
           {waiters.map((waiter) => {
             const payRows = staffPayDrafts(waiter, roleOptions).filter(row => row.selected)
             const linkedMember = boMembers.find((member) => member.waiter_id === waiter.id)
+            const primaryRole = primaryStaffRole(waiter, roleOptions)
+            const rolePermission = rolePerms.find(
+              (item) => normalizeRoleCode(item.role_key) === primaryRole,
+            ) || {}
+            const noSaleOverride = noSaleOverrideState(waiter.pos_permissions_override)
+            const effectiveNoSale = cashDrawerRoleSummary(
+              applyDrawerOverrides(rolePermission, waiter.pos_permissions_override),
+              cashDrawerPolicy || {},
+            ).find((item) => item.key === 'no_sale')?.value
             const pendingAccountInvite = boInvites.find((invitation) => invitation.waiter_id === waiter.id)
             const mayManageWaiter = canManageMembers
               && canManageStaffMember(access.authorityLevel, waiter, roleOptions)
@@ -1359,6 +1373,23 @@ export default function TeamPage({ restaurantId }) {
                     <Settings2 size={13} strokeWidth={1.75} aria-hidden="true" />
                     Jobs &amp; pay
                   </button>
+                  <select
+                    value={noSaleOverride}
+                    disabled={!mayManageWaiter}
+                    aria-label={`${waiter.name} No Sale permission`}
+                    title={`No Sale: ${effectiveNoSale || 'manager only'}. A drawer assigned directly to the signed-in terminal is always required.`}
+                    onChange={(event) => void patchWaiter(waiter.id, {
+                      pos_permissions_override: withNoSaleOverride(
+                        waiter.pos_permissions_override,
+                        event.target.value,
+                      ),
+                    })}
+                    className="rounded-xl border border-dash-border bg-[var(--glass-bg)] px-2 py-1.5 text-[11px] font-semibold text-dash-secondary outline-none focus:border-shell-accent/60"
+                  >
+                    <option value="inherit">No Sale: role</option>
+                    <option value="allow">No Sale: allow</option>
+                    <option value="deny">No Sale: deny</option>
+                  </select>
                   {canManageMembers && !boUnavailable && (
                     linkedMember ? (
                       <span

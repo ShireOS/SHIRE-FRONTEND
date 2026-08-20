@@ -128,6 +128,7 @@ export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All ch
   const [refundPresetId, setRefundPresetId] = useState('')
   const [managerPasscode, setManagerPasscode] = useState('')
   const [refundRequestId, setRefundRequestId] = useState(null)
+  const [rescueReason, setRescueReason] = useState('')
   // 'receipt' shows the check like a printed receipt; 'log' shows every
   // action it underwent, grouped into a section per (re)open.
   const [view, setView] = useState('receipt')
@@ -144,6 +145,7 @@ export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All ch
   const activity = detail?.activity || []
   const sessions = useMemo(() => groupActivityIntoSessions(activity), [activity])
   const canRefund = access.can('payments.refund') && access.viewVisible('checks.refunds')
+  const canCloseDay = access.can('operations.close_day') && access.viewVisible('close_day.readiness')
   const refundReasonsQuery = useQuery({
     queryKey: ['pos-refund-reason-presets', restaurantId],
     queryFn: ({ signal }) => posRefundApi.reasonPresets(restaurantId, signal),
@@ -198,6 +200,18 @@ export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All ch
     refundMutation.reset()
   }
 
+  const rescueMutation = useMutation({
+    mutationFn: () => posCheckLedgerApi.repairStaleSplitAndClose(
+      restaurantId,
+      orderId,
+      rescueReason.trim(),
+    ),
+    onSuccess: async () => {
+      setRescueReason('')
+      await detailQuery.refetch()
+    },
+  })
+
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -246,6 +260,41 @@ export function CheckDetail({ restaurantId, orderId, onBack, backLabel = 'All ch
             <Metric title="Tip" value={money(check.tip_amount)} />
             <Metric title="Total" value={money(check.total)} />
           </div>
+
+          {canCloseDay && detail.available_actions?.includes('repair_stale_split') && (
+            <div className="mt-4 rounded-xl border border-amber-300/25 bg-amber-300/[0.06] p-4">
+              <p className="text-sm font-semibold text-amber-100">Remote Close Rescue</p>
+              <p className="mt-1 text-xs leading-5 text-amber-100/70">
+                This repairs only untendered stale split allocations. The server then recomputes the ledger and closes only if exactly $0 remains. Completed or in-flight tender history is never rewritten; any real balance leaves the check unchanged.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <input
+                  value={rescueReason}
+                  onChange={(event) => setRescueReason(event.target.value)}
+                  placeholder="Required manager reason"
+                  className="h-9 min-w-64 flex-1 rounded-lg border border-white/10 bg-transparent px-3 text-sm text-dash-cream placeholder:text-dash-tertiary focus:border-amber-300/50 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={rescueMutation.isPending || rescueReason.trim().length < 5}
+                  onClick={() => {
+                    if (window.confirm('Repair this split ledger and close only if the server proves exactly $0 remains?')) rescueMutation.mutate()
+                  }}
+                  className="rounded-lg bg-amber-200 px-3 py-2 text-xs font-semibold text-black disabled:opacity-40"
+                >
+                  {rescueMutation.isPending ? 'Verifying…' : 'Repair & close at $0'}
+                </button>
+              </div>
+              {rescueMutation.isError && (
+                <p className="mt-2 text-xs text-red-300">
+                  {rescueMutation.error instanceof Error ? rescueMutation.error.message : 'The check was not changed.'}
+                </p>
+              )}
+              {rescueMutation.isSuccess && (
+                <p className="mt-2 text-xs text-emerald-300">The server repaired the stale split and verified the check was fully settled before closing.</p>
+              )}
+            </div>
+          )}
 
           <div className="mt-4 flex w-fit gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1">
             {[['receipt', 'Receipt'], ...(access.viewVisible('checks.activity') ? [['log', `Activity log${activity.length ? ` (${activity.length})` : ''}`]] : [])].map(([id, text]) => (

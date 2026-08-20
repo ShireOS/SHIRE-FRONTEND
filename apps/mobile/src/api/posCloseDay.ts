@@ -15,6 +15,8 @@ export type CloseDayPreview = {
   active_business_date?: string;
   open_checks: number;
   exception_count?: number;
+  blocking_exception_count?: number;
+  overdue_close_alerts?: Array<{ id: string; code: 'close_day_overdue'; business_date: string; title: string; message: string; detected_at: string }>;
   gross_subtotal: number;
   discounts: number;
   tax: number;
@@ -38,7 +40,7 @@ export type CloseDayPreview = {
     cash_variance_threshold?: number;
     show_clockout_options_at_close?: boolean;
   };
-  close_period?: { id?: string; sequence: number; opened_at?: string | null; activity_count: number; recent_activity: boolean; quiet_minutes: number };
+  close_period?: { id?: string; sequence: number; next_sequence?: number; last_completed_sequence?: number | null; opened_at?: string | null; activity_count: number; recent_activity: boolean; quiet_minutes: number };
   cash_reconciliation?: {
     opening_bank: number;
     cash_sales: number;
@@ -60,10 +62,17 @@ export type CloseDayInput = {
   paid_in: number;
   paid_out: number;
   cash_refunds: number;
-  counted_cash: number;
+  cash_count_status?: 'counted' | 'not_counted';
+  counted_cash?: number | null;
+  confirm_uncounted_cash?: boolean;
+  uncounted_cash_reason?: string;
   retained_bank: number;
   deposit_amount: number;
   variance_reason?: string;
+  verification_status?: 'verified' | 'mismatch' | 'unavailable' | 'not_performed';
+  verification_checks?: Array<Record<string, unknown>>;
+  confirm_verification_exception?: boolean;
+  verification_reason?: string;
 };
 
 export type CloseDayResult = {

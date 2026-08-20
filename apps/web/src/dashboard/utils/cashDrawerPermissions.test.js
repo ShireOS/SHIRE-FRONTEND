@@ -29,6 +29,18 @@ test('authorized roles can self-approve safe actions while paid out remains mana
   assert.equal(summary.cash_drop, 'manager at $250.00+')
 })
 
+test('generic role approval still protects movements but does not override explicit No Sale access', () => {
+  const summary = values(
+    { can_open_cash_drawer: true, can_no_sale: true, can_paid_in_out: true, require_manager_pin_for_approval: true },
+    { require_manager_for_drawer_open: false, allow_paid_in_out: true, cash_drop_threshold: 250 },
+  )
+
+  assert.equal(summary.no_sale, 'role approved')
+  assert.equal(summary.paid_in, 'manager PIN')
+  assert.equal(summary.paid_out, 'manager PIN')
+  assert.equal(summary.cash_drop, 'manager PIN')
+})
+
 test('roles without cash movement capability cannot initiate ledger movements', () => {
   const summary = values(
     { can_open_cash_drawer: true, can_no_sale: false, can_paid_in_out: false, require_manager_pin_for_approval: false },

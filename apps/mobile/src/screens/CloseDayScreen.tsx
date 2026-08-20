@@ -41,7 +41,7 @@ const INITIAL_CASH: CashForm = {
   paid_in: '0.00',
   paid_out: '0.00',
   cash_refunds: '0.00',
-  counted_cash: '0.00',
+  counted_cash: '',
   retained_bank: '0.00',
   deposit_amount: '0.00',
   variance_reason: '',
@@ -177,8 +177,32 @@ export default function CloseDayScreen() {
     setError(nextError instanceof Error ? nextError.message : 'Could not close the business day.');
   };
 
-  const submitClose = async (confirmAutoClockOut: boolean, clockOutMode: 'all' | 'none' = 'all', confirmRecentActivity = false) => {
+  const submitClose = async (
+    confirmAutoClockOut: boolean,
+    clockOutMode: 'all' | 'none' = 'all',
+    confirmRecentActivity = false,
+    confirmUnverified = false,
+  ) => {
     if (!restaurantId || !preview) return;
+    if (!cash.counted_cash.trim()) {
+      setError('Enter the physical drawer count before closing from mobile.');
+      return;
+    }
+    if (!confirmUnverified) {
+      Alert.alert(
+        'Independent verification unavailable',
+        'The mobile close flow cannot independently recompute the financial report. Continuing records this close as unverified; it does not claim the totals matched.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Close as unverified',
+            style: 'destructive',
+            onPress: () => void submitClose(confirmAutoClockOut, clockOutMode, confirmRecentActivity, true),
+          },
+        ],
+      );
+      return;
+    }
     if (Math.abs(variance) > threshold && !cash.variance_reason.trim()) {
       setError(`Explain the ${money(variance)} cash variance before closing.`);
       return;
@@ -201,6 +225,9 @@ export default function CloseDayScreen() {
         retained_bank: numberValue(cash.retained_bank),
         deposit_amount: numberValue(cash.deposit_amount),
         variance_reason: cash.variance_reason.trim() || undefined,
+        verification_status: 'not_performed',
+        confirm_verification_exception: true,
+        verification_reason: 'Mobile Close Day does not have the independent transaction reconciliation service.',
       });
       setResult(closed);
       setPreview({
@@ -243,7 +270,7 @@ export default function CloseDayScreen() {
       );
       return;
     }
-    if (Number(preview.exception_count || 0) > 0) {
+    if (Number(preview.blocking_exception_count || 0) > 0) {
       setError('Resolve all close-day payment and check exceptions on the POS first.');
       return;
     }
@@ -309,6 +336,8 @@ export default function CloseDayScreen() {
 
       {error ? <View style={styles.errorBox}><Feather name="alert-triangle" size={18} color={color_pallet.danger[700]} /><Text style={styles.errorText}>{error}</Text></View> : null}
 
+      {preview?.overdue_close_alerts?.length ? <View style={styles.errorBox}><Feather name="alert-triangle" size={18} color={color_pallet.danger[700]} /><Text style={styles.errorText}>Close Day overdue for {preview.overdue_close_alerts.map((alert) => alert.business_date).join(', ')}. Review the dated close in Back Office.</Text></View> : null}
+
       {loading && !preview ? (
         <View style={styles.loadingBox}><ActivityIndicator color={semanticColors.text} /><Text style={styles.muted}>Loading close-day readiness...</Text></View>
       ) : preview ? (
@@ -330,7 +359,13 @@ export default function CloseDayScreen() {
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Readiness</Text>
                 <Readiness label="Checks" ready={!preview.open_checks} detail={preview.open_checks ? `${preview.open_checks} must be closed on POS` : 'All checks are closed'} />
-                <Readiness label="Exceptions" ready={!preview.exception_count} detail={preview.exception_count ? `${preview.exception_count} require review` : 'No unresolved exceptions'} />
+                <Readiness
+                  label="Exceptions"
+                  ready={!preview.blocking_exception_count}
+                  detail={preview.blocking_exception_count
+                    ? `${preview.blocking_exception_count} block close (${preview.exception_count || preview.blocking_exception_count} total for review)`
+                    : preview.exception_count ? `${preview.exception_count} audit item(s), none blocking` : 'No unresolved exceptions'}
+                />
                 <Readiness label="Print work" ready={!preview.pending_print_jobs} detail={preview.pending_print_jobs ? `${preview.pending_print_jobs} jobs still pending` : 'No pending print work'} />
                 <Readiness label="Employees" ready={!employees.length} warning={employees.length > 0} detail={employees.length ? `${employees.length} require confirmation` : 'Everyone is clocked out'} />
                 {employees.map((entry) => (

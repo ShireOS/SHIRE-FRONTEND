@@ -43,6 +43,7 @@ export default function CloseDayReview({ restaurantId, onBack }) {
   const [varianceReason, setVarianceReason] = useState('')
   const [notes, setNotes] = useState('')
   const [discardPrintJobs, setDiscardPrintJobs] = useState(false)
+  const [unverifiedConfirmed, setUnverifiedConfirmed] = useState(false)
   const [confirmedClockOutSignature, setConfirmedClockOutSignature] = useState(null)
   const [closeAttemptId] = useState(() => crypto.randomUUID())
 
@@ -64,7 +65,8 @@ export default function CloseDayReview({ restaurantId, onBack }) {
   const variance = numberValue(countedCash) - expectedCash
   const threshold = numberValue(preview?.closeout_settings?.cash_variance_threshold)
   const needsVarianceReason = cashCountEntered && Math.abs(variance) > threshold
-  const exceptionCount = numberValue(preview?.exception_count)
+  const blockingExceptionCount = numberValue(preview?.blocking_exception_count)
+  const blockingExceptions = (preview?.exceptions || []).filter((exception) => exception.close_day_blocking !== false)
   const pendingPrintJobs = numberValue(preview?.pending_print_jobs)
   const openChecks = numberValue(preview?.open_checks)
   const openClockEntries = preview?.open_timeclock_entries || []
@@ -77,11 +79,12 @@ export default function CloseDayReview({ restaurantId, onBack }) {
     && confirmedClockOutSignature === openClockEntrySignature
   const alreadyClosed = preview?.business_day?.status === 'closed'
   const hasBlockingWork = openChecks > 0
-    || exceptionCount > 0
+    || blockingExceptionCount > 0
     || (pendingPrintJobs > 0 && !discardPrintJobs)
     || (requiresClockOutConfirmation && !clockOutConfirmed)
     || !cashCountEntered
     || (needsVarianceReason && !varianceReason.trim())
+    || !unverifiedConfirmed
     || alreadyClosed
 
   const finalizeMutation = useMutation({
@@ -99,6 +102,9 @@ export default function CloseDayReview({ restaurantId, onBack }) {
       retained_bank: numberValue(retainedBank),
       deposit_amount: numberValue(depositAmount),
       variance_reason: varianceReason.trim() || undefined,
+      verification_status: 'not_performed',
+      confirm_verification_exception: true,
+      verification_reason: 'Close Day Exception Hub does not run the independent transaction reconciliation service.',
       decisions: [
         {
           type: 'back_office_close_day_review',
@@ -151,17 +157,17 @@ export default function CloseDayReview({ restaurantId, onBack }) {
         <>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <Summary label="Open checks" value={openChecks} warning={openChecks > 0} />
-            <Summary label="Exceptions" value={exceptionCount} warning={exceptionCount > 0} />
+            <Summary label="Blocking exceptions" value={blockingExceptionCount} warning={blockingExceptionCount > 0} />
             <Summary label="Pending print work" value={pendingPrintJobs} warning={pendingPrintJobs > 0} />
             <Summary label="Open clock entries" value={openClockEntries.length} warning={requiresClockOutConfirmation} />
             <Summary label="Card collected" value={money(preview.card_collected)} />
           </div>
 
-          {(preview.exceptions || []).length > 0 && (
+          {blockingExceptions.length > 0 && (
             <div className="mt-5">
               <p className="label-mono">Blocking exceptions</p>
               <ul className="mt-2 space-y-2">
-                {preview.exceptions.map((exception, index) => (
+                {blockingExceptions.map((exception, index) => (
                   <li key={exception.id || `${exception.type}-${index}`} className="flex gap-2 rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-100">
                     <TriangleAlert className="mt-0.5 shrink-0" size={15} aria-hidden="true" />
                     <span>
@@ -243,6 +249,13 @@ export default function CloseDayReview({ restaurantId, onBack }) {
                   </span>
                 </label>
               )}
+              <label className="mt-3 flex gap-2 rounded-xl border border-amber-400/30 bg-amber-400/[0.07] p-3 text-sm text-amber-100">
+                <input type="checkbox" checked={unverifiedConfirmed} onChange={(event) => setUnverifiedConfirmed(event.target.checked)} className="mt-0.5" />
+                <span>
+                  Close with independent financial verification not performed
+                  <span className="mt-0.5 block text-xs text-amber-200/80">This screen records an unverified close and never claims the totals matched raw transactions.</span>
+                </span>
+              </label>
               <label className="mt-3 block">
                 <span className="label-mono !text-[9px]">Manager notes</span>
                 <textarea

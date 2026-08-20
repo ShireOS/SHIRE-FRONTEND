@@ -25,7 +25,10 @@ export function buildPayrollRows(payouts, rateFor) {
     const hours = Number(p.hours_worked ?? 0)
     const rate = Number(rateFor?.(p) ?? 0)
     const baseWage = hours * rate
-    const tipsNet = Number(p.final_amount ?? 0) // tips take-home after pool/tipout/adjustment
+    // The tip engine's final_amount includes employee gratuity that must be paid
+    // through payroll. Keep that liability visible instead of calling all of it tips.
+    const tipsNet = Number(p.final_amount ?? 0)
+    const gratuityPayrollDue = Number(p.employee_gratuity_payroll_owed ?? 0)
     return {
       staff_name: p.staff_name || 'Unknown',
       role_key: p.role_key || '',
@@ -37,6 +40,11 @@ export function buildPayrollRows(payouts, rateFor) {
       tipout_paid: Number(p.tipout_paid ?? 0),
       tipout_received: Number(p.tipout_received ?? 0),
       adjustment: Number(p.adjustment ?? 0),
+      employee_gratuity: Number(p.employee_gratuity ?? 0),
+      cash_employee_gratuity: Number(p.cash_employee_gratuity ?? 0),
+      non_cash_employee_gratuity: Number(p.non_cash_employee_gratuity ?? 0),
+      gratuity_payroll_due: gratuityPayrollDue,
+      voluntary_tips_net: tipsNet - gratuityPayrollDue,
       tips_net: tipsNet,
       gross_pay: baseWage + tipsNet,
     }
@@ -51,14 +59,21 @@ export function payrollTotals(rows) {
     pool_share: acc.pool_share + r.pool_share,
     tipout_paid: acc.tipout_paid + r.tipout_paid,
     tipout_received: acc.tipout_received + r.tipout_received,
+    employee_gratuity: acc.employee_gratuity + r.employee_gratuity,
+    cash_employee_gratuity: acc.cash_employee_gratuity + r.cash_employee_gratuity,
+    non_cash_employee_gratuity: acc.non_cash_employee_gratuity + r.non_cash_employee_gratuity,
+    gratuity_payroll_due: acc.gratuity_payroll_due + r.gratuity_payroll_due,
+    voluntary_tips_net: acc.voluntary_tips_net + r.voluntary_tips_net,
     tips_net: acc.tips_net + r.tips_net,
     gross_pay: acc.gross_pay + r.gross_pay,
-  }), { hours: 0, base_wage: 0, tips_collected: 0, pool_share: 0, tipout_paid: 0, tipout_received: 0, tips_net: 0, gross_pay: 0 })
+  }), { hours: 0, base_wage: 0, tips_collected: 0, pool_share: 0, tipout_paid: 0, tipout_received: 0, employee_gratuity: 0, cash_employee_gratuity: 0, non_cash_employee_gratuity: 0, gratuity_payroll_due: 0, voluntary_tips_net: 0, tips_net: 0, gross_pay: 0 })
 }
 
 const CSV_HEADERS = [
   'Employee', 'Role', 'Hours', 'Rate', 'Base wage', 'Tips collected',
-  'Pool share', 'Tipout paid', 'Tipout received', 'Adjustment', 'Tips net', 'Gross pay',
+  'Pool share', 'Tipout paid', 'Tipout received', 'Adjustment', 'Voluntary tips net',
+  'Employee gratuity earned', 'Cash gratuity kept', 'Noncash gratuity',
+  'Gratuity payroll due', 'Tips and gratuity due', 'Gross pay',
 ]
 
 function csvCell(value) {
@@ -73,14 +88,18 @@ export function exportPayrollCsv(run, rows, restaurantName) {
       csvCell(r.staff_name), csvCell(r.role_key), r.hours.toFixed(2), r.rate.toFixed(2),
       r.base_wage.toFixed(2), r.tips_collected.toFixed(2), r.pool_share.toFixed(2),
       r.tipout_paid.toFixed(2), r.tipout_received.toFixed(2), r.adjustment.toFixed(2),
-      r.tips_net.toFixed(2), r.gross_pay.toFixed(2),
+      r.voluntary_tips_net.toFixed(2), r.employee_gratuity.toFixed(2),
+      r.cash_employee_gratuity.toFixed(2), r.non_cash_employee_gratuity.toFixed(2),
+      r.gratuity_payroll_due.toFixed(2), r.tips_net.toFixed(2), r.gross_pay.toFixed(2),
     ].join(','))
   })
   const totals = payrollTotals(rows)
   lines.push([
     'TOTALS', '', totals.hours.toFixed(2), '', totals.base_wage.toFixed(2), totals.tips_collected.toFixed(2),
     totals.pool_share.toFixed(2), totals.tipout_paid.toFixed(2), totals.tipout_received.toFixed(2),
-    '', totals.tips_net.toFixed(2), totals.gross_pay.toFixed(2),
+    '', totals.voluntary_tips_net.toFixed(2), totals.employee_gratuity.toFixed(2),
+    totals.cash_employee_gratuity.toFixed(2), totals.non_cash_employee_gratuity.toFixed(2),
+    totals.gratuity_payroll_due.toFixed(2), totals.tips_net.toFixed(2), totals.gross_pay.toFixed(2),
   ].join(','))
 
   const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
@@ -112,7 +131,7 @@ export function exportPayrollPdf(run, rows, restaurantName, variant = 'summary')
     <table>
       <thead><tr>
         <th class="l">Employee</th><th class="l">Role</th><th>Hours</th><th>Base wage</th>
-        <th>Tips net</th><th>Gross pay</th>
+        <th>Voluntary tips net</th><th>Gratuity payroll due</th><th>Gross pay</th>
       </tr></thead>
       <tbody>
         ${rows.map(r => `<tr>
@@ -120,14 +139,15 @@ export function exportPayrollPdf(run, rows, restaurantName, variant = 'summary')
           <td class="l muted">${esc(r.role_key)}</td>
           <td>${r.hours.toFixed(2)}</td>
           <td>$${money(r.base_wage)}</td>
-          <td>$${money(r.tips_net)}</td>
+          <td>$${money(r.voluntary_tips_net)}</td>
+          <td>$${money(r.gratuity_payroll_due)}</td>
           <td class="b">$${money(r.gross_pay)}</td>
         </tr>`).join('')}
       </tbody>
       <tfoot><tr>
         <td class="l b">Totals · ${rows.length} staff</td><td></td>
         <td>${totals.hours.toFixed(2)}</td><td>$${money(totals.base_wage)}</td>
-        <td>$${money(totals.tips_net)}</td><td>$${money(totals.gross_pay)}</td>
+        <td>$${money(totals.voluntary_tips_net)}</td><td>$${money(totals.gratuity_payroll_due)}</td><td>$${money(totals.gross_pay)}</td>
       </tr></tfoot>
     </table>`
 
@@ -146,7 +166,10 @@ export function exportPayrollPdf(run, rows, restaurantName, variant = 'summary')
         <tr><td>Tipout paid</td><td class="r">−$${money(r.tipout_paid)}</td></tr>
         <tr><td>Tipout received</td><td class="r">+$${money(r.tipout_received)}</td></tr>
         ${r.adjustment ? `<tr><td>Adjustment</td><td class="r">$${money(r.adjustment)}</td></tr>` : ''}
-        <tr><td>Tips take-home</td><td class="r">$${money(r.tips_net)}</td></tr>
+        <tr><td>Voluntary tips net</td><td class="r">$${money(r.voluntary_tips_net)}</td></tr>
+        <tr><td>Employee gratuity earned</td><td class="r">$${money(r.employee_gratuity)}</td></tr>
+        <tr><td>Cash gratuity already kept</td><td class="r">$${money(r.cash_employee_gratuity)}</td></tr>
+        <tr><td>Employee gratuity due through payroll</td><td class="r">$${money(r.gratuity_payroll_due)}</td></tr>
         <tr class="grand"><td>Gross pay</td><td class="r">$${money(r.gross_pay)}</td></tr>
       </table>
     </section>`).join('')

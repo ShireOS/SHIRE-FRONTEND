@@ -7,7 +7,7 @@ const source = readFileSync(new URL('./AuthenticatedDashboardApp.jsx', import.me
 test('the Menu workspace exposes kitchen routing under the settings permission', () => {
   assert.match(
     source,
-    /backOfficeAccess\.can\('settings\.edit'\) \? \[\{ id: 'routing', label: 'Kitchen Routing' \}\]/,
+    /backOfficeAccess\.can\('settings\.edit'\) && backOfficeAccess\.viewVisible\('menu\.routing'\) \? \[\{ id: 'routing', label: 'Kitchen Routing' \}\]/,
   )
   assert.match(source, /allowedTabs=\{\[section === 'taxes' \? 'taxes_charges' : section\]\}/)
 })

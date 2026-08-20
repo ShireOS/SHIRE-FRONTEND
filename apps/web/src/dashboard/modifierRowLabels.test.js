@@ -18,7 +18,7 @@ test('existing modifier rows permanently label every data control', () => {
   ]
 
   for (const label of labels) {
-    assert.match(source, new RegExp(`<ModifierRowField label="${label}">`))
+    assert.match(source, new RegExp(`<ModifierRowField label="${label}"(?:\\s[^>]*)?>`))
   }
 })
 

@@ -27,7 +27,7 @@ test('the generic receipt renderer supports tax summary lines and detailed rows'
 
 test('settings are driven by the backend catalog instead of a second tax schema', () => {
   assert.match(reportsPage, /const catalog = snapshot\?\.catalog\?\.length \? snapshot\.catalog : RECEIPT_GROUP_CATALOG/)
-  assert.match(reportsPage, /catalog\.map\(\(group\) =>/)
+  assert.match(reportsPage, /visibleCatalog\.map\(\(group\) =>/)
   assert.match(reportsPage, /checked=\{selected\.group_ids\.includes\(group\.id\)\}/)
 })
 

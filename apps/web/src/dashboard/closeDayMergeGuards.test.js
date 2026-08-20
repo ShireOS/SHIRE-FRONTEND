@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import test from 'node:test'
+
+const read = (relative) => readFileSync(new URL(relative, import.meta.url), 'utf8')
+const checkLedger = read('./components/CheckLedgerSection.jsx')
+const closeDay = read('./pages/CloseDayPage.jsx')
+
+test('check actions retain permission and view-policy guards after merging', () => {
+  assert.match(checkLedger, /const canRefund = access\.can\('payments\.refund'\) && access\.viewVisible\('checks\.refunds'\)/)
+  assert.match(checkLedger, /const canCloseDay = access\.can\('operations\.close_day'\) && access\.viewVisible\('close_day\.readiness'\)/)
+  assert.match(checkLedger, /canCloseDay && detail\.available_actions\?\.includes\('repair_stale_split'\)/)
+})
+
+test('close-day safeguards remain inside their configured views', () => {
+  assert.match(closeDay, /access\.viewVisible\('close_day\.readiness'\) && <>[\s\S]*overdueCloseAlerts\.length > 0/)
+  assert.match(closeDay, /access\.viewVisible\('close_day\.cash'\) && <section/)
+  assert.match(closeDay, /cashCountStatus === 'counted' && <label className="mt-4 block">/)
+  assert.doesNotMatch(closeDay, /^(<<<<<<<|=======|>>>>>>>)/m)
+})

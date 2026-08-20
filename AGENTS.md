@@ -142,6 +142,11 @@ list must stay in sync.
   compatibility proxy only.
 - Tip reads use `payroll.view`; settings/payout edits use
   `payroll.adjust_tips`; run create/finalize/void uses `payroll.run`.
+- Payroll & Tips -> Overview uses `payroll.view` for its daily employee-gratuity
+  ledger. It keeps earned gratuity, cash already kept, noncash funding, payroll
+  still due, and unattributed amounts separate for the restaurant and every
+  returned employee. Employee gratuity remains excluded from pooling and
+  tip-outs until the POS-owned engine implements an explicit audited policy.
 - Receiving-role tipouts default to an even split. Optional Monday-Sunday
   exceptions are saved in `weekday_tipout_overrides`: missing days inherit the
   restaurant default, while a day may disable tipouts or replace only its
@@ -251,6 +256,20 @@ surface independently, while every mutation is also guarded by the ML backend.
   every active printer choose Hold & alert or an explicit backup, and exposes
   one-tap reroute/restore. Policy lives inside existing
   `kitchen_output_targets.config`; no new schema is required.
+- Automatic paid-receipt behavior is a restaurant-wide `settings.edit` policy
+  stored in `restaurants.config.pos.printing.auto_print_after_payment`. It
+  defaults on, is edited from Printing & Routing -> Receipts & Tickets, requires
+  a reason when changed, and is audited by the POS backend. Turning it off skips
+  only the automatic post-payment print; payment completion and manual reprints
+  remain available.
+- External-card signed tip slips use a single default-off toggle within Back
+  Office's existing Suggested Tips receipt section and persist at
+  `restaurants.config.pos.printing.customer.signed_tip_slip.external_card`.
+  Integrated-card slip behavior is not configurable here and remains unchanged.
+  The external option renders Tip, Total, and Signature lines only while the
+  tender's tip decision is pending; recorded tips and finalized No Tip decisions
+  suppress blank lines. Saving uses existing `settings.edit`, requires a reason,
+  and writes the POS print-config audit trail.
 - Terminal hardware and cash-drawer configuration uses the reseller-aware
   `devices.manage` / `settings.edit` POS guards. Changes are sent through audited
   POS-backend endpoints with a required reason; direct Supabase writes remain
@@ -293,13 +312,15 @@ surface independently, while every mutation is also guarded by the ML backend.
   through the POS backend. Native POS remains view/print only, and the required
   cash-settlement lines and their existing math are not configurable.
 - Cash drawer access is role-first: No Sale requires `can_no_sale` plus
-  `can_open_cash_drawer`; movements require `can_paid_in_out` plus
-  `can_open_cash_drawer`. The restaurant-wide
-  `require_manager_for_drawer_open` and role-level
-  `require_manager_pin_for_approval` each force manager approval. Paid Out is
-  always manager-approved, while Cash Drop also respects its configured
-  threshold. Employee add/edit surfaces preview inherited behavior; the POS
-  backend remains authoritative and posts movements only after drawer delivery.
+  `can_open_cash_drawer`; employee `pos_permissions_override` may explicitly
+  allow or deny those two keys. Movements require `can_paid_in_out` plus
+  `can_open_cash_drawer`. The restaurant-wide `require_manager_for_drawer_open`
+  forces manager approval for No Sale; the generic role approval flag continues
+  to protect movements and other sensitive actions. Every pulse still requires
+  a drawer assigned directly to the requesting terminal, even after manager
+  approval. Paid Out is always manager-approved, while Cash Drop also respects
+  its configured threshold. The POS backend remains authoritative and posts
+  movements only after drawer delivery.
 - Back-office Close Day uses the canonical POS close operation. Open checks are
   never overrideable; clocked-in employees require an explicit confirmation and
   retain the manager adjustment audit. Owner access uses

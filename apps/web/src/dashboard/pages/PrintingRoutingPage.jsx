@@ -18,7 +18,8 @@ import {
 } from '../components/printing/ticketPreviewPolicy'
 
 const DEFAULT_CONFIG = {
-  receipt_detail: 'clean',
+  auto_print_after_payment: true,
+  receipt_detail: 'full',
   customer: {
     size: 'medium',
     show_restaurant_name: true, restaurant_name: '', restaurant_name_size: 'standard',
@@ -27,21 +28,43 @@ const DEFAULT_CONFIG = {
     header_message: '', footer_message: '', show_server: true, show_table: true, table_size: 'standard',
     show_tab_name: false, show_check_number: true, check_number_size: 'standard', show_date_time: true, show_guest_count: true,
     suggested_tips: { enabled: false, percentages: [18, 20, 22], basis: 'subtotal', placement: 'bottom', show_amounts: true },
+    signed_tip_slip: { external_card: false },
   },
   report: { size: 'medium' },
   kitchen: {
     size: 'easy_read', print_modifiers: true, print_prices: false,
     print_seats: true, combine_identical: true, item_bold: true, item_name_mode: 'alias',
     modifier_name_mode: 'alias', modifier_size: 'large', modifier_color: 'black', modifier_bold: true,
+    modifier_marker: 'indent', line_density: 'tight',
     note_size: 'large', note_color: 'red', note_bold: true,
     check_number_format: 'chk', time_format: 'meridiem', seat_format: 'short',
-    note_style: 'stars', item_separator: 'dashes', modifier_marker: 'indent', line_density: 'tight',
+    note_style: 'stars', item_separator: 'dashes',
   },
   aliases: { items: {}, modifiers: {} },
   stations: {},
 }
 
 const clone = value => JSON.parse(JSON.stringify(value))
+const jsonEqual = (left, right) => JSON.stringify(left) === JSON.stringify(right)
+
+// The printing endpoint intentionally accepts a complete document. Rebase only
+// edits made since this page loaded onto a fresh canonical read so a manager
+// cannot overwrite a concurrent POS or Back Office change by saving stale UI.
+function mergeChangedPrintingValues(baseline, draft, fresh) {
+  if (jsonEqual(baseline, draft)) return fresh === undefined ? undefined : clone(fresh)
+  const baselineObject = baseline && typeof baseline === 'object' && !Array.isArray(baseline)
+  const draftObject = draft && typeof draft === 'object' && !Array.isArray(draft)
+  if (!baselineObject || !draftObject) return draft === undefined ? undefined : clone(draft)
+  const result = fresh && typeof fresh === 'object' && !Array.isArray(fresh) ? clone(fresh) : {}
+  for (const key of new Set([...Object.keys(baseline), ...Object.keys(draft)])) {
+    if (!(key in draft)) delete result[key]
+    else if (!(key in baseline)) result[key] = clone(draft[key])
+    else if (!jsonEqual(baseline[key], draft[key])) {
+      result[key] = mergeChangedPrintingValues(baseline[key], draft[key], result[key])
+    }
+  }
+  return result
+}
 const sectionFromHash = hash => ['overview', 'routing', 'receipts'].includes(hash.replace('#', '')) ? hash.replace('#', '') : 'overview'
 const PRICING_PROGRAM_LABELS = {
   standard: 'Standard pricing receipt',
@@ -94,6 +117,10 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const section = sectionFromHash(location.hash)
   const [config, setConfig] = useState(DEFAULT_CONFIG)
   const [savedConfig, setSavedConfig] = useState(DEFAULT_CONFIG)
+  const [savedAutoPrintAfterPayment, setSavedAutoPrintAfterPayment] = useState(true)
+  const [savedExternalCardSignedSlip, setSavedExternalCardSignedSlip] = useState(false)
+  const [savedKitchenPresentation, setSavedKitchenPresentation] = useState({ modifier_marker: 'indent', line_density: 'tight' })
+  const [receiptPolicyReason, setReceiptPolicyReason] = useState('')
   const [routing, setRouting] = useState({ stations: [], targets: [] })
   const [savedRouting, setSavedRouting] = useState({ stations: [], targets: [] })
   const [catalog, setCatalog] = useState([])
@@ -116,6 +143,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const previewRequestRef = useRef(0)
+  const loadedConfigRef = useRef(null)
 
   useEffect(() => {
     let current = true
@@ -141,7 +169,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
         if (!current) return
         if (itemsResult.error) throw itemsResult.error
         if (modifiersResult.error) throw modifiersResult.error
-        const normalizedConfig = {
+        const mergedPrinting = {
           ...clone(DEFAULT_CONFIG), ...(printing || {}),
           customer: {
             ...clone(DEFAULT_CONFIG.customer), ...(printing?.customer || {}),
@@ -151,8 +179,16 @@ export default function PrintingRoutingPage({ restaurantId }) {
           kitchen: { ...clone(DEFAULT_CONFIG.kitchen), ...(printing?.kitchen || {}) },
         }
         const normalizedRouting = routes || { stations: [], targets: [] }
-        setConfig(normalizedConfig)
-        setSavedConfig(normalizedConfig)
+        setConfig(mergedPrinting)
+        setSavedConfig(mergedPrinting)
+        loadedConfigRef.current = clone(mergedPrinting)
+        setSavedAutoPrintAfterPayment(mergedPrinting.auto_print_after_payment !== false)
+        setSavedExternalCardSignedSlip(mergedPrinting.customer?.signed_tip_slip?.external_card === true)
+        setSavedKitchenPresentation({
+          modifier_marker: mergedPrinting.kitchen?.modifier_marker ?? 'indent',
+          line_density: mergedPrinting.kitchen?.line_density ?? 'tight',
+        })
+        setReceiptPolicyReason('')
         setLoadedRestaurantId(String(restaurantId))
         setRouting(normalizedRouting)
         setSavedRouting(normalizedRouting)
@@ -213,7 +249,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
           signal: controller.signal,
           cache: 'no-store',
         })
-        if (!['printing-v5', 'printing-v6', 'printing-v7', 'printing-v8'].includes(result.renderer_version)) {
+        if (!['printing-v5', 'printing-v6', 'printing-v7', 'printing-v8', 'printing-v9'].includes(result.renderer_version)) {
           throw new Error('Receipt preview version is not supported. Refresh this page after the POS backend finishes updating.')
         }
         if (requestId === previewRequestRef.current) {
@@ -359,11 +395,35 @@ export default function PrintingRoutingPage({ restaurantId }) {
   })
 
   const save = async () => {
-    setSaving(true); setError(''); setMessage('')
+    const autoPrintChanged = (config.auto_print_after_payment !== false) !== savedAutoPrintAfterPayment
+    const externalSignedSlipChanged = (config.customer?.signed_tip_slip?.external_card === true) !== savedExternalCardSignedSlip
+    const kitchenPresentationChanged = (config.kitchen?.modifier_marker ?? 'indent') !== savedKitchenPresentation.modifier_marker
+      || (config.kitchen?.line_density ?? 'tight') !== savedKitchenPresentation.line_density
+    const auditedBehaviorChanged = autoPrintChanged || externalSignedSlipChanged || kitchenPresentationChanged
+    const reason = receiptPolicyReason.trim()
+    setError(''); setMessage('')
+    if (auditedBehaviorChanged && reason.length < 2) {
+      setError('Enter a reason for changing receipt or kitchen-ticket behavior.')
+      return
+    }
+    setSaving(true)
     try {
-      const saved = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`, { method: 'PUT', body: JSON.stringify(config) })
+      const fresh = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`, { cache: 'no-store' })
+      const rebasedConfig = mergeChangedPrintingValues(loadedConfigRef.current || fresh, config, fresh)
+      const saved = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...rebasedConfig, ...(auditedBehaviorChanged ? { change_reason: reason } : {}) }),
+      })
       setConfig(saved)
       setSavedConfig(saved)
+      loadedConfigRef.current = clone(saved)
+      setSavedAutoPrintAfterPayment(saved.auto_print_after_payment !== false)
+      setSavedExternalCardSignedSlip(saved.customer?.signed_tip_slip?.external_card === true)
+      setSavedKitchenPresentation({
+        modifier_marker: saved.kitchen?.modifier_marker ?? 'indent',
+        line_density: saved.kitchen?.line_density ?? 'tight',
+      })
+      setReceiptPolicyReason('')
       for (const targetId of dirtyTargetIds) {
         const target = (routing.targets || []).find(candidate => String(candidate.id) === String(targetId))
         if (!target) continue
@@ -398,6 +458,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
     setConfig(clone(savedConfig))
     setRouting(clone(savedRouting))
     setDirtyTargetIds(new Set())
+    setReceiptPolicyReason('')
     setError('')
     setMessage('Changes discarded.')
   }
@@ -443,6 +504,22 @@ export default function PrintingRoutingPage({ restaurantId }) {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,.85fr)]">
         <div className="space-y-4">
+          {section === 'receipts' && (
+            <div className="rounded-2xl border border-dash-gold/30 bg-dash-gold/[0.07] p-5">
+              <p className="label-mono">Paid receipt behavior</p>
+              <h2 className="mt-2 text-lg font-semibold">Automatic receipt after payment</h2>
+              <p className="mt-1 text-sm text-dash-tertiary">This restaurant-wide policy is shared with every POS station. It is enabled by default.</p>
+              <div className="mt-3"><Toggle label="Print automatically when payment succeeds" checked={config.auto_print_after_payment !== false} onChange={value => setConfig(current => ({ ...current, auto_print_after_payment: value }))} /></div>
+              <p className="mt-3 text-xs text-dash-tertiary">When off, payment still completes normally and staff can print from Payment Complete or a closed check at any time.</p>
+              {(config.auto_print_after_payment !== false) !== savedAutoPrintAfterPayment && (
+                <label className="mt-4 block">
+                  <span className="label-mono">Reason for change</span>
+                  <input maxLength={300} value={receiptPolicyReason} onChange={event => setReceiptPolicyReason(event.target.value)} placeholder="Example: Guests prefer digital receipts" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" />
+                  <span className="mt-2 block text-xs text-dash-tertiary">Saved in the printing configuration audit log.</span>
+                </label>
+              )}
+            </div>
+          )}
           <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
             <div className="grid gap-4 md:grid-cols-2">
               <Select label="Output" value={output} onChange={setOutput}><option value="kitchen_ticket">Kitchen ticket</option><option value="customer_receipt">Customer receipt</option><option value="server_report">Server report</option></Select>
@@ -453,7 +530,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
               {output === 'kitchen_ticket' && <Select label="Apply to" value={scope} onChange={setScope}><option value="whole">Whole Kitchen</option>{stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}</Select>}
               {output === 'kitchen_ticket' && <Select label="Preview order method" value={kitchenVariant} onChange={setKitchenVariant}><option value="dine_in">Dine-in</option><option value="togo">To-Go</option><option value="delivery">Delivery</option></Select>}
               {output === 'kitchen_ticket' && <label className="block"><span className="label-mono">Preview check memo</span><input maxLength={240} value={kitchenMemo} onChange={event => setKitchenMemo(event.target.value)} placeholder="Blank previews a ticket with no check memo" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></label>}
-              {output === 'customer_receipt' && <Select label="Preview state" value={customerVariant} onChange={setCustomerVariant}><option value="open_check">Open check</option><option value="paid_cash">Paid with cash</option><option value="paid_card">Paid with credit card</option><option value="paid_debit">Paid with debit / prepaid</option></Select>}
+              {output === 'customer_receipt' && <Select label="Preview state" value={customerVariant} onChange={setCustomerVariant}><option value="open_check">Open check</option><option value="paid_cash">Paid with cash</option><option value="paid_card">Paid with credit card</option><option value="paid_debit">Paid with debit / prepaid</option><option value="paid_external">Paid on external card terminal</option></Select>}
             </div>
           </div>
 
@@ -468,7 +545,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <h2 className="text-lg font-semibold">Receipt presentation</h2>
-                <p className="mt-1 text-sm text-dash-tertiary">Medium is the readable default. Compact fits more per line; Large increases line height.</p>
+                <p className="mt-1 text-sm text-dash-tertiary">Medium is the readable receipt default with comfortable spacing and modest total emphasis. Compact fits more per line; Large increases line height.</p>
                 <div className="mt-4"><Select label="Text size" value={config.customer?.size || 'medium'} onChange={value => patchCustomer({ size: value })}><option value="compact">Compact</option><option value="medium">Medium</option><option value="large">Large</option></Select></div>
               </div>
 
@@ -493,13 +570,13 @@ export default function PrintingRoutingPage({ restaurantId }) {
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <h2 className="text-lg font-semibold">Customer receipt detail</h2>
-                <p className="mt-1 text-sm text-dash-tertiary">Clean hides $0 items and ordinary free modifiers. Full prints every line.</p>
-                <div className="mt-4 grid grid-cols-2 gap-2">{['clean', 'full'].map(value => <button key={value} onClick={() => setConfig(current => ({ ...current, receipt_detail: value }))} className={`rounded-xl border px-4 py-3 text-sm font-medium capitalize ${config.receipt_detail === value ? 'border-dash-gold bg-dash-gold/15 text-dash-gold' : 'border-white/10 text-dash-secondary'}`}>{value}</button>)}</div>
+                <p className="mt-1 text-sm text-dash-tertiary">Keep complimentary items visible for loss prevention, or hide ordinary $0 lines for a shorter receipt. Fully discounted paid items and their discounts remain visible.</p>
+                <div className="mt-3"><Toggle label="Show $0 items on customer receipts" checked={config.receipt_detail !== 'clean'} onChange={checked => setConfig(current => ({ ...current, receipt_detail: checked ? 'full' : 'clean' }))} /></div>
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <h2 className="text-lg font-semibold">Suggested tips</h2>
-                <p className="mt-1 text-sm text-dash-tertiary">Print percentage choices on the open check. Paid receipts never ask for another tip.</p>
+                <p className="mt-1 text-sm text-dash-tertiary">Print percentage choices on the open check. The external-card option below is a separate handwritten tip workflow.</p>
                 <div className="mt-3"><Toggle label="Print suggested tips" checked={config.customer?.suggested_tips?.enabled ?? false} onChange={value => patchCustomer({}, { enabled: value })} /></div>
                 {config.customer?.suggested_tips?.enabled && <div className="mt-4 space-y-4">
                   <div className="grid gap-4 md:grid-cols-2">
@@ -514,6 +591,26 @@ export default function PrintingRoutingPage({ restaurantId }) {
                   </div>
                   <Toggle label="Show calculated dollar amounts" checked={config.customer.suggested_tips.show_amounts} onChange={value => patchCustomer({}, { show_amounts: value })} />
                 </div>}
+                <div className="mt-4 border-t border-white/10 pt-4">
+                  <Toggle
+                    label="Print Tip, Total & Signature lines for external card payments"
+                    checked={config.customer?.signed_tip_slip?.external_card === true}
+                    onChange={value => patchCustomer({
+                      signed_tip_slip: {
+                        ...(config.customer?.signed_tip_slip || {}),
+                        external_card: value,
+                      },
+                    })}
+                  />
+                  <p className="mt-2 text-xs text-dash-tertiary">Integrated Shire card payments already use their standard signed merchant slip. Enable this only when the external terminal does not print its own slip. A recorded tip or finalized No Tip decision never prints blank tip lines.</p>
+                  {(config.customer?.signed_tip_slip?.external_card === true) !== savedExternalCardSignedSlip && (config.auto_print_after_payment !== false) === savedAutoPrintAfterPayment && (
+                    <label className="mt-4 block">
+                      <span className="label-mono">Reason for change</span>
+                      <input maxLength={300} value={receiptPolicyReason} onChange={event => setReceiptPolicyReason(event.target.value)} placeholder="Example: External terminal does not print a signed slip" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" />
+                      <span className="mt-2 block text-xs text-dash-tertiary">Saved in the printing configuration audit log.</span>
+                    </label>
+                  )}
+                </div>
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
@@ -576,7 +673,18 @@ export default function PrintingRoutingPage({ restaurantId }) {
                     <Select label="Note size" value={effectiveKitchen.note_size ?? 'large'} onChange={value => patchKitchen({ note_size: value })}><option value="standard">Standard</option><option value="large">Large (recommended)</option></Select>
                     <Select label="Modifier color" value={effectiveKitchen.modifier_color} onChange={value => patchKitchen({ modifier_color: value })}><option value="black">Black</option><option value="red">Red — impact printer ribbon</option></Select>
                     <Select label="Note color" value={effectiveKitchen.note_color ?? 'red'} onChange={value => patchKitchen({ note_color: value })}><option value="black">Black</option><option value="red">Red — impact printer ribbon</option></Select>
+                    <Select label="Modifier marker" value={effectiveKitchen.modifier_marker ?? 'indent'} onChange={value => patchKitchen({ modifier_marker: value })}><option value="indent">Indent only (recommended)</option><option value="plus">Plus sign</option></Select>
+                    <Select label="Vertical density" value={effectiveKitchen.line_density ?? 'tight'} onChange={value => patchKitchen({ line_density: value })}><option value="tight">Shorter same-width font + tight pitch</option><option value="standard">Original tall font + spacing</option></Select>
                   </div>
+                  {scope === 'whole' && (
+                    (config.kitchen?.modifier_marker ?? 'indent') !== savedKitchenPresentation.modifier_marker
+                    || (config.kitchen?.line_density ?? 'tight') !== savedKitchenPresentation.line_density
+                  ) && (
+                    <div className="mt-3 rounded-xl border border-dash-gold/25 bg-dash-gold/[0.06] p-3">
+                      <label className="text-xs font-semibold text-dash-cream">Reason for kitchen-ticket presentation change</label>
+                      <input maxLength={300} value={receiptPolicyReason} onChange={event => setReceiptPolicyReason(event.target.value)} placeholder="Example: Adopt the tighter hybrid kitchen ticket" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" />
+                    </div>
+                  )}
                   <p className={`mt-2 text-xs ${supportsRed === false ? 'text-amber-200' : 'text-dash-tertiary'}`}>
                     {supportsRed === true
                       ? 'This impact printer can use its red ribbon for modifiers and notes.'
@@ -662,7 +770,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
           <div className="flex items-center justify-between"><div><p className="label-mono">Live preview</p><h2 className="mt-1 text-lg font-semibold">{previewTitle}</h2></div>{previewStatus === 'ready' ? <span className="inline-flex items-center gap-1 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" /> Real renderer</span> : previewStatus === 'error' ? <span className="inline-flex items-center gap-1 text-xs text-amber-200"><AlertCircle className="h-4 w-4" /> Renderer unavailable</span> : <span className="inline-flex items-center gap-1 text-xs text-dash-tertiary"><Loader2 className="h-4 w-4 animate-spin" /> Rendering</span>}</div>
           <div className="mt-5 overflow-x-auto pb-2">
             <div className="mx-auto w-max min-w-[430px] bg-[#fffdf6] px-7 py-8 text-black shadow-2xl">
-            <pre className={`whitespace-pre font-mono leading-relaxed ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{previewLines.map((line, index, lines) => {
+            <pre className={`whitespace-pre font-mono ${output === 'kitchen_ticket' && (effectiveKitchen.line_density ?? 'tight') === 'tight' ? 'leading-[1.18]' : 'leading-relaxed'} ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{previewLines.map((line, index, lines) => {
               const isModifier = output === 'kitchen_ticket' && isKitchenPreviewModifierLine(lines, index)
               const isItem = output === 'kitchen_ticket' && isKitchenPreviewItemLine(line)
               const isMethod = output === 'kitchen_ticket'

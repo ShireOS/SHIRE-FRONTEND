@@ -39,7 +39,7 @@ export function defaultRolePermission(roleKey: string, permissionTier?: string):
     can_discount: elevated || service,
     discount_limit_percent: elevated ? '' : service ? '20' : '',
     can_open_cash_drawer: elevated || cashier || key === 'bartender',
-    can_no_sale: elevated || cashier,
+    can_no_sale: elevated || cashier || key === 'bartender',
     can_paid_in_out: elevated || cashier,
     can_adjust_tips: elevated,
     can_adjust_gratuity: elevated,

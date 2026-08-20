@@ -198,7 +198,8 @@ const PRESETS = [
 
 // ---------------------------------------------------------------------------
 // Sample-night simulator — a faithful client-side mirror of the backend
-// engine (tipouts first and capped at tips, then pool contribution + payout)
+// engine (sales tipouts are fully owed; tip-based tipouts remain capped, then
+// pool contribution + payout)
 // over a small fabricated cast built from the restaurant's own roles.
 // ---------------------------------------------------------------------------
 
@@ -257,6 +258,7 @@ function buildSampleCast(settings, jobCodes) {
         salesByCategory,
         tipsByCategory,
         tipoutPaid: 0,
+        tipoutPending: 0,
         tipoutReceived: 0,
         contributed: 0,
         poolShare: 0,
@@ -301,7 +303,7 @@ export function simulateSampleNight(settings, jobCodes) {
     return hours.some(h => h > 0) ? hours : members.map(() => 1)
   }
 
-  // --- tipouts (own + restaurant scope), capped at each payer's tips ---
+  // --- tipouts (sales obligations are full; tip-basis obligations are capped) ---
   const catKey = value => String(value || '').trim().toLowerCase()
   const lookup = (map, category) => {
     const hit = Object.entries(map).find(([cat]) => catKey(cat) === catKey(category))
@@ -321,10 +323,10 @@ export function simulateSampleNight(settings, jobCodes) {
   }
 
   const plannedByPerson = new Map()
-  const plan = (person, targets, amount) => {
-    if (!(amount > 0) || !targets?.length) return
+  const plan = (person, targets, amount, basis) => {
+    if (!(amount > 0)) return
     if (!plannedByPerson.has(person)) plannedByPerson.set(person, [])
-    plannedByPerson.get(person).push({ targets, amount })
+    plannedByPerson.get(person).push({ targets: targets || [], amount, basis })
   }
   const previewWarnings = new Set()
   const destinationsFor = tipout => {
@@ -340,9 +342,8 @@ export function simulateSampleNight(settings, jobCodes) {
       if (!targets?.length) {
         const label = destination.unallocated ? 'Unallocated' : labelFor(jobCodes, destination.target_role)
         previewWarnings.add(`${money(amount)} is reserved for ${label} and will enter the SHIRE tip-out audit.`)
-        return
       }
-      plan(person, targets, amount)
+      plan(person, targets, amount, tipout.basis)
     })
   }
   byRole.forEach((members, roleKey) => {
@@ -350,7 +351,7 @@ export function simulateSampleNight(settings, jobCodes) {
     tipouts.forEach(t => {
       if (t.basis_scope === 'restaurant') {
         const amount = houseBasis(t) * num(t.percent) / 100
-        const funding = allocate(amount, members.map(m => Math.max(0, m.tips)))
+        const funding = allocate(amount, members.map(m => Math.max(0, ownBasis(m, t))))
         members.forEach((m, i) => planDestinations(m, t, funding[i]))
       } else {
         members.forEach(m => planDestinations(m, t, ownBasis(m, t) * num(t.percent) / 100))
@@ -359,15 +360,23 @@ export function simulateSampleNight(settings, jobCodes) {
   })
   notes.push(...previewWarnings)
   plannedByPerson.forEach((planned, person) => {
-    const total = planned.reduce((s, item) => s + item.amount, 0)
-    const scale = total > person.tips && total > 0 ? person.tips / total : 1
-    planned.forEach(({ targets, amount }) => {
-      const paid = amount * scale
+    const tipBasedTotal = planned
+      .filter(item => item.basis !== 'sales')
+      .reduce((sum, item) => sum + item.amount, 0)
+    const tipScale = tipBasedTotal > person.tips && tipBasedTotal > 0
+      ? person.tips / tipBasedTotal
+      : 1
+    planned.forEach(({ targets, amount, basis }) => {
+      const paid = amount * (basis === 'sales' ? 1 : tipScale)
+      if (!targets.length) {
+        person.tipoutPending += paid
+        return
+      }
       person.tipoutPaid += paid
       const weights = splitWeights(targets)
       allocate(paid, weights).forEach((share, i) => { targets[i].tipoutReceived += share })
     })
-    if (scale < 1) notes.push(`${person.name}’s tipouts were capped at their tips.`)
+    if (tipScale < 1) notes.push(`${person.name}’s tip-based tipouts were capped at their tips.`)
   })
 
   // --- pool: contribution then payout ---
@@ -377,7 +386,7 @@ export function simulateSampleNight(settings, jobCodes) {
     cast.forEach(person => {
       const rule = person.rule
       if (!rule.tip_eligible || !rule.contributes_to_pool) return
-      const remaining = Math.max(0, person.tips - person.tipoutPaid)
+      const remaining = Math.max(0, person.tips - person.tipoutPaid - person.tipoutPending)
       const share = rule.pool_contribution_percent === '' ? 100 : Math.min(100, Math.max(0, num(rule.pool_contribution_percent)))
       person.contributed = remaining * share / 100
       pool += person.contributed
@@ -409,7 +418,7 @@ export function simulateSampleNight(settings, jobCodes) {
   }
 
   cast.forEach(person => {
-    person.final = person.tips - person.tipoutPaid - person.contributed + person.poolShare + person.tipoutReceived
+    person.final = person.tips - person.tipoutPaid - person.tipoutPending - person.contributed + person.poolShare + person.tipoutReceived
   })
   return { cast, notes }
 }
@@ -1209,7 +1218,7 @@ export default function TipRulesEditor({
 
       {/* ---- Tipouts ---- */}
       <SectionCard>
-        <StepHeading title="Tipouts" hint="The basis only sets how the amount is calculated — the money always comes out of the paying role's tips." />
+        <StepHeading title="Tipouts" hint="Sales-based amounts are fully owed even when recorded tips are lower. Tip-based amounts cannot exceed recorded tips." />
         {tipoutRows.length === 0 ? (
           <p className="text-sm text-dash-tertiary">No tipouts yet — every role keeps its tips (minus any pool contribution above).</p>
         ) : null}
@@ -1362,7 +1371,7 @@ export default function TipRulesEditor({
                 name: p.staff_name || '—', role: p.role_key,
                 detail: `${num(p.hours_worked).toFixed(1)}h · ${money(p.sales_total)} sales`,
                 tips: num(p.tips_collected),
-                out: num(p.tipout_paid) + num(p.contributed_to_pool),
+                out: num(p.tipout_paid) + num(p.tipout_pending) + num(p.contributed_to_pool),
                 received: num(p.tipout_received) + num(p.pool_share),
                 final: num(p.final_amount),
               }))
@@ -1370,7 +1379,7 @@ export default function TipRulesEditor({
                 name: person.name, role: labelFor(jobCodes, person.role_key),
                 detail: `${person.hours}h${person.sales ? ` · ${money(person.sales)} sales` : ''}`,
                 tips: person.tips,
-                out: person.tipoutPaid + person.contributed,
+                out: person.tipoutPaid + person.tipoutPending + person.contributed,
                 received: person.tipoutReceived + person.poolShare,
                 final: person.final,
               }))
