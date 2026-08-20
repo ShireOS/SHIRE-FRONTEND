@@ -27,6 +27,8 @@ import { Badge } from '../components/shared/Badge'
 import { Modal, ModalFooter } from '../components/shared/Modal'
 import RolePermissionsPanel from '../components/team/RolePermissionsPanel'
 import PermissionEditor, { diffOverrides } from '../components/team/PermissionEditor'
+import BackOfficeViewEditor from '../components/team/BackOfficeViewEditor'
+import { VIEW_LEVELS, defaultViewPolicy, normalizeViewPolicy } from '../../shared/backOfficeView'
 import { normalizeJobCodes, PERMISSION_TIER_OPTIONS } from '@shire/settings'
 import { cashDrawerRoleSummary } from '../utils/cashDrawerPermissions'
 import {
@@ -67,6 +69,12 @@ const memberTypeLabel = (role) => (
 const invitationTypeLabel = (invitation) => (
   invitation.kind === 'reseller_connection' ? 'Reseller' : memberTypeLabel(invitation.role)
 )
+
+const viewLevelLabel = (policy) => {
+  const normalized = normalizeViewPolicy(policy)
+  if (Object.keys(normalized.overrides).length > 0) return 'Custom view'
+  return `${VIEW_LEVELS.find((level) => level.id === normalized.base)?.label || 'Advanced'} view`
+}
 
 const connectedResellerName = (assignment) => (
   assignment.organization_name
@@ -373,7 +381,7 @@ const invitationRoleForWaiter = (waiter) => {
   return roles.some((value) => ['manager', 'admin', 'supervisor', 'developer', 'owner'].includes(value)) ? 'manager' : 'server'
 }
 
-function AddTeamMemberModal({ restaurantId, waiters, jobCodes, rolePerms, cashDrawerPolicy, roleDefaultsForRole, grantCap, accountTypeOptions, cloneResellerAccess, initialWaiterId, initialRole, onClose, onAdded }) {
+function AddTeamMemberModal({ restaurantId, waiters, jobCodes, rolePerms, cashDrawerPolicy, roleDefaultsForRole, grantCap, accountTypeOptions, cloneResellerAccess, templates, onCreateTemplate, initialWaiterId, initialRole, onClose, onAdded }) {
   const initialWaiter = waiters.find((waiter) => waiter.id === initialWaiterId)
   const initialAccountRole = initialRole || invitationRoleForWaiter(initialWaiter)
   const [email, setEmail] = useState('')
@@ -389,6 +397,7 @@ function AddTeamMemberModal({ restaurantId, waiters, jobCodes, rolePerms, cashDr
     null,
   ))
   const [resellerPerms, setResellerPerms] = useState(DEFAULT_RESELLER_PERMISSIONS)
+  const [viewPolicy, setViewPolicy] = useState(() => defaultViewPolicy(initialAccountRole === 'owner' ? 'simple' : 'medium'))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
@@ -413,6 +422,7 @@ function AddTeamMemberModal({ restaurantId, waiters, jobCodes, rolePerms, cashDr
     setWaiterId('')
     setPosMode(nextRole === 'server' ? 'new' : 'none')
     setPerms(mergePermissions(roleDefaultsForRole(nextRole), null))
+    setViewPolicy(defaultViewPolicy(nextRole === 'owner' ? 'simple' : 'medium'))
   }
 
   const pickPermissionTier = (nextTier) => {
@@ -484,6 +494,7 @@ function AddTeamMemberModal({ restaurantId, waiters, jobCodes, rolePerms, cashDr
             job_assignments: staffPayPayload(rows),
           } : null,
           permissions: role === 'owner' ? {} : perms,
+          view_policy: viewPolicy,
         })
       const invitationResult = role === 'reseller' ? response : response.invitation_result
       setResult({
@@ -701,6 +712,24 @@ function AddTeamMemberModal({ restaurantId, waiters, jobCodes, rolePerms, cashDr
             </div>
           )}
 
+          {role !== 'reseller' && email.trim() ? (
+            <div className="space-y-3 border-t border-dash-border pt-4">
+              <div>
+                <p className="text-sm font-semibold text-dash-cream">Back Office view</p>
+                <p className="mt-1 text-xs leading-5 text-dash-tertiary">
+                  This controls how much detail they see. Their permissions still decide what they are allowed to do.
+                </p>
+              </div>
+              <BackOfficeViewEditor
+                value={viewPolicy}
+                onChange={setViewPolicy}
+                templates={templates}
+                onSaveTemplate={onCreateTemplate}
+                disabled={busy}
+              />
+            </div>
+          ) : null}
+
           {role === 'reseller' && cloneResellerAccess ? (
             <p className="text-xs leading-5 text-dash-tertiary">
               This reseller will receive the same restaurant access currently assigned to your reseller account.
@@ -765,8 +794,9 @@ function AddTeamMemberModal({ restaurantId, waiters, jobCodes, rolePerms, cashDr
 
 // Per-member permission drawer. Edits the FULL effective map; only the keys
 // that differ from the role defaults are persisted as permission_overrides.
-function MemberPermissionsModal({ restaurantId, member, roleDefaults, grantCap, onClose, onSaved }) {
+function MemberPermissionsModal({ restaurantId, member, roleDefaults, grantCap, templates, onCreateTemplate, onClose, onSaved }) {
   const [perms, setPerms] = useState(() => mergePermissions(roleDefaults, member.permission_overrides))
+  const [viewPolicy, setViewPolicy] = useState(() => normalizeViewPolicy(member.view_assignment?.policy))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
@@ -774,10 +804,17 @@ function MemberPermissionsModal({ restaurantId, member, roleDefaults, grantCap, 
     setBusy(true)
     setError(null)
     try {
-      const updated = await backOfficeApi.updateMember(restaurantId, member.id, {
-        permission_overrides: diffOverrides(perms, roleDefaults),
-      })
-      onSaved(updated)
+      const updated = member.is_primary_owner
+        ? member
+        : await backOfficeApi.updateMember(restaurantId, member.id, {
+          permission_overrides: diffOverrides(perms, roleDefaults),
+        })
+      const viewAssignment = await backOfficeApi.updateMemberViewPolicy(
+        restaurantId,
+        member.user_id,
+        viewPolicy,
+      )
+      onSaved({ ...updated, view_assignment: viewAssignment })
       onClose()
     } catch (saveError) {
       setError(saveError?.message || 'Could not save permissions.')
@@ -786,16 +823,38 @@ function MemberPermissionsModal({ restaurantId, member, roleDefaults, grantCap, 
   }
 
   return (
-    <Modal isOpen onClose={onClose} title={`Permissions — ${member.display_name || member.email}`} size="lg">
+    <Modal isOpen onClose={onClose} title={`Access & view — ${member.display_name || member.email}`} size="xl">
       <div className="space-y-4">
-        <PermissionEditor
-          value={perms}
-          roleDefaults={roleDefaults}
-          onChange={setPerms}
-          grantCap={grantCap}
-          showPreview
-          disabled={busy}
-        />
+        {!member.is_primary_owner ? (
+          <div>
+            <p className="mb-3 text-sm font-semibold text-dash-cream">Permissions</p>
+            <PermissionEditor
+              value={perms}
+              roleDefaults={roleDefaults}
+              onChange={setPerms}
+              grantCap={grantCap}
+              showPreview
+              disabled={busy}
+            />
+          </div>
+        ) : (
+          <p className="rounded-lg border border-dash-border px-3 py-2 text-xs leading-5 text-dash-tertiary">
+            Primary owners always keep full authority. You can simplify how their Back Office is presented below.
+          </p>
+        )}
+        <div className="border-t border-dash-border pt-4">
+          <p className="text-sm font-semibold text-dash-cream">Back Office view</p>
+          <p className="mb-3 mt-1 text-xs leading-5 text-dash-tertiary">
+            Choose a preset or customize individual tabs and control groups. This never grants access.
+          </p>
+          <BackOfficeViewEditor
+            value={viewPolicy}
+            onChange={setViewPolicy}
+            templates={templates}
+            onSaveTemplate={onCreateTemplate}
+            disabled={busy}
+          />
+        </div>
         {error && <p className="text-xs text-dash-danger">{error}</p>}
         <ModalFooter>
           <button
@@ -811,7 +870,7 @@ function MemberPermissionsModal({ restaurantId, member, roleDefaults, grantCap, 
             onClick={() => void save()}
             className="rounded-xl bg-shell-cta px-4 py-2 text-sm font-semibold text-shell-cta-text transition hover:opacity-90 disabled:opacity-50"
           >
-            {busy ? 'Saving…' : 'Save permissions'}
+            {busy ? 'Saving…' : 'Save access & view'}
           </button>
         </ModalFooter>
       </div>
@@ -842,9 +901,11 @@ export default function TeamPage({ restaurantId }) {
   const [boBootstrapped, setBoBootstrapped] = useState(null)
   const [addMemberState, setAddMemberState] = useState(null) // { waiterId: string|null, role?: string } | null
   const [editingMember, setEditingMember] = useState(null)
+  const [viewTemplates, setViewTemplates] = useState([])
 
   const canViewMembers = access.can('team.view')
   const canManageMembers = access.can('team.edit_employees')
+  const canConfigureMemberViews = canManageMembers && (!access.isDirectReseller || access.can('settings.edit'))
   const accountTypeOptions = manageableTeamAccountTypes(access.authorityLevel, {
     isDirectReseller: access.isDirectReseller,
     canManageMembers,
@@ -922,6 +983,22 @@ export default function TeamPage({ restaurantId }) {
     void loadBackOffice()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurantId, access.loading, canViewMembers, boBootstrapped])
+
+  useEffect(() => {
+    if (!restaurantId || access.loading || !canViewMembers) return
+    backOfficeApi.listViewTemplates(restaurantId)
+      .then((templates) => setViewTemplates(Array.isArray(templates) ? templates : []))
+      .catch(() => setViewTemplates([]))
+  }, [restaurantId, access.loading, canViewMembers])
+
+  const createViewTemplate = async (name, policy) => {
+    const created = await backOfficeApi.createViewTemplate(restaurantId, {
+      name,
+      policy,
+      reusable: true,
+    })
+    setViewTemplates((current) => [...current.filter((item) => item.id !== created.id), created])
+  }
 
   const refreshBackOffice = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.backOfficeMembers(restaurantId) })
@@ -1163,7 +1240,7 @@ export default function TeamPage({ restaurantId }) {
         )}
       </div>
 
-      <Pane icon={BadgeDollarSign} eyebrow="POS positions" title="Roles and default pay">
+      {access.viewVisible('team.positions') && <Pane icon={BadgeDollarSign} eyebrow="POS positions" title="Roles and default pay">
         <div className="space-y-2">
           {normalizeStaffRoleOptions(jobCodes).map((code) => {
             const assignedCount = positionAssignmentCounts.get(roleCodeFromJobCode(code)) || 0
@@ -1241,9 +1318,9 @@ export default function TeamPage({ restaurantId }) {
             </button>
           </div>
         </div>
-      </Pane>
+      </Pane>}
 
-      <Pane icon={Users} eyebrow="Employees" title="Roles, pay & POS PIN">
+      {access.viewVisible('team.employees') && <Pane icon={Users} eyebrow="Employees" title="Roles, pay & POS PIN">
         <div className="space-y-2">
           {waiters.map((waiter) => {
             const payRows = staffPayDrafts(waiter, roleOptions).filter(row => row.selected)
@@ -1323,9 +1400,9 @@ export default function TeamPage({ restaurantId }) {
           })}
           {waiters.length === 0 && <p className="text-sm text-dash-tertiary">No employees yet.</p>}
         </div>
-      </Pane>
+      </Pane>}
 
-      <Pane
+      {access.viewVisible('team.access') && <Pane
         icon={ShieldCheck}
         eyebrow="Team access"
         title="Users and restaurant connections"
@@ -1369,29 +1446,34 @@ export default function TeamPage({ restaurantId }) {
                       {suspended ? 'suspended' : 'active'}
                     </Badge>
                     <Badge variant="neutral">{memberTypeLabel(member.role)}</Badge>
-                    {canManageMembers && (
+                    <Badge variant="neutral">{viewLevelLabel(member.view_assignment?.policy)}</Badge>
+                    {canConfigureMemberViews && (
                       <>
                         <button
                           type="button"
                           onClick={() => setEditingMember(member)}
                           className="rounded-lg border border-dash-border px-2 py-1 text-[11px] font-semibold text-dash-secondary transition hover:border-shell-accent/50 hover:text-dash-cream"
                         >
-                          Permissions
+                          Access &amp; view
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => void patchBoMember(member, { status: suspended ? 'active' : 'suspended' })}
-                          className="text-xs font-semibold text-dash-tertiary transition hover:text-dash-secondary"
-                        >
-                          {suspended ? 'Reactivate' : 'Suspend'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void removeBoMember(member)}
-                          className="text-xs font-semibold text-dash-danger/80 transition hover:text-dash-danger"
-                        >
-                          Remove
-                        </button>
+                        {!member.is_primary_owner && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => void patchBoMember(member, { status: suspended ? 'active' : 'suspended' })}
+                              className="text-xs font-semibold text-dash-tertiary transition hover:text-dash-secondary"
+                            >
+                              {suspended ? 'Reactivate' : 'Suspend'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void removeBoMember(member)}
+                              className="text-xs font-semibold text-dash-danger/80 transition hover:text-dash-danger"
+                            >
+                              Remove
+                            </button>
+                          </>
+                        )}
                       </>
                     )}
                   </span>
@@ -1444,6 +1526,7 @@ export default function TeamPage({ restaurantId }) {
                 <span className="ml-auto flex flex-wrap items-center gap-2">
                   <Badge variant="gold" dot>invited (pending)</Badge>
                   <Badge variant="neutral">{invitationTypeLabel(invitation)}</Badge>
+                  {invitation.kind !== 'reseller_connection' && <Badge variant="neutral">{viewLevelLabel(invitation.view_policy)}</Badge>}
                   {invitation.accept_url && <CopyButton text={invitation.accept_url} label="Copy invite link" />}
                   {canManageMembers && (
                     invitation.kind !== 'reseller_connection'
@@ -1471,15 +1554,15 @@ export default function TeamPage({ restaurantId }) {
             )}
           </div>
         )}
-      </Pane>
+      </Pane>}
 
-      <RolePermissionsPanel
+      {access.viewVisible('team.permissions') && <RolePermissionsPanel
         restaurantId={restaurantId}
         cashDrawerPolicy={cashDrawerPolicy}
         onRolesChange={setRolePerms}
         authorityLevel={access.authorityLevel}
         jobCodes={jobCodes}
-      />
+      />}
 
       {employeeEditor && (
         <EmployeeJobsPayModal
@@ -1505,6 +1588,8 @@ export default function TeamPage({ restaurantId }) {
           grantCap={grantCap}
           accountTypeOptions={accountTypeOptions}
           cloneResellerAccess={access.isDirectReseller && !access.isOwner}
+          templates={viewTemplates}
+          onCreateTemplate={access.can('settings.edit') ? createViewTemplate : undefined}
           initialWaiterId={addMemberState.waiterId}
           initialRole={addMemberState.role}
           onClose={() => setAddMemberState(null)}
@@ -1521,6 +1606,8 @@ export default function TeamPage({ restaurantId }) {
           member={editingMember}
           roleDefaults={editingMember.waiter_id ? roleDefaultsForWaiter(editingMember.waiter_id) : null}
           grantCap={grantCap}
+          templates={viewTemplates}
+          onCreateTemplate={access.can('settings.edit') ? createViewTemplate : undefined}
           onClose={() => setEditingMember(null)}
           onSaved={(updated) => {
             setBoMembers((prev) => prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)))

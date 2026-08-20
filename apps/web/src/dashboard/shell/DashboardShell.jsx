@@ -42,8 +42,11 @@ import { supabase } from '../../shared/lib/supabase'
 import { queryClient, queryKeys, fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import { TAB_PERMISSIONS } from '../../shared/permissions'
+import { SECTION_VIEW_CAPABILITIES, TAB_VIEW_CAPABILITIES, defaultViewPolicy, normalizeViewPolicy } from '../../shared/backOfficeView'
 import { backOfficeApi } from '../../shared/api/backOfficeApi'
 import { fetchReservationsApi } from '../../shared/api/reservationsClient'
+import { Modal, ModalFooter } from '../components/shared/Modal'
+import BackOfficeViewEditor from '../components/team/BackOfficeViewEditor'
 
 const THEME_STORAGE_KEY = 'shire_dashboard_theme'
 
@@ -357,6 +360,65 @@ function Breadcrumb({ trail = [] }) {
   )
 }
 
+function MyBackOfficeViewModal({ restaurantId, access, onClose }) {
+  const [policy, setPolicy] = useState(() => normalizeViewPolicy(access.viewPolicy))
+  const [templates, setTemplates] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    backOfficeApi.listViewTemplates(restaurantId)
+      .then((rows) => setTemplates(Array.isArray(rows) ? rows : []))
+      .catch(() => setTemplates([]))
+  }, [restaurantId])
+
+  const saveTemplate = async (name, templatePolicy) => {
+    const created = await backOfficeApi.createViewTemplate(restaurantId, {
+      name,
+      policy: templatePolicy,
+      reusable: true,
+    })
+    setTemplates((current) => [...current.filter((item) => item.id !== created.id), created])
+  }
+
+  const save = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await backOfficeApi.updateMyViewPolicy(restaurantId, policy)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.backOfficeAccess(restaurantId) })
+      onClose()
+    } catch (saveError) {
+      setError(saveError?.message || 'Could not save your Back Office view.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal isOpen onClose={busy ? () => {} : onClose} title="My Back Office view" size="xl">
+      <div className="max-h-[76vh] space-y-4 overflow-y-auto pr-1">
+        <p className="text-sm leading-6 text-dash-tertiary">
+          Choose how much detail you want to see. This changes presentation only; your permissions stay the same.
+        </p>
+        <BackOfficeViewEditor
+          value={policy || defaultViewPolicy('advanced')}
+          onChange={setPolicy}
+          templates={templates}
+          onSaveTemplate={access.can('settings.edit') ? saveTemplate : undefined}
+          disabled={busy}
+        />
+        {error && <p className="text-sm text-dash-danger">{error}</p>}
+        <ModalFooter>
+          <button type="button" onClick={onClose} disabled={busy} className="rounded-lg border border-dash-border px-4 py-2 text-sm font-semibold text-dash-secondary">Cancel</button>
+          <button type="button" onClick={() => void save()} disabled={busy} className="rounded-lg bg-shell-cta px-4 py-2 text-sm font-semibold text-shell-cta-text disabled:opacity-50">
+            {busy ? 'Saving...' : 'Save view'}
+          </button>
+        </ModalFooter>
+      </div>
+    </Modal>
+  )
+}
+
 export default function DashboardShell({
   context = 'enterprise', // 'enterprise' | 'store'
   activeItem = null,
@@ -375,6 +437,7 @@ export default function DashboardShell({
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [theme, setTheme] = useShellTheme()
   const [alertCount, setAlertCount] = useState(0)
+  const [viewEditorOpen, setViewEditorOpen] = useState(false)
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
@@ -402,19 +465,24 @@ export default function DashboardShell({
   const roleLabel = deriveRoleLabel(auth)
   const hidden = hiddenSurfaces(auth)
   const access = useBackOfficeAccess(auth, inStore ? restaurantId : null)
-  const tabVisible = (id) => {
+  const tabVisible = (id, section = null) => {
     if (id === 'setup' && !showSetup) return false
     if (allowedStoreTabs && !allowedStoreTabs.includes(id)) return false
     if (hidden.has(id)) return false
     // While a member's access is loading, keep nav visible (server enforces).
     if (access.loading) return true
     const required = TAB_PERMISSIONS[id]
-    return !required || access.can(required)
+    if (required && !access.can(required)) return false
+    if (id === 'setup') return true
+    const tabCapability = TAB_VIEW_CAPABILITIES[id]
+    if (tabCapability && !access.viewVisible(tabCapability)) return false
+    const sectionCapability = SECTION_VIEW_CAPABILITIES[`${id}#${section}`]
+    return !sectionCapability || access.viewVisible(sectionCapability)
   }
   const storeNav = STORE_NAV
     .map((item) => (
       item.children
-        ? { ...item, children: item.children.filter((child) => tabVisible(child.id)) }
+        ? { ...item, children: item.children.filter((child) => tabVisible(child.id, child.section)) }
         : item
     ))
     .filter((item) => {
@@ -616,7 +684,12 @@ export default function DashboardShell({
                 </span>
               )}
             </button>
-            <div className="glass-panel flex items-center gap-2 rounded-xl border border-dash-border py-1 pl-1 pr-3">
+            <button
+              type="button"
+              onClick={() => inStore && setViewEditorOpen(true)}
+              title={inStore ? 'Configure my Back Office view' : displayName}
+              className="glass-panel flex items-center gap-2 rounded-xl border border-dash-border py-1 pl-1 pr-3 text-left transition hover:border-shell-accent/40"
+            >
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-shell-accent text-xs font-bold text-shell-cta-text">
                 {initials}
               </span>
@@ -624,7 +697,8 @@ export default function DashboardShell({
                 <span className="max-w-[140px] truncate text-xs font-semibold text-dash-cream">{displayName}</span>
                 <span className="label-mono !text-[9px]">{roleLabel}</span>
               </span>
-            </div>
+              {inStore && <SlidersHorizontal size={13} className="hidden text-dash-tertiary sm:block" aria-hidden="true" />}
+            </button>
             <button
               type="button"
               onClick={() => void auth.signOut()}
@@ -642,6 +716,13 @@ export default function DashboardShell({
           </div>
         </main>
       </div>
+      {viewEditorOpen && inStore && (
+        <MyBackOfficeViewModal
+          restaurantId={restaurantId}
+          access={access}
+          onClose={() => setViewEditorOpen(false)}
+        />
+      )}
     </div>
   )
 }

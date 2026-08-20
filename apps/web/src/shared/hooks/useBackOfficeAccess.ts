@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { backOfficeApi, type BackOfficeAccess } from '../api/backOfficeApi'
 import { allPermissions, can as canCheck, type PermissionMap } from '../permissions'
+import { defaultViewPolicy, viewMode, viewVisible } from '../backOfficeView'
 import { queryKeys } from '../query/queryKeys'
 import { STALE_TIMES } from '../query/queryClient'
 
@@ -12,8 +13,8 @@ interface AuthLike {
 }
 
 // Effective back-office access for the signed-in user at one restaurant.
-// Primary owners and platform admins can be derived locally. Restaurant members
-// and resellers fetch the server-computed grant for this specific restaurant.
+// Permission bypasses can be derived locally, but everyone still fetches their
+// restaurant-specific presentation policy.
 export function useBackOfficeAccess(auth: AuthLike, restaurantId: string | null | undefined) {
   const ownsRestaurant = Boolean(
     restaurantId &&
@@ -27,7 +28,7 @@ export function useBackOfficeAccess(auth: AuthLike, restaurantId: string | null 
   const query = useQuery<BackOfficeAccess>({
     queryKey: restaurantId ? queryKeys.backOfficeAccess(restaurantId) : ['back-office-access', 'none'],
     queryFn: () => backOfficeApi.myAccess(restaurantId as string),
-    enabled: Boolean(restaurantId) && !bypass,
+    enabled: Boolean(restaurantId && auth?.user?.id),
     staleTime: STALE_TIMES.setup,
     retry: 1,
   })
@@ -42,11 +43,13 @@ export function useBackOfficeAccess(auth: AuthLike, restaurantId: string | null 
       : auth?.accountType === 'admin'
         ? 'platform_admin'
         : query.data?.authority_level || 'staff'
+    const viewAssignment = query.data?.view_assignment
+    const viewPolicy = viewAssignment?.policy || defaultViewPolicy('advanced')
     return {
       isOwner,
       // Server guards remain authoritative while this restaurant-specific
       // access result is loading.
-      loading: !bypass && query.isLoading,
+      loading: query.isLoading,
       permissions,
       can: (key: string) => isOwner || canCheck(permissions, key),
       memberId: query.data?.member_id ?? null,
@@ -55,6 +58,10 @@ export function useBackOfficeAccess(auth: AuthLike, restaurantId: string | null 
         || (auth?.accountType === 'reseller' && canCheck(permissions, 'team.edit_employees'))
       ),
       authorityLevel,
+      viewAssignment,
+      viewPolicy,
+      viewMode: (capabilityId: string) => viewMode(viewPolicy, capabilityId),
+      viewVisible: (capabilityId: string) => viewVisible(viewPolicy, capabilityId),
     }
   }, [auth?.accountType, bypass, ownsRestaurant, query.data, query.isLoading])
 }

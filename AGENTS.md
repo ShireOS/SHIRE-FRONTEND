@@ -88,6 +88,26 @@
 - UI gating is courtesy only — every mutating endpoint must check the effective
   permission map server-side.
 
+### Back Office presentation granularity (2026-08-20)
+- Presentation is independent from authorization. Per-user, per-restaurant
+  policies live in ML-owned `back_office_view_assignments`; reusable versioned
+  snapshots live in `back_office_view_templates`; every assignment change is
+  recorded in `back_office_view_audit`. These rows never grant data or mutation
+  access, and POS/Host services do not consume them.
+- Policies use stable capability IDs from
+  `apps/web/src/shared/backOfficeView.ts`, a Simple/Medium/Advanced base, and
+  optional `hidden`/`summary`/`standard`/`full` overrides. Navigation, deep-link
+  handling, nested tabs, and control groups must all use the same resolver.
+  Incomplete Setup and critical operational blockers remain reachable.
+- Team -> Users and restaurant connections configures an existing owner or
+  member's view. New restaurant-member invitations snapshot
+  `access_invitations.back_office_view_policy` and apply it on acceptance.
+  Every authorized user can change their own view; a reseller needs both the
+  store's Team and Setup grants to configure another person's view. Hiding a
+  surface must never suppress its server permission check or alter POS data.
+- Existing accounts without an assignment resolve to Advanced for compatibility;
+  newly created restaurant owners receive an explicit Simple assignment.
+
 ### When you code in this area (STANDING RULES)
 - **Every new back-office feature, page, tab, or mutating endpoint MUST be wired
   into the permission system in the same PR/commit:** assign an existing

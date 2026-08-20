@@ -1,5 +1,6 @@
 import { fetchWithSupabaseAuth } from '../query/fetchWithSupabaseAuth'
 import type { PermissionMap } from '../permissions'
+import type { BackOfficeViewAssignment, BackOfficeViewPolicy } from '../backOfficeView'
 
 // Back-office access management (ML backend): who may open the dashboard for a
 // restaurant and what they can do there. See src/shared/permissions.ts for the
@@ -15,6 +16,7 @@ export interface BackOfficeAccess {
   member_id: string | null
   waiter_id: string | null
   status: string | null
+  view_assignment?: BackOfficeViewAssignment
 }
 
 export interface BackOfficeMember {
@@ -27,6 +29,8 @@ export interface BackOfficeMember {
   status: 'active' | 'suspended'
   permission_overrides: PermissionMap
   created_at: string
+  is_primary_owner?: boolean
+  view_assignment?: BackOfficeViewAssignment
 }
 
 export interface ConnectedReseller {
@@ -51,6 +55,19 @@ export interface BackOfficeInvitation {
   expires_at: string
   role?: 'server' | 'manager' | 'owner'
   kind?: string
+  view_policy?: BackOfficeViewPolicy | null
+}
+
+export interface BackOfficeViewTemplate {
+  id: string
+  owner_user_id: string
+  restaurant_id: string | null
+  name: string
+  policy: BackOfficeViewPolicy
+  version: number
+  status: 'active' | 'archived'
+  created_at: string
+  updated_at: string
 }
 
 export interface AccessInvitationPreview {
@@ -144,7 +161,7 @@ export const backOfficeApi = {
 
   invite: (
     restaurantId: string,
-    input: { email: string; name?: string; waiter_id?: string | null; role: 'server' | 'manager' | 'owner'; permissions: PermissionMap },
+    input: { email: string; name?: string; waiter_id?: string | null; role: 'server' | 'manager' | 'owner'; permissions: PermissionMap; view_policy?: BackOfficeViewPolicy },
   ): Promise<{ invitation: BackOfficeInvitation; email_sent: boolean; accept_url: string }> =>
     fetchWithSupabaseAuth(`/restaurants/${restaurantId}/back-office/invites`, {
       method: 'POST',
@@ -164,6 +181,7 @@ export const backOfficeApi = {
         job_assignments: Record<string, unknown>[]
       } | null
       permissions: PermissionMap
+      view_policy?: BackOfficeViewPolicy
     },
   ): Promise<TeamMemberCreateResult> =>
     fetchWithSupabaseAuth(`/restaurants/${restaurantId}/team-members`, {
@@ -211,6 +229,49 @@ export const backOfficeApi = {
     fetchWithSupabaseAuth(`/restaurants/${restaurantId}/back-office/members/${memberId}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
+    }),
+
+  updateMyViewPolicy: (
+    restaurantId: string,
+    policy: BackOfficeViewPolicy,
+    templateId?: string | null,
+  ): Promise<BackOfficeViewAssignment> =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/back-office/view-policy`, {
+      method: 'PATCH',
+      body: JSON.stringify({ policy, template_id: templateId || null }),
+    }),
+
+  updateMemberViewPolicy: (
+    restaurantId: string,
+    userId: string,
+    policy: BackOfficeViewPolicy,
+    templateId?: string | null,
+  ): Promise<BackOfficeViewAssignment> =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/back-office/members/${userId}/view-policy`, {
+      method: 'PATCH',
+      body: JSON.stringify({ policy, template_id: templateId || null }),
+    }),
+
+  listViewTemplates: (restaurantId: string): Promise<BackOfficeViewTemplate[]> =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/back-office/view-templates`),
+
+  createViewTemplate: (
+    restaurantId: string,
+    input: { name: string; policy: BackOfficeViewPolicy; reusable?: boolean },
+  ): Promise<BackOfficeViewTemplate> =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/back-office/view-templates`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  updateViewTemplate: (
+    restaurantId: string,
+    templateId: string,
+    input: { name?: string; policy?: BackOfficeViewPolicy; status?: 'active' | 'archived' },
+  ): Promise<BackOfficeViewTemplate> =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/back-office/view-templates/${templateId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
     }),
 
   removeMember: (restaurantId: string, memberId: string): Promise<null> =>
