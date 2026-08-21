@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   AuthProvider,
@@ -21,46 +21,74 @@ import ModernRestaurantSetupPanel, {
 } from './RestaurantSetupPanel'
 import { SmartTimeInput } from '../shared/components/SmartTimeInput'
 import DashboardShell from './shell/DashboardShell'
-import StoresPage from './pages/StoresPage'
-import RatesPage from './pages/RatesPage'
-import UsersPage from './pages/UsersPage'
-import OverviewPage from './pages/OverviewPage'
 import { normalizeReportingScope, WHOLE_RESTAURANT_SCOPE } from './components/homepageWidgetMath'
-import SettingsPage from './pages/SettingsPage'
-import PosSettingsPage from './pages/PosSettingsPage'
-import PrintingRoutingPage from './pages/PrintingRoutingPage'
-import TipPoolingPage from './pages/TipPoolingPage'
-import LaborCostPage from './pages/LaborCostPage'
-import TeamPage from './pages/TeamPage'
-import TimeClockPage from './pages/TimeClockPage'
-import AcceptInvitePage from './pages/AcceptInvitePage'
-import ClaimStorePage from './pages/ClaimStorePage'
-import DevicesPage from './pages/DevicesPage'
-import StoreDevicesPanel from './components/devices/StoreDevicesPanel'
-import MenuPanel from './MenuPanel'
 import { useAllowedStoreTabs } from './data/resellerAccess'
 import { useBackOfficeAccess } from '../shared/hooks/useBackOfficeAccess'
 import { TAB_PERMISSIONS } from '../shared/permissions'
 import { SECTION_VIEW_CAPABILITIES, TAB_VIEW_CAPABILITIES } from '../shared/backOfficeView'
 import { backOfficeApi } from '../shared/api/backOfficeApi'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
-import SalesTiles from './components/SalesTiles'
-import CheckLedgerSection from './components/CheckLedgerSection'
-import CloseDayReview from './components/CloseDayReview'
-import HomepageWidgets from './components/HomepageWidgets'
 import { usePersistedPeriod } from './data/analyticsSummary'
-import ResellerApp from '../reseller/ResellerApp'
-import ResellerUiEditor from '../reseller/ResellerUiEditor'
-import RestaurantReportsPage from './reports/RestaurantReportsPage'
-import MenuWorkspaceEditor from '../shared/components/MenuWorkspaceEditor'
-import ManagerActionInboxPage from './pages/ManagerActionInboxPage'
-import CloseDayPage from './pages/CloseDayPage'
+import {
+  loadCheckLedger,
+  loadCloseDay,
+  loadCloseDayReview,
+  loadHomepageWidgets,
+  loadLaborCost,
+  loadManagerInbox,
+  loadMenuPanel,
+  loadMenuWorkspace,
+  loadPosSettings,
+  loadPrintingRouting,
+  loadReports,
+  loadResellerUiEditor,
+  loadStoreDevices,
+  loadSalesTiles,
+  loadTeam,
+  loadTimeClock,
+  loadTipPooling,
+} from './workspaceModuleLoaders'
+
+const AcceptInvitePage = lazy(() => import('./pages/AcceptInvitePage'))
+const CheckLedgerSection = lazy(loadCheckLedger)
+const ClaimStorePage = lazy(() => import('./pages/ClaimStorePage'))
+const CloseDayPage = lazy(loadCloseDay)
+const CloseDayReview = lazy(loadCloseDayReview)
+const DevicesPage = lazy(() => import('./pages/DevicesPage'))
+const LaborCostPage = lazy(loadLaborCost)
+const ManagerActionInboxPage = lazy(loadManagerInbox)
+const MenuPanel = lazy(loadMenuPanel)
+const MenuWorkspaceEditor = lazy(loadMenuWorkspace)
+const HomepageWidgets = lazy(loadHomepageWidgets)
+const OverviewPage = lazy(() => import('./pages/OverviewPage'))
+const PosSettingsPage = lazy(loadPosSettings)
+const PrintingRoutingPage = lazy(loadPrintingRouting)
+const RatesPage = lazy(() => import('./pages/RatesPage'))
+const RestaurantReportsPage = lazy(loadReports)
+const ResellerApp = lazy(() => import('../reseller/ResellerApp'))
+const ResellerUiEditor = lazy(loadResellerUiEditor)
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const SalesTiles = lazy(loadSalesTiles)
+const StoreDevicesPanel = lazy(loadStoreDevices)
+const StoresPage = lazy(() => import('./pages/StoresPage'))
+const TeamPage = lazy(loadTeam)
+const TimeClockPage = lazy(loadTimeClock)
+const TipPoolingPage = lazy(loadTipPooling)
+const UsersPage = lazy(() => import('./pages/UsersPage'))
 
 function LoadingScreen() {
   return (
     <div className="min-h-screen bg-dash-base text-dash-cream flex items-center justify-center">
       <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-dash-gold" />
     </div>
+  )
+}
+
+function PageLoading() {
+  return (
+    <section className="flex min-h-48 items-center justify-center" aria-busy="true" aria-label="Loading page">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-dash-border border-t-dash-gold" />
+    </section>
   )
 }
 
@@ -132,7 +160,7 @@ function EnterprisePage({ item, title, children }) {
           { label: title },
         ]}
       >
-        {children}
+        <Suspense fallback={<PageLoading />}>{children}</Suspense>
       </DashboardShell>
     </ProtectedRoute>
   )
@@ -5326,6 +5354,7 @@ export function RestaurantWorkspace({
         allowedStoreTabs={allowedStoreTabs}
         routes={shellRoutes}
       >
+        <Suspense fallback={<PageLoading />}>
         {activeTab === 'analytics' && (
           <>
             <AnalyticsDashboard restaurant={restaurant} />
@@ -5440,6 +5469,7 @@ export function RestaurantWorkspace({
             <p>Plan management, billing status, payment method, and subscription controls will live here.</p>
           </PlaceholderPanel>
         )}
+        </Suspense>
       </DashboardShell>
     </ProtectedRoute>
   )
@@ -5476,48 +5506,50 @@ const WORKSPACE_BREADCRUMB_LABELS = {
 export default function AuthenticatedDashboardApp() {
   return (
     <AuthProvider>
-      <Routes>
-        <Route path="auth/login" element={<LoginPage />} />
-        <Route path="auth/signup" element={<SignupPage />} />
-        <Route path="auth/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="auth/reset-password" element={<ResetPasswordPage />} />
-        <Route path="auth/callback" element={<AuthCallbackPage />} />
-        <Route path="employee" element={<EmployeePortal />} />
-        <Route path="onboarding" element={<OnboardingPage />} />
-        <Route path="reseller/*" element={<ResellerApp />} />
-        <Route path="claim/:token" element={<ClaimStorePage />} />
-        <Route path="invite" element={<AcceptInvitePage />} />
-        <Route path="enterprise" element={<Navigate to="/enterprise/stores" replace />} />
-        <Route
-          path="enterprise/overview"
-          element={<EnterprisePage item="overview" title="Overview"><OverviewPage /></EnterprisePage>}
-        />
-        <Route
-          path="enterprise/stores"
-          element={<EnterprisePage item="stores" title="Stores"><StoresPage /></EnterprisePage>}
-        />
-        <Route
-          path="enterprise/settings"
-          element={<EnterprisePage item="settings" title="Settings"><SettingsPage /></EnterprisePage>}
-        />
-        <Route
-          path="enterprise/rates"
-          element={<EnterprisePage item="rates" title="Rates & Pricing"><RatesPage /></EnterprisePage>}
-        />
-        <Route
-          path="enterprise/devices"
-          element={<EnterprisePage item="devices" title="Devices"><DevicesPage /></EnterprisePage>}
-        />
-        <Route
-          path="enterprise/users"
-          element={<EnterprisePage item="users" title="Users"><UsersPage /></EnterprisePage>}
-        />
-        <Route path="restaurants" element={<Navigate to="/enterprise/stores" replace />} />
-        <Route path="restaurants/:restaurantId" element={<Navigate to="analytics" replace />} />
-        <Route path="restaurants/:restaurantId/:tab" element={<RestaurantWorkspace />} />
-        <Route index element={<OwnerGate />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <Suspense fallback={<LoadingScreen />}>
+        <Routes>
+          <Route path="auth/login" element={<LoginPage />} />
+          <Route path="auth/signup" element={<SignupPage />} />
+          <Route path="auth/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="auth/reset-password" element={<ResetPasswordPage />} />
+          <Route path="auth/callback" element={<AuthCallbackPage />} />
+          <Route path="employee" element={<EmployeePortal />} />
+          <Route path="onboarding" element={<OnboardingPage />} />
+          <Route path="reseller/*" element={<ResellerApp />} />
+          <Route path="claim/:token" element={<ClaimStorePage />} />
+          <Route path="invite" element={<AcceptInvitePage />} />
+          <Route path="enterprise" element={<Navigate to="/enterprise/stores" replace />} />
+          <Route
+            path="enterprise/overview"
+            element={<EnterprisePage item="overview" title="Overview"><OverviewPage /></EnterprisePage>}
+          />
+          <Route
+            path="enterprise/stores"
+            element={<EnterprisePage item="stores" title="Stores"><StoresPage /></EnterprisePage>}
+          />
+          <Route
+            path="enterprise/settings"
+            element={<EnterprisePage item="settings" title="Settings"><SettingsPage /></EnterprisePage>}
+          />
+          <Route
+            path="enterprise/rates"
+            element={<EnterprisePage item="rates" title="Rates & Pricing"><RatesPage /></EnterprisePage>}
+          />
+          <Route
+            path="enterprise/devices"
+            element={<EnterprisePage item="devices" title="Devices"><DevicesPage /></EnterprisePage>}
+          />
+          <Route
+            path="enterprise/users"
+            element={<EnterprisePage item="users" title="Users"><UsersPage /></EnterprisePage>}
+          />
+          <Route path="restaurants" element={<Navigate to="/enterprise/stores" replace />} />
+          <Route path="restaurants/:restaurantId" element={<Navigate to="analytics" replace />} />
+          <Route path="restaurants/:restaurantId/:tab" element={<RestaurantWorkspace />} />
+          <Route index element={<OwnerGate />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </AuthProvider>
   )
 }

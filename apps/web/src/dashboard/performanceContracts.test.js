@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const dashboardApp = await readFile(new URL('./AuthenticatedDashboardApp.jsx', import.meta.url), 'utf8')
 const dashboardShell = await readFile(new URL('./shell/DashboardShell.jsx', import.meta.url), 'utf8')
+const workspaceLoaders = await readFile(new URL('./workspaceModuleLoaders.js', import.meta.url), 'utf8')
 
 function between(source, start, end) {
   const startIndex = source.indexOf(start)
@@ -40,4 +41,13 @@ test('supplemental setup reads stay off ordinary operational pages', () => {
     /needsSupplementalSetupData = activeTab === 'setup' \|\| activeTab === 'team' \|\| activeTab === 'ui'/,
   )
   assert.match(dashboardApp, /!restaurant \|\| !needsSupplementalSetupData/)
+})
+
+test('heavy workspace pages use shared lazy loaders that sidebar intent can warm', () => {
+  for (const loader of ['loadMenuPanel', 'loadReports', 'loadCheckLedger', 'loadTeam', 'loadTipPooling']) {
+    assert.match(dashboardApp, new RegExp(`lazy\\(${loader}\\)`))
+    assert.match(workspaceLoaders, new RegExp(`export const ${loader} = \\(\\) => import\\(`))
+  }
+  assert.match(dashboardShell, /preloadWorkspaceModule\(tabId\)/)
+  assert.match(dashboardApp, /<Suspense fallback=\{<PageLoading \/>\}>/)
 })

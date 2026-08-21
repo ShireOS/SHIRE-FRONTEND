@@ -44,6 +44,7 @@ import { TAB_PERMISSIONS } from '../../shared/permissions'
 import { SECTION_VIEW_CAPABILITIES, TAB_VIEW_CAPABILITIES, defaultViewPolicy, normalizeViewPolicy } from '../../shared/backOfficeView'
 import { backOfficeApi } from '../../shared/api/backOfficeApi'
 import { fetchReservationsApi } from '../../shared/api/reservationsClient'
+import { preloadWorkspaceModule } from '../workspaceModuleLoaders'
 import { Modal, ModalFooter } from '../components/shared/Modal'
 import BackOfficeViewEditor from '../components/team/BackOfficeViewEditor'
 
@@ -66,6 +67,7 @@ export function useShellTheme() {
 // so the data is usually already there when they click.
 export function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
   if (!restaurantId || tabId === activeTab) return
+  preloadWorkspaceModule(tabId)
   const prefetch = (queryKey, queryFn, staleTime) =>
     void queryClient.prefetchQuery({ queryKey, queryFn, staleTime })
   const api = (path) => () => fetchWithSupabaseAuth(path)
