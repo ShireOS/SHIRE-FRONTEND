@@ -62,6 +62,7 @@ test('POS report printing previews thermal output and follows physical delivery'
   assert.match(reportsPage, /crypto\.randomUUID\(\)/)
   assert.match(reportsPage, /snapshot_id: snapshot\?\.print_snapshot_id/)
   assert.match(reportsPage, /printer_context_id: preview\?\.printer_context_id/)
+  assert.match(reportsPage, /render_token: preview\?\.render_token/)
   assert.match(reportsPage, /setPreloadedReceiptPreviews/)
   assert.match(reportsPage, /preloadReceiptPreview/)
   assert.match(reportsPage, /onIntent=\{\(\) => \{ void preloadReceiptPreview\(\) \}\}/)

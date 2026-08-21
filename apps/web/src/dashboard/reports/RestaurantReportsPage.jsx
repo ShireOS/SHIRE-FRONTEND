@@ -513,6 +513,7 @@ function ReceiptPrintModal({ restaurantId, profileName, requestPayload, initialP
           client_print_id: crypto.randomUUID(),
           confirm_long_receipt: confirmedLong,
           printer_context_id: preview?.printer_context_id || null,
+          render_token: preview?.render_token || null,
         }),
       })
       let latest = job
