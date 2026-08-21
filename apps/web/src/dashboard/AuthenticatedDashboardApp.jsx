@@ -5145,6 +5145,7 @@ export function RestaurantWorkspace({
   })
   const showSetup = setupStatusQuery.isLoading || Boolean(setupStatusQuery.error) || setupStatusQuery.data?.complete !== true
   const setupWarningCount = setupStatusQuery.data?.missing_count ?? modernWarningCount(setupWarnings || {})
+  const needsSupplementalSetupData = activeTab === 'setup' || activeTab === 'team' || activeTab === 'ui'
 
   const handleSetupChanged = () => {
     setSetupRefreshKey(key => key + 1)
@@ -5152,7 +5153,7 @@ export function RestaurantWorkspace({
   }
 
   useEffect(() => {
-    if (!restaurantId || !restaurant) return
+    if (!restaurantId || !restaurant || !needsSupplementalSetupData) return
     if (auth.restaurant.currentRestaurant?.id !== restaurantId) {
       void auth.switchRestaurant(restaurantId)
     }
@@ -5196,7 +5197,7 @@ export function RestaurantWorkspace({
     return () => {
       cancelled = true
     }
-  }, [restaurant, restaurantId, setupRefreshKey])
+  }, [needsSupplementalSetupData, restaurant, restaurantId, setupRefreshKey])
 
   if (!restaurantId) {
     return <Navigate to={restaurantListPath} replace />

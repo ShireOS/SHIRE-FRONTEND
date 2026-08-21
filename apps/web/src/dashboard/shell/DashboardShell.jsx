@@ -38,7 +38,6 @@ import {
   Wrench,
 } from 'lucide-react'
 import { useAuth } from '../../auth'
-import { supabase } from '../../shared/lib/supabase'
 import { queryClient, queryKeys, fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import { TAB_PERMISSIONS } from '../../shared/permissions'
@@ -74,28 +73,9 @@ export function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
   if (tabId === 'analytics') {
     prefetch(queryKeys.ownerAnalytics(restaurantId, 'week'), api(`/restaurants/${restaurantId}/owner-analytics?period=week`), STALE_TIMES.analytics)
   } else if (tabId === 'setup') {
-    prefetch(queryKeys.waiters(restaurantId), api(`/restaurants/${restaurantId}/waiters?include_inactive=false`), STALE_TIMES.setup)
-    prefetch(queryKeys.menuItems(restaurantId), api(`/restaurants/${restaurantId}/menu/items`), STALE_TIMES.setup)
-    prefetch(queryKeys.jobCodes(restaurantId), api(`/restaurants/${restaurantId}/job-codes`), STALE_TIMES.setup)
-    prefetch(queryKeys.sections(restaurantId), api(`/restaurants/${restaurantId}/sections`), STALE_TIMES.setup)
-    prefetch(queryKeys.floorPlan(restaurantId), api(`/restaurants/${restaurantId}/floor-plan`), STALE_TIMES.setup)
-    prefetch(queryKeys.taxesCharges(restaurantId), api(`/restaurants/${restaurantId}/taxes-charges`), STALE_TIMES.setup)
-    prefetch(queryKeys.menuCategories(restaurantId), api(`/restaurants/${restaurantId}/menu/categories`), STALE_TIMES.setup)
-    prefetch(queryKeys.discountRules(restaurantId), api(`/restaurants/${restaurantId}/discount-rules`), STALE_TIMES.setup)
-    prefetch(queryKeys.managerControls(restaurantId), api(`/restaurants/${restaurantId}/manager-controls`), STALE_TIMES.setup)
-    prefetch(queryKeys.closeoutSettings(restaurantId), api(`/restaurants/${restaurantId}/closeout-settings`), STALE_TIMES.setup)
-    prefetch(queryKeys.checkWorkflowSettings(restaurantId), api(`/restaurants/${restaurantId}/check-workflow-settings`), STALE_TIMES.setup)
-    prefetch(queryKeys.tipsPayrollSettings(restaurantId), api(`/restaurants/${restaurantId}/tips-payroll-settings`), STALE_TIMES.setup)
-    prefetch(queryKeys.pricingPolicy(restaurantId), api(`/restaurants/${restaurantId}/pricing-policy`), STALE_TIMES.setup)
-    prefetch(queryKeys.operatingHours(restaurantId), async () => {
-      const { data, error } = await supabase
-        .from('operating_hours')
-        .select('day_of_week, open_time, close_time, is_closed')
-        .eq('restaurant_id', restaurantId)
-        .order('day_of_week')
-      if (error) throw error
-      return data
-    }, STALE_TIMES.setup)
+    // The setup editor already scopes its reads to the visible section. Do not
+    // turn an incidental sidebar hover into a fourteen-request workspace load.
+    prefetch(queryKeys.setupStatus(restaurantId), api(`/restaurants/${restaurantId}/setup-status`), STALE_TIMES.setup)
   } else if (tabId === 'scheduling') {
     prefetch(queryKeys.staffingBlocks(restaurantId), api(`/restaurants/${restaurantId}/staffing-requirements/blocks`), STALE_TIMES.scheduling)
     prefetch(queryKeys.staffingSuggestions(restaurantId), api(`/restaurants/${restaurantId}/staffing-requirements/suggestions`), STALE_TIMES.scheduling)
@@ -103,7 +83,7 @@ export function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
     prefetch(queryKeys.waiters(restaurantId), api(`/restaurants/${restaurantId}/waiters?include_inactive=false`), STALE_TIMES.scheduling)
     prefetch(queryKeys.employeeRequestPolicy(restaurantId), api(`/restaurants/${restaurantId}/employee-request-policy`), STALE_TIMES.scheduling)
     prefetch(queryKeys.employeeRequests(restaurantId, 'all'), api(`/restaurants/${restaurantId}/employee-requests?status=all`), STALE_TIMES.scheduling)
-    prefetch(queryKeys.shiftTradeRequests(restaurantId, 'pending_manager'), api(`/restaurants/${restaurantId}/shift-trade-requests?status=pending_manager`), STALE_TIMES.scheduling)
+    prefetch(queryKeys.shiftTradeRequests(restaurantId, 'all'), api(`/restaurants/${restaurantId}/shift-trade-requests?status=all`), STALE_TIMES.scheduling)
   } else if (tabId === 'messaging') {
     prefetch(queryKeys.waiters(restaurantId), api(`/restaurants/${restaurantId}/waiters?include_inactive=false`), STALE_TIMES.setup)
     prefetch(queryKeys.conversations(restaurantId), api(`/restaurants/${restaurantId}/messages/conversations`), STALE_TIMES.messaging)
@@ -111,15 +91,14 @@ export function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
   } else if (tabId === 'menu') {
     prefetch(queryKeys.menuItems(restaurantId), api(`/restaurants/${restaurantId}/menu/items`), STALE_TIMES.setup)
     prefetch(queryKeys.menuCategories(restaurantId), api(`/restaurants/${restaurantId}/menu/categories`), STALE_TIMES.setup)
-    prefetch(queryKeys.kitchenRouting(restaurantId), api(`/restaurants/${restaurantId}/kitchen-routing`), STALE_TIMES.setup)
   } else if (tabId === 'taxes') {
     prefetch(queryKeys.taxesCharges(restaurantId), api(`/restaurants/${restaurantId}/taxes-charges`), STALE_TIMES.setup)
     prefetch(queryKeys.menuCategories(restaurantId), api(`/restaurants/${restaurantId}/menu/categories`), STALE_TIMES.setup)
     prefetch(queryKeys.priceAllocations(restaurantId), api(`/restaurants/${restaurantId}/menu/price-allocations`), STALE_TIMES.setup)
   } else if (tabId === 'feedback') {
     prefetch(
-      queryKeys.guestFeedback(restaurantId, 'all'),
-      () => fetchReservationsApi(`/locations/${restaurantId}/guest-feedback?status=all`),
+      queryKeys.guestFeedback(restaurantId, 'open'),
+      () => fetchReservationsApi(`/locations/${restaurantId}/guest-feedback?status=open`),
       STALE_TIMES.messaging
     )
   }
@@ -528,7 +507,7 @@ export default function DashboardShell({
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [context, restaurantId, activeItem])
+  }, [context, restaurantId])
 
   return (
     <div className={`${theme} flex min-h-screen bg-dash-base text-dash-cream transition-colors duration-300`}>
