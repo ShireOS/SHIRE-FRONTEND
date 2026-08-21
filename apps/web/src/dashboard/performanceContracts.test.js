@@ -6,6 +6,7 @@ const dashboardApp = await readFile(new URL('./AuthenticatedDashboardApp.jsx', i
 const dashboardShell = await readFile(new URL('./shell/DashboardShell.jsx', import.meta.url), 'utf8')
 const menuPanel = await readFile(new URL('./MenuPanel.jsx', import.meta.url), 'utf8')
 const menuUi = await readFile(new URL('./components/menuUi.jsx', import.meta.url), 'utf8')
+const reportsPage = await readFile(new URL('./reports/RestaurantReportsPage.jsx', import.meta.url), 'utf8')
 const queryKeys = await readFile(new URL('../shared/query/queryKeys.ts', import.meta.url), 'utf8')
 const workspaceLoaders = await readFile(new URL('./workspaceModuleLoaders.js', import.meta.url), 'utf8')
 
@@ -82,4 +83,24 @@ test('Menu thumbnails defer offscreen transfer and decoding', () => {
   assert.match(menuUi, /decoding="async"/)
   assert.match(menuUi, /width="40"/)
   assert.match(menuUi, /height="40"/)
+})
+
+test('POS Reports starts from preferences without blocking on modal-only reads', () => {
+  const hydration = between(
+    reportsPage,
+    'setHydrated(false)',
+    '  const loadDimensions = async',
+  )
+  assert.match(hydration, /queryKeys\.reportPreferences/)
+  assert.doesNotMatch(hydration, /reports\/dimensions/)
+  assert.doesNotMatch(hydration, /reports\/recipients/)
+  assert.match(reportsPage, /const openScopeModal = \(\) => \{[\s\S]*void loadDimensions\(\)/)
+  assert.match(reportsPage, /const openSchedulesModal = \(\) => \{[\s\S]*void loadRecipients\(\)/)
+})
+
+test('POS Reports caches snapshots and preloads only the active receipt on intent', () => {
+  assert.match(reportsPage, /queryKeys\.reportSnapshot\(restaurantId, requestKey\)/)
+  assert.match(reportsPage, /queryKeys\.reportReceiptPreview\(restaurantId, receiptPreviewRequestKey\)/)
+  assert.match(reportsPage, /onIntent=\{\(\) => \{ void preloadReceiptPreview\(\) \}\}/)
+  assert.doesNotMatch(reportsPage, /profiles\.filter\(\(candidate\) => candidate\.built_in\)/)
 })

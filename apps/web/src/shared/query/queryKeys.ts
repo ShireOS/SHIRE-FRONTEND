@@ -42,6 +42,13 @@ export const queryKeys = {
     ['restaurant', restaurantId, 'owner-analytics', period] as const,
   restaurantReports: (restaurantId: string, query: string) =>
     ['restaurant', restaurantId, 'reports', query] as const,
+  reportPreferences: (restaurantId: string) => ['restaurant', restaurantId, 'reports', 'preferences'] as const,
+  reportDimensions: (restaurantId: string) => ['restaurant', restaurantId, 'reports', 'dimensions'] as const,
+  reportRecipients: (restaurantId: string) => ['restaurant', restaurantId, 'reports', 'recipients'] as const,
+  reportSnapshot: (restaurantId: string, requestKey: string) =>
+    ['restaurant', restaurantId, 'reports', 'snapshot', requestKey] as const,
+  reportReceiptPreview: (restaurantId: string, requestKey: string) =>
+    ['restaurant', restaurantId, 'reports', 'receipt-preview', requestKey] as const,
 
   staffingBlocks: (restaurantId: string) => ['restaurant', restaurantId, 'staffing-blocks'] as const,
   staffingSuggestions: (restaurantId: string) => ['restaurant', restaurantId, 'staffing-suggestions'] as const,

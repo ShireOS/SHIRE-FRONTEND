@@ -18,6 +18,8 @@ export const queryClient = new QueryClient({
 export const STALE_TIMES = {
   setup: 5 * 60 * 1000,
   analytics: 60 * 1000,
+  reports: 60 * 1000,
+  receiptPreview: 30 * 1000,
   scheduling: 60 * 1000,
   messaging: 15 * 1000,
 }

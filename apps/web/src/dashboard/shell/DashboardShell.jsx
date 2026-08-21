@@ -72,7 +72,9 @@ export function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
     void queryClient.prefetchQuery({ queryKey, queryFn, staleTime })
   const api = (path) => () => fetchWithSupabaseAuth(path)
 
-  if (tabId === 'analytics') {
+  if (tabId === 'reports') {
+    prefetch(queryKeys.reportPreferences(restaurantId), api(`/restaurants/${restaurantId}/reports/view-preferences`), STALE_TIMES.setup)
+  } else if (tabId === 'analytics') {
     prefetch(queryKeys.ownerAnalytics(restaurantId, 'week'), api(`/restaurants/${restaurantId}/owner-analytics?period=week`), STALE_TIMES.analytics)
   } else if (tabId === 'setup') {
     // The setup editor already scopes its reads to the visible section. Do not
