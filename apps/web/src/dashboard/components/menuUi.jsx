@@ -202,7 +202,17 @@ export function PosTilePreview({ color, label, sublabel, size = 'md' }) {
 // with the item's initial (colored by its category color when set).
 export function ItemThumb({ item, color }) {
   if (item.image_url) {
-    return <img src={item.image_url} alt="" className="h-10 w-10 rounded-lg object-cover" />
+    return (
+      <img
+        src={item.image_url}
+        alt=""
+        width="40"
+        height="40"
+        loading="lazy"
+        decoding="async"
+        className="h-10 w-10 rounded-lg object-cover"
+      />
+    )
   }
   return (
     <div

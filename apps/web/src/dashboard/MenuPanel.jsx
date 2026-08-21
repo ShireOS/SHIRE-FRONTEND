@@ -126,6 +126,17 @@ const MENU_TABS = [
   { id: 'printing', label: 'Printing & Routing' },
 ]
 
+const MENU_TAB_SOURCE_KEYS = {
+  categories: ['category-colors', 'modifiers', 'groups', 'routing'],
+  combos: ['combos'],
+  modifiers: ['modifiers', 'groups'],
+  groups: ['modifiers', 'groups'],
+  allergies: ['allergies'],
+  pricing: ['specials', 'special-settings'],
+  specials: [],
+  printing: ['category-colors', 'modifiers', 'routing', 'printing-config'],
+}
+
 const MENU_SOURCE_TIMEOUT_MS = 45_000
 
 const loadMenuSource = (label, loader) => new Promise((resolve, reject) => {
@@ -741,6 +752,8 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [routing, setRouting] = useState(null)
   const [printingConfig, setPrintingConfig] = useState({ aliases: { items: {}, modifiers: {} } })
   const [loading, setLoading] = useState(true)
+  const [sourceStates, setSourceStates] = useState({})
+  const sourceRequestsRef = useRef(new Map())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -832,9 +845,14 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
   // image_url is portal-managed and absent from the ML API response; merged in
   // separately. Fails soft until the images/colors migration is applied.
-  const loadImages = async () => {
+  const loadImages = async (force = true) => {
     try {
-      setItemImages(await fetchItemImages(restaurantId))
+      const images = await fetchCached(
+        queryKeys.menuItemImages(restaurantId),
+        () => fetchItemImages(restaurantId),
+        force ? 0 : STALE_TIMES.setup,
+      )
+      setItemImages(images)
     } catch {
       setItemImages({})
     }
@@ -850,61 +868,102 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     setCategories(next)
     setSavedCategories(next)
     setTaxRates(Array.isArray(data?.tax_rates) ? data.tax_rates : [])
+  }
+
+  const loadCategoryColors = async (force = true) => {
     try {
-      setCategoryColors(await fetchCategoryColors(restaurantId))
+      const colors = await fetchCached(
+        queryKeys.menuCategoryColors(restaurantId),
+        () => fetchCategoryColors(restaurantId),
+        force ? 0 : STALE_TIMES.setup,
+      )
+      setCategoryColors(colors)
     } catch {
       setCategoryColors({})
     }
   }
 
-  const loadModifiers = async () => {
-    const rows = await api(`/restaurants/${restaurantId}/menu/modifiers`)
-    const list = Array.isArray(rows) ? rows : []
-    const { data: roleRows, error: roleError } = await supabase
-      .from('menu_modifiers')
-      .select('id, kitchen_display_role')
-      .eq('restaurant_id', restaurantId)
-      .is('archived_at', null)
-    if (roleError && roleError.code !== '42703') throw roleError
-    const roleById = Object.fromEntries((roleRows || []).map(row => [row.id, row.kitchen_display_role || null]))
-    setModifiers(list.map(row => ({ ...row, kitchen_display_role: roleById[row.id] ?? row.kitchen_display_role ?? null })))
+  const loadModifiers = async (force = true) => {
+    const next = await fetchCached(
+      queryKeys.menuModifiers(restaurantId),
+      async () => {
+        const rows = await api(`/restaurants/${restaurantId}/menu/modifiers`)
+        const list = Array.isArray(rows) ? rows : []
+        const { data: roleRows, error: roleError } = await supabase
+          .from('menu_modifiers')
+          .select('id, kitchen_display_role')
+          .eq('restaurant_id', restaurantId)
+          .is('archived_at', null)
+        if (roleError && roleError.code !== '42703') throw roleError
+        const roleById = Object.fromEntries((roleRows || []).map(row => [row.id, row.kitchen_display_role || null]))
+        return list.map(row => ({ ...row, kitchen_display_role: roleById[row.id] ?? row.kitchen_display_role ?? null }))
+      },
+      force ? 0 : STALE_TIMES.setup,
+    )
+    setModifiers(next)
   }
 
-  const loadGroups = async () => {
-    setGroups(await fetchModifierGroups(restaurantId))
+  const loadGroups = async (force = true) => {
+    const next = await fetchCached(
+      queryKeys.menuModifierGroups(restaurantId),
+      () => fetchModifierGroups(restaurantId),
+      force ? 0 : STALE_TIMES.setup,
+    )
+    setGroups(next)
   }
 
-  const loadCombos = async () => {
-    const data = await fetchPosApi(restaurantId, '/manager/combos')
+  const loadCombos = async (force = true) => {
+    const data = await fetchCached(
+      queryKeys.menuCombos(restaurantId),
+      () => fetchPosApi(restaurantId, '/manager/combos'),
+      force ? 0 : STALE_TIMES.setup,
+    )
     setCombos(Array.isArray(data?.combos) ? data.combos : [])
   }
 
   // { [itemId]: { [modifierId]: { price_delta, no_print } } } — per-item price
   // and kitchen-print overrides for modifiers. Fails soft pre-migration.
-  const loadItemModifierOverrides = async () => {
+  const loadItemModifierOverrides = async (force = true) => {
     try {
-      setItemModifierOverrides(await fetchItemModifierOverrides(restaurantId))
+      const overrides = await fetchCached(
+        queryKeys.menuModifierOverrides(restaurantId),
+        () => fetchItemModifierOverrides(restaurantId),
+        force ? 0 : STALE_TIMES.setup,
+      )
+      setItemModifierOverrides(overrides)
     } catch {
       setItemModifierOverrides({})
     }
   }
 
-  const loadAllergies = async () => {
-    const group = await fetchAllergyGroup(restaurantId)
-    setAllergyGroup(group)
-    setAllergyPills(group ? await fetchAllergyPills(group.id) : [])
-    try {
-      setAllergyExclusions(await fetchAllergyExclusions(restaurantId))
-    } catch {
-      setAllergyExclusions([]) // exclusions table not migrated yet — fail soft
-    }
+  const loadAllergies = async (force = true) => {
+    const data = await fetchCached(
+      queryKeys.menuAllergies(restaurantId),
+      async () => {
+        const group = await fetchAllergyGroup(restaurantId)
+        const pills = group ? await fetchAllergyPills(group.id) : []
+        let exclusions = []
+        try {
+          exclusions = await fetchAllergyExclusions(restaurantId)
+        } catch {
+          exclusions = [] // exclusions table not migrated yet — fail soft
+        }
+        return { group, pills, exclusions }
+      },
+      force ? 0 : STALE_TIMES.setup,
+    )
+    setAllergyGroup(data.group)
+    setAllergyPills(data.pills)
+    setAllergyExclusions(data.exclusions)
   }
 
-  const loadSpecials = async ({ soft = false } = {}) => {
+  const loadSpecials = async ({ soft = false, force = true } = {}) => {
     try {
-      const nextSpecials = await getPricingSpecials(restaurantId, {
-        timeoutMs: DEFAULT_API_TIMEOUT_MS,
-      })
+      const nextSpecials = await fetchCached(
+        queryKeys.menuSpecials(restaurantId),
+        () => getPricingSpecials(restaurantId, { timeoutMs: DEFAULT_API_TIMEOUT_MS }),
+        force ? 0 : STALE_TIMES.setup,
+      )
       setSpecials(nextSpecials)
       setSpecialsError('')
       return nextSpecials
@@ -964,11 +1023,15 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     })
   }
 
-  const loadEditorPrefs = async () => {
+  const loadEditorPrefs = async (force = false) => {
     const targetRestaurantId = restaurantId
     // Layout prefs are cosmetic — swallow failures so they never block the menu.
     try {
-      const data = await api(`/restaurants/${targetRestaurantId}/reports/view-preferences`)
+      const data = await fetchCached(
+        queryKeys.menuEditorPreferences(targetRestaurantId),
+        () => api(`/restaurants/${targetRestaurantId}/reports/view-preferences`),
+        force ? 0 : STALE_TIMES.setup,
+      )
       if (editorPrefsRestaurantRef.current !== targetRestaurantId) return
       const saved = data?.settings?.menu_item_editor
       const next = saved && typeof saved === 'object' ? saved : {}
@@ -1004,6 +1067,13 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     const next = { ...(editorPrefsRef.current || {}), ...patch }
     editorPrefsRef.current = next
     setEditorPrefs(next)
+    queryClient.setQueryData(queryKeys.menuEditorPreferences(restaurantId), current => ({
+      ...(current && typeof current === 'object' ? current : {}),
+      settings: {
+        ...(current?.settings && typeof current.settings === 'object' ? current.settings : {}),
+        menu_item_editor: next,
+      },
+    }))
     if (editorPrefsTimerRef.current) clearTimeout(editorPrefsTimerRef.current)
     editorPrefsPendingRef.current = { restaurantId, settings: next }
     editorPrefsTimerRef.current = setTimeout(() => {
@@ -1021,11 +1091,18 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurantId])
 
-  const loadSpecialSettings = async () => {
-    const { data, error } = await supabase.from('restaurants').select('config').eq('id', restaurantId).single()
-    if (error) throw error
-    const raw = data?.config?.daily_specials
-    setDailySpecialSettings({ ...DEFAULT_DAILY_SPECIAL_SETTINGS, ...(raw && typeof raw === 'object' ? raw : {}) })
+  const loadSpecialSettings = async (force = false) => {
+    const next = await fetchCached(
+      queryKeys.menuSpecialSettings(restaurantId),
+      async () => {
+        const { data, error } = await supabase.from('restaurants').select('config').eq('id', restaurantId).single()
+        if (error) throw error
+        const raw = data?.config?.daily_specials
+        return { ...DEFAULT_DAILY_SPECIAL_SETTINGS, ...(raw && typeof raw === 'object' ? raw : {}) }
+      },
+      force ? 0 : STALE_TIMES.setup,
+    )
+    setDailySpecialSettings(next)
   }
 
   // Read-merge-write on restaurants.config so unrelated config keys survive.
@@ -1041,11 +1118,16 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       .eq('id', restaurantId)
     if (update.error) throw update.error
     setDailySpecialSettings(next)
+    queryClient.setQueryData(queryKeys.menuSpecialSettings(restaurantId), next)
   }, 'Specials settings saved.', 'Couldn’t save specials settings')
 
-  const loadPrintingConfig = async () => {
+  const loadPrintingConfig = async (force = false) => {
     try {
-      const data = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`)
+      const data = await fetchCached(
+        queryKeys.menuPrintingConfig(restaurantId),
+        () => fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`),
+        force ? 0 : STALE_TIMES.setup,
+      )
       setPrintingConfig(data || { aliases: { items: {}, modifiers: {} } })
     } catch {
       // printing-config ships with the POS receipt-config backend build and
@@ -1055,39 +1137,69 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     }
   }
 
+  const ensureSource = (key, label, loader) => {
+    const current = sourceRequestsRef.current.get(key)
+    if (current?.status === 'loaded') return Promise.resolve()
+    if (current?.status === 'loading') return current.promise
+
+    const promise = loadMenuSource(label, loader)
+      .then((value) => {
+        sourceRequestsRef.current.set(key, { status: 'loaded', promise: null })
+        setSourceStates(states => ({ ...states, [key]: 'loaded' }))
+        return value
+      })
+      .catch((sourceError) => {
+        sourceRequestsRef.current.set(key, { status: 'error', promise: null })
+        setSourceStates(states => ({ ...states, [key]: 'error' }))
+        throw sourceError
+      })
+
+    sourceRequestsRef.current.set(key, { status: 'loading', promise })
+    setSourceStates(states => ({ ...states, [key]: 'loading' }))
+    return promise
+  }
+
   useEffect(() => {
     if (!restaurantId) return
     let cancelled = false
+    sourceRequestsRef.current.clear()
+    setSourceStates({})
     setLoading(true)
     setError('')
+    setMenuItems([])
+    setItemImages({})
+    setCategories([])
+    setSavedCategories([])
+    setCategoryColors({})
+    setTaxRates([])
+    setCombos([])
+    setModifiers([])
+    setGroups([])
+    setItemModifierOverrides({})
+    setSpecials([])
+    setDailySpecialSettings(null)
+    setRouting(null)
+    setPrintingConfig({ aliases: { items: {}, modifiers: {} } })
+    setAllergyGroup(null)
+    setAllergyPills([])
+    setAllergyExclusions([])
     setSelectedItemId(null)
     setEditingCategoryKey(null)
     setExpandedCategoryNames(new Set())
     setComboManagerPasscode('')
     const loaders = [
-      ['items', loadItems],
-      ['images', loadImages],
-      ['categories', loadCategories],
-      ['modifiers', loadModifiers],
-      ['questions', loadGroups],
-      ['combos', loadCombos],
-      ['modifier overrides', loadItemModifierOverrides],
-      ['allergies', loadAllergies],
-      ['specials', () => loadSpecials({ soft: true })],
-      ['specials settings', loadSpecialSettings],
-      ['editor layout', loadEditorPrefs],
-      ['kitchen routing', loadRouting],
-      ['printing config', loadPrintingConfig],
+      ['items', 'items', () => loadItems(false)],
+      ['categories', 'categories', () => loadCategories(false)],
     ]
-    Promise.allSettled(loaders.map(([label, load]) => loadMenuSource(label, load))).then(results => {
+    Promise.allSettled(loaders.map(([key, label, load]) => ensureSource(key, label, load))).then(results => {
       if (cancelled) return
       const failures = results.flatMap((result, index) => (
         result.status === 'rejected'
-          ? [`${loaders[index][0]}: ${describeError(result.reason)}`]
+          ? [`${loaders[index][1]}: ${describeError(result.reason)}`]
           : []
       ))
       if (failures.length > 0) {
-        setError(`Some menu data failed to load: ${failures.join('; ')}.`)
+        setError(`The menu could not fully load: ${failures.join('; ')}.`)
       }
       setLoading(false)
     })
@@ -1096,6 +1208,71 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restaurantId])
+
+  useEffect(() => {
+    if (!restaurantId || loading) return
+    const loadersByTab = {
+      items: [
+        ['images', 'item images', () => loadImages(false)],
+        ['category-colors', 'category colors', () => loadCategoryColors(false)],
+        ['modifiers', 'modifiers', () => loadModifiers(false)],
+        ['groups', 'questions', () => loadGroups(false)],
+        ['modifier-overrides', 'modifier overrides', () => loadItemModifierOverrides(false)],
+        ['specials', 'specials', () => loadSpecials({ soft: true, force: false })],
+        ['editor-layout', 'editor layout', () => loadEditorPrefs(false)],
+        ['printing-config', 'printing config', () => loadPrintingConfig(false)],
+      ],
+      categories: [
+        ['category-colors', 'category colors', () => loadCategoryColors(false)],
+        ['modifiers', 'modifiers', () => loadModifiers(false)],
+        ['groups', 'questions', () => loadGroups(false)],
+        ['routing', 'kitchen routing', () => loadRouting(false)],
+      ],
+      combos: [['combos', 'combos', () => loadCombos(false)]],
+      modifiers: [
+        ['modifiers', 'modifiers', () => loadModifiers(false)],
+        ['groups', 'questions', () => loadGroups(false)],
+      ],
+      groups: [
+        ['modifiers', 'modifiers', () => loadModifiers(false)],
+        ['groups', 'questions', () => loadGroups(false)],
+      ],
+      allergies: [['allergies', 'allergies', () => loadAllergies(false)]],
+      pricing: [
+        ['specials', 'specials', () => loadSpecials({ soft: true, force: false })],
+        ['special-settings', 'specials settings', () => loadSpecialSettings(false)],
+      ],
+      specials: [],
+      printing: [
+        ['category-colors', 'category colors', () => loadCategoryColors(false)],
+        ['modifiers', 'modifiers', () => loadModifiers(false)],
+        ['routing', 'kitchen routing', () => loadRouting(false)],
+        ['printing-config', 'printing config', () => loadPrintingConfig(false)],
+      ],
+    }
+    const loaders = loadersByTab[activeTab] || []
+    Promise.allSettled(loaders.map(([key, label, load]) => ensureSource(key, label, load))).then(results => {
+      const failures = results.flatMap((result, index) => (
+        result.status === 'rejected'
+          ? [`${loaders[index][1]}: ${describeError(result.reason)}`]
+          : []
+      ))
+      if (failures.length > 0) setError(`Some ${activeTab} data failed to load: ${failures.join('; ')}.`)
+    })
+    // The loader functions intentionally use the restaurant captured by this
+    // render; sourceRequestsRef deduplicates overlapping tab requirements.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, loading, restaurantId])
+
+  useEffect(() => {
+    if (loading || activeTab !== 'items' || (!selectedItemId && !creating)) return
+    const loaders = [
+      ['routing', 'kitchen routing', () => loadRouting(false)],
+      ['allergies', 'allergies', () => loadAllergies(false)],
+    ]
+    void Promise.allSettled(loaders.map(([key, label, load]) => ensureSource(key, label, load)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, creating, loading, restaurantId, selectedItemId])
 
   const invalidateItems = () => queryClient.invalidateQueries({ queryKey: queryKeys.menuItems(restaurantId) })
   const invalidateCategories = () => queryClient.invalidateQueries({ queryKey: queryKeys.menuCategories(restaurantId) })
@@ -1583,9 +1760,25 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       : bucketModifiersByCategory(modifiers)
   ), [modifierMatches, modifierSearch, modifiers])
   const behaviorByItemId = useMemo(() => {
+    const directGroupsByItemId = {}
+    const inheritedGroupsByCategoryId = {}
+    for (const group of groups) {
+      for (const itemId of group.item_ids || []) {
+        ;(directGroupsByItemId[itemId] ||= []).push(group)
+      }
+      for (const link of group.category_links || []) {
+        ;(inheritedGroupsByCategoryId[link.category_id] ||= []).push(group)
+      }
+    }
     const map = {}
     for (const item of mergedItems) {
-      map[item.id] = itemOrderingBehavior(item, groups, categoriesByName, modifiersById)
+      const categoryId = categoriesByName[item.category || '']?.id
+      const candidates = [
+        ...(directGroupsByItemId[item.id] || []),
+        ...(categoryId ? inheritedGroupsByCategoryId[categoryId] || [] : []),
+      ]
+      const uniqueCandidates = [...new Map(candidates.map(group => [group.id, group])).values()]
+      map[item.id] = itemOrderingBehavior(item, uniqueCandidates, categoriesByName, modifiersById)
     }
     return map
   }, [mergedItems, groups, categoriesByName, modifiersById])
@@ -1718,6 +1911,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       const next = { ...prev }
       if (color) next[category.id] = color
       else delete next[category.id]
+      queryClient.setQueryData(queryKeys.menuCategoryColors(restaurantId), next)
       return next
     })
   }, color ? 'Category color set.' : 'Category color cleared.', 'Couldn’t save the button color')
@@ -2121,6 +2315,15 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
 
   // ── Render ───────────────────────────────────────────────────────────────
 
+  const activeTabSourceKeys = MENU_TAB_SOURCE_KEYS[activeTab] || []
+  const activeTabLoading = activeTab !== 'items' && activeTabSourceKeys.some(key => (
+    !sourceStates[key] || sourceStates[key] === 'loading'
+  ))
+  const itemEditorLoading = activeTab === 'items' && Boolean(selectedItemId || creating) && ['routing', 'allergies'].some(key => (
+    !sourceStates[key] || sourceStates[key] === 'loading'
+  ))
+  const contentReady = !loading && !activeTabLoading
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -2133,10 +2336,10 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         </div>
         <div className="flex flex-wrap gap-2 text-sm text-dash-tertiary">
           <span className="rounded-full border border-white/10 px-3 py-1">{menuItems.length} items</span>
-          <span className="rounded-full border border-white/10 px-3 py-1">{combos.filter(combo => combo.is_available !== false).length} combos</span>
-          <span className="rounded-full border border-white/10 px-3 py-1">{modifiers.length} modifiers</span>
-          <span className="rounded-full border border-white/10 px-3 py-1">{groups.length} questions</span>
-          <span className="rounded-full border border-white/10 px-3 py-1">{activeSpecials.length} live specials</span>
+          {sourceStates.combos === 'loaded' && <span className="rounded-full border border-white/10 px-3 py-1">{combos.filter(combo => combo.is_available !== false).length} combos</span>}
+          {sourceStates.modifiers === 'loaded' && <span className="rounded-full border border-white/10 px-3 py-1">{modifiers.length} modifiers</span>}
+          {sourceStates.groups === 'loaded' && <span className="rounded-full border border-white/10 px-3 py-1">{groups.length} questions</span>}
+          {sourceStates.specials === 'loaded' && <span className="rounded-full border border-white/10 px-3 py-1">{activeSpecials.length} live specials</span>}
         </div>
       </div>
 
@@ -2160,8 +2363,10 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       {error && <div role="alert" className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">{error}</div>}
       {notice && <div role="status" aria-live="polite" className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">{notice}</div>}
       {loading && <div className="text-sm text-dash-tertiary">Loading menu...</div>}
+      {!loading && activeTabLoading && <div className="text-sm text-dash-tertiary">Loading {MENU_TABS.find(tab => tab.id === activeTab)?.label || 'menu details'}...</div>}
+      {!loading && itemEditorLoading && <div className="text-sm text-dash-tertiary">Loading item details...</div>}
 
-      {!loading && activeTab === 'items' && importing && (
+      {contentReady && activeTab === 'items' && importing && (
         <SectionShell
           title={importing === 'upload' ? 'Import menu from a photo' : 'Bulk edit menu'}
           description="Rows keep their identity: saving updates existing items in place and adds new ones. Photos, questions, specials, and routing on existing items are untouched. Nothing is removed unless you delete its row here."
@@ -2184,7 +2389,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         </SectionShell>
       )}
 
-      {!loading && activeTab === 'items' && !importing && creating && (
+      {contentReady && !itemEditorLoading && activeTab === 'items' && !importing && creating && (
         <MenuItemCreate
           key={creating.source?.id || 'new-item'}
           categoryNames={categoryNames}
@@ -2211,7 +2416,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         />
       )}
 
-      {!loading && activeTab === 'items' && !importing && !creating && selectedItem && (
+      {contentReady && !itemEditorLoading && activeTab === 'items' && !importing && !creating && selectedItem && (
         <MenuItemDetail
           key={selectedItem.id}
           restaurantId={restaurantId}
@@ -2243,7 +2448,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         />
       )}
 
-      {!loading && activeTab === 'items' && !importing && !creating && !selectedItem && (
+      {contentReady && activeTab === 'items' && !importing && !creating && !selectedItem && (
         <SectionShell
           title="Items"
           description="Click an item to open its full editor. Quick-86 on every row."
@@ -2367,7 +2572,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         </SectionShell>
       )}
 
-      {!loading && activeTab === 'categories' && (
+      {contentReady && activeTab === 'categories' && (
         <SectionShell
           title="Categories"
           description="How the menu is organized on the POS. Each category card shows exactly how its button will look on the device, and sets the tax rate, prep station, and course its items inherit. Click an item count to see what's inside."
@@ -2713,7 +2918,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         </SectionShell>
       )}
 
-      {!loading && activeTab === 'combos' && (
+      {contentReady && activeTab === 'combos' && (
         <MenuCombosPanel
           combos={combos}
           menuItems={mergedItems.map(item => ({ ...item, category: effectiveItemCategoryName(item, categoriesById) }))}
@@ -2727,7 +2932,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         />
       )}
 
-      {!loading && activeTab === 'modifiers' && (
+      {contentReady && activeTab === 'modifiers' && (
         <SectionShell
           title="Modifiers"
           description="Individual add-ons and choices — Extra cheese, Ranch, Medium rare — organized into categories like Sauces or Temperatures. A modifier tax or sales-category override applies to that modifier's charged amount only. To reclassify part of a fixed-price combo without changing its total, price the base item and modifier portion separately."
@@ -2959,7 +3164,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         </SectionShell>
       )}
 
-      {!loading && activeTab === 'allergies' && (
+      {contentReady && activeTab === 'allergies' && (
         <SectionShell
           title="Allergies"
           description="The allergy pills servers can flag on any order line — Peanut, Gluten, Dairy. Every pill applies to every item automatically (including new items and new pills); narrow a pill off specific items below. Allergy flags always print on kitchen tickets and never block quick-add."
@@ -3014,7 +3219,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         </SectionShell>
       )}
 
-      {!loading && activeTab === 'groups' && (
+      {contentReady && activeTab === 'groups' && (
         <SectionShell
           title="Questions"
           description='Every question the POS can ask, with everything it touches: the items that ask it, the categories that inherit it, and the modifiers it follows up on. A question is shared — edit it once, it updates everywhere; items keep their own overrides (defaults, skip, order).'
@@ -3092,7 +3297,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         </SectionShell>
       )}
 
-      {!loading && (activeTab === 'pricing' || activeTab === 'specials') && (
+      {contentReady && (activeTab === 'pricing' || activeTab === 'specials') && (
         <div className="space-y-5">
           {activeTab === 'pricing' && (
             <>
@@ -3369,7 +3574,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         />
       )}
 
-      {!loading && activeTab === 'printing' && (
+      {contentReady && activeTab === 'printing' && (
         <div className="space-y-5">
           <SectionShell
             title="Stations & Printers"

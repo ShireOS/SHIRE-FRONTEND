@@ -4,6 +4,9 @@ import test from 'node:test'
 
 const dashboardApp = await readFile(new URL('./AuthenticatedDashboardApp.jsx', import.meta.url), 'utf8')
 const dashboardShell = await readFile(new URL('./shell/DashboardShell.jsx', import.meta.url), 'utf8')
+const menuPanel = await readFile(new URL('./MenuPanel.jsx', import.meta.url), 'utf8')
+const menuUi = await readFile(new URL('./components/menuUi.jsx', import.meta.url), 'utf8')
+const queryKeys = await readFile(new URL('../shared/query/queryKeys.ts', import.meta.url), 'utf8')
 const workspaceLoaders = await readFile(new URL('./workspaceModuleLoaders.js', import.meta.url), 'utf8')
 
 function between(source, start, end) {
@@ -50,4 +53,33 @@ test('heavy workspace pages use shared lazy loaders that sidebar intent can warm
   }
   assert.match(dashboardShell, /preloadWorkspaceModule\(tabId\)/)
   assert.match(dashboardApp, /<Suspense fallback=\{<PageLoading \/>\}>/)
+})
+
+test('Menu first paint waits only for items and categories', () => {
+  const criticalLoad = between(
+    menuPanel,
+    "const loaders = [\n      ['items', 'items'",
+    "  useEffect(() => {\n    if (!restaurantId || loading)",
+  )
+  assert.match(criticalLoad, /loadItems\(false\)/)
+  assert.match(criticalLoad, /loadCategories\(false\)/)
+  for (const offTabLoader of ['loadCombos', 'loadAllergies', 'loadRouting', 'loadPrintingConfig']) {
+    assert.doesNotMatch(criticalLoad, new RegExp(offTabLoader))
+  }
+  assert.match(menuPanel, /const loadersByTab = \{/)
+  assert.match(menuPanel, /const contentReady = !loading && !activeTabLoading/)
+})
+
+test('Menu supplemental reads use shared restaurant-scoped cache keys', () => {
+  for (const key of ['menuItemImages', 'menuCategoryColors', 'menuModifiers', 'menuModifierGroups', 'menuCombos', 'menuAllergies', 'menuSpecials', 'menuPrintingConfig']) {
+    assert.match(queryKeys, new RegExp(`${key}: \\(restaurantId`))
+    assert.match(menuPanel, new RegExp(`queryKeys\\.${key}\\(restaurantId\\)`))
+  }
+})
+
+test('Menu thumbnails defer offscreen transfer and decoding', () => {
+  assert.match(menuUi, /loading="lazy"/)
+  assert.match(menuUi, /decoding="async"/)
+  assert.match(menuUi, /width="40"/)
+  assert.match(menuUi, /height="40"/)
 })
