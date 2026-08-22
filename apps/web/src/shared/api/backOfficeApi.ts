@@ -127,6 +127,10 @@ export interface ManagerInboxResponse {
   open_count: number
 }
 
+export interface ManagerInboxCountResponse {
+  open_count: number
+}
+
 export const backOfficeApi = {
   updatePlatformAccountType: (
     profileId: string,
@@ -139,6 +143,9 @@ export const backOfficeApi = {
 
   managerInbox: (restaurantId: string, status: 'open' | 'all' = 'open'): Promise<ManagerInboxResponse> =>
     fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-action-inbox?status=${status}`),
+
+  managerInboxCount: (restaurantId: string): Promise<ManagerInboxCountResponse> =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-action-inbox/count`),
 
   actOnManagerInboxItem: (
     restaurantId: string,

@@ -172,6 +172,9 @@ The universal manager action inbox uses `team.view` for visibility,
 `team.adjust_timeclock` for missed-clock-out corrections. Owners retain the
 existing bypass; the frontend resolves effective access and hides each mutation
 surface independently, while every mutation is also guarded by the ML backend.
+The shell badge polls the count-only `/manager-action-inbox/count` contract; it
+must never fetch full inbox rows or trigger missed-clock-out detection. Opening
+Alerts still loads the full authorized inbox and refreshes the shared count.
 
 ### Implementation map (2026-07-08 build)
 - Frontend: `shared/permissions.ts` (keys/presets/merge/can/TAB_PERMISSIONS),
@@ -315,7 +318,14 @@ surface independently, while every mutation is also guarded by the ML backend.
   widgets and on the dedicated Checks route. Both locations reuse
   `CheckLedgerSection`, including Active/Closed/History, detail and activity-log
   views, and the existing `reports.view` read boundary; refund actions retain
-  their separate `payments.refund` guard.
+  their separate `payments.refund` guard. Home defers that ledger until it is
+  near the viewport; the dedicated Checks route remains immediate.
+- Restaurant Home hydrates saved view and widget preferences through the
+  authorized `/reports/homepage/bootstrap` aggregate. Primary widgets render
+  before the activity-review widget, keep stale data only within the same store
+  while refreshing, and show explicit skeleton/error states. Reporting
+  dimensions remain modal-only, and incomplete-setup polling runs only while
+  the Setup route is active.
 - Opening cash is a `settings.edit` restaurant policy on the existing
   `pos_closeout_settings` row: zero, fixed, or the latest finalized
   `pos_cash_reconciliations.retained_bank` with a configured fallback. Staff are

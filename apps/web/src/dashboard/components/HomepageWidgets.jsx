@@ -28,13 +28,14 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { fetchWithSupabaseAuth } from '../../shared/query'
+import { fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
 import { DEFAULT_API_TIMEOUT_MS } from '../../shared/api/requestDeadline'
 import {
   aggregateWidgetRows,
   effectiveHomepageWidgetSettings,
   normalizeReportingScope,
   pruneReportingScope,
+  splitHomepageWidgetIds,
   WHOLE_RESTAURANT_SCOPE,
 } from './homepageWidgetMath'
 import {
@@ -184,7 +185,7 @@ function Choice({ selected, children, onClick }) {
   return <button type="button" onClick={onClick} className={`min-h-9 rounded-md border px-3 text-sm ${selected ? 'border-shell-accent bg-shell-accent/10 text-dash-cream' : 'border-dash-border text-dash-secondary'}`}>{children}</button>
 }
 
-function ReportingScopeFields({ widget, dimensions, value, onChange }) {
+function ReportingScopeFields({ widget, dimensions, dimensionsLoading = false, dimensionsError = false, onRetryDimensions = null, value, onChange }) {
   const supported = widget.reporting_dimensions || []
   if (!supported.length) return <p className="rounded-md border border-dash-border p-3 text-xs leading-5 text-dash-tertiary">This widget is restaurant-wide because its source records do not carry a reliable section or device assignment.</p>
   const dimension = value.scope_dimension || 'none'
@@ -196,7 +197,7 @@ function ReportingScopeFields({ widget, dimensions, value, onChange }) {
     {dimension !== 'none' && <>
       <p className="text-xs leading-5 text-dash-tertiary">No selection includes every {dimension === 'device' ? 'device' : 'section'}. Sections are used as revenue centers in reports.</p>
       <div className="flex gap-2"><Choice selected={(value.scope_mode || 'cumulative') === 'cumulative'} onClick={() => onChange({ ...value, scope_mode: 'cumulative' })}>Cumulative total</Choice><Choice selected={value.scope_mode === 'breakdown'} onClick={() => onChange({ ...value, scope_mode: 'breakdown' })}>Break down results</Choice></div>
-      <div className="grid max-h-48 gap-2 overflow-y-auto sm:grid-cols-2">{options.map((option) => <label key={option.id} className="flex min-h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm"><input type="checkbox" checked={ids.includes(option.id)} onChange={() => toggle(option.id)} /><span className="truncate">{option.restaurant_name ? `${option.restaurant_name} / ` : ''}{option.name}{dimension === 'device' && option.section_name ? <span className="ml-1 text-xs text-dash-tertiary">({option.section_name})</span> : null}</span></label>)}</div>
+      {dimensionsLoading ? <p role="status" className="rounded-md border border-dash-border p-3 text-xs text-dash-tertiary">Loading sections and devices...</p> : dimensionsError ? <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-dash-danger/30 bg-dash-danger/10 p-3 text-xs text-dash-danger"><span>Could not load reporting filters.</span>{onRetryDimensions && <button type="button" onClick={onRetryDimensions} className="rounded border border-dash-danger/30 px-2 py-1 font-semibold">Retry</button>}</div> : <div className="grid max-h-48 gap-2 overflow-y-auto sm:grid-cols-2">{options.map((option) => <label key={option.id} className="flex min-h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm"><input type="checkbox" checked={ids.includes(option.id)} onChange={() => toggle(option.id)} /><span className="truncate">{option.restaurant_name ? `${option.restaurant_name} / ` : ''}{option.name}{dimension === 'device' && option.section_name ? <span className="ml-1 text-xs text-dash-tertiary">({option.section_name})</span> : null}</span></label>)}</div>}
     </>}
   </div>
 }
@@ -209,19 +210,19 @@ function scopeControlLabel(value) {
   return `${scope.scope_ids.length} ${noun}${scope.scope_ids.length === 1 ? '' : 's'}`
 }
 
-function DashboardScopeModal({ dimensions, value, onClose, onSave }) {
+function DashboardScopeModal({ dimensions, dimensionsLoading, dimensionsError, onRetryDimensions, value, onClose, onSave }) {
   const [draft, setDraft] = useState(() => normalizeReportingScope(value))
   const scopeWidget = { reporting_dimensions: ['revenue_center', 'device'] }
   return <Modal title="Dashboard scope" onClose={onClose}>
     <div className="space-y-4 p-5">
       <p className="text-sm leading-6 text-dash-secondary">This filter applies to every widget whose source data can be reliably assigned to a section or device. Labor and other restaurant-wide records remain unfiltered.</p>
-      <ReportingScopeFields widget={scopeWidget} dimensions={dimensions} value={draft} onChange={setDraft} />
+      <ReportingScopeFields widget={scopeWidget} dimensions={dimensions} dimensionsLoading={dimensionsLoading} dimensionsError={dimensionsError} onRetryDimensions={onRetryDimensions} value={draft} onChange={setDraft} />
     </div>
     <footer className="sticky bottom-0 flex justify-end gap-2 border-t border-dash-border bg-dash-elevated p-5"><button type="button" onClick={onClose} className="h-10 rounded-md border border-dash-border px-4 text-sm">Cancel</button><button type="button" onClick={() => onSave(normalizeReportingScope(draft))} className="h-10 rounded-md bg-shell-cta px-4 text-sm font-semibold text-shell-cta-text">Apply scope</button></footer>
   </Modal>
 }
 
-function WidgetSettingsModal({ widget, widgetData, dimensions, settings, dashboardScope, pdfSettings, period, anchorDate, dateRange, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave, onSavePdf }) {
+function WidgetSettingsModal({ widget, widgetData, dimensions, dimensionsLoading, dimensionsError, onRetryDimensions, settings, dashboardScope, pdfSettings, period, anchorDate, dateRange, scope, restaurantId, groupIds, includeUngrouped, onClose, onSave, onSavePdf }) {
   const dates = dateRange?.start && dateRange?.end ? dateRange : periodDates(period, anchorDate)
   const [tab, setTab] = useState('display')
   const explicitWidgetScope = settings.scope_source === 'widget'
@@ -287,8 +288,8 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, dashboa
       {tab === 'display' ? <div className="space-y-5 p-5">
         {(widget.reporting_dimensions || []).length ? <div className="space-y-3">
           <div><p className="label-mono mb-2">Filter behavior</p><div className="flex flex-wrap gap-2"><Choice selected={draft.scope_source !== 'widget'} onClick={() => setDraft({ ...draft, scope_source: 'global', scope_dimension: 'none', scope_mode: 'cumulative', scope_ids: [] })}>Use dashboard scope</Choice><Choice selected={draft.scope_source === 'widget'} onClick={() => setDraft({ ...draft, scope_source: 'widget', scope_dimension: 'none', scope_mode: 'cumulative', scope_ids: [] })}>Custom scope</Choice></div><p className="mt-2 text-xs text-dash-tertiary">Dashboard scope: {scopeControlLabel(dashboardScope)}</p></div>
-          {draft.scope_source === 'widget' && <ReportingScopeFields widget={widget} dimensions={dimensions} value={draft} onChange={setDraft} />}
-        </div> : <ReportingScopeFields widget={widget} dimensions={dimensions} value={draft} onChange={setDraft} />}
+          {draft.scope_source === 'widget' && <ReportingScopeFields widget={widget} dimensions={dimensions} dimensionsLoading={dimensionsLoading} dimensionsError={dimensionsError} onRetryDimensions={onRetryDimensions} value={draft} onChange={setDraft} />}
+        </div> : <ReportingScopeFields widget={widget} dimensions={dimensions} dimensionsLoading={dimensionsLoading} dimensionsError={dimensionsError} onRetryDimensions={onRetryDimensions} value={draft} onChange={setDraft} />}
         {widget.id === 'discount_review' ? <>
           <p className="text-sm leading-6 text-dash-secondary">Employees are flagged only after meeting the minimum sample and exceeding the selected number of standard deviations above peers at the same restaurant.</p>
           <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">Outlier threshold<input type="number" min="1" max="5" step="0.1" value={draft.alert_z_score} onChange={(event) => setDraft({ ...draft, alert_z_score: Number(event.target.value) })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-3" /><span className="mt-1 block text-xs text-dash-tertiary">Standard deviations above peers</span></label><label className="text-sm">Minimum actions<input type="number" min="1" max="100" value={draft.alert_min_actions} onChange={(event) => setDraft({ ...draft, alert_min_actions: Number(event.target.value) })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-3" /><span className="mt-1 block text-xs text-dash-tertiary">Prevents one-off false alerts</span></label></div>
@@ -300,7 +301,7 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, dashboa
         <div className="grid gap-4 sm:grid-cols-3"><label className="text-sm">Sort by<select value={draft.sort_by} onChange={(event) => setDraft({ ...draft, sort_by: event.target.value })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-2">{widget.columns.map((column) => <option key={column.id} value={column.id}>{column.label}</option>)}</select></label><label className="text-sm">Direction<select value={draft.sort_direction} onChange={(event) => setDraft({ ...draft, sort_direction: event.target.value })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-2"><option value="desc">Highest first</option><option value="asc">Lowest first</option></select></label><label className="text-sm">Rows<input type="number" min="1" max="100" value={draft.limit} onChange={(event) => setDraft({ ...draft, limit: Number(event.target.value) })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-2" /></label></div>
         </>}
       </div> : <div className="space-y-5 p-5">
-        <ReportingScopeFields widget={widget} dimensions={dimensions} value={report} onChange={setReport} />
+        <ReportingScopeFields widget={widget} dimensions={dimensions} dimensionsLoading={dimensionsLoading} dimensionsError={dimensionsError} onRetryDimensions={onRetryDimensions} value={report} onChange={setReport} />
         <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">From<input type="date" value={report.start_date} onChange={(event) => setReport({ ...report, start_date: event.target.value })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-3" /></label><label className="text-sm">Through<input type="date" value={report.end_date} onChange={(event) => setReport({ ...report, end_date: event.target.value })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-3" /></label></div>
         <label className="block text-sm">Report title<input value={report.title} onChange={(event) => setReport({ ...report, title: event.target.value })} className="mt-1 h-10 w-full rounded-md border border-dash-border bg-dash-surface px-3" /></label>
         {widget.id === 'discount_review' ? renderAuditOptions() : <>
@@ -319,6 +320,24 @@ function WidgetSettingsModal({ widget, widgetData, dimensions, settings, dashboa
 
 function WidgetHeader({ widget, onSettings }) {
   return <header className="mb-4 flex items-start justify-between gap-3"><div><p className="label-mono">Homepage widget</p><h2 className="mt-1 text-lg font-semibold">{widget.label}</h2><p className="mt-1 text-xs text-dash-tertiary">{widget.description}</p>{widget.scopeLabel && <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-shell-accent"><Layers3 size={13} />{widget.scopeLabel}</p>}</div><button type="button" onClick={(event) => { event.stopPropagation(); onSettings() }} title={`Configure ${widget.label}`} aria-label={`Configure ${widget.label}`} className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-dash-border text-dash-secondary hover:text-dash-cream"><Settings2 size={16} /></button></header>
+}
+
+function widgetSpan(widgetId) {
+  if (widgetId === 'sales_summary' || widgetId === 'menu_performance') return 'xl:col-span-4'
+  if (widgetId === 'credit_card_deposit' || widgetId === 'discount_review') return 'xl:col-span-2'
+  return ''
+}
+
+function HomepageWidgetSkeleton({ widget }) {
+  return <section role="status" aria-label={`Loading ${widget.label}`} className={`glass-card min-h-48 animate-pulse rounded-lg p-5 ${widgetSpan(widget.id)}`} aria-busy="true"><div className="h-3 w-24 rounded bg-white/[0.06]" /><div className="mt-4 h-6 w-44 rounded bg-white/[0.07]" /><div className="mt-3 h-3 w-3/5 rounded bg-white/[0.05]" /><div className="mt-8 grid gap-3 sm:grid-cols-3"><div className="h-16 rounded-md bg-white/[0.04]" /><div className="h-16 rounded-md bg-white/[0.04]" /><div className="h-16 rounded-md bg-white/[0.04]" /></div><span className="sr-only">Loading {widget.label}...</span></section>
+}
+
+function HomepageWidgetError({ widget, onRetry, onSettings }) {
+  return <section role="alert" className={`glass-card min-h-48 rounded-lg p-5 ${widgetSpan(widget.id)}`}><WidgetHeader widget={widget} onSettings={onSettings} /><p className="text-sm text-dash-danger">This widget could not be loaded.</p><button type="button" onClick={onRetry} className="mt-4 inline-flex items-center gap-2 rounded-md border border-dash-danger/30 px-3 py-1.5 text-xs font-semibold text-dash-danger"><RefreshCw size={13} />Retry</button></section>
+}
+
+function HomepagePreferenceSkeleton() {
+  return <div role="status" aria-label="Loading homepage settings" className="grid gap-4 md:grid-cols-2 xl:grid-cols-4" aria-busy="true"><div className="h-72 animate-pulse rounded-lg border border-dash-border bg-white/[0.025] md:col-span-2 xl:col-span-4" />{[0, 1, 2, 3].map((item) => <div key={item} className="h-48 animate-pulse rounded-lg border border-dash-border bg-white/[0.025]" />)}<span className="sr-only">Loading homepage settings...</span></div>
 }
 
 function measureColumns(data, widget) {
@@ -718,7 +737,7 @@ function DiscountReviewWidget({ widget, data, onSettings, onOpenDetails }) {
   </section>
 }
 
-export default function HomepageWidgets({ scope, restaurantId, period, anchorDate, dateRange = null, dashboardScope = WHOLE_RESTAURANT_SCOPE, onDashboardScopeChange = null, groupIds = null, includeUngrouped = false, onScopeLoaded = null }) {
+export default function HomepageWidgets({ scope, restaurantId, period, anchorDate, dateRange = null, dashboardScope = WHOLE_RESTAURANT_SCOPE, onDashboardScopeChange = null, groupIds = null, includeUngrouped = false, onScopeLoaded = null, initialPreference = null, initialPreferenceUpdatedAt = undefined }) {
   const queryClient = useQueryClient()
   const [configureOpen, setConfigureOpen] = useState(false)
   const [scopeOpen, setScopeOpen] = useState(false)
@@ -726,14 +745,16 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
   const [detailId, setDetailId] = useState(null)
   const [saving, setSaving] = useState(false)
   const preferencePath = scope === 'portfolio' ? '/portfolio-reports/homepage/preferences' : `/restaurants/${restaurantId}/reports/homepage/preferences`
-  const preferenceQuery = useQuery({ queryKey: ['homepage-preferences', scope, restaurantId], queryFn: () => fetchWithSupabaseAuth(preferencePath, { timeoutMs: DEFAULT_API_TIMEOUT_MS }), enabled: scope === 'portfolio' || Boolean(restaurantId) })
+  const preferenceKey = ['homepage-preferences', scope, restaurantId]
+  const preferenceQuery = useQuery({ queryKey: preferenceKey, queryFn: () => fetchWithSupabaseAuth(preferencePath, { timeoutMs: DEFAULT_API_TIMEOUT_MS }), enabled: scope === 'portfolio' || Boolean(restaurantId), initialData: initialPreference || undefined, initialDataUpdatedAt: initialPreference ? initialPreferenceUpdatedAt : undefined, staleTime: STALE_TIMES.analytics })
   const preference = preferenceQuery.data || { visible_widgets: [], widget_order: [], widget_settings: {}, widget_pdf_settings: {}, catalog: [] }
   const dimensionPath = scope === 'portfolio'
     ? `/portfolio-reports/dimensions?${new URLSearchParams({ ...(groupIds?.length ? { group_ids: groupIds.join(',') } : {}), include_ungrouped: String(includeUngrouped) })}`
     : `/restaurants/${restaurantId}/reports/dimensions`
-  const dimensionQuery = useQuery({ queryKey: ['reporting-dimensions', scope, restaurantId, (groupIds || []).join(','), includeUngrouped], queryFn: () => fetchWithSupabaseAuth(dimensionPath, { timeoutMs: DEFAULT_API_TIMEOUT_MS }), enabled: scope === 'portfolio' || Boolean(restaurantId) })
+  const dimensionsNeeded = scope === 'portfolio' || scopeOpen || Boolean(settingsId)
+  const dimensionQuery = useQuery({ queryKey: ['reporting-dimensions', scope, restaurantId, (groupIds || []).join(','), includeUngrouped], queryFn: () => fetchWithSupabaseAuth(dimensionPath, { timeoutMs: DEFAULT_API_TIMEOUT_MS }), enabled: dimensionsNeeded && (scope === 'portfolio' || Boolean(restaurantId)) })
   const resolvedDashboardScope = useMemo(
-    () => pruneReportingScope(dashboardScope, dimensionQuery.data),
+    () => dimensionQuery.data ? pruneReportingScope(dashboardScope, dimensionQuery.data) : normalizeReportingScope(dashboardScope),
     [dashboardScope, dimensionQuery.data],
   )
   useEffect(() => {
@@ -743,6 +764,7 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
     }
   }, [dashboardScope, dimensionQuery.data, onDashboardScopeChange, resolvedDashboardScope])
   const orderedVisible = useMemo(() => (preference.widget_order || []).filter((id) => (preference.visible_widgets || []).includes(id)), [preference])
+  const widgetGroups = useMemo(() => splitHomepageWidgetIds(orderedVisible), [orderedVisible])
   const effectiveSettings = useMemo(
     () => effectiveHomepageWidgetSettings(preference.widget_settings || {}, orderedVisible, resolvedDashboardScope),
     [preference.widget_settings, orderedVisible, resolvedDashboardScope],
@@ -751,10 +773,24 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
   const portfolioScope = scope === 'portfolio'
     ? { ...(groupIds?.length ? { group_ids: groupIds } : {}), include_ungrouped: includeUngrouped }
     : {}
+  const loadWidgetData = (widgetIds) => fetchWithSupabaseAuth(dataPath, { method: 'POST', body: JSON.stringify({ period, anchor_date: anchorDate || null, ...(dateRange?.start && dateRange?.end ? { start_date: dateRange.start, end_date: dateRange.end } : {}), widget_ids: widgetIds, widget_settings: effectiveSettings, ...portfolioScope }), timeoutMs: DEFAULT_API_TIMEOUT_MS })
+  const sameWorkspacePlaceholder = (previousData, previousQuery) => (
+    previousQuery?.queryKey?.[1] === scope
+    && previousQuery?.queryKey?.[2] === restaurantId
+      ? previousData
+      : undefined
+  )
   const dataQuery = useQuery({
-    queryKey: ['homepage-data', scope, restaurantId, period, anchorDate, dateRange?.start, dateRange?.end, (groupIds || []).join(','), includeUngrouped, orderedVisible.join(','), JSON.stringify(effectiveSettings)],
-    queryFn: () => fetchWithSupabaseAuth(dataPath, { method: 'POST', body: JSON.stringify({ period, anchor_date: anchorDate || null, ...(dateRange?.start && dateRange?.end ? { start_date: dateRange.start, end_date: dateRange.end } : {}), widget_ids: orderedVisible, widget_settings: effectiveSettings, ...portfolioScope }), timeoutMs: DEFAULT_API_TIMEOUT_MS }),
-    enabled: orderedVisible.length > 0,
+    queryKey: ['homepage-data', scope, restaurantId, 'primary', period, anchorDate, dateRange?.start, dateRange?.end, (groupIds || []).join(','), includeUngrouped, widgetGroups.primary.join(','), JSON.stringify(effectiveSettings)],
+    queryFn: () => loadWidgetData(widgetGroups.primary),
+    enabled: widgetGroups.primary.length > 0,
+    placeholderData: sameWorkspacePlaceholder,
+  })
+  const deferredDataQuery = useQuery({
+    queryKey: ['homepage-data', scope, restaurantId, 'deferred', period, anchorDate, dateRange?.start, dateRange?.end, (groupIds || []).join(','), includeUngrouped, widgetGroups.deferred.join(','), JSON.stringify(effectiveSettings)],
+    queryFn: () => loadWidgetData(widgetGroups.deferred),
+    enabled: widgetGroups.deferred.length > 0 && (widgetGroups.primary.length === 0 || dataQuery.isFetched),
+    placeholderData: sameWorkspacePlaceholder,
   })
   useEffect(() => {
     if (dataQuery.data?.scope && onScopeLoaded) onScopeLoaded(dataQuery.data.scope)
@@ -762,8 +798,11 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
   const savePreference = async (next) => {
     setSaving(true)
     try {
-      await fetchWithSupabaseAuth(preferencePath, { method: 'PUT', body: JSON.stringify(next) })
-      await queryClient.invalidateQueries({ queryKey: ['homepage-preferences', scope, restaurantId] })
+      const saved = await fetchWithSupabaseAuth(preferencePath, { method: 'PUT', body: JSON.stringify(next) })
+      queryClient.setQueryData(preferenceKey, saved)
+      if (scope === 'restaurant') {
+        queryClient.setQueryData(['homepage-bootstrap', 'restaurant', restaurantId], (current) => current ? { ...current, preferences: saved } : current)
+      }
       setConfigureOpen(false); setSettingsId(null)
     } finally { setSaving(false) }
   }
@@ -773,29 +812,41 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
       method: 'PATCH',
       body: JSON.stringify({ [kind === 'display' ? 'display_settings' : 'pdf_settings']: settings }),
     })
-    queryClient.setQueryData(['homepage-preferences', scope, restaurantId], saved)
+    queryClient.setQueryData(preferenceKey, saved)
+    if (scope === 'restaurant') {
+      queryClient.setQueryData(['homepage-bootstrap', 'restaurant', restaurantId], (current) => current ? { ...current, preferences: saved } : current)
+    }
     if (kind === 'display') {
       await queryClient.invalidateQueries({ queryKey: ['homepage-data', scope, restaurantId] })
       setSettingsId(null)
     }
   }
   const saveSettings = async (settings) => saveWidgetPreference('display', settings)
+  const allWidgetData = useMemo(() => ({
+    ...(dataQuery.data?.widgets || {}),
+    ...(deferredDataQuery.data?.widgets || {}),
+  }), [dataQuery.data?.widgets, deferredDataQuery.data?.widgets])
   const selectedWidget = (preference.catalog || []).find((widget) => widget.id === settingsId)
   const detailWidget = (preference.catalog || []).find((widget) => widget.id === detailId) || { label: 'Widget', columns: [] }
-  if (preferenceQuery.isPending) return <p className="p-6 text-sm text-dash-tertiary">Loading homepage...</p>
+  if (preferenceQuery.isPending) return <HomepagePreferenceSkeleton />
   if (preferenceQuery.isError) return <div className="flex items-center justify-between gap-3 rounded-md border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger"><span>{preferenceQuery.error?.message || 'Could not load homepage settings.'}</span><button type="button" onClick={() => preferenceQuery.refetch()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-dash-danger/30 px-2.5 py-1.5 text-xs font-semibold"><RefreshCw size={13} />Retry</button></div>
   return <div className="space-y-4">
     <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setScopeOpen(true)} className={`inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-semibold ${resolvedDashboardScope.scope_dimension === 'none' ? 'border-dash-border text-dash-secondary hover:text-dash-cream' : 'border-shell-accent bg-shell-accent/10 text-dash-cream'}`}><Layers3 size={15} />{scopeControlLabel(resolvedDashboardScope)}</button><button type="button" onClick={() => setConfigureOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm font-semibold text-dash-secondary hover:text-dash-cream"><Settings2 size={15} />Customize homepage</button></div>
-    {dataQuery.isError && <div className="flex items-center justify-between gap-3 rounded-md border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger"><span>{dataQuery.error?.message || 'Could not load homepage widgets.'}</span><button type="button" onClick={() => dataQuery.refetch()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-dash-danger/30 px-2.5 py-1.5 text-xs font-semibold"><RefreshCw size={13} />Retry</button></div>}
+    {((dataQuery.isFetching && dataQuery.data) || (deferredDataQuery.isFetching && deferredDataQuery.data)) && <p role="status" className="text-right text-xs font-semibold text-dash-tertiary">Updating homepage data...</p>}
+    {dataQuery.isError && dataQuery.data && <div className="flex items-center justify-between gap-3 rounded-md border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger"><span>{dataQuery.error?.message || 'Could not refresh homepage widgets.'}</span><button type="button" onClick={() => dataQuery.refetch()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-dash-danger/30 px-2.5 py-1.5 text-xs font-semibold"><RefreshCw size={13} />Retry</button></div>}
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {orderedVisible.map((id) => {
         const catalogWidget = preference.catalog.find((item) => item.id === id)
         if (!catalogWidget) return null
-        const data = dataQuery.data?.widgets?.[id]
+        const deferred = widgetGroups.deferred.includes(id)
+        const widgetQuery = deferred ? deferredDataQuery : dataQuery
+        const data = allWidgetData[id]
         const widget = { ...catalogWidget, scopeLabel: widgetScopeLabel(catalogWidget, data, dimensionQuery.data, resolvedDashboardScope) }
         const onSettings = () => setSettingsId(id)
         const onOpenDetails = () => setDetailId(id)
         const settings = effectiveSettings[id] || {}
+        if (!data && widgetQuery.isError) return <HomepageWidgetError key={id} widget={widget} onSettings={onSettings} onRetry={() => widgetQuery.refetch()} />
+        if (!data) return <HomepageWidgetSkeleton key={id} widget={widget} />
         if (id === 'sales_summary') return <SalesWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
         if (scopedBreakdown(data) && id !== 'discount_review') return <ScopedBreakdownWidget key={id} widget={widget} data={data} settings={settings} onSettings={onSettings} onOpenDetails={onOpenDetails} />
         if (id === 'credit_card_deposit' && settings.display_mode !== 'chart') return <CardDepositWidget key={id} widget={widget} data={data} onSettings={onSettings} onOpenDetails={onOpenDetails} />
@@ -808,9 +859,9 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
       })}
     </div>
     {!orderedVisible.length && <div className="rounded-md border border-dash-border p-8 text-center"><FileText className="mx-auto text-dash-tertiary" /><p className="mt-3 text-sm text-dash-secondary">Choose widgets to build this homepage.</p></div>}
-    {scopeOpen && <DashboardScopeModal dimensions={dimensionQuery.data} value={resolvedDashboardScope} onClose={() => setScopeOpen(false)} onSave={(next) => { onDashboardScopeChange?.(next); setScopeOpen(false) }} />}
+    {scopeOpen && <DashboardScopeModal dimensions={dimensionQuery.data} dimensionsLoading={dimensionQuery.isPending || dimensionQuery.isFetching} dimensionsError={dimensionQuery.isError} onRetryDimensions={() => dimensionQuery.refetch()} value={resolvedDashboardScope} onClose={() => setScopeOpen(false)} onSave={(next) => { onDashboardScopeChange?.(next); setScopeOpen(false) }} />}
     {configureOpen && <ConfigureModal catalog={preference.catalog || []} visible={preference.visible_widgets || []} order={preference.widget_order || []} saving={saving} onClose={() => setConfigureOpen(false)} onSave={(visible, order) => savePreference({ visible_widgets: visible, widget_order: order, widget_settings: preference.widget_settings || {} })} />}
-    {selectedWidget && <WidgetSettingsModal widget={selectedWidget} widgetData={dataQuery.data?.widgets?.[settingsId]} dimensions={dimensionQuery.data} settings={preference.widget_settings?.[settingsId] || {}} dashboardScope={resolvedDashboardScope} pdfSettings={preference.widget_pdf_settings?.[settingsId] || {}} period={period} anchorDate={anchorDate} dateRange={dateRange} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={saveSettings} onSavePdf={(settings) => saveWidgetPreference('pdf', settings)} />}
-    {detailId && <WidgetDetailModal widget={{ ...detailWidget, scopeLabel: widgetScopeLabel(detailWidget, dataQuery.data?.widgets?.[detailId], dimensionQuery.data, resolvedDashboardScope) }} data={dataQuery.data?.widgets?.[detailId]} period={period} anchorDate={anchorDate} dateRange={dateRange} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} settings={effectiveSettings[detailId] || {}} onClose={() => setDetailId(null)} />}
+    {selectedWidget && <WidgetSettingsModal widget={selectedWidget} widgetData={allWidgetData[settingsId]} dimensions={dimensionQuery.data} dimensionsLoading={dimensionQuery.isPending || dimensionQuery.isFetching} dimensionsError={dimensionQuery.isError} onRetryDimensions={() => dimensionQuery.refetch()} settings={preference.widget_settings?.[settingsId] || {}} dashboardScope={resolvedDashboardScope} pdfSettings={preference.widget_pdf_settings?.[settingsId] || {}} period={period} anchorDate={anchorDate} dateRange={dateRange} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} onClose={() => setSettingsId(null)} onSave={saveSettings} onSavePdf={(settings) => saveWidgetPreference('pdf', settings)} />}
+    {detailId && <WidgetDetailModal widget={{ ...detailWidget, scopeLabel: widgetScopeLabel(detailWidget, allWidgetData[detailId], dimensionQuery.data, resolvedDashboardScope) }} data={allWidgetData[detailId]} period={period} anchorDate={anchorDate} dateRange={dateRange} scope={scope} restaurantId={restaurantId} groupIds={groupIds} includeUngrouped={includeUngrouped} settings={effectiveSettings[detailId] || {}} onClose={() => setDetailId(null)} />}
   </div>
 }

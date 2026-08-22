@@ -10,6 +10,15 @@ export const WHOLE_RESTAURANT_SCOPE = Object.freeze({
   scope_ids: [],
 })
 
+const DEFERRED_HOME_WIDGET_IDS = new Set(['discount_review'])
+
+export function splitHomepageWidgetIds(widgetIds = []) {
+  return {
+    primary: widgetIds.filter((widgetId) => !DEFERRED_HOME_WIDGET_IDS.has(widgetId)),
+    deferred: widgetIds.filter((widgetId) => DEFERRED_HOME_WIDGET_IDS.has(widgetId)),
+  }
+}
+
 export function normalizeReportingScope(value = {}) {
   const dimension = ['revenue_center', 'device'].includes(value.scope_dimension)
     ? value.scope_dimension

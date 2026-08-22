@@ -514,6 +514,56 @@ function MiniTable({ columns, rows }) {
   )
 }
 
+function HomeAnalyticsSkeleton() {
+  return (
+    <section role="status" aria-label="Loading restaurant analytics" className="space-y-4" aria-busy="true">
+      <div className="flex justify-end gap-2">
+        <div className="h-10 w-36 animate-pulse rounded-md bg-white/[0.05]" />
+        <div className="h-10 w-44 animate-pulse rounded-md bg-white/[0.05]" />
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="h-72 animate-pulse rounded-lg border border-dash-border bg-white/[0.025] md:col-span-2 xl:col-span-4" />
+        {[0, 1, 2, 3].map((item) => <div key={item} className="h-48 animate-pulse rounded-lg border border-dash-border bg-white/[0.025]" />)}
+      </div>
+      <span className="sr-only">Loading restaurant performance...</span>
+    </section>
+  )
+}
+
+function DeferredCheckLedgerSection({ restaurantId }) {
+  const boundaryRef = useRef(null)
+  const [shouldLoad, setShouldLoad] = useState(false)
+
+  useEffect(() => {
+    setShouldLoad(false)
+    const node = boundaryRef.current
+    if (!node) return undefined
+    if (typeof IntersectionObserver === 'undefined') {
+      setShouldLoad(true)
+      return undefined
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return
+      setShouldLoad(true)
+      observer.disconnect()
+    }, { rootMargin: '600px 0px' })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [restaurantId])
+
+  return (
+    <div ref={boundaryRef} className="min-h-40">
+      {shouldLoad ? (
+        <Suspense fallback={<div role="status" className="h-40 animate-pulse rounded-2xl border border-dash-border bg-white/[0.02]"><span className="sr-only">Loading check ledger...</span></div>}>
+          <CheckLedgerSection restaurantId={restaurantId} />
+        </Suspense>
+      ) : (
+        <div aria-hidden="true" className="h-40 rounded-2xl border border-dash-border bg-white/[0.015]" />
+      )}
+    </div>
+  )
+}
+
 function AnalyticsDashboard({ restaurant }) {
   const auth = useAuth()
   const access = useBackOfficeAccess(auth, restaurant?.id)
@@ -521,62 +571,78 @@ function AnalyticsDashboard({ restaurant }) {
   const [dates, setDates] = useState(() => analyticsPeriodRange('week'))
   const [reportingScope, setReportingScope] = useState(() => ({ ...WHOLE_RESTAURANT_SCOPE }))
   const [viewHydrated, setViewHydrated] = useState(false)
-  const [viewPersistenceReady, setViewPersistenceReady] = useState(false)
+  const viewTouchedRef = useRef(false)
+  const bootstrapKey = useMemo(
+    () => ['homepage-bootstrap', 'restaurant', restaurant?.id],
+    [restaurant?.id],
+  )
+  const bootstrapQuery = useQuery({
+    queryKey: bootstrapKey,
+    queryFn: () => fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/reports/homepage/bootstrap`),
+    enabled: Boolean(restaurant?.id),
+    staleTime: STALE_TIMES.analytics,
+  })
   const selectPeriod = (preset) => {
+    viewTouchedRef.current = true
     setPeriodPreset(preset)
     setDates(analyticsPeriodRange(preset))
   }
   const setCustomDate = (field, value) => {
     if (!value) return
+    viewTouchedRef.current = true
     const range = { start: dates.start, end: dates.end, [field]: value }
     if (field === 'start' && value > range.end) range.end = value
     if (field === 'end' && value < range.start) range.start = value
     setPeriodPreset('custom')
     setDates(range)
   }
+  const changeReportingScope = (next) => {
+    viewTouchedRef.current = true
+    setReportingScope(next)
+  }
   useEffect(() => {
-    if (!restaurant?.id) return
-    let cancelled = false
+    viewTouchedRef.current = false
     setViewHydrated(false)
-    setViewPersistenceReady(false)
     setReportingScope({ ...WHOLE_RESTAURANT_SCOPE })
-    fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/reports/view-preferences`)
-      .then((payload) => {
-        if (!cancelled) {
-          const saved = payload.settings?.homepage
-          const preset = saved?.period || 'week'
-          if (preset === 'custom' && saved?.custom_start_date && saved?.custom_end_date) {
-            setPeriodPreset('custom')
-            setDates({ start: saved.custom_start_date, end: saved.custom_end_date })
-          } else {
-            const resolved = preset === 'custom' ? 'week' : preset
-            setPeriodPreset(resolved)
-            setDates(analyticsPeriodRange(resolved))
-          }
-          setReportingScope(normalizeReportingScope(saved))
-          setViewPersistenceReady(true)
-        }
-      })
-      .catch(() => undefined)
-      .finally(() => { if (!cancelled) setViewHydrated(true) })
-    return () => { cancelled = true }
   }, [restaurant?.id])
   useEffect(() => {
-    if (!restaurant?.id || !viewHydrated || !viewPersistenceReady) return
+    if (!restaurant?.id || !bootstrapQuery.data) return
+    if (viewTouchedRef.current) {
+      setViewHydrated(true)
+      return
+    }
+    const saved = bootstrapQuery.data.view_settings || {}
+    const preset = saved.period || 'week'
+    if (preset === 'custom' && saved.custom_start_date && saved.custom_end_date) {
+      setPeriodPreset('custom')
+      setDates({ start: saved.custom_start_date, end: saved.custom_end_date })
+    } else {
+      const resolved = preset === 'custom' ? 'week' : preset
+      setPeriodPreset(resolved)
+      setDates(analyticsPeriodRange(resolved))
+    }
+    setReportingScope(normalizeReportingScope(saved))
+    setViewHydrated(true)
+  }, [bootstrapQuery.data, restaurant?.id])
+  useEffect(() => {
+    if (!restaurant?.id || !viewHydrated || !viewTouchedRef.current) return
     const timeout = window.setTimeout(() => {
+      const settings = {
+        period: periodPreset,
+        anchor_date: null,
+        custom_start_date: periodPreset === 'custom' ? dates.start : null,
+        custom_end_date: periodPreset === 'custom' ? dates.end : null,
+        ...reportingScope,
+      }
       fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/reports/view-preferences/homepage`, {
         method: 'PUT',
-        body: JSON.stringify({ settings: {
-          period: periodPreset,
-          anchor_date: null,
-          custom_start_date: periodPreset === 'custom' ? dates.start : null,
-          custom_end_date: periodPreset === 'custom' ? dates.end : null,
-          ...reportingScope,
-        } }),
+        body: JSON.stringify({ settings }),
+      }).then(() => {
+        queryClient.setQueryData(bootstrapKey, (current) => current ? { ...current, view_settings: settings } : current)
       }).catch(() => undefined)
     }, 450)
     return () => window.clearTimeout(timeout)
-  }, [restaurant?.id, viewHydrated, viewPersistenceReady, periodPreset, dates, reportingScope])
+  }, [bootstrapKey, restaurant?.id, viewHydrated, periodPreset, dates, reportingScope])
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-5 border-b border-white/10 pb-5 lg:flex-row lg:items-end lg:justify-between">
@@ -603,11 +669,18 @@ function AnalyticsDashboard({ restaurant }) {
           </div>
         </div>
       </header>
+      {(bootstrapQuery.isPending || (!viewHydrated && !bootstrapQuery.isError)) && <HomeAnalyticsSkeleton />}
+      {bootstrapQuery.isError && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger">
+          <span>{bootstrapQuery.error instanceof Error ? bootstrapQuery.error.message : 'Could not load the restaurant homepage.'}</span>
+          <button type="button" onClick={() => bootstrapQuery.refetch()} className="rounded-md border border-dash-danger/30 px-3 py-1.5 text-xs font-semibold">Retry</button>
+        </div>
+      )}
       {viewHydrated && access.viewVisible('home.analytics') && !access.viewVisible('home.widgets') && (
         <SalesTiles restaurantId={restaurant?.id} period={periodPreset} />
       )}
-      {viewHydrated && access.viewVisible('home.widgets') && <HomepageWidgets scope="restaurant" restaurantId={restaurant?.id} period={periodPreset} dateRange={dates} dashboardScope={reportingScope} onDashboardScopeChange={setReportingScope} />}
-      {viewHydrated && access.viewVisible('home.check_ledger') && <CheckLedgerSection restaurantId={restaurant?.id} />}
+      {viewHydrated && access.viewVisible('home.widgets') && <HomepageWidgets scope="restaurant" restaurantId={restaurant?.id} period={periodPreset} dateRange={dates} dashboardScope={reportingScope} onDashboardScopeChange={changeReportingScope} initialPreference={bootstrapQuery.data?.preferences} initialPreferenceUpdatedAt={bootstrapQuery.dataUpdatedAt} />}
+      {viewHydrated && access.viewVisible('home.check_ledger') && <DeferredCheckLedgerSection restaurantId={restaurant?.id} />}
     </div>
   )
 }
@@ -5169,7 +5242,7 @@ export function RestaurantWorkspace({
     queryFn: () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/setup-status`),
     enabled: Boolean(restaurantId && restaurant && (backOfficeAccess.loading || backOfficeAccess.can('settings.edit'))),
     staleTime: STALE_TIMES.setup,
-    refetchInterval: query => query.state.data?.complete ? false : 15_000,
+    refetchInterval: query => activeTab === 'setup' && query.state.data?.complete !== true ? 15_000 : false,
   })
   const showSetup = setupStatusQuery.isLoading || Boolean(setupStatusQuery.error) || setupStatusQuery.data?.complete !== true
   const setupWarningCount = setupStatusQuery.data?.missing_count ?? modernWarningCount(setupWarnings || {})

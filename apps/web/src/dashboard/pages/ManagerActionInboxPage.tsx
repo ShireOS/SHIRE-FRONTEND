@@ -8,6 +8,7 @@ import {
 } from '../../shared/api/backOfficeApi'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import { SmartDateTimeInput } from '../../shared/components/SmartDateTimeInput'
+import { queryClient, queryKeys } from '../../shared/query'
 
 type Props = {
   restaurantId: string
@@ -58,6 +59,9 @@ export default function ManagerActionInboxPage({ restaurantId }: Props) {
     try {
       const response = await backOfficeApi.managerInbox(restaurantId, scope)
       setItems(response.items)
+      queryClient.setQueryData(queryKeys.managerInboxCount(restaurantId), {
+        open_count: response.open_count,
+      })
       setSelectedId((current) => response.items.some((item) => item.id === current) ? current : response.items[0]?.id ?? null)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Could not load alerts.')

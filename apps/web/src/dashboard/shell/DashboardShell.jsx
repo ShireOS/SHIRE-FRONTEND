@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   Banknote,
@@ -75,7 +76,7 @@ export function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
   if (tabId === 'reports') {
     prefetch(queryKeys.reportPreferences(restaurantId), api(`/restaurants/${restaurantId}/reports/view-preferences`), STALE_TIMES.setup)
   } else if (tabId === 'analytics') {
-    prefetch(queryKeys.ownerAnalytics(restaurantId, 'week'), api(`/restaurants/${restaurantId}/owner-analytics?period=week`), STALE_TIMES.analytics)
+    prefetch(['homepage-bootstrap', 'restaurant', restaurantId], api(`/restaurants/${restaurantId}/reports/homepage/bootstrap`), STALE_TIMES.analytics)
   } else if (tabId === 'setup') {
     // The setup editor already scopes its reads to the visible section. Do not
     // turn an incidental sidebar hover into a fourteen-request workspace load.
@@ -419,7 +420,6 @@ export default function DashboardShell({
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [theme, setTheme] = useShellTheme()
-  const [alertCount, setAlertCount] = useState(0)
   const [viewEditorOpen, setViewEditorOpen] = useState(false)
 
   useEffect(() => {
@@ -448,6 +448,20 @@ export default function DashboardShell({
   const roleLabel = deriveRoleLabel(auth)
   const hidden = hiddenSurfaces(auth)
   const access = useBackOfficeAccess(auth, inStore ? restaurantId : null)
+  const managerInboxCountQuery = useQuery({
+    queryKey: queryKeys.managerInboxCount(restaurantId || ''),
+    queryFn: () => backOfficeApi.managerInboxCount(restaurantId),
+    enabled: Boolean(
+      context === 'store'
+      && restaurantId
+      && !access.loading
+      && access.can('team.view')
+    ),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    retry: 0,
+  })
+  const alertCount = managerInboxCountQuery.data?.open_count || 0
   const tabVisible = (id, section = null) => {
     if (id === 'setup' && !showSetup) return false
     if (allowedStoreTabs && !allowedStoreTabs.includes(id)) return false
@@ -491,27 +505,6 @@ export default function DashboardShell({
   const displayName = [auth.profile?.first_name, auth.profile?.last_name].filter(Boolean).join(' ')
     || auth.user?.email
     || 'Account'
-
-  useEffect(() => {
-    if (!restaurantId || context !== 'store') {
-      setAlertCount(0)
-      return undefined
-    }
-    let cancelled = false
-    const refresh = () => backOfficeApi.managerInbox(restaurantId, 'open')
-      .then((response) => {
-        if (!cancelled) setAlertCount(response.open_count)
-      })
-      .catch(() => {
-        if (!cancelled) setAlertCount(0)
-      })
-    void refresh()
-    const timer = window.setInterval(refresh, 30_000)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [context, restaurantId])
 
   return (
     <div className={`${theme} flex min-h-screen bg-dash-base text-dash-cream transition-colors duration-300`}>

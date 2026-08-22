@@ -6,6 +6,7 @@ import {
   effectiveHomepageWidgetSettings,
   normalizeReportingScope,
   pruneReportingScope,
+  splitHomepageWidgetIds,
 } from './homepageWidgetMath.js'
 
 test('aggregates sales summaries using receipt count', () => {
@@ -94,5 +95,17 @@ test('drops stale portfolio scope when its selected stores change', () => {
     scope_dimension: 'none',
     scope_mode: 'cumulative',
     scope_ids: [],
+  })
+})
+
+test('defers the expensive activity review without delaying primary Home widgets', () => {
+  assert.deepEqual(splitHomepageWidgetIds([
+    'sales_summary',
+    'orders',
+    'discount_review',
+    'tips',
+  ]), {
+    primary: ['sales_summary', 'orders', 'tips'],
+    deferred: ['discount_review'],
   })
 })
