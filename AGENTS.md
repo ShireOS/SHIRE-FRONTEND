@@ -175,6 +175,8 @@ surface independently, while every mutation is also guarded by the ML backend.
 The shell badge polls the count-only `/manager-action-inbox/count` contract; it
 must never fetch full inbox rows or trigger missed-clock-out detection. Opening
 Alerts still loads the full authorized inbox and refreshes the shared count.
+Both the sidebar Alerts entry and the top-bar bell use the same `team.view`
+gate; the bell remains disabled while access is unresolved or denied.
 
 ### Implementation map (2026-07-08 build)
 - Frontend: `shared/permissions.ts` (keys/presets/merge/can/TAB_PERMISSIONS),
@@ -223,6 +225,11 @@ Alerts still loads the full authorized inbox and refreshes the shared count.
   After account type resolves, auth hydration loads independent owned-store,
   membership, and reseller-portfolio scopes concurrently; each query keeps its
   existing RLS boundary and error handling before results are deduplicated.
+  Account-scoped hydration is generation-guarded and aborts superseded requests,
+  so an old account cannot repopulate restaurant or loading state after an
+  account switch or sign-out. A direct user-to-user session replacement clears
+  the shared query cache and restaurant state before the new account hydrates;
+  delayed initial-session reads cannot overwrite a newer auth event.
   UI previews default to the same-origin Expo exports under
   `apps/web/public/previews`; environment URLs may explicitly override them.
   Never add an implicit localhost or developer-machine fallback.
@@ -327,11 +334,14 @@ Alerts still loads the full authorized inbox and refreshes the shared count.
   their separate `payments.refund` guard. Home defers that ledger until it is
   near the viewport; the dedicated Checks route remains immediate.
 - Restaurant Home hydrates saved view and widget preferences through the
-  authorized `/reports/homepage/bootstrap` aggregate. Primary widgets render
-  before the activity-review widget, keep stale data only within the same store
-  while refreshing, and show explicit skeleton/error states. Reporting
+  authorized `/reports/homepage/bootstrap` aggregate. Sales is the critical
+  first widget request, ordinary cards follow as a separately keyed request,
+  and activity review remains the final/heaviest request. Each group sends only
+  its own settings, keeps stale data only within the same store and group while
+  refreshing, and shows explicit skeleton/error/retry states. Reporting
   dimensions remain modal-only, and incomplete-setup polling runs only while
-  the Setup route is active.
+  the Setup route is active. Store-card and Home-nav intent warm the exact
+  bootstrap cache key used by the destination page.
 - Opening cash is a `settings.edit` restaurant policy on the existing
   `pos_closeout_settings` row: zero, fixed, or the latest finalized
   `pos_cash_reconciliations.retained_bank` with a configured fallback. Staff are

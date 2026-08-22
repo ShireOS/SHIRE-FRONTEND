@@ -40,6 +40,7 @@ export const queryKeys = {
 
   ownerAnalytics: (restaurantId: string, period: string) =>
     ['restaurant', restaurantId, 'owner-analytics', period] as const,
+  homepageBootstrap: (restaurantId: string) => ['homepage-bootstrap', 'restaurant', restaurantId] as const,
   restaurantReports: (restaurantId: string, query: string) =>
     ['restaurant', restaurantId, 'reports', query] as const,
   reportPreferences: (restaurantId: string) => ['restaurant', restaurantId, 'reports', 'preferences'] as const,

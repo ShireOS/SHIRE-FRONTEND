@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Check, ChevronDown, Copy, FolderKanban, LayoutGrid, List, Plus, Search, Send, Store } from 'lucide-react'
 import { useAuth } from '../../auth'
-import { queryKeys, fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
+import { queryClient, queryKeys, fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
 import BoardRestaurantModal from './BoardRestaurantModal'
 import StoreGroupsModal from './StoreGroupsModal'
 import ApplyToStoresModal from './ApplyToStoresModal'
@@ -125,19 +125,20 @@ function CopyLinkButton({ url }) {
   )
 }
 
-function StoreCard({ restaurant, layout, onOpen, onFinishSetup, claimInvite, onRevokeInvite, summary, summaryFailed }) {
+function StoreCard({ restaurant, layout, onOpen, onIntent, onFinishSetup, claimInvite, onRevokeInvite, summary, summaryFailed }) {
   const location = [restaurant.city, restaurant.state].filter(Boolean).join(', ')
   const isDraft = restaurant.status === 'draft'
   const isActive = Boolean(restaurant.onboarding_completed_at)
 
   return (
     <div
+      onMouseEnter={onIntent}
       className={[
         'group glass-card rounded-2xl transition-transform duration-200 hover:-translate-y-[2px] hover:border-shell-accent/40',
         layout === 'list' ? 'w-full' : '',
       ].join(' ')}
     >
-      <button type="button" onClick={onOpen} className="w-full p-4 text-left">
+      <button type="button" onClick={onOpen} onFocus={onIntent} className="w-full p-4 text-left">
         <div className="flex items-start justify-between gap-3 pb-3">
           <div className="min-w-0">
             <h2 className="truncate text-lg font-semibold text-dash-cream">
@@ -277,6 +278,17 @@ export default function StoresPage() {
     await auth.switchRestaurant(restaurant.id)
     navigate(`/restaurants/${restaurant.id}/analytics`)
   }
+
+  const prefetchStoreHome = useCallback((restaurantId) => {
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.homepageBootstrap(restaurantId),
+      queryFn: ({ signal }) => fetchWithSupabaseAuth(
+        `/restaurants/${restaurantId}/reports/homepage/bootstrap`,
+        { signal },
+      ),
+      staleTime: STALE_TIMES.analytics,
+    })
+  }, [])
 
   // Owners resume the onboarding flow; resellers/admins land on the store's
   // Setup page, where payout and payment details live.
@@ -437,6 +449,7 @@ export default function StoresPage() {
               restaurant={restaurant}
               layout={layout}
               onOpen={() => void openStore(restaurant)}
+              onIntent={() => prefetchStoreHome(restaurant.id)}
               onFinishSetup={() => void finishSetup(restaurant)}
               claimInvite={inviteByDraftId[restaurant.id] || null}
               onRevokeInvite={(invite) => void handleRevoke(invite)}

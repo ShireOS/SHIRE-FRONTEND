@@ -98,14 +98,27 @@ test('drops stale portfolio scope when its selected stores change', () => {
   })
 })
 
-test('defers the expensive activity review without delaying primary Home widgets', () => {
+test('loads Sales first, then standard cards, then the expensive activity review', () => {
   assert.deepEqual(splitHomepageWidgetIds([
     'sales_summary',
     'orders',
     'discount_review',
     'tips',
   ]), {
-    primary: ['sales_summary', 'orders', 'tips'],
+    primary: ['sales_summary'],
+    secondary: ['orders', 'tips'],
     deferred: ['discount_review'],
   })
+})
+
+test('custom Home configurations still assign every widget to one request group', () => {
+  const configured = ['orders', 'menu_performance', 'discount_review']
+  const groups = splitHomepageWidgetIds(configured)
+
+  assert.deepEqual(groups, {
+    primary: [],
+    secondary: ['orders', 'menu_performance'],
+    deferred: ['discount_review'],
+  })
+  assert.deepEqual([...groups.primary, ...groups.secondary, ...groups.deferred], configured)
 })

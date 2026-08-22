@@ -10,12 +10,16 @@ export const WHOLE_RESTAURANT_SCOPE = Object.freeze({
   scope_ids: [],
 })
 
-const DEFERRED_HOME_WIDGET_IDS = new Set(['discount_review'])
+const CRITICAL_HOME_WIDGET_IDS = new Set(['sales_summary'])
+const HEAVY_HOME_WIDGET_IDS = new Set(['discount_review'])
 
 export function splitHomepageWidgetIds(widgetIds = []) {
   return {
-    primary: widgetIds.filter((widgetId) => !DEFERRED_HOME_WIDGET_IDS.has(widgetId)),
-    deferred: widgetIds.filter((widgetId) => DEFERRED_HOME_WIDGET_IDS.has(widgetId)),
+    primary: widgetIds.filter((widgetId) => CRITICAL_HOME_WIDGET_IDS.has(widgetId)),
+    secondary: widgetIds.filter((widgetId) => (
+      !CRITICAL_HOME_WIDGET_IDS.has(widgetId) && !HEAVY_HOME_WIDGET_IDS.has(widgetId)
+    )),
+    deferred: widgetIds.filter((widgetId) => HEAVY_HOME_WIDGET_IDS.has(widgetId)),
   }
 }
 

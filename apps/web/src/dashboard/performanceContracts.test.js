@@ -39,14 +39,23 @@ test('shell badge polls the lightweight manager inbox count', () => {
   assert.match(dashboardShell, /backOfficeApi\.managerInboxCount/)
   assert.doesNotMatch(dashboardShell, /backOfficeApi\.managerInbox\(restaurantId, 'open'\)/)
   assert.doesNotMatch(dashboardShell, /window\.setInterval/)
+  assert.match(dashboardShell, /canViewManagerAlerts[\s\S]*access\.can\('team\.view'\)/)
+  assert.match(dashboardShell, /disabled=\{!canViewManagerAlerts\}/)
 })
 
 test('supplemental setup reads stay off ordinary operational pages', () => {
-  assert.match(
-    dashboardApp,
-    /needsSupplementalSetupData = activeTab === 'setup' \|\| activeTab === 'team' \|\| activeTab === 'ui'/,
-  )
-  assert.match(dashboardApp, /!restaurant \|\| !needsSupplementalSetupData/)
+  const marker = dashboardApp.indexOf('// setupRefreshKey bumps after setup edits')
+  const effectStart = dashboardApp.lastIndexOf('  useEffect(() => {', marker)
+  const effectEnd = dashboardApp.indexOf('\n  }, [needsSupplementalSetupData', marker)
+  assert.notEqual(marker, -1)
+  assert.notEqual(effectStart, -1)
+  assert.notEqual(effectEnd, -1)
+  const supplementalEffect = dashboardApp.slice(effectStart, effectEnd)
+
+  assert.match(supplementalEffect, /!restaurantId \|\| !restaurant \|\| !needsSupplementalSetupData/)
+  assert.match(dashboardApp, /if \(!restaurantId \|\| !restaurant\) return[\s\S]*auth\.switchRestaurant\(restaurantId\)/)
+  assert.doesNotMatch(dashboardApp, /auth\.switchRestaurant\(restaurantId\)[\s\S]{0,160}\[auth\.restaurant\.currentRestaurant\?\.id, auth\.switchRestaurant, needsSupplementalSetupData/)
+  assert.match(dashboardApp, /\[needsSupplementalSetupData, restaurant, restaurantId, setupRefreshKey\]/)
 })
 
 test('heavy workspace pages use shared lazy loaders that sidebar intent can warm', () => {
@@ -101,8 +110,9 @@ test('POS Reports starts from preferences without blocking on modal-only reads',
 })
 
 test('POS Reports caches snapshots and preloads only the active receipt on intent', () => {
-  assert.match(reportsPage, /queryKeys\.reportSnapshot\(restaurantId, requestKey\)/)
-  assert.match(reportsPage, /queryKeys\.reportReceiptPreview\(restaurantId, receiptPreviewRequestKey\)/)
+  assert.match(reportsPage, /queryKeys\.reportSnapshot\(requestedRestaurantId, requestKey\)/)
+  assert.match(reportsPage, /queryKeys\.reportReceiptPreview\(requestedRestaurantId, receiptPreviewRequestBody\)/)
+  assert.match(reportsPage, /const receiptPreviewLocalKey = `\$\{restaurantId\}:\$\{receiptPreviewRequestBody\}`/)
   assert.match(reportsPage, /onIntent=\{\(\) => \{ void preloadReceiptPreview\(\) \}\}/)
   assert.doesNotMatch(reportsPage, /profiles\.filter\(\(candidate\) => candidate\.built_in\)/)
 })
@@ -110,7 +120,7 @@ test('POS Reports caches snapshots and preloads only the active receipt on inten
 test('POS Reports bounds interactive snapshot waits and keeps refresh state visible', () => {
   const snapshotRequest = between(
     reportsPage,
-    "fetchPosApi(restaurantId, '/manager/report-hub/snapshot'",
+    "fetchPosApi(requestedRestaurantId, '/manager/report-hub/snapshot'",
     'forceRefresh ? 0 : STALE_TIMES.reports',
   )
   assert.match(snapshotRequest, /timeoutMs: REPORT_SNAPSHOT_TIMEOUT_MS/)
@@ -119,4 +129,25 @@ test('POS Reports bounds interactive snapshot waits and keeps refresh state visi
   assert.match(reportsPage, /Updating POS report…/)
   assert.match(reportsPage, /Loading POS report…/)
   assert.match(reportsPage, /reporting services are running incompatible versions/)
+})
+
+test('POS Reports isolates delayed requests when the selected restaurant changes', () => {
+  assert.match(dashboardApp, /<RestaurantReportsPage key=\{restaurantId\} restaurantId=\{restaurantId\}/)
+  assert.match(reportsPage, /const restaurantGenerationRef = useRef\(0\)/)
+  assert.match(reportsPage, /activeRestaurantRef\.current = restaurantId/)
+  assert.match(reportsPage, /loadAbortRef\.current\?\.abort\(\)/)
+  assert.match(reportsPage, /generation !== restaurantGenerationRef\.current \|\| activeRestaurantRef\.current !== requestedRestaurantId/)
+  assert.match(reportsPage, /_restaurant_id: requestedRestaurantId/)
+  assert.match(reportsPage, /setModal\(null\)/)
+  assert.match(reportsPage, /setReceiptPrintOpen\(false\)/)
+  assert.match(reportsPage, /restaurantGenerationRef\.current \+= 1/)
+})
+
+test('POS Reports forces both backend cache layers and disables stale-context outputs', () => {
+  assert.match(reportsPage, /force_refresh: forceRefresh/)
+  assert.match(reportsPage, /const snapshotIsCurrent = snapshotCoversReceiptRequest/)
+  assert.match(reportsPage, /disabled=\{!snapshotIsCurrent \|\| loading \|\| Boolean\(working\)\}/)
+  assert.match(reportsPage, /Downloads and delivery are disabled until the current report succeeds/)
+  assert.match(reportsPage, /window\.clearTimeout\(loadDebounceRef\.current\)[\s\S]*load\(true\)/)
+  assert.match(reportsPage, /reportOutputContextRef\.current !== outputContext/)
 })

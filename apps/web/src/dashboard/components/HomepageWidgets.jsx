@@ -28,7 +28,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
+import { fetchWithSupabaseAuth, queryKeys, STALE_TIMES } from '../../shared/query'
 import { DEFAULT_API_TIMEOUT_MS } from '../../shared/api/requestDeadline'
 import {
   aggregateWidgetRows,
@@ -121,6 +121,10 @@ function savePdf(file) {
   anchor.download = file.file_name
   anchor.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function settingsForWidgetIds(settings, widgetIds) {
+  return Object.fromEntries(widgetIds.map((widgetId) => [widgetId, settings[widgetId] || {}]))
 }
 
 function Modal({ title, onClose, children, width = 'max-w-3xl' }) {
@@ -769,39 +773,54 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
     () => effectiveHomepageWidgetSettings(preference.widget_settings || {}, orderedVisible, resolvedDashboardScope),
     [preference.widget_settings, orderedVisible, resolvedDashboardScope],
   )
+  const groupedSettings = useMemo(() => ({
+    primary: settingsForWidgetIds(effectiveSettings, widgetGroups.primary),
+    secondary: settingsForWidgetIds(effectiveSettings, widgetGroups.secondary),
+    deferred: settingsForWidgetIds(effectiveSettings, widgetGroups.deferred),
+  }), [effectiveSettings, widgetGroups])
   const dataPath = scope === 'portfolio' ? '/portfolio-reports/homepage/data' : `/restaurants/${restaurantId}/reports/homepage/data`
   const portfolioScope = scope === 'portfolio'
     ? { ...(groupIds?.length ? { group_ids: groupIds } : {}), include_ungrouped: includeUngrouped }
     : {}
-  const loadWidgetData = (widgetIds) => fetchWithSupabaseAuth(dataPath, { method: 'POST', body: JSON.stringify({ period, anchor_date: anchorDate || null, ...(dateRange?.start && dateRange?.end ? { start_date: dateRange.start, end_date: dateRange.end } : {}), widget_ids: widgetIds, widget_settings: effectiveSettings, ...portfolioScope }), timeoutMs: DEFAULT_API_TIMEOUT_MS })
-  const sameWorkspacePlaceholder = (previousData, previousQuery) => (
+  const loadWidgetData = (widgetIds, widgetSettings, signal) => fetchWithSupabaseAuth(dataPath, { method: 'POST', body: JSON.stringify({ period, anchor_date: anchorDate || null, ...(dateRange?.start && dateRange?.end ? { start_date: dateRange.start, end_date: dateRange.end } : {}), widget_ids: widgetIds, widget_settings: widgetSettings, ...portfolioScope }), timeoutMs: DEFAULT_API_TIMEOUT_MS, signal })
+  const sameWorkspacePlaceholder = (group) => (previousData, previousQuery) => (
     previousQuery?.queryKey?.[1] === scope
     && previousQuery?.queryKey?.[2] === restaurantId
+    && previousQuery?.queryKey?.[3] === group
       ? previousData
       : undefined
   )
   const dataQuery = useQuery({
-    queryKey: ['homepage-data', scope, restaurantId, 'primary', period, anchorDate, dateRange?.start, dateRange?.end, (groupIds || []).join(','), includeUngrouped, widgetGroups.primary.join(','), JSON.stringify(effectiveSettings)],
-    queryFn: () => loadWidgetData(widgetGroups.primary),
+    queryKey: ['homepage-data', scope, restaurantId, 'primary', period, anchorDate, dateRange?.start, dateRange?.end, (groupIds || []).join(','), includeUngrouped, widgetGroups.primary.join(','), JSON.stringify(groupedSettings.primary)],
+    queryFn: ({ signal }) => loadWidgetData(widgetGroups.primary, groupedSettings.primary, signal),
     enabled: widgetGroups.primary.length > 0,
-    placeholderData: sameWorkspacePlaceholder,
+    placeholderData: sameWorkspacePlaceholder('primary'),
+  })
+  const secondaryDataQuery = useQuery({
+    queryKey: ['homepage-data', scope, restaurantId, 'secondary', period, anchorDate, dateRange?.start, dateRange?.end, (groupIds || []).join(','), includeUngrouped, widgetGroups.secondary.join(','), JSON.stringify(groupedSettings.secondary)],
+    queryFn: ({ signal }) => loadWidgetData(widgetGroups.secondary, groupedSettings.secondary, signal),
+    enabled: widgetGroups.secondary.length > 0 && (widgetGroups.primary.length === 0 || dataQuery.isFetched),
+    placeholderData: sameWorkspacePlaceholder('secondary'),
   })
   const deferredDataQuery = useQuery({
-    queryKey: ['homepage-data', scope, restaurantId, 'deferred', period, anchorDate, dateRange?.start, dateRange?.end, (groupIds || []).join(','), includeUngrouped, widgetGroups.deferred.join(','), JSON.stringify(effectiveSettings)],
-    queryFn: () => loadWidgetData(widgetGroups.deferred),
-    enabled: widgetGroups.deferred.length > 0 && (widgetGroups.primary.length === 0 || dataQuery.isFetched),
-    placeholderData: sameWorkspacePlaceholder,
+    queryKey: ['homepage-data', scope, restaurantId, 'deferred', period, anchorDate, dateRange?.start, dateRange?.end, (groupIds || []).join(','), includeUngrouped, widgetGroups.deferred.join(','), JSON.stringify(groupedSettings.deferred)],
+    queryFn: ({ signal }) => loadWidgetData(widgetGroups.deferred, groupedSettings.deferred, signal),
+    enabled: widgetGroups.deferred.length > 0
+      && (widgetGroups.primary.length === 0 || dataQuery.isFetched)
+      && (widgetGroups.secondary.length === 0 || secondaryDataQuery.isFetched),
+    placeholderData: sameWorkspacePlaceholder('deferred'),
   })
   useEffect(() => {
-    if (dataQuery.data?.scope && onScopeLoaded) onScopeLoaded(dataQuery.data.scope)
-  }, [dataQuery.data?.scope, onScopeLoaded])
+    const loadedScope = dataQuery.data?.scope || secondaryDataQuery.data?.scope || deferredDataQuery.data?.scope
+    if (loadedScope && onScopeLoaded) onScopeLoaded(loadedScope)
+  }, [dataQuery.data?.scope, deferredDataQuery.data?.scope, onScopeLoaded, secondaryDataQuery.data?.scope])
   const savePreference = async (next) => {
     setSaving(true)
     try {
       const saved = await fetchWithSupabaseAuth(preferencePath, { method: 'PUT', body: JSON.stringify(next) })
       queryClient.setQueryData(preferenceKey, saved)
       if (scope === 'restaurant') {
-        queryClient.setQueryData(['homepage-bootstrap', 'restaurant', restaurantId], (current) => current ? { ...current, preferences: saved } : current)
+        queryClient.setQueryData(queryKeys.homepageBootstrap(restaurantId), (current) => current ? { ...current, preferences: saved } : current)
       }
       setConfigureOpen(false); setSettingsId(null)
     } finally { setSaving(false) }
@@ -814,32 +833,43 @@ export default function HomepageWidgets({ scope, restaurantId, period, anchorDat
     })
     queryClient.setQueryData(preferenceKey, saved)
     if (scope === 'restaurant') {
-      queryClient.setQueryData(['homepage-bootstrap', 'restaurant', restaurantId], (current) => current ? { ...current, preferences: saved } : current)
+      queryClient.setQueryData(queryKeys.homepageBootstrap(restaurantId), (current) => current ? { ...current, preferences: saved } : current)
     }
     if (kind === 'display') {
-      await queryClient.invalidateQueries({ queryKey: ['homepage-data', scope, restaurantId] })
+      const group = widgetGroups.deferred.includes(settingsId)
+        ? 'deferred'
+        : widgetGroups.secondary.includes(settingsId)
+          ? 'secondary'
+          : 'primary'
+      await queryClient.invalidateQueries({ queryKey: ['homepage-data', scope, restaurantId, group] })
       setSettingsId(null)
     }
   }
   const saveSettings = async (settings) => saveWidgetPreference('display', settings)
   const allWidgetData = useMemo(() => ({
     ...(dataQuery.data?.widgets || {}),
+    ...(secondaryDataQuery.data?.widgets || {}),
     ...(deferredDataQuery.data?.widgets || {}),
-  }), [dataQuery.data?.widgets, deferredDataQuery.data?.widgets])
+  }), [dataQuery.data?.widgets, deferredDataQuery.data?.widgets, secondaryDataQuery.data?.widgets])
   const selectedWidget = (preference.catalog || []).find((widget) => widget.id === settingsId)
   const detailWidget = (preference.catalog || []).find((widget) => widget.id === detailId) || { label: 'Widget', columns: [] }
   if (preferenceQuery.isPending) return <HomepagePreferenceSkeleton />
   if (preferenceQuery.isError) return <div className="flex items-center justify-between gap-3 rounded-md border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger"><span>{preferenceQuery.error?.message || 'Could not load homepage settings.'}</span><button type="button" onClick={() => preferenceQuery.refetch()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-dash-danger/30 px-2.5 py-1.5 text-xs font-semibold"><RefreshCw size={13} />Retry</button></div>
   return <div className="space-y-4">
     <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setScopeOpen(true)} className={`inline-flex h-10 items-center gap-2 rounded-md border px-3 text-sm font-semibold ${resolvedDashboardScope.scope_dimension === 'none' ? 'border-dash-border text-dash-secondary hover:text-dash-cream' : 'border-shell-accent bg-shell-accent/10 text-dash-cream'}`}><Layers3 size={15} />{scopeControlLabel(resolvedDashboardScope)}</button><button type="button" onClick={() => setConfigureOpen(true)} className="inline-flex h-10 items-center gap-2 rounded-md border border-dash-border px-3 text-sm font-semibold text-dash-secondary hover:text-dash-cream"><Settings2 size={15} />Customize homepage</button></div>
-    {((dataQuery.isFetching && dataQuery.data) || (deferredDataQuery.isFetching && deferredDataQuery.data)) && <p role="status" className="text-right text-xs font-semibold text-dash-tertiary">Updating homepage data...</p>}
+    {((dataQuery.isFetching && dataQuery.data) || (secondaryDataQuery.isFetching && secondaryDataQuery.data) || (deferredDataQuery.isFetching && deferredDataQuery.data)) && <p role="status" className="text-right text-xs font-semibold text-dash-tertiary">Updating homepage data...</p>}
     {dataQuery.isError && dataQuery.data && <div className="flex items-center justify-between gap-3 rounded-md border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger"><span>{dataQuery.error?.message || 'Could not refresh homepage widgets.'}</span><button type="button" onClick={() => dataQuery.refetch()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-dash-danger/30 px-2.5 py-1.5 text-xs font-semibold"><RefreshCw size={13} />Retry</button></div>}
+    {secondaryDataQuery.isError && secondaryDataQuery.data && <div className="flex items-center justify-between gap-3 rounded-md border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger"><span>{secondaryDataQuery.error?.message || 'Could not refresh the remaining homepage widgets.'}</span><button type="button" onClick={() => secondaryDataQuery.refetch()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-dash-danger/30 px-2.5 py-1.5 text-xs font-semibold"><RefreshCw size={13} />Retry</button></div>}
+    {deferredDataQuery.isError && deferredDataQuery.data && <div className="flex items-center justify-between gap-3 rounded-md border border-dash-danger/30 bg-dash-danger/10 p-4 text-sm text-dash-danger"><span>{deferredDataQuery.error?.message || 'Could not refresh activity review.'}</span><button type="button" onClick={() => deferredDataQuery.refetch()} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-dash-danger/30 px-2.5 py-1.5 text-xs font-semibold"><RefreshCw size={13} />Retry</button></div>}
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {orderedVisible.map((id) => {
         const catalogWidget = preference.catalog.find((item) => item.id === id)
         if (!catalogWidget) return null
-        const deferred = widgetGroups.deferred.includes(id)
-        const widgetQuery = deferred ? deferredDataQuery : dataQuery
+        const widgetQuery = widgetGroups.deferred.includes(id)
+          ? deferredDataQuery
+          : widgetGroups.secondary.includes(id)
+            ? secondaryDataQuery
+            : dataQuery
         const data = allWidgetData[id]
         const widget = { ...catalogWidget, scopeLabel: widgetScopeLabel(catalogWidget, data, dimensionQuery.data, resolvedDashboardScope) }
         const onSettings = () => setSettingsId(id)

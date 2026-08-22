@@ -7,6 +7,7 @@ import type { Profile, Restaurant, RestaurantMember } from '@shire/db'
 import { isAbortError } from '../utils/authErrors'
 import { isUnrecoverableSessionError } from '../../shared/auth/sessionErrors'
 import { redirectForUnrecoverableSession } from '../../shared/auth/sessionRecovery'
+import { createAuthHydrationCoordinator } from './authHydrationCoordinator'
 
 const isRestaurantMemberPolicyRecursion = (message: string): boolean =>
   message
@@ -38,6 +39,15 @@ const withTimeout = async <T,>(
   } finally {
     if (timerId) clearTimeout(timerId)
   }
+}
+
+const withAbortSignal = <T,>(operation: T, signal?: AbortSignal): T => {
+  if (!signal) return operation
+  return (operation as T & { abortSignal: (requestSignal: AbortSignal) => T }).abortSignal(signal)
+}
+
+const throwIfAborted = (signal?: AbortSignal) => {
+  if (signal?.aborted) throw new DOMException('Account hydration was superseded.', 'AbortError')
 }
 
 const createAppAuthUrl = (path: 'callback' | 'reset-password') =>
@@ -155,7 +165,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const initializedRef = useRef(false)
   const membershipQueryDisabledRef = useRef(false)
   const membershipErrorLoggedRef = useRef(false)
-  const hydrateRequestRef = useRef(0)
+  const hydrationCoordinatorRef = useRef(createAuthHydrationCoordinator())
+  const authUserIdRef = useRef<string | null>(null)
+  const authIdentityResolvedRef = useRef(false)
+  const authEventGenerationRef = useRef(0)
 
   const handleMembershipError = useCallback((message: string, context: string) => {
     if (isRestaurantMemberPolicyRecursion(message)) {
@@ -175,6 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const resetRestaurantState = useCallback(() => {
+    hydrationCoordinatorRef.current.invalidate()
     setProfile(null)
     setCurrentRestaurant(null)
     setRestaurants([])
@@ -185,6 +199,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     membershipErrorLoggedRef.current = false
     localStorage.removeItem(CURRENT_RESTAURANT_STORAGE_KEY)
   }, [])
+
+  const applyAuthIdentity = useCallback((nextUserId: string | null) => {
+    const identityChanged = (
+      authIdentityResolvedRef.current
+      && authUserIdRef.current !== nextUserId
+    )
+    if (identityChanged) {
+      // Query keys are restaurant-scoped, not user-scoped. A direct A -> B
+      // session replacement must not let B reuse A's cached preferences/data.
+      queryClient.clear()
+      resetRestaurantState()
+    } else if (authUserIdRef.current !== nextUserId) {
+      hydrationCoordinatorRef.current.invalidate()
+    }
+    authIdentityResolvedRef.current = true
+    authUserIdRef.current = nextUserId
+  }, [resetRestaurantState])
 
   const fetchMembership = useCallback(async (
     restaurantId: string,
@@ -253,19 +284,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ----------------------------------------
   // FETCH USER PROFILE
   // ----------------------------------------
-  const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
+  const fetchProfile = useCallback(async (
+    userId: string,
+    signal?: AbortSignal,
+  ): Promise<Profile | null> => {
     if (!isSupabaseConfigured) return null
     let result
     try {
       result = await withTimeout(
-        supabase
+        withAbortSignal(supabase
           .from('profiles')
           .select('*')
           .eq('id', userId)
-          .single(),
+          .single(), signal),
         'Profile lookup timed out.'
       )
+      throwIfAborted(signal)
     } catch (error) {
+      if (isAbortError(error)) throw error
       console.warn('[Auth] Could not fetch profile:', error)
       return null
     }
@@ -286,42 +322,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ----------------------------------------
   const fetchRestaurants = useCallback(async (
     userId: string,
-    accountType: AccountType = 'owner'
+    accountType: AccountType = 'owner',
+    signal?: AbortSignal,
   ): Promise<Restaurant[]> => {
     if (!isSupabaseConfigured) return []
-    setRestaurantLoading(true)
 
     try {
       if (accountType === 'reseller_employee') {
         const { data: employee, error: employeeError } = await withTimeout(
-          supabase
+          withAbortSignal(supabase
             .from('reseller_employees')
             .select('id, reseller_id, status, group_assignments:reseller_employee_groups(group_id)')
             .eq('user_id', userId)
             .eq('status', 'active')
-            .maybeSingle(),
+            .maybeSingle(), signal),
           'Reseller employee lookup timed out.'
         )
+        throwIfAborted(signal)
         if (employeeError) {
           console.warn('[Auth] Could not fetch reseller employee:', employeeError.message)
-          setRestaurants([])
           return []
         }
         if (!employee?.id) {
-          setRestaurants([])
           return []
         }
 
         const { data: assignments, error: assignmentError } = await withTimeout(
-          supabase
+          withAbortSignal(supabase
             .from('reseller_employee_restaurants')
             .select('restaurant:restaurants(*)')
-            .eq('employee_id', employee.id),
+            .eq('employee_id', employee.id), signal),
           'Reseller employee restaurant lookup timed out.'
         )
+        throwIfAborted(signal)
         if (assignmentError) {
           console.warn('[Auth] Could not fetch reseller employee restaurants:', assignmentError.message)
-          setRestaurants([])
           return []
         }
 
@@ -334,12 +369,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let groupRestaurants: Restaurant[] = []
         if (groupIds.size > 0) {
           const { data: groupAssignments, error: groupAssignmentError } = await withTimeout(
-            supabase
+            withAbortSignal(supabase
               .from('reseller_restaurant_group_members')
               .select('restaurant:restaurants(*)')
-              .in('group_id', [...groupIds]),
+              .in('group_id', [...groupIds]), signal),
             'Reseller employee group restaurant lookup timed out.'
           )
+          throwIfAborted(signal)
           if (groupAssignmentError) {
             console.warn('[Auth] Could not fetch reseller employee group restaurants:', groupAssignmentError.message)
           } else {
@@ -355,21 +391,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             scopedRestaurants.push(restaurant)
           }
         }
-        setRestaurants(scopedRestaurants)
         return scopedRestaurants
       }
 
       // Admins see every restaurant (RLS permits); no further scoping needed.
       if (accountType === 'admin') {
         const { data: allRestaurants, error: allError } = await withTimeout(
-          supabase.from('restaurants').select('*').order('name'),
+          withAbortSignal(supabase.from('restaurants').select('*').order('name'), signal),
           'Restaurant lookup timed out.'
         )
+        throwIfAborted(signal)
         if (allError) {
           console.warn('[Auth] Could not fetch restaurants as admin:', allError.message)
         }
         const resolved = allRestaurants || []
-        setRestaurants(resolved)
         return resolved
       }
 
@@ -377,32 +412,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // together so cold auth hydration pays one network round trip instead of
       // owned -> portfolio -> membership serial latency.
       const ownedRequest = withTimeout(
-        supabase
+        withAbortSignal(supabase
           .from('restaurants')
           .select('*')
-          .eq('owner_id', userId),
+          .eq('owner_id', userId), signal),
         'Owned restaurant lookup timed out.'
       )
       const portfolioRequest = accountType === 'reseller'
         ? withTimeout(
-          supabase
+          withAbortSignal(supabase
             .from('reseller_restaurants')
             .select('restaurant:restaurants(*)')
             .eq('reseller_id', userId)
-            .eq('status', 'active'),
+            .eq('status', 'active'), signal),
           'Reseller portfolio lookup timed out.'
         )
         : Promise.resolve({ data: [], error: null })
       const membershipRequest = !membershipQueryDisabledRef.current
         ? withTimeout(
-          supabase
+          withAbortSignal(supabase
             .from('restaurant_members')
             .select(`
               *,
               restaurant:restaurants(*)
             `)
             .eq('user_id', userId)
-            .eq('status', 'active'),
+            .eq('status', 'active'), signal),
           'Member restaurant lookup timed out.'
         )
         : Promise.resolve({ data: [], error: null })
@@ -412,6 +447,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         { data: assignments, error: portfolioError },
         { data: memberships, error: memberError },
       ] = await Promise.all([ownedRequest, portfolioRequest, membershipRequest])
+      throwIfAborted(signal)
 
       if (ownedError) {
         console.warn('[Auth] Could not fetch owned restaurants:', ownedError.message)
@@ -445,14 +481,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      setRestaurants(allRestaurants)
       return allRestaurants
     } catch (error) {
+      if (isAbortError(error)) throw error
       console.error('[Auth] Error in fetchRestaurants:', error)
-      setRestaurants([])
       return []
-    } finally {
-      setRestaurantLoading(false)
     }
   }, [handleMembershipError])
 
@@ -484,35 +517,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ----------------------------------------
   const refreshRestaurants = useCallback(async (preferredRestaurantId?: string | null) => {
     if (!user) return
+    const hydration = hydrationCoordinatorRef.current.begin()
+    setRestaurantLoading(true)
 
-    const userRestaurants = await fetchRestaurants(
-      user.id,
-      (profile?.account_type as AccountType) || 'owner'
-    )
+    try {
+      const userRestaurants = await fetchRestaurants(
+        user.id,
+        (profile?.account_type as AccountType) || 'owner',
+        hydration.signal,
+      )
+      if (!hydration.isCurrent()) return
+      setRestaurants(userRestaurants)
 
-    if (userRestaurants.length === 0) {
-      if (preferredRestaurantId && currentRestaurant?.id === preferredRestaurantId) {
-        localStorage.setItem(CURRENT_RESTAURANT_STORAGE_KEY, preferredRestaurantId)
+      if (userRestaurants.length === 0) {
+        if (preferredRestaurantId && currentRestaurant?.id === preferredRestaurantId) {
+          localStorage.setItem(CURRENT_RESTAURANT_STORAGE_KEY, preferredRestaurantId)
+          return
+        }
+        setCurrentRestaurant(null)
+        setMembership(null)
+        localStorage.removeItem(CURRENT_RESTAURANT_STORAGE_KEY)
         return
       }
-      setCurrentRestaurant(null)
-      setMembership(null)
-      localStorage.removeItem(CURRENT_RESTAURANT_STORAGE_KEY)
-      return
-    }
 
-    const savedRestaurantId = localStorage.getItem(CURRENT_RESTAURANT_STORAGE_KEY)
-    const preferredRestaurant =
-      preferredRestaurantId
-        ? userRestaurants.find((restaurant) => restaurant.id === preferredRestaurantId) ?? null
-        : null
-    const restaurantToSelect =
-      preferredRestaurant
-      ?? pickRestaurant(userRestaurants, currentRestaurant, savedRestaurantId)
+      const savedRestaurantId = localStorage.getItem(CURRENT_RESTAURANT_STORAGE_KEY)
+      const preferredRestaurant =
+        preferredRestaurantId
+          ? userRestaurants.find((restaurant) => restaurant.id === preferredRestaurantId) ?? null
+          : null
+      const restaurantToSelect =
+        preferredRestaurant
+        ?? pickRestaurant(userRestaurants, currentRestaurant, savedRestaurantId)
 
-    if (restaurantToSelect) {
-      setCurrentRestaurant(restaurantToSelect)
-      localStorage.setItem(CURRENT_RESTAURANT_STORAGE_KEY, restaurantToSelect.id)
+      if (restaurantToSelect) {
+        setCurrentRestaurant(restaurantToSelect)
+        localStorage.setItem(CURRENT_RESTAURANT_STORAGE_KEY, restaurantToSelect.id)
+      }
+    } catch (error) {
+      if (!isAbortError(error) && hydration.isCurrent()) {
+        console.error('[Auth] Could not refresh restaurants:', error)
+        setRestaurants([])
+      }
+    } finally {
+      if (hydration.isCurrent()) {
+        setRestaurantLoading(false)
+        setHydratedUserId(user.id)
+      }
     }
   }, [user, profile?.account_type, fetchRestaurants, currentRestaurant])
 
@@ -547,11 +597,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const initializeAuth = async () => {
+      const initializationGeneration = authEventGenerationRef.current
       try {
         const currentSession = await getSessionWithRetry()
 
-        if (!mounted) return
+        if (!mounted || authEventGenerationRef.current !== initializationGeneration) return
 
+        const nextUserId = currentSession?.user.id ?? null
+        applyAuthIdentity(nextUserId)
         setSession(currentSession)
         setUser(currentSession?.user ?? null)
       } catch (error) {
@@ -575,7 +628,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return
 
+      authEventGenerationRef.current += 1
       console.log('[Auth] State change:', event)
+
+      const nextUserId = nextSession?.user.id ?? null
+      applyAuthIdentity(nextUserId)
+      setIsLoading(false)
+      initializedRef.current = true
 
       if (event === 'SIGNED_OUT') {
         queryClient.clear()
@@ -599,12 +658,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted = false
       subscription.unsubscribe()
     }
-  }, [getSessionWithRetry, resetRestaurantState])
+  }, [applyAuthIdentity, getSessionWithRetry, resetRestaurantState])
 
   // Hydrate user-dependent data outside auth state-change callback.
   useEffect(() => {
-    let mounted = true
-    const requestId = ++hydrateRequestRef.current
+    const hydration = hydrationCoordinatorRef.current.begin()
     const userId = user?.id ?? null
 
     if (!userId) {
@@ -612,25 +670,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCurrentRestaurant(null)
       setRestaurants([])
       setMembership(null)
+      setRestaurantLoading(false)
       setHydratedUserId(null)
-      return () => {
-        mounted = false
-      }
+      return hydration.cancel
     }
 
     setHydratedUserId(null)
+    setRestaurantLoading(true)
 
     const hydrateUserState = async () => {
       try {
-        const userProfile = await fetchProfile(userId)
-        if (!mounted || hydrateRequestRef.current !== requestId) return
+        const userProfile = await fetchProfile(userId, hydration.signal)
+        if (!hydration.isCurrent()) return
         setProfile(userProfile)
 
         const userRestaurants = await fetchRestaurants(
           userId,
-          (userProfile?.account_type as AccountType) || 'owner'
+          (userProfile?.account_type as AccountType) || 'owner',
+          hydration.signal,
         )
-        if (!mounted || hydrateRequestRef.current !== requestId) return
+        if (!hydration.isCurrent()) return
+        setRestaurants(userRestaurants)
 
         const savedRestaurantId = localStorage.getItem(CURRENT_RESTAURANT_STORAGE_KEY)
         const restaurantToSelect = pickRestaurant(userRestaurants, null, savedRestaurantId)
@@ -642,8 +702,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else {
           localStorage.removeItem(CURRENT_RESTAURANT_STORAGE_KEY)
         }
+      } catch (error) {
+        if (!isAbortError(error) && hydration.isCurrent()) {
+          console.error('[Auth] Could not hydrate account state:', error)
+          setRestaurants([])
+          setCurrentRestaurant(null)
+        }
       } finally {
-        if (mounted && hydrateRequestRef.current === requestId) {
+        if (hydration.isCurrent()) {
+          setRestaurantLoading(false)
           setHydratedUserId(userId)
         }
       }
@@ -651,9 +718,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     void hydrateUserState()
 
-    return () => {
-      mounted = false
-    }
+    return hydration.cancel
   }, [user?.id, fetchProfile, fetchRestaurants])
 
   // Keep membership synchronized with selected restaurant.
@@ -733,6 +798,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) throw error
 
       if (data.session) {
+        applyAuthIdentity(data.session.user.id)
         setSession(data.session)
         setUser(data.session.user)
         setHydratedUserId(null)
@@ -778,6 +844,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) throw error
 
       if (data.session) {
+        applyAuthIdentity(data.session.user.id)
         setSession(data.session)
         setUser(data.session.user)
         setHydratedUserId(null)

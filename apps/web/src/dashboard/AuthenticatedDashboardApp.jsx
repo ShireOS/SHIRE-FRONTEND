@@ -573,12 +573,12 @@ function AnalyticsDashboard({ restaurant }) {
   const [viewHydrated, setViewHydrated] = useState(false)
   const viewTouchedRef = useRef(false)
   const bootstrapKey = useMemo(
-    () => ['homepage-bootstrap', 'restaurant', restaurant?.id],
+    () => queryKeys.homepageBootstrap(restaurant?.id || ''),
     [restaurant?.id],
   )
   const bootstrapQuery = useQuery({
     queryKey: bootstrapKey,
-    queryFn: () => fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/reports/homepage/bootstrap`),
+    queryFn: ({ signal }) => fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/reports/homepage/bootstrap`, { signal }),
     enabled: Boolean(restaurant?.id),
     staleTime: STALE_TIMES.analytics,
   })
@@ -5254,14 +5254,14 @@ export function RestaurantWorkspace({
   }
 
   useEffect(() => {
-    if (!restaurantId || !restaurant || !needsSupplementalSetupData) return
+    if (!restaurantId || !restaurant) return
     if (auth.restaurant.currentRestaurant?.id !== restaurantId) {
       void auth.switchRestaurant(restaurantId)
     }
   }, [auth.restaurant.currentRestaurant?.id, auth.switchRestaurant, restaurant, restaurantId])
 
   useEffect(() => {
-    if (!restaurantId || !restaurant) return
+    if (!restaurantId || !restaurant || !needsSupplementalSetupData) return
     let cancelled = false
     // setupRefreshKey bumps after setup edits; force a fresh read then.
     const staleTime = setupRefreshKey > 0 ? 0 : STALE_TIMES.setup
@@ -5430,11 +5430,11 @@ export function RestaurantWorkspace({
         <Suspense fallback={<PageLoading />}>
         {activeTab === 'analytics' && (
           <>
-            <AnalyticsDashboard restaurant={restaurant} />
+            <AnalyticsDashboard key={restaurantId} restaurant={restaurant} />
           </>
         )}
         {activeTab === 'checks' && <CheckLedgerSection restaurantId={restaurantId} />}
-        {activeTab === 'reports' && <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurant?.name} canConfigureServerReceipt={backOfficeAccess.can('settings.edit')} viewPolicy={backOfficeAccess.viewPolicy} />}
+        {activeTab === 'reports' && <RestaurantReportsPage key={restaurantId} restaurantId={restaurantId} restaurantName={restaurant?.name} canConfigureServerReceipt={backOfficeAccess.can('settings.edit')} viewPolicy={backOfficeAccess.viewPolicy} />}
         {activeTab === 'close-day' && <CloseDayPage key={restaurantId} restaurantId={restaurantId} restaurantName={restaurant?.name} />}
         {activeTab === 'store-information' && (
           <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[

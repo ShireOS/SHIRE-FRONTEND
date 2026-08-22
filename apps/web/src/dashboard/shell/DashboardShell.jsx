@@ -71,12 +71,12 @@ export function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
   preloadWorkspaceModule(tabId)
   const prefetch = (queryKey, queryFn, staleTime) =>
     void queryClient.prefetchQuery({ queryKey, queryFn, staleTime })
-  const api = (path) => () => fetchWithSupabaseAuth(path)
+  const api = (path) => ({ signal }) => fetchWithSupabaseAuth(path, { signal })
 
   if (tabId === 'reports') {
     prefetch(queryKeys.reportPreferences(restaurantId), api(`/restaurants/${restaurantId}/reports/view-preferences`), STALE_TIMES.setup)
   } else if (tabId === 'analytics') {
-    prefetch(['homepage-bootstrap', 'restaurant', restaurantId], api(`/restaurants/${restaurantId}/reports/homepage/bootstrap`), STALE_TIMES.analytics)
+    prefetch(queryKeys.homepageBootstrap(restaurantId), api(`/restaurants/${restaurantId}/reports/homepage/bootstrap`), STALE_TIMES.analytics)
   } else if (tabId === 'setup') {
     // The setup editor already scopes its reads to the visible section. Do not
     // turn an incidental sidebar hover into a fourteen-request workspace load.
@@ -448,15 +448,16 @@ export default function DashboardShell({
   const roleLabel = deriveRoleLabel(auth)
   const hidden = hiddenSurfaces(auth)
   const access = useBackOfficeAccess(auth, inStore ? restaurantId : null)
+  const canViewManagerAlerts = Boolean(
+    inStore
+    && restaurantId
+    && !access.loading
+    && access.can('team.view')
+  )
   const managerInboxCountQuery = useQuery({
     queryKey: queryKeys.managerInboxCount(restaurantId || ''),
     queryFn: () => backOfficeApi.managerInboxCount(restaurantId),
-    enabled: Boolean(
-      context === 'store'
-      && restaurantId
-      && !access.loading
-      && access.can('team.view')
-    ),
+    enabled: canViewManagerAlerts,
     staleTime: 30_000,
     refetchInterval: 60_000,
     retry: 0,
@@ -647,14 +648,16 @@ export default function DashboardShell({
             </button>
             <button
               type="button"
-              title={restaurantId ? 'Manager alerts' : 'Open a store to view alerts'}
-              aria-label={alertCount ? `Manager alerts, ${alertCount} open` : 'Manager alerts'}
-              disabled={!restaurantId || context !== 'store'}
-              onClick={() => navigate(`${navigation.restaurants}/${restaurantId}/alerts`)}
+              title={canViewManagerAlerts ? 'Manager alerts' : 'Manager alerts require Team access'}
+              aria-label={canViewManagerAlerts && alertCount ? `Manager alerts, ${alertCount} open` : 'Manager alerts'}
+              disabled={!canViewManagerAlerts}
+              onClick={() => {
+                if (canViewManagerAlerts) navigate(`${navigation.restaurants}/${restaurantId}/alerts`)
+              }}
               className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-dash-border text-dash-secondary transition hover:border-shell-accent/40 hover:text-dash-cream disabled:cursor-not-allowed disabled:text-dash-tertiary"
             >
               <Bell size={16} strokeWidth={1.75} aria-hidden="true" />
-              {alertCount > 0 && (
+              {canViewManagerAlerts && alertCount > 0 && (
                 <span className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white">
                   {alertCount > 99 ? '99+' : alertCount}
                 </span>
