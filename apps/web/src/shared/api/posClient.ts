@@ -261,6 +261,13 @@ export interface CloseDayPreview {
   closed_checks: number
   voided_checks: number
   pending_print_jobs?: number
+  paid_unsent_fulfillment_checks?: number
+  paid_unsent_fulfillment_items?: number
+  cash_accountability?: {
+    pending_count?: number
+    reconciliation_required_count?: number
+    unreviewed_paid_out_count?: number
+  }
   open_timeclock_entries?: OpenTimeClockEntry[]
   business_day?: {
     status: 'open' | 'closed' | 'reopened'
@@ -282,6 +289,7 @@ export interface CloseDayPreview {
     track_deposit_at_close?: boolean
     blind_drawer_close?: boolean
     cash_variance_threshold?: number
+    eod_require_paid_outs_reviewed?: boolean
     show_clockout_options_at_close?: boolean
     close_day_activity_quiet_minutes?: number
   }

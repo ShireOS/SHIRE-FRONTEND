@@ -285,6 +285,13 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const unresolvedExceptions = Number(preview?.exception_count || 0)
   const blockingExceptions = Number(preview?.blocking_exception_count || 0)
   const pendingPrintJobs = Number(preview?.pending_print_jobs || 0)
+  const paidUnsentChecks = Number(preview?.paid_unsent_fulfillment_checks || 0)
+  const paidUnsentItems = Number(preview?.paid_unsent_fulfillment_items || 0)
+  const pendingCashMovements = Number(preview?.cash_accountability?.pending_count || 0)
+  const unreviewedPaidOuts = Number(preview?.cash_accountability?.unreviewed_paid_out_count || 0)
+  const requirePaidOutReview = Boolean(preview?.closeout_settings?.eod_require_paid_outs_reviewed)
+  const cashMovementBlockers = pendingCashMovements
+    + (requirePaidOutReview ? unreviewedPaidOuts : 0)
   const overdueCloseAlerts = preview?.overdue_close_alerts || []
 
   const updateCash = (key, value) => setCash((current) => ({ ...current, [key]: value }))
@@ -466,6 +473,18 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       setError('Resolve pending print work on the POS before closing remotely.')
       return
     }
+    if (paidUnsentChecks > 0) {
+      setError(`Resolve ${paidUnsentChecks} paid check${paidUnsentChecks === 1 ? '' : 's'} with unsent routed items before closing.`)
+      return
+    }
+    if (pendingCashMovements > 0) {
+      setError('Resolve pending or uncertain cash movements before closing remotely.')
+      return
+    }
+    if (requirePaidOutReview && unreviewedPaidOuts > 0) {
+      setError('Review every paid-out movement before closing remotely.')
+      return
+    }
     if (verificationStatus !== 'verified' && !verificationReviewed) {
       setModal('verification')
       return
@@ -628,6 +647,8 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             <div className="mt-4 space-y-4">
               <ReadinessRow ready={!preview?.open_checks} label="Checks" detail={preview?.open_checks ? `${preview.open_checks} must be closed on POS` : 'All checks are closed'} />
               <ReadinessRow ready={!blockingExceptions} label="Exceptions" detail={blockingExceptions ? `${blockingExceptions} block close (${unresolvedExceptions} total for review)` : unresolvedExceptions ? `${unresolvedExceptions} audit item(s), none blocking` : 'No payment or check exceptions'} />
+              <ReadinessRow ready={!paidUnsentChecks} label="Fulfillment" detail={paidUnsentChecks ? `${paidUnsentChecks} paid check(s) have ${paidUnsentItems} unsent routed item(s)` : 'No paid checks have unsent routed items'} />
+              <ReadinessRow ready={!cashMovementBlockers} label="Cash movements" detail={pendingCashMovements ? `${pendingCashMovements} pending or uncertain movement(s)` : requirePaidOutReview && unreviewedPaidOuts ? `${unreviewedPaidOuts} paid-out movement(s) require review` : 'No cash movement blockers'} />
               <ReadinessRow ready={verificationStatus === 'verified'} warning={verificationStatus !== 'mismatch'} label="Financial verification" detail={reconLoading ? 'Independent recompute still running' : verificationStatus === 'verified' ? 'Totals match raw transactions' : verificationStatus === 'mismatch' ? `${verificationMismatchCount} mismatch(es) require an override reason` : 'Independent verifier unavailable; close will be marked unverified'} />
               <ReadinessRow ready={!pendingPrintJobs} label="Print work" detail={pendingPrintJobs ? `${pendingPrintJobs} jobs still pending` : 'No pending print work'} />
               <ReadinessRow ready={!openEmployees.length} warning={Boolean(openEmployees.length)} label="Employees" detail={openEmployees.length ? `${openEmployees.length} will require confirmation` : 'Everyone is clocked out'} />

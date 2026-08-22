@@ -80,3 +80,11 @@ test('a successful close removes alternate cached previews for the same restaura
   ), false)
   assert.match(page, /queryClient\.removeQueries\(\{[\s\S]*isAlternateCloseDayPreviewKey/)
 })
+
+test('compact readiness surfaces every canonical POS close blocker', () => {
+  assert.match(page, /preview\?\.paid_unsent_fulfillment_checks/)
+  assert.match(page, /preview\?\.cash_accountability\?\.pending_count/)
+  assert.match(page, /preview\?\.cash_accountability\?\.unreviewed_paid_out_count/)
+  assert.match(page, /label="Fulfillment"/)
+  assert.match(page, /label="Cash movements"/)
+})
