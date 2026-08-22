@@ -66,6 +66,7 @@ export type {
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../../shared/lib/supabase'
 import { API_CONFIG } from '../../shared/api/config'
+import { fetchWithSupabaseAuth } from '../../shared/query/fetchWithSupabaseAuth'
 import { fetchPosApi } from '../../shared/api/posClient'
 import { fetchReservationsApi } from '../../shared/api/reservationsClient'
 import { useAuth } from '../../auth'
@@ -164,6 +165,8 @@ export interface OnboardingData {
   same_hours_every_day: boolean
 
   // Step 13: Reservation Timing
+  public_slug: string
+  canonical_booking_url: string | null
   reservation_timing_same_for_channels: boolean
   reservation_online_booking_horizon_days: string
   reservation_online_lead_time_minutes: string
@@ -346,6 +349,8 @@ const INITIAL_DATA: OnboardingData = {
   same_hours_every_day: true,
 
   reservation_timing_same_for_channels: true,
+  public_slug: '',
+  canonical_booking_url: null,
   reservation_online_booking_horizon_days: '30',
   reservation_online_lead_time_minutes: '120',
   reservation_online_grace_period_minutes: '15',
@@ -565,6 +570,8 @@ const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): On
       typeof input.reservation_timing_same_for_channels === 'boolean'
         ? input.reservation_timing_same_for_channels
         : INITIAL_DATA.reservation_timing_same_for_channels,
+    public_slug: asString(input.public_slug, INITIAL_DATA.public_slug),
+    canonical_booking_url: asNullableString(input.canonical_booking_url),
     reservation_online_booking_horizon_days: asString(input.reservation_online_booking_horizon_days, INITIAL_DATA.reservation_online_booking_horizon_days),
     reservation_online_lead_time_minutes: asString(input.reservation_online_lead_time_minutes, INITIAL_DATA.reservation_online_lead_time_minutes),
     reservation_online_grace_period_minutes: asString(input.reservation_online_grace_period_minutes, INITIAL_DATA.reservation_online_grace_period_minutes),
@@ -983,6 +990,23 @@ const buildUniqueSlug = (name: string): string => {
   return `${slugify(name)}-${randomSuffix}`
 }
 
+const savePublicSlug = async (restaurantId: string, slug: string) => {
+  const normalized = slugify(slug)
+  if (!normalized) return null
+  return fetchWithSupabaseAuth<{
+    public_slug?: string
+    publicSlug?: string
+    canonical_booking_url?: string
+    canonicalBookingUrl?: string
+  }>(
+    `/locations/${restaurantId}/public-slug`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ public_slug: normalized }),
+    }
+  )
+}
+
 const isSlugConflict = (error: unknown): boolean => {
   if (!isRecord(error)) return false
   const code = asString(error.code).trim()
@@ -1194,6 +1218,8 @@ export function useOnboarding() {
       type: restaurant.type as RestaurantType | null,
       cuisine_types: Array.isArray(restaurant.cuisine_types) ? restaurant.cuisine_types : [],
       phone: asString(restaurant.phone),
+      public_slug: asString(restaurant.public_slug || restaurant.slug),
+      canonical_booking_url: restaurant.public_slug ? `/book/${restaurant.public_slug}` : null,
       seating_capacity: restaurant.seating_capacity,
       table_count: restaurant.table_count,
       operating_hours: normalizeOperatingHours(hoursResult.data),
@@ -1582,6 +1608,10 @@ export function useOnboarding() {
       setRestaurantId(createdRestaurant.id)
       setCurrentStep(prev => Math.max(prev, 1))
       seedCurrentRestaurant(createdRestaurant)
+      setData(prev => mergeOnboardingData(prev, {
+        public_slug: asString(createdRestaurant.public_slug || createdRestaurant.slug),
+        canonical_booking_url: createdRestaurant.public_slug ? `/book/${createdRestaurant.public_slug}` : null,
+      }))
       if (user) {
         writeDraft(user.id, {
           version: ONBOARDING_DRAFT_VERSION,
@@ -2207,6 +2237,10 @@ export function useOnboarding() {
       const activeRestaurantId = getActiveRestaurantId()
       const existingConfig = await fetchRestaurantConfig(activeRestaurantId)
       const timing = reservationTimingPatch(data)
+      const slugResult = await runWithTimeout(
+        () => savePublicSlug(activeRestaurantId, data.public_slug || data.name),
+        'Saving public booking URL timed out. Please retry.'
+      )
 
       await runWithTimeout(
         () => saveReservationSettings(activeRestaurantId, data),
@@ -2254,6 +2288,12 @@ export function useOnboarding() {
         reservation_max_party_size: timing.reservation_max_party_size,
         reservation_default_duration_minutes: timing.reservation_default_duration_minutes,
         reservation_windows_follow_operating_hours: timing.reservation_windows_follow_operating_hours,
+        ...(slugResult
+          ? {
+              public_slug: slugResult.public_slug || slugResult.publicSlug || '',
+              canonical_booking_url: slugResult.canonical_booking_url || slugResult.canonicalBookingUrl || null,
+            }
+          : {}),
       }))
       setRestaurantId(activeRestaurantId)
     } catch (err) {

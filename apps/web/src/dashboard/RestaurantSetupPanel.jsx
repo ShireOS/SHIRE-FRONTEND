@@ -170,6 +170,18 @@ const DEFAULT_RESERVATION_TIMING = {
   reservation_windows_follow_operating_hours: true,
 }
 
+const publicBookingBaseUrl = (
+  import.meta.env.VITE_RESERVATIONS_PUBLIC_BASE_URL ||
+  import.meta.env.VITE_RESERVATIONS_WEB_BASE_URL ||
+  window.location.origin
+).replace(/\/+$/, '')
+
+const normalizePublicSlugDraft = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
 const ROLE_OPTIONS = ['server', 'bartender', 'host', 'manager', 'busser', 'runner']
 
 const initialLegal = (restaurant) => {
@@ -997,6 +1009,13 @@ function reservationTimingFromSettings(settings) {
   })
 }
 
+async function saveReservationPublicSlug(restaurantId, slug) {
+  return fetchWithSupabaseAuth(`/locations/${restaurantId}/public-slug`, {
+    method: 'PATCH',
+    body: JSON.stringify({ public_slug: normalizePublicSlugDraft(slug) }),
+  })
+}
+
 function defaultServiceCharge(index = 0) {
   return {
     name: index === 0 ? 'Service Charge' : `Service Charge ${index + 1}`,
@@ -1491,6 +1510,7 @@ export default function RestaurantSetupPanel({
   const [hours, setHours] = useState(DEFAULT_HOURS)
   const [sameHours, setSameHours] = useState(true)
   const [reservationTiming, setReservationTiming] = useState(() => normalizeReservationTiming(restaurant.config))
+  const [reservationPublicSlug, setReservationPublicSlug] = useState(() => restaurant.public_slug || restaurant.slug || '')
   const [floorTables, setFloorTables] = useState([])
   const [floorPlanMode, setFloorPlanMode] = useState(null)
   const [waiters, setWaiters] = useState([])
@@ -1508,6 +1528,10 @@ export default function RestaurantSetupPanel({
   const savedDraftsRef = useRef({})
 
   const isPropagationEnabled = Boolean(propagationContext?.requestTargets)
+  const reservationPublicUrl = useMemo(() => {
+    const slug = normalizePublicSlugDraft(reservationPublicSlug) || normalizePublicSlugDraft(profile.name) || 'restaurant'
+    return `${publicBookingBaseUrl}/book/${slug}`
+  }, [profile.name, reservationPublicSlug])
 
   const rememberSavedDraft = (sectionId, value) => {
     savedDraftsRef.current[sectionId] = value == null ? value : structuredClone(value)
@@ -1552,7 +1576,10 @@ export default function RestaurantSetupPanel({
         setHours(baseline.hours)
         setSameHours(baseline.sameHours)
         break
-      case 'reservation_timing': setReservationTiming(baseline); break
+      case 'reservation_timing':
+        setReservationTiming(baseline.timing)
+        setReservationPublicSlug(baseline.publicSlug)
+        break
       case 'capacity': setProfile(current => ({ ...current, ...baseline })); break
       case 'employees':
         setJobCodes(baseline.jobCodes)
@@ -1849,6 +1876,7 @@ export default function RestaurantSetupPanel({
     const nextServiceModel = initialServiceModel(restaurant)
     const nextGoals = initialGoals(restaurant)
     const nextReservationTiming = normalizeReservationTiming(restaurant.config)
+    const nextReservationPublicSlug = restaurant.public_slug || restaurant.slug || ''
     setProfile(nextProfile)
     setLegal(nextLegal)
     setPayments(nextPayments)
@@ -1856,6 +1884,7 @@ export default function RestaurantSetupPanel({
     setServiceModel(nextServiceModel)
     setGoals(nextGoals)
     setReservationTiming(nextReservationTiming)
+    setReservationPublicSlug(nextReservationPublicSlug)
     setCoverImageUrl(restaurant.cover_image_url || '')
     setPendingCoverFile(null)
     setSaveMessage('')
@@ -1877,7 +1906,7 @@ export default function RestaurantSetupPanel({
     rememberSavedDraft('payments', nextPayments)
     rememberSavedDraft('service_model', nextServiceModel)
     rememberSavedDraft('goals', nextGoals)
-    rememberSavedDraft('reservation_timing', nextReservationTiming)
+    rememberSavedDraft('reservation_timing', { timing: nextReservationTiming, publicSlug: nextReservationPublicSlug })
     rememberSavedDraft('branding', { coverImageUrl: restaurant.cover_image_url || '' })
   }, [restaurant])
 
@@ -2002,7 +2031,7 @@ export default function RestaurantSetupPanel({
         const serviceReservationTiming = reservationTimingFromSettings(reservationSettingsData)
         const nextReservationTiming = serviceReservationTiming ? { ...configReservationTiming, ...serviceReservationTiming } : configReservationTiming
         setReservationTiming(nextReservationTiming)
-        rememberSavedDraft('reservation_timing', nextReservationTiming)
+        rememberSavedDraft('reservation_timing', { timing: nextReservationTiming, publicSlug: restaurant.public_slug || restaurant.slug || '' })
       }
       const failedLabels = results.filter(result => result.error).map(result => result.label)
       if (failedLabels.length > 0) {
@@ -2640,6 +2669,9 @@ export default function RestaurantSetupPanel({
       propagation: SETUP_PROPAGATION.reservation_timing,
       successMessage: 'Saved reservation timing.',
       saveSource: async (targetId) => {
+        if (targetId === restaurantId) {
+          await saveReservationPublicSlug(targetId, reservationPublicSlug || profile.name)
+        }
         await saveReservationSettings(targetId, payload, hours)
         return mergeRestaurantConfig(targetId, configPatch)
       },
@@ -2649,8 +2681,10 @@ export default function RestaurantSetupPanel({
       },
       onSourceSaved: () => {
         const normalized = normalizeReservationTiming(configPatch)
+        const normalizedPublicSlug = normalizePublicSlugDraft(reservationPublicSlug || profile.name)
         setReservationTiming(normalized)
-        rememberSavedDraft('reservation_timing', normalized)
+        setReservationPublicSlug(normalizedPublicSlug)
+        rememberSavedDraft('reservation_timing', { timing: normalized, publicSlug: normalizedPublicSlug })
       },
       publication,
     })
@@ -3981,6 +4015,33 @@ export default function RestaurantSetupPanel({
           }
         >
           <div className="space-y-5">
+            <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <p className="label-mono mb-3">Public Booking Page</p>
+              <div className="grid gap-3 md:grid-cols-[1fr,1.4fr]">
+                <Field label="Booking slug">
+                  <div className="flex overflow-hidden rounded-xl border border-white/10 bg-white/[0.035]">
+                    <span className="shrink-0 border-r border-white/10 px-4 py-3 text-sm text-dash-tertiary">/book/</span>
+                    <input
+                      value={reservationPublicSlug || normalizePublicSlugDraft(profile.name)}
+                      onChange={event => setReservationPublicSlug(normalizePublicSlugDraft(event.target.value))}
+                      className="min-w-0 flex-1 bg-transparent px-4 py-3 text-sm text-dash-cream outline-none placeholder:text-dash-tertiary"
+                      placeholder="restaurant-name"
+                    />
+                  </div>
+                </Field>
+                <Field label="Guest link">
+                  <a
+                    href={reservationPublicUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block break-all rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-dash-secondary hover:text-dash-cream"
+                  >
+                    {reservationPublicUrl}
+                  </a>
+                </Field>
+              </div>
+            </div>
+
             <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>

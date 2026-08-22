@@ -16,6 +16,12 @@ type TimingField =
   | 'reservation_max_party_size'
   | 'reservation_default_duration_minutes'
 
+const normalizeSlugDraft = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
 function TimingInput({
   label,
   value,
@@ -51,6 +57,15 @@ function TimingInput({
 
 export function ReservationTimingStep({ onboarding }: ReservationTimingStepProps) {
   const { data, updateData, saveReservationTiming, nextStep, isLoading, error } = onboarding
+  const publicBookingBaseUrl = (
+    import.meta.env.VITE_RESERVATIONS_PUBLIC_BASE_URL ||
+    import.meta.env.VITE_RESERVATIONS_WEB_BASE_URL ||
+    window.location.origin
+  ).replace(/\/+$/, '')
+  const publicSlug = data.public_slug || normalizeSlugDraft(data.name) || 'restaurant'
+  const publicBookingUrl = data.canonical_booking_url?.startsWith('http')
+    ? data.canonical_booking_url
+    : `${publicBookingBaseUrl}${data.canonical_booking_url || `/book/${publicSlug}`}`
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -80,6 +95,37 @@ export function ReservationTimingStep({ onboarding }: ReservationTimingStepProps
           {error}
         </div>
       )}
+
+      <section className="p-6 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] space-y-5">
+        <div>
+          <p className="label-mono text-[rgb(var(--gold))] tracking-[0.12em]">PUBLIC BOOKING PAGE</p>
+          <p className="mt-1 text-sm text-[rgb(var(--text-secondary))]">
+            Guests use this unique link to make online reservations for this restaurant.
+          </p>
+        </div>
+        <label className="block">
+          <span className="label-mono block mb-2 text-[rgb(var(--gold))]">Booking slug</span>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <span className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3 py-3 text-sm text-[rgb(var(--text-tertiary))]">
+              /book/
+            </span>
+            <input
+              type="text"
+              value={publicSlug}
+              onChange={(event) => updateData({ public_slug: normalizeSlugDraft(event.target.value), canonical_booking_url: null })}
+              className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
+            />
+          </div>
+        </label>
+        <a
+          href={publicBookingUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="block break-all rounded-lg border border-[rgba(255,255,255,0.08)] bg-black/20 px-4 py-3 text-sm text-[rgb(var(--text-secondary))] hover:text-[rgb(var(--text-primary))]"
+        >
+          {publicBookingUrl}
+        </a>
+      </section>
 
       <div className="p-5 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)]">
         <div className="flex items-start justify-between gap-4">
