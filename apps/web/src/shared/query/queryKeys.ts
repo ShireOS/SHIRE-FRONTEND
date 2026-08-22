@@ -12,6 +12,17 @@ export const queryKeys = {
 
   menuItems: (restaurantId: string) => ['restaurant', restaurantId, 'menu-items'] as const,
   menuCategories: (restaurantId: string) => ['restaurant', restaurantId, 'menu-categories'] as const,
+  menuItemImages: (restaurantId: string) => ['restaurant', restaurantId, 'menu-item-images'] as const,
+  menuCategoryColors: (restaurantId: string) => ['restaurant', restaurantId, 'menu-category-colors'] as const,
+  menuModifiers: (restaurantId: string) => ['restaurant', restaurantId, 'menu-modifiers'] as const,
+  menuModifierGroups: (restaurantId: string) => ['restaurant', restaurantId, 'menu-modifier-groups'] as const,
+  menuCombos: (restaurantId: string) => ['restaurant', restaurantId, 'menu-combos'] as const,
+  menuModifierOverrides: (restaurantId: string) => ['restaurant', restaurantId, 'menu-modifier-overrides'] as const,
+  menuAllergies: (restaurantId: string) => ['restaurant', restaurantId, 'menu-allergies'] as const,
+  menuSpecials: (restaurantId: string) => ['restaurant', restaurantId, 'menu-specials'] as const,
+  menuSpecialSettings: (restaurantId: string) => ['restaurant', restaurantId, 'menu-special-settings'] as const,
+  menuEditorPreferences: (restaurantId: string) => ['restaurant', restaurantId, 'menu-editor-preferences'] as const,
+  menuPrintingConfig: (restaurantId: string) => ['restaurant', restaurantId, 'menu-printing-config'] as const,
 
   taxesCharges: (restaurantId: string) => ['restaurant', restaurantId, 'taxes-charges'] as const,
   priceAllocations: (restaurantId: string) => ['restaurant', restaurantId, 'price-allocations'] as const,
@@ -31,6 +42,13 @@ export const queryKeys = {
     ['restaurant', restaurantId, 'owner-analytics', period] as const,
   restaurantReports: (restaurantId: string, query: string) =>
     ['restaurant', restaurantId, 'reports', query] as const,
+  reportPreferences: (restaurantId: string) => ['restaurant', restaurantId, 'reports', 'preferences'] as const,
+  reportDimensions: (restaurantId: string) => ['restaurant', restaurantId, 'reports', 'dimensions'] as const,
+  reportRecipients: (restaurantId: string) => ['restaurant', restaurantId, 'reports', 'recipients'] as const,
+  reportSnapshot: (restaurantId: string, requestKey: string) =>
+    ['restaurant', restaurantId, 'reports', 'snapshot', requestKey] as const,
+  reportReceiptPreview: (restaurantId: string, requestKey: string) =>
+    ['restaurant', restaurantId, 'reports', 'receipt-preview', requestKey] as const,
 
   staffingBlocks: (restaurantId: string) => ['restaurant', restaurantId, 'staffing-blocks'] as const,
   staffingSuggestions: (restaurantId: string) => ['restaurant', restaurantId, 'staffing-suggestions'] as const,

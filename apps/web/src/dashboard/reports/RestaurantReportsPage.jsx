@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { fetchWithSupabaseAuth } from '../../shared/query'
+import { fetchCached, fetchWithSupabaseAuth, queryClient, queryKeys, STALE_TIMES } from '../../shared/query'
 import { fetchPosApi } from '../../shared/api/posClient'
 import ServerReceiptTemplateModal from './ServerReceiptTemplateModal'
 import { viewVisible } from '../../shared/backOfficeView'
@@ -125,14 +125,35 @@ function minuteTime(value, fallback) {
   return typeof value === 'string' && /^\d{2}:\d{2}/.test(value) ? value.slice(0, 5) : fallback
 }
 
+const currencyFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+const numberFormatters = new Map()
+const dateFormatters = new Map()
+
+function numberFormatter(digits) {
+  if (!numberFormatters.has(digits)) {
+    numberFormatters.set(digits, new Intl.NumberFormat('en-US', { maximumFractionDigits: digits, minimumFractionDigits: digits }))
+  }
+  return numberFormatters.get(digits)
+}
+
+function dateFormatter(kind, timezone) {
+  const key = `${kind}:${timezone || 'local'}`
+  if (!dateFormatters.has(key)) {
+    dateFormatters.set(key, new Intl.DateTimeFormat(undefined, kind === 'datetime'
+      ? { dateStyle: 'short', timeStyle: 'short', timeZone: timezone }
+      : { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }))
+  }
+  return dateFormatters.get(key)
+}
+
 function money(value) {
   const amount = Number(value || 0)
-  const absolute = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Math.abs(amount))
+  const absolute = currencyFormatter.format(Math.abs(amount))
   return amount < 0 ? `-${absolute}` : absolute
 }
 
 function number(value, digits = 0) {
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: digits, minimumFractionDigits: digits }).format(Number(value || 0))
+  return numberFormatter(digits).format(Number(value || 0))
 }
 
 function displayValue(value, format, digits = 0, timezone = undefined) {
@@ -141,8 +162,8 @@ function displayValue(value, format, digits = 0, timezone = undefined) {
   if (format === 'percent') return `${number(value, 2)}%`
   if (format === 'number') return number(value, digits)
   if (format === 'minutes') return `${number(value, 1)} min`
-  if (format === 'datetime') return new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short', timeZone: timezone }).format(new Date(value))
-  if (format === 'date') return new Date(`${value}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+  if (format === 'datetime') return dateFormatter('datetime', timezone).format(new Date(value))
+  if (format === 'date') return dateFormatter('date').format(new Date(`${value}T12:00:00`))
   if (format === 'json' && typeof value === 'object') return JSON.stringify(value)
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value).replaceAll('_', ' ')
@@ -183,11 +204,13 @@ function downloadSnapshotCsv(snapshot, groupIds, profileName) {
   saveBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `${restaurant}-${profile}-${snapshot.window.start_date}-to-${snapshot.window.end_date}.csv`)
 }
 
-function IconButton({ label, icon: Icon, onClick, disabled = false, primary = false }) {
+function IconButton({ label, icon: Icon, onClick, onIntent, disabled = false, primary = false }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      onMouseEnter={onIntent}
+      onFocus={onIntent}
       disabled={disabled}
       title={label}
       className={`inline-flex h-10 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${primary ? 'bg-dash-gold text-black' : 'border border-white/10 bg-white/[0.04] text-dash-secondary hover:bg-white/[0.08] hover:text-dash-cream'}`}
@@ -221,7 +244,7 @@ function Modal({ title, onClose, children, maxWidth = 'max-w-3xl' }) {
   )
 }
 
-function ScopeModal({ value, dimensions, onClose, onApply }) {
+function ScopeModal({ value, dimensions, loading = false, error = '', onClose, onApply }) {
   const [draft, setDraft] = useState(() => ({ ...value, scope_mode: 'cumulative', scope_ids: [...value.scope_ids] }))
   const options = draft.scope_dimension === 'revenue_center'
     ? dimensions.sections || []
@@ -234,6 +257,8 @@ function ScopeModal({ value, dimensions, onClose, onApply }) {
   const canApply = draft.scope_dimension === 'none' || draft.scope_ids.length > 0
   return (
     <Modal title="Report scope" onClose={onClose}>
+      {loading && <p className="mb-4 text-sm text-dash-tertiary">Loading sections, devices, and employees...</p>}
+      {error && <p className="mb-4 rounded-md border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">{error}</p>}
       <div className="flex flex-wrap gap-2">
         {[['none', 'Whole restaurant'], ['revenue_center', 'Sections'], ['device', 'Devices'], ['employee', 'Employees']].map(([id, label]) => (
           <button key={id} type="button" onClick={() => setDraft({ ...draft, scope_dimension: id, scope_ids: [], scope_mode: 'cumulative' })} className={`h-10 rounded-md border px-3 text-sm font-semibold ${draft.scope_dimension === id ? 'border-dash-gold bg-dash-gold/10 text-dash-cream' : 'border-white/10 text-dash-secondary'}`}>{label}</button>
@@ -341,7 +366,7 @@ function ProfileSettingsModal({ profiles, activeId, catalog, defaults, scopeDime
   )
 }
 
-function ScheduledReportsModal({ recipients, canManage, deliveryEnabled, disabledReason, defaultTimezone, onClose, onSave, onDelete, onTest }) {
+function ScheduledReportsModal({ recipients, loading = false, canManage, deliveryEnabled, disabledReason, defaultTimezone, onClose, onSave, onDelete, onTest }) {
   const [editingId, setEditingId] = useState(null)
   const [draft, setDraft] = useState(EMPTY_SCHEDULE)
   const [working, setWorking] = useState('')
@@ -379,9 +404,10 @@ function ScheduledReportsModal({ recipients, canManage, deliveryEnabled, disable
             <div className="min-w-0"><p className="truncate font-semibold">{recipient.name || recipient.email}</p><p className="mt-1 break-words text-sm text-dash-secondary">{recipient.email} · {recipient.frequency} at {String(recipient.send_time || '07:00').slice(0, 5)} · {recipient.timezone}</p><p className="mt-1 text-xs text-dash-tertiary">{(recipient.sections || []).map((id) => SCHEDULE_LABELS[id] || id.replaceAll('_', ' ')).join(', ')}</p></div>
             {canManage && <div className="flex shrink-0 gap-2"><button type="button" disabled={!deliveryEnabled || Boolean(working)} onClick={() => test(recipient)} className="h-10 rounded-md border border-white/10 px-3 text-sm disabled:opacity-40">{working === recipient.id ? 'Working' : 'Test'}</button><button type="button" disabled={Boolean(working)} onClick={() => edit(recipient)} className="h-10 rounded-md border border-white/10 px-3 text-sm disabled:opacity-40">Edit</button><button type="button" disabled={Boolean(working)} title="Delete schedule" onClick={() => remove(recipient)} className="inline-flex h-10 items-center justify-center rounded-md border border-red-400/20 px-3 text-red-300 disabled:opacity-40"><Trash2 className="h-4 w-4" /></button></div>}
           </div>)}
-          {!recipients.length && <p className="py-8 text-center text-sm text-dash-tertiary">No scheduled report recipients.</p>}
+          {loading && <p className="py-8 text-center text-sm text-dash-tertiary">Loading scheduled reports...</p>}
+          {!loading && !recipients.length && <p className="py-8 text-center text-sm text-dash-tertiary">No scheduled report recipients.</p>}
         </div>
-        {canManage && <button type="button" onClick={() => edit()} className="mt-5 inline-flex h-10 items-center gap-2 rounded-md bg-dash-gold px-4 text-sm font-semibold text-black"><Plus className="h-4 w-4" />Add recipient</button>}
+        {canManage && !loading && <button type="button" onClick={() => edit()} className="mt-5 inline-flex h-10 items-center gap-2 rounded-md bg-dash-gold px-4 text-sm font-semibold text-black"><Plus className="h-4 w-4" />Add recipient</button>}
       </> : <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Recipient name"><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></Field>
@@ -442,7 +468,7 @@ function ReceiptPrintModal({ restaurantId, profileName, requestPayload, initialP
   const [confirmedLong, setConfirmedLong] = useState(false)
   const [message, setMessage] = useState('')
   const printLock = useRef(false)
-  const requestKey = JSON.stringify(requestPayload)
+  const requestKey = JSON.stringify({ ...requestPayload, profile_name: profileName })
 
   useEffect(() => {
     if (initialPreview) {
@@ -455,11 +481,15 @@ function ReceiptPrintModal({ restaurantId, profileName, requestPayload, initialP
     const controller = new AbortController()
     setLoading(true)
     setMessage('')
-    fetchPosApi(restaurantId, '/manager/report-hub/receipt-preview', {
-      method: 'POST',
-      body: JSON.stringify({ ...requestPayload, profile_name: profileName }),
-      signal: controller.signal,
-    }).then((result) => {
+    fetchCached(
+      queryKeys.reportReceiptPreview(restaurantId, requestKey),
+      () => fetchPosApi(restaurantId, '/manager/report-hub/receipt-preview', {
+        method: 'POST',
+        body: requestKey,
+        signal: controller.signal,
+      }),
+      STALE_TIMES.receiptPreview,
+    ).then((result) => {
       if (!cancelled) setPreview(result)
     }).catch((error) => {
       if (!cancelled) setMessage(error instanceof Error ? error.message : 'Could not build the receipt preview.')
@@ -483,14 +513,17 @@ function ReceiptPrintModal({ restaurantId, profileName, requestPayload, initialP
           client_print_id: crypto.randomUUID(),
           confirm_long_receipt: confirmedLong,
           printer_context_id: preview?.printer_context_id || null,
+          render_token: preview?.render_token || null,
         }),
       })
       let latest = job
       const deadline = Date.now() + 30_000
+      let pollDelay = 500
       while (latest.progress !== 'printed' && latest.progress !== 'failed' && Date.now() < deadline) {
         setMessage(latest.progress === 'writing' ? `Sending to ${latest.target_name || 'receipt printer'}…` : latest.progress === 'claimed' ? 'The POS device is delivering the report…' : `Queued to ${latest.target_name || 'receipt printer'}…`)
-        await new Promise((resolve) => window.setTimeout(resolve, 250))
+        await new Promise((resolve) => window.setTimeout(resolve, pollDelay))
         latest = await fetchPosApi(restaurantId, `/manager/report-hub/receipt-jobs/${job.job_id}`)
+        pollDelay = Math.min(Math.round(pollDelay * 1.5), 2000)
       }
       if (latest.progress === 'printed') {
         onPrinted(`Printed ${profileName} report to ${latest.target_name || 'the receipt printer'}.`)
@@ -608,6 +641,9 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   const [periodPreset, setPeriodPreset] = useState('week')
   const [scope, setScope] = useState({ scope_dimension: 'none', scope_mode: 'cumulative', scope_ids: [] })
   const [dimensions, setDimensions] = useState({ sections: [], devices: [], employees: [] })
+  const [dimensionsLoading, setDimensionsLoading] = useState(false)
+  const [dimensionsLoaded, setDimensionsLoaded] = useState(false)
+  const [dimensionsError, setDimensionsError] = useState('')
   const [profiles, setProfiles] = useState(DEFAULT_PROFILES)
   const [activeProfileId, setActiveProfileId] = useState('long')
   const [snapshot, setSnapshot] = useState(null)
@@ -621,10 +657,14 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   const [modal, setModal] = useState(null)
   const [serverReceiptOpen, setServerReceiptOpen] = useState(false)
   const [recipients, setRecipients] = useState([])
+  const [recipientsLoading, setRecipientsLoading] = useState(false)
+  const [recipientsLoaded, setRecipientsLoaded] = useState(false)
   const [canManageRecipients, setCanManageRecipients] = useState(false)
   const [emailDelivery, setEmailDelivery] = useState({ enabled: false, reason: '' })
   const loadRequestRef = useRef(0)
   const loadAbortRef = useRef(null)
+  const initialSnapshotStartedRef = useRef(false)
+  const preferenceAutosaveReadyRef = useRef(false)
   const visibleProfiles = viewVisible(viewPolicy, 'reports.activity')
     ? profiles
     : profiles.filter((profile) => profile.id !== 'activity')
@@ -658,11 +698,23 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     setLoading(true)
     setSnapshot(null)
     setPreloadedReceiptPreviews({})
+    setDimensions({ sections: [], devices: [], employees: [] })
+    setDimensionsLoaded(false)
+    setDimensionsLoading(false)
+    setDimensionsError('')
+    setRecipients([])
+    setRecipientsLoaded(false)
+    setRecipientsLoading(false)
+    setCanManageRecipients(false)
+    setEmailDelivery({ enabled: false, reason: '' })
+    initialSnapshotStartedRef.current = false
+    preferenceAutosaveReadyRef.current = false
     setError('')
-    Promise.all([
-      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/view-preferences`),
-      fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/dimensions`),
-    ]).then(([preferences, nextDimensions]) => {
+    fetchCached(
+      queryKeys.reportPreferences(restaurantId),
+      () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/view-preferences`),
+      STALE_TIMES.setup,
+    ).then((preferences) => {
       if (cancelled) return
       const saved = preferences.settings?.reports || {}
       const preset = saved.period_preset || 'week'
@@ -674,26 +726,67 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       setScope({ scope_dimension: saved.scope_dimension || 'none', scope_mode: 'cumulative', scope_ids: saved.scope_ids || [] })
       setProfiles(nextProfiles)
       setActiveProfileId(nextProfiles.some((profile) => profile.id === requestedActiveId) ? requestedActiveId : 'long')
-      setDimensions(nextDimensions)
     }).catch((nextError) => {
       if (!cancelled) setError(nextError instanceof Error ? nextError.message : 'Could not load POS report settings.')
     }).finally(() => { if (!cancelled) setHydrated(true) })
     return () => { cancelled = true }
   }, [restaurantId])
 
-  useEffect(() => {
-    if (!restaurantId) return
-    let cancelled = false
-    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/recipients`)
-      .then((data) => {
-        if (cancelled) return
-        setRecipients(data.recipients || [])
-        setCanManageRecipients(Boolean(data.can_manage))
-        setEmailDelivery({ enabled: Boolean(data.delivery_enabled), reason: data.delivery_disabled_reason || '' })
-      })
-      .catch(() => undefined)
-    return () => { cancelled = true }
-  }, [restaurantId])
+  const loadDimensions = async (force = false) => {
+    if (!restaurantId || (dimensionsLoaded && !force)) return dimensions
+    setDimensionsLoading(true)
+    setDimensionsError('')
+    try {
+      const next = await fetchCached(
+        queryKeys.reportDimensions(restaurantId),
+        () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/dimensions`),
+        force ? 0 : STALE_TIMES.setup,
+      )
+      setDimensions(next)
+      setDimensionsLoaded(true)
+      return next
+    } catch (nextError) {
+      setDimensionsError(nextError instanceof Error ? nextError.message : 'Could not load report scope options.')
+      return null
+    } finally {
+      setDimensionsLoading(false)
+    }
+  }
+
+  const applyRecipientData = (data) => {
+    setRecipients(data?.recipients || [])
+    setCanManageRecipients(Boolean(data?.can_manage))
+    setEmailDelivery({ enabled: Boolean(data?.delivery_enabled), reason: data?.delivery_disabled_reason || '' })
+  }
+
+  const loadRecipients = async (force = false) => {
+    if (!restaurantId || (recipientsLoaded && !force)) return
+    setRecipientsLoading(true)
+    try {
+      const data = await fetchCached(
+        queryKeys.reportRecipients(restaurantId),
+        () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/recipients`),
+        force ? 0 : STALE_TIMES.reports,
+      )
+      applyRecipientData(data)
+      setRecipientsLoaded(true)
+    } catch {
+      // The modal remains usable for retry on the next open; existing report
+      // content should not fail because schedules are unavailable.
+    } finally {
+      setRecipientsLoading(false)
+    }
+  }
+
+  const openScopeModal = () => {
+    setModal('scope')
+    void loadDimensions()
+  }
+
+  const openSchedulesModal = () => {
+    setModal('schedules')
+    void loadRecipients()
+  }
 
   const load = async (forceRefresh = false) => {
     if (!restaurantId || !hydrated) return
@@ -711,11 +804,16 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     loadAbortRef.current = controller
     setLoading(true); setError(''); setPreloadedReceiptPreviews({})
     try {
-      const next = await fetchPosApi(restaurantId, '/manager/report-hub/snapshot', {
-        method: 'POST',
-        body: JSON.stringify(requestPayload),
-        signal: controller.signal,
-      })
+      const requestKey = JSON.stringify(requestPayload)
+      const next = await fetchCached(
+        queryKeys.reportSnapshot(restaurantId, requestKey),
+        () => fetchPosApi(restaurantId, '/manager/report-hub/snapshot', {
+          method: 'POST',
+          body: requestKey,
+          signal: controller.signal,
+        }),
+        forceRefresh ? 0 : STALE_TIMES.reports,
+      )
       if (loadRequestRef.current !== requestId) return
       setSnapshot({ ...next, _request_context_key: receiptSnapshotContextKey(requestPayload) })
       if (!profiles.length) setProfiles(withRequiredBuiltInProfiles([], next.default_profiles || DEFAULT_PROFILES))
@@ -732,7 +830,10 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   }
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => { void load() }, 120)
+    if (!restaurantId || !hydrated) return undefined
+    const delay = initialSnapshotStartedRef.current ? 180 : 0
+    initialSnapshotStartedRef.current = true
+    const timeout = window.setTimeout(() => { void load() }, delay)
     return () => window.clearTimeout(timeout)
   }, [restaurantId, hydrated, dates.start, dates.end, times.start, times.end, scope.scope_dimension, scope.scope_mode, scopeIdsKey, groupIdsKey])
 
@@ -754,13 +855,26 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     pos_report_profiles: nextProfiles,
   })
 
+  const cachePreferenceSettings = (patch) => {
+    queryClient.setQueryData(queryKeys.reportPreferences(restaurantId), current => ({
+      ...(current && typeof current === 'object' ? current : {}),
+      settings: {
+        ...(current?.settings && typeof current.settings === 'object' ? current.settings : {}),
+        ...patch,
+      },
+    }))
+  }
+
   const savePreferences = async (nextProfiles, nextActiveId) => {
-    await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/view-preferences/reports`, { method: 'PUT', body: JSON.stringify({ settings: preferencePayload(nextProfiles, nextActiveId) }) })
+    const settings = preferencePayload(nextProfiles, nextActiveId)
+    await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/view-preferences/reports`, { method: 'PUT', body: JSON.stringify({ settings }) })
+    cachePreferenceSettings(settings)
     setProfiles(nextProfiles); setActiveProfileId(nextActiveId); setStatus('Report profiles saved.')
   }
 
   const selectProfile = (id) => {
     setActiveProfileId(id)
+    cachePreferenceSettings({ active_profile_id: id, pos_report_profiles: profiles })
     fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/view-preferences/reports`, {
       method: 'PUT',
       body: JSON.stringify({ settings: { active_profile_id: id, pos_report_profiles: profiles } }),
@@ -791,19 +905,23 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
 
   useEffect(() => {
     if (!restaurantId || !hydrated) return undefined
+    if (!preferenceAutosaveReadyRef.current) {
+      preferenceAutosaveReadyRef.current = true
+      return undefined
+    }
     const timeout = window.setTimeout(() => {
+      const settings = {
+        period_preset: periodPreset,
+        custom_start_date: periodPreset === 'custom' ? dates.start : null,
+        custom_end_date: periodPreset === 'custom' ? dates.end : null,
+        start_time: times.start,
+        end_time: times.end,
+        ...scope,
+      }
+      cachePreferenceSettings(settings)
       fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/view-preferences/reports`, {
         method: 'PUT',
-        body: JSON.stringify({
-          settings: {
-            period_preset: periodPreset,
-            custom_start_date: periodPreset === 'custom' ? dates.start : null,
-            custom_end_date: periodPreset === 'custom' ? dates.end : null,
-            start_time: times.start,
-            end_time: times.end,
-            ...scope,
-          },
-        }),
+        body: JSON.stringify({ settings }),
       }).catch(() => undefined)
     }, 450)
     return () => window.clearTimeout(timeout)
@@ -833,37 +951,28 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   }
   const receiptPreviewRequestKey = JSON.stringify({ ...receiptPrintPayload, profile_name: activeProfile.name })
 
-  useEffect(() => {
-    if (!restaurantId || !snapshot?.print_snapshot_id) return undefined
-    let cancelled = false
-    const controllers = []
-    const basePayload = {
-      start_date: dates.start,
-      end_date: dates.end,
-      start_time: times.start,
-      end_time: times.end,
-      top_n: 10,
-      snapshot_id: snapshot.print_snapshot_id,
-      ...backendScope,
+  const preloadReceiptPreview = async () => {
+    if (!restaurantId || !snapshotCoversReceiptRequest(snapshot, receiptPrintPayload)) return null
+    const cached = preloadedReceiptPreviews[receiptPreviewRequestKey]
+    if (cached && Date.now() - cached.loadedAt < STALE_TIMES.receiptPreview) return cached.preview
+    try {
+      const preview = await fetchCached(
+        queryKeys.reportReceiptPreview(restaurantId, receiptPreviewRequestKey),
+        () => fetchPosApi(restaurantId, '/manager/report-hub/receipt-preview', {
+          method: 'POST',
+          body: receiptPreviewRequestKey,
+        }),
+        STALE_TIMES.receiptPreview,
+      )
+      setPreloadedReceiptPreviews((current) => ({
+        ...current,
+        [receiptPreviewRequestKey]: { preview, loadedAt: Date.now() },
+      }))
+      return preview
+    } catch {
+      return null
     }
-    for (const profile of profiles.filter((candidate) => candidate.built_in)) {
-      const profileGroupIds = profile.group_ids.filter((groupId) => scope.scope_dimension !== 'employee' || !employeeUnsupportedGroupIds.has(groupId))
-      const payload = { ...basePayload, receipt_group_ids: profileGroupIds }
-      if (!snapshotCoversReceiptRequest(snapshot, payload)) continue
-      const key = JSON.stringify({ ...payload, profile_name: profile.name })
-      if (preloadedReceiptPreviews[key]) continue
-      const controller = new AbortController()
-      controllers.push(controller)
-      fetchPosApi(restaurantId, '/manager/report-hub/receipt-preview', {
-        method: 'POST',
-        body: key,
-        signal: controller.signal,
-      }).then((preview) => {
-        if (!cancelled) setPreloadedReceiptPreviews((current) => ({ ...current, [key]: preview }))
-      }).catch(() => undefined)
-    }
-    return () => { cancelled = true; controllers.forEach((controller) => controller.abort()) }
-  }, [restaurantId, snapshot?.print_snapshot_id, profiles, scope.scope_dimension, employeeUnsupportedGroupIds])
+  }
 
   const downloadArtifact = async (format) => {
     setWorking(format); setStatus('')
@@ -886,24 +995,25 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   const saveRecipient = async (id, draft) => {
     const endpoint = id ? `/restaurants/${restaurantId}/reports/recipients/${id}` : `/restaurants/${restaurantId}/reports/recipients`
     await fetchWithSupabaseAuth(endpoint, { method: id ? 'PUT' : 'POST', body: JSON.stringify(draft) })
-    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/recipients`)
-    setRecipients(data.recipients || [])
-    setEmailDelivery({ enabled: Boolean(data.delivery_enabled), reason: data.delivery_disabled_reason || '' })
+    await loadRecipients(true)
   }
 
   const deleteRecipient = async (id) => {
     await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/recipients/${id}`, { method: 'DELETE' })
-    setRecipients((current) => current.filter((recipient) => recipient.id !== id))
+    await loadRecipients(true)
   }
 
   const testRecipient = async (id) => {
     const result = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/recipients/${id}/test`, { method: 'POST' })
-    const data = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/recipients`)
-    setRecipients(data.recipients || [])
+    await loadRecipients(true)
     return result
   }
 
   const selectedGroupCount = useMemo(() => (snapshot?.groups || []).filter((group) => scopedGroupIds.includes(group.id)).length, [snapshot, scopedGroupIds])
+  const preloadedReceiptPreview = (() => {
+    const cached = preloadedReceiptPreviews[receiptPreviewRequestKey]
+    return cached && Date.now() - cached.loadedAt < STALE_TIMES.receiptPreview ? cached.preview : null
+  })()
 
   return (
     <div className="mx-auto w-full max-w-7xl overflow-x-hidden pb-12">
@@ -912,9 +1022,9 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0"><h1 className="text-2xl font-semibold">POS reports</h1><p className="mt-1 text-xs text-dash-tertiary">Restaurant local time {dates.start} {times.start} through {dates.end} {times.end}</p></div>
             <div className="flex flex-wrap gap-2 lg:justify-end">
-              {viewVisible(viewPolicy, 'reports.scope') && <IconButton label={scope.scope_dimension === 'none' ? 'Scope' : scope.scope_dimension === 'device' ? 'Devices' : scope.scope_dimension === 'employee' ? 'Employees' : 'Sections'} icon={Layers} onClick={() => setModal('scope')} />}
+              {viewVisible(viewPolicy, 'reports.scope') && <IconButton label={scope.scope_dimension === 'none' ? 'Scope' : scope.scope_dimension === 'device' ? 'Devices' : scope.scope_dimension === 'employee' ? 'Employees' : 'Sections'} icon={Layers} onClick={openScopeModal} />}
               {viewVisible(viewPolicy, 'reports.profiles') && <IconButton label="Settings" icon={Settings2} onClick={() => setModal('settings')} />}
-              {viewVisible(viewPolicy, 'reports.schedules') && <IconButton label="Schedules" icon={Mail} onClick={() => setModal('schedules')} />}
+              {viewVisible(viewPolicy, 'reports.schedules') && <IconButton label="Schedules" icon={Mail} onClick={openSchedulesModal} />}
               {canConfigureServerReceipt && viewVisible(viewPolicy, 'reports.receipt_template') && <IconButton label="Server receipt" icon={Printer} onClick={() => setServerReceiptOpen(true)} />}
               <IconButton label="Refresh" icon={RefreshCw} onClick={() => { void load(true) }} disabled={loading} />
             </div>
@@ -932,7 +1042,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
             <IconButton label="CSV" icon={Download} onClick={() => downloadSnapshotCsv(snapshot, scopedGroupIds, activeProfile.name)} disabled={!snapshot || Boolean(working)} />
             <IconButton label="Excel" icon={FileSpreadsheet} onClick={() => downloadArtifact('xlsx')} disabled={!snapshot || Boolean(working)} />
             <IconButton label="Email" icon={Mail} onClick={() => setModal('email')} disabled={!snapshot || Boolean(working)} />
-            <IconButton label="Print receipt" icon={Printer} onClick={() => setReceiptPrintOpen(true)} disabled={!snapshot || loading || Boolean(working)} />
+            <IconButton label="Print receipt" icon={Printer} onIntent={() => { void preloadReceiptPreview() }} onClick={() => { void preloadReceiptPreview(); setReceiptPrintOpen(true) }} disabled={!snapshot || loading || Boolean(working)} />
             <span className="ml-auto text-xs text-dash-tertiary">{selectedGroupCount} section{selectedGroupCount === 1 ? '' : 's'}</span>
           </div>}
         </div>
@@ -943,12 +1053,12 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       {loading && !snapshot && <div className="flex min-h-72 items-center justify-center"><RefreshCw className="h-6 w-6 animate-spin text-dash-gold" /></div>}
       {snapshot && <div className="py-6 sm:py-8"><DigitalReceipt snapshot={snapshot} profile={activeProfile} /></div>}
 
-      {modal === 'scope' && <ScopeModal value={scope} dimensions={dimensions} onClose={() => setModal(null)} onApply={(next) => { setScope(next); setModal(null) }} />}
-      {modal === 'settings' && <ProfileSettingsModal profiles={profiles} activeId={activeProfileId} catalog={catalog} defaults={defaults} scopeDimension={scope.scope_dimension} canConfigureReceipt={canConfigureServerReceipt && viewVisible(viewPolicy, 'reports.receipt_template')} canManageSchedules={viewVisible(viewPolicy, 'reports.schedules')} onConfigureReceipt={() => { setModal(null); setServerReceiptOpen(true) }} onManageSchedules={() => setModal('schedules')} onClose={() => setModal(null)} onSave={savePreferences} />}
+      {modal === 'scope' && <ScopeModal value={scope} dimensions={dimensions} loading={dimensionsLoading} error={dimensionsError} onClose={() => setModal(null)} onApply={(next) => { setScope(next); setModal(null) }} />}
+      {modal === 'settings' && <ProfileSettingsModal profiles={profiles} activeId={activeProfileId} catalog={catalog} defaults={defaults} scopeDimension={scope.scope_dimension} canConfigureReceipt={canConfigureServerReceipt && viewVisible(viewPolicy, 'reports.receipt_template')} canManageSchedules={viewVisible(viewPolicy, 'reports.schedules')} onConfigureReceipt={() => { setModal(null); setServerReceiptOpen(true) }} onManageSchedules={openSchedulesModal} onClose={() => setModal(null)} onSave={savePreferences} />}
       {modal === 'email' && <EmailModal profileName={activeProfile.name} onClose={() => setModal(null)} onSend={emailReport} />}
-      {modal === 'schedules' && <ScheduledReportsModal recipients={recipients} canManage={canManageRecipients} deliveryEnabled={emailDelivery.enabled} disabledReason={emailDelivery.reason} defaultTimezone={snapshot?.restaurant?.timezone} onClose={() => setModal(null)} onSave={saveRecipient} onDelete={deleteRecipient} onTest={testRecipient} />}
+      {modal === 'schedules' && <ScheduledReportsModal recipients={recipients} loading={recipientsLoading} canManage={canManageRecipients} deliveryEnabled={emailDelivery.enabled} disabledReason={emailDelivery.reason} defaultTimezone={snapshot?.restaurant?.timezone} onClose={() => setModal(null)} onSave={saveRecipient} onDelete={deleteRecipient} onTest={testRecipient} />}
       {serverReceiptOpen && <ServerReceiptTemplateModal restaurantId={restaurantId} onClose={() => setServerReceiptOpen(false)} onSaved={() => setStatus('Server receipt layout saved restaurant-wide.')} />}
-      {receiptPrintOpen && <ReceiptPrintModal restaurantId={restaurantId} profileName={activeProfile.name} requestPayload={receiptPrintPayload} initialPreview={preloadedReceiptPreviews[receiptPreviewRequestKey] || null} onClose={() => setReceiptPrintOpen(false)} onPrinted={setStatus} />}
+      {receiptPrintOpen && <ReceiptPrintModal restaurantId={restaurantId} profileName={activeProfile.name} requestPayload={receiptPrintPayload} initialPreview={preloadedReceiptPreview} onClose={() => setReceiptPrintOpen(false)} onPrinted={setStatus} />}
     </div>
   )
 }
