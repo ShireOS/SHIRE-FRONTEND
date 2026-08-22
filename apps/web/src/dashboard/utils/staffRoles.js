@@ -41,10 +41,12 @@ export function canManageJobCode(authorityLevel, jobCode) {
 
 export function canManageStaffMember(authorityLevel, waiter, jobCodes = []) {
   const options = normalizeStaffRoleOptions(jobCodes)
-  return assignedStaffRoles(waiter, options).every((role) => {
+  const assignmentRanks = assignedStaffRoles(waiter, options).map((role) => {
     const jobCode = options.find(option => roleCodeFromJobCode(option) === role)
-    return canManageJobCode(authorityLevel, jobCode || { code: role, permission_tier: role })
+    return jobCodeAuthority(jobCode || { code: role, permission_tier: role })
   })
+  const targetRank = Math.max(staffAuthorityRank(waiter?.pos_role), ...assignmentRanks, 0)
+  return staffAuthorityRank(authorityLevel) >= targetRank
 }
 
 export function manageableTeamAccountTypes(

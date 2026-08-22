@@ -23,12 +23,18 @@
   later configuration changes do not rewrite historical labor or payroll.
 - **Server and Waiter are one working role.** `waiter` is a legacy alias that the
   dashboard renders as `Server`; new assignments prefer the active `server` job
-  code while waiter-only restaurants remain compatible. `waiters.pos_role` is a
-  POS permission tier and must never be used as the employee's primary job.
+  code while waiter-only restaurants remain compatible. `waiters.pos_role` is
+  the durable person-level POS authority (`normal`, `waiter`, or `manager`) and
+  must never be used as the employee's primary job. Job-code assignment writes
+  may promote it to a position's minimum tier but never lower it. A linked
+  Manager/Owner account requires `manager` POS authority.
   Restaurant-defined custom job codes remain distinct and selectable alongside
   the built-in roles.
 - **POS-side auth:** PIN identify → staff token (`get_current_waiter` →
-  `WaiterContext` in Shire_POS_backend). Manager-gated routes check `is_manager(ctx)`.
+  `WaiterContext` in Shire_POS_backend). One employee has one PIN and may choose
+  any assigned position at clock-in. The selected position controls workflow,
+  pay, tips, and the time-clock snapshot; POS capabilities use the highest
+  person authority independently. Manager-gated routes check `is_manager(ctx)`.
   Per-check gratuity overrides use the distinct `can_adjust_gratuity` role
   permission; they never reuse voluntary-tip permission `can_adjust_tips`.
   Add/change/remove mutations require an unpaid editable check and write the

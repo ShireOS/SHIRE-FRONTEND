@@ -175,9 +175,11 @@ export const backOfficeApi = {
       email?: string | null
       name?: string | null
       waiter_id?: string | null
+      pos_authority?: 'normal' | 'waiter' | 'manager' | null
       pos_profile?: {
         name: string
         pin?: string | null
+        pos_authority?: 'normal' | 'waiter' | 'manager' | null
         job_assignments: Record<string, unknown>[]
       } | null
       permissions: PermissionMap
@@ -224,7 +226,9 @@ export const backOfficeApi = {
   updateMember: (
     restaurantId: string,
     memberId: string,
-    patch: Partial<Pick<BackOfficeMember, 'permission_overrides' | 'status' | 'waiter_id' | 'display_name'>>,
+    patch: Partial<Pick<BackOfficeMember, 'permission_overrides' | 'status' | 'waiter_id' | 'display_name' | 'role'>> & {
+      pos_authority?: 'normal' | 'waiter' | 'manager'
+    },
   ): Promise<BackOfficeMember> =>
     fetchWithSupabaseAuth(`/restaurants/${restaurantId}/back-office/members/${memberId}`, {
       method: 'PATCH',

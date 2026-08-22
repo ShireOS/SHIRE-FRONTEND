@@ -91,6 +91,12 @@ test('staff authority uses the highest assigned role, not only the primary role'
   assert.equal(canManageStaffMember('owner', waiter, jobCodes), true)
 })
 
+test('staff authority includes person-level POS authority independently of positions', () => {
+  const waiter = { role: 'server', roles: ['server'], pos_role: 'manager' }
+  assert.equal(canManageStaffMember('staff', waiter, jobCodes), false)
+  assert.equal(canManageStaffMember('manager', waiter, jobCodes), true)
+})
+
 test('team account types follow peer-or-below authority', () => {
   assert.deepEqual(manageableTeamAccountTypes('manager'), ['employee', 'manager'])
   assert.deepEqual(manageableTeamAccountTypes('owner'), ['employee', 'manager', 'owner', 'reseller'])
