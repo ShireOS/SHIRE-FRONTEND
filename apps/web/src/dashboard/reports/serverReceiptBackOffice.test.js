@@ -60,7 +60,7 @@ test('POS report printing previews thermal output and follows physical delivery'
   assert.match(reportsPage, /\/manager\/report-hub\/receipt'/)
   assert.match(reportsPage, /\/manager\/report-hub\/receipt-jobs\//)
   assert.match(reportsPage, /crypto\.randomUUID\(\)/)
-  assert.match(reportsPage, /snapshot_id: snapshot\?\.print_snapshot_id/)
+  assert.match(reportsPage, /snapshot_id: snapshotCoversReceiptRequest\([\s\S]*\) \? snapshot\?\.print_snapshot_id \|\| null : null/)
   assert.match(reportsPage, /printer_context_id: preview\?\.printer_context_id/)
   assert.match(reportsPage, /render_token: preview\?\.render_token/)
   assert.match(reportsPage, /setPreloadedReceiptPreviews/)
