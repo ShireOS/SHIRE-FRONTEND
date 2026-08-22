@@ -217,6 +217,9 @@ surface independently, while every mutation is also guarded by the ML backend.
   POS requests refresh Supabase sessions through one single-flight coordinator:
   refresh before expiry, retry once after `401`, and never treat `403` as a
   token failure. Signing out clears restaurant-scoped query state.
+  After account type resolves, auth hydration loads independent owned-store,
+  membership, and reseller-portfolio scopes concurrently; each query keeps its
+  existing RLS boundary and error handling before results are deduplicated.
   UI previews default to the same-origin Expo exports under
   `apps/web/public/previews`; environment URLs may explicitly override them.
   Never add an implicit localhost or developer-machine fallback.

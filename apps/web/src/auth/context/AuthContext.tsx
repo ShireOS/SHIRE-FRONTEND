@@ -373,23 +373,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return resolved
       }
 
-      // Get restaurants where user is owner
-      const { data: ownedRestaurants, error: ownedError } = await withTimeout(
+      // These scopes are independent once account type is known. Run them
+      // together so cold auth hydration pays one network round trip instead of
+      // owned -> portfolio -> membership serial latency.
+      const ownedRequest = withTimeout(
         supabase
           .from('restaurants')
           .select('*')
           .eq('owner_id', userId),
         'Owned restaurant lookup timed out.'
       )
-
-      if (ownedError) {
-        console.warn('[Auth] Could not fetch owned restaurants:', ownedError.message)
-      }
-
-      // Resellers additionally see their assigned portfolio.
-      let portfolioRestaurants: Restaurant[] = []
-      if (accountType === 'reseller') {
-        const { data: assignments, error: portfolioError } = await withTimeout(
+      const portfolioRequest = accountType === 'reseller'
+        ? withTimeout(
           supabase
             .from('reseller_restaurants')
             .select('restaurant:restaurants(*)')
@@ -397,18 +392,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .eq('status', 'active'),
           'Reseller portfolio lookup timed out.'
         )
-        if (portfolioError) {
-          console.warn('[Auth] Could not fetch reseller portfolio:', portfolioError.message)
-        } else {
-          portfolioRestaurants = assignments
-            ?.map((a: any) => a.restaurant)
-            .filter(Boolean) || []
-        }
-      }
-
-      let memberRestaurants: Restaurant[] = []
-      if (!membershipQueryDisabledRef.current) {
-        const { data: memberships, error: memberError } = await withTimeout(
+        : Promise.resolve({ data: [], error: null })
+      const membershipRequest = !membershipQueryDisabledRef.current
+        ? withTimeout(
           supabase
             .from('restaurant_members')
             .select(`
@@ -419,14 +405,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .eq('status', 'active'),
           'Member restaurant lookup timed out.'
         )
+        : Promise.resolve({ data: [], error: null })
 
-        if (memberError) {
-          handleMembershipError(memberError.message, 'Could not fetch memberships (RLS may need setup)')
-        } else {
-          memberRestaurants = memberships
-            ?.map((m: any) => m.restaurant)
-            .filter(Boolean) || []
-        }
+      const [
+        { data: ownedRestaurants, error: ownedError },
+        { data: assignments, error: portfolioError },
+        { data: memberships, error: memberError },
+      ] = await Promise.all([ownedRequest, portfolioRequest, membershipRequest])
+
+      if (ownedError) {
+        console.warn('[Auth] Could not fetch owned restaurants:', ownedError.message)
+      }
+
+      // Resellers additionally see their assigned portfolio.
+      let portfolioRestaurants: Restaurant[] = []
+      if (portfolioError) {
+        console.warn('[Auth] Could not fetch reseller portfolio:', portfolioError.message)
+      } else {
+        portfolioRestaurants = assignments
+          ?.map((a: any) => a.restaurant)
+          .filter(Boolean) || []
+      }
+
+      let memberRestaurants: Restaurant[] = []
+      if (memberError) {
+        handleMembershipError(memberError.message, 'Could not fetch memberships (RLS may need setup)')
+      } else {
+        memberRestaurants = memberships
+          ?.map((m: any) => m.restaurant)
+          .filter(Boolean) || []
       }
 
       // Combine owned, member, and portfolio restaurants (dedupe)
