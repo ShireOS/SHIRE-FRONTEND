@@ -314,6 +314,12 @@ Alerts still loads the full authorized inbox and refreshes the shared count.
   the POS backend. Back Office exposes the resulting read-only daily/Z/PDF/XLSX/
   email reporting under the existing `reports.view` permission; it never writes
   cash ledger rows directly.
+- Interactive POS Reports uses the POS Report Hub's versioned receipt contract.
+  Snapshot loads have a bounded deadline, preserve the previous receipt while
+  refreshing, and surface deployment skew as an actionable service-version
+  error instead of `Not Found`. Release order is Restaurant ML first (verify
+  `/readyz` advertises `pos_reports.receipt.v3`), then POS backend, then this
+  frontend; authenticated snapshot/artifact/email smoke tests complete release.
 - The full POS check ledger appears both on the store Home page below analytics
   widgets and on the dedicated Checks route. Both locations reuse
   `CheckLedgerSection`, including Active/Closed/History, detail and activity-log

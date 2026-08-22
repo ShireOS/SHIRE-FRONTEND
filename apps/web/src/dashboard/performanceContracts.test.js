@@ -34,9 +34,11 @@ test('sidebar prefetch parameters match each destination initial query', () => {
   assert.match(dashboardShell, /guestFeedback\(restaurantId, 'open'\)[\s\S]*status=open/)
 })
 
-test('store tab navigation does not restart manager inbox polling', () => {
-  assert.match(dashboardShell, /\}, \[context, restaurantId\]\)/)
-  assert.doesNotMatch(dashboardShell, /\[context, restaurantId, activeItem\]/)
+test('shell badge polls the lightweight manager inbox count', () => {
+  assert.match(dashboardShell, /queryKeys\.managerInboxCount/)
+  assert.match(dashboardShell, /backOfficeApi\.managerInboxCount/)
+  assert.doesNotMatch(dashboardShell, /backOfficeApi\.managerInbox\(restaurantId, 'open'\)/)
+  assert.doesNotMatch(dashboardShell, /window\.setInterval/)
 })
 
 test('supplemental setup reads stay off ordinary operational pages', () => {
@@ -103,4 +105,18 @@ test('POS Reports caches snapshots and preloads only the active receipt on inten
   assert.match(reportsPage, /queryKeys\.reportReceiptPreview\(restaurantId, receiptPreviewRequestKey\)/)
   assert.match(reportsPage, /onIntent=\{\(\) => \{ void preloadReceiptPreview\(\) \}\}/)
   assert.doesNotMatch(reportsPage, /profiles\.filter\(\(candidate\) => candidate\.built_in\)/)
+})
+
+test('POS Reports bounds interactive snapshot waits and keeps refresh state visible', () => {
+  const snapshotRequest = between(
+    reportsPage,
+    "fetchPosApi(restaurantId, '/manager/report-hub/snapshot'",
+    'forceRefresh ? 0 : STALE_TIMES.reports',
+  )
+  assert.match(snapshotRequest, /timeoutMs: REPORT_SNAPSHOT_TIMEOUT_MS/)
+  assert.match(reportsPage, /const REPORT_SNAPSHOT_TIMEOUT_MS = 15_000/)
+  assert.match(reportsPage, /aria-busy=\{loading\}/)
+  assert.match(reportsPage, /Updating POS report…/)
+  assert.match(reportsPage, /Loading POS report…/)
+  assert.match(reportsPage, /reporting services are running incompatible versions/)
 })

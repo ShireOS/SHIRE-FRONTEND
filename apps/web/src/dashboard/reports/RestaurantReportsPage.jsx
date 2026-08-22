@@ -85,6 +85,16 @@ const PERIOD_OPTIONS = [
   { id: 'year', label: 'This year' },
   { id: 'custom', label: 'Custom' },
 ]
+const REPORT_SNAPSHOT_TIMEOUT_MS = 15_000
+
+function reportLoadErrorMessage(error) {
+  const message = error instanceof Error ? error.message : 'Could not load the POS report.'
+  const status = Number(error?.status || 0)
+  if ([404, 502, 503].includes(status) && ['not found', '404 not found'].includes(message.trim().toLowerCase())) {
+    return 'POS Reports is unavailable because the reporting services are running incompatible versions. Deploy matching POS and Restaurant reporting backend versions, then retry.'
+  }
+  return message
+}
 
 // Existing scheduler rows keep their legacy attachment contract while the
 // interactive POS report uses the new receipt-group contract.
@@ -811,6 +821,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
           method: 'POST',
           body: requestKey,
           signal: controller.signal,
+          timeoutMs: REPORT_SNAPSHOT_TIMEOUT_MS,
         }),
         forceRefresh ? 0 : STALE_TIMES.reports,
       )
@@ -819,7 +830,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       if (!profiles.length) setProfiles(withRequiredBuiltInProfiles([], next.default_profiles || DEFAULT_PROFILES))
     } catch (nextError) {
       if (loadRequestRef.current === requestId && !controller.signal.aborted) {
-        setError(nextError instanceof Error ? nextError.message : 'Could not load the POS report.')
+        setError(reportLoadErrorMessage(nextError))
       }
     } finally {
       if (loadRequestRef.current === requestId) {
@@ -1016,7 +1027,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   })()
 
   return (
-    <div className="mx-auto w-full max-w-7xl overflow-x-hidden pb-12">
+    <div aria-busy={loading} className="mx-auto w-full max-w-7xl overflow-x-hidden pb-12">
       <header className="sticky top-0 z-30 -mx-3 border-b border-white/10 bg-dash-base/95 px-3 py-4 backdrop-blur-xl sm:-mx-5 sm:px-5">
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1048,9 +1059,10 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
         </div>
       </header>
 
+      {loading && snapshot && <div role="status" aria-live="polite" className="my-4 flex items-center gap-2 rounded-md border border-dash-gold/20 bg-dash-gold/10 px-3 py-2 text-sm text-dash-cream"><RefreshCw className="h-4 w-4 animate-spin text-dash-gold" /><span>Updating POS report…</span></div>}
       {error && <div className="my-5 rounded-md border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">{error}</div>}
       {status && <div className="my-4 flex items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-secondary"><span>{status}</span><button type="button" title="Dismiss" onClick={() => setStatus('')} className="rounded p-1 hover:bg-white/10"><X className="h-4 w-4" /></button></div>}
-      {loading && !snapshot && <div className="flex min-h-72 items-center justify-center"><RefreshCw className="h-6 w-6 animate-spin text-dash-gold" /></div>}
+      {loading && !snapshot && <div role="status" aria-live="polite" className="flex min-h-72 flex-col items-center justify-center gap-3 text-sm text-dash-secondary"><RefreshCw className="h-6 w-6 animate-spin text-dash-gold" /><span>Loading POS report…</span></div>}
       {snapshot && <div className="py-6 sm:py-8"><DigitalReceipt snapshot={snapshot} profile={activeProfile} /></div>}
 
       {modal === 'scope' && <ScopeModal value={scope} dimensions={dimensions} loading={dimensionsLoading} error={dimensionsError} onClose={() => setModal(null)} onApply={(next) => { setScope(next); setModal(null) }} />}
