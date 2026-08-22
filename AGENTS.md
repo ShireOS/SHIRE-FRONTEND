@@ -14,6 +14,12 @@
   employee is allowed to work. At clock-in the employee (or manager) picks one of
   their allowed roles; that role is snapshotted onto `pos_time_clock_entries.role`
   and is what payroll/tip-out groups by.
+- **One active employee owns one unique POS PIN per restaurant.** Team creation
+  requires an explicit four-digit PIN, and both staff backends reject a PIN that
+  is already assigned to another active employee rather than relying on a shared
+  default that makes PIN identification ambiguous. POS authentication rejects
+  legacy duplicates instead of selecting an arbitrary employee; Team marks those
+  rows so an authorized manager can assign distinct PINs.
 - **Pay is per employee-position assignment.** `job_codes.default_hourly_rate`
   is the restaurant default and `employee_job_codes.hourly_rate_override` is an
   optional employee-specific rate for that one position. Team -> Employees ->

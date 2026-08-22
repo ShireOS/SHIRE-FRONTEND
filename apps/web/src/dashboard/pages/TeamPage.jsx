@@ -444,7 +444,7 @@ function AddTeamMemberModal({ restaurantId, waiters, jobCodes, roleDefaultsForRo
   const [waiterId, setWaiterId] = useState(initialWaiterId || '')
   const [role, setRole] = useState(initialAccountRole)
   const [posMode, setPosMode] = useState(initialWaiterId ? 'existing' : initialAccountRole === 'reseller' ? 'none' : 'new')
-  const [pin, setPin] = useState('')
+  const [pin, setPin] = useState(() => randomPin())
   const [rows, setRows] = useState(initialRows)
   const [posAuthority, setPosAuthority] = useState(() => highestPosAuthority(
     initialWaiter?.pos_role,
@@ -508,7 +508,7 @@ function AddTeamMemberModal({ restaurantId, waiters, jobCodes, roleDefaultsForRo
         setError('Name is required for a POS employee.')
         return
       }
-      if (pin && !/^\d{4}$/.test(pin)) {
+      if (!/^\d{4}$/.test(pin)) {
         setError('POS PIN must be exactly 4 digits.')
         return
       }
@@ -531,7 +531,7 @@ function AddTeamMemberModal({ restaurantId, waiters, jobCodes, roleDefaultsForRo
           pos_authority: posMode === 'existing' ? effectivePosAuthority : null,
           pos_profile: posMode === 'new' ? {
             name: name.trim(),
-            pin: pin || null,
+            pin,
             pos_authority: effectivePosAuthority,
             job_assignments: staffPayPayload(rows),
           } : null,
@@ -667,13 +667,13 @@ function AddTeamMemberModal({ restaurantId, waiters, jobCodes, roleDefaultsForRo
                       />
                     </label>
                     <label>
-                      <span className="label-mono !text-[9px]">POS PIN (optional)</span>
+                      <span className="label-mono !text-[9px]">POS PIN</span>
                       <input
                         inputMode="numeric"
                         autoComplete="off"
                         value={pin}
                         maxLength={4}
-                        placeholder="Defaults to 1111"
+                        placeholder="4 digits"
                         disabled={busy}
                         onChange={(event) => setPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
                         className="mt-1 w-full rounded-xl border border-dash-border bg-[var(--glass-bg)] px-3 py-2 font-mono text-sm tabular-nums text-dash-cream outline-none placeholder:font-sans placeholder:text-dash-tertiary focus:border-shell-accent/60"
@@ -1157,6 +1157,18 @@ export default function TeamPage({ restaurantId }) {
       }))
     return people
   }, [boInvites, boMembers, waiters])
+  const duplicateActivePins = useMemo(() => {
+    const counts = new Map()
+    waiters
+      .filter(waiter => waiter.is_active !== false && waiter.pos_passcode)
+      .forEach(waiter => counts.set(
+        String(waiter.pos_passcode),
+        (counts.get(String(waiter.pos_passcode)) || 0) + 1,
+      ))
+    return new Set([...counts.entries()].filter(([, count]) => count > 1).map(([pin]) => pin))
+  }, [waiters])
+  const hasPinConflicts = duplicateActivePins.size > 0
+    || waiters.some(waiter => waiter.is_active !== false && waiter.pin_conflict)
 
   const act = async (fn) => {
     setError(null)
@@ -1321,6 +1333,12 @@ export default function TeamPage({ restaurantId }) {
             </button>
           )}
 
+          {hasPinConflicts && (
+            <p className="py-3 text-sm text-dash-warning">
+              Some active POS identities share a PIN. Update every row marked below before those employees sign in.
+            </p>
+          )}
+
           {teamPeople.map(({ key, waiter, member, invitation }) => {
             const payRows = waiter ? staffPayDrafts(waiter, roleOptions).filter(row => row.selected) : []
             const primaryRole = waiter ? primaryStaffRole(waiter, roleOptions) : null
@@ -1337,6 +1355,13 @@ export default function TeamPage({ restaurantId }) {
             const suspended = member?.status === 'suspended'
             const displayName = waiter?.name || member?.display_name || invitation?.name || member?.email || invitation?.email
             const accountRole = member?.role || invitation?.role || null
+            const hasDuplicatePin = Boolean(
+              waiter?.is_active !== false
+              && (
+                waiter?.pin_conflict
+                || duplicateActivePins.has(String(waiter?.pos_passcode || ''))
+              ),
+            )
             return (
               <div key={key} className="flex flex-wrap items-center gap-3 py-3">
                 <span className="min-w-[190px] flex-1">
@@ -1356,6 +1381,7 @@ export default function TeamPage({ restaurantId }) {
                   <span className="mt-1 flex flex-wrap gap-1.5">
                     <Badge variant="neutral">{accountRole ? memberTypeLabel(accountRole) : 'POS only'}</Badge>
                     {waiter && <Badge variant="neutral">{posAuthorityLabel(waiter.pos_role)} POS</Badge>}
+                    {hasDuplicatePin && <Badge variant="warning" dot>duplicate PIN</Badge>}
                     {invitation && <Badge variant="gold" dot>invite pending</Badge>}
                     {suspended && <Badge variant="warning" dot>suspended</Badge>}
                   </span>
