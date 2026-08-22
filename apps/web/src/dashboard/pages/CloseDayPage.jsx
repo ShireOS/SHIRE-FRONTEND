@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -12,16 +13,20 @@ import {
   X,
 } from 'lucide-react'
 import { posCloseDayApi } from '../../shared/api/posClient'
-import { queryClient } from '../../shared/query'
+import { fetchWithSupabaseAuth, queryClient } from '../../shared/query'
 import {
   ReconciliationBanner,
   acknowledgeReconciliation,
   failedChecks,
-  fetchReconciliation,
 } from '../../shared/components/ReconciliationBanner'
 import { useAuth } from '../../auth'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import CashCloseDaySettings from '../components/CashCloseDaySettings'
+import {
+  closeDayOperationKey,
+  isAlternateCloseDayPreviewKey,
+  mergeCloseDaySettings,
+} from '../closeDayState'
 
 const INITIAL_CASH = {
   opening_bank: '0.00',
@@ -33,6 +38,28 @@ const INITIAL_CASH = {
   deposit_amount: '0.00',
   variance_reason: '',
 }
+
+const CLOSE_DAY_PREVIEW_STALE_MS = 10_000
+const CLOSE_DAY_RECONCILIATION_STALE_MS = 30_000
+const CLOSE_DAY_RECONCILIATION_TIMEOUT_MS = 15_000
+
+const closeDayPreviewKey = (restaurantId, businessDate) => [
+  'close-day-preview',
+  restaurantId,
+  businessDate || 'active',
+]
+
+const closeDayReconciliationKey = (restaurantId, businessDate) => [
+  'close-day-reconciliation',
+  restaurantId,
+  businessDate,
+]
+
+const fetchCloseDayReconciliation = (restaurantId, businessDate, signal) =>
+  fetchWithSupabaseAuth(
+    `/restaurants/${restaurantId}/reports/reconciliation?start_date=${businessDate}&end_date=${businessDate}`,
+    { signal, timeoutMs: CLOSE_DAY_RECONCILIATION_TIMEOUT_MS },
+  )
 
 const money = (value) => new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -120,72 +147,87 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const navigate = useNavigate()
   const auth = useAuth()
   const access = useBackOfficeAccess(auth, restaurantId)
-  const [preview, setPreview] = useState(null)
+  const [selectedBusinessDate, setSelectedBusinessDate] = useState(null)
   const [cash, setCash] = useState(INITIAL_CASH)
-  const [loading, setLoading] = useState(true)
   const [closing, setClosing] = useState(false)
   const [error, setError] = useState('')
   const [modal, setModal] = useState(null)
   const [result, setResult] = useState(null)
   const [clockOutEntryIds, setClockOutEntryIds] = useState([])
   const [recentActivityConfirmed, setRecentActivityConfirmed] = useState(false)
-  const [recon, setRecon] = useState(null)
-  const [reconLoading, setReconLoading] = useState(false)
   const [cashCountStatus, setCashCountStatus] = useState('counted')
   const [uncountedCashReason, setUncountedCashReason] = useState('')
   const [verificationReason, setVerificationReason] = useState('')
   const [verificationExceptionStatus, setVerificationExceptionStatus] = useState(null)
   const attemptId = useRef(newAttemptId())
-  const cashBusinessDate = useRef(null)
+  const closeOperationKey = useRef(null)
 
-  const loadPreview = useCallback(async (businessDate) => {
-    setLoading(true)
+  const previewQuery = useQuery({
+    queryKey: closeDayPreviewKey(restaurantId, selectedBusinessDate),
+    queryFn: ({ signal }) => posCloseDayApi.preview(
+      restaurantId,
+      selectedBusinessDate || undefined,
+      signal,
+    ),
+    enabled: Boolean(restaurantId),
+    staleTime: CLOSE_DAY_PREVIEW_STALE_MS,
+    // fetchPosApi already performs one bounded transport retry inside this
+    // request's deadline. A React Query retry would start a second deadline
+    // and turn a 20-second outage into a roughly 40-second loading state.
+    retry: 0,
+  })
+  const preview = previewQuery.data || null
+  const previewBusinessDate = preview?.business_date || null
+  const previewIsClosed = preview?.business_day?.status === 'closed'
+  const reconciliationQuery = useQuery({
+    queryKey: closeDayReconciliationKey(restaurantId, previewBusinessDate),
+    queryFn: ({ signal }) => fetchCloseDayReconciliation(
+      restaurantId,
+      previewBusinessDate,
+      signal,
+    ),
+    enabled: Boolean(restaurantId && previewBusinessDate && !previewIsClosed),
+    staleTime: CLOSE_DAY_RECONCILIATION_STALE_MS,
+    retry: 0,
+  })
+  const recon = reconciliationQuery.data || null
+  const reconLoading = Boolean(previewBusinessDate && !previewIsClosed)
+    && reconciliationQuery.isFetching
+  const loading = previewQuery.isFetching
+  const loadError = previewQuery.isError
+    ? previewQuery.error instanceof Error
+      ? previewQuery.error.message
+      : 'Could not load close-day readiness.'
+    : ''
+
+  const loadPreview = useCallback((businessDate) => {
     setError('')
-    try {
-      const next = await posCloseDayApi.preview(restaurantId, businessDate)
-      setPreview(next)
-      if (next?.business_date) {
-        setReconLoading(true)
-        try {
-          setRecon(await fetchReconciliation(restaurantId, next.business_date, next.business_date))
-        } catch {
-          setRecon(null)
-        } finally {
-          setReconLoading(false)
-        }
-      }
-      setClockOutEntryIds((next.open_timeclock_entries || []).map((entry) => entry.id))
-      if (cashBusinessDate.current !== next.business_date) {
-        const reconciliation = next.cash_reconciliation || {}
-        cashBusinessDate.current = next.business_date
-        attemptId.current = newAttemptId()
-        setRecentActivityConfirmed(false)
-        setResult(null)
-        setCashCountStatus('counted')
-        setUncountedCashReason('')
-        setVerificationReason('')
-        setVerificationExceptionStatus(null)
-        setCash((current) => ({
-          ...current,
-          opening_bank: Number(reconciliation.opening_bank || 0).toFixed(2),
-          paid_in: Number(reconciliation.paid_in || 0).toFixed(2),
-          paid_out: Number(reconciliation.paid_out || 0).toFixed(2),
-          cash_refunds: Number(reconciliation.cash_refunds || 0).toFixed(2),
-          counted_cash: '',
-          retained_bank: '0.00',
-          deposit_amount: '0.00',
-          variance_reason: '',
-        }))
-      }
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Could not load close-day readiness.')
-    } finally {
-      setLoading(false)
+    const nextDate = businessDate || null
+    if (nextDate === selectedBusinessDate) {
+      return previewQuery.refetch()
     }
-  }, [restaurantId])
+    setSelectedBusinessDate(nextDate)
+    return Promise.resolve()
+  }, [previewQuery, selectedBusinessDate])
+
+  const refreshPreview = useCallback(() => {
+    setError('')
+    const requests = [previewQuery.refetch()]
+    if (previewBusinessDate && !previewIsClosed) {
+      requests.push(reconciliationQuery.refetch())
+    }
+    return Promise.all(requests)
+  }, [previewBusinessDate, previewIsClosed, previewQuery, reconciliationQuery])
+
+  const replacePreview = useCallback((nextPreviewOrUpdater) => {
+    queryClient.setQueryData(
+      closeDayPreviewKey(restaurantId, selectedBusinessDate),
+      nextPreviewOrUpdater,
+    )
+  }, [restaurantId, selectedBusinessDate])
 
   useEffect(() => {
-    cashBusinessDate.current = null
+    closeOperationKey.current = null
     attemptId.current = newAttemptId()
     setCash(INITIAL_CASH)
     setCashCountStatus('counted')
@@ -193,8 +235,39 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     setVerificationReason('')
     setVerificationExceptionStatus(null)
     setResult(null)
-    void loadPreview()
-  }, [loadPreview])
+    setSelectedBusinessDate(null)
+  }, [restaurantId])
+
+  useEffect(() => {
+    if (!preview?.business_date) return
+    setClockOutEntryIds((preview.open_timeclock_entries || []).map((entry) => entry.id))
+    // A restaurant can close more than once on one business date when fresh
+    // activity arrives after an earlier seal. Scope all client-side attempt
+    // state to that numbered close period so an old idempotency key can never
+    // replay the prior close.
+    const operationKey = closeDayOperationKey(preview)
+    if (closeOperationKey.current === operationKey) return
+    const reconciliation = preview.cash_reconciliation || {}
+    closeOperationKey.current = operationKey
+    attemptId.current = newAttemptId()
+    setRecentActivityConfirmed(false)
+    setResult(null)
+    setCashCountStatus('counted')
+    setUncountedCashReason('')
+    setVerificationReason('')
+    setVerificationExceptionStatus(null)
+    setCash((current) => ({
+      ...current,
+      opening_bank: Number(reconciliation.opening_bank || 0).toFixed(2),
+      paid_in: Number(reconciliation.paid_in || 0).toFixed(2),
+      paid_out: Number(reconciliation.paid_out || 0).toFixed(2),
+      cash_refunds: Number(reconciliation.cash_refunds || 0).toFixed(2),
+      counted_cash: '',
+      retained_bank: '0.00',
+      deposit_amount: '0.00',
+      variance_reason: '',
+    }))
+  }, [preview])
 
   const closeoutSettings = preview?.closeout_settings
   const openingBankPolicy = preview?.cash_reconciliation?.opening_bank_policy
@@ -208,7 +281,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const variance = cashCountStatus === 'counted' ? numberValue(cash.counted_cash) - expectedCash : null
   const threshold = Number(preview?.closeout_settings?.cash_variance_threshold || 0)
   const openEmployees = preview?.open_timeclock_entries || []
-  const isClosed = preview?.business_day?.status === 'closed'
+  const isClosed = previewIsClosed
   const unresolvedExceptions = Number(preview?.exception_count || 0)
   const blockingExceptions = Number(preview?.blocking_exception_count || 0)
   const pendingPrintJobs = Number(preview?.pending_print_jobs || 0)
@@ -267,7 +340,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const handleConflict = (nextError) => {
     const detail = nextError?.detail
     if (detail && typeof detail === 'object') {
-      if (detail.totals) setPreview(detail.totals)
+      if (detail.totals) replacePreview(detail.totals)
       if (detail.code === 'open_checks') {
         setModal('open-checks')
         return
@@ -341,7 +414,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         verification_reason: verificationStatus !== 'verified' ? verificationReason.trim() : undefined,
       })
       setResult(closed)
-      setPreview({
+      replacePreview({
         ...closed.totals,
         business_date: closed.business_date,
         active_business_date: closed.active_business_date,
@@ -352,6 +425,13 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
           closed_at: closed.closed_at,
         },
       })
+      queryClient.removeQueries({
+        predicate: (query) => isAlternateCloseDayPreviewKey(
+          query.queryKey,
+          restaurantId,
+          selectedBusinessDate,
+        ),
+      })
       setModal('success')
       if (reconMismatches.length > 0) {
         acknowledgeReconciliation(restaurantId, {
@@ -361,14 +441,9 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
           mismatches: reconMismatches.slice(0, 20),
         }).catch(() => {})
       }
-      try {
-        setPreview(await posCloseDayApi.preview(restaurantId, closed.business_date))
-      } catch {
-        // The close already succeeded; keep the normalized closed response if
-        // the follow-up read is temporarily unavailable.
-      }
       await queryClient.invalidateQueries({
-        predicate: (query) => query.queryKey.some((part) => part === restaurantId),
+        predicate: (query) => query.queryKey[0] !== 'close-day-preview'
+          && query.queryKey.some((part) => part === restaurantId),
       })
     } catch (nextError) {
       handleConflict(nextError)
@@ -391,10 +466,6 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       setError('Resolve pending print work on the POS before closing remotely.')
       return
     }
-    if (reconLoading) {
-      setError('Wait for independent financial verification to finish before closing.')
-      return
-    }
     if (verificationStatus !== 'verified' && !verificationReviewed) {
       setModal('verification')
       return
@@ -404,10 +475,6 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       return
     }
     setModal(openEmployees.length ? 'employees' : 'confirm')
-  }
-
-  if (loading && !preview) {
-    return <div className="flex min-h-[55vh] items-center justify-center text-sm text-dash-secondary">Loading close-day readiness...</div>
   }
 
   return (
@@ -420,20 +487,35 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             Finalize {restaurantName || 'this restaurant'} remotely using the same audited close used by the POS.
           </p>
         </div>
-        <button type="button" onClick={() => void loadPreview()} disabled={loading || closing} className="flex min-h-[40px] items-center gap-2 border border-dash-border px-4 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">
+        <button type="button" onClick={() => void refreshPreview()} disabled={loading || closing || !restaurantId} className="flex min-h-[40px] items-center gap-2 border border-dash-border px-4 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">
           <RefreshCw size={15} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
-          Refresh
+          {loading && preview ? 'Updating…' : 'Refresh'}
         </button>
       </header>
 
-      {error && (
+      {(error || loadError) && (
         <div className="flex items-start gap-3 border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
           <AlertTriangle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <p>{error}</p>
+          <p>{error || loadError}</p>
         </div>
       )}
 
-      {access.viewVisible('close_day.readiness') && <>
+      {!preview && (
+        <section className="border border-dash-border bg-[var(--glass-bg)] p-5" aria-live="polite">
+          <div className="flex items-center gap-3 text-sm font-semibold text-dash-cream">
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
+            {loading ? 'Loading live POS readiness…' : 'Close Day readiness is unavailable.'}
+          </div>
+          <p className="mt-2 text-sm text-dash-tertiary">
+            The page is ready. Sales, open checks, cash, and employee status will appear as soon as the POS responds.
+          </p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-4" aria-hidden="true">
+            {[0, 1, 2, 3].map((item) => <div key={item} className="h-20 animate-pulse border border-dash-border bg-white/[0.025]" />)}
+          </div>
+        </section>
+      )}
+
+      {preview && access.viewVisible('close_day.readiness') && <>
         {overdueCloseAlerts.length > 0 && (
           <section className="border border-amber-400/40 bg-amber-500/10 p-4">
             <div className="flex items-start gap-3"><AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-300" aria-hidden="true" /><div className="min-w-0 flex-1"><h2 className="font-semibold text-amber-100">Close Day overdue</h2><p className="mt-1 text-sm text-amber-100/75">The backend watchdog found business activity that crossed the restaurant’s day boundary without a completed close.</p><div className="mt-3 flex flex-wrap gap-2">{overdueCloseAlerts.map((alert) => <button type="button" key={alert.id} onClick={() => void loadPreview(alert.business_date)} className="border border-amber-300/35 px-3 py-2 text-xs font-semibold text-amber-100">Review {alert.business_date}</button>)}</div></div></div>
@@ -456,7 +538,14 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         />
       )}
 
-      {isClosed ? (
+      {preview && !isClosed && reconLoading && (
+        <div className="flex items-center gap-3 border border-sky-400/25 bg-sky-400/[0.06] px-4 py-3 text-sm text-sky-100" aria-live="polite">
+          <RefreshCw size={16} className="animate-spin" aria-hidden="true" />
+          POS readiness is available. Independently verifying transaction totals in the background…
+        </div>
+      )}
+
+      {preview && (isClosed ? (
         <section className="flex items-start gap-4 border border-emerald-400/35 bg-emerald-500/10 p-5">
           <CheckCircle2 size={24} className="shrink-0 text-emerald-300" aria-hidden="true" />
           <div>
@@ -559,9 +648,16 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             </button>}
           </section>}
         </div>
-      )}
+      ))}
 
-      {access.can('settings.edit') && access.viewMode('close_day.cash') === 'full' && <CashCloseDaySettings restaurantId={restaurantId} />}
+      {preview && access.can('settings.edit') && access.viewMode('close_day.cash') === 'full' && (
+        <CashCloseDaySettings
+          key={`${restaurantId}:${preview.business_date}`}
+          restaurantId={restaurantId}
+          initialSettings={preview.closeout_settings}
+          onSaved={(settings) => replacePreview((current) => mergeCloseDaySettings(current, settings))}
+        />
+      )}
 
       {modal === 'open-checks' && (
         <ActionModal

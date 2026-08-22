@@ -146,19 +146,23 @@ function ManagerPreview({ floatMode, floatAmount, blindClose, trackDeposit }) {
   )
 }
 
-export default function CashCloseDaySettings({ restaurantId }) {
-  const [settings, setSettings] = useState(null)
-  const [loading, setLoading] = useState(true)
+export default function CashCloseDaySettings({ restaurantId, initialSettings = null, onSaved }) {
+  const [settings, setSettings] = useState(initialSettings)
+  const [loading, setLoading] = useState(!initialSettings)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState('')
 
-  const [floatMode, setFloatMode] = useState(FLOAT_MODES.none)
-  const [floatAmount, setFloatAmount] = useState('')
-  const [blindClose, setBlindClose] = useState(true)
-  const [trackDeposit, setTrackDeposit] = useState(false)
-  const [showClockoutOptions, setShowClockoutOptions] = useState(false)
-  const [varianceThreshold, setVarianceThreshold] = useState('')
+  const [floatMode, setFloatMode] = useState(() => floatModeFrom(initialSettings))
+  const [floatAmount, setFloatAmount] = useState(() => (
+    initialSettings?.opening_bank_default == null ? '' : sanitizeMoney(initialSettings.opening_bank_default)
+  ))
+  const [blindClose, setBlindClose] = useState(initialSettings?.blind_drawer_close !== false)
+  const [trackDeposit, setTrackDeposit] = useState(initialSettings?.track_deposit_at_close === true)
+  const [showClockoutOptions, setShowClockoutOptions] = useState(initialSettings?.show_clockout_options_at_close === true)
+  const [varianceThreshold, setVarianceThreshold] = useState(() => (
+    initialSettings?.cash_variance_threshold == null ? '' : sanitizeMoney(initialSettings.cash_variance_threshold)
+  ))
 
   const hydrate = useCallback((row) => {
     setSettings(row)
@@ -172,17 +176,23 @@ export default function CashCloseDaySettings({ restaurantId }) {
 
   useEffect(() => {
     if (!restaurantId) return undefined
+    if (initialSettings) {
+      setLoading(false)
+      return undefined
+    }
     let active = true
     setLoading(true)
     setError('')
-    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`)
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`, {
+      timeoutMs: 15_000,
+    })
       .then((row) => { if (active) hydrate(row) })
       .catch((nextError) => {
         if (active) setError(nextError instanceof Error ? nextError.message : 'Could not load cash settings.')
       })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [restaurantId, hydrate])
+  }, [restaurantId, initialSettings, hydrate])
 
   const dirty = useMemo(() => {
     if (!settings) return false
@@ -195,16 +205,28 @@ export default function CashCloseDaySettings({ restaurantId }) {
       || (varianceThreshold === '' ? null : Number(varianceThreshold)) !== (settings.cash_variance_threshold == null ? null : Number(settings.cash_variance_threshold))
   }, [settings, floatMode, floatAmount, blindClose, trackDeposit, showClockoutOptions, varianceThreshold])
 
+  useEffect(() => {
+    if (!initialSettings || saving || dirty) return
+    hydrate(initialSettings)
+    setLoading(false)
+  }, [dirty, hydrate, initialSettings, saving])
+
   const save = async () => {
     if (!settings || saving) return
     setSaving(true)
     setError('')
     setSaved('')
     try {
+      // The preview contains only the Close Day subset. Fetch the complete row
+      // at save time so fields owned by Setup or Server Reports are preserved,
+      // without putting this secondary request on the page-entry critical path.
+      const latestSettings = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`, {
+        timeoutMs: 15_000,
+      })
       const saveResult = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`, {
         method: 'PUT',
         body: JSON.stringify({
-          ...settings,
+          ...latestSettings,
           // Legacy clients still understand this field, but opening cash is no
           // longer a cashier-entered prerequisite in any policy mode.
           require_starting_bank: false,
@@ -217,6 +239,7 @@ export default function CashCloseDaySettings({ restaurantId }) {
         }),
       })
       hydrate(saveResult)
+      onSaved?.(saveResult)
       setSaved('Saved. The change reaches the iPad the next time a manager opens Close Day.')
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Could not save cash settings.')

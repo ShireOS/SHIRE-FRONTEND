@@ -239,6 +239,7 @@ export interface CloseDayPreview {
   open_checks: number
   exception_count?: number
   blocking_exception_count?: number
+  exception_details_truncated?: boolean
   exceptions?: Array<Record<string, unknown>>
   overdue_close_alerts?: Array<{
     id: string
@@ -357,8 +358,12 @@ export interface CloseDayResult {
 
 export const posCloseDayApi = {
   preview: (restaurantId: string, businessDate?: string, signal?: AbortSignal) => {
-    const query = businessDate ? `?business_date=${encodeURIComponent(businessDate)}` : ''
-    return fetchPosApi<CloseDayPreview>(restaurantId, `/manager/close-day/preview${query}`, { signal })
+    const query = new URLSearchParams({ compact: 'true' })
+    if (businessDate) query.set('business_date', businessDate)
+    return fetchPosApi<CloseDayPreview>(restaurantId, `/manager/close-day/preview?${query}`, {
+      signal,
+      timeoutMs: 20_000,
+    })
   },
   finalize: (restaurantId: string, input: CloseDayFinalizeInput) =>
     fetchPosApi(restaurantId, '/manager/close-day', {

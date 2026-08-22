@@ -357,7 +357,12 @@ Alerts still loads the full authorized inbox and refreshes the shared count.
   retain the manager adjustment audit. Owner access uses
   `operations.close_day`; reseller stores additionally require the owner-granted
   `reseller_restaurants.permissions.close_day`, and reseller employees require
-  their own `permissions.close_day` plus restaurant/group access.
+  their own `permissions.close_day` plus restaurant/group access. Page entry
+  requests the compact POS readiness contract and loads report-service
+  reconciliation independently; a slow reconciliation may enter the existing
+  explicit unverified-reason flow but must never block the authoritative POS
+  close. Client attempt state is scoped to the numbered close period, and a
+  successful close removes alternate active/date preview cache entries.
 - Portfolio email recipient schedules are shared reseller setup: the reseller
   account and its active employees see the same recipient list, and the same
   scope is enforced for edit, delete, test-send, and delivery history. Platform

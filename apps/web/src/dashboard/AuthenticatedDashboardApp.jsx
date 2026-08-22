@@ -5435,7 +5435,7 @@ export function RestaurantWorkspace({
         )}
         {activeTab === 'checks' && <CheckLedgerSection restaurantId={restaurantId} />}
         {activeTab === 'reports' && <RestaurantReportsPage restaurantId={restaurantId} restaurantName={restaurant?.name} canConfigureServerReceipt={backOfficeAccess.can('settings.edit')} viewPolicy={backOfficeAccess.viewPolicy} />}
-        {activeTab === 'close-day' && <CloseDayPage restaurantId={restaurantId} restaurantName={restaurant?.name} />}
+        {activeTab === 'close-day' && <CloseDayPage key={restaurantId} restaurantId={restaurantId} restaurantName={restaurant?.name} />}
         {activeTab === 'store-information' && (
           <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[
             ...(backOfficeAccess.viewVisible('store.basics') ? ['basics'] : []),
