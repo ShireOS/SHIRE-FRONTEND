@@ -355,7 +355,10 @@ gate; the bell remains disabled while access is unresolved or denied.
 - Cash drawer access is role-first: No Sale requires `can_no_sale` plus
   `can_open_cash_drawer`; employee `pos_permissions_override` may explicitly
   allow or deny those two keys. Movements require `can_paid_in_out` plus
-  `can_open_cash_drawer`. The restaurant-wide `require_manager_for_drawer_open`
+  `can_open_cash_drawer`. Bartender role defaults grant both drawer-open and No
+  Sale; the one-time POS rollout changes only untouched legacy/missing rows, so
+  later restaurant role edits and employee overrides still win. The
+  restaurant-wide `require_manager_for_drawer_open`
   forces manager approval for No Sale; the generic role approval flag continues
   to protect movements and other sensitive actions. Every pulse still requires
   a drawer assigned directly to the requesting terminal, even after manager

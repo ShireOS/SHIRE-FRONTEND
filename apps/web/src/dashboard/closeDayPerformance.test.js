@@ -5,6 +5,7 @@ import {
   closeDayOperationKey,
   isAlternateCloseDayPreviewKey,
   mergeCloseDaySettings,
+  reconcileClockOutEntryIds,
 } from './closeDayState.js'
 
 const page = readFileSync(new URL('./pages/CloseDayPage.jsx', import.meta.url), 'utf8')
@@ -47,8 +48,43 @@ test('Close Day scopes idempotency and operator state to each numbered close per
     close_period: { sequence: 2, previous_close_id: 'second', opened_at: '18:00' },
   })
   assert.notEqual(first, second)
-  assert.match(page, /closeOperationKey\.current === operationKey/)
+  assert.match(page, /const operationChanged = closeOperationKey\.current !== operationKey/)
   assert.match(page, /closeOperationKey\.current = operationKey[\s\S]*attemptId\.current = newAttemptId\(\)/)
+})
+
+test('same-period readiness expands default Everyone but preserves a customized subset', () => {
+  const openEntries = [{ id: 'new' }, { id: 'selected' }, { id: 'also-open' }]
+
+  assert.deepEqual(
+    reconcileClockOutEntryIds(['selected'], openEntries, false, false),
+    ['new', 'selected', 'also-open'],
+  )
+  assert.deepEqual(
+    reconcileClockOutEntryIds(['selected', 'now-closed'], openEntries, false, true),
+    ['selected'],
+  )
+  assert.deepEqual(
+    reconcileClockOutEntryIds([], openEntries, false, true),
+    [],
+  )
+  assert.deepEqual(
+    reconcileClockOutEntryIds(['selected'], openEntries, true, true),
+    ['new', 'selected', 'also-open'],
+  )
+  assert.match(page, /const operationChanged = closeOperationKey\.current !== operationKey/)
+  assert.match(page, /reconcileClockOutEntryIds\([\s\S]*operationChanged,[\s\S]*clockOutSelectionCustomized\.current/)
+  assert.match(page, /selectAllClockOutEntries[\s\S]*clockOutSelectionCustomized\.current = false/)
+  assert.match(page, /selectNoClockOutEntries[\s\S]*clockOutSelectionCustomized\.current = true/)
+  assert.match(page, /clock_out_mode:[\s\S]*!clockOutSelectionCustomized\.current[\s\S]*'selected'/)
+})
+
+test('historical Close Day review has an explicit freshly loaded route to the active day', () => {
+  assert.match(page, /const showActivePreview = useCallback/)
+  assert.match(page, /queryKey: closeDayPreviewKey\(restaurantId, null\),\s*exact: true/)
+  assert.match(page, />Active day</)
+  assert.match(page, />Return to active day</)
+  assert.match(page, /selectedBusinessDate && <button[\s\S]{0,300}disabled=\{closing \|\| !restaurantId\}[\s\S]{0,300}Active day<\/button>/)
+  assert.match(page, /selectedBusinessDate \? 'Refresh history' : 'Refresh'/)
 })
 
 test('settings saves merge into the newest preview without rolling back readiness', () => {

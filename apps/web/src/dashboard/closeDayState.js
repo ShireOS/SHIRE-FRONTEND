@@ -12,6 +12,13 @@ export function mergeCloseDaySettings(current, settings) {
   return current ? { ...current, closeout_settings: settings } : current
 }
 
+export function reconcileClockOutEntryIds(currentIds, openEntries, operationChanged, selectionCustomized = false) {
+  const openIds = (openEntries || []).map((entry) => entry.id)
+  if (operationChanged || !selectionCustomized) return openIds
+  const selected = new Set(currentIds || [])
+  return openIds.filter((id) => selected.has(id))
+}
+
 export function isAlternateCloseDayPreviewKey(queryKey, restaurantId, selectedBusinessDate) {
   return queryKey?.[0] === 'close-day-preview'
     && queryKey?.[1] === restaurantId

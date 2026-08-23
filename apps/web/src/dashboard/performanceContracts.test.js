@@ -121,7 +121,7 @@ test('POS Reports bounds interactive snapshot waits and keeps refresh state visi
   const snapshotRequest = between(
     reportsPage,
     "fetchPosApi(requestedRestaurantId, '/manager/report-hub/snapshot'",
-    'forceRefresh ? 0 : STALE_TIMES.reports',
+    'effectiveForceRefresh ? 0 : STALE_TIMES.reports',
   )
   assert.match(snapshotRequest, /timeoutMs: REPORT_SNAPSHOT_TIMEOUT_MS/)
   assert.match(reportsPage, /const REPORT_SNAPSHOT_TIMEOUT_MS = 15_000/)
@@ -144,10 +144,16 @@ test('POS Reports isolates delayed requests when the selected restaurant changes
 })
 
 test('POS Reports forces both backend cache layers and disables stale-context outputs', () => {
-  assert.match(reportsPage, /force_refresh: forceRefresh/)
-  assert.match(reportsPage, /const snapshotIsCurrent = snapshotCoversReceiptRequest/)
+  assert.match(reportsPage, /const effectiveForceRefresh = shouldForceReportSnapshotRefresh/)
+  assert.match(reportsPage, /force_refresh: effectiveForceRefresh/)
+  assert.match(reportsPage, /effectiveForceRefresh \? 0 : STALE_TIMES\.reports/)
+  assert.match(reportsPage, /const snapshotIsCurrent = snapshotIsFreshForOutput/)
+  assert.match(reportsPage, /invalidatedOutputContextRef\.current\.add\(requestedOutputContextKey\)/)
+  assert.match(reportsPage, /setInvalidatedOutputContextKeys\(\[\.\.\.invalidatedOutputContextRef\.current\]\)/)
+  assert.match(reportsPage, /receivedCurrentNetworkResponse && invalidatedOutputContextRef\.current\.delete\(requestedOutputContextKey\)/)
   assert.match(reportsPage, /disabled=\{!snapshotIsCurrent \|\| loading \|\| Boolean\(working\)\}/)
-  assert.match(reportsPage, /Downloads and delivery are disabled until the current report succeeds/)
+  assert.match(reportsPage, /Downloads and delivery are disabled until the current report refresh succeeds/)
   assert.match(reportsPage, /window\.clearTimeout\(loadDebounceRef\.current\)[\s\S]*load\(true\)/)
-  assert.match(reportsPage, /reportOutputContextRef\.current !== outputContext/)
+  assert.match(reportsPage, /reportOutputRefreshEpochRef\.current \+= 1/)
+  assert.match(reportsPage, /if \(!isCurrentOutputRequest\(outputRequest\)\) return[\s\S]*saveBlob/)
 })

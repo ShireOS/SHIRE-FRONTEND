@@ -26,6 +26,7 @@ import {
   closeDayOperationKey,
   isAlternateCloseDayPreviewKey,
   mergeCloseDaySettings,
+  reconcileClockOutEntryIds,
 } from '../closeDayState'
 
 const INITIAL_CASH = {
@@ -161,6 +162,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const [verificationExceptionStatus, setVerificationExceptionStatus] = useState(null)
   const attemptId = useRef(newAttemptId())
   const closeOperationKey = useRef(null)
+  const clockOutSelectionCustomized = useRef(false)
 
   const previewQuery = useQuery({
     queryKey: closeDayPreviewKey(restaurantId, selectedBusinessDate),
@@ -210,6 +212,18 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     return Promise.resolve()
   }, [previewQuery, selectedBusinessDate])
 
+  const showActivePreview = useCallback(() => {
+    setError('')
+    if (selectedBusinessDate === null) return previewQuery.refetch()
+    setSelectedBusinessDate(null)
+    // Returning from a historical close should not silently reuse an active
+    // preview that predates the manager's review.
+    return queryClient.invalidateQueries({
+      queryKey: closeDayPreviewKey(restaurantId, null),
+      exact: true,
+    })
+  }, [previewQuery, restaurantId, selectedBusinessDate])
+
   const refreshPreview = useCallback(() => {
     setError('')
     const requests = [previewQuery.refetch()]
@@ -228,6 +242,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
 
   useEffect(() => {
     closeOperationKey.current = null
+    clockOutSelectionCustomized.current = false
     attemptId.current = newAttemptId()
     setCash(INITIAL_CASH)
     setCashCountStatus('counted')
@@ -240,15 +255,22 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
 
   useEffect(() => {
     if (!preview?.business_date) return
-    setClockOutEntryIds((preview.open_timeclock_entries || []).map((entry) => entry.id))
     // A restaurant can close more than once on one business date when fresh
     // activity arrives after an earlier seal. Scope all client-side attempt
     // state to that numbered close period so an old idempotency key can never
     // replay the prior close.
     const operationKey = closeDayOperationKey(preview)
-    if (closeOperationKey.current === operationKey) return
+    const operationChanged = closeOperationKey.current !== operationKey
+    setClockOutEntryIds((current) => reconcileClockOutEntryIds(
+      current,
+      preview.open_timeclock_entries,
+      operationChanged,
+      clockOutSelectionCustomized.current,
+    ))
+    if (!operationChanged) return
     const reconciliation = preview.cash_reconciliation || {}
     closeOperationKey.current = operationKey
+    clockOutSelectionCustomized.current = false
     attemptId.current = newAttemptId()
     setRecentActivityConfirmed(false)
     setResult(null)
@@ -295,6 +317,20 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const overdueCloseAlerts = preview?.overdue_close_alerts || []
 
   const updateCash = (key, value) => setCash((current) => ({ ...current, [key]: value }))
+  const selectAllClockOutEntries = () => {
+    clockOutSelectionCustomized.current = false
+    setClockOutEntryIds(openEmployees.map((entry) => entry.id))
+  }
+  const selectNoClockOutEntries = () => {
+    clockOutSelectionCustomized.current = true
+    setClockOutEntryIds([])
+  }
+  const toggleClockOutEntry = (entryId) => {
+    clockOutSelectionCustomized.current = true
+    setClockOutEntryIds((current) => current.includes(entryId)
+      ? current.filter((id) => id !== entryId)
+      : [...current, entryId])
+  }
 
   // Close-day preview totals vs the independent recompute (client-side diff:
   // the preview is POS-computed, the recompute comes from raw rows).
@@ -399,7 +435,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         confirm_auto_clock_out: confirmAutoClockOut,
         clock_out_mode: !preview.closeout_settings?.show_clockout_options_at_close
           ? 'all'
-          : openEmployees.length === 0 || clockOutEntryIds.length === openEmployees.length
+          : !clockOutSelectionCustomized.current
             ? 'all'
             : clockOutEntryIds.length === 0 ? 'none' : 'selected',
         clock_out_entry_ids: clockOutEntryIds,
@@ -506,11 +542,21 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             Finalize {restaurantName || 'this restaurant'} remotely using the same audited close used by the POS.
           </p>
         </div>
-        <button type="button" onClick={() => void refreshPreview()} disabled={loading || closing || !restaurantId} className="flex min-h-[40px] items-center gap-2 border border-dash-border px-4 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">
-          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
-          {loading && preview ? 'Updating…' : 'Refresh'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {selectedBusinessDate && <button type="button" onClick={() => void showActivePreview()} disabled={closing || !restaurantId} className="flex min-h-[40px] items-center gap-2 border border-dash-border px-4 text-sm font-semibold text-dash-cream hover:border-dash-cream disabled:opacity-50"><CalendarCheck size={15} aria-hidden="true" />Active day</button>}
+          <button type="button" onClick={() => void refreshPreview()} disabled={loading || closing || !restaurantId} className="flex min-h-[40px] items-center gap-2 border border-dash-border px-4 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
+            {loading && preview ? 'Updating…' : selectedBusinessDate ? 'Refresh history' : 'Refresh'}
+          </button>
+        </div>
       </header>
+
+      {selectedBusinessDate && (
+        <div role="status" className="flex flex-wrap items-center justify-between gap-3 border border-sky-400/25 bg-sky-400/[0.06] px-4 py-3 text-sm text-sky-100">
+          <span>Reviewing historical Close Day readiness for {selectedBusinessDate}.</span>
+          <button type="button" onClick={() => void showActivePreview()} disabled={closing} className="border border-sky-200/30 px-3 py-2 text-xs font-semibold text-sky-50 disabled:opacity-50">Return to active day</button>
+        </div>
+      )}
 
       {(error || loadError) && (
         <div className="flex items-start gap-3 border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
@@ -717,10 +763,10 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
           footer={<><button type="button" onClick={() => setModal(null)} disabled={closing} className="min-h-[40px] border border-dash-border px-4 text-sm font-semibold text-dash-secondary">Cancel</button><button type="button" onClick={() => void submitClose(true)} disabled={closing} className="min-h-[40px] bg-amber-300 px-4 text-sm font-bold text-black disabled:opacity-50">{closing ? 'Closing...' : 'Clock out employees & close'}</button></>}
         >
           <p className="text-sm text-dash-secondary">Everyone is selected by default. This choice affects payroll only; it does not change the saved financial close.</p>
-          {preview?.closeout_settings?.show_clockout_options_at_close && <div className="mt-3 flex gap-2"><button type="button" onClick={() => setClockOutEntryIds(openEmployees.map((entry) => entry.id))} className="border border-dash-border px-3 py-2 text-xs font-semibold text-dash-cream">Everyone</button><button type="button" onClick={() => setClockOutEntryIds([])} className="border border-dash-border px-3 py-2 text-xs font-semibold text-dash-secondary">Nobody</button></div>}
+          {preview?.closeout_settings?.show_clockout_options_at_close && <div className="mt-3 flex gap-2"><button type="button" onClick={selectAllClockOutEntries} className="border border-dash-border px-3 py-2 text-xs font-semibold text-dash-cream">Everyone</button><button type="button" onClick={selectNoClockOutEntries} className="border border-dash-border px-3 py-2 text-xs font-semibold text-dash-secondary">Nobody</button></div>}
           <div className="mt-4 divide-y divide-dash-border border-y border-dash-border">
             {openEmployees.map((entry) => (
-              <button type="button" key={entry.id} disabled={!preview?.closeout_settings?.show_clockout_options_at_close} onClick={() => setClockOutEntryIds((current) => current.includes(entry.id) ? current.filter((id) => id !== entry.id) : [...current, entry.id])} className="flex w-full items-center justify-between gap-4 py-3 text-left disabled:cursor-default">
+              <button type="button" key={entry.id} disabled={!preview?.closeout_settings?.show_clockout_options_at_close} onClick={() => toggleClockOutEntry(entry.id)} className="flex w-full items-center justify-between gap-4 py-3 text-left disabled:cursor-default">
                 <div><p className="font-semibold text-dash-cream">{clockOutEntryIds.includes(entry.id) ? '✓ ' : '○ '}{entry.staff_name}</p><p className="mt-0.5 text-xs text-dash-tertiary">Clocked in {clockLabel(entry.clock_in_at)}{entry.last_activity_at ? ` · last POS activity ${clockLabel(entry.last_activity_at)}` : ''}</p></div>
                 <span className="text-sm font-semibold text-amber-200">{durationLabel(entry.worked_minutes)}</span>
               </button>

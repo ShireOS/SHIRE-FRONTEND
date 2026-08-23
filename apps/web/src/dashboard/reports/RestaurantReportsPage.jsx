@@ -18,6 +18,14 @@ import { fetchCached, fetchWithSupabaseAuth, queryClient, queryKeys, STALE_TIMES
 import { fetchPosApi } from '../../shared/api/posClient'
 import ServerReceiptTemplateModal from './ServerReceiptTemplateModal'
 import { viewVisible } from '../../shared/backOfficeView'
+import {
+  receiptSnapshotContextKey,
+  reportOutputContextKey,
+  reportOutputRequestIsCurrent,
+  shouldForceReportSnapshotRefresh,
+  snapshotCoversReceiptRequest,
+  snapshotIsFreshForOutput,
+} from './reportSnapshotState'
 
 // Presentation fallback for the canonical POS receipt contract. The snapshot
 // replaces this metadata when available, but settings remain usable while a
@@ -634,22 +642,6 @@ function DigitalReceipt({ snapshot, profile }) {
   )
 }
 
-function receiptSnapshotContextKey(payload) {
-  const {
-    receipt_group_ids: _groupIds,
-    snapshot_id: _snapshotId,
-    force_refresh: _forceRefresh,
-    ...context
-  } = payload
-  return JSON.stringify(context)
-}
-
-function snapshotCoversReceiptRequest(snapshot, payload, restaurantId) {
-  if (!snapshot?.print_snapshot_id || snapshot._restaurant_id !== restaurantId || snapshot._request_context_key !== receiptSnapshotContextKey(payload)) return false
-  const available = new Set((snapshot.groups || []).map((group) => group.id))
-  return (payload.receipt_group_ids || []).every((groupId) => available.has(groupId))
-}
-
 export default function RestaurantReportsPage({ restaurantId, canConfigureServerReceipt = false, viewPolicy = null }) {
   const [dates, setDates] = useState(() => periodRange('week'))
   const [times, setTimes] = useState({ start: '00:00', end: '23:59' })
@@ -662,6 +654,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   const [profiles, setProfiles] = useState(DEFAULT_PROFILES)
   const [activeProfileId, setActiveProfileId] = useState('long')
   const [snapshot, setSnapshot] = useState(null)
+  const [invalidatedOutputContextKeys, setInvalidatedOutputContextKeys] = useState([])
   const [preloadedReceiptPreviews, setPreloadedReceiptPreviews] = useState({})
   const [receiptPrintOpen, setReceiptPrintOpen] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -682,12 +675,20 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   const restaurantGenerationRef = useRef(0)
   const activeRestaurantRef = useRef(restaurantId)
   const reportOutputContextRef = useRef('')
+  const reportOutputRefreshEpochRef = useRef(0)
+  const invalidatedOutputContextRef = useRef(new Set())
   const initialSnapshotStartedRef = useRef(false)
   const preferenceAutosaveReadyRef = useRef(false)
   // Promise callbacks from the previous restaurant can run before passive
   // effect cleanup. Keep the latest tenant visible synchronously so every
   // async state commit can reject a cross-restaurant result.
   activeRestaurantRef.current = restaurantId
+  const isCurrentOutputRequest = (request) => reportOutputRequestIsCurrent(request, {
+    restaurantId: activeRestaurantRef.current,
+    generation: restaurantGenerationRef.current,
+    contextKey: reportOutputContextRef.current,
+    refreshEpoch: reportOutputRefreshEpochRef.current,
+  })
   const visibleProfiles = viewVisible(viewPolicy, 'reports.activity')
     ? profiles
     : profiles.filter((profile) => profile.id !== 'activity')
@@ -725,6 +726,9 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     setHydrated(false)
     setLoading(true)
     setSnapshot(null)
+    reportOutputRefreshEpochRef.current += 1
+    invalidatedOutputContextRef.current = new Set()
+    setInvalidatedOutputContextKeys([])
     setPreloadedReceiptPreviews({})
     setDimensions({ sections: [], devices: [], employees: [] })
     setDimensionsLoaded(false)
@@ -850,11 +854,30 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     const requestedRestaurantId = restaurantId
     const generation = restaurantGenerationRef.current
     const requestPayload = { start_date: dates.start, end_date: dates.end, start_time: times.start, end_time: times.end, top_n: 10, receipt_group_ids: scopedGroupIds, ...backendScope }
+    const requestedOutputContextKey = reportOutputContextKey(requestedRestaurantId, requestPayload)
+    const effectiveForceRefresh = shouldForceReportSnapshotRefresh(
+      forceRefresh,
+      invalidatedOutputContextRef.current,
+      requestedOutputContextKey,
+    )
     const requestId = loadRequestRef.current + 1
     loadRequestRef.current = requestId
     loadAbortRef.current?.abort()
     loadAbortRef.current = null
-    if (!forceRefresh && snapshotCoversReceiptRequest(snapshot, requestPayload, requestedRestaurantId)) {
+    if (forceRefresh) {
+      // A forced refresh is an operator assertion that cached output is no
+      // longer safe to deliver. Keep that context invalidated even if the
+      // refresh fails; only a successful current snapshot can re-enable it.
+      reportOutputRefreshEpochRef.current += 1
+      invalidatedOutputContextRef.current.add(requestedOutputContextKey)
+      setInvalidatedOutputContextKeys([...invalidatedOutputContextRef.current])
+      setReceiptPrintOpen(false)
+      setModal((current) => current === 'email' ? null : current)
+      setWorking('')
+      setStatus('')
+    }
+    if (!effectiveForceRefresh
+      && snapshotCoversReceiptRequest(snapshot, requestPayload, requestedRestaurantId)) {
       setLoading(false)
       setError('')
       return
@@ -864,18 +887,26 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     setLoading(true); setError(''); setPreloadedReceiptPreviews({})
     try {
       const requestKey = JSON.stringify(requestPayload)
+      let receivedCurrentNetworkResponse = false
       const next = await fetchCached(
         queryKeys.reportSnapshot(requestedRestaurantId, requestKey),
-        () => fetchPosApi(requestedRestaurantId, '/manager/report-hub/snapshot', {
-          method: 'POST',
-          body: JSON.stringify({ ...requestPayload, force_refresh: forceRefresh }),
-          signal: controller.signal,
-          timeoutMs: REPORT_SNAPSHOT_TIMEOUT_MS,
-        }),
-        forceRefresh ? 0 : STALE_TIMES.reports,
+        async () => {
+          const response = await fetchPosApi(requestedRestaurantId, '/manager/report-hub/snapshot', {
+            method: 'POST',
+            body: JSON.stringify({ ...requestPayload, force_refresh: effectiveForceRefresh }),
+            signal: controller.signal,
+            timeoutMs: REPORT_SNAPSHOT_TIMEOUT_MS,
+          })
+          receivedCurrentNetworkResponse = true
+          return response
+        },
+        effectiveForceRefresh ? 0 : STALE_TIMES.reports,
       )
       if (loadRequestRef.current !== requestId || generation !== restaurantGenerationRef.current || activeRestaurantRef.current !== requestedRestaurantId) return
       setSnapshot({ ...next, _restaurant_id: requestedRestaurantId, _request_context_key: receiptSnapshotContextKey(requestPayload) })
+      if (receivedCurrentNetworkResponse && invalidatedOutputContextRef.current.delete(requestedOutputContextKey)) {
+        setInvalidatedOutputContextKeys([...invalidatedOutputContextRef.current])
+      }
       if (!profiles.length) setProfiles(withRequiredBuiltInProfiles([], next.default_profiles || DEFAULT_PROFILES))
     } catch (nextError) {
       if (loadRequestRef.current === requestId && generation === restaurantGenerationRef.current && activeRestaurantRef.current === requestedRestaurantId && !controller.signal.aborted) {
@@ -1011,26 +1042,6 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     ...backendScope,
   })
 
-  const receiptPrintPayload = {
-    start_date: dates.start,
-    end_date: dates.end,
-    start_time: times.start,
-    end_time: times.end,
-    receipt_group_ids: scopedGroupIds,
-    top_n: 10,
-    snapshot_id: snapshotCoversReceiptRequest(snapshot, {
-      start_date: dates.start,
-      end_date: dates.end,
-      start_time: times.start,
-      end_time: times.end,
-      receipt_group_ids: scopedGroupIds,
-      top_n: 10,
-      ...backendScope,
-    }, restaurantId) ? snapshot?.print_snapshot_id || null : null,
-    ...backendScope,
-  }
-  const receiptPreviewRequestBody = JSON.stringify({ ...receiptPrintPayload, profile_name: activeProfile.name })
-  const receiptPreviewLocalKey = `${restaurantId}:${receiptPreviewRequestBody}`
   const currentSnapshotPayload = {
     start_date: dates.start,
     end_date: dates.end,
@@ -1040,13 +1051,38 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     top_n: 10,
     ...backendScope,
   }
-  reportOutputContextRef.current = JSON.stringify({
+  const snapshotBelongsToRestaurant = snapshot?._restaurant_id === restaurantId
+  const snapshotIsCurrent = snapshotIsFreshForOutput(
+    snapshot,
+    currentSnapshotPayload,
+    restaurantId,
+    invalidatedOutputContextKeys,
+  )
+
+  const receiptPrintPayload = {
+    start_date: dates.start,
+    end_date: dates.end,
+    start_time: times.start,
+    end_time: times.end,
+    receipt_group_ids: scopedGroupIds,
+    top_n: 10,
+    snapshot_id: snapshotIsCurrent ? snapshot?.print_snapshot_id || null : null,
+    ...backendScope,
+  }
+  const receiptPreviewRequestBody = JSON.stringify({ ...receiptPrintPayload, profile_name: activeProfile.name })
+  const receiptPreviewLocalKey = `${restaurantId}:${receiptPreviewRequestBody}`
+  const currentReportOutputContext = JSON.stringify({
     ...currentSnapshotPayload,
     profile_id: activeProfile.id,
   })
-  const snapshotBelongsToRestaurant = snapshot?._restaurant_id === restaurantId
-  const snapshotIsCurrent = snapshotCoversReceiptRequest(snapshot, currentSnapshotPayload, restaurantId)
-
+  reportOutputContextRef.current = currentReportOutputContext
+  useEffect(() => {
+    // Context changes already invalidate the callback through its context key.
+    // Release the prior request's UI lock without allowing that old callback
+    // to clear a newer request for the new context.
+    setWorking('')
+    setStatus('')
+  }, [currentReportOutputContext])
   useEffect(() => {
     if (!snapshotBelongsToRestaurant || snapshotIsCurrent) return
     setReceiptPrintOpen(false)
@@ -1054,9 +1090,15 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   }, [snapshotBelongsToRestaurant, snapshotIsCurrent])
 
   const preloadReceiptPreview = async () => {
-    if (!restaurantId || !snapshotCoversReceiptRequest(snapshot, receiptPrintPayload, restaurantId)) return null
+    if (!restaurantId || !snapshotIsCurrent) return null
     const requestedRestaurantId = restaurantId
     const generation = restaurantGenerationRef.current
+    const outputRequest = {
+      restaurantId: requestedRestaurantId,
+      generation,
+      contextKey: reportOutputContextRef.current,
+      refreshEpoch: reportOutputRefreshEpochRef.current,
+    }
     const cached = preloadedReceiptPreviews[receiptPreviewLocalKey]
     if (cached && Date.now() - cached.loadedAt < STALE_TIMES.receiptPreview) return cached.preview
     try {
@@ -1068,7 +1110,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
         }),
         STALE_TIMES.receiptPreview,
       )
-      if (generation !== restaurantGenerationRef.current || activeRestaurantRef.current !== requestedRestaurantId) return null
+      if (!isCurrentOutputRequest(outputRequest)) return null
       setPreloadedReceiptPreviews((current) => ({
         ...current,
         [receiptPreviewLocalKey]: { preview, loadedAt: Date.now() },
@@ -1083,18 +1125,24 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     const requestedRestaurantId = restaurantId
     const generation = restaurantGenerationRef.current
     const outputContext = reportOutputContextRef.current
+    const outputRequest = {
+      restaurantId: requestedRestaurantId,
+      generation,
+      contextKey: outputContext,
+      refreshEpoch: reportOutputRefreshEpochRef.current,
+    }
     setWorking(format); setStatus('')
     try {
       const file = await fetchPosApi(requestedRestaurantId, '/manager/report-hub/artifact', { method: 'POST', body: JSON.stringify(artifactPayload(format)) })
-      if (generation !== restaurantGenerationRef.current || activeRestaurantRef.current !== requestedRestaurantId || reportOutputContextRef.current !== outputContext) return
+      if (!isCurrentOutputRequest(outputRequest)) return
       saveBlob(fileFromBase64(file), file.file_name)
       setStatus(`${file.file_name} is ready.`)
     } catch (nextError) {
-      if (generation === restaurantGenerationRef.current && activeRestaurantRef.current === requestedRestaurantId && reportOutputContextRef.current === outputContext) {
+      if (isCurrentOutputRequest(outputRequest)) {
         setStatus(nextError instanceof Error ? nextError.message : `Could not generate ${format.toUpperCase()}.`)
       }
     } finally {
-      if (generation === restaurantGenerationRef.current && activeRestaurantRef.current === requestedRestaurantId) setWorking('')
+      if (isCurrentOutputRequest(outputRequest)) setWorking('')
     }
   }
 
@@ -1160,7 +1208,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       </header>
 
       {loading && snapshotBelongsToRestaurant && <div role="status" aria-live="polite" className="my-4 flex items-center gap-2 rounded-md border border-dash-gold/20 bg-dash-gold/10 px-3 py-2 text-sm text-dash-cream"><RefreshCw className="h-4 w-4 animate-spin text-dash-gold" /><span>Updating POS report…</span></div>}
-      {snapshotBelongsToRestaurant && !snapshotIsCurrent && <div role="status" className="my-4 rounded-md border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-sm text-amber-100">Showing the previous successful report while the selected range updates. Downloads and delivery are disabled until the current report succeeds.</div>}
+      {snapshotBelongsToRestaurant && !snapshotIsCurrent && <div role="status" className="my-4 rounded-md border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-sm text-amber-100">Showing the previous successful report. Downloads and delivery are disabled until the current report refresh succeeds.</div>}
       {error && <div className="my-5 rounded-md border border-red-400/20 bg-red-400/10 p-4 text-sm text-red-200">{error}</div>}
       {status && <div className="my-4 flex items-center justify-between gap-3 rounded-md border border-white/10 bg-white/[0.035] px-3 py-2 text-sm text-dash-secondary"><span>{status}</span><button type="button" title="Dismiss" onClick={() => setStatus('')} className="rounded p-1 hover:bg-white/10"><X className="h-4 w-4" /></button></div>}
       {loading && !snapshotBelongsToRestaurant && <div role="status" aria-live="polite" className="flex min-h-72 flex-col items-center justify-center gap-3 text-sm text-dash-secondary"><RefreshCw className="h-6 w-6 animate-spin text-dash-gold" /><span>Loading POS report…</span></div>}
