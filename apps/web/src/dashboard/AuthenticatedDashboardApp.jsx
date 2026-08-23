@@ -29,6 +29,7 @@ import { SECTION_VIEW_CAPABILITIES, TAB_VIEW_CAPABILITIES } from '../shared/back
 import { backOfficeApi } from '../shared/api/backOfficeApi'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
 import { usePersistedPeriod } from './data/analyticsSummary'
+import { loadRestaurantHomepageBootstrap } from './data/homepageBootstrap'
 import {
   loadCheckLedger,
   loadCloseDay,
@@ -578,7 +579,7 @@ function AnalyticsDashboard({ restaurant }) {
   )
   const bootstrapQuery = useQuery({
     queryKey: bootstrapKey,
-    queryFn: ({ signal }) => fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/reports/homepage/bootstrap`, { signal }),
+    queryFn: ({ signal }) => loadRestaurantHomepageBootstrap(fetchWithSupabaseAuth, restaurant.id, signal),
     enabled: Boolean(restaurant?.id),
     staleTime: STALE_TIMES.analytics,
   })

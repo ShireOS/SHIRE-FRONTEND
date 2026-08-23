@@ -5,6 +5,8 @@
         "web:dev:sandbox": "node scripts/web-dev-sandbox.mjs",
         "web:dev:sandbox:down": "node scripts/web-dev-sandbox.mjs --down",
         "web:dev:sandbox:test": "node --test scripts/web-dev-sandbox.test.mjs",
+        "release:verify-contracts": "node scripts/verify-production-contracts.mjs",
+        "release:verify-contracts:test": "node --test scripts/verify-production-contracts.test.mjs",
         "ios": "pnpm --filter mobile ios",
         "ios_device": "pnpm --filter mobile ios_device",
         "ios_server": "pnpm --filter mobile start",

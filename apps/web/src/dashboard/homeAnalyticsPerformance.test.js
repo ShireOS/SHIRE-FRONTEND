@@ -6,6 +6,7 @@ const appSource = readFileSync(new URL('./AuthenticatedDashboardApp.jsx', import
 const widgetSource = readFileSync(new URL('./components/HomepageWidgets.jsx', import.meta.url), 'utf8')
 const shellSource = readFileSync(new URL('./shell/DashboardShell.jsx', import.meta.url), 'utf8')
 const storesSource = readFileSync(new URL('./pages/StoresPage.jsx', import.meta.url), 'utf8')
+const bootstrapSource = readFileSync(new URL('./data/homepageBootstrap.js', import.meta.url), 'utf8')
 
 test('restaurant Home uses one preference bootstrap and never persists untouched view state', () => {
   const analyticsSource = appSource.slice(
@@ -13,9 +14,12 @@ test('restaurant Home uses one preference bootstrap and never persists untouched
     appSource.indexOf('const RESTAURANT_HOMEPAGE_WIDGETS'),
   )
 
-  assert.match(analyticsSource, /reports\/homepage\/bootstrap/)
-  assert.match(analyticsSource, /queryFn: \(\{ signal \}\).*homepage\/bootstrap`, \{ signal \}\)/)
+  assert.match(analyticsSource, /loadRestaurantHomepageBootstrap\(fetchWithSupabaseAuth, restaurant\.id, signal\)/)
   assert.doesNotMatch(analyticsSource, /reports\/view-preferences`\)/)
+  assert.match(bootstrapSource, /reports\/homepage\/bootstrap/)
+  assert.match(bootstrapSource, /error\?\.status !== 404/)
+  assert.match(bootstrapSource, /reports\/view-preferences/)
+  assert.match(bootstrapSource, /reports\/homepage\/preferences/)
   assert.match(analyticsSource, /!viewTouchedRef\.current/)
   assert.match(analyticsSource, /if \(viewTouchedRef\.current\) \{\s+setViewHydrated\(true\)/)
   assert.match(analyticsSource, /<HomeAnalyticsSkeleton \/>/)
@@ -49,9 +53,10 @@ test('analytics intent prefetch warms the current Home bootstrap contract', () =
   )
 
   assert.match(prefetchSource, /queryKeys\.homepageBootstrap\(restaurantId\)/)
-  assert.match(prefetchSource, /reports\/homepage\/bootstrap/)
+  assert.match(prefetchSource, /loadRestaurantHomepageBootstrap/)
   assert.doesNotMatch(prefetchSource, /owner-analytics/)
   assert.match(storesSource, /onMouseEnter=\{onIntent\}/)
   assert.match(storesSource, /onFocus=\{onIntent\}/)
   assert.match(storesSource, /queryKey: queryKeys\.homepageBootstrap\(restaurantId\)/)
+  assert.match(storesSource, /loadRestaurantHomepageBootstrap\(fetchWithSupabaseAuth, restaurantId, signal\)/)
 })

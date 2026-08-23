@@ -46,6 +46,7 @@ import { SECTION_VIEW_CAPABILITIES, TAB_VIEW_CAPABILITIES, defaultViewPolicy, no
 import { backOfficeApi } from '../../shared/api/backOfficeApi'
 import { fetchReservationsApi } from '../../shared/api/reservationsClient'
 import { preloadWorkspaceModule } from '../workspaceModuleLoaders'
+import { loadRestaurantHomepageBootstrap } from '../data/homepageBootstrap'
 import { Modal, ModalFooter } from '../components/shared/Modal'
 import BackOfficeViewEditor from '../components/team/BackOfficeViewEditor'
 
@@ -76,7 +77,11 @@ export function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
   if (tabId === 'reports') {
     prefetch(queryKeys.reportPreferences(restaurantId), api(`/restaurants/${restaurantId}/reports/view-preferences`), STALE_TIMES.setup)
   } else if (tabId === 'analytics') {
-    prefetch(queryKeys.homepageBootstrap(restaurantId), api(`/restaurants/${restaurantId}/reports/homepage/bootstrap`), STALE_TIMES.analytics)
+    prefetch(
+      queryKeys.homepageBootstrap(restaurantId),
+      ({ signal }) => loadRestaurantHomepageBootstrap(fetchWithSupabaseAuth, restaurantId, signal),
+      STALE_TIMES.analytics,
+    )
   } else if (tabId === 'setup') {
     // The setup editor already scopes its reads to the visible section. Do not
     // turn an incidental sidebar hover into a fourteen-request workspace load.

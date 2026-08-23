@@ -10,6 +10,7 @@ import ApplyToStoresModal from './ApplyToStoresModal'
 import { fetchStoreGroups } from '../data/storeGroups'
 import { fetchMyInvites, revokeInvite, claimUrl } from '../data/boarding'
 import { useAnalyticsSummary } from '../data/analyticsSummary'
+import { loadRestaurantHomepageBootstrap } from '../data/homepageBootstrap'
 
 const ORDER_OPTIONS = [
   { value: 'name', label: 'Name A–Z' },
@@ -282,10 +283,7 @@ export default function StoresPage() {
   const prefetchStoreHome = useCallback((restaurantId) => {
     void queryClient.prefetchQuery({
       queryKey: queryKeys.homepageBootstrap(restaurantId),
-      queryFn: ({ signal }) => fetchWithSupabaseAuth(
-        `/restaurants/${restaurantId}/reports/homepage/bootstrap`,
-        { signal },
-      ),
+      queryFn: ({ signal }) => loadRestaurantHomepageBootstrap(fetchWithSupabaseAuth, restaurantId, signal),
       staleTime: STALE_TIMES.analytics,
     })
   }, [])
