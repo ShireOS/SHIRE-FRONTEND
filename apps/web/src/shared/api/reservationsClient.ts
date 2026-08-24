@@ -11,6 +11,20 @@ export const reservationsApiBaseUrl = resolveReservationsApiBaseUrl(
   configuredBaseUrl,
 )
 
+export class ReservationsApiError extends Error {
+  status: number
+  code: string | null
+  details: Record<string, unknown>
+
+  constructor(message: string, status: number, code: string | null, details: Record<string, unknown>) {
+    super(message)
+    this.name = 'ReservationsApiError'
+    this.status = status
+    this.code = code
+    this.details = details
+  }
+}
+
 export async function fetchReservationsApi<T = any>(
   endpoint: string,
   options: RequestInit = {},
@@ -35,7 +49,12 @@ export async function fetchReservationsApi<T = any>(
   if (!response.ok) {
     const body = await response.json().catch(() => ({}))
     const detail = body?.message || body?.detail
-    throw new Error(typeof detail === 'string' ? detail : `Reservations request failed (${response.status})`)
+    throw new ReservationsApiError(
+      typeof detail === 'string' ? detail : `Reservations request failed (${response.status})`,
+      response.status,
+      typeof body?.code === 'string' ? body.code : null,
+      body && typeof body === 'object' ? body : {},
+    )
   }
   if (response.status === 204) return null as T
   return response.json() as Promise<T>

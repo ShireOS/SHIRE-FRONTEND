@@ -122,6 +122,7 @@ export const TAB_PERMISSIONS: Record<string, string> = {
   marketing: 'settings.edit',
   settings: 'settings.edit',
   integrations: 'settings.edit',
+  reservations: 'settings.edit',
   ui: 'settings.edit',
   menu: 'menu.view',
   'menu-workspace': 'menu.view',

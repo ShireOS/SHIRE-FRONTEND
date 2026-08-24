@@ -37,6 +37,8 @@ export const queryKeys = {
   operatingHours: (restaurantId: string) => ['restaurant', restaurantId, 'operating-hours'] as const,
   guestFeedback: (restaurantId: string, status = 'all') =>
     ['restaurant', restaurantId, 'guest-feedback', status] as const,
+  voiceProvisioning: (restaurantId: string) =>
+    ['restaurant', restaurantId, 'voice-provisioning'] as const,
 
   ownerAnalytics: (restaurantId: string, period: string) =>
     ['restaurant', restaurantId, 'owner-analytics', period] as const,

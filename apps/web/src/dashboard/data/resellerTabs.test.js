@@ -11,7 +11,7 @@ test('setup grant exposes every related configuration surface', () => {
     feedback: false,
   })
 
-  for (const tab of ['setup', 'store-information', 'marketing', 'settings', 'integrations', 'ui', 'pos-settings', 'printing-routing']) {
+  for (const tab of ['setup', 'store-information', 'marketing', 'settings', 'integrations', 'reservations', 'ui', 'pos-settings', 'printing-routing']) {
     assert.ok(tabs.includes(tab), tab)
   }
   assert.ok(!tabs.includes('devices'))
@@ -40,7 +40,7 @@ test('all store grants produce every implemented store route', () => {
   }))
   const expected = [
     'analytics', 'reports', 'checks', 'close-day', 'setup', 'store-information',
-    'marketing', 'settings', 'integrations', 'ui', 'menu',
+    'marketing', 'settings', 'integrations', 'reservations', 'ui', 'menu',
     'menu-workspace', 'feedback', 'devices', 'pos-settings',
     'printing-routing', 'team', 'time-clock', 'alerts', 'labor-cost',
     'tip-pooling', 'scheduling', 'messaging', 'payments',

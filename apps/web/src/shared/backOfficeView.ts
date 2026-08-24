@@ -84,8 +84,11 @@ export const BACK_OFFICE_VIEW_CATALOG: ViewCapability[] = [
   ]),
   node('nav.integrations', 'Integrations', [
     node('integrations.service_model', 'Tools and service model'),
-    node('integrations.reservations', 'Reservation settings'),
     node('integrations.providers', 'Provider connections'),
+  ]),
+  node('nav.reservations', 'Reservations', [
+    node('reservations.booking', 'Booking page and timing'),
+    node('reservations.phone', 'AI phone'),
   ]),
   node('nav.ui', 'UI Editor', [
     node('ui.appearance', 'Application appearance'),
@@ -170,6 +173,7 @@ export const TAB_VIEW_CAPABILITIES: Record<string, string> = {
   analytics: 'nav.analytics', reports: 'nav.reports', checks: 'nav.checks',
   'close-day': 'nav.close-day', 'store-information': 'nav.store-information',
   marketing: 'nav.marketing', settings: 'nav.settings', integrations: 'nav.integrations',
+  reservations: 'nav.reservations',
   ui: 'nav.ui', menu: 'nav.menu', 'menu-workspace': 'nav.menu-workspace',
   feedback: 'nav.feedback', devices: 'nav.devices', 'pos-settings': 'nav.pos-settings',
   'printing-routing': 'nav.printing-routing', team: 'nav.team', 'time-clock': 'nav.time-clock',
@@ -214,6 +218,7 @@ const PRESET_OVERRIDES: Record<BackOfficeViewLevel, Record<string, BackOfficeVie
     'settings.pricing': 'summary', 'settings.taxes': 'summary',
     'settings.charges': 'summary', 'settings.closeout': 'summary',
     'settings.check_workflow': 'summary', 'ui.appearance': 'hidden',
+    'reservations.booking': 'standard', 'reservations.phone': 'standard',
     'menu.combos': 'standard', 'menu.allergies': 'hidden', 'menu.pricing': 'standard',
     'menu.discounts': 'hidden', 'menu.routing': 'hidden',
     'devices.health': 'full', 'devices.pairing': 'standard', 'devices.assignments': 'standard',

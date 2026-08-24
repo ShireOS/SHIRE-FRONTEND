@@ -33,6 +33,7 @@ export function diffOverrides(effective, roleDefaults) {
 const NAV_PREVIEW = [
   { id: 'home', label: 'Home' },
   { id: 'setup', label: 'Setup' },
+  { id: 'reservations', label: 'Reservations' },
   { id: 'menu', label: 'Menu' },
   { id: 'feedback', label: 'Complaints' },
   { id: 'devices', label: 'Devices' },

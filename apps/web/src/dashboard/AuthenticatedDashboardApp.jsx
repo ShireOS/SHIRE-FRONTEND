@@ -48,6 +48,7 @@ import {
   loadTeam,
   loadTimeClock,
   loadTipPooling,
+  loadVoiceReservations,
 } from './workspaceModuleLoaders'
 
 const AcceptInvitePage = lazy(() => import('./pages/AcceptInvitePage'))
@@ -75,6 +76,7 @@ const StoresPage = lazy(() => import('./pages/StoresPage'))
 const TeamPage = lazy(loadTeam)
 const TimeClockPage = lazy(loadTimeClock)
 const TipPoolingPage = lazy(loadTipPooling)
+const VoiceReservationsPage = lazy(loadVoiceReservations)
 const UsersPage = lazy(() => import('./pages/UsersPage'))
 
 function LoadingScreen() {
@@ -177,6 +179,7 @@ const TABS = [
   { id: 'marketing', label: 'Marketing' },
   { id: 'settings', label: 'Store Settings' },
   { id: 'integrations', label: 'Integrations' },
+  { id: 'reservations', label: 'Reservations' },
   { id: 'ui', label: 'UI Editor' },
   { id: 'menu', label: 'Menu' },
   { id: 'menu-workspace', label: 'POS Menus' },
@@ -5469,13 +5472,35 @@ export function RestaurantWorkspace({
         {activeTab === 'integrations' && (
           <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[
             ...(backOfficeAccess.viewVisible('integrations.service_model') ? ['service_model'] : []),
-            ...(backOfficeAccess.viewVisible('integrations.reservations') ? ['reservation_timing'] : []),
             ...(backOfficeAccess.viewVisible('integrations.providers') ? ['integrations'] : []),
           ]} summaryTabs={[
             ...(backOfficeAccess.viewMode('integrations.service_model') === 'summary' ? ['service_model'] : []),
-            ...(backOfficeAccess.viewMode('integrations.reservations') === 'summary' ? ['reservation_timing'] : []),
             ...(backOfficeAccess.viewMode('integrations.providers') === 'summary' ? ['integrations'] : []),
           ]} showHeader={false} />
+        )}
+        {activeTab === 'reservations' && (
+          <ConfigurationHub tabs={[
+            ...(backOfficeAccess.viewVisible('reservations.booking') ? [{ id: 'booking', label: 'Booking' }] : []),
+            ...(backOfficeAccess.viewVisible('reservations.phone') ? [{ id: 'phone', label: 'AI Phone' }] : []),
+          ]} initialTab={backOfficeAccess.viewVisible('reservations.booking') ? 'booking' : 'phone'}>
+            {(section) => section === 'booking' ? (
+              <ModernRestaurantSetupPanel
+                restaurant={restaurant}
+                restaurantId={restaurantId}
+                auth={auth}
+                setupWarnings={setupWarnings}
+                onSetupChanged={handleSetupChanged}
+                allowedTabs={['reservation_timing']}
+                summaryTabs={backOfficeAccess.viewMode('reservations.booking') === 'summary' ? ['reservation_timing'] : []}
+                showHeader={false}
+              />
+            ) : (
+              <VoiceReservationsPage
+                restaurantId={restaurantId}
+                readOnly={backOfficeAccess.viewMode('reservations.phone') === 'summary'}
+              />
+            )}
+          </ConfigurationHub>
         )}
         {activeTab === 'ui' && (
           <ConfigurationHub tabs={[
@@ -5559,6 +5584,7 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   marketing: 'Marketing',
   settings: 'Store Settings',
   integrations: 'Integrations',
+  reservations: 'Reservations',
   'menu-workspace': 'POS Menus',
   ui: 'UI Editor',
   menu: 'Menu',

@@ -210,8 +210,8 @@ gate; the bell remains disabled while access is unresolved or denied.
   Reseller sidebar visibility comes from one grant-to-route map used by every
   store route, including the specialized Setup and UI Editor shells. The
   owner-controlled `setup` grant covers conditional Setup, Store Information,
-  Marketing, Store Settings, Integrations, UI Editor, POS Settings, and Printing
-  & Routing; `team` covers Members, Time Clock, and Alerts; report,
+  Marketing, Store Settings, Integrations, Reservations, UI Editor, POS Settings,
+  and Printing & Routing; `team` covers Members, Time Clock, and Alerts; report,
   check, labor-cost, and payroll/tip surfaces remain mandatory. Route changes
   reuse the resolved store grants so the sidebar does not change composition.
   POS Settings reason-preset reads and mutations use the same portal-aware
@@ -239,8 +239,9 @@ gate; the bell remains disabled while access is unresolved or denied.
   `onboarding_completed_at` remains historical metadata and is not the source
   of truth. Permanent configuration ownership is Store Information (Basics and
   Goals), Marketing (Branding), Store Settings (Legal, Payments, Taxes & Charges,
-  Cash/Closeout, Check Workflow, Hours), Integrations (current tools/service model and
-  reservations), Menu (menu data, discounts, routing),
+  Cash/Closeout, Check Workflow, Hours), Integrations (current tools/service model
+  and provider connections), Reservations (booking page/timing and AI phone
+  provisioning), Menu (menu data, discounts, routing),
   Team (members/roles and Manager Controls), UI Editor (appearance, sections,
   floor plan), and Payroll & Tips. All of these pages reuse the Setup editor's
   canonical save contracts. Discount reads require `menu.view`; writes require

@@ -26,6 +26,7 @@ import {
   PanelLeftOpen,
   Palette,
   Percent,
+  PhoneCall,
   Printer,
   ReceiptText,
   Search,
@@ -111,6 +112,12 @@ export function prefetchWorkspaceTab(restaurantId, tabId, activeTab) {
       () => fetchReservationsApi(`/locations/${restaurantId}/guest-feedback?status=open`),
       STALE_TIMES.messaging
     )
+  } else if (tabId === 'reservations') {
+    prefetch(
+      queryKeys.voiceProvisioning(restaurantId),
+      () => fetchReservationsApi(`/locations/${restaurantId}/voice-provisioning`),
+      STALE_TIMES.setup,
+    )
   }
 }
 
@@ -141,6 +148,7 @@ const STORE_NAV = [
   { id: 'menu-workspace', label: 'POS Menus', icon: SlidersHorizontal },
   { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
   { id: 'integrations', label: 'Integrations', icon: SlidersHorizontal },
+  { id: 'reservations', label: 'Reservations', icon: PhoneCall },
   { id: 'feedback', label: 'Complaints', icon: MessageSquareWarning },
   { id: 'devices', label: 'Devices', icon: Monitor },
   { id: 'pos-settings', label: 'POS Settings', icon: Settings },

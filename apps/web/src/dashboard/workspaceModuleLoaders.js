@@ -18,6 +18,7 @@ export const loadSalesTiles = () => import('./components/SalesTiles')
 export const loadTeam = () => import('./pages/TeamPage')
 export const loadTimeClock = () => import('./pages/TimeClockPage')
 export const loadTipPooling = () => import('./pages/TipPoolingPage')
+export const loadVoiceReservations = () => import('./pages/VoiceReservationsPage')
 
 const WORKSPACE_MODULE_LOADERS = {
   analytics: () => Promise.all([loadSalesTiles(), loadHomepageWidgets(), loadCloseDayReview()]),
@@ -34,6 +35,7 @@ const WORKSPACE_MODULE_LOADERS = {
   'pos-settings': loadPosSettings,
   'printing-routing': loadPrintingRouting,
   'tip-pooling': loadTipPooling,
+  reservations: loadVoiceReservations,
   alerts: loadManagerInbox,
 }
 
