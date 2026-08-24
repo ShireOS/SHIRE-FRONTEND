@@ -26,7 +26,7 @@ const DEFAULT_PATH = new URL('./ticketTopDefault.json', import.meta.url)
 
 // Mirror of this file in the backend repo: Shire_POS_backend/tests/ticket_top_default.json
 // Update both, then update this digest and DEFAULT_SHA256 there.
-const EXPECTED_SHA256 = '6309247bc2910692d092e7d2d706f569b7f71759cd28baa5d6d7747dd3a82c43'
+const EXPECTED_SHA256 = '82d84b6d58a7e0a545ff40e673018426ec79a783ad6ccfc70126684229c5febd'
 
 test('the starter is exactly what the printer renders by default', () => {
   const shipped = JSON.parse(readFileSync(DEFAULT_PATH, 'utf8'))
@@ -52,7 +52,9 @@ test('the starter centers the method and narrower table above the item hierarchy
   assert.equal(identity.type, 'pair')
   assert.deepEqual(identity.left.parts.map(part => part.field), ['station_name', 'server_name'])
   assert.equal(identity.left.join, ' · ')
+  assert.equal(identity.left.size, 'large')
   assert.equal(identity.right.parts[0].field, 'time_only')
+  assert.equal(identity.right.size, 'large')
   assert.equal(identity.right_width, 9)
   assert.deepEqual([beforeTable.type, table.field, table.align, table.size, table.bold, afterTable.type], ['divider', 'location', 'center', 'large', true, 'divider'])
 })

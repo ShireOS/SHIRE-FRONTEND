@@ -18,14 +18,16 @@
           {
             "field": "server_name"
           }
-        ]
+        ],
+        "size": "large"
       },
       "right": {
         "parts": [
           {
             "field": "time_only"
           }
-        ]
+        ],
+        "size": "large"
       },
       "right_width": 9,
       "type": "pair"
