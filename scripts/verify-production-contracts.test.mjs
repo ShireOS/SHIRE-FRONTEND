@@ -9,6 +9,7 @@ import {
   REPORT_CONTRACT_VERSION,
   REQUIRED_ML_OPERATIONS,
   REQUIRED_POS_OPERATIONS,
+  productionApiRoutingError,
   releaseVerificationRequired,
   verifyProductionContracts,
 } from './verify-production-contracts.mjs'
@@ -109,4 +110,25 @@ test('automatic enforcement targets production builds without blocking previews'
   assert.equal(releaseVerificationRequired({ VERCEL_ENV: 'preview' }), false)
   assert.equal(releaseVerificationRequired({ VERCEL_ENV: 'development' }), false)
   assert.equal(releaseVerificationRequired({}), true)
+})
+
+test('production routing rejects a direct ML API override', () => {
+  assert.match(
+    productionApiRoutingError({
+      VERCEL_ENV: 'production',
+      VITE_API_BASE_URL: 'https://web-production.example/api/v1',
+    }),
+    /same-origin \/ml-api proxy/,
+  )
+  assert.equal(
+    productionApiRoutingError({ VERCEL_ENV: 'production', VITE_API_BASE_URL: '/ml-api' }),
+    null,
+  )
+  assert.equal(
+    productionApiRoutingError({
+      VERCEL_ENV: 'preview',
+      VITE_API_BASE_URL: 'https://preview.example/api/v1',
+    }),
+    null,
+  )
 })

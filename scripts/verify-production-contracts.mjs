@@ -119,9 +119,20 @@ export function releaseVerificationRequired(environment = process.env) {
   return environment.VERCEL_ENV !== 'preview' && environment.VERCEL_ENV !== 'development'
 }
 
+export function productionApiRoutingError(environment = process.env) {
+  if (environment.VERCEL_ENV !== 'production') return null
+  const override = String(environment.VITE_API_BASE_URL || '').trim()
+  if (!/^https?:\/\//i.test(override)) return null
+  return 'VITE_API_BASE_URL must be omitted or relative so production uses the same-origin /ml-api proxy'
+}
+
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
 if (isMain) {
-  if (!releaseVerificationRequired()) {
+  const routingError = productionApiRoutingError()
+  if (routingError) {
+    console.error(`Production API routing check failed: ${routingError}`)
+    process.exitCode = 1
+  } else if (!releaseVerificationRequired()) {
     console.log(`Skipping production API compatibility check for Vercel ${process.env.VERCEL_ENV} build.`)
   } else {
     try {

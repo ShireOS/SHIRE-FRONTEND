@@ -1,10 +1,19 @@
 // API Configuration
 // Reads from environment variables set in .env.development or .env.production
 
+export const resolveApiBaseUrl = (override: string | undefined, production: boolean): string => {
+  const candidate = override?.trim()
+  // Production dashboard traffic must stay on the Vercel proxy. Besides
+  // avoiding CORS preflights, this prevents a stale deployment variable from
+  // bypassing the same-origin contract already defined in vercel.json.
+  if (production && candidate && /^https?:\/\//i.test(candidate)) return '/ml-api'
+  return candidate || '/ml-api'
+}
+
 export const API_CONFIG = {
   // Keep dashboard traffic same-origin by default. Vite and Vercel proxy this
   // mount to Restaurant ML, avoiding browser CORS and localhost build leaks.
-  baseUrl: import.meta.env.VITE_API_BASE_URL || '/ml-api',
+  baseUrl: resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL, import.meta.env.PROD),
   publicSiteUrl: import.meta.env.VITE_PUBLIC_SITE_URL || '',
   timeout: 10000, // 10 seconds
   useMockData: import.meta.env.VITE_USE_MOCK_DATA === 'true',
