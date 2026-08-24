@@ -16,6 +16,10 @@ import {
 } from 'lucide-react'
 import { fetchCached, fetchWithSupabaseAuth, queryClient, queryKeys, STALE_TIMES } from '../../shared/query'
 import { fetchPosApi } from '../../shared/api/posClient'
+import {
+  DIRECT_POS_REPORTS_ENABLED,
+  restaurantReportApi,
+} from '../../shared/api/restaurantReportClient'
 import ServerReceiptTemplateModal from './ServerReceiptTemplateModal'
 import { viewVisible } from '../../shared/backOfficeView'
 import {
@@ -99,7 +103,9 @@ function reportLoadErrorMessage(error) {
   const message = error instanceof Error ? error.message : 'Could not load the POS report.'
   const status = Number(error?.status || 0)
   if ([404, 502, 503].includes(status) && ['not found', '404 not found'].includes(message.trim().toLowerCase())) {
-    return 'POS Reports is unavailable because the reporting services are running incompatible versions. Deploy matching POS and Restaurant reporting backend versions, then retry.'
+    return DIRECT_POS_REPORTS_ENABLED
+      ? 'POS Reports is unavailable because Restaurant ML does not expose the direct reporting contract. Deploy and enable the matching Restaurant ML version, then retry.'
+      : 'POS Reports is unavailable because the reporting services are running incompatible versions. Deploy matching POS and Restaurant reporting backend versions, then retry.'
   }
   return message
 }
@@ -886,17 +892,24 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     loadAbortRef.current = controller
     setLoading(true); setError(''); setPreloadedReceiptPreviews({})
     try {
-      const requestKey = JSON.stringify(requestPayload)
+      const requestKey = `${DIRECT_POS_REPORTS_ENABLED ? 'ml-direct' : 'pos-compat'}:${JSON.stringify(requestPayload)}`
       let receivedCurrentNetworkResponse = false
       const next = await fetchCached(
         queryKeys.reportSnapshot(requestedRestaurantId, requestKey),
         async () => {
-          const response = await fetchPosApi(requestedRestaurantId, '/manager/report-hub/snapshot', {
-            method: 'POST',
-            body: JSON.stringify({ ...requestPayload, force_refresh: effectiveForceRefresh }),
-            signal: controller.signal,
-            timeoutMs: REPORT_SNAPSHOT_TIMEOUT_MS,
-          })
+          const payload = { ...requestPayload, force_refresh: effectiveForceRefresh }
+          const response = DIRECT_POS_REPORTS_ENABLED
+            ? await restaurantReportApi.snapshot(
+              requestedRestaurantId,
+              payload,
+              controller.signal,
+            )
+            : await fetchPosApi(requestedRestaurantId, '/manager/report-hub/snapshot', {
+              method: 'POST',
+              body: JSON.stringify(payload),
+              signal: controller.signal,
+              timeoutMs: REPORT_SNAPSHOT_TIMEOUT_MS,
+            })
           receivedCurrentNetworkResponse = true
           return response
         },
@@ -1133,10 +1146,27 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     }
     setWorking(format); setStatus('')
     try {
-      const file = await fetchPosApi(requestedRestaurantId, '/manager/report-hub/artifact', { method: 'POST', body: JSON.stringify(artifactPayload(format)) })
+      if (DIRECT_POS_REPORTS_ENABLED && !snapshot?.snapshot_id) {
+        throw new Error('Refresh this report before downloading it.')
+      }
+      const file = DIRECT_POS_REPORTS_ENABLED
+        ? await restaurantReportApi.artifact(
+          requestedRestaurantId,
+          snapshot.snapshot_id,
+          {
+            format,
+            packet_name: `${activeProfile.name} POS report`,
+          },
+        )
+        : await fetchPosApi(requestedRestaurantId, '/manager/report-hub/artifact', {
+          method: 'POST',
+          body: JSON.stringify(artifactPayload(format)),
+        })
       if (!isCurrentOutputRequest(outputRequest)) return
-      saveBlob(fileFromBase64(file), file.file_name)
-      setStatus(`${file.file_name} is ready.`)
+      const blob = DIRECT_POS_REPORTS_ENABLED ? file.blob : fileFromBase64(file)
+      const fileName = DIRECT_POS_REPORTS_ENABLED ? file.fileName : file.file_name
+      saveBlob(blob, fileName)
+      setStatus(`${fileName} is ready.`)
     } catch (nextError) {
       if (isCurrentOutputRequest(outputRequest)) {
         setStatus(nextError instanceof Error ? nextError.message : `Could not generate ${format.toUpperCase()}.`)
@@ -1146,10 +1176,27 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     }
   }
 
-  const emailReport = (values) => fetchPosApi(restaurantId, '/manager/report-hub/email-now', {
-    method: 'POST',
-    body: JSON.stringify({ ...artifactPayload('pdf'), formats: values.formats, recipients: values.recipients, message: values.message }),
-  })
+  const emailReport = (values) => {
+    if (DIRECT_POS_REPORTS_ENABLED) {
+      if (!snapshotIsCurrent || !snapshot?.snapshot_id) {
+        return Promise.reject(new Error('Refresh this report before emailing it.'))
+      }
+      return restaurantReportApi.emailNow(
+        restaurantId,
+        snapshot.snapshot_id,
+        {
+          formats: values.formats,
+          recipients: values.recipients,
+          packet_name: `${activeProfile.name} POS report`,
+          message: values.message,
+        },
+      )
+    }
+    return fetchPosApi(restaurantId, '/manager/report-hub/email-now', {
+      method: 'POST',
+      body: JSON.stringify({ ...artifactPayload('pdf'), formats: values.formats, recipients: values.recipients, message: values.message }),
+    })
+  }
 
   const saveRecipient = async (id, draft) => {
     const endpoint = id ? `/restaurants/${restaurantId}/reports/recipients/${id}` : `/restaurants/${restaurantId}/reports/recipients`

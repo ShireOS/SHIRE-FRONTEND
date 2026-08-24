@@ -328,12 +328,20 @@ gate; the bell remains disabled while access is unresolved or denied.
   the POS backend. Back Office exposes the resulting read-only daily/Z/PDF/XLSX/
   email reporting under the existing `reports.view` permission; it never writes
   cash ledger rows directly.
-- Interactive POS Reports uses the POS Report Hub's versioned receipt contract.
-  Snapshot loads have a bounded deadline, preserve the previous receipt while
-  refreshing, and surface deployment skew as an actionable service-version
-  error instead of `Not Found`. Release order is Restaurant ML first (verify
-  `/readyz` advertises `pos_reports.receipt.v3`), then POS backend, then this
-  frontend; authenticated snapshot/artifact/email smoke tests complete release.
+- Interactive POS Reports keeps the versioned receipt-v3 content contract, but
+  Restaurant ML owns Back Office digital snapshots, PDF/XLSX artifacts, and
+  immediate email when `VITE_DIRECT_POS_REPORTS_ENABLED=true`. Every artifact
+  and email uses the opaque, restaurant-bound Redis snapshot currently visible
+  in the page; expiry requires an explicit Refresh and client operational facts
+  are never authoritative. Snapshot loads have a bounded deadline, preserve the
+  previous receipt while refreshing, and retain restaurant/context-generation
+  fencing. CSV remains browser-rendered from that snapshot. Physical thermal
+  preview/printing and native POS compatibility remain on the POS Report Hub.
+  Roll back the digital cutover by disabling the frontend flag. Release order is
+  Restaurant ML dark deploy, enable and verify
+  `back_office_pos_reports.direct.v1`, then the flagged frontend; keep the POS
+  compatibility operations throughout the rollout. Weekly Long preview p95
+  must remain under 3 seconds and cached PDF p95 under 1 second.
 - The full POS check ledger appears both on the store Home page below analytics
   widgets and on the dedicated Checks route. Both locations reuse
   `CheckLedgerSection`, including Active/Closed/History, detail and activity-log

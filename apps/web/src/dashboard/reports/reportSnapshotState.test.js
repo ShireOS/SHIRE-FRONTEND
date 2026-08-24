@@ -49,6 +49,21 @@ test('output still requires every requested receipt group', () => {
   ), false)
 })
 
+test('a Restaurant ML snapshot token is valid without a POS print snapshot token', () => {
+  const directSnapshot = {
+    ...snapshot,
+    print_snapshot_id: undefined,
+    snapshot_id: 'ml-snapshot-1',
+  }
+
+  assert.equal(snapshotIsFreshForOutput(
+    directSnapshot,
+    payload,
+    'restaurant-1',
+    [],
+  ), true)
+})
+
 test('an invalidated context forces both cache and backend refresh on retry', () => {
   const contextKey = reportOutputContextKey('restaurant-1', payload)
 

@@ -25,7 +25,8 @@ export function shouldForceReportSnapshotRefresh(forceRefresh, invalidatedOutput
 }
 
 export function snapshotCoversReceiptRequest(snapshot, payload, restaurantId) {
-  if (!snapshot?.print_snapshot_id || snapshot._restaurant_id !== restaurantId || snapshot._request_context_key !== receiptSnapshotContextKey(payload)) return false
+  const retainedSnapshotId = snapshot?.snapshot_id || snapshot?.print_snapshot_id
+  if (!retainedSnapshotId || snapshot._restaurant_id !== restaurantId || snapshot._request_context_key !== receiptSnapshotContextKey(payload)) return false
   const available = new Set((snapshot.groups || []).map((group) => group.id))
   return (payload.receipt_group_ids || []).every((groupId) => available.has(groupId))
 }
