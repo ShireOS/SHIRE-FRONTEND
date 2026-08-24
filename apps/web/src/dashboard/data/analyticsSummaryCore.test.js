@@ -19,14 +19,15 @@ test('restaurant summary IDs are stable, unique, and chunked at fifty', () => {
   assert.deepEqual(chunks.flat(), [...new Set(ids)].sort())
 })
 
-test('restaurant summary validation accepts real zeroes and rejects missing metrics', () => {
+test('restaurant summary validation accepts real zeroes and isolates unavailable restaurants', () => {
   const valid = validateAnalyticsSummaryPayload(
     {
       restaurants: {
         'restaurant-1': { net_sales: 0, order_count: '0', covers: 0, tips: 0 },
+        'restaurant-3': { net_sales: null, order_count: 1, covers: 1, tips: 0 },
       },
     },
-    ['restaurant-1'],
+    ['restaurant-1', 'restaurant-2', 'restaurant-3'],
   )
   assert.deepEqual(valid.restaurants['restaurant-1'], {
     net_sales: 0,
@@ -34,15 +35,30 @@ test('restaurant summary validation accepts real zeroes and rejects missing metr
     covers: 0,
     tips: 0,
   })
+  assert.deepEqual(valid.unavailableRestaurantIds, ['restaurant-2', 'restaurant-3'])
+  assert.equal(valid.restaurants['restaurant-2'], undefined)
+  assert.equal(valid.restaurants['restaurant-3'], undefined)
+})
 
-  assert.throws(
-    () => validateAnalyticsSummaryPayload({ restaurants: {} }, ['restaurant-1']),
-    /incomplete/,
+test('one omitted restaurant does not discard valid summaries in the same chunk', () => {
+  const valid = validateAnalyticsSummaryPayload(
+    {
+      restaurants: {
+        'restaurant-1': { net_sales: 20, order_count: 2, covers: 4, tips: 3 },
+      },
+    },
+    ['restaurant-1', 'restaurant-2'],
   )
-  assert.throws(
-    () => validateAnalyticsSummaryPayload({ restaurants: { 'restaurant-1': { net_sales: null } } }, ['restaurant-1']),
-    /incomplete/,
+  const combined = combineAnalyticsSummaryQueries(
+    [['restaurant-1', 'restaurant-2']],
+    [{ data: valid, isError: false }],
   )
+
+  assert.equal(combined.restaurantStates['restaurant-1'].status, 'success')
+  assert.equal(combined.restaurantStates['restaurant-2'].status, 'error')
+  assert.equal(combined.data.restaurants['restaurant-1'].net_sales, 20)
+  assert.equal(combined.isError, true)
+  assert.match(combined.error.message, /unavailable/)
 })
 
 test('cached data remains successful when a background refresh fails', () => {
