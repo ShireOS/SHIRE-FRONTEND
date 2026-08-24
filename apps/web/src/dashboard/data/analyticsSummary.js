@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react'
-import { useQuery, keepPreviousData } from '@tanstack/react-query'
-import { fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
+import { useEffect, useMemo, useState } from 'react'
+import { keepPreviousData, useQueries } from '@tanstack/react-query'
+import { fetchWithSupabaseAuth, queryClient, queryKeys, STALE_TIMES } from '../../shared/query'
+import {
+  chunkRestaurantIds,
+  combineAnalyticsSummaryQueries,
+  normalizeRestaurantIds,
+  validateAnalyticsSummaryPayload,
+} from './analyticsSummaryCore'
 
 /**
  * Period selection that survives navigation and reloads. One key per surface
@@ -18,23 +24,54 @@ export function usePersistedPeriod(storageKey, fallback = 'week') {
 }
 
 /**
- * Batch KPI summary for many stores in ONE request (vs. a full owner-analytics
- * payload per store — 8 sequential section builders each). Callers should fall
- * back to per-store queries when this errors (older deployed backend).
+ * One optimized request per 50 stores. Each response is validated before it is
+ * cached so a truncated or partial response can never masquerade as zero data.
  */
-export function useAnalyticsSummary(restaurantIds, period) {
-  const ids = [...(restaurantIds || [])].sort()
-  return useQuery({
-    queryKey: ['analytics-summary', ids.join(','), period],
-    queryFn: () =>
-      fetchWithSupabaseAuth(
-        `/owner-analytics/summary?restaurant_ids=${ids.join(',')}&period=${period}`
-      ),
-    enabled: ids.length > 0,
+export function analyticsSummaryQueryOptions(restaurantIds, period) {
+  const ids = normalizeRestaurantIds(restaurantIds)
+  const params = new URLSearchParams({
+    restaurant_ids: ids.join(','),
+    period,
+    view: 'cards',
+  })
+  return {
+    queryKey: queryKeys.analyticsSummary(ids, period),
+    queryFn: async ({ signal } = {}) => {
+      const payload = await fetchWithSupabaseAuth(
+        `/owner-analytics/summary?${params.toString()}`,
+        { signal },
+      )
+      return validateAnalyticsSummaryPayload(payload, ids)
+    },
     staleTime: STALE_TIMES.analytics,
     retry: false,
-    // Keep the previous period's numbers on screen while the next loads —
-    // no flash of zeros/dashes when switching Day/Week/Month/Year.
     placeholderData: keepPreviousData,
+  }
+}
+
+export function prefetchAnalyticsSummary(restaurantIds, period = 'week') {
+  return Promise.all(
+    chunkRestaurantIds(restaurantIds).map((ids) =>
+      queryClient.prefetchQuery(analyticsSummaryQueryOptions(ids, period))
+    ),
+  )
+}
+
+export function useAnalyticsSummary(restaurantIds, period) {
+  const idsKey = (restaurantIds || []).filter(Boolean).join(',')
+  const chunks = useMemo(
+    () => chunkRestaurantIds(restaurantIds),
+    // The caller owns the array; the serialized IDs make the dependency stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [idsKey],
+  )
+  const queries = useQueries({
+    queries: chunks.map((ids) => analyticsSummaryQueryOptions(ids, period)),
   })
+  const combined = combineAnalyticsSummaryQueries(chunks, queries)
+
+  return {
+    ...combined,
+    refetch: () => Promise.all(queries.map((query) => query.refetch())),
+  }
 }

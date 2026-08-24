@@ -42,6 +42,8 @@ export const queryKeys = {
 
   ownerAnalytics: (restaurantId: string, period: string) =>
     ['restaurant', restaurantId, 'owner-analytics', period] as const,
+  analyticsSummary: (restaurantIds: string[], period: string) =>
+    ['analytics-summary', period, [...restaurantIds].sort().join(',')] as const,
   homepageBootstrap: (restaurantId: string) => ['homepage-bootstrap', 'restaurant', restaurantId] as const,
   restaurantReports: (restaurantId: string, query: string) =>
     ['restaurant', restaurantId, 'reports', query] as const,
