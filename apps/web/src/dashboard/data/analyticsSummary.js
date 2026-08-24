@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useQueries } from '@tanstack/react-query'
 import { fetchWithSupabaseAuth, queryClient, queryKeys, STALE_TIMES } from '../../shared/query'
 import {
+  analyticsSummaryQueryNeedsRetry,
   chunkRestaurantIds,
   combineAnalyticsSummaryQueries,
   normalizeRestaurantIds,
@@ -72,6 +73,10 @@ export function useAnalyticsSummary(restaurantIds, period) {
 
   return {
     ...combined,
-    refetch: () => Promise.all(queries.map((query) => query.refetch())),
+    refetch: () => Promise.all(
+      queries
+        .filter((query, index) => analyticsSummaryQueryNeedsRetry(chunks[index], query))
+        .map((query) => query.refetch()),
+    ),
   }
 }

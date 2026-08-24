@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  analyticsSummaryQueryNeedsRetry,
   chunkRestaurantIds,
   combineAnalyticsSummaryQueries,
   validateAnalyticsSummaryPayload,
@@ -76,4 +77,24 @@ test('cached data remains successful when a background refresh fails', () => {
   assert.equal(combined.restaurantStates['restaurant-2'].status, 'error')
   assert.equal(combined.isError, true)
   assert.equal(combined.hasData, true)
+})
+
+test('retry selection excludes successful and in-flight chunks', () => {
+  const ids = ['restaurant-1', 'restaurant-2']
+  const complete = {
+    restaurants: {
+      'restaurant-1': { net_sales: 20 },
+      'restaurant-2': { net_sales: 10 },
+    },
+  }
+  const partial = { restaurants: { 'restaurant-1': { net_sales: 20 } } }
+
+  assert.equal(analyticsSummaryQueryNeedsRetry(ids, { data: complete }), false)
+  assert.equal(analyticsSummaryQueryNeedsRetry(ids, { data: partial }), true)
+  assert.equal(analyticsSummaryQueryNeedsRetry(ids, { isError: true }), true)
+  assert.equal(analyticsSummaryQueryNeedsRetry(ids, { isPending: true }), false)
+  assert.equal(
+    analyticsSummaryQueryNeedsRetry(ids, { data: partial, isPlaceholderData: true }),
+    false,
+  )
 })

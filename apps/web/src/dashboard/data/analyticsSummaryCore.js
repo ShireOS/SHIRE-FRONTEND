@@ -50,6 +50,12 @@ export function validateAnalyticsSummaryPayload(payload, requestedIds) {
   return { ...payload, restaurants, unavailableRestaurantIds }
 }
 
+export function analyticsSummaryQueryNeedsRetry(restaurantIds, query) {
+  if (query?.isError) return true
+  if (!query?.data || query.isPlaceholderData) return false
+  return restaurantIds.some((restaurantId) => !query.data.restaurants?.[restaurantId])
+}
+
 export function combineAnalyticsSummaryQueries(chunks, queries) {
   const restaurants = {}
   const restaurantStates = {}
