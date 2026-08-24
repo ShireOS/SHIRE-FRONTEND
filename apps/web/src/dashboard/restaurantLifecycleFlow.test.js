@@ -24,6 +24,9 @@ test('recovery stays in account settings and admin recovery requires a support r
   assert.match(recoveryPanel, /Recovery deadline/)
   assert.match(recoveryPanel, /Open Store/)
   assert.match(recoveryPanel, /Email password setup link/)
+  assert.match(recoveryPanel, /window\.sessionStorage\.setItem/)
+  assert.match(recoveryPanel, /row\.state === 'restoring'/)
+  assert.match(recoveryPanel, /await refreshRestaurants\(\)/)
 })
 
 test('lifecycle API writes carry idempotency keys and the view capability exists', () => {

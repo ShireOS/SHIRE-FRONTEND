@@ -137,12 +137,16 @@
   Password setup/reset is available for OAuth-only accounts. Recovery preserves
   the restaurant UUID and slugs but increments the lifecycle epoch, so every POS
   device must be paired again and stale offline work never auto-replays.
+  In-flight restore tracking is session-persisted and also reconstructed from
+  backend `restoring` rows, so an Account Settings reload still refreshes the
+  portfolio and exposes Open Store when recovery completes.
 - Only lifecycle state `active` is operational. Public routes hide quarantined
   stores, authenticated clients receive structured `410 restaurant_deleted`,
-  and restaurant-scoped UI/query state is cleared after deletion. Archive,
-  restore, and exact-30-day purge continue through the ML durable outbox polled
-  by its existing singleton background runner, even if new deletion requests
-  are disabled during a rollback.
+  and restaurant-scoped UI/query state is cleared after deletion. Public assets
+  are quarantined before deletion is accepted. Archive, restore, and exact-30-day
+  purge continue through the ML durable outbox polled by every web deployment
+  using Postgres leases; no separate Celery worker is required, and cleanup
+  remains available even if new deletion requests are disabled during rollback.
 
 ### When you code in this area (STANDING RULES)
 - **Every new back-office feature, page, tab, or mutating endpoint MUST be wired

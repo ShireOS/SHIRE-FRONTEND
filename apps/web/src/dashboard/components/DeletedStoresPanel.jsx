@@ -6,6 +6,31 @@ import { backOfficeApi } from '../../shared/api/backOfficeApi'
 import { queryClient } from '../../shared/query'
 
 const countdownFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'always' })
+const RESTORE_TRACKING_PREFIX = 'shire:deleted-store-restores:'
+
+function readRestoreTracking(key) {
+  if (!key) return {}
+  try {
+    const value = JSON.parse(window.sessionStorage.getItem(key) || '{}')
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeRestoreTracking(key, value) {
+  if (!key) return
+  if (Object.keys(value).length) window.sessionStorage.setItem(key, JSON.stringify(value))
+  else window.sessionStorage.removeItem(key)
+}
+
+function trackedRestore(store) {
+  return {
+    deletion_id: store.deletion_id,
+    restaurant_id: store.restaurant_id,
+    name: store.name,
+  }
+}
 
 function recoveryCountdown(deadline, now) {
   const milliseconds = new Date(deadline).getTime() - now
@@ -76,10 +101,22 @@ export default function DeletedStoresPanel() {
   const [restored, setRestored] = useState([])
   const restoringRef = useRef(restoring)
   const restoreIdempotencyKeyRef = useRef('')
+  const restoreTrackingKey = useMemo(
+    () => auth.user?.id ? `${RESTORE_TRACKING_PREFIX}${auth.user.id}` : '',
+    [auth.user?.id],
+  )
 
   useEffect(() => {
-    restoringRef.current = restoring
-  }, [restoring])
+    const tracked = readRestoreTracking(restoreTrackingKey)
+    restoringRef.current = tracked
+    setRestoring(tracked)
+  }, [restoreTrackingKey])
+
+  const commitRestoring = useCallback((next) => {
+    restoringRef.current = next
+    setRestoring(next)
+    writeRestoreTracking(restoreTrackingKey, next)
+  }, [restoreTrackingKey])
 
   const refreshRestaurants = auth.refreshRestaurants
   const load = useCallback(async ({ quiet = false } = {}) => {
@@ -89,10 +126,15 @@ export default function DeletedStoresPanel() {
       const rows = await backOfficeApi.deletedRestaurants()
       setStores(rows)
       const currentIds = new Set(rows.map((row) => row.deletion_id))
-      const completed = Object.values(restoringRef.current).filter((row) => !currentIds.has(row.deletion_id))
+      const tracked = { ...restoringRef.current }
+      rows.filter((row) => row.state === 'restoring').forEach((row) => {
+        tracked[row.deletion_id] = trackedRestore(row)
+      })
+      const completed = Object.values(tracked).filter((row) => !currentIds.has(row.deletion_id))
+      const stillRestoring = Object.fromEntries(Object.entries(tracked).filter(([id]) => currentIds.has(id)))
+      commitRestoring(stillRestoring)
       if (completed.length) {
         setRestored((current) => [...completed, ...current.filter((row) => !completed.some((item) => item.restaurant_id === row.restaurant_id))])
-        setRestoring((current) => Object.fromEntries(Object.entries(current).filter(([id]) => currentIds.has(id))))
         queryClient.clear()
         await refreshRestaurants()
       }
@@ -101,7 +143,7 @@ export default function DeletedStoresPanel() {
     } finally {
       if (!quiet) setLoading(false)
     }
-  }, [refreshRestaurants])
+  }, [commitRestoring, refreshRestaurants])
 
   useEffect(() => {
     void load()
@@ -141,7 +183,10 @@ export default function DeletedStoresPanel() {
           || (restoreIdempotencyKeyRef.current = crypto.randomUUID()),
       )
       restoreIdempotencyKeyRef.current = ''
-      setRestoring((current) => ({ ...current, [restoreTarget.deletion_id]: restoreTarget }))
+      commitRestoring({
+        ...restoringRef.current,
+        [restoreTarget.deletion_id]: trackedRestore(restoreTarget),
+      })
       setStores((current) => current.map((store) => store.deletion_id === restoreTarget.deletion_id ? { ...store, state: 'restoring' } : store))
       setRestoreTarget(null)
       setPassword('')
