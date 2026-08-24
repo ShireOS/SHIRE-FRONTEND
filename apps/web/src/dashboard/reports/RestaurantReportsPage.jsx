@@ -145,10 +145,6 @@ function periodRange(preset, now = new Date()) {
   return { start: dateKey(start), end: dateKey(end) }
 }
 
-function minuteTime(value, fallback) {
-  return typeof value === 'string' && /^\d{2}:\d{2}/.test(value) ? value.slice(0, 5) : fallback
-}
-
 const currencyFormatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
 const numberFormatters = new Map()
 const dateFormatters = new Map()
@@ -766,10 +762,6 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     ).then((preferences) => {
       if (cancelled || generation !== restaurantGenerationRef.current || activeRestaurantRef.current !== restaurantId) return
       const saved = preferences.settings?.reports || {}
-      const preset = saved.period_preset || 'week'
-      const range = preset === 'custom' && saved.custom_start_date && saved.custom_end_date ? { start: saved.custom_start_date, end: saved.custom_end_date } : periodRange(preset)
-      setPeriodPreset(preset); setDates(range)
-      setTimes({ start: minuteTime(saved.start_time, '00:00'), end: minuteTime(saved.end_time, '23:59') })
       const nextProfiles = withRequiredBuiltInProfiles(saved.pos_report_profiles, DEFAULT_PROFILES)
       const requestedActiveId = saved.report_scope === 'activity' ? 'activity' : saved.active_profile_id
       setScope({ scope_dimension: saved.scope_dimension || 'none', scope_mode: 'cumulative', scope_ids: saved.scope_ids || [] })
@@ -956,11 +948,6 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   useEffect(() => () => loadAbortRef.current?.abort(), [])
 
   const preferencePayload = (nextProfiles = profiles, nextActiveId = activeProfileId) => ({
-    period_preset: periodPreset,
-    custom_start_date: periodPreset === 'custom' ? dates.start : null,
-    custom_end_date: periodPreset === 'custom' ? dates.end : null,
-    start_time: times.start,
-    end_time: times.end,
     comparison_enabled: false,
     comparison_mode: 'previous_period',
     comparison_start_date: null,
@@ -1026,14 +1013,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       return undefined
     }
     const timeout = window.setTimeout(() => {
-      const settings = {
-        period_preset: periodPreset,
-        custom_start_date: periodPreset === 'custom' ? dates.start : null,
-        custom_end_date: periodPreset === 'custom' ? dates.end : null,
-        start_time: times.start,
-        end_time: times.end,
-        ...scope,
-      }
+      const settings = { ...scope }
       cachePreferenceSettings(settings)
       fetchWithSupabaseAuth(`/restaurants/${restaurantId}/reports/view-preferences/reports`, {
         method: 'PUT',
@@ -1041,7 +1021,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
       }).catch(() => undefined)
     }, 450)
     return () => window.clearTimeout(timeout)
-  }, [restaurantId, hydrated, periodPreset, dates.start, dates.end, times.start, times.end, scope.scope_dimension, scope.scope_mode, scopeIdsKey])
+  }, [restaurantId, hydrated, scope.scope_dimension, scope.scope_mode, scopeIdsKey])
 
   const artifactPayload = (format) => ({
     start_date: dates.start,
