@@ -7,6 +7,7 @@ const widgetSource = readFileSync(new URL('./components/HomepageWidgets.jsx', im
 const shellSource = readFileSync(new URL('./shell/DashboardShell.jsx', import.meta.url), 'utf8')
 const storesSource = readFileSync(new URL('./pages/StoresPage.jsx', import.meta.url), 'utf8')
 const bootstrapSource = readFileSync(new URL('./data/homepageBootstrap.js', import.meta.url), 'utf8')
+const analyticsSummarySource = readFileSync(new URL('./data/analyticsSummary.js', import.meta.url), 'utf8')
 
 test('restaurant Home uses one preference bootstrap and never persists untouched view state', () => {
   const analyticsSource = appSource.slice(
@@ -59,4 +60,16 @@ test('analytics intent prefetch warms the current Home bootstrap contract', () =
   assert.match(storesSource, /onFocus=\{onIntent\}/)
   assert.match(storesSource, /queryKey: queryKeys\.homepageBootstrap\(restaurantId\)/)
   assert.match(storesSource, /loadRestaurantHomepageBootstrap\(fetchWithSupabaseAuth, restaurantId, signal\)/)
+})
+
+test('store cards render truthful summary states without per-store analytics fan-out', () => {
+  assert.doesNotMatch(storesSource, /restaurants\/\$\{restaurantId\}\/owner-analytics\?period=week/)
+  assert.match(storesSource, /data-metrics-state=\{state\.status\}/)
+  assert.match(storesSource, /state\.status === 'loading'/)
+  assert.match(storesSource, /animate-pulse/)
+  assert.match(storesSource, /Store metrics are temporarily unavailable/)
+  assert.match(storesSource, /summaryState=\{kpiSummary\.restaurantStates\[restaurant\.id\]\}/)
+  assert.match(analyticsSummarySource, /view: 'cards'/)
+  assert.match(analyticsSummarySource, /chunkRestaurantIds\(restaurantIds\)/)
+  assert.match(appSource, /prefetchAnalyticsSummary\(restaurants\.map/)
 })

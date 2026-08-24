@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
 import { Check, ChevronDown, Copy, FolderKanban, LayoutGrid, List, Plus, Search, Send, Store } from 'lucide-react'
 import { useAuth } from '../../auth'
 import { queryClient, queryKeys, fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
@@ -30,12 +29,10 @@ const TYPE_LABELS = {
 const typeLabel = (type) => TYPE_LABELS[type] || (type ? type.replace(/_/g, ' ') : 'Restaurant')
 
 const formatMoney = (value) =>
-  value === null || value === undefined
-    ? '0.00'
-    : Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const formatCount = (value) =>
-  value === null || value === undefined ? '0' : Number(value).toLocaleString('en-US')
+  Number(value).toLocaleString('en-US')
 
 function FilterPill({ label, isActive, onClick }) {
   return (
@@ -54,52 +51,45 @@ function FilterPill({ label, isActive, onClick }) {
   )
 }
 
-function StoreKpis({ restaurantId, layout = 'grid', summary, summaryFailed }) {
-  // Per-store fetch only as fallback when the batch summary is unavailable.
-  const kpiQuery = useQuery({
-    queryKey: queryKeys.ownerAnalytics(restaurantId, 'week'),
-    queryFn: () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/owner-analytics?period=week`),
-    staleTime: STALE_TIMES.analytics,
-    retry: false,
-    enabled: Boolean(summaryFailed),
-  })
-
-  const revenue = kpiQuery.data?.sections?.revenue?.data || {}
-  const visits = kpiQuery.data?.sections?.visits?.data || {}
-  const source = summary
-    ? {
-        net_sales: summary.net_sales ?? summary.total_revenue,
-        order_count: summary.order_count,
-        covers: summary.covers,
-        tips: summary.tips,
-      }
-    : {
-        net_sales: revenue.net_sales ?? revenue.total_revenue,
-        order_count: revenue.order_count,
-        covers: visits.covers,
-        tips: revenue.tips,
-      }
-  const pending = summary ? false : summaryFailed ? kpiQuery.isPending : true
+function StoreKpis({ layout = 'grid', summaryState }) {
+  const state = summaryState || { status: 'loading', data: null }
+  const source = state.data
+  const loading = state.status === 'loading'
+  const unavailable = state.status === 'error'
   const kpis = [
-    { label: 'Net sales', value: formatMoney(source.net_sales) },
-    { label: 'Orders', value: formatCount(source.order_count) },
-    { label: 'Covers', value: formatCount(source.covers) },
-    { label: 'Tips', value: formatMoney(source.tips) },
+    { label: 'Net sales', value: source ? formatMoney(source.net_sales) : null, skeletonWidth: 'w-20' },
+    { label: 'Orders', value: source ? formatCount(source.order_count) : null, skeletonWidth: 'w-12' },
+    { label: 'Covers', value: source ? formatCount(source.covers) : null, skeletonWidth: 'w-12' },
+    { label: 'Tips', value: source ? formatMoney(source.tips) : null, skeletonWidth: 'w-16' },
   ]
 
   return (
     <div
+      aria-busy={loading || Boolean(state.isUpdating)}
+      data-metrics-state={state.status}
       className={[
         'grid gap-3 border-t border-dash-border pt-3',
         layout === 'grid' ? 'grid-cols-4' : 'grid-cols-2 sm:grid-cols-4',
       ].join(' ')}
     >
+      {state.isUpdating && <span className="sr-only">Updating store metrics</span>}
       {kpis.map((kpi) => (
         <div key={kpi.label} className="min-w-0">
           <p className="truncate label-mono !text-[10px] normal-nums">{kpi.label}</p>
-          <p className={`truncate font-mono text-sm tabular-nums text-dash-cream ${pending ? 'opacity-40' : ''}`}>
-            {kpi.value}
-          </p>
+          {loading ? (
+            <span
+              className={`mt-1 block h-4 max-w-full animate-pulse rounded bg-white/10 ${kpi.skeletonWidth}`}
+              aria-hidden="true"
+            />
+          ) : unavailable ? (
+            <p className="truncate font-mono text-sm tabular-nums text-dash-tertiary" aria-label={`${kpi.label} unavailable`}>
+              —
+            </p>
+          ) : (
+            <p className="truncate font-mono text-sm tabular-nums text-dash-cream">
+              {kpi.value}
+            </p>
+          )}
         </div>
       ))}
     </div>
@@ -126,7 +116,7 @@ function CopyLinkButton({ url }) {
   )
 }
 
-function StoreCard({ restaurant, layout, onOpen, onIntent, onFinishSetup, claimInvite, onRevokeInvite, summary, summaryFailed }) {
+function StoreCard({ restaurant, layout, onOpen, onIntent, onFinishSetup, claimInvite, onRevokeInvite, summaryState }) {
   const location = [restaurant.city, restaurant.state].filter(Boolean).join(', ')
   const isDraft = restaurant.status === 'draft'
   const isActive = Boolean(restaurant.onboarding_completed_at)
@@ -163,7 +153,7 @@ function StoreCard({ restaurant, layout, onOpen, onIntent, onFinishSetup, claimI
             {isDraft ? 'Awaiting claim' : isActive ? 'Active' : 'Onboarding'}
           </span>
         </div>
-        <StoreKpis restaurantId={restaurant.id} layout={layout} summary={summary} summaryFailed={summaryFailed} />
+        <StoreKpis layout={layout} summaryState={summaryState} />
       </button>
       {isDraft ? (
         <div className="flex flex-wrap items-center gap-2 border-t border-dash-border px-4 py-2.5">
@@ -416,6 +406,27 @@ export default function StoresPage() {
         </div>
       </div>
 
+      {kpiSummary.isError && (
+        <section
+          role="status"
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-dash-warning/30 bg-dash-warning/10 px-4 py-3"
+        >
+          <p className="min-w-0 flex-1 text-sm text-dash-secondary">
+            {kpiSummary.hasData
+              ? 'Some store metrics could not be refreshed. Last known values remain visible.'
+              : 'Store metrics are temporarily unavailable.'}
+          </p>
+          <button
+            type="button"
+            disabled={kpiSummary.isFetching}
+            onClick={() => void kpiSummary.refetch()}
+            className="h-8 rounded-full border border-dash-warning/40 px-3 text-xs font-semibold text-dash-warning transition hover:bg-dash-warning/10 disabled:opacity-50"
+          >
+            {kpiSummary.isFetching ? 'Retrying…' : 'Retry metrics'}
+          </button>
+        </section>
+      )}
+
       {visible.length === 0 ? (
         <section className="glass-card rounded-2xl p-8 text-center">
           <h2 className="text-lg font-semibold text-dash-cream">No stores match</h2>
@@ -451,8 +462,7 @@ export default function StoresPage() {
               onFinishSetup={() => void finishSetup(restaurant)}
               claimInvite={inviteByDraftId[restaurant.id] || null}
               onRevokeInvite={(invite) => void handleRevoke(invite)}
-              summary={kpiSummary.data?.restaurants?.[restaurant.id] || null}
-              summaryFailed={kpiSummary.isError}
+              summaryState={kpiSummary.restaurantStates[restaurant.id]}
             />
           ))}
         </section>

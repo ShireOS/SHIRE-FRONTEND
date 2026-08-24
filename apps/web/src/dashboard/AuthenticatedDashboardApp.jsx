@@ -28,7 +28,7 @@ import { TAB_PERMISSIONS } from '../shared/permissions'
 import { SECTION_VIEW_CAPABILITIES, TAB_VIEW_CAPABILITIES } from '../shared/backOfficeView'
 import { backOfficeApi } from '../shared/api/backOfficeApi'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
-import { usePersistedPeriod } from './data/analyticsSummary'
+import { prefetchAnalyticsSummary, usePersistedPeriod } from './data/analyticsSummary'
 import { loadRestaurantHomepageBootstrap } from './data/homepageBootstrap'
 import { canOpenWorkforcePay } from './pages/workforcePayNavigation'
 import {
@@ -149,6 +149,14 @@ function ProtectedRoute({ children }) {
 // Enterprise-context pages (Stores, Rates, Users) share the shell with an
 // Enterprise breadcrumb, mirroring the store-context workspace below.
 function EnterprisePage({ item, title, children }) {
+  const auth = useAuth()
+  const restaurants = auth.restaurant.restaurants || []
+
+  useEffect(() => {
+    if (item !== 'stores' || restaurants.length === 0) return
+    void prefetchAnalyticsSummary(restaurants.map((restaurant) => restaurant.id), 'week')
+  }, [item, restaurants])
+
   return (
     <ProtectedRoute>
       <DashboardShell
