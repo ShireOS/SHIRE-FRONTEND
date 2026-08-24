@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  DIRECT_POS_REPORTS_CAPABILITY,
   MIN_ML_OPERATION_COUNT,
   MIN_POS_OPERATION_COUNT,
   REPORT_CONTRACT_CAPABILITY,
@@ -58,9 +59,40 @@ test('release verification reports stale routes and reporting metadata together'
   assert.equal(result.ok, false)
   assert.ok(result.errors.some(error => error.includes('manager-action-inbox/count')))
   assert.ok(result.errors.some(error => error.includes('reports/homepage/bootstrap')))
-  assert.ok(result.errors.some(error => error.includes('expected at least 348')))
+  assert.ok(result.errors.some(error => error.includes('expected at least 351')))
   assert.ok(result.errors.some(error => error.includes('contract none')))
   assert.ok(result.errors.some(error => error.includes(REPORT_CONTRACT_CAPABILITY)))
+})
+
+test('direct rollout requires the dark-launch ML capability only when enabled', async () => {
+  const missingBodies = [
+    schema(REQUIRED_ML_OPERATIONS, MIN_ML_OPERATION_COUNT),
+    schema(REQUIRED_POS_OPERATIONS, MIN_POS_OPERATION_COUNT),
+    {
+      report_contract_version: REPORT_CONTRACT_VERSION,
+      capabilities: [REPORT_CONTRACT_CAPABILITY],
+    },
+  ]
+  const missing = await verifyProductionContracts({
+    fetchImpl: async () => response(missingBodies.shift()),
+    directReportsEnabled: true,
+  })
+  assert.equal(missing.ok, false)
+  assert.ok(missing.errors.some(error => error.includes(DIRECT_POS_REPORTS_CAPABILITY)))
+
+  const readyBodies = [
+    schema(REQUIRED_ML_OPERATIONS, MIN_ML_OPERATION_COUNT),
+    schema(REQUIRED_POS_OPERATIONS, MIN_POS_OPERATION_COUNT),
+    {
+      report_contract_version: REPORT_CONTRACT_VERSION,
+      capabilities: [REPORT_CONTRACT_CAPABILITY, DIRECT_POS_REPORTS_CAPABILITY],
+    },
+  ]
+  const ready = await verifyProductionContracts({
+    fetchImpl: async () => response(readyBodies.shift()),
+    directReportsEnabled: true,
+  })
+  assert.equal(ready.ok, true)
 })
 
 test('release verification fails closed when a manifest cannot be read', async () => {

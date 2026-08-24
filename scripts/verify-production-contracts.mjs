@@ -5,6 +5,7 @@ const DEFAULT_POS_BASE_URL = 'https://shire-pos-api-production.up.railway.app'
 
 export const REPORT_CONTRACT_VERSION = '2026-08-19.v3'
 export const REPORT_CONTRACT_CAPABILITY = 'pos_reports.receipt.v3'
+export const DIRECT_POS_REPORTS_CAPABILITY = 'back_office_pos_reports.direct.v1'
 
 export const REQUIRED_ML_OPERATIONS = [
   ['get', '/api/v1/restaurants/{restaurant_id}/manager-action-inbox/count'],
@@ -12,17 +13,23 @@ export const REQUIRED_ML_OPERATIONS = [
   ['post', '/api/v1/restaurants/{restaurant_id}/reports/pos/snapshot'],
   ['post', '/api/v1/restaurants/{restaurant_id}/reports/pos/artifact'],
   ['post', '/api/v1/restaurants/{restaurant_id}/reports/pos/email-now'],
+  ['post', '/api/v1/restaurants/{restaurant_id}/reports/pos-snapshots'],
+  ['post', '/api/v1/restaurants/{restaurant_id}/reports/pos-snapshots/{snapshot_id}/artifacts'],
+  ['post', '/api/v1/restaurants/{restaurant_id}/reports/pos-snapshots/{snapshot_id}/email-now'],
 ]
 
 export const REQUIRED_POS_OPERATIONS = [
   ['post', '/api/v1/dev-v2/manager/report-hub/snapshot'],
   ['post', '/api/v1/dev-v2/manager/report-hub/artifact'],
   ['post', '/api/v1/dev-v2/manager/report-hub/email-now'],
+  ['post', '/api/v1/dev-v2/manager/report-hub/receipt-preview'],
+  ['post', '/api/v1/dev-v2/manager/report-hub/receipt'],
+  ['get', '/api/v1/dev-v2/manager/report-hub/receipt-jobs/{job_id}'],
 ]
 
 // These floors are generated from the checked-out backend OpenAPI manifests.
 // A deliberate route retirement must update the floor in the same release.
-export const MIN_ML_OPERATION_COUNT = 348
+export const MIN_ML_OPERATION_COUNT = 351
 export const MIN_POS_OPERATION_COUNT = 481
 
 function trimBaseUrl(value, fallback) {
@@ -57,6 +64,7 @@ export async function verifyProductionContracts({
   fetchImpl = globalThis.fetch,
   mlBaseUrl = process.env.SHIRE_ML_RELEASE_URL,
   posBaseUrl = process.env.SHIRE_POS_RELEASE_URL,
+  directReportsEnabled = process.env.VITE_DIRECT_POS_REPORTS_ENABLED === 'true',
 } = {}) {
   const mlBase = trimBaseUrl(mlBaseUrl, DEFAULT_ML_BASE_URL)
   const posBase = trimBaseUrl(posBaseUrl, DEFAULT_POS_BASE_URL)
@@ -90,6 +98,12 @@ export async function verifyProductionContracts({
     || !mlReadiness.capabilities.includes(REPORT_CONTRACT_CAPABILITY)) {
     errors.push(`Restaurant ML does not advertise ${REPORT_CONTRACT_CAPABILITY}`)
   }
+  if (directReportsEnabled && (
+    !Array.isArray(mlReadiness?.capabilities)
+    || !mlReadiness.capabilities.includes(DIRECT_POS_REPORTS_CAPABILITY)
+  )) {
+    errors.push(`Restaurant ML does not advertise ${DIRECT_POS_REPORTS_CAPABILITY}`)
+  }
 
   return {
     ok: errors.length === 0,
@@ -97,6 +111,7 @@ export async function verifyProductionContracts({
     mlOperations,
     posOperations,
     mlBuildSha: mlReadiness?.build_sha || null,
+    directReportsEnabled,
   }
 }
 
