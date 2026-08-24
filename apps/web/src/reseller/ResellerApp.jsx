@@ -52,6 +52,7 @@ import { scheduleChange } from '../shared/api/scheduledChanges'
 import { PublishControls } from '../shared/components/PublishControls'
 import { PropagationModal } from '../shared/components/PropagationModal'
 import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
+import DeletedStoresPanel, { AccountSecurityPanel } from '../dashboard/components/DeletedStoresPanel'
 
 const GROUP_COLORS = ['#2EA6A1', '#D4A854', '#7C8CF8', '#E06B4F', '#6DAF5C', '#B66DD8']
 const RESELLER_SHELL_ROUTES = {
@@ -539,6 +540,10 @@ function ResellerProfilePage() {
         </div>
       </div>
       <ResellerProfileEditor />
+      <div className="mt-5 space-y-5">
+        <AccountSecurityPanel />
+        <DeletedStoresPanel />
+      </div>
     </ResellerShell>
   )
 }

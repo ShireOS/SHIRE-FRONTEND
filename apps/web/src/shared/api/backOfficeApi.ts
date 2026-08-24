@@ -131,7 +131,76 @@ export interface ManagerInboxCountResponse {
   open_count: number
 }
 
+export interface RestaurantDeletionBlocker {
+  code: string
+  message: string
+  count?: number
+  resolution_url?: string | null
+}
+
+export interface RestaurantDeletionReadiness {
+  restaurant_id: string
+  ready: boolean
+  lifecycle_state: string
+  lifecycle_epoch: number
+  blockers: RestaurantDeletionBlocker[]
+  warnings: string[]
+  checked_at: string
+}
+
+export interface DeletedRestaurant {
+  deletion_id: string
+  restaurant_id: string
+  name: string
+  original_owner_id?: string | null
+  original_owner_email?: string | null
+  deleted_at: string
+  recoverable_until: string
+  state: 'archiving' | 'recoverable' | 'restoring'
+  archive_status: string
+  restore_status: string
+  provider_steps: Record<string, unknown>
+  provider_cost_warning: boolean
+}
+
+export interface RestaurantLifecycleMutation {
+  deletion_id: string
+  restaurant_id: string
+  state: string
+  recoverable_until: string
+  archive_status: string
+  restore_status: string
+}
+
 export const backOfficeApi = {
+  deletionReadiness: (restaurantId: string): Promise<RestaurantDeletionReadiness> =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/deletion-readiness`),
+
+  deleteRestaurant: (
+    restaurantId: string,
+    input: { restaurant_name: string; password: string },
+    idempotencyKey: string,
+  ): Promise<RestaurantLifecycleMutation> =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/deletion`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify(input),
+    }),
+
+  deletedRestaurants: (): Promise<DeletedRestaurant[]> =>
+    fetchWithSupabaseAuth('/account/deleted-restaurants'),
+
+  restoreDeletedRestaurant: (
+    deletionId: string,
+    input: { password: string; support_reason?: string },
+    idempotencyKey: string,
+  ): Promise<RestaurantLifecycleMutation> =>
+    fetchWithSupabaseAuth(`/account/deleted-restaurants/${deletionId}/restore`, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify(input),
+    }),
+
   updatePlatformAccountType: (
     profileId: string,
     accountType: 'owner' | 'reseller' | 'admin',

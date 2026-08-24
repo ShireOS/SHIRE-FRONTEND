@@ -5470,6 +5470,7 @@ export function RestaurantWorkspace({
             ...(backOfficeAccess.viewVisible('settings.closeout') ? ['closeout'] : []),
             ...(backOfficeAccess.viewVisible('settings.check_workflow') ? ['check_workflow'] : []),
             ...(backOfficeAccess.viewVisible('settings.hours') ? ['hours'] : []),
+            ...(restaurant?.owner_id === auth.user?.id && backOfficeAccess.viewVisible('settings.lifecycle') ? ['lifecycle'] : []),
           ]} summaryTabs={[
             ...(backOfficeAccess.viewMode('settings.legal') === 'summary' ? ['legal'] : []),
             ...(backOfficeAccess.viewMode('settings.payments') === 'summary' ? ['payments'] : []),

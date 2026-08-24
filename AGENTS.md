@@ -119,6 +119,30 @@
   surface must never suppress its server permission check or alter POS data.
 - Existing accounts without an assignment resolve to Advanced for compatibility;
   newly created restaurant owners receive an explicit Simple assignment.
+- `settings.lifecycle` is the stable presentation capability for Store Settings
+  -> Danger Zone. It is visible in Simple, Medium, and Advanced, but presentation
+  never grants lifecycle authority. The page continues to use `settings.edit`
+  for Store Settings entry and requires `restaurants.owner_id = auth.uid()` for
+  deletion; the primary-owner check is repeated by the ML API under lock.
+
+### Recoverable restaurant lifecycle (2026-08-24)
+- Store deletion is a service-owned lifecycle, never a browser DELETE. The
+  Danger Zone accepts only the exact case-sensitive store name plus the primary
+  owner's Supabase password and performs a final POS-owned readiness recheck
+  after quiescing. Managers, owner-role members, resellers, and admins who do not
+  own the row cannot initiate deletion.
+- Account Settings owns the Deleted Stores recovery surface. The original owner
+  may restore before the exact database deadline; platform admins may restore
+  any recoverable store with their own password and a mandatory support reason.
+  Password setup/reset is available for OAuth-only accounts. Recovery preserves
+  the restaurant UUID and slugs but increments the lifecycle epoch, so every POS
+  device must be paired again and stale offline work never auto-replays.
+- Only lifecycle state `active` is operational. Public routes hide quarantined
+  stores, authenticated clients receive structured `410 restaurant_deleted`,
+  and restaurant-scoped UI/query state is cleared after deletion. Archive,
+  restore, and exact-30-day purge continue through the ML durable outbox polled
+  by its existing singleton background runner, even if new deletion requests
+  are disabled during a rollback.
 
 ### When you code in this area (STANDING RULES)
 - **Every new back-office feature, page, tab, or mutating endpoint MUST be wired

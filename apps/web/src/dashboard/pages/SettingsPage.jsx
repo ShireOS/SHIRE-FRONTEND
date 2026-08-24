@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Check, UserCircle2, SlidersHorizontal } from 'lucide-react'
 import { useAuth } from '../../auth'
 import { supabase } from '../../shared/lib/supabase'
+import DeletedStoresPanel, { AccountSecurityPanel } from '../components/DeletedStoresPanel'
 
 // Surfaces a user may hide from their own view. Per user, not per role —
 // hiding is cosmetic and never grants or removes access.
@@ -120,6 +121,10 @@ export default function SettingsPage() {
           )}
         </dl>
       </section>
+
+      <AccountSecurityPanel />
+
+      <DeletedStoresPanel />
 
       <section className="glass-card rounded-2xl p-5">
         <div className="flex items-center gap-2">

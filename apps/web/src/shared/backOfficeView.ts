@@ -81,6 +81,7 @@ export const BACK_OFFICE_VIEW_CATALOG: ViewCapability[] = [
     node('settings.closeout', 'Cash and closeout policy'),
     node('settings.check_workflow', 'Check workflow'),
     node('settings.hours', 'Operating hours'),
+    node('settings.lifecycle', 'Store deletion and recovery'),
   ]),
   node('nav.integrations', 'Integrations', [
     node('integrations.service_model', 'Tools and service model'),
@@ -219,6 +220,7 @@ const PRESET_OVERRIDES: Record<BackOfficeViewLevel, Record<string, BackOfficeVie
     'settings.pricing': 'summary', 'settings.taxes': 'summary',
     'settings.charges': 'summary', 'settings.closeout': 'summary',
     'settings.check_workflow': 'summary', 'ui.appearance': 'hidden',
+    'settings.lifecycle': 'standard',
     'reservations.booking': 'standard', 'reservations.phone': 'standard',
     'menu.combos': 'standard', 'menu.allergies': 'hidden', 'menu.pricing': 'standard',
     'menu.discounts': 'hidden', 'menu.routing': 'hidden',

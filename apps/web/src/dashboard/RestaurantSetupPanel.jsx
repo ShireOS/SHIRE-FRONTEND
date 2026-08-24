@@ -84,6 +84,7 @@ import { SmartTimeInput } from '../shared/components/SmartTimeInput'
 import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
 import { scheduleChange } from '../shared/api/scheduledChanges'
 import { cashDrawerRoleSummary } from './utils/cashDrawerPermissions'
+import StoreDangerZone from './components/StoreDangerZone'
 
 const SETUP_TABS = [
   { id: 'basics', label: 'Basics' },
@@ -109,6 +110,7 @@ const SETUP_TABS = [
   { id: 'routing', label: 'Kitchen Routing' },
   { id: 'employees', label: 'Employees' },
   { id: 'integrations', label: 'Integrations' },
+  { id: 'lifecycle', label: 'Danger Zone' },
 ]
 
 const RESTAURANT_ASSET_BUCKET = 'restaurant-assets'
@@ -4400,6 +4402,9 @@ export default function RestaurantSetupPanel({
             Declared POS, scheduling, and reservation providers are saved as restaurant configuration. OAuth connection records remain provider-managed and are never replaced by this screen.
           </div>
         </SectionShell>
+      )}
+      {activeSetupTab === 'lifecycle' && (
+        <StoreDangerZone restaurant={restaurant} restaurantId={restaurantId} auth={auth} />
       )}
       </>}
     </div>
