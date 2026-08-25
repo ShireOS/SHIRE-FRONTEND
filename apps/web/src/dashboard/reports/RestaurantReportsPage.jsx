@@ -29,6 +29,7 @@ import {
   shouldForceReportSnapshotRefresh,
   snapshotCoversReceiptRequest,
   snapshotIsFreshForOutput,
+  snapshotIsReadyForPhysicalPrint,
 } from './reportSnapshotState'
 
 // Presentation fallback for the canonical POS receipt contract. The snapshot
@@ -1051,6 +1052,12 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     restaurantId,
     invalidatedOutputContextKeys,
   )
+  const physicalPrintIsReady = snapshotIsReadyForPhysicalPrint(
+    snapshot,
+    currentSnapshotPayload,
+    restaurantId,
+    invalidatedOutputContextKeys,
+  )
 
   const receiptPrintPayload = {
     start_date: dates.start,
@@ -1059,7 +1066,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
     end_time: times.end,
     receipt_group_ids: scopedGroupIds,
     top_n: 10,
-    snapshot_id: snapshotIsCurrent ? snapshot?.print_snapshot_id || null : null,
+    snapshot_id: physicalPrintIsReady ? snapshot.print_snapshot_id : null,
     ...backendScope,
   }
   const receiptPreviewRequestBody = JSON.stringify({ ...receiptPrintPayload, profile_name: activeProfile.name })
@@ -1083,7 +1090,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
   }, [snapshotBelongsToRestaurant, snapshotIsCurrent])
 
   const preloadReceiptPreview = async () => {
-    if (!restaurantId || !snapshotIsCurrent) return null
+    if (!restaurantId || !physicalPrintIsReady) return null
     const requestedRestaurantId = restaurantId
     const generation = restaurantGenerationRef.current
     const outputRequest = {
@@ -1228,7 +1235,7 @@ export default function RestaurantReportsPage({ restaurantId, canConfigureServer
             <IconButton label="CSV" icon={Download} onClick={() => downloadSnapshotCsv(snapshot, scopedGroupIds, activeProfile.name)} disabled={!snapshotIsCurrent || loading || Boolean(working)} />
             <IconButton label="Excel" icon={FileSpreadsheet} onClick={() => downloadArtifact('xlsx')} disabled={!snapshotIsCurrent || loading || Boolean(working)} />
             <IconButton label="Email" icon={Mail} onClick={() => setModal('email')} disabled={!snapshotIsCurrent || loading || Boolean(working)} />
-            <IconButton label="Print receipt" icon={Printer} onIntent={() => { void preloadReceiptPreview() }} onClick={() => { void preloadReceiptPreview(); setReceiptPrintOpen(true) }} disabled={!snapshotIsCurrent || loading || Boolean(working)} />
+            <IconButton label={snapshotIsCurrent && !physicalPrintIsReady ? 'Print receipt unavailable' : 'Print receipt'} icon={Printer} onIntent={() => { void preloadReceiptPreview() }} onClick={() => { void preloadReceiptPreview(); setReceiptPrintOpen(true) }} disabled={!physicalPrintIsReady || loading || Boolean(working)} />
             <span className="ml-auto text-xs text-dash-tertiary">{selectedGroupCount} section{selectedGroupCount === 1 ? '' : 's'}</span>
           </div>}
         </div>

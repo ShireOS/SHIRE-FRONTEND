@@ -28,13 +28,20 @@ export function snapshotCoversReceiptRequest(snapshot, payload, restaurantId) {
   const retainedSnapshotId = snapshot?.snapshot_id || snapshot?.print_snapshot_id
   if (!retainedSnapshotId || snapshot._restaurant_id !== restaurantId || snapshot._request_context_key !== receiptSnapshotContextKey(payload)) return false
   const available = new Set((snapshot.groups || []).map((group) => group.id))
-  return (payload.receipt_group_ids || []).every((groupId) => available.has(groupId))
+  const requested = new Set(payload.receipt_group_ids || [])
+  return requested.size === available.size
+    && [...requested].every((groupId) => available.has(groupId))
 }
 
 export function snapshotIsFreshForOutput(snapshot, payload, restaurantId, invalidatedOutputContextKeys) {
   const invalidated = outputContextSet(invalidatedOutputContextKeys)
   return !invalidated.has(reportOutputContextKey(restaurantId, payload))
     && snapshotCoversReceiptRequest(snapshot, payload, restaurantId)
+}
+
+export function snapshotIsReadyForPhysicalPrint(snapshot, payload, restaurantId, invalidatedOutputContextKeys) {
+  return Boolean(snapshot?.print_snapshot_id)
+    && snapshotIsFreshForOutput(snapshot, payload, restaurantId, invalidatedOutputContextKeys)
 }
 
 export function reportOutputRequestIsCurrent(request, current) {
