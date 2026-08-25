@@ -17,7 +17,8 @@ test('danger zone is primary-owner-only and requires an exact name plus password
   assert.match(dangerZone, /idempotencyKeyRef\.current \|\| \(idempotencyKeyRef\.current = crypto\.randomUUID\(\)\)/)
   assert.match(dangerZone, /queryClient\.clear\(\)[\s\S]*navigate\([\s\S]*void auth\.refreshRestaurants\(\)\.catch/)
   assert.doesNotMatch(dangerZone, /await auth\.refreshRestaurants\(\)/)
-  assert.match(dangerZone, /await backOfficeApi\.deletionReadiness\(restaurantId\)[\s\S]*lifecycle_state !== 'active'[\s\S]*leaveStore\(notice\)/)
+  assert.match(dangerZone, /await backOfficeApi\.deletionReadiness\(restaurantId\)[\s\S]*lifecycle_state !== 'suspending'/)
+  assert.match(dangerZone, /!\['active', 'suspending'\]\.includes\(currentReadiness\.lifecycle_state\)[\s\S]*leaveStore\(notice\)/)
   assert.match(dashboard, /queryClient\.prefetchQuery\([\s\S]*queryKeys\.deletionReadiness\(restaurantId\)/)
 })
 
@@ -31,6 +32,8 @@ test('recovery stays in account settings and admin recovery requires a support r
   assert.match(recoveryPanel, /window\.sessionStorage\.setItem/)
   assert.match(recoveryPanel, /row\.state === 'restoring'/)
   assert.match(recoveryPanel, /await refreshRestaurants\(\)/)
+  assert.match(recoveryPanel, /Replay the[\s\S]*exact request once/)
+  assert.doesNotMatch(recoveryPanel, /disabled=\{!recoverable/)
 })
 
 test('lifecycle API writes carry idempotency keys and the view capability exists', () => {

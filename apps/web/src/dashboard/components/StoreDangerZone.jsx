@@ -6,6 +6,12 @@ import { backOfficeApi } from '../../shared/api/backOfficeApi'
 import { queryClient, queryKeys } from '../../shared/query'
 
 const READINESS_STALE_TIME_MS = 30_000
+const DELETION_RECONCILE_ATTEMPTS = 20
+const DELETION_RECONCILE_DELAY_MS = 750
+
+function wait(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
+}
 
 function errorMessage(error, fallback) {
   if (!(error instanceof Error)) return fallback
@@ -69,6 +75,20 @@ export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
     void auth.refreshRestaurants().catch(() => undefined)
   }
 
+  const reconcileDeletion = async () => {
+    let current = null
+    for (let attempt = 0; attempt < DELETION_RECONCILE_ATTEMPTS; attempt += 1) {
+      try {
+        current = await backOfficeApi.deletionReadiness(restaurantId)
+      } catch {
+        current = null
+      }
+      if (!current || current.lifecycle_state !== 'suspending') return current
+      await wait(DELETION_RECONCILE_DELAY_MS)
+    }
+    return current
+  }
+
   const deleteStore = async (event) => {
     event.preventDefault()
     if (submitting || !exactNameMatches || !password || !readiness?.ready) return
@@ -86,25 +106,21 @@ export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
       // The mutation can finish on the server after a proxy/network response
       // fails. Reconcile authoritative lifecycle state before calling it a
       // readiness failure or leaving the user inside a non-operational store.
-      let currentReadiness = null
-      try {
-        currentReadiness = await backOfficeApi.deletionReadiness(restaurantId)
-      } catch {
-        // Preserve the original mutation error when reconciliation is unavailable.
-      }
-      if (currentReadiness?.lifecycle_state && currentReadiness.lifecycle_state !== 'active') {
-        const notice = currentReadiness.lifecycle_state === 'suspending'
-          ? `${restaurant.name} is temporarily unavailable while deletion safely finishes or rolls back.`
-          : `${restaurant.name} is being archived. It remains recoverable for 30 days.`
+      const currentReadiness = await reconcileDeletion()
+      if (currentReadiness?.lifecycle_state
+          && !['active', 'suspending'].includes(currentReadiness.lifecycle_state)) {
+        const notice = `${restaurant.name} is being archived. It remains recoverable for 30 days.`
         leaveStore(notice)
         return
       }
       if (currentReadiness) {
         queryClient.setQueryData(queryKeys.deletionReadiness(restaurantId), currentReadiness)
       }
-      setSubmitError(currentReadiness?.blockers?.length
-        ? 'Store activity changed during the final safety check. Resolve the blockers, then try again.'
-        : errorMessage(error, 'The store was not deleted. Check the password and readiness, then try again.'))
+      setSubmitError(currentReadiness?.lifecycle_state === 'suspending'
+        ? 'The deletion safety check is still resolving. This page will not redirect until the server confirms deletion; select Check again shortly.'
+        : currentReadiness?.blockers?.length
+          ? 'Store activity changed during the final safety check. Resolve the blockers, then try again.'
+          : errorMessage(error, 'The store was not deleted. Check the password and readiness, then try again.'))
     } finally {
       setSubmitting(false)
     }

@@ -156,6 +156,7 @@ export interface DeletedRestaurant {
   original_owner_email?: string | null
   deleted_at: string
   recoverable_until: string
+  server_time: string
   state: 'archiving' | 'recoverable' | 'restoring'
   archive_status: string
   restore_status: string

@@ -92,6 +92,7 @@ export default function DeletedStoresPanel() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [now, setNow] = useState(Date.now())
+  const [serverClockOffset, setServerClockOffset] = useState(0)
   const [restoreTarget, setRestoreTarget] = useState(null)
   const [password, setPassword] = useState('')
   const [supportReason, setSupportReason] = useState('')
@@ -125,6 +126,11 @@ export default function DeletedStoresPanel() {
     try {
       const rows = await backOfficeApi.deletedRestaurants()
       setStores(rows)
+      const serverTime = rows.find((row) => row.server_time)?.server_time
+      if (serverTime) {
+        const parsed = new Date(serverTime).getTime()
+        if (Number.isFinite(parsed)) setServerClockOffset(parsed - Date.now())
+      }
       const currentIds = new Set(rows.map((row) => row.deletion_id))
       const tracked = { ...restoringRef.current }
       rows.filter((row) => row.state === 'restoring').forEach((row) => {
@@ -175,13 +181,28 @@ export default function DeletedStoresPanel() {
     if (!restoreTarget || submitting || !password || (auth.accountType === 'admin' && !supportReason.trim())) return
     setSubmitting(true)
     setRestoreError('')
+    const requestKey = restoreIdempotencyKeyRef.current
+      || (restoreIdempotencyKeyRef.current = crypto.randomUUID())
+    const requestBody = { password, support_reason: supportReason.trim() || undefined }
     try {
-      await backOfficeApi.restoreDeletedRestaurant(
-        restoreTarget.deletion_id,
-        { password, support_reason: supportReason.trim() || undefined },
-        restoreIdempotencyKeyRef.current
-          || (restoreIdempotencyKeyRef.current = crypto.randomUUID()),
-      )
+      try {
+        await backOfficeApi.restoreDeletedRestaurant(
+          restoreTarget.deletion_id,
+          requestBody,
+          requestKey,
+        )
+      } catch (firstFailure) {
+        const status = firstFailure && typeof firstFailure === 'object' ? firstFailure.status : undefined
+        if (Number.isFinite(status) && status < 500) throw firstFailure
+        // An upstream/proxy 5xx can lose a committed 202 response. Replay the
+        // exact request once; backend idempotency returns the original result
+        // without starting a second restore.
+        await backOfficeApi.restoreDeletedRestaurant(
+          restoreTarget.deletion_id,
+          requestBody,
+          requestKey,
+        )
+      }
       restoreIdempotencyKeyRef.current = ''
       commitRestoring({
         ...restoringRef.current,
@@ -195,6 +216,24 @@ export default function DeletedStoresPanel() {
       void load({ quiet: true })
     } catch (restoreFailure) {
       setPassword('')
+      try {
+        const rows = await backOfficeApi.deletedRestaurants()
+        setStores(rows)
+        const authoritative = rows.find((row) => row.deletion_id === restoreTarget.deletion_id)
+        if (authoritative?.state === 'restoring') {
+          commitRestoring({
+            ...restoringRef.current,
+            [restoreTarget.deletion_id]: trackedRestore(authoritative),
+          })
+          setRestoreTarget(null)
+          setSupportReason('')
+          setRestoreError('')
+          return
+        }
+      } catch {
+        // Keep the original mutation error when authoritative reconciliation
+        // is unavailable.
+      }
       setRestoreError(errorMessage(restoreFailure, 'The store was not restored. Check the password and recovery deadline.'))
     } finally {
       setSubmitting(false)
@@ -240,7 +279,7 @@ export default function DeletedStoresPanel() {
         ))}
 
         {stores.map((store) => {
-          const recoverable = new Date(store.recoverable_until).getTime() > now
+          const estimatedServerNow = now + serverClockOffset
           return (
             <article key={store.deletion_id} className="rounded-xl border border-white/10 bg-black/10 p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -255,12 +294,12 @@ export default function DeletedStoresPanel() {
               </div>
               <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
                 <div><dt className="text-dash-tertiary">Recovery deadline</dt><dd className="mt-0.5 text-dash-cream">{new Date(store.recoverable_until).toLocaleString()}</dd></div>
-                <div><dt className="text-dash-tertiary">Countdown</dt><dd className="mt-0.5 font-semibold text-amber-100">{recoveryCountdown(store.recoverable_until, now)}</dd></div>
+                <div><dt className="text-dash-tertiary">Countdown</dt><dd className="mt-0.5 font-semibold text-amber-100">{recoveryCountdown(store.recoverable_until, estimatedServerNow)}</dd></div>
                 <div><dt className="text-dash-tertiary">Asset archive</dt><dd className="mt-0.5 text-dash-cream">{store.archive_status}</dd></div>
                 <div><dt className="text-dash-tertiary">Providers</dt><dd className="mt-0.5 text-dash-cream">{Object.keys(store.provider_steps || {}).length ? 'Lifecycle steps recorded' : 'Pending'}</dd></div>
               </dl>
               <p className="mt-3 text-xs text-amber-200">AI phone and other provider charges may continue during recovery.</p>
-              <button type="button" onClick={() => { restoreIdempotencyKeyRef.current = ''; setRestoreTarget(store) }} disabled={!recoverable || store.state !== 'recoverable'} className="mt-3 rounded-lg bg-shell-accent px-3 py-2 text-xs font-semibold text-dash-base hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">
+              <button type="button" onClick={() => { restoreIdempotencyKeyRef.current = ''; setRestoreTarget(store) }} disabled={store.state !== 'recoverable'} className="mt-3 rounded-lg bg-shell-accent px-3 py-2 text-xs font-semibold text-dash-base hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">
                 {store.state === 'restoring' ? 'Restoring…' : 'Restore'}
               </button>
             </article>
