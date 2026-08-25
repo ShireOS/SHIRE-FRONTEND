@@ -30,12 +30,12 @@ import { backOfficeApi } from '../shared/api/backOfficeApi'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
 import { usePersistedPeriod } from './data/analyticsSummary'
 import { loadRestaurantHomepageBootstrap } from './data/homepageBootstrap'
+import { canOpenWorkforcePay } from './pages/workforcePayNavigation'
 import {
   loadCheckLedger,
   loadCloseDay,
   loadCloseDayReview,
   loadHomepageWidgets,
-  loadLaborCost,
   loadManagerInbox,
   loadMenuPanel,
   loadMenuWorkspace,
@@ -46,8 +46,7 @@ import {
   loadStoreDevices,
   loadSalesTiles,
   loadTeam,
-  loadTimeClock,
-  loadTipPooling,
+  loadWorkforcePay,
   loadVoiceReservations,
 } from './workspaceModuleLoaders'
 
@@ -57,7 +56,6 @@ const ClaimStorePage = lazy(() => import('./pages/ClaimStorePage'))
 const CloseDayPage = lazy(loadCloseDay)
 const CloseDayReview = lazy(loadCloseDayReview)
 const DevicesPage = lazy(() => import('./pages/DevicesPage'))
-const LaborCostPage = lazy(loadLaborCost)
 const ManagerActionInboxPage = lazy(loadManagerInbox)
 const MenuPanel = lazy(loadMenuPanel)
 const MenuWorkspaceEditor = lazy(loadMenuWorkspace)
@@ -74,8 +72,7 @@ const SalesTiles = lazy(loadSalesTiles)
 const StoreDevicesPanel = lazy(loadStoreDevices)
 const StoresPage = lazy(() => import('./pages/StoresPage'))
 const TeamPage = lazy(loadTeam)
-const TimeClockPage = lazy(loadTimeClock)
-const TipPoolingPage = lazy(loadTipPooling)
+const WorkforcePayPage = lazy(loadWorkforcePay)
 const VoiceReservationsPage = lazy(loadVoiceReservations)
 const UsersPage = lazy(() => import('./pages/UsersPage'))
 
@@ -187,7 +184,7 @@ const TABS = [
   { id: 'devices', label: 'Devices' },
   { id: 'pos-settings', label: 'POS Settings' },
   { id: 'printing-routing', label: 'Printing & Routing' },
-  { id: 'tip-pooling', label: 'Payroll & Tips' },
+  { id: 'tip-pooling', label: 'Workforce & Pay' },
   { id: 'labor-cost', label: 'Labor Cost' },
   { id: 'feedback', label: 'Complaints' },
   { id: 'team', label: 'Team' },
@@ -5234,6 +5231,7 @@ export function RestaurantWorkspace({
   const viewCapability = SECTION_VIEW_CAPABILITIES[`${activeTab}#${activeSection}`]
     || TAB_VIEW_CAPABILITIES[activeTab]
   const presentationHidden = activeTab !== 'setup'
+    && activeTab !== 'tip-pooling'
     && !backOfficeAccess.loading
     && Boolean(viewCapability)
     && !backOfficeAccess.viewVisible(viewCapability)
@@ -5336,7 +5334,11 @@ export function RestaurantWorkspace({
   // Back-office members only reach permitted tabs (owners bypass; server
   // guards remain the real enforcement).
   const requiredPermission = TAB_PERMISSIONS[activeTab]
-  if (!backOfficeAccess.loading && requiredPermission && !backOfficeAccess.can(requiredPermission)) {
+  const workforcePayAllowed = activeTab === 'tip-pooling' && canOpenWorkforcePay({
+    canViewTeam: backOfficeAccess.can('team.view'),
+    canViewPayroll: backOfficeAccess.can('payroll.view'),
+  })
+  if (!backOfficeAccess.loading && requiredPermission && !backOfficeAccess.can(requiredPermission) && !workforcePayAllowed) {
     return <Navigate to={`${restaurantBase}/${restaurantId}/analytics`} replace />
   }
 
@@ -5554,12 +5556,12 @@ export function RestaurantWorkspace({
             {(section) => section === 'members' ? <TeamPage restaurantId={restaurantId} /> : <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['manager_controls']} summaryTabs={backOfficeAccess.viewMode('team.manager_controls') === 'summary' ? ['manager_controls'] : []} showHeader={false} />}
           </ConfigurationHub>
         )}
-        {activeTab === 'time-clock' && <TimeClockPage restaurantId={restaurantId} />}
-        {activeTab === 'labor-cost' && <LaborCostPage restaurantId={restaurantId} />}
+        {activeTab === 'time-clock' && <Navigate to={`${restaurantBase}/${restaurantId}/tip-pooling#timecards`} replace />}
+        {activeTab === 'labor-cost' && <Navigate to={`${restaurantBase}/${restaurantId}/tip-pooling#overview`} replace />}
         {activeTab === 'devices' && <StoreDevicesPanel restaurantId={restaurantId} />}
         {activeTab === 'pos-settings' && <PosSettingsPage restaurantId={restaurantId} />}
         {activeTab === 'printing-routing' && <PrintingRoutingPage restaurantId={restaurantId} />}
-        {activeTab === 'tip-pooling' && <TipPoolingPage restaurantId={restaurantId} />}
+        {activeTab === 'tip-pooling' && <WorkforcePayPage restaurantId={restaurantId} />}
         {activeTab === 'scheduling' && <SchedulingPanel restaurantId={restaurantId} />}
         {activeTab === 'alerts' && <ManagerActionInboxPage restaurantId={restaurantId} />}
         {activeTab === 'messaging' && <ManagerMessagingPanel restaurantId={restaurantId} />}
@@ -5596,7 +5598,7 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   devices: 'Devices',
   'pos-settings': 'POS Settings',
   'printing-routing': 'Printing & Routing',
-  'tip-pooling': 'Payroll & Tips',
+  'tip-pooling': 'Workforce & Pay',
   scheduling: 'Scheduling',
   alerts: 'Alerts',
   messaging: 'Messaging',

@@ -186,6 +186,7 @@ export const SECTION_VIEW_CAPABILITIES: Record<string, string> = {
   'printing-routing#routing': 'printing.routing',
   'printing-routing#receipts': 'printing.receipts',
   'tip-pooling#overview': 'payroll.overview',
+  'tip-pooling#timecards': 'time_clock.entries',
   'tip-pooling#run': 'payroll.runs',
   'tip-pooling#rules': 'payroll.rules',
   'tip-pooling#payroll': 'payroll.setup',

@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   Banknote,
-  BadgeDollarSign,
   Bell,
   Building2,
   Gauge,
@@ -12,7 +11,6 @@ import {
   ChartNoAxesCombined,
   ChevronDown,
   ChevronRight,
-  Clock,
   CreditCard,
   Home,
   LayoutGrid,
@@ -168,16 +166,8 @@ const STORE_NAV = [
     icon: Users,
     children: [
       { id: 'team', label: 'Members', icon: Users },
-      { id: 'time-clock', label: 'Time Clock', icon: Clock },
       { id: 'alerts', label: 'Alerts', icon: Bell },
-      { id: 'labor-cost', label: 'Labor Cost', icon: BadgeDollarSign },
-      // Payroll & Tips sections, flat within the Team group (not nested under
-      // a single Payroll item). All render TipPoolingPage ('tip-pooling' tab);
-      // the section travels in the URL hash, which the page reads.
-      { id: 'tip-pooling', section: 'overview', label: 'Payroll & Tips', icon: Percent },
-      { id: 'tip-pooling', section: 'run', label: 'Pay Run', icon: Banknote },
-      { id: 'tip-pooling', section: 'rules', label: 'Tip & Tipout Rules', icon: SlidersHorizontal },
-      { id: 'tip-pooling', section: 'payroll', label: 'Payroll Setup', icon: Settings },
+      { id: 'tip-pooling', label: 'Workforce & Pay', icon: Banknote },
       { id: 'scheduling', label: 'Scheduling', icon: CalendarClock },
     ],
   },
@@ -479,10 +469,16 @@ export default function DashboardShell({
   const tabVisible = (id, section = null) => {
     if (id === 'setup' && !showSetup) return false
     if (allowedStoreTabs && !allowedStoreTabs.includes(id)) return false
-    if (hidden.has(id)) return false
+    if (hidden.has(id) && id !== 'tip-pooling') return false
     // While a member's access is loading, keep nav visible (server enforces).
     if (access.loading) return true
     const required = TAB_PERMISSIONS[id]
+    if (id === 'tip-pooling') {
+      const payrollVisible = !hidden.has('tip-pooling') && access.can('payroll.view') && access.viewVisible('nav.tip-pooling')
+      const timeClockVisible = !hidden.has('time-clock') && access.can('team.view') && access.viewVisible('nav.time-clock')
+      const laborVisible = !hidden.has('labor-cost') && access.can('payroll.view') && access.viewVisible('nav.labor-cost')
+      return payrollVisible || timeClockVisible || laborVisible
+    }
     if (required && !access.can(required)) return false
     if (id === 'setup') return true
     const tabCapability = TAB_VIEW_CAPABILITIES[id]

@@ -59,7 +59,7 @@ test('supplemental setup reads stay off ordinary operational pages', () => {
 })
 
 test('heavy workspace pages use shared lazy loaders that sidebar intent can warm', () => {
-  for (const loader of ['loadMenuPanel', 'loadReports', 'loadCheckLedger', 'loadTeam', 'loadTipPooling']) {
+  for (const loader of ['loadMenuPanel', 'loadReports', 'loadCheckLedger', 'loadTeam', 'loadWorkforcePay']) {
     assert.match(dashboardApp, new RegExp(`lazy\\(${loader}\\)`))
     assert.match(workspaceLoaders, new RegExp(`export const ${loader} = \\(\\) => import\\(`))
   }

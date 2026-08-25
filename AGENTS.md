@@ -186,8 +186,14 @@ gate; the bell remains disabled while access is unresolved or denied.
   `shared/api/backOfficeApi.ts` (ML back-office endpoints). Sidebar Team group +
   tab gating in `dashboard/shell/DashboardShell.jsx`; deep-link gating in
   `AuthenticatedDashboardApp.jsx` (RestaurantWorkspace); `/invite` route →
-  `pages/AcceptInvitePage.jsx`; Time Clock tab → `pages/TimeClockPage.jsx`;
-  Labor Cost tab → `pages/LaborCostPage.jsx` and existing `payroll.view`.
+  `pages/AcceptInvitePage.jsx`. The Team sidebar keeps Members, Alerts, and
+  Scheduling as separate destinations and consolidates the former Time Clock,
+  Labor Cost, and Payroll & Tips entries under Workforce & Pay. That workspace
+  composes the existing `pages/TimeClockPage.jsx`, `pages/LaborCostPage.jsx`, and
+  `pages/TipPoolingPage.jsx` without changing their API or persistence contracts;
+  Timecards retain `team.view`, while labor, overview, runs, rules, and setup
+  retain their existing payroll permissions. Legacy Time Clock and Labor Cost
+  deep links redirect into the matching Workforce & Pay section.
   Payroll exports/email actions use existing `payroll.export`; the frontend posts
   email requests to `/restaurants/:id/payroll/email` and falls back to download
   when the email service endpoint is not configured. Menu item price-allocation

@@ -39,9 +39,7 @@ const NAV_PREVIEW = [
   { id: 'devices', label: 'Devices' },
   { id: 'pos-settings', label: 'POS Settings' },
   { id: 'team', label: 'Members' },
-  { id: 'time-clock', label: 'Time Clock' },
-  { id: 'labor-cost', label: 'Labor Cost' },
-  { id: 'tip-pooling', label: 'Payroll & Tips' },
+  { id: 'tip-pooling', label: 'Workforce & Pay', anyOf: ['team.view', 'payroll.view'] },
   { id: 'scheduling', label: 'Scheduling' },
   { id: 'messaging', label: 'Messaging' },
   { id: 'payments', label: 'Payments' },
@@ -87,7 +85,9 @@ function NavPreview({ effective }) {
       <ul className="mt-2 space-y-1">
         {NAV_PREVIEW.map((item) => {
           const required = TAB_PERMISSIONS[item.id]
-          const visible = !required || Boolean(effective[required])
+          const visible = item.anyOf
+            ? item.anyOf.some((permission) => Boolean(effective[permission]))
+            : !required || Boolean(effective[required])
           return (
             <li
               key={item.id}
