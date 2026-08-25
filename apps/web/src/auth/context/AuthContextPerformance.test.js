@@ -13,6 +13,13 @@ test('cold auth hydration batches independent restaurant scopes', () => {
   assert.match(source, /Promise\.all\(\[ownedRequest, portfolioRequest, membershipRequest\]\)/)
 })
 
+test('admin hydration excludes closed restaurants from the operational portfolio', () => {
+  assert.match(
+    source,
+    /accountType === 'admin'[\s\S]*from\('restaurants'\)[\s\S]*neq\('status', 'closed'\)/,
+  )
+})
+
 function deferred() {
   let resolve
   const promise = new Promise((next) => { resolve = next })

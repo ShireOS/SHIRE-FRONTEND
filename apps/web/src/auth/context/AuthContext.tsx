@@ -394,10 +394,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return scopedRestaurants
       }
 
-      // Admins see every restaurant (RLS permits); no further scoping needed.
+      // Keep the admin portfolio aligned with the backend's operational scope:
+      // closed restaurants are historical and are not authorized for store metrics.
       if (accountType === 'admin') {
         const { data: allRestaurants, error: allError } = await withTimeout(
-          withAbortSignal(supabase.from('restaurants').select('*').order('name'), signal),
+          withAbortSignal(
+            supabase
+              .from('restaurants')
+              .select('*')
+              .neq('status', 'closed')
+              .order('name'),
+            signal,
+          ),
           'Restaurant lookup timed out.'
         )
         throwIfAborted(signal)

@@ -259,6 +259,9 @@ gate; the bell remains disabled while access is unresolved or denied.
   After account type resolves, auth hydration loads independent owned-store,
   membership, and reseller-portfolio scopes concurrently; each query keeps its
   existing RLS boundary and error handling before results are deduplicated.
+  Admin hydration excludes closed restaurants so the visible operational
+  portfolio matches the ML portfolio resolver and batched store metrics never
+  request an unauthorized historical store.
   Account-scoped hydration is generation-guarded and aborts superseded requests,
   so an old account cannot repopulate restaurant or loading state after an
   account switch or sign-out. A direct user-to-user session replacement clears
