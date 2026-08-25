@@ -5257,6 +5257,18 @@ export function RestaurantWorkspace({
   const showSetup = setupStatusQuery.isLoading || Boolean(setupStatusQuery.error) || setupStatusQuery.data?.complete !== true
   const setupWarningCount = setupStatusQuery.data?.missing_count ?? modernWarningCount(setupWarnings || {})
   const needsSupplementalSetupData = activeTab === 'setup' || activeTab === 'team' || activeTab === 'ui'
+  const isPrimaryOwner = Boolean(auth.user?.id && restaurant?.owner_id === auth.user.id)
+
+  useEffect(() => {
+    if (activeTab !== 'settings' || !restaurantId || !isPrimaryOwner) return
+    // Start the relatively expensive POS/payment readiness check as soon as
+    // Store Settings opens, before the owner selects the Danger Zone tab.
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.deletionReadiness(restaurantId),
+      queryFn: () => backOfficeApi.deletionReadiness(restaurantId),
+      staleTime: 30_000,
+    })
+  }, [activeTab, isPrimaryOwner, restaurantId])
 
   const handleSetupChanged = () => {
     setSetupRefreshKey(key => key + 1)

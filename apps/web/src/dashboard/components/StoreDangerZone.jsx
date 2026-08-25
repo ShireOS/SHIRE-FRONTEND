@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ExternalLink, RefreshCw, Trash2 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { backOfficeApi } from '../../shared/api/backOfficeApi'
-import { queryClient } from '../../shared/query'
+import { queryClient, queryKeys } from '../../shared/query'
+
+const READINESS_STALE_TIME_MS = 30_000
 
 function errorMessage(error, fallback) {
   if (!(error instanceof Error)) return fallback
@@ -16,9 +19,6 @@ function errorMessage(error, fallback) {
 
 export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
   const navigate = useNavigate()
-  const [readiness, setReadiness] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [restaurantName, setRestaurantName] = useState('')
   const [password, setPassword] = useState('')
@@ -29,23 +29,17 @@ export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
 
   const isPrimaryOwner = Boolean(auth?.user?.id && restaurant?.owner_id === auth.user.id)
   const exactNameMatches = restaurantName === (restaurant?.name || '')
-
-  const loadReadiness = useCallback(async () => {
-    if (!restaurantId || !isPrimaryOwner) return
-    setLoading(true)
-    setLoadError('')
-    try {
-      setReadiness(await backOfficeApi.deletionReadiness(restaurantId))
-    } catch (error) {
-      setLoadError(errorMessage(error, 'Could not check whether this store is ready for deletion.'))
-    } finally {
-      setLoading(false)
-    }
-  }, [isPrimaryOwner, restaurantId])
-
-  useEffect(() => {
-    void loadReadiness()
-  }, [loadReadiness])
+  const readinessQuery = useQuery({
+    queryKey: queryKeys.deletionReadiness(restaurantId || ''),
+    queryFn: () => backOfficeApi.deletionReadiness(restaurantId),
+    enabled: Boolean(restaurantId && isPrimaryOwner),
+    staleTime: READINESS_STALE_TIME_MS,
+  })
+  const readiness = readinessQuery.data ?? null
+  const loading = readinessQuery.isPending
+  const loadError = readinessQuery.error
+    ? errorMessage(readinessQuery.error, 'Could not check whether this store is ready for deletion.')
+    : ''
 
   const closeModal = () => {
     if (submitting) return
@@ -78,15 +72,17 @@ export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
       setPassword('')
       setModalOpen(false)
       queryClient.clear()
-      await auth.refreshRestaurants()
       navigate(auth.accountType === 'reseller' ? '/reseller/profile' : '/enterprise/settings', {
         replace: true,
         state: { lifecycleNotice: `${restaurant.name} is being archived. It remains recoverable for 30 days.` },
       })
+      // The deletion has already committed. Do not keep the user on a now-deleted
+      // store while the portfolio refresh makes its own network round trip.
+      void auth.refreshRestaurants().catch(() => undefined)
     } catch (error) {
       setPassword('')
       setSubmitError(errorMessage(error, 'The store was not deleted. Check the password and readiness, then try again.'))
-      await loadReadiness()
+      void readinessQuery.refetch()
     } finally {
       setSubmitting(false)
     }
@@ -117,8 +113,8 @@ export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
       <div className="mt-5 rounded-xl border border-white/10 bg-black/15 p-4">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold text-dash-cream">Deletion readiness</h3>
-          <button type="button" onClick={() => void loadReadiness()} disabled={loading} className="inline-flex items-center gap-1.5 text-xs font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">
-            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
+          <button type="button" onClick={() => void readinessQuery.refetch()} disabled={readinessQuery.isFetching} className="inline-flex items-center gap-1.5 text-xs font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">
+            <RefreshCw size={13} className={readinessQuery.isFetching ? 'animate-spin' : ''} aria-hidden="true" />
             Check again
           </button>
         </div>
@@ -146,8 +142,7 @@ export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          disabled={loading || !readiness?.ready}
-          className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-red-500 px-4 text-sm font-semibold text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-red-500 px-4 text-sm font-semibold text-white transition hover:bg-red-400"
         >
           <Trash2 size={15} aria-hidden="true" /> Delete store
         </button>
@@ -166,6 +161,9 @@ export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
             <p className="mt-2 text-sm leading-6 text-dash-secondary">
               Enter the exact, case-sensitive store name and your primary owner account password. The password is verified by Supabase Auth and is never stored.
             </p>
+            {loading && <p className="mt-3 text-sm text-amber-200" role="status">Finishing the store safety check… You can fill this out while it runs.</p>}
+            {!loading && loadError && <p className="mt-3 text-sm text-red-200">The safety check could not finish. Close this dialog and select Check again.</p>}
+            {!loading && !loadError && !readiness?.ready && <p className="mt-3 text-sm text-red-200">Resolve the readiness blockers shown behind this dialog before deletion.</p>}
             <label className="mt-5 block text-xs font-semibold text-dash-secondary">
               Store name
               <input autoFocus value={restaurantName} onChange={(event) => setRestaurantName(event.target.value)} disabled={submitting} autoComplete="off" className="mt-1.5 w-full rounded-lg border border-white/15 bg-black/20 px-3 py-2.5 text-sm text-dash-cream outline-none focus:border-red-300" />

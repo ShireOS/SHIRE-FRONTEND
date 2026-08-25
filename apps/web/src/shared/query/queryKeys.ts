@@ -65,6 +65,7 @@ export const queryKeys = {
     ['restaurant', restaurantId, 'shift-trade-requests', status] as const,
 
   backOfficeAccess: (restaurantId: string) => ['restaurant', restaurantId, 'back-office-access'] as const,
+  deletionReadiness: (restaurantId: string) => ['restaurant', restaurantId, 'deletion-readiness'] as const,
   backOfficeMembers: (restaurantId: string) => ['restaurant', restaurantId, 'back-office-members'] as const,
   managerInboxCount: (restaurantId: string) => ['restaurant', restaurantId, 'manager-inbox-count'] as const,
   timeClockRange: (restaurantId: string, startDate: string, endDate: string) =>

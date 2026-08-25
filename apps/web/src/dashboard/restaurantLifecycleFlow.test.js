@@ -12,9 +12,12 @@ test('danger zone is primary-owner-only and requires an exact name plus password
   assert.match(dashboard, /restaurant\?\.owner_id === auth\.user\?\.id[\s\S]*settings\.lifecycle/)
   assert.match(dangerZone, /restaurantName === \(restaurant\?\.name \|\| ''\)/)
   assert.match(dangerZone, /disabled=\{submitting \|\| !exactNameMatches \|\| !password \|\| !readiness\?\.ready\}/)
+  assert.match(dangerZone, /You can fill this out while it runs/)
   assert.match(dangerZone, /autoComplete="current-password"/)
   assert.match(dangerZone, /idempotencyKeyRef\.current \|\| \(idempotencyKeyRef\.current = crypto\.randomUUID\(\)\)/)
-  assert.match(dangerZone, /queryClient\.clear\(\)[\s\S]*auth\.refreshRestaurants\(\)/)
+  assert.match(dangerZone, /queryClient\.clear\(\)[\s\S]*navigate\([\s\S]*void auth\.refreshRestaurants\(\)\.catch/)
+  assert.doesNotMatch(dangerZone, /await auth\.refreshRestaurants\(\)/)
+  assert.match(dashboard, /queryClient\.prefetchQuery\([\s\S]*queryKeys\.deletionReadiness\(restaurantId\)/)
 })
 
 test('recovery stays in account settings and admin recovery requires a support reason', () => {
