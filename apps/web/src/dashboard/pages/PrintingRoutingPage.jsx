@@ -8,14 +8,9 @@ import ResilientPrintingCard from '../components/printing/ResilientPrintingCard'
 import ProductionWorkflowCard from '../components/printing/ProductionWorkflowCard'
 import HardwareChainGuide from '../components/printing/HardwareChainGuide'
 import TicketTopBuilder from '../components/printing/TicketTopBuilder'
-import { TICKET_TOP_STARTER, ticketTopFieldPresentation } from '../components/printing/ticketTopPolicy'
+import PrinterFaithfulPreview from '../components/printing/PrinterFaithfulPreview'
 import { useAuth } from '../../auth'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
-import {
-  isKitchenPreviewItemLine,
-  isKitchenPreviewLocationLine,
-  isKitchenPreviewModifierLine,
-} from '../components/printing/ticketPreviewPolicy'
 
 const DEFAULT_CONFIG = {
   auto_print_after_payment: true,
@@ -73,20 +68,24 @@ const PRICING_PROGRAM_LABELS = {
   cash_discount: 'Cash discount · standard price minus discount',
 }
 
-const MEMO_FIELDS = new Set(['check_memo', 'check_memo_label', 'check_memo_value'])
-const KITCHEN_METHOD_LABELS = { dine_in: 'DINE IN', togo: 'TO GO', delivery: 'DELIVERY' }
-
-function memoPresentation(rows) {
-  for (const row of rows || []) {
-    if (row?.type === 'field' && MEMO_FIELDS.has(row.field)) return row
-    if (row?.type !== 'pair') continue
-    for (const side of [row.left, row.right]) {
-      const parts = Array.isArray(side?.parts) ? side.parts : [side]
-      if (parts.some(part => MEMO_FIELDS.has(part?.field))) return { ...row, ...side, pair: true }
-    }
-  }
-  return { align: 'left', size: 'standard', bold: true, color: 'red' }
-}
+const OUTPUT_MODES = [
+  { id: 'kitchen_ticket', label: 'Kitchen Ticket', description: 'Production ticket sent to the kitchen' },
+  { id: 'customer_receipt', label: 'Customer Receipt', description: 'Guest-facing check and payment receipt' },
+  { id: 'server_report', label: 'Server Report', description: 'Checkout and settlement report' },
+]
+const KITCHEN_EDITOR_SECTIONS = [
+  { id: 'top', label: 'Ticket top', description: 'Order, kitchen, server, time and table' },
+  { id: 'items', label: 'Items', description: 'Entrée size, emphasis and seats' },
+  { id: 'modifiers', label: 'Modifiers', description: 'Size, ribbon color and marker' },
+  { id: 'notes', label: 'Notes', description: 'Guest instructions and emphasis' },
+  { id: 'spacing', label: 'Spacing & format', description: 'Line pitch, dividers and shared formats' },
+  { id: 'names', label: 'Printed names', description: 'Short kitchen aliases' },
+]
+const PREVIEW_PRINTER_PROFILES = [
+  { id: 'TM-U220', label: 'Epson TM-U220 / U220II · impact kitchen' },
+  { id: 'TM-T88VI', label: 'Epson TM-T88 family · 80 mm thermal' },
+  { id: 'TM-m30II', label: 'Epson TM-m30 family · compact thermal' },
+]
 
 function Toggle({ label, checked, onChange }) {
   return (
@@ -130,10 +129,13 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const [kitchenVariant, setKitchenVariant] = useState('dine_in')
   const [kitchenMemo, setKitchenMemo] = useState('OK')
   const [selectedTargetId, setSelectedTargetId] = useState('')
+  const [previewProfile, setPreviewProfile] = useState('')
   const [previewCapabilities, setPreviewCapabilities] = useState(null)
   const [dirtyTargetIds, setDirtyTargetIds] = useState(() => new Set())
   const [preview, setPreview] = useState('Loading preview…')
+  const [previewSvg, setPreviewSvg] = useState('')
   const [previewStatus, setPreviewStatus] = useState('loading')
+  const [kitchenEditorSection, setKitchenEditorSection] = useState('top')
   const [previewPricingProgram, setPreviewPricingProgram] = useState('standard')
   const [previewPricingWarnings, setPreviewPricingWarnings] = useState([])
   const [search, setSearch] = useState('')
@@ -227,9 +229,17 @@ export default function PrintingRoutingPage({ restaurantId }) {
 
   useEffect(() => {
     if (loading || section === 'routing') return undefined
+    if (output === 'kitchen_ticket' && !selectedTarget && !previewProfile) {
+      setPreview('Choose the physical kitchen-printer model to render an accurate preview.')
+      setPreviewSvg('')
+      setPreviewCapabilities(null)
+      setPreviewStatus('needs_profile')
+      return undefined
+    }
     const requestId = ++previewRequestRef.current
     const controller = new AbortController()
     setPreview('Rendering preview…')
+    setPreviewSvg('')
     setPreviewStatus('loading')
     setPreviewPricingWarnings([])
     const timer = setTimeout(async () => {
@@ -243,6 +253,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
             kitchen_memo: kitchenMemo.trim() || null,
             station_id: scope === 'whole' ? null : scope,
             target_id: selectedTargetId || null,
+            preview_profile: selectedTargetId ? null : previewProfile || null,
             paper_width_mm: selectedTarget?.config?.paper_width_mm || null,
             config,
           }),
@@ -254,6 +265,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
         }
         if (requestId === previewRequestRef.current) {
           setPreview(result.preview || 'No preview available')
+          setPreviewSvg(result.preview_svg || '')
           setPreviewCapabilities(result.printer_capabilities || null)
           setPreviewPricingProgram(result.pricing_program || 'standard')
           setPreviewPricingWarnings(result.pricing_warnings || [])
@@ -263,6 +275,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
         if (err?.name !== 'AbortError' && requestId === previewRequestRef.current) {
           setPreview(err?.message || 'Preview unavailable')
           setPreviewStatus('error')
+          setPreviewSvg('')
         }
       }
     }, 250)
@@ -270,7 +283,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [config, customerVariant, kitchenMemo, kitchenVariant, loading, output, restaurantId, scope, section, selectedTarget, selectedTargetId])
+  }, [config, customerVariant, kitchenMemo, kitchenVariant, loading, output, previewProfile, restaurantId, scope, section, selectedTarget, selectedTargetId])
 
   const effectiveKitchen = useMemo(() => ({
     ...config.kitchen,
@@ -281,25 +294,6 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const ticketTopOverridden = scope === 'whole'
     ? ticketTopConfigured
     : Array.isArray(stationKitchen?.header) || Array.isArray(stationKitchen?.info)
-  const memoStyle = useMemo(() => {
-    const rows = ticketTopConfigured
-      ? [...(effectiveKitchen.header || []), ...(effectiveKitchen.info || [])]
-      : [...TICKET_TOP_STARTER.header, ...TICKET_TOP_STARTER.info]
-    return memoPresentation(rows)
-  }, [effectiveKitchen, ticketTopConfigured])
-  const methodStyle = useMemo(() => {
-    const rows = ticketTopConfigured
-      ? [...(effectiveKitchen.header || []), ...(effectiveKitchen.info || [])]
-      : [...TICKET_TOP_STARTER.header, ...TICKET_TOP_STARTER.info]
-    return ticketTopFieldPresentation(rows, 'order_type') || {}
-  }, [effectiveKitchen, ticketTopConfigured])
-  const locationStyle = useMemo(() => {
-    const rows = ticketTopConfigured
-      ? [...(effectiveKitchen.header || []), ...(effectiveKitchen.info || [])]
-      : [...TICKET_TOP_STARTER.header, ...TICKET_TOP_STARTER.info]
-    return ticketTopFieldPresentation(rows, 'location') || {}
-  }, [effectiveKitchen, ticketTopConfigured])
-
   const effectiveAliases = kind => ({
     ...(config.aliases?.[kind] || {}),
     ...(scope === 'whole' ? {} : config.stations?.[scope]?.aliases?.[kind] || {}),
@@ -472,15 +466,15 @@ export default function PrintingRoutingPage({ restaurantId }) {
   const paperWidthOptions = displayedCapabilities?.paper_width_options || []
   const previewTitle = output === 'kitchen_ticket' ? 'Kitchen ticket' : output === 'server_report' ? 'Server report' : 'Customer receipt'
   const previewSize = output === 'kitchen_ticket' ? effectiveKitchen.size : output === 'server_report' ? config.report?.size : config.customer?.size
-  const previewLines = preview.split('\n')
   const displayedNormalColumns = output === 'kitchen_ticket'
     ? displayedCapabilities?.kitchen_normal_columns ?? displayedCapabilities?.normal_columns
     : displayedCapabilities?.normal_columns
   const displayedCompactColumns = output === 'kitchen_ticket'
     ? displayedCapabilities?.kitchen_compact_columns ?? displayedCapabilities?.condensed_columns
     : displayedCapabilities?.condensed_columns
-  const firstPreviewItemIndex = previewLines.findIndex(line => /^\d+(?:\.\d+)?\s{2}\S/.test(line))
-  const memoPreviewValues = kitchenMemo.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  const displayedImpactWideColumns = displayedCapabilities?.family === 'impact'
+    ? Math.min(18, Math.floor((displayedNormalColumns || 40) / 2))
+    : null
 
   return (
     <div className="space-y-5">
@@ -521,17 +515,40 @@ export default function PrintingRoutingPage({ restaurantId }) {
             </div>
           )}
           <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
-            <div className="grid gap-4 md:grid-cols-2">
-              <Select label="Output" value={output} onChange={setOutput}><option value="kitchen_ticket">Kitchen ticket</option><option value="customer_receipt">Customer receipt</option><option value="server_report">Server report</option></Select>
+            <div role="tablist" aria-label="Printed output" className="grid gap-2 md:grid-cols-3">
+              {OUTPUT_MODES.map(mode => (
+                <button
+                  key={mode.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={output === mode.id}
+                  onClick={() => setOutput(mode.id)}
+                  className={`rounded-xl border px-4 py-3 text-left transition ${output === mode.id ? 'border-dash-gold/60 bg-dash-gold/10 text-dash-cream' : 'border-white/10 bg-black/15 text-dash-secondary hover:border-white/20'}`}
+                >
+                  <span className="block text-sm font-semibold">{mode.label}</span>
+                  <span className="mt-1 block text-xs text-dash-tertiary">{mode.description}</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
               <Select label="Printer" value={selectedTargetId} onChange={setSelectedTargetId}>
                 {!eligibleTargets.length && <option value="">No compatible printer configured</option>}
                 {eligibleTargets.map(target => <option key={target.id} value={target.id}>{target.name}</option>)}
               </Select>
+              {output === 'kitchen_ticket' && !selectedTarget && (
+                <Select label="Physical model for preview" value={previewProfile} onChange={setPreviewProfile}>
+                  <option value="">Choose the model on the printer label</option>
+                  {PREVIEW_PRINTER_PROFILES.map(profile => <option key={profile.id} value={profile.id}>{profile.label}</option>)}
+                </Select>
+              )}
               {output === 'kitchen_ticket' && <Select label="Apply to" value={scope} onChange={setScope}><option value="whole">Whole Kitchen</option>{stations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}</Select>}
               {output === 'kitchen_ticket' && <Select label="Preview order method" value={kitchenVariant} onChange={setKitchenVariant}><option value="dine_in">Dine-in</option><option value="togo">To-Go</option><option value="delivery">Delivery</option></Select>}
               {output === 'kitchen_ticket' && <label className="block"><span className="label-mono">Preview check memo</span><input maxLength={240} value={kitchenMemo} onChange={event => setKitchenMemo(event.target.value)} placeholder="Blank previews a ticket with no check memo" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></label>}
               {output === 'customer_receipt' && <Select label="Preview state" value={customerVariant} onChange={setCustomerVariant}><option value="open_check">Open check</option><option value="paid_cash">Paid with cash</option><option value="paid_card">Paid with credit card</option><option value="paid_debit">Paid with debit / prepaid</option><option value="paid_external">Paid on external card terminal</option></Select>}
             </div>
+            {output === 'kitchen_ticket' && !selectedTarget && previewProfile && (
+              <p className="mt-3 text-xs text-amber-100">Preview-only model. It does not change printer routing; register the physical printer to make this restaurant configuration authoritative.</p>
+            )}
           </div>
 
           {output === 'customer_receipt' ? (
@@ -642,123 +659,71 @@ export default function PrintingRoutingPage({ restaurantId }) {
             </div>
           ) : (
             <>
-              {access.viewVisible('printing.ticket_layout') && (loadedRestaurantId === String(restaurantId) ? (
-                <TicketTopBuilder
-                  key={`${restaurantId}:${scope}:${ticketTopResetKey}`}
-                  header={effectiveKitchen.header}
-                  info={effectiveKitchen.info}
-                  configured={ticketTopConfigured}
-                  inherited={scope !== 'whole' && ticketTopConfigured && !ticketTopOverridden}
-                  stationScoped={scope !== 'whole'}
-                  canReset={ticketTopOverridden}
-                  supportsRed={supportsRed}
-                  onChange={patch => patchKitchen({ ...patch, ticket_top_customized: true })}
-                  onReset={resetTicketTop}
-                />
-              ) : (
-                <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 text-sm text-dash-tertiary">
-                  Loading ticket configuration…
+              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                <p className="label-mono">Choose a ticket section</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {KITCHEN_EDITOR_SECTIONS.map(editorSection => (
+                    <button key={editorSection.id} type="button" onClick={() => setKitchenEditorSection(editorSection.id)} className={`rounded-xl border px-3 py-2.5 text-left transition ${kitchenEditorSection === editorSection.id ? 'border-dash-gold/60 bg-dash-gold/10' : 'border-white/10 bg-black/15 hover:border-white/20'}`}>
+                      <span className="block text-sm font-semibold text-dash-cream">{editorSection.label}</span>
+                      <span className="mt-0.5 block text-[11px] text-dash-tertiary">{editorSection.description}</span>
+                    </button>
+                  ))}
                 </div>
-              ))}
-              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
-                <h2 className="text-lg font-semibold">Ticket detail</h2>
-                <div className="mt-4 grid gap-4 md:grid-cols-3">
-                  <Select label="Size" value={effectiveKitchen.size} onChange={value => patchKitchen({ size: value })}><option value="compact">Compact</option><option value="standard">Standard</option><option value="easy_read">Easy Read (recommended)</option><option value="large">Large</option></Select>
-                  <Select label="Item names" value={effectiveKitchen.item_name_mode} onChange={value => patchKitchen({ item_name_mode: value })}><option value="alias">Use aliases</option><option value="full">Use full names</option></Select>
-                  <Select label="Modifier names" value={effectiveKitchen.modifier_name_mode} onChange={value => patchKitchen({ modifier_name_mode: value })}><option value="alias">Use aliases</option><option value="full">Use full names</option></Select>
-                </div>
-                <div className="mt-4">
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <Select label="Modifier size" value={effectiveKitchen.modifier_size ?? 'large'} onChange={value => patchKitchen({ modifier_size: value })}><option value="standard">Standard</option><option value="large">Large (recommended)</option></Select>
-                    <Select label="Note size" value={effectiveKitchen.note_size ?? 'large'} onChange={value => patchKitchen({ note_size: value })}><option value="standard">Standard</option><option value="large">Large (recommended)</option></Select>
-                    <Select label="Modifier color" value={effectiveKitchen.modifier_color} onChange={value => patchKitchen({ modifier_color: value })}><option value="black">Black</option><option value="red">Red — impact printer ribbon</option></Select>
-                    <Select label="Note color" value={effectiveKitchen.note_color ?? 'red'} onChange={value => patchKitchen({ note_color: value })}><option value="black">Black</option><option value="red">Red — impact printer ribbon</option></Select>
-                    <Select label="Modifier marker" value={effectiveKitchen.modifier_marker ?? 'indent'} onChange={value => patchKitchen({ modifier_marker: value })}><option value="indent">Indent only (recommended)</option><option value="plus">Plus sign</option></Select>
-                    <Select label="Vertical density" value={effectiveKitchen.line_density ?? 'tight'} onChange={value => patchKitchen({ line_density: value })}><option value="tight">Shorter same-width font + tight pitch</option><option value="standard">Original tall font + spacing</option></Select>
-                  </div>
-                  {scope === 'whole' && (
-                    (config.kitchen?.modifier_marker ?? 'indent') !== savedKitchenPresentation.modifier_marker
-                    || (config.kitchen?.line_density ?? 'tight') !== savedKitchenPresentation.line_density
-                  ) && (
-                    <div className="mt-3 rounded-xl border border-dash-gold/25 bg-dash-gold/[0.06] p-3">
-                      <label className="text-xs font-semibold text-dash-cream">Reason for kitchen-ticket presentation change</label>
-                      <input maxLength={300} value={receiptPolicyReason} onChange={event => setReceiptPolicyReason(event.target.value)} placeholder="Example: Adopt the tighter hybrid kitchen ticket" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" />
-                    </div>
-                  )}
-                  <p className={`mt-2 text-xs ${supportsRed === false ? 'text-amber-200' : 'text-dash-tertiary'}`}>
-                    {supportsRed === true
-                      ? 'This impact printer can use its red ribbon for modifiers and notes.'
-                      : supportsRed === false
-                        ? 'This printer cannot produce red. Requested red emphasis prints bold black instead.'
-                        : 'Choose a printer to verify color. Requested red safely falls back to bold black.'}
-                  </p>
-                </div>
-                {/* The shared vocabulary. Each of these renders a concept that appears in
-                    more than one place on a ticket, so the choice is made once here rather
-                    than per row — a check number cannot read CHK 418 in the heading and
-                    ORD-2026-000418 in a row someone added in the builder. */}
-                <div className="mt-4">
-                  <span className="label-mono">How things read</span>
-                  <p className="mt-1 text-xs text-dash-tertiary">Applies everywhere it appears — the heading, the builder rows, and the item lines.</p>
-                  <div className="mt-2 grid gap-3 md:grid-cols-2">
-                    <Select label="Check number" value={effectiveKitchen.check_number_format ?? 'chk'} onChange={value => patchKitchen({ check_number_format: value })}>
-                      <option value="chk">CHK 418 (recommended)</option>
-                      <option value="short">418</option>
-                      <option value="hash">#418</option>
-                      <option value="full">ORD-2026-000418</option>
-                      <option value="labeled">Order ORD-2026-000418</option>
-                    </Select>
-                    <Select label="Sent time" value={effectiveKitchen.time_format ?? 'meridiem'} onChange={value => patchKitchen({ time_format: value })}>
-                      <option value="compact">3:14P</option>
-                      <option value="meridiem">3:14 PM (recommended)</option>
-                      <option value="h24">15:14</option>
-                    </Select>
-                    <Select label="Seats" value={effectiveKitchen.seat_format ?? 'short'} onChange={value => patchKitchen({ seat_format: value })}>
-                      <option value="short">S1 (recommended)</option>
-                      <option value="labeled">Seat 1</option>
-                      <option value="paren">(Seat 1)</option>
-                      <option value="number">1</option>
-                    </Select>
-                    <Select label="Guest notes" value={effectiveKitchen.note_style ?? 'stars'} onChange={value => patchKitchen({ note_style: value })}>
-                      <option value="stars">** NO ONION ** (recommended)</option>
-                      <option value="labeled">NOTE: NO ONION</option>
-                      <option value="bracket">[NO ONION]</option>
-                      <option value="plain">NO ONION</option>
-                    </Select>
-                    <Select label="Between items" value={effectiveKitchen.item_separator ?? 'dashes'} onChange={value => patchKitchen({ item_separator: value })}>
-                      <option value="dots">Dotted rule</option>
-                      <option value="dashes">Solid rule (recommended)</option>
-                      <option value="blank">Blank line</option>
-                      <option value="none">Nothing</option>
-                    </Select>
-                  </div>
-                  <p className="mt-2 text-xs text-dash-tertiary">
-                    A seat label with no number ("Window") always prints as written — there is nothing to shorten.
-                  </p>
-                </div>
-                <div className="mt-4"><Toggle label="Bold items (darker)" checked={effectiveKitchen.item_bold ?? true} onChange={value => patchKitchen({ item_bold: value })} /><Toggle label="Print modifiers" checked={effectiveKitchen.print_modifiers} onChange={value => patchKitchen({ print_modifiers: value })} /><Toggle label="Bold modifiers (darker)" checked={effectiveKitchen.modifier_bold ?? true} onChange={value => patchKitchen({ modifier_bold: value })} /><Toggle label="Bold notes (darker)" checked={effectiveKitchen.note_bold ?? true} onChange={value => patchKitchen({ note_bold: value })} /><Toggle label="Print prices" checked={effectiveKitchen.print_prices} onChange={value => patchKitchen({ print_prices: value })} /><Toggle label="Print seats" checked={effectiveKitchen.print_seats} onChange={value => patchKitchen({ print_seats: value })} /><Toggle label="Combine identical items" checked={effectiveKitchen.combine_identical} onChange={value => patchKitchen({ combine_identical: value })} /></div>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+              {kitchenEditorSection === 'top' && (access.viewVisible('printing.ticket_layout') ? (loadedRestaurantId === String(restaurantId) ? (
+                <TicketTopBuilder key={`${restaurantId}:${scope}:${ticketTopResetKey}`} header={effectiveKitchen.header} info={effectiveKitchen.info} configured={ticketTopConfigured} inherited={scope !== 'whole' && ticketTopConfigured && !ticketTopOverridden} stationScoped={scope !== 'whole'} canReset={ticketTopOverridden} supportsRed={supportsRed} onChange={patch => patchKitchen({ ...patch, ticket_top_customized: true })} onReset={resetTicketTop} />
+              ) : <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5 text-sm text-dash-tertiary">Loading ticket configuration…</div>) : (
+                <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-5"><h2 className="text-lg font-semibold">Ticket-top controls are hidden in this view</h2><p className="mt-1 text-sm text-amber-100">Switch your Back Office presentation to Advanced to edit these rows. The saved ticket still prints normally.</p></div>
+              ))}
+
+              {kitchenEditorSection === 'items' && <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+                <h2 className="text-lg font-semibold">Item style</h2><p className="mt-1 text-sm text-dash-tertiary">Controls the main entrée lines. The printer preview uses the same physical width and height modes.</p>
+                <div className="mt-4 grid gap-4 md:grid-cols-2"><Select label="Item size" value={effectiveKitchen.size} onChange={value => patchKitchen({ size: value })}><option value="compact">Compact · full-width line</option><option value="standard">Standard · wide + tall on impact</option><option value="easy_read">Easy Read · wide + tall (recommended)</option><option value="large">Large · widest thermal mode</option></Select><Select label="Printed item name" value={effectiveKitchen.item_name_mode} onChange={value => patchKitchen({ item_name_mode: value })}><option value="alias">Use kitchen alias</option><option value="full">Use full POS name</option></Select><Select label="Seat format" value={effectiveKitchen.seat_format ?? 'short'} onChange={value => patchKitchen({ seat_format: value })}><option value="short">S1 (recommended)</option><option value="labeled">Seat 1</option><option value="paren">(Seat 1)</option><option value="number">1</option></Select></div>
+                {displayedImpactWideColumns && <p className="mt-3 text-xs text-dash-tertiary">On this TM-U220, readable items use {displayedImpactWideColumns} wide characters across the 40-column printable canvas; the seat remains on that same physical row.</p>}
+                <div className="mt-4"><Toggle label="Bold items (darker)" checked={effectiveKitchen.item_bold ?? true} onChange={value => patchKitchen({ item_bold: value })} /><Toggle label="Print seats" checked={effectiveKitchen.print_seats} onChange={value => patchKitchen({ print_seats: value })} /><Toggle label="Print prices" checked={effectiveKitchen.print_prices} onChange={value => patchKitchen({ print_prices: value })} /><Toggle label="Combine identical items" checked={effectiveKitchen.combine_identical} onChange={value => patchKitchen({ combine_identical: value })} /></div>
+              </div>}
+
+              {kitchenEditorSection === 'modifiers' && <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+                <h2 className="text-lg font-semibold">Modifier style</h2>
+                <div className="mt-4 grid gap-4 md:grid-cols-2"><Select label="Modifier size" value={effectiveKitchen.modifier_size ?? 'large'} onChange={value => patchKitchen({ modifier_size: value })}><option value="standard">Standard · full-width line</option><option value="large">Large · wide + tall (recommended)</option></Select><Select label="Modifier color" value={effectiveKitchen.modifier_color} onChange={value => patchKitchen({ modifier_color: value })}><option value="black">Black</option><option value="red">Red — impact ribbon</option></Select><Select label="Modifier marker" value={effectiveKitchen.modifier_marker ?? 'indent'} onChange={value => patchKitchen({ modifier_marker: value })}><option value="indent">Indent only (recommended)</option><option value="plus">Plus sign</option></Select><Select label="Printed modifier name" value={effectiveKitchen.modifier_name_mode} onChange={value => patchKitchen({ modifier_name_mode: value })}><option value="alias">Use kitchen alias</option><option value="full">Use full POS name</option></Select></div>
+                <div className="mt-4"><Toggle label="Print modifiers" checked={effectiveKitchen.print_modifiers} onChange={value => patchKitchen({ print_modifiers: value })} /><Toggle label="Bold modifiers (darker)" checked={effectiveKitchen.modifier_bold ?? true} onChange={value => patchKitchen({ modifier_bold: value })} /></div>
+                <p className={`mt-3 text-xs ${supportsRed === false ? 'text-amber-200' : 'text-dash-tertiary'}`}>{supportsRed === true ? 'This impact printer uses its red ribbon.' : supportsRed === false ? 'This printer cannot produce red; red emphasis prints bold black.' : 'Choose a printer model to verify red-ribbon support.'}</p>
+              </div>}
+
+              {kitchenEditorSection === 'notes' && <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+                <h2 className="text-lg font-semibold">Guest-note style</h2>
+                <div className="mt-4 grid gap-4 md:grid-cols-2"><Select label="Note size" value={effectiveKitchen.note_size ?? 'large'} onChange={value => patchKitchen({ note_size: value })}><option value="standard">Standard · full-width line</option><option value="large">Large · wide + tall</option></Select><Select label="Note color" value={effectiveKitchen.note_color ?? 'red'} onChange={value => patchKitchen({ note_color: value })}><option value="black">Black</option><option value="red">Red — impact ribbon</option></Select><Select label="Note format" value={effectiveKitchen.note_style ?? 'stars'} onChange={value => patchKitchen({ note_style: value })}><option value="stars">** NO ONION ** (recommended)</option><option value="labeled">NOTE: NO ONION</option><option value="bracket">[NO ONION]</option><option value="plain">NO ONION</option></Select></div>
+                <div className="mt-4"><Toggle label="Bold notes (darker)" checked={effectiveKitchen.note_bold ?? true} onChange={value => patchKitchen({ note_bold: value })} /></div>
+                {displayedImpactWideColumns && <p className="mt-3 text-xs text-dash-tertiary">Large notes use {displayedImpactWideColumns} wide characters per line before their item indent. With the saved stars format, “** Gluten allergy **” therefore wraps on the physical printer too; Standard uses all {displayedNormalColumns} columns.</p>}
+              </div>}
+
+              {kitchenEditorSection === 'spacing' && <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+                <h2 className="text-lg font-semibold">Spacing and shared formats</h2><p className="mt-1 text-sm text-dash-tertiary">These settings affect the whole ticket wherever the same concept appears.</p>
+                <div className="mt-4 grid gap-4 md:grid-cols-2"><Select label="Vertical density" value={effectiveKitchen.line_density ?? 'tight'} onChange={value => patchKitchen({ line_density: value })}><option value="tight">Tight impact pitch (recommended)</option><option value="standard">Standard printer spacing</option></Select><Select label="Between items" value={effectiveKitchen.item_separator ?? 'dashes'} onChange={value => patchKitchen({ item_separator: value })}><option value="dots">Dotted rule</option><option value="dashes">Solid rule (recommended)</option><option value="blank">Blank line</option><option value="none">Nothing</option></Select><Select label="Check number" value={effectiveKitchen.check_number_format ?? 'chk'} onChange={value => patchKitchen({ check_number_format: value })}><option value="chk">CHK 418 (recommended)</option><option value="short">418</option><option value="hash">#418</option><option value="full">ORD-2026-000418</option><option value="labeled">Order ORD-2026-000418</option></Select><Select label="Sent time" value={effectiveKitchen.time_format ?? 'meridiem'} onChange={value => patchKitchen({ time_format: value })}><option value="compact">3:14P</option><option value="meridiem">3:14 PM (recommended)</option><option value="h24">15:14</option></Select></div>
+                {scope === 'whole' && ((config.kitchen?.modifier_marker ?? 'indent') !== savedKitchenPresentation.modifier_marker || (config.kitchen?.line_density ?? 'tight') !== savedKitchenPresentation.line_density) && <div className="mt-4 rounded-xl border border-dash-gold/25 bg-dash-gold/[0.06] p-3"><label className="text-xs font-semibold text-dash-cream">Reason for kitchen-ticket presentation change</label><input maxLength={300} value={receiptPolicyReason} onChange={event => setReceiptPolicyReason(event.target.value)} placeholder="Example: Increase kitchen-ticket readability" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /></div>}
+              </div>}
+
+              {kitchenEditorSection === 'names' && <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Printed names</h2><p className="mt-1 text-sm text-dash-tertiary">Full POS names remain unchanged.</p></div><div className="relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-dash-tertiary" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search items or modifiers" className="rounded-xl border border-white/10 bg-black/20 py-2 pl-9 pr-3 text-sm outline-none" /></div></div>
                 <div className="mt-4 max-h-[420px] overflow-y-auto rounded-xl border border-white/10">
                   {filtered.map(row => { const aliases = effectiveAliases(row.kind); const inherited = config.aliases?.[row.kind]?.[row.id]; return <div key={`${row.kind}-${row.id}`} className="grid gap-2 border-b border-white/10 p-3 last:border-0 md:grid-cols-[1.2fr_.9fr_.5fr] md:items-center"><div><p className="text-sm font-medium text-dash-cream">{row.name}</p><p className="text-xs text-dash-tertiary">{row.type}{row.category ? ` · ${row.category}` : ''}</p></div><input value={aliases[row.id] || ''} onChange={event => setAlias(row.kind, row.id, event.target.value)} placeholder={scope !== 'whole' && inherited ? `Inherits ${inherited}` : 'Uses full name'} className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none focus:border-dash-gold/60" /><span className="text-xs text-dash-tertiary">{scope === 'whole' ? 'Whole Kitchen' : aliases[row.id] && aliases[row.id] !== inherited ? 'Station override' : 'Inherited'}</span></div> })}
                 </div>
-              </div>
+              </div>}
             </>
           )}
           <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
             <h2 className="text-lg font-semibold">Detected printer layout</h2>
-            {selectedTarget && displayedCapabilities ? <>
-              <p className="mt-1 text-sm text-dash-tertiary">Layout comes from the model already selected for this printer target.</p>
+            {displayedCapabilities ? <>
+              <p className="mt-1 text-sm text-dash-tertiary">{selectedTarget ? 'Layout comes from the model saved on this printer target.' : 'Layout is a preview-only model until a physical printer is registered.'}</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-white/10 bg-black/20 p-3"><p className="label-mono">Model</p><p className="mt-1 text-sm font-semibold">{displayedCapabilities.profile || selectedTarget.config?.profile || 'Unknown'}</p></div>
+                <div className="rounded-xl border border-white/10 bg-black/20 p-3"><p className="label-mono">Model</p><p className="mt-1 text-sm font-semibold">{displayedCapabilities.profile || selectedTarget?.config?.profile || 'Unknown'}</p></div>
                 <div className="rounded-xl border border-white/10 bg-black/20 p-3"><p className="label-mono">Roll width</p><p className="mt-1 text-sm font-semibold">{displayedCapabilities.paper_width_mm} mm</p></div>
                 <div className="rounded-xl border border-white/10 bg-black/20 p-3"><p className="label-mono">Columns</p><p className="mt-1 text-sm font-semibold">{displayedNormalColumns} normal · {displayedCompactColumns} compact</p></div>
               </div>
               {!displayedCapabilities.known_profile && <p className="mt-3 text-xs text-amber-200">Unknown model: using the conservative 42-column fallback.</p>}
-              {paperWidthOptions.length > 1 && <div className="mt-4 max-w-xs"><Select label="Installed paper roll" value={String(selectedTarget.config?.paper_width_mm || displayedCapabilities.paper_width_mm)} onChange={patchTargetPaperWidth}>{paperWidthOptions.map(width => <option key={width} value={width}>{width} mm</option>)}</Select></div>}
-            </> : <p className="mt-2 text-sm text-dash-tertiary">Choose a compatible printer to calculate its usable paper width.</p>}
+              {selectedTarget && paperWidthOptions.length > 1 && <div className="mt-4 max-w-xs"><Select label="Installed paper roll" value={String(selectedTarget.config?.paper_width_mm || displayedCapabilities.paper_width_mm)} onChange={patchTargetPaperWidth}>{paperWidthOptions.map(width => <option key={width} value={width}>{width} mm</option>)}</Select></div>}
+            </> : <p className="mt-2 text-sm text-dash-tertiary">Choose a compatible printer or a preview model to calculate its usable paper width.</p>}
           </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={discard} disabled={saving || loading || loadedRestaurantId !== String(restaurantId)} className="rounded-xl border border-white/10 px-5 py-3 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">Cancel</button>
@@ -767,64 +732,12 @@ export default function PrintingRoutingPage({ restaurantId }) {
         </div>
 
         <div className="h-fit rounded-2xl border border-white/10 bg-white/[0.035] p-5 xl:sticky xl:top-20">
-          <div className="flex items-center justify-between"><div><p className="label-mono">Live preview</p><h2 className="mt-1 text-lg font-semibold">{previewTitle}</h2></div>{previewStatus === 'ready' ? <span className="inline-flex items-center gap-1 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" /> Real renderer</span> : previewStatus === 'error' ? <span className="inline-flex items-center gap-1 text-xs text-amber-200"><AlertCircle className="h-4 w-4" /> Renderer unavailable</span> : <span className="inline-flex items-center gap-1 text-xs text-dash-tertiary"><Loader2 className="h-4 w-4 animate-spin" /> Rendering</span>}</div>
+          <div className="flex items-center justify-between gap-3"><div><p className="label-mono">Live preview</p><h2 className="mt-1 text-lg font-semibold">{previewTitle}</h2></div>{previewStatus === 'ready' ? <span className="inline-flex items-center gap-1 text-xs text-emerald-200"><CheckCircle2 className="h-4 w-4" /> {output === 'kitchen_ticket' && previewSvg ? 'Printer-faithful' : 'Production renderer'}</span> : previewStatus === 'error' ? <span className="inline-flex items-center gap-1 text-xs text-amber-200"><AlertCircle className="h-4 w-4" /> Renderer unavailable</span> : previewStatus === 'needs_profile' ? <span className="inline-flex items-center gap-1 text-xs text-amber-200"><Printer className="h-4 w-4" /> Choose model</span> : <span className="inline-flex items-center gap-1 text-xs text-dash-tertiary"><Loader2 className="h-4 w-4 animate-spin" /> Rendering</span>}</div>
+          {output === 'kitchen_ticket' && <div className="mt-4 flex flex-wrap gap-1.5">{KITCHEN_EDITOR_SECTIONS.map(editorSection => <button key={editorSection.id} type="button" onClick={() => setKitchenEditorSection(editorSection.id)} className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${kitchenEditorSection === editorSection.id ? 'border-dash-gold/60 bg-dash-gold/10 text-dash-gold' : 'border-white/10 text-dash-tertiary hover:text-dash-cream'}`}>{editorSection.label}</button>)}</div>}
           <div className="mt-5 overflow-x-auto pb-2">
-            <div className="mx-auto w-max min-w-[430px] bg-[#fffdf6] px-7 py-8 text-black shadow-2xl">
-            <pre className={`whitespace-pre font-mono ${output === 'kitchen_ticket' && (effectiveKitchen.line_density ?? 'tight') === 'tight' ? 'leading-[1.18]' : 'leading-relaxed'} ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{previewLines.map((line, index, lines) => {
-              const isModifier = output === 'kitchen_ticket' && isKitchenPreviewModifierLine(lines, index)
-              const isItem = output === 'kitchen_ticket' && isKitchenPreviewItemLine(line)
-              const isMethod = output === 'kitchen_ticket'
-                && line.trim() === KITCHEN_METHOD_LABELS[kitchenVariant]
-                && (firstPreviewItemIndex < 0 || index < firstPreviewItemIndex)
-              const isLocation = output === 'kitchen_ticket'
-                && isKitchenPreviewLocationLine(line)
-                && (firstPreviewItemIndex < 0 || index < firstPreviewItemIndex)
-              // Guest notes carry whichever marker the note style configures, so
-              // matching only the old "NOTE:" prefix left them unstyled in the
-              // preview under every other choice.
-              const isNote = output === 'kitchen_ticket' && (
-                /^\s*(NOTE:|\*\* .* \*\*\s*$|\[.*\]\s*$)/.test(line)
-                || line.trim() === 'ORDER NOTE'
-                || (index > 0 && lines[index - 1].trim() === 'ORDER NOTE')
-              )
-              const isCheckMemo = output === 'kitchen_ticket' && (
-                /^CHECK MEMO(?:\s*[·:]|\s*$)/i.test(line.trim())
-                || (index > 0 && /^CHECK MEMO\s*$/i.test(lines[index - 1].trim()))
-                || ((firstPreviewItemIndex < 0 || index < firstPreviewItemIndex) && memoPreviewValues.includes(line.trim()))
-              )
-              const requestedColor = isCheckMemo ? (memoStyle.color ?? 'black') : isNote ? (effectiveKitchen.note_color ?? 'red') : effectiveKitchen.modifier_color
-              const requestedBold = isItem ? (effectiveKitchen.item_bold ?? true) : isCheckMemo ? (memoStyle.bold ?? false) : isNote ? (effectiveKitchen.note_bold ?? true) : (effectiveKitchen.modifier_bold ?? true)
-              const requestedSize = isCheckMemo ? (memoStyle.size ?? 'standard') : isNote ? (effectiveKitchen.note_size ?? 'large') : (effectiveKitchen.modifier_size ?? 'large')
-              const fallbackBold = requestedColor === 'red' && supportsRed === false
-              const className = [
-                (isModifier || isNote || isCheckMemo) && requestedColor === 'red' && supportsRed === true ? 'text-red-700' : '',
-                (isModifier || isNote || isCheckMemo || isItem) && (requestedBold || fallbackBold) ? 'font-bold' : '',
-                (isModifier || isNote || isCheckMemo) && requestedSize === 'standard' ? 'text-[0.86em]' : '',
-                (isModifier || isNote || isCheckMemo) && requestedSize === 'large' ? 'text-[1em]' : '',
-                isCheckMemo && requestedSize === 'double' ? 'text-[1.15em]' : '',
-                isMethod && methodStyle.color === 'red' && supportsRed === true ? 'text-red-700' : '',
-                isMethod && methodStyle.bold ? 'font-bold' : '',
-                isMethod && methodStyle.size === 'large' ? 'text-[1.35em] leading-[2.1]' : '',
-                isMethod && methodStyle.size === 'double' ? 'text-[1.7em] leading-[2.1]' : '',
-                isMethod && !methodStyle.pair && methodStyle.align === 'center' ? 'block text-center' : '',
-                isMethod && !methodStyle.pair && methodStyle.align === 'right' ? 'block text-right' : '',
-                isLocation && locationStyle.bold ? 'font-bold' : '',
-                isLocation && locationStyle.size === 'large' ? 'text-[1.35em] leading-[2.1]' : '',
-                isLocation && locationStyle.size === 'double' ? 'text-[1.7em] leading-[2.1]' : '',
-                isLocation && !locationStyle.pair && locationStyle.align === 'center' ? 'block text-center' : '',
-                isLocation && !locationStyle.pair && locationStyle.align === 'right' ? 'block text-right' : '',
-                isCheckMemo && !memoStyle.pair && memoStyle.align === 'center' ? 'block text-center' : '',
-                isCheckMemo && !memoStyle.pair && memoStyle.align === 'right' ? 'block text-right' : '',
-              ].filter(Boolean).join(' ')
-              const displayLine = (isMethod && !methodStyle.pair && ['center', 'right'].includes(methodStyle.align))
-                || (isLocation && !locationStyle.pair && ['center', 'right'].includes(locationStyle.align))
-                ? line.trim()
-                : line
-              return <span key={index} className={className}>{displayLine}{'\n'}</span>
-            })}</pre>
-            </div>
+            {output === 'kitchen_ticket' && previewSvg ? <PrinterFaithfulPreview svg={previewSvg} alt={`${previewTitle} on ${displayedCapabilities?.profile || 'selected printer'}`} impact={displayedCapabilities?.family === 'impact'} paperWidthMm={displayedCapabilities?.paper_width_mm} /> : <div className="mx-auto w-max min-w-[430px] bg-[#fffdf6] px-7 py-8 text-black shadow-2xl"><pre className={`whitespace-pre font-mono leading-relaxed ${previewSize === 'compact' ? 'text-xs' : previewSize === 'large' || previewSize === 'easy_read' ? 'text-base' : 'text-sm'}`}>{preview}</pre></div>}
           </div>
-          <p className="mt-4 text-center text-xs text-dash-tertiary">Uses live menu names and the same ReceiptLine renderer as the printer.</p>
+          <p className="mt-4 text-center text-xs text-dash-tertiary">{output === 'kitchen_ticket' && previewSvg ? displayedCapabilities?.family === 'impact' ? `${displayedCapabilities.paper_width_mm || 76} mm roll · 63.4 mm printable area · ${displayedNormalColumns || 40} Font B columns · 7×9 impact dots.` : `Physical ${displayedCapabilities?.paper_width_mm || 80} mm width, ${displayedNormalColumns || 48} columns and printer font modes.` : 'Uses live menu names and the production ReceiptLine renderer.'}</p>
         </div>
       </div>
     </div>

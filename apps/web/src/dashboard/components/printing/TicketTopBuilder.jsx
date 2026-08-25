@@ -75,13 +75,13 @@ let rowIdCounter = 0
 const nextRowId = () => `ttrow-${++rowIdCounter}`
 const withIds = rows => (rows || []).map(row => ({ id: nextRowId(), ...row }))
 
-function MiniSelect({ value, onChange, title, children }) {
+function MiniSelect({ value, onChange, title, children, className = '' }) {
   return (
     <select
       value={value}
       onChange={event => onChange(event.target.value)}
       title={title}
-      className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs text-dash-cream outline-none focus:border-dash-gold/60"
+      className={`min-w-0 max-w-full rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs text-dash-cream outline-none focus:border-dash-gold/60 ${className}`}
     >
       {children}
     </select>
@@ -102,10 +102,10 @@ function ColumnEditor({ side, label, onChange }) {
   })
 
   return (
-    <div className="min-w-[190px] flex-1 rounded-lg border border-white/10 bg-black/15 p-2">
-      <div className="flex items-center justify-between gap-2">
+    <div className="min-w-0 flex-1 basis-[220px] rounded-lg border border-white/10 bg-black/15 p-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-mono text-[9px] uppercase tracking-wider text-dash-tertiary">{label}</span>
-        <span className="flex items-center gap-1">
+        <span className="flex min-w-0 flex-wrap items-center justify-end gap-1">
           <MiniSelect value={side?.size || 'standard'} onChange={value => patch({ size: value })} title="Column size">
             <option value="standard">Standard</option>
             <option value="large">Large · tall</option>
@@ -115,35 +115,38 @@ function ColumnEditor({ side, label, onChange }) {
         </span>
       </div>
       {parts.map((part, index) => (
-        <div key={index} className="mt-1.5 flex items-center gap-1">
+        <div key={index} className="mt-1.5 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-1">
           <MiniSelect
             value={part.field || ''}
             onChange={value => patchPart(index, { field: value, text: undefined })}
             title="What prints here"
+            className="w-full"
           >
             {Object.entries(TICKET_TOP_FIELDS).map(([field, meta]) => (
               <option key={field} value={field}>{meta.label}</option>
             ))}
           </MiniSelect>
-          {index > 0 && (
-            <Chip
-              on={part.hide_if_duplicate === true}
-              title="Skip this when the same text already printed higher up the ticket"
-              onClick={() => patchPart(index, { hide_if_duplicate: !part.hide_if_duplicate || undefined })}
-            >
-              No repeat
-            </Chip>
-          )}
-          {parts.length > 1 && (
-            <button
-              type="button"
-              title="Remove"
-              onClick={() => patch({ parts: parts.filter((_, position) => position !== index) })}
-              className="px-1 text-sm leading-none text-dash-tertiary transition hover:text-red-300"
-            >
-              ×
-            </button>
-          )}
+          <span className="flex shrink-0 items-center gap-1">
+            {index > 0 && (
+              <Chip
+                on={part.hide_if_duplicate === true}
+                title="Skip this when the same text already printed higher up the ticket"
+                onClick={() => patchPart(index, { hide_if_duplicate: !part.hide_if_duplicate || undefined })}
+              >
+                No repeat
+              </Chip>
+            )}
+            {parts.length > 1 && (
+              <button
+                type="button"
+                title="Remove"
+                onClick={() => patch({ parts: parts.filter((_, position) => position !== index) })}
+                className="px-1 text-sm leading-none text-dash-tertiary transition hover:text-red-300"
+              >
+                ×
+              </button>
+            )}
+          </span>
         </div>
       ))}
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
@@ -193,7 +196,6 @@ function Chip({ on, tone = 'gold', title, onClick, children }) {
 }
 
 export default function TicketTopBuilder({ header, info, configured, inherited, stationScoped, canReset, supportsRed, onChange, onReset }) {
-  const [advanced, setAdvanced] = useState(false)
   const externalRows = useMemo(
     () => ticketTopEditorRows(header, info, configured),
     [configured, header, info],
@@ -297,10 +299,10 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
           />
         )}
         {isPair && (
-          <div className="flex w-full flex-wrap items-start gap-2">
+          <div className="grid w-full min-w-0 gap-2 md:grid-cols-2">
             <ColumnEditor side={row.left} label="Left" onChange={next => updateRow(zone, id, { left: next })} />
             <ColumnEditor side={row.right} label="Right" onChange={next => updateRow(zone, id, { right: next })} />
-            <label className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/15 px-2 py-1.5" title="How many columns the right side reserves. Narrower leaves more room for the left.">
+            <label className="flex min-w-0 items-center gap-1.5 justify-self-start rounded-lg border border-white/10 bg-black/15 px-2 py-1.5 md:col-span-2 md:justify-self-end" title="How many columns the right side reserves. Narrower leaves more room for the left.">
               <span className="font-mono text-[9px] uppercase tracking-wider text-dash-tertiary">Right width</span>
               <input
                 type="number"
@@ -314,7 +316,7 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
           </div>
         )}
         {row.type === 'divider' && <span className="min-w-[60px] flex-1 border-t border-dashed border-white/20" />}
-        <span className="ml-auto flex flex-wrap items-center gap-1.5">
+        <span className="flex w-full min-w-0 flex-wrap items-center justify-end gap-1.5">
           {!structural && !isPair && (
             <>
               <MiniSelect value={row.size || 'standard'} onChange={value => updateRow(zone, id, { size: value })} title="Row size">
@@ -323,30 +325,26 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
                 <option value="double">Double · wide</option>
               </MiniSelect>
               <Chip on={row.bold === true} title="Bold" onClick={() => updateRow(zone, id, { bold: !row.bold })}>B</Chip>
-              {advanced && (
-                <>
-                  <MiniSelect
-                    value={row.align || (zone === 'header' ? 'center' : 'left')}
-                    onChange={value => updateRow(zone, id, { align: value })}
-                    title="Alignment — header rows centre by default, info rows run left"
-                  >
-                    <option value="left">Left</option>
-                    <option value="center">Centre</option>
-                    <option value="right">Right</option>
-                  </MiniSelect>
-                  <Chip
-                    on={row.color === 'red'}
-                    tone="red"
-                    title={supportsRed === false ? 'This printer has no red ribbon — prints bold black instead' : 'Red — impact printer ribbon; thermal falls back to bold black'}
-                    onClick={() => updateRow(zone, id, { color: row.color === 'red' ? 'black' : 'red' })}
-                  >
-                    Red
-                  </Chip>
-                </>
-              )}
+              <MiniSelect
+                value={row.align || (zone === 'header' ? 'center' : 'left')}
+                onChange={value => updateRow(zone, id, { align: value })}
+                title="Alignment — header rows centre by default, info rows run left"
+              >
+                <option value="left">Left</option>
+                <option value="center">Centre</option>
+                <option value="right">Right</option>
+              </MiniSelect>
+              <Chip
+                on={row.color === 'red'}
+                tone="red"
+                title={supportsRed === false ? 'This printer has no red ribbon — prints bold black instead' : 'Red — impact printer ribbon; thermal falls back to bold black'}
+                onClick={() => updateRow(zone, id, { color: row.color === 'red' ? 'black' : 'red' })}
+              >
+                Red
+              </Chip>
             </>
           )}
-          {!structural && advanced && (
+          {!structural && (
             <span className="flex gap-0.5 rounded-lg border border-white/10 p-0.5" title="Which order methods print this row">
               {METHODS.map(method => {
                 const active = !onlyWhen || onlyWhen.includes(method.id)
@@ -369,28 +367,24 @@ export default function TicketTopBuilder({ header, info, configured, inherited, 
               })}
             </span>
           )}
-          {advanced && (
-            <MiniSelect
-              value={row.requires || ''}
-              onChange={value => updateRow(zone, id, { requires: value || undefined })}
-              title="Only print this row when a field has a value — e.g. a rule under the course banner should vanish on an uncoursed ticket"
-            >
-              <option value="">Always print</option>
-              {Object.entries(TICKET_TOP_FIELDS).map(([field, meta]) => (
-                <option key={field} value={field}>Only if: {meta.label}</option>
-              ))}
-            </MiniSelect>
-          )}
-          {advanced && (
-            <button
-              type="button"
-              title={zone === 'header' ? 'Move to info block' : 'Move to header'}
-              onClick={() => moveRow(zone, id)}
-              className="rounded-lg border border-white/10 p-1.5 text-dash-tertiary transition hover:border-dash-gold/60 hover:text-dash-gold"
-            >
-              <ArrowDownUp className="h-3.5 w-3.5" />
-            </button>
-          )}
+          <MiniSelect
+            value={row.requires || ''}
+            onChange={value => updateRow(zone, id, { requires: value || undefined })}
+            title="Only print this row when a field has a value — e.g. a rule under the course banner should vanish on an uncoursed ticket"
+          >
+            <option value="">Always print</option>
+            {Object.entries(TICKET_TOP_FIELDS).map(([field, meta]) => (
+              <option key={field} value={field}>Only if: {meta.label}</option>
+            ))}
+          </MiniSelect>
+          <button
+            type="button"
+            title={zone === 'header' ? 'Move to info block' : 'Move to header'}
+            onClick={() => moveRow(zone, id)}
+            className="rounded-lg border border-white/10 p-1.5 text-dash-tertiary transition hover:border-dash-gold/60 hover:text-dash-gold"
+          >
+            <ArrowDownUp className="h-3.5 w-3.5" />
+          </button>
           <button
             type="button"
             title="Delete row"
@@ -484,13 +478,6 @@ Kitchen · Marcus          3:14 PM
               <RotateCcw className="h-3 w-3" /> {stationScoped ? 'Use Whole Kitchen' : 'Use the standard'}
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => setAdvanced(current => !current)}
-            className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${advanced ? 'border-dash-gold/50 bg-dash-gold/15 text-dash-gold' : 'border-white/10 text-dash-secondary hover:text-dash-cream'}`}
-          >
-            Advanced
-          </button>
         </div>
       </div>
 
@@ -502,7 +489,7 @@ Kitchen · Marcus          3:14 PM
         <div className="mt-2">
           <SortableRows ids={zones.header.map(row => row.id)} onReorder={ids => reorderZone('header', ids)} renderRow={renderRow('header')} />
         </div>
-        {advanced && renderAddZone('header')}
+        {renderAddZone('header')}
       </div>
 
       <div className="mt-5">
@@ -513,19 +500,12 @@ Kitchen · Marcus          3:14 PM
         <div className="mt-2">
           <SortableRows ids={zones.info.map(row => row.id)} onReorder={ids => reorderZone('info', ids)} renderRow={renderRow('info')} />
         </div>
-        {advanced && renderAddZone('info')}
+        {renderAddZone('info')}
       </div>
 
       <p className="mt-3 text-xs text-dash-tertiary">
         Check memo is a whole-check kitchen instruction. Move and style it like any row, or use its label and value inside a two-column row. If every memo field is removed or hidden for an order method, the compact memo safely returns immediately before the items. CHANGE and CANCEL / HOLD corrections always use the fixed safety banner.
       </p>
-
-      {!advanced && (
-        <p className="mt-3 text-xs text-dash-tertiary">
-          Red ink, per-method rows (e.g. a To-Go banner), optional fields, and custom text live under{' '}
-          <button type="button" onClick={() => setAdvanced(true)} className="font-semibold text-dash-gold">Advanced</button>.
-        </p>
-      )}
     </div>
   )
 }
