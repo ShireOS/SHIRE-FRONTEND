@@ -147,6 +147,11 @@
   purge continue through the ML durable outbox polled by every web deployment
   using Postgres leases; no separate Celery worker is required, and cleanup
   remains available even if new deletion requests are disabled during rollback.
+  Restore mutations replay the same idempotency key after ambiguous 5xx/network
+  responses, and the UI uses the backend clock for the countdown while leaving
+  the exact deadline decision to the database. A transient `suspending` state
+  never causes navigation until the backend confirms archiving/recovery or an
+  active rollback.
 
 ### When you code in this area (STANDING RULES)
 - **Every new back-office feature, page, tab, or mutating endpoint MUST be wired
