@@ -57,32 +57,54 @@ export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
     setResetStatus(result.success ? 'sent' : result.error || 'error')
   }
 
+  const leaveStore = (notice) => {
+    idempotencyKeyRef.current = ''
+    setPassword('')
+    setModalOpen(false)
+    queryClient.clear()
+    navigate(auth.accountType === 'reseller' ? '/reseller/profile' : '/enterprise/settings', {
+      replace: true,
+      state: { lifecycleNotice: notice },
+    })
+    void auth.refreshRestaurants().catch(() => undefined)
+  }
+
   const deleteStore = async (event) => {
     event.preventDefault()
     if (submitting || !exactNameMatches || !password || !readiness?.ready) return
     setSubmitting(true)
     setSubmitError('')
     try {
-      await backOfficeApi.deleteRestaurant(
+      const result = await backOfficeApi.deleteRestaurant(
         restaurantId,
         { restaurant_name: restaurantName, password },
         idempotencyKeyRef.current || (idempotencyKeyRef.current = crypto.randomUUID()),
       )
-      idempotencyKeyRef.current = ''
-      setPassword('')
-      setModalOpen(false)
-      queryClient.clear()
-      navigate(auth.accountType === 'reseller' ? '/reseller/profile' : '/enterprise/settings', {
-        replace: true,
-        state: { lifecycleNotice: `${restaurant.name} is being archived. It remains recoverable for 30 days.` },
-      })
-      // The deletion has already committed. Do not keep the user on a now-deleted
-      // store while the portfolio refresh makes its own network round trip.
-      void auth.refreshRestaurants().catch(() => undefined)
+      leaveStore(`${restaurant.name} is ${result.state === 'recoverable' ? 'archived' : 'being archived'}. It remains recoverable for 30 days.`)
     } catch (error) {
       setPassword('')
-      setSubmitError(errorMessage(error, 'The store was not deleted. Check the password and readiness, then try again.'))
-      void readinessQuery.refetch()
+      // The mutation can finish on the server after a proxy/network response
+      // fails. Reconcile authoritative lifecycle state before calling it a
+      // readiness failure or leaving the user inside a non-operational store.
+      let currentReadiness = null
+      try {
+        currentReadiness = await backOfficeApi.deletionReadiness(restaurantId)
+      } catch {
+        // Preserve the original mutation error when reconciliation is unavailable.
+      }
+      if (currentReadiness?.lifecycle_state && currentReadiness.lifecycle_state !== 'active') {
+        const notice = currentReadiness.lifecycle_state === 'suspending'
+          ? `${restaurant.name} is temporarily unavailable while deletion safely finishes or rolls back.`
+          : `${restaurant.name} is being archived. It remains recoverable for 30 days.`
+        leaveStore(notice)
+        return
+      }
+      if (currentReadiness) {
+        queryClient.setQueryData(queryKeys.deletionReadiness(restaurantId), currentReadiness)
+      }
+      setSubmitError(currentReadiness?.blockers?.length
+        ? 'Store activity changed during the final safety check. Resolve the blockers, then try again.'
+        : errorMessage(error, 'The store was not deleted. Check the password and readiness, then try again.'))
     } finally {
       setSubmitting(false)
     }

@@ -17,6 +17,7 @@ test('danger zone is primary-owner-only and requires an exact name plus password
   assert.match(dangerZone, /idempotencyKeyRef\.current \|\| \(idempotencyKeyRef\.current = crypto\.randomUUID\(\)\)/)
   assert.match(dangerZone, /queryClient\.clear\(\)[\s\S]*navigate\([\s\S]*void auth\.refreshRestaurants\(\)\.catch/)
   assert.doesNotMatch(dangerZone, /await auth\.refreshRestaurants\(\)/)
+  assert.match(dangerZone, /await backOfficeApi\.deletionReadiness\(restaurantId\)[\s\S]*lifecycle_state !== 'active'[\s\S]*leaveStore\(notice\)/)
   assert.match(dashboard, /queryClient\.prefetchQuery\([\s\S]*queryKeys\.deletionReadiness\(restaurantId\)/)
 })
 
