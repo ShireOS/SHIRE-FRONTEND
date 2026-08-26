@@ -6,6 +6,7 @@ import {
   reportOutputRequestIsCurrent,
   shouldForceReportSnapshotRefresh,
   snapshotIsFreshForOutput,
+  snapshotIsReadyForPhysicalPrint,
 } from './reportSnapshotState.js'
 
 const payload = {
@@ -49,6 +50,20 @@ test('output still requires every requested receipt group', () => {
   ), false)
 })
 
+test('output rejects a broader snapshot when the selected profile requests fewer groups', () => {
+  const broaderSnapshot = {
+    ...snapshot,
+    groups: [{ id: 'revenue' }, { id: 'tender_mix' }],
+  }
+
+  assert.equal(snapshotIsFreshForOutput(
+    broaderSnapshot,
+    payload,
+    'restaurant-1',
+    [],
+  ), false)
+})
+
 test('a Restaurant ML snapshot token is valid without a POS print snapshot token', () => {
   const directSnapshot = {
     ...snapshot,
@@ -58,6 +73,27 @@ test('a Restaurant ML snapshot token is valid without a POS print snapshot token
 
   assert.equal(snapshotIsFreshForOutput(
     directSnapshot,
+    payload,
+    'restaurant-1',
+    [],
+  ), true)
+})
+
+test('physical printing still requires the POS token for the exact visible snapshot', () => {
+  const directSnapshot = {
+    ...snapshot,
+    print_snapshot_id: undefined,
+    snapshot_id: 'ml-snapshot-1',
+  }
+
+  assert.equal(snapshotIsReadyForPhysicalPrint(
+    directSnapshot,
+    payload,
+    'restaurant-1',
+    [],
+  ), false)
+  assert.equal(snapshotIsReadyForPhysicalPrint(
+    snapshot,
     payload,
     'restaurant-1',
     [],
