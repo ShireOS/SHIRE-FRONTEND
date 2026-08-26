@@ -1296,6 +1296,27 @@ export function TipRulesFields({
   )
 }
 
+function PayoutPills({ value, options, onChange }) {
+  return (
+    <div className="inline-flex rounded-full border border-dash-border bg-black/20 p-1">
+      {options.map(option => {
+        const selected = option.value === value
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onChange(option.value)}
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${selected ? 'bg-dash-gold text-black' : 'text-dash-secondary hover:text-dash-cream'}`}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // Payroll defaults: provider, export cadence, cash/credit handling, card fees.
 export function PayrollSetupFields({ settings, onUpdateSettings, payPeriodCalendar = null }) {
   const periods = payPeriodCalendar?.periods || {}
@@ -1306,6 +1327,36 @@ export function PayrollSetupFields({ settings, onUpdateSettings, payPeriodCalend
   ].filter(([key]) => periods[key])
   return (
     <div className="space-y-5">
+      <div className="space-y-4 rounded-xl border border-dash-gold/30 bg-dash-gold/5 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-dash-cream">Apply employee payouts to expected drawer cash</p>
+            <p className="mt-1 max-w-2xl text-xs text-dash-secondary">Off preserves legacy drawer math. On subtracts only immediate or nightly payouts; payroll amounts remain in restaurant cash.</p>
+          </div>
+          <PayoutPills
+            value={settings.expected_drawer_payouts_enabled ? 'on' : 'off'}
+            options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]}
+            onChange={value => onUpdateSettings({ expected_drawer_payouts_enabled: value === 'on' })}
+          />
+        </div>
+        {settings.expected_drawer_payouts_enabled ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {[
+              ['Cash voluntary tips', 'cash_tip_payout_timing', settings.cash_tip_payout_timing, [{ value: 'immediate', label: 'Keep now' }, { value: 'payroll', label: 'Payroll' }]],
+              ['Cash employee gratuity', 'cash_employee_gratuity_payout_timing', settings.cash_employee_gratuity_payout_timing, [{ value: 'immediate', label: 'Keep now' }, { value: 'payroll', label: 'Payroll' }]],
+              ['Card voluntary tips', 'credit_tip_payout_timing', settings.credit_tip_payout_timing, [{ value: 'nightly', label: 'Nightly cash' }, { value: 'payroll', label: 'Payroll' }]],
+              ['Card employee gratuity', 'card_employee_gratuity_payout_timing', settings.card_employee_gratuity_payout_timing, [{ value: 'nightly', label: 'Nightly cash' }, { value: 'payroll', label: 'Payroll' }]],
+              ['Tip-outs', 'tipout_payout_timing', settings.tipout_payout_timing, [{ value: 'nightly', label: 'Nightly drawer' }, { value: 'payroll', label: 'Payroll' }]],
+            ].map(([label, key, value, options]) => (
+              <div key={key} className="rounded-lg border border-dash-border bg-black/10 p-3">
+                <p className="mb-2 text-xs font-medium text-dash-secondary">{label}</p>
+                <PayoutPills value={value} options={options} onChange={next => onUpdateSettings({ [key]: next })} />
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <p className="text-xs text-dash-tertiary">Nightly tip-outs are withheld from contributors and paid to recipients. Allocated transfers net to $0 additional drawer impact; unresolved amounts remain reserved.</p>
+      </div>
       <div className="grid gap-3 lg:grid-cols-3">
         <Field label="Payroll Provider">
           <TextInput value={settings.payroll_provider} onChange={event => onUpdateSettings({ payroll_provider: event.target.value })} placeholder="Gusto, ADP, manual..." />
@@ -1326,12 +1377,6 @@ export function PayrollSetupFields({ settings, onUpdateSettings, payPeriodCalend
           </Field>
           <p className="mt-2 text-xs text-dash-tertiary">Optional means Skip records no declaration. It never turns an unknown amount into $0. Only required mode blocks Server Checkout.</p>
         </div>
-        <Field label="Credit Tips Paid">
-          <SelectInput value={settings.credit_tip_payout_timing} onChange={event => onUpdateSettings({ credit_tip_payout_timing: event.target.value })}>
-            <option value="nightly">Nightly</option>
-            <option value="payroll">Payroll</option>
-          </SelectInput>
-        </Field>
       </div>
       <div className="rounded-xl border border-dash-border bg-white/[0.025] p-4">
         <div>

@@ -245,6 +245,13 @@ const defaultJobCodes = (): JobCodeData[] => [
   { code: 'kitchen', label: 'Kitchen', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: 'kitchen', sort_order: 80, is_active: true },
 ]
 
+const defaultOnboardingTipPayrollSettings = (): TipPayrollSettingsData => ({
+  ...defaultTipPayrollSettings(defaultJobCodes()),
+  expected_drawer_payouts_enabled: true,
+  credit_tip_payout_timing: 'nightly',
+  card_employee_gratuity_payout_timing: 'nightly',
+})
+
 const defaultPricingPolicy = (): PricingPolicyData => ({
   version: 0,
   enabled: true,
@@ -332,7 +339,7 @@ const INITIAL_DATA: OnboardingData = {
   closeout_settings: defaultCloseoutSettings(),
   check_workflow_settings: defaultCheckWorkflowSettings(),
   job_codes: defaultJobCodes(),
-  tip_payroll_settings: defaultTipPayrollSettings(defaultJobCodes()),
+  tip_payroll_settings: defaultOnboardingTipPayrollSettings(),
 
   challenges: [],
   daily_covers_range: null,

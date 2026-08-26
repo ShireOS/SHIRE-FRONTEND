@@ -64,6 +64,36 @@ function Toggle({ active, onClick, children }: { active: boolean; onClick: () =>
   )
 }
 
+function ChoicePills({ value, options, onChange }: {
+  value: string
+  options: Array<{ value: string; label: string }>
+  onChange: (value: string) => void
+}) {
+  return (
+    <div className="inline-flex rounded-full border border-[rgba(255,255,255,0.1)] bg-black/20 p-1">
+      {options.map(option => {
+        const selected = option.value === value
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onChange(option.value)}
+            className={[
+              'rounded-full px-3 py-1.5 text-xs font-semibold transition',
+              selected
+                ? 'bg-[rgb(var(--gold))] text-black shadow-sm'
+                : 'text-[rgb(var(--text-secondary))] hover:text-[rgb(var(--text-primary))]',
+            ].join(' ')}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function activePoolMethod(settings: TipPayrollSettingsData): (typeof POOL_METHODS)[number]['key'] {
   if (!settings.tip_pooling_enabled || settings.tip_distribution_mode === 'individual') return 'individual'
   if (settings.tip_distribution_mode === 'role_based') return 'points_based'
@@ -112,6 +142,37 @@ export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
         </p>
       </div>
 
+      <div className="space-y-4 rounded-xl border border-[rgba(212,168,84,0.25)] bg-[rgba(212,168,84,0.06)] p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">Apply employee payouts to expected drawer cash</p>
+            <p className="mt-1 max-w-2xl text-xs leading-5 text-[rgb(var(--text-secondary))]">When on, Close Day subtracts only money employees receive now or nightly. Payroll amounts stay in the drawer.</p>
+          </div>
+          <ChoicePills
+            value={settings.expected_drawer_payouts_enabled ? 'on' : 'off'}
+            options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]}
+            onChange={(value) => update({ expected_drawer_payouts_enabled: value === 'on' })}
+          />
+        </div>
+        {settings.expected_drawer_payouts_enabled ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {[
+              { label: 'Cash voluntary tips', value: settings.cash_tip_payout_timing, options: [{ value: 'immediate', label: 'Keep now' }, { value: 'payroll', label: 'Payroll' }], change: (value: string) => update({ cash_tip_payout_timing: value as TipPayrollSettingsData['cash_tip_payout_timing'] }) },
+              { label: 'Cash employee gratuity', value: settings.cash_employee_gratuity_payout_timing, options: [{ value: 'immediate', label: 'Keep now' }, { value: 'payroll', label: 'Payroll' }], change: (value: string) => update({ cash_employee_gratuity_payout_timing: value as TipPayrollSettingsData['cash_employee_gratuity_payout_timing'] }) },
+              { label: 'Card voluntary tips', value: settings.credit_tip_payout_timing, options: [{ value: 'nightly', label: 'Nightly cash' }, { value: 'payroll', label: 'Payroll' }], change: (value: string) => update({ credit_tip_payout_timing: value as TipPayrollSettingsData['credit_tip_payout_timing'] }) },
+              { label: 'Card employee gratuity', value: settings.card_employee_gratuity_payout_timing, options: [{ value: 'nightly', label: 'Nightly cash' }, { value: 'payroll', label: 'Payroll' }], change: (value: string) => update({ card_employee_gratuity_payout_timing: value as TipPayrollSettingsData['card_employee_gratuity_payout_timing'] }) },
+              { label: 'Tip-outs', value: settings.tipout_payout_timing, options: [{ value: 'nightly', label: 'Nightly drawer' }, { value: 'payroll', label: 'Payroll' }], change: (value: string) => update({ tipout_payout_timing: value as TipPayrollSettingsData['tipout_payout_timing'] }) },
+            ].map(item => (
+              <div key={item.label} className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-black/15 p-3">
+                <p className="mb-2 text-xs font-medium text-[rgb(var(--text-secondary))]">{item.label}</p>
+                <ChoicePills value={item.value} options={item.options} onChange={item.change} />
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <p className="text-xs leading-5 text-[rgb(var(--text-tertiary))]">Nightly tip-outs are withheld from contributors and paid to recipients through the drawer. Allocated tip-outs net to $0 additional drawer impact; unresolved amounts remain reserved.</p>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2">
         <div>
           <label className={labelClass}>Cash tips</label>
@@ -119,13 +180,6 @@ export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
             {CASH_TIP_MODES.map(option => <option key={option.value} value={option.value} className="bg-[#1a1a1a]">{option.label}</option>)}
           </select>
           <p className="mt-2 text-xs leading-5 text-[rgb(var(--text-tertiary))]">Optional means an employee can enter a real amount or Skip. Skip records no declaration; it is never treated as $0. Only required mode blocks Server Checkout.</p>
-        </div>
-        <div>
-          <label className={labelClass}>Credit card tips paid</label>
-          <select value={settings.credit_tip_payout_timing} onChange={(event) => update({ credit_tip_payout_timing: event.target.value as TipPayrollSettingsData['credit_tip_payout_timing'] })} className={inputClass}>
-            <option value="nightly" className="bg-[#1a1a1a]">Nightly</option>
-            <option value="payroll" className="bg-[#1a1a1a]">Through payroll</option>
-          </select>
         </div>
         <div>
           <label className={labelClass}>Payroll export</label>

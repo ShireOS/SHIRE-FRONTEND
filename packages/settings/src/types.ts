@@ -264,6 +264,11 @@ export interface TipPayrollSettingsData {
   tip_distribution_mode: 'individual' | 'pooled' | 'role_based' | 'sales_based' | 'hours_based' | 'points_based' | 'role_shares'
   cash_tip_declaration_mode: 'not_tracked' | 'declared_by_employee' | 'declared_by_manager' | 'required_checkout'
   credit_tip_payout_timing: 'nightly' | 'payroll'
+  expected_drawer_payouts_enabled: boolean
+  cash_tip_payout_timing: 'immediate' | 'payroll'
+  cash_employee_gratuity_payout_timing: 'immediate' | 'payroll'
+  card_employee_gratuity_payout_timing: 'nightly' | 'payroll'
+  tipout_payout_timing: 'nightly' | 'payroll'
   payroll_provider: string
   payroll_export_frequency: 'daily' | 'weekly' | 'biweekly' | 'semimonthly' | 'monthly' | 'manual'
   payroll_period_start_weekday: number
