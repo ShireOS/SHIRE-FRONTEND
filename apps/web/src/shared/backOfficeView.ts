@@ -124,6 +124,13 @@ export const BACK_OFFICE_VIEW_CATALOG: ViewCapability[] = [
     node('devices.hardware', 'Cash-drawer and hardware transport'),
     node('devices.print_groups', 'Print groups and category routing'),
   ]),
+  node('nav.device-updates', 'Device Updates', [
+    node('device_updates.fleet', 'Fleet update status'),
+    node('device_updates.rollouts', 'Create and cancel rollouts'),
+    node('device_updates.releases', 'Approved release library'),
+    node('device_updates.policy', 'Restaurant update policy'),
+    node('device_updates.audit', 'Update audit trail'),
+  ]),
   node('nav.pos-settings', 'POS Settings', [
     node('pos_settings.reasons', 'Reason presets'),
     node('pos_settings.approvals', 'Remote manager approval'),
@@ -176,7 +183,7 @@ export const TAB_VIEW_CAPABILITIES: Record<string, string> = {
   marketing: 'nav.marketing', settings: 'nav.settings', integrations: 'nav.integrations',
   reservations: 'nav.reservations',
   ui: 'nav.ui', menu: 'nav.menu', 'menu-workspace': 'nav.menu-workspace',
-  feedback: 'nav.feedback', devices: 'nav.devices', 'pos-settings': 'nav.pos-settings',
+  feedback: 'nav.feedback', devices: 'nav.devices', 'device-updates': 'nav.device-updates', 'pos-settings': 'nav.pos-settings',
   'printing-routing': 'nav.printing-routing', team: 'nav.team', 'time-clock': 'nav.time-clock',
   alerts: 'nav.alerts', 'labor-cost': 'nav.labor-cost', 'tip-pooling': 'nav.tip-pooling',
   scheduling: 'nav.scheduling', messaging: 'nav.messaging', payments: 'nav.payments',
@@ -210,7 +217,7 @@ const PRESET_OVERRIDES: Record<BackOfficeViewLevel, Record<string, BackOfficeVie
   },
   simple: {
     'nav.marketing': 'hidden', 'nav.integrations': 'hidden', 'nav.menu-workspace': 'hidden',
-    'nav.pos-settings': 'hidden', 'nav.printing-routing': 'hidden',
+    'nav.device-updates': 'hidden', 'nav.pos-settings': 'hidden', 'nav.printing-routing': 'hidden',
     'home.widgets': 'hidden', 'home.discount_review': 'summary',
     'home.analytics': 'standard', 'home.check_ledger': 'standard',
     'reports.viewer': 'standard', 'checks.active': 'standard',

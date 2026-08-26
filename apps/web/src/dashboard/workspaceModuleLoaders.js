@@ -14,6 +14,7 @@ export const loadPrintingRouting = () => import('./pages/PrintingRoutingPage')
 export const loadReports = () => import('./reports/RestaurantReportsPage')
 export const loadResellerUiEditor = () => import('../reseller/ResellerUiEditor')
 export const loadStoreDevices = () => import('./components/devices/StoreDevicesPanel')
+export const loadDeviceUpdates = () => import('./pages/DeviceUpdatesPage')
 export const loadSalesTiles = () => import('./components/SalesTiles')
 export const loadTeam = () => import('./pages/TeamPage')
 export const loadTimeClock = () => import('./pages/TimeClockPage')
@@ -33,6 +34,7 @@ const WORKSPACE_MODULE_LOADERS = {
   'time-clock': loadTimeClock,
   'labor-cost': loadLaborCost,
   devices: loadStoreDevices,
+  'device-updates': loadDeviceUpdates,
   'pos-settings': loadPosSettings,
   'printing-routing': loadPrintingRouting,
   'tip-pooling': loadWorkforcePay,

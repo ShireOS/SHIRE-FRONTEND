@@ -34,7 +34,7 @@ const MANDATORY_STORE_TABS = [
 ]
 
 const GRANT_ROUTES = {
-  devices: ['devices'],
+  devices: ['devices', 'device-updates'],
   setup: ['setup', 'store-information', 'marketing', 'settings', 'integrations', 'reservations', 'ui', 'pos-settings', 'printing-routing'],
   menu: ['menu', 'menu-workspace'],
   feedback: ['feedback'],

@@ -27,6 +27,7 @@ import {
   PhoneCall,
   Printer,
   ReceiptText,
+  RefreshCw,
   Search,
   Settings,
   ShoppingCart,
@@ -149,6 +150,7 @@ const STORE_NAV = [
   { id: 'reservations', label: 'Reservations', icon: PhoneCall },
   { id: 'feedback', label: 'Complaints', icon: MessageSquareWarning },
   { id: 'devices', label: 'Devices', icon: Monitor },
+  { id: 'device-updates', label: 'Device Updates', icon: RefreshCw },
   { id: 'pos-settings', label: 'POS Settings', icon: Settings },
   {
     id: 'printing-group',
@@ -479,7 +481,11 @@ export default function DashboardShell({
       const laborVisible = !hidden.has('labor-cost') && access.can('payroll.view') && access.viewVisible('nav.labor-cost')
       return payrollVisible || timeClockVisible || laborVisible
     }
-    if (required && !access.can(required)) return false
+    // Reseller visibility is already narrowed by the owner's store grant.
+    // The POS backend re-resolves that same grant for every mutation, so an ML
+    // member-permission response must not hide a granted reseller route.
+    const resellerRouteGranted = Boolean(allowedStoreTabs?.includes(id))
+    if (required && !access.can(required) && !resellerRouteGranted) return false
     if (id === 'setup') return true
     const tabCapability = TAB_VIEW_CAPABILITIES[id]
     if (tabCapability && !access.viewVisible(tabCapability)) return false

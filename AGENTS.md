@@ -369,6 +369,16 @@ gate; the bell remains disabled while access is unresolved or denied.
   active assignment rows for restaurants they can already access directly or
   through an assigned group (migration
   `20260718140717_reseller_employee_device_assignment_visibility.sql`).
+- The per-store `Device Updates` tab is a lazy Back Office workspace beside
+  Devices and POS Settings. It uses existing `settings.edit`; assigned resellers
+  receive it through the owner-controlled `devices` grant. The browser calls only
+  the audited POS-backend update APIs and never writes update tables directly.
+  Owners/resellers may deploy approved releases with ASAP-safe, one hour after
+  successful Close Day, scheduled, next-launch, or download-only policies; only
+  platform admins may approve immutable release artifacts. No clock-out trigger
+  exists. A mandatory rollout never bypasses the POS-local payment, order,
+  printing, or unsynced-work safety gates, and activation is complete only after
+  the restarted device acknowledges the exact approved update ID.
 - Operational pricing uses one versioned `pos_restaurant_configs.pricing_policy`
   record per store. Setup and enterprise Rates both read/write it through the ML
   backend under existing `settings.edit`/reseller authorization; the browser must

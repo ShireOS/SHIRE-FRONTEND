@@ -45,6 +45,7 @@ import {
   loadReports,
   loadResellerUiEditor,
   loadStoreDevices,
+  loadDeviceUpdates,
   loadSalesTiles,
   loadTeam,
   loadWorkforcePay,
@@ -71,6 +72,7 @@ const ResellerUiEditor = lazy(loadResellerUiEditor)
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const SalesTiles = lazy(loadSalesTiles)
 const StoreDevicesPanel = lazy(loadStoreDevices)
+const DeviceUpdatesPage = lazy(loadDeviceUpdates)
 const StoresPage = lazy(() => import('./pages/StoresPage'))
 const TeamPage = lazy(loadTeam)
 const WorkforcePayPage = lazy(loadWorkforcePay)
@@ -209,6 +211,7 @@ const TABS = [
   { id: 'menu-workspace', label: 'POS Menus' },
   { id: 'taxes', label: 'Taxes' },
   { id: 'devices', label: 'Devices' },
+  { id: 'device-updates', label: 'Device Updates' },
   { id: 'pos-settings', label: 'POS Settings' },
   { id: 'printing-routing', label: 'Printing & Routing' },
   { id: 'tip-pooling', label: 'Workforce & Pay' },
@@ -5379,7 +5382,8 @@ export function RestaurantWorkspace({
     canViewTeam: backOfficeAccess.can('team.view'),
     canViewPayroll: backOfficeAccess.can('payroll.view'),
   })
-  if (!backOfficeAccess.loading && requiredPermission && !backOfficeAccess.can(requiredPermission) && !workforcePayAllowed) {
+  const resellerRouteGranted = Boolean(allowedStoreTabs?.includes(activeTab))
+  if (!backOfficeAccess.loading && requiredPermission && !backOfficeAccess.can(requiredPermission) && !workforcePayAllowed && !resellerRouteGranted) {
     return <Navigate to={`${restaurantBase}/${restaurantId}/analytics`} replace />
   }
 
@@ -5601,6 +5605,7 @@ export function RestaurantWorkspace({
         {activeTab === 'time-clock' && <Navigate to={`${restaurantBase}/${restaurantId}/tip-pooling#timecards`} replace />}
         {activeTab === 'labor-cost' && <Navigate to={`${restaurantBase}/${restaurantId}/tip-pooling#overview`} replace />}
         {activeTab === 'devices' && <StoreDevicesPanel restaurantId={restaurantId} />}
+        {activeTab === 'device-updates' && <DeviceUpdatesPage restaurantId={restaurantId} />}
         {activeTab === 'pos-settings' && <PosSettingsPage restaurantId={restaurantId} />}
         {activeTab === 'printing-routing' && <PrintingRoutingPage restaurantId={restaurantId} />}
         {activeTab === 'tip-pooling' && <WorkforcePayPage restaurantId={restaurantId} />}
@@ -5638,6 +5643,7 @@ const WORKSPACE_BREADCRUMB_LABELS = {
   'time-clock': 'Time Clock',
   'labor-cost': 'Labor Cost',
   devices: 'Devices',
+  'device-updates': 'Device Updates',
   'pos-settings': 'POS Settings',
   'printing-routing': 'Printing & Routing',
   'tip-pooling': 'Workforce & Pay',
