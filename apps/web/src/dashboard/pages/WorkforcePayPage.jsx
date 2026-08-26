@@ -35,7 +35,9 @@ export default function WorkforcePayPage({ restaurantId }) {
     canViewPayroll: access.can('payroll.view'),
     payrollOverviewVisible: access.viewVisible('payroll.overview'),
     laborOverviewVisible: access.viewVisible('labor.overview'),
-    timecardsVisible: access.viewVisible('time_clock.entries'),
+    timecardEntriesVisible: access.viewVisible('time_clock.entries'),
+    timecardAdjustmentsVisible: access.viewVisible('time_clock.adjustments'),
+    timecardTotalsVisible: access.viewVisible('time_clock.totals'),
     runsVisible: access.viewVisible('payroll.runs'),
     rulesVisible: access.viewVisible('payroll.rules'),
     payrollSetupVisible: access.viewVisible('payroll.setup'),
@@ -58,14 +60,14 @@ export default function WorkforcePayPage({ restaurantId }) {
   }
 
   if (!activeHash) {
-    const revealCapability = access.can('payroll.view')
-      ? 'payroll.overview'
+    const revealCapabilities = access.can('payroll.view')
+      ? ['nav.tip-pooling', 'payroll.overview']
       : access.can('team.view')
-        ? 'time_clock.entries'
-        : null
+        ? ['nav.time-clock', 'time_clock.entries']
+        : []
 
     const showInMyView = async () => {
-      if (!revealCapability || revealing) return
+      if (!revealCapabilities.length || revealing) return
       setRevealing(true)
       setRevealError('')
       try {
@@ -73,7 +75,7 @@ export default function WorkforcePayPage({ restaurantId }) {
           ...access.viewPolicy,
           overrides: {
             ...access.viewPolicy.overrides,
-            [revealCapability]: 'standard',
+            ...Object.fromEntries(revealCapabilities.map((capability) => [capability, 'standard'])),
           },
         })
         await queryClient.invalidateQueries({ queryKey: queryKeys.backOfficeAccess(restaurantId) })
@@ -89,7 +91,7 @@ export default function WorkforcePayPage({ restaurantId }) {
         <p className="label-mono">Team</p>
         <h1 className="mt-2 text-2xl font-semibold text-dash-cream">Workforce &amp; Pay</h1>
         <p className="mt-2 text-sm text-dash-secondary">No Workforce &amp; Pay sections are available in your current access and view settings.</p>
-        {revealCapability ? (
+        {revealCapabilities.length ? (
           <button
             type="button"
             onClick={() => void showInMyView()}

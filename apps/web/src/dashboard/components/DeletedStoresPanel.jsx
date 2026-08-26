@@ -4,6 +4,13 @@ import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../../auth'
 import { backOfficeApi } from '../../shared/api/backOfficeApi'
 import { queryClient } from '../../shared/query'
+import {
+  isPurgeState,
+  isRestoreInProgress,
+  isVerifiedRestore,
+  normalizedStatus,
+  trackedRestoreDisappearanceIsVerified,
+} from './deletedStoreLifecycle'
 
 const countdownFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'always' })
 const RESTORE_TRACKING_PREFIX = 'shire:deleted-store-restores:'
@@ -12,7 +19,17 @@ function readRestoreTracking(key) {
   if (!key) return {}
   try {
     const value = JSON.parse(window.sessionStorage.getItem(key) || '{}')
-    return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+    return Object.fromEntries(Object.entries(value).flatMap(([id, item]) => (
+      item && typeof item === 'object'
+        ? [[id, {
+            ...item,
+            // Older builds only wrote a tracking row after an accepted
+            // mutation or an authoritative `restoring` observation.
+            accepted: item.accepted !== false,
+          }]]
+        : []
+    )))
   } catch {
     return {}
   }
@@ -24,22 +41,42 @@ function writeRestoreTracking(key, value) {
   else window.sessionStorage.removeItem(key)
 }
 
-function trackedRestore(store) {
+function trackedRestore(store, evidence = {}) {
   return {
     deletion_id: store.deletion_id,
     restaurant_id: store.restaurant_id,
     name: store.name,
+    accepted: Boolean(evidence.accepted),
+    observed_restoring: Boolean(evidence.observedRestoring),
   }
 }
 
 function recoveryCountdown(deadline, now) {
+  if (!deadline) return 'Unavailable while restoration is running'
   const milliseconds = new Date(deadline).getTime() - now
+  if (!Number.isFinite(milliseconds)) return 'Deadline unavailable'
   if (milliseconds <= 0) return 'Recovery window ended'
   const minutes = Math.ceil(milliseconds / 60_000)
   if (minutes < 60) return countdownFormatter.format(minutes, 'minute')
   const hours = Math.ceil(milliseconds / 3_600_000)
   if (hours < 48) return countdownFormatter.format(hours, 'hour')
   return countdownFormatter.format(Math.ceil(milliseconds / 86_400_000), 'day')
+}
+
+function restorationLabel(store) {
+  const restoreStatus = normalizedStatus(store.restore_status)
+  if (store.state === 'archiving') return 'Archiving'
+  if (isPurgeState(store)) return store.state === 'purged' ? 'Purged' : 'Purging'
+  if (isRestoreInProgress(store)) return restoreStatus === 'failed' ? 'Restoration retrying' : 'Restoring'
+  if (store.state === 'recoverable' && restoreStatus === 'failed') return 'Restore failed — recoverable'
+  if (store.state === 'active') return 'Verifying restoration'
+  return 'Recoverable'
+}
+
+function formatDeadline(deadline) {
+  if (!deadline) return 'Unavailable while restoration is running'
+  const parsed = new Date(deadline)
+  return Number.isFinite(parsed.getTime()) ? parsed.toLocaleString() : 'Deadline unavailable'
 }
 
 function errorMessage(error, fallback) {
@@ -125,20 +162,50 @@ export default function DeletedStoresPanel() {
     setError('')
     try {
       const rows = await backOfficeApi.deletedRestaurants()
-      setStores(rows)
       const serverTime = rows.find((row) => row.server_time)?.server_time
       if (serverTime) {
         const parsed = new Date(serverTime).getTime()
         if (Number.isFinite(parsed)) setServerClockOffset(parsed - Date.now())
       }
-      const currentIds = new Set(rows.map((row) => row.deletion_id))
       const tracked = { ...restoringRef.current }
-      rows.filter((row) => row.state === 'restoring').forEach((row) => {
-        tracked[row.deletion_id] = trackedRestore(row)
+      const currentIds = new Set(rows.map((row) => row.deletion_id))
+      const completed = []
+
+      rows.forEach((row) => {
+        if (isVerifiedRestore(row)) {
+          completed.push(tracked[row.deletion_id] || trackedRestore(row, { accepted: true }))
+          delete tracked[row.deletion_id]
+          return
+        }
+        if (isPurgeState(row) || (row.state === 'recoverable' && tracked[row.deletion_id])) {
+          // Purging is not recovery, and an explicitly recoverable failure is
+          // retryable by the user. A rollback that omitted a status is also
+          // recoverable, never an Open Store success.
+          delete tracked[row.deletion_id]
+          return
+        }
+        if (isRestoreInProgress(row)) {
+          const previous = tracked[row.deletion_id]
+          tracked[row.deletion_id] = trackedRestore(row, {
+            accepted: previous?.accepted,
+            observedRestoring: true,
+          })
+        }
       })
-      const completed = Object.values(tracked).filter((row) => !currentIds.has(row.deletion_id))
-      const stillRestoring = Object.fromEntries(Object.entries(tracked).filter(([id]) => currentIds.has(id)))
-      commitRestoring(stillRestoring)
+
+      Object.entries(tracked).forEach(([id, item]) => {
+        if (currentIds.has(id)) return
+        // The lifecycle API keeps every accepted/observed restore visible
+        // until provider publication is verified. Disappearance is completion
+        // only with that restore-specific evidence, never on its own.
+        if (trackedRestoreDisappearanceIsVerified(item)) {
+          completed.push(item)
+          delete tracked[id]
+        }
+      })
+
+      commitRestoring(tracked)
+      setStores(rows.filter((row) => !isVerifiedRestore(row)))
       if (completed.length) {
         setRestored((current) => [...completed, ...current.filter((row) => !completed.some((item) => item.restaurant_id === row.restaurant_id))])
         queryClient.clear()
@@ -160,7 +227,9 @@ export default function DeletedStoresPanel() {
     return () => window.clearInterval(timer)
   }, [])
 
-  const needsPolling = stores.some((store) => ['archiving', 'restoring'].includes(store.state)) || Object.keys(restoring).length > 0
+  const needsPolling = stores.some((store) => (
+    store.state === 'archiving' || isRestoreInProgress(store) || store.state === 'purging'
+  )) || Object.keys(restoring).length > 0
   useEffect(() => {
     if (!needsPolling) return undefined
     const timer = window.setInterval(() => void load({ quiet: true }), 5_000)
@@ -185,30 +254,52 @@ export default function DeletedStoresPanel() {
       || (restoreIdempotencyKeyRef.current = crypto.randomUUID())
     const requestBody = { password, support_reason: supportReason.trim() || undefined }
     try {
+      let result
       try {
-        await backOfficeApi.restoreDeletedRestaurant(
+        result = await backOfficeApi.restoreDeletedRestaurant(
           restoreTarget.deletion_id,
           requestBody,
           requestKey,
         )
       } catch (firstFailure) {
         const status = firstFailure && typeof firstFailure === 'object' ? firstFailure.status : undefined
-        if (Number.isFinite(status) && status < 500) throw firstFailure
-        // An upstream/proxy 5xx can lose a committed 202 response. Replay the
-        // exact request once; backend idempotency returns the original result
-        // without starting a second restore.
-        await backOfficeApi.restoreDeletedRestaurant(
+        if (Number.isFinite(status) && status < 500 && status !== 408) throw firstFailure
+        // A timeout or upstream/proxy 5xx can lose a committed 202 response.
+        // Replay the exact request once; backend idempotency returns the
+        // original result without starting a second restore.
+        result = await backOfficeApi.restoreDeletedRestaurant(
           restoreTarget.deletion_id,
           requestBody,
           requestKey,
         )
       }
+      if (isVerifiedRestore(result)) {
+        restoreIdempotencyKeyRef.current = ''
+        setRestored((current) => [
+          trackedRestore(restoreTarget, { accepted: true }),
+          ...current.filter((row) => row.restaurant_id !== restoreTarget.restaurant_id),
+        ])
+        setStores((current) => current.filter((store) => store.deletion_id !== restoreTarget.deletion_id))
+        setRestoreTarget(null)
+        setPassword('')
+        setSupportReason('')
+        queryClient.clear()
+        await refreshRestaurants()
+        return
+      }
+      if (!isRestoreInProgress(result)) {
+        await load({ quiet: true })
+        setRestoreError('The server did not confirm that restoration started. Refresh the lifecycle status before retrying.')
+        return
+      }
       restoreIdempotencyKeyRef.current = ''
       commitRestoring({
         ...restoringRef.current,
-        [restoreTarget.deletion_id]: trackedRestore(restoreTarget),
+        [restoreTarget.deletion_id]: trackedRestore(restoreTarget, { accepted: true }),
       })
-      setStores((current) => current.map((store) => store.deletion_id === restoreTarget.deletion_id ? { ...store, state: 'restoring' } : store))
+      setStores((current) => current.map((store) => store.deletion_id === restoreTarget.deletion_id
+        ? { ...store, state: 'restoring', restore_status: 'processing' }
+        : store))
       setRestoreTarget(null)
       setPassword('')
       setSupportReason('')
@@ -218,12 +309,27 @@ export default function DeletedStoresPanel() {
       setPassword('')
       try {
         const rows = await backOfficeApi.deletedRestaurants()
-        setStores(rows)
+        setStores(rows.filter((row) => !isVerifiedRestore(row)))
         const authoritative = rows.find((row) => row.deletion_id === restoreTarget.deletion_id)
-        if (authoritative?.state === 'restoring') {
+        if (authoritative && isVerifiedRestore(authoritative)) {
+          commitRestoring(Object.fromEntries(
+            Object.entries(restoringRef.current).filter(([id]) => id !== restoreTarget.deletion_id),
+          ))
+          setRestored((current) => [
+            trackedRestore(authoritative, { accepted: true }),
+            ...current.filter((row) => row.restaurant_id !== authoritative.restaurant_id),
+          ])
+          setRestoreTarget(null)
+          setSupportReason('')
+          setRestoreError('')
+          queryClient.clear()
+          await refreshRestaurants()
+          return
+        }
+        if (authoritative && isRestoreInProgress(authoritative)) {
           commitRestoring({
             ...restoringRef.current,
-            [restoreTarget.deletion_id]: trackedRestore(authoritative),
+            [restoreTarget.deletion_id]: trackedRestore(authoritative, { observedRestoring: true }),
           })
           setRestoreTarget(null)
           setSupportReason('')
@@ -261,7 +367,7 @@ export default function DeletedStoresPanel() {
       {error && <p className="mt-4 text-sm text-dash-danger">{error}</p>}
       {loading && <p className="mt-4 text-sm text-dash-secondary">Loading deleted stores…</p>}
 
-      {!loading && stores.length === 0 && restored.length === 0 && !error && (
+      {!loading && stores.length === 0 && restored.length === 0 && Object.keys(restoring).length === 0 && !error && (
         <p className="mt-4 rounded-xl border border-white/10 bg-black/10 p-4 text-sm text-dash-tertiary">No recoverable stores.</p>
       )}
 
@@ -278,6 +384,13 @@ export default function DeletedStoresPanel() {
           </div>
         ))}
 
+        {Object.values(restoring).filter((tracked) => !stores.some((store) => store.deletion_id === tracked.deletion_id)).map((tracked) => (
+          <article key={`verifying-${tracked.deletion_id}`} className="rounded-xl border border-amber-300/20 bg-amber-300/[0.05] p-4">
+            <p className="font-semibold text-dash-cream">{tracked.name}</p>
+            <p className="mt-1 text-xs text-amber-100">Verifying the authoritative recovery result. Open Store remains unavailable until verification completes.</p>
+          </article>
+        ))}
+
         {stores.map((store) => {
           const estimatedServerNow = now + serverClockOffset
           return (
@@ -288,19 +401,24 @@ export default function DeletedStoresPanel() {
                   {auth.accountType === 'admin' && <p className="mt-1 text-xs text-dash-tertiary">Original owner: {store.original_owner_email || store.original_owner_id}</p>}
                   <p className="mt-1 text-xs text-dash-tertiary">Deleted {new Date(store.deleted_at).toLocaleString()}</p>
                 </div>
-                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${store.state === 'recoverable' ? 'bg-emerald-300/10 text-emerald-200' : 'bg-amber-300/10 text-amber-100'}`}>
-                  {store.state === 'archiving' ? 'Archiving' : store.state === 'restoring' ? 'Restoring' : 'Recoverable'}
+                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${store.state === 'recoverable' && normalizedStatus(store.restore_status) !== 'failed' ? 'bg-emerald-300/10 text-emerald-200' : 'bg-amber-300/10 text-amber-100'}`}>
+                  {restorationLabel(store)}
                 </span>
               </div>
               <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
-                <div><dt className="text-dash-tertiary">Recovery deadline</dt><dd className="mt-0.5 text-dash-cream">{new Date(store.recoverable_until).toLocaleString()}</dd></div>
+                <div><dt className="text-dash-tertiary">Recovery deadline</dt><dd className="mt-0.5 text-dash-cream">{formatDeadline(store.recoverable_until)}</dd></div>
                 <div><dt className="text-dash-tertiary">Countdown</dt><dd className="mt-0.5 font-semibold text-amber-100">{recoveryCountdown(store.recoverable_until, estimatedServerNow)}</dd></div>
                 <div><dt className="text-dash-tertiary">Asset archive</dt><dd className="mt-0.5 text-dash-cream">{store.archive_status}</dd></div>
+                <div><dt className="text-dash-tertiary">Restore status</dt><dd className="mt-0.5 text-dash-cream">{store.restore_status || 'Not started'}</dd></div>
                 <div><dt className="text-dash-tertiary">Providers</dt><dd className="mt-0.5 text-dash-cream">{Object.keys(store.provider_steps || {}).length ? 'Lifecycle steps recorded' : 'Pending'}</dd></div>
               </dl>
+              {store.state === 'recoverable' && normalizedStatus(store.restore_status) === 'failed' && (
+                <p className="mt-3 text-xs text-red-200">The previous restore did not complete. The store remains recoverable and can be retried before its deadline.</p>
+              )}
+              {isPurgeState(store) && <p className="mt-3 text-xs text-red-200">Recovery is no longer available because permanent cleanup has started.</p>}
               <p className="mt-3 text-xs text-amber-200">AI phone and other provider charges may continue during recovery.</p>
               <button type="button" onClick={() => { restoreIdempotencyKeyRef.current = ''; setRestoreTarget(store) }} disabled={store.state !== 'recoverable'} className="mt-3 rounded-lg bg-shell-accent px-3 py-2 text-xs font-semibold text-dash-base hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40">
-                {store.state === 'restoring' ? 'Restoring…' : 'Restore'}
+                {isRestoreInProgress(store) ? 'Restoring…' : isPurgeState(store) ? 'Recovery unavailable' : 'Restore'}
               </button>
             </article>
           )

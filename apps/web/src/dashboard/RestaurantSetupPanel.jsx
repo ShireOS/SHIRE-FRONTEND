@@ -1469,11 +1469,13 @@ export default function RestaurantSetupPanel({
   initialTab = null,
   showHeader = true,
 }) {
+  const isPrimaryOwner = Boolean(auth?.user?.id && restaurant?.owner_id === auth.user.id)
   const visibleSetupTabs = useMemo(() => {
-    if (!Array.isArray(allowedTabs)) return SETUP_TABS
+    const authorizedTabs = SETUP_TABS.filter((tab) => tab.id !== 'lifecycle' || isPrimaryOwner)
+    if (!Array.isArray(allowedTabs)) return authorizedTabs
     const allowed = new Set(allowedTabs)
-    return SETUP_TABS.filter(tab => allowed.has(tab.id))
-  }, [allowedTabs])
+    return authorizedTabs.filter(tab => allowed.has(tab.id))
+  }, [allowedTabs, isPrimaryOwner])
   const visibleSetupTabIds = visibleSetupTabs.map(tab => tab.id).join(',')
   const [activeSetupTab, setActiveSetupTab] = useState(() => initialTab || visibleSetupTabs[0]?.id || 'basics')
   const activeTabIsSummary = summaryTabs.includes(activeSetupTab)

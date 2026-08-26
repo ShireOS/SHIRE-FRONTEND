@@ -39,11 +39,12 @@ test('POS reports use a distinct analytics icon from the check ledger', () => {
   assert.match(dashboardShell, /\{ id: 'checks', label: 'Checks', icon: ReceiptText \}/)
 })
 
-test('POS report range includes persisted local times in preview and exports', () => {
+test('POS report range uses visit-local times in preview and exports', () => {
   assert.match(reportsPage, /type="datetime-local"/)
   assert.match(reportsPage, /start_time: times\.start/)
   assert.match(reportsPage, /end_time: times\.end/)
-  assert.match(reportsPage, /minuteTime\(saved\.start_time, '00:00'\)/)
+  assert.doesNotMatch(reportsPage, /saved\.(?:period_preset|custom_start_date|custom_end_date|start_time|end_time)/)
+  assert.match(reportsPage, /setPeriodPreset\('week'\)[\s\S]{0,100}setTimes\(\{ start: '00:00', end: '23:59' \}\)/)
   assert.match(reportsPage, /Restaurant local time/)
 })
 

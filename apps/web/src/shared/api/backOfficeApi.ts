@@ -6,6 +6,9 @@ import type { BackOfficeViewAssignment, BackOfficeViewPolicy } from '../backOffi
 // restaurant and what they can do there. See src/shared/permissions.ts for the
 // permission model and key registry.
 
+const LIFECYCLE_READ_TIMEOUT_MS = 20_000
+const LIFECYCLE_MUTATION_TIMEOUT_MS = 60_000
+
 export interface BackOfficeAccess {
   is_owner: boolean
   is_admin?: boolean
@@ -155,9 +158,9 @@ export interface DeletedRestaurant {
   original_owner_id?: string | null
   original_owner_email?: string | null
   deleted_at: string
-  recoverable_until: string
+  recoverable_until: string | null
   server_time: string
-  state: 'archiving' | 'recoverable' | 'restoring'
+  state: 'active' | 'archiving' | 'recoverable' | 'restoring' | 'purging' | 'purged'
   archive_status: string
   restore_status: string
   provider_steps: Record<string, unknown>
@@ -168,14 +171,16 @@ export interface RestaurantLifecycleMutation {
   deletion_id: string
   restaurant_id: string
   state: string
-  recoverable_until: string
+  recoverable_until: string | null
   archive_status: string
   restore_status: string
 }
 
 export const backOfficeApi = {
   deletionReadiness: (restaurantId: string): Promise<RestaurantDeletionReadiness> =>
-    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/deletion-readiness`),
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/deletion-readiness`, {
+      timeoutMs: LIFECYCLE_READ_TIMEOUT_MS,
+    }),
 
   deleteRestaurant: (
     restaurantId: string,
@@ -186,10 +191,13 @@ export const backOfficeApi = {
       method: 'POST',
       headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(input),
+      timeoutMs: LIFECYCLE_MUTATION_TIMEOUT_MS,
     }),
 
   deletedRestaurants: (): Promise<DeletedRestaurant[]> =>
-    fetchWithSupabaseAuth('/account/deleted-restaurants'),
+    fetchWithSupabaseAuth('/account/deleted-restaurants', {
+      timeoutMs: LIFECYCLE_READ_TIMEOUT_MS,
+    }),
 
   restoreDeletedRestaurant: (
     deletionId: string,
@@ -200,6 +208,7 @@ export const backOfficeApi = {
       method: 'POST',
       headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(input),
+      timeoutMs: LIFECYCLE_MUTATION_TIMEOUT_MS,
     }),
 
   updatePlatformAccountType: (

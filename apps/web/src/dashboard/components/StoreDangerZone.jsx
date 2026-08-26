@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ExternalLink, RefreshCw, Trash2 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -8,6 +8,8 @@ import { queryClient, queryKeys } from '../../shared/query'
 const READINESS_STALE_TIME_MS = 30_000
 const DELETION_RECONCILE_ATTEMPTS = 20
 const DELETION_RECONCILE_DELAY_MS = 750
+const DELETION_BACKGROUND_RECONCILE_MS = 5_000
+const DELETION_TRACKING_PREFIX = 'shire:pending-store-deletion:'
 
 function wait(milliseconds) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
@@ -23,6 +25,22 @@ function errorMessage(error, fallback) {
   }
 }
 
+function readPendingDeletion(key) {
+  if (!key) return null
+  try {
+    const value = JSON.parse(window.sessionStorage.getItem(key) || 'null')
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+function writePendingDeletion(key, value) {
+  if (!key) return
+  if (value) window.sessionStorage.setItem(key, JSON.stringify(value))
+  else window.sessionStorage.removeItem(key)
+}
+
 export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
   const navigate = useNavigate()
   const [modalOpen, setModalOpen] = useState(false)
@@ -31,7 +49,45 @@ export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [resetStatus, setResetStatus] = useState('')
+  const [pendingDeletion, setPendingDeletion] = useState(null)
+  const [reconciling, setReconciling] = useState(false)
+  const [reconciliationMessage, setReconciliationMessage] = useState('')
   const idempotencyKeyRef = useRef('')
+  const pendingDeletionRef = useRef(null)
+  const activeRestaurantRef = useRef(restaurantId)
+  activeRestaurantRef.current = restaurantId
+
+  const deletionTrackingKey = useMemo(
+    () => auth?.user?.id && restaurantId
+      ? `${DELETION_TRACKING_PREFIX}${auth.user.id}:${restaurantId}`
+      : '',
+    [auth?.user?.id, restaurantId],
+  )
+
+  useEffect(() => {
+    const stored = readPendingDeletion(deletionTrackingKey)
+    // A reload means an in-memory request can no longer still be running. Its
+    // persisted key must therefore be reconciled as an ambiguous response.
+    const tracked = stored ? { ...stored, phase: 'ambiguous' } : null
+    pendingDeletionRef.current = tracked
+    setPendingDeletion(tracked)
+    writePendingDeletion(deletionTrackingKey, tracked)
+    idempotencyKeyRef.current = tracked?.idempotency_key || ''
+    setReconciliationMessage(tracked
+      ? 'The deletion response is still being reconciled with the server.'
+      : '')
+  }, [deletionTrackingKey])
+
+  const commitPendingDeletion = useCallback((next) => {
+    pendingDeletionRef.current = next
+    setPendingDeletion(next)
+    writePendingDeletion(deletionTrackingKey, next)
+  }, [deletionTrackingKey])
+
+  const clearPendingDeletion = useCallback(() => {
+    commitPendingDeletion(null)
+    idempotencyKeyRef.current = ''
+  }, [commitPendingDeletion])
 
   const isPrimaryOwner = Boolean(auth?.user?.id && restaurant?.owner_id === auth.user.id)
   const exactNameMatches = restaurantName === (restaurant?.name || '')
@@ -53,7 +109,7 @@ export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
     setRestaurantName('')
     setPassword('')
     setSubmitError('')
-    idempotencyKeyRef.current = ''
+    if (!pendingDeletionRef.current) idempotencyKeyRef.current = ''
   }
 
   const sendPasswordSetup = async () => {
@@ -63,8 +119,9 @@ export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
     setResetStatus(result.success ? 'sent' : result.error || 'error')
   }
 
-  const leaveStore = (notice) => {
-    idempotencyKeyRef.current = ''
+  const leaveStore = useCallback((notice) => {
+    if (activeRestaurantRef.current !== restaurantId) return
+    clearPendingDeletion()
     setPassword('')
     setModalOpen(false)
     queryClient.clear()
@@ -73,20 +130,80 @@ export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
       state: { lifecycleNotice: notice },
     })
     void auth.refreshRestaurants().catch(() => undefined)
-  }
+  }, [auth, clearPendingDeletion, navigate, restaurantId])
 
-  const reconcileDeletion = async () => {
+  const reconcileDeletion = useCallback(async (attempts = DELETION_RECONCILE_ATTEMPTS) => {
     let current = null
-    for (let attempt = 0; attempt < DELETION_RECONCILE_ATTEMPTS; attempt += 1) {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       try {
         current = await backOfficeApi.deletionReadiness(restaurantId)
       } catch {
-        current = null
+        // A transport failure is not an authoritative lifecycle state. Keep
+        // the persisted request alive and retry instead of treating it as a
+        // failed deletion.
       }
-      if (!current || current.lifecycle_state !== 'suspending') return current
-      await wait(DELETION_RECONCILE_DELAY_MS)
+      if (current && current.lifecycle_state !== 'suspending') return current
+      if (attempt + 1 < attempts) await wait(DELETION_RECONCILE_DELAY_MS)
     }
     return current
+  }, [restaurantId])
+
+  const applyReconciledState = useCallback((current, fallbackMessage = '') => {
+    if (activeRestaurantRef.current !== restaurantId) return false
+    if (current?.lifecycle_state
+        && !['active', 'suspending'].includes(current.lifecycle_state)) {
+      leaveStore(`${restaurant.name} is being archived. It remains recoverable for 30 days.`)
+      return true
+    }
+    if (current) {
+      queryClient.setQueryData(queryKeys.deletionReadiness(restaurantId), current)
+    }
+    if (current?.lifecycle_state === 'active') {
+      clearPendingDeletion()
+      setReconciliationMessage('The server confirmed this store is still active. Review readiness before trying again.')
+      setSubmitError(current.blockers?.length
+        ? 'Store activity changed during the final safety check. Resolve the blockers, then try again.'
+        : fallbackMessage)
+      return false
+    }
+    setReconciliationMessage(current?.lifecycle_state === 'suspending'
+      ? 'The final deletion safety check is still resolving. This page will leave the store only after the server confirms a non-active state.'
+      : 'The server could not be reached to confirm the deletion state. Reconciliation will keep retrying safely.')
+    setSubmitError(current?.lifecycle_state === 'suspending'
+      ? 'The deletion safety check is still resolving. Select Check again shortly.'
+      : fallbackMessage)
+    return false
+  }, [clearPendingDeletion, leaveStore, restaurant.name, restaurantId])
+
+  useEffect(() => {
+    if (!pendingDeletion
+        || pendingDeletion.restaurant_id !== restaurantId
+        || pendingDeletion.phase === 'requesting') return undefined
+    let cancelled = false
+    let timer = null
+    const check = async () => {
+      const current = await reconcileDeletion(1)
+      if (cancelled || activeRestaurantRef.current !== restaurantId) return
+      if (!applyReconciledState(current)) {
+        timer = window.setTimeout(check, DELETION_BACKGROUND_RECONCILE_MS)
+      }
+    }
+    void check()
+    return () => {
+      cancelled = true
+      if (timer !== null) window.clearTimeout(timer)
+    }
+  }, [applyReconciledState, pendingDeletion, reconcileDeletion, restaurantId])
+
+  const checkAgain = async () => {
+    if (reconciling) return
+    setReconciling(true)
+    try {
+      const current = await reconcileDeletion(3)
+      applyReconciledState(current, 'The store remains active. Review readiness before trying again.')
+    } finally {
+      if (activeRestaurantRef.current === restaurantId) setReconciling(false)
+    }
   }
 
   const deleteStore = async (event) => {
@@ -94,33 +211,51 @@ export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
     if (submitting || !exactNameMatches || !password || !readiness?.ready) return
     setSubmitting(true)
     setSubmitError('')
+    setReconciliationMessage('')
+    const requestKey = idempotencyKeyRef.current || (idempotencyKeyRef.current = crypto.randomUUID())
+    commitPendingDeletion({
+      restaurant_id: restaurantId,
+      restaurant_name: restaurant.name,
+      idempotency_key: requestKey,
+      started_at: new Date().toISOString(),
+      phase: 'requesting',
+    })
     try {
       const result = await backOfficeApi.deleteRestaurant(
         restaurantId,
         { restaurant_name: restaurantName, password },
-        idempotencyKeyRef.current || (idempotencyKeyRef.current = crypto.randomUUID()),
+        requestKey,
       )
-      leaveStore(`${restaurant.name} is ${result.state === 'recoverable' ? 'archived' : 'being archived'}. It remains recoverable for 30 days.`)
+      if (result.state && !['active', 'suspending'].includes(result.state)) {
+        leaveStore(`${restaurant.name} is ${result.state === 'recoverable' ? 'archived' : 'being archived'}. It remains recoverable for 30 days.`)
+        return
+      }
+      commitPendingDeletion({
+        ...pendingDeletionRef.current,
+        phase: 'ambiguous',
+      })
+      const currentReadiness = await reconcileDeletion()
+      applyReconciledState(
+        currentReadiness,
+        'The deletion response did not confirm a non-active state. Review readiness before trying again.',
+      )
     } catch (error) {
       setPassword('')
+      commitPendingDeletion({
+        ...pendingDeletionRef.current,
+        restaurant_id: restaurantId,
+        restaurant_name: restaurant.name,
+        idempotency_key: requestKey,
+        phase: 'ambiguous',
+      })
       // The mutation can finish on the server after a proxy/network response
       // fails. Reconcile authoritative lifecycle state before calling it a
       // readiness failure or leaving the user inside a non-operational store.
       const currentReadiness = await reconcileDeletion()
-      if (currentReadiness?.lifecycle_state
-          && !['active', 'suspending'].includes(currentReadiness.lifecycle_state)) {
-        const notice = `${restaurant.name} is being archived. It remains recoverable for 30 days.`
-        leaveStore(notice)
-        return
-      }
-      if (currentReadiness) {
-        queryClient.setQueryData(queryKeys.deletionReadiness(restaurantId), currentReadiness)
-      }
-      setSubmitError(currentReadiness?.lifecycle_state === 'suspending'
-        ? 'The deletion safety check is still resolving. This page will not redirect until the server confirms deletion; select Check again shortly.'
-        : currentReadiness?.blockers?.length
-          ? 'Store activity changed during the final safety check. Resolve the blockers, then try again.'
-          : errorMessage(error, 'The store was not deleted. Check the password and readiness, then try again.'))
+      applyReconciledState(
+        currentReadiness,
+        errorMessage(error, 'The store was not deleted. Check the password and readiness, then try again.'),
+      )
     } finally {
       setSubmitting(false)
     }
@@ -151,11 +286,12 @@ export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
       <div className="mt-5 rounded-xl border border-white/10 bg-black/15 p-4">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold text-dash-cream">Deletion readiness</h3>
-          <button type="button" onClick={() => void readinessQuery.refetch()} disabled={readinessQuery.isFetching} className="inline-flex items-center gap-1.5 text-xs font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">
-            <RefreshCw size={13} className={readinessQuery.isFetching ? 'animate-spin' : ''} aria-hidden="true" />
+          <button type="button" onClick={() => void checkAgain()} disabled={readinessQuery.isFetching || reconciling} className="inline-flex items-center gap-1.5 text-xs font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">
+            <RefreshCw size={13} className={readinessQuery.isFetching || reconciling ? 'animate-spin' : ''} aria-hidden="true" />
             Check again
           </button>
         </div>
+        {reconciliationMessage && <p className="mt-2 text-sm text-amber-200" role="status">{reconciliationMessage}</p>}
         {loading && <p className="mt-2 text-sm text-dash-secondary">Checking POS, payment, staff, and device activity…</p>}
         {loadError && <p className="mt-2 text-sm text-red-200">{loadError}</p>}
         {!loading && readiness?.ready && <p className="mt-2 text-sm text-emerald-300">Ready. A final POS-owned check runs after the store is quiesced.</p>}
@@ -180,6 +316,7 @@ export default function StoreDangerZone({ restaurant, restaurantId, auth }) {
         <button
           type="button"
           onClick={() => setModalOpen(true)}
+          disabled={Boolean(pendingDeletion)}
           className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-red-500 px-4 text-sm font-semibold text-white transition hover:bg-red-400"
         >
           <Trash2 size={15} aria-hidden="true" /> Delete store

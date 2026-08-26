@@ -1,13 +1,15 @@
 // API Configuration
 // Reads from environment variables set in .env.development or .env.production
 
+import { DEFAULT_API_BASE_PATH, resolveProductionApiBasePath } from './apiBaseUrl'
+
 export const resolveApiBaseUrl = (override: string | undefined, production: boolean): string => {
   const candidate = override?.trim()
   // Production dashboard traffic must stay on the Vercel proxy. Besides
   // avoiding CORS preflights, this prevents a stale deployment variable from
   // bypassing the same-origin contract already defined in vercel.json.
-  if (production && candidate && /^https?:\/\//i.test(candidate)) return '/ml-api'
-  return candidate || '/ml-api'
+  if (production) return resolveProductionApiBasePath(candidate)
+  return candidate || DEFAULT_API_BASE_PATH
 }
 
 export const API_CONFIG = {

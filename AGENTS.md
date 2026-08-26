@@ -41,6 +41,10 @@
   any assigned position at clock-in. The selected position controls workflow,
   pay, tips, and the time-clock snapshot; POS capabilities use the highest
   person authority independently. Manager-gated routes check `is_manager(ctx)`.
+  The read-only `/offline/sync-status` safety probe accepts either current staff
+  auth or a paired active device token so PIN-screen close-day update checks can
+  inspect conflict and receipt/kitchen print queues; offline mutations remain
+  staff-authenticated.
   Per-check gratuity overrides use the distinct `can_adjust_gratuity` role
   permission; they never reuse voluntary-tip permission `can_adjust_tips`.
   Add/change/remove mutations require an unpaid editable check and write the
@@ -123,7 +127,10 @@
   -> Danger Zone. It is visible in Simple, Medium, and Advanced, but presentation
   never grants lifecycle authority. The page continues to use `settings.edit`
   for Store Settings entry and requires `restaurants.owner_id = auth.uid()` for
-  deletion; the primary-owner check is repeated by the ML API under lock.
+  deletion; the primary-owner check is repeated by the ML API under lock. The
+  nested Danger Zone tab is also omitted from incomplete Setup and Store Settings
+  for every non-primary owner; rendering an empty nested-tab set must never fall
+  through to a hidden child surface.
 
 ### Recoverable restaurant lifecycle (2026-08-24)
 - Store deletion is a service-owned lifecycle, never a browser DELETE. The
@@ -139,7 +146,12 @@
   device must be paired again and stale offline work never auto-replays.
   In-flight restore tracking is session-persisted and also reconstructed from
   backend `restoring` rows, so an Account Settings reload still refreshes the
-  portfolio and exposes Open Store when recovery completes.
+  portfolio and exposes Open Store only after an explicit verified result or the
+  documented disappearance of an accepted/observed restore after verification.
+  A retrying provider failure remains Restoring, a recoverable failed restore is
+  shown as retryable, and purging never becomes a restoration success. Owners
+  whose portfolio contains only deleted stores route to Account Settings rather
+  than onboarding; lookup failures also fail toward that recoverable surface.
 - Only lifecycle state `active` is operational. Public routes hide quarantined
   stores, authenticated clients receive structured `410 restaurant_deleted`,
   and restaurant-scoped UI/query state is cleared after deletion. Public assets
@@ -151,7 +163,10 @@
   responses, and the UI uses the backend clock for the countdown while leaving
   the exact deadline decision to the database. A transient `suspending` state
   never causes navigation until the backend confirms archiving/recovery or an
-  active rollback.
+  active rollback. Ambiguous deletion requests persist their idempotency key in
+  session storage, survive transient reconciliation failures, and are retried by
+  both background polling and Check again; only an authoritative non-active
+  state navigates away.
 
 ### When you code in this area (STANDING RULES)
 - **Every new back-office feature, page, tab, or mutating endpoint MUST be wired
@@ -226,7 +241,10 @@ gate; the bell remains disabled while access is unresolved or denied.
   `pages/TipPoolingPage.jsx` without changing their API or persistence contracts;
   Timecards retain `team.view`, while labor, overview, runs, rules, and setup
   retain their existing payroll permissions. Legacy Time Clock and Labor Cost
-  deep links redirect into the matching Workforce & Pay section.
+  deep links redirect into the matching Workforce & Pay section. Timecards stay
+  reachable when any of entries, manager adjustments, or labor totals is visible.
+  Self-service view recovery reveals both the selected child and its parent nav
+  capability so an explicitly hidden parent cannot strand the workspace.
   Payroll exports/email actions use existing `payroll.export`; the frontend posts
   email requests to `/restaurants/:id/payroll/email` and falls back to download
   when the email service endpoint is not configured. Menu item price-allocation

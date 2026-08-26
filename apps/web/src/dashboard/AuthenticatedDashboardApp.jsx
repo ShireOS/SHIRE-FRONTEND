@@ -27,6 +27,7 @@ import { useBackOfficeAccess } from '../shared/hooks/useBackOfficeAccess'
 import { TAB_PERMISSIONS } from '../shared/permissions'
 import { SECTION_VIEW_CAPABILITIES, TAB_VIEW_CAPABILITIES } from '../shared/backOfficeView'
 import { backOfficeApi } from '../shared/api/backOfficeApi'
+import { routeForOwnerWithoutOperationalStores } from '../auth/hooks/deletedStoreRouting'
 import { PENDING_CLAIM_STORAGE_KEY } from './data/boarding'
 import { prefetchAnalyticsSummary, usePersistedPeriod } from './data/analyticsSummary'
 import { loadRestaurantHomepageBootstrap } from './data/homepageBootstrap'
@@ -94,6 +95,20 @@ function PageLoading() {
 
 function OwnerGate() {
   const auth = useAuth()
+  const emptyOwnerPortfolio = Boolean(
+    !auth.isLoading
+    && !auth.restaurant.isLoading
+    && auth.isAuthenticated
+    && auth.accountType === 'owner'
+    && auth.restaurant.restaurants.length === 0
+  )
+  const deletedStoresQuery = useQuery({
+    queryKey: ['account', auth.user?.id || '', 'deleted-store-routing'],
+    queryFn: () => backOfficeApi.deletedRestaurants(),
+    enabled: emptyOwnerPortfolio,
+    staleTime: 15_000,
+    retry: 1,
+  })
 
   if (auth.isLoading || auth.restaurant.isLoading) {
     return <LoadingScreen />
@@ -116,8 +131,12 @@ function OwnerGate() {
 
   // Resellers and admins live in the enterprise portal even with an empty
   // portfolio; only owners with no restaurants get sent to onboarding.
-  if (auth.restaurant.restaurants.length === 0 && auth.accountType === 'owner') {
-    return <Navigate to="/onboarding" replace />
+  if (emptyOwnerPortfolio) {
+    if (deletedStoresQuery.isPending) return <LoadingScreen />
+    return <Navigate to={routeForOwnerWithoutOperationalStores(
+      deletedStoresQuery.data,
+      deletedStoresQuery.isError,
+    ) || '/onboarding'} replace />
   }
 
   const prefs = auth.profile?.dashboard_prefs
@@ -255,9 +274,11 @@ function PlaceholderPanel({ title, eyebrow, children }) {
 
 function ConfigurationHub({ tabs, initialTab, children }) {
   const [active, setActive] = useState(initialTab || tabs[0]?.id)
+  const resolvedActive = tabs.some(tab => tab.id === active) ? active : tabs[0]?.id
   useEffect(() => {
-    if (!tabs.some(tab => tab.id === active)) setActive(tabs[0]?.id)
-  }, [active, tabs])
+    if (active !== resolvedActive) setActive(resolvedActive)
+  }, [active, resolvedActive])
+  if (tabs.length === 0) return null
   return (
     <div className="space-y-5">
       <nav className="flex flex-wrap gap-2 border-b border-white/10 pb-4" aria-label="Configuration sections">
@@ -266,13 +287,13 @@ function ConfigurationHub({ tabs, initialTab, children }) {
             key={tab.id}
             type="button"
             onClick={() => setActive(tab.id)}
-            className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${active === tab.id ? 'bg-dash-gold text-black' : 'border border-white/10 text-dash-secondary hover:border-white/20 hover:text-dash-cream'}`}
+            className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${resolvedActive === tab.id ? 'bg-dash-gold text-black' : 'border border-white/10 text-dash-secondary hover:border-white/20 hover:text-dash-cream'}`}
           >
             {tab.label}
           </button>
         ))}
       </nav>
-      {children(active)}
+      {children(resolvedActive)}
     </div>
   )
 }

@@ -46,5 +46,8 @@ test('an unavailable raw hash redirects before an existing page can render it', 
 test('fully hidden workforce views retain the self-service recovery action', () => {
   assert.match(page, /backOfficeApi\.updateMyViewPolicy/)
   assert.match(page, /queryKeys\.backOfficeAccess/)
+  assert.match(page, /\['nav\.tip-pooling', 'payroll\.overview'\]/)
+  assert.match(page, /\['nav\.time-clock', 'time_clock\.entries'\]/)
+  assert.match(page, /Object\.fromEntries\(revealCapabilities\.map/)
   assert.match(page, /Show in my view/)
 })

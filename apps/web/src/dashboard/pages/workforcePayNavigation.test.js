@@ -19,7 +19,7 @@ test('section availability never widens team and payroll permissions', () => {
   const teamOnly = workforcePayAvailability({
     canViewTeam: true,
     canViewPayroll: false,
-    timecardsVisible: true,
+    timecardEntriesVisible: true,
     payrollOverviewVisible: true,
     runsVisible: true,
   })
@@ -35,7 +35,7 @@ test('section availability never widens team and payroll permissions', () => {
     canViewTeam: false,
     canViewPayroll: true,
     payrollOverviewVisible: true,
-    timecardsVisible: true,
+    timecardEntriesVisible: true,
     runsVisible: true,
     rulesVisible: true,
     payrollSetupVisible: true,
@@ -47,6 +47,28 @@ test('section availability never widens team and payroll permissions', () => {
     rules: true,
     payroll: true,
   })
+})
+
+test('any visible timecard child keeps the timecard workspace reachable', () => {
+  for (const child of [
+    'timecardEntriesVisible',
+    'timecardAdjustmentsVisible',
+    'timecardTotalsVisible',
+  ]) {
+    const availability = workforcePayAvailability({
+      canViewTeam: true,
+      canViewPayroll: false,
+      [child]: true,
+    })
+    assert.equal(availability.timecards, true, child)
+  }
+
+  assert.equal(workforcePayAvailability({
+    canViewTeam: false,
+    timecardEntriesVisible: true,
+    timecardAdjustmentsVisible: true,
+    timecardTotalsVisible: true,
+  }).timecards, false)
 })
 
 test('legacy payroll hashes map into the consolidated top-level areas', () => {

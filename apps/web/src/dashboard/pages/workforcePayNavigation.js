@@ -9,14 +9,20 @@ export function workforcePayAvailability({
   canViewPayroll,
   payrollOverviewVisible,
   laborOverviewVisible,
-  timecardsVisible,
+  timecardEntriesVisible,
+  timecardAdjustmentsVisible,
+  timecardTotalsVisible,
   runsVisible,
   rulesVisible,
   payrollSetupVisible,
 }) {
   return {
     overview: Boolean(canViewPayroll && (payrollOverviewVisible || laborOverviewVisible)),
-    timecards: Boolean(canViewTeam && timecardsVisible),
+    timecards: Boolean(canViewTeam && (
+      timecardEntriesVisible
+      || timecardAdjustmentsVisible
+      || timecardTotalsVisible
+    )),
     runs: Boolean(canViewPayroll && runsVisible),
     rules: Boolean(canViewPayroll && rulesVisible),
     payroll: Boolean(canViewPayroll && payrollSetupVisible),

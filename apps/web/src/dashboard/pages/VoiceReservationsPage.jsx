@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -131,10 +131,23 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
   const [transferPhone, setTransferPhone] = useState('')
   const [purchaseOpen, setPurchaseOpen] = useState(false)
   const [purchaseConfirmed, setPurchaseConfirmed] = useState(false)
+  const requestContextRef = useRef({ restaurantId, generation: 0 })
+  if (requestContextRef.current.restaurantId !== restaurantId) {
+    requestContextRef.current = {
+      restaurantId,
+      generation: requestContextRef.current.generation + 1,
+    }
+  }
+  const captureRequestContext = () => ({ ...requestContextRef.current })
+  const requestIsCurrent = (request) => (
+    request.restaurantId === requestContextRef.current.restaurantId
+    && request.generation === requestContextRef.current.generation
+  )
 
   const setupQuery = useQuery({
     queryKey: queryKeys.voiceProvisioning(restaurantId),
     queryFn: () => fetchReservationsApi(`/locations/${restaurantId}/voice-provisioning`),
+    enabled: Boolean(restaurantId),
     staleTime: STALE_TIMES.setup,
     retry: false,
   })
@@ -143,40 +156,61 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
   const selectedNumber = setup?.selectedPhoneNumber || setup?.voiceAgent?.phoneNumber || ''
 
   useEffect(() => {
+    setSearchMode('zip')
+    setSearchValue('')
+    setNumbers([])
+    setSearching(false)
+    setBusyAction(null)
+    setActionError(null)
+    setNotice('')
+    setForwardingMode('none')
+    setForwardingFrom('')
+    setTransferPhone('')
+    setPurchaseOpen(false)
+    setPurchaseConfirmed(false)
+  }, [restaurantId])
+
+  useEffect(() => {
     if (!setup) return
+    const request = captureRequestContext()
+    if (!requestIsCurrent(request) || request.restaurantId !== restaurantId) return
     setForwardingMode(setup.forwardingMode || 'none')
     setForwardingFrom(setup.forwardingFrom || '')
     setTransferPhone(setup.voiceAgent?.transferPhone || '')
-  }, [setup?.id, setup?.updatedAt])
+  }, [restaurantId, setup?.id, setup?.updatedAt])
 
   const requirements = useMemo(
     () => (setup?.requirements || []).filter((item) => !['approved', 'waived'].includes(item.status)),
     [setup?.requirements],
   )
 
-  const storeSetup = (next) => {
-    queryClient.setQueryData(queryKeys.voiceProvisioning(restaurantId), next)
+  const storeSetup = (next, request) => {
+    if (!requestIsCurrent(request)) return undefined
+    queryClient.setQueryData(queryKeys.voiceProvisioning(request.restaurantId), next)
     return next
   }
 
   const runSetupAction = async (name, endpoint, options = {}, successMessage = '') => {
+    const request = captureRequestContext()
     setBusyAction(name)
     setActionError(null)
     setNotice('')
     try {
-      const next = await fetchReservationsApi(`/locations/${restaurantId}/voice-provisioning${endpoint}`, options)
-      storeSetup(next)
+      const next = await fetchReservationsApi(`/locations/${request.restaurantId}/voice-provisioning${endpoint}`, options)
+      if (!requestIsCurrent(request)) return undefined
+      storeSetup(next, request)
       if (successMessage) setNotice(successMessage)
       return next
     } catch (error) {
-      setActionError(error)
+      if (requestIsCurrent(request)) setActionError(error)
       throw error
     } finally {
-      setBusyAction(null)
+      if (requestIsCurrent(request)) setBusyAction(null)
     }
   }
 
   const searchNumbers = async () => {
+    const request = captureRequestContext()
     setSearching(true)
     setActionError(null)
     setNotice('')
@@ -184,17 +218,20 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
       const payload = searchMode === 'area'
         ? { areaCode: searchValue }
         : { postalCode: searchValue }
-      const result = await fetchReservationsApi(`/locations/${restaurantId}/voice-provisioning/available-numbers`, {
+      const result = await fetchReservationsApi(`/locations/${request.restaurantId}/voice-provisioning/available-numbers`, {
         method: 'POST',
         body: JSON.stringify(payload),
       })
+      if (!requestIsCurrent(request)) return
       setNumbers(result.numbers || [])
       if (!(result.numbers || []).length) setNotice('No local voice numbers matched. Try a nearby ZIP or area code.')
     } catch (error) {
-      setNumbers([])
-      setActionError(error)
+      if (requestIsCurrent(request)) {
+        setNumbers([])
+        setActionError(error)
+      }
     } finally {
-      setSearching(false)
+      if (requestIsCurrent(request)) setSearching(false)
     }
   }
 
@@ -232,27 +269,33 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
   }
 
   const purchase = async () => {
+    const request = captureRequestContext()
+    const payload = configurationPayload()
     setBusyAction('purchase')
     setActionError(null)
     setNotice('')
     try {
-      await fetchReservationsApi(`/locations/${restaurantId}/voice-provisioning/configuration`, {
+      await fetchReservationsApi(`/locations/${request.restaurantId}/voice-provisioning/configuration`, {
         method: 'PUT',
-        body: JSON.stringify(configurationPayload()),
+        body: JSON.stringify(payload),
       })
-      const next = await fetchReservationsApi(`/locations/${restaurantId}/voice-provisioning/provision`, {
+      if (!requestIsCurrent(request)) return
+      const next = await fetchReservationsApi(`/locations/${request.restaurantId}/voice-provisioning/provision`, {
         method: 'POST',
         body: JSON.stringify({ confirmPurchase: true }),
       })
-      storeSetup(next)
+      if (!requestIsCurrent(request)) return
+      storeSetup(next, request)
       setPurchaseOpen(false)
       setPurchaseConfirmed(false)
       setNotice('The AI number is configured. Complete forwarding below if you selected it.')
     } catch (error) {
-      setActionError(error)
-      setPurchaseOpen(false)
+      if (requestIsCurrent(request)) {
+        setActionError(error)
+        setPurchaseOpen(false)
+      }
     } finally {
-      setBusyAction(null)
+      if (requestIsCurrent(request)) setBusyAction(null)
     }
   }
 
@@ -276,9 +319,11 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
   }
 
   const copyNumber = async () => {
-    if (!setup?.voiceAgent?.phoneNumber) return
-    await navigator.clipboard.writeText(setup.voiceAgent.phoneNumber)
-    setNotice('AI number copied.')
+    const request = captureRequestContext()
+    const phoneNumber = setup?.voiceAgent?.phoneNumber
+    if (!phoneNumber) return
+    await navigator.clipboard.writeText(phoneNumber)
+    if (requestIsCurrent(request)) setNotice('AI number copied.')
   }
 
   if (setupQuery.isLoading) {

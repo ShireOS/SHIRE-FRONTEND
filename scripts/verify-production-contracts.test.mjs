@@ -112,18 +112,27 @@ test('automatic enforcement targets production builds without blocking previews'
   assert.equal(releaseVerificationRequired({}), true)
 })
 
-test('production routing warns about a direct ML API override without blocking the build', () => {
-  assert.match(
-    productionApiRoutingWarning({
-      VERCEL_ENV: 'production',
-      VITE_API_BASE_URL: 'https://web-production.example/api/v1',
-    }),
-    /Ignoring absolute VITE_API_BASE_URL.*same-origin \/ml-api proxy/,
-  )
-  assert.equal(
-    productionApiRoutingWarning({ VERCEL_ENV: 'production', VITE_API_BASE_URL: '/ml-api' }),
-    null,
-  )
+test('production routing warns about every unsafe API base without blocking the build', () => {
+  for (const VITE_API_BASE_URL of [
+    'https://web-production.example/api/v1',
+    '//web-production.example/api/v1',
+    '\\\\web-production.example\\api\\v1',
+    '/\\web-production.example/api/v1',
+    'ml-api',
+  ]) {
+    assert.match(
+      productionApiRoutingWarning({ VERCEL_ENV: 'production', VITE_API_BASE_URL }),
+      /Ignoring unsafe VITE_API_BASE_URL.*same-origin path.*\/ml-api/,
+      VITE_API_BASE_URL,
+    )
+  }
+  for (const VITE_API_BASE_URL of ['/ml-api', '/api/v1', '']) {
+    assert.equal(
+      productionApiRoutingWarning({ VERCEL_ENV: 'production', VITE_API_BASE_URL }),
+      null,
+      VITE_API_BASE_URL,
+    )
+  }
   assert.equal(
     productionApiRoutingWarning({
       VERCEL_ENV: 'preview',

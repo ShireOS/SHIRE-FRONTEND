@@ -110,16 +110,26 @@ test('restaurant switches retain tenant-specific paths and headers', async () =>
   ])
 })
 
-test('transport overhead stays negligible relative to the report latency gates', async () => {
-  const startedAt = performance.now()
-  await requestRestaurantReport({
+test('transport settles as soon as the underlying response resolves', async () => {
+  let releaseResponse
+  const responseGate = new Promise((resolve) => {
+    releaseResponse = resolve
+  })
+  let settled = false
+  const request = requestRestaurantReport({
     auth: auth(),
     baseUrl: '/ml-api',
     restaurantId: 'restaurant-1',
     endpoint: '/restaurants/restaurant-1/reports/pos-snapshots',
     method: 'POST',
-    fetchImpl: async () => Response.json({ snapshot_id: 'snapshot-1' }),
+    fetchImpl: async () => responseGate,
   })
+  request.finally(() => { settled = true })
 
-  assert.ok(performance.now() - startedAt < 100)
+  await Promise.resolve()
+  assert.equal(settled, false)
+
+  releaseResponse(Response.json({ snapshot_id: 'snapshot-1' }))
+  assert.deepEqual(await request, { snapshot_id: 'snapshot-1' })
+  assert.equal(settled, true)
 })

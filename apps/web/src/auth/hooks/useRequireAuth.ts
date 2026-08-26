@@ -1,7 +1,10 @@
 import { useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { backOfficeApi } from '../../shared/api/backOfficeApi'
 import type { Restaurant } from '@shire/db'
+import { routeForOwnerWithoutOperationalStores } from './deletedStoreRouting'
 
 const getCompletedRestaurant = (
   currentRestaurant: Restaurant | null,
@@ -70,6 +73,22 @@ export function useRequireAuth(options: UseRequireAuthOptions = {}) {
     completedRestaurant &&
     auth.restaurant.currentRestaurant?.id !== completedRestaurant.id
   )
+  const shouldCheckDeletedStores = Boolean(
+    requireOnboarding
+    && !auth.isLoading
+    && !auth.restaurant.isLoading
+    && auth.isAuthenticated
+    && auth.accountType === 'owner'
+    && !completedRestaurant
+    && auth.restaurant.restaurants.length === 0
+  )
+  const deletedStoresQuery = useQuery({
+    queryKey: ['account', auth.user?.id || '', 'deleted-store-routing'],
+    queryFn: () => backOfficeApi.deletedRestaurants(),
+    enabled: shouldCheckDeletedStores,
+    staleTime: 15_000,
+    retry: 1,
+  })
 
   useEffect(() => {
     // Wait for auth AND restaurant data to initialize
@@ -87,7 +106,11 @@ export function useRequireAuth(options: UseRequireAuthOptions = {}) {
     // Check onboarding status if required
     if (requireOnboarding) {
       if (!completedRestaurant) {
-        navigate(onboardingRedirect, { replace: true })
+        if (shouldCheckDeletedStores && deletedStoresQuery.isPending) return
+        const recoveryRoute = shouldCheckDeletedStores
+          ? routeForOwnerWithoutOperationalStores(deletedStoresQuery.data, deletedStoresQuery.isError)
+          : null
+        navigate(recoveryRoute || onboardingRedirect, { replace: true })
         return
       }
 
@@ -110,6 +133,10 @@ export function useRequireAuth(options: UseRequireAuthOptions = {}) {
     redirectTo,
     requireOnboarding,
     onboardingRedirect,
+    shouldCheckDeletedStores,
+    deletedStoresQuery.data,
+    deletedStoresQuery.isError,
+    deletedStoresQuery.isPending,
   ])
 
   return {
@@ -118,6 +145,7 @@ export function useRequireAuth(options: UseRequireAuthOptions = {}) {
       !auth.isLoading &&
       !auth.restaurant.isLoading &&
       auth.isAuthenticated &&
+      (!shouldCheckDeletedStores || !deletedStoresQuery.isPending) &&
       (!requireOnboarding || (!!resolvedRestaurant && !needsRestaurantSwitch)),
     /** Current user */
     user: auth.user,
@@ -219,6 +247,25 @@ export function useRedirectIfAuthenticated(redirectTo = '/') {
   const auth = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const completedRestaurant = getCompletedRestaurant(
+    auth.restaurant.currentRestaurant,
+    auth.restaurant.restaurants
+  )
+  const shouldCheckDeletedStores = Boolean(
+    !auth.isLoading
+    && !auth.restaurant.isLoading
+    && auth.isAuthenticated
+    && auth.accountType === 'owner'
+    && !completedRestaurant
+    && auth.restaurant.restaurants.length === 0
+  )
+  const deletedStoresQuery = useQuery({
+    queryKey: ['account', auth.user?.id || '', 'deleted-store-routing'],
+    queryFn: () => backOfficeApi.deletedRestaurants(),
+    enabled: shouldCheckDeletedStores,
+    staleTime: 15_000,
+    retry: 1,
+  })
 
   useEffect(() => {
     // Wait for auth AND restaurant data to initialize
@@ -241,13 +288,12 @@ export function useRedirectIfAuthenticated(redirectTo = '/') {
         return
       }
 
-      const completedRestaurant = getCompletedRestaurant(
-        auth.restaurant.currentRestaurant,
-        auth.restaurant.restaurants
-      )
-
       if (!completedRestaurant) {
-        navigate('/onboarding', { replace: true })
+        if (shouldCheckDeletedStores && deletedStoresQuery.isPending) return
+        const destination = shouldCheckDeletedStores
+          ? routeForOwnerWithoutOperationalStores(deletedStoresQuery.data, deletedStoresQuery.isError)
+          : '/onboarding'
+        navigate(destination || '/onboarding', { replace: true })
         return
       }
 
@@ -269,10 +315,17 @@ export function useRedirectIfAuthenticated(redirectTo = '/') {
     navigate,
     location.state,
     redirectTo,
+    completedRestaurant,
+    shouldCheckDeletedStores,
+    deletedStoresQuery.data,
+    deletedStoresQuery.isError,
+    deletedStoresQuery.isPending,
   ])
 
   return {
-    isReady: !auth.isLoading && !auth.restaurant.isLoading,
+    isReady: !auth.isLoading
+      && !auth.restaurant.isLoading
+      && (!shouldCheckDeletedStores || !deletedStoresQuery.isPending),
     isAuthenticated: auth.isAuthenticated,
   }
 }

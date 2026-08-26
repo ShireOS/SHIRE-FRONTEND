@@ -122,8 +122,9 @@ export function releaseVerificationRequired(environment = process.env) {
 export function productionApiRoutingWarning(environment = process.env) {
   if (environment.VERCEL_ENV !== 'production') return null
   const override = String(environment.VITE_API_BASE_URL || '').trim()
-  if (!/^https?:\/\//i.test(override)) return null
-  return 'Ignoring absolute VITE_API_BASE_URL because production uses the same-origin /ml-api proxy'
+  const safeSameOriginPath = /^\/(?!\/)[^\\?#\u0000-\u001f\u007f]*$/.test(override)
+  if (!override || safeSameOriginPath) return null
+  return 'Ignoring unsafe VITE_API_BASE_URL because production accepts only a same-origin path and falls back to /ml-api'
 }
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
