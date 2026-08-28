@@ -7,6 +7,7 @@ import MenuPanel from '../MenuPanel'
 import ResilientPrintingCard from '../components/printing/ResilientPrintingCard'
 import ProductionWorkflowCard from '../components/printing/ProductionWorkflowCard'
 import HardwareChainGuide from '../components/printing/HardwareChainGuide'
+import KdsConfigurationCard from '../components/printing/KdsConfigurationCard'
 import TicketTopBuilder from '../components/printing/TicketTopBuilder'
 import PrinterFaithfulPreview from '../components/printing/PrinterFaithfulPreview'
 import { useAuth } from '../../auth'
@@ -60,7 +61,7 @@ function mergeChangedPrintingValues(baseline, draft, fresh) {
   }
   return result
 }
-const sectionFromHash = hash => ['overview', 'routing', 'receipts'].includes(hash.replace('#', '')) ? hash.replace('#', '') : 'overview'
+const sectionFromHash = hash => ['overview', 'routing', 'kds', 'receipts'].includes(hash.replace('#', '')) ? hash.replace('#', '') : 'overview'
 const PRICING_PROGRAM_LABELS = {
   standard: 'Standard pricing receipt',
   dual_pricing_posted_electronic: 'Dual posted prices · Cash / Card columns',
@@ -110,10 +111,15 @@ function Select({ label, value, onChange, children }) {
 }
 
 export default function PrintingRoutingPage({ restaurantId }) {
-  const auth = useAuth()
-  const access = useBackOfficeAccess(auth, restaurantId)
   const location = useLocation()
   const section = sectionFromHash(location.hash)
+  if (section === 'kds') return <KdsConfigurationCard restaurantId={restaurantId} />
+  return <PrintingRoutingContent restaurantId={restaurantId} section={section} />
+}
+
+function PrintingRoutingContent({ restaurantId, section }) {
+  const auth = useAuth()
+  const access = useBackOfficeAccess(auth, restaurantId)
   const [config, setConfig] = useState(DEFAULT_CONFIG)
   const [savedConfig, setSavedConfig] = useState(DEFAULT_CONFIG)
   const [savedAutoPrintAfterPayment, setSavedAutoPrintAfterPayment] = useState(true)
