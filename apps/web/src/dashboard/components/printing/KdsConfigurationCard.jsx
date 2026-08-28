@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, ChefHat, Clock3, Loader2, MonitorSmartphone, Plus, RefreshCw, Save, Settings2, Volume2 } from 'lucide-react'
 import { assignKdsDevice, createKdsProfile, fetchKdsConfiguration, updateKdsProfile } from '../../../shared/api/kds'
 
@@ -12,8 +12,11 @@ const METADATA_FIELDS = [
   ['descriptions', 'Item descriptions in details'],
 ]
 
+const emptyConfiguration = () => ({ profiles: [], stations: [], devices: [], display_groups: [], metrics: {} })
+
 const blankProfile = stations => {
-  const first = stations.find(station => station.station_type !== 'expo') || stations[0]
+  const first = stations.find(station => station.station_type !== 'expo')
+  if (!first) return null
   return {
     id: null,
     name: first ? `${first.name} KDS` : 'Kitchen KDS',
@@ -73,36 +76,57 @@ function Field({ label, children }) {
 const inputClass = 'mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-dash-cream outline-none focus:border-dash-gold/60'
 
 export default function KdsConfigurationCard({ restaurantId }) {
-  const [configuration, setConfiguration] = useState({ profiles: [], stations: [], devices: [], display_groups: [], metrics: {} })
+  const [configuration, setConfiguration] = useState(emptyConfiguration)
   const [draft, setDraft] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [reason, setReason] = useState('')
+  const restaurantRef = useRef(String(restaurantId))
+  const loadRequestRef = useRef(0)
+  const loadSequenceRef = useRef(0)
+  const appliedLoadRef = useRef(0)
 
-  const load = async signal => {
-    setLoading(true); setError('')
+  const load = async (signal, { replaceDraft = false, background = false } = {}) => {
+    const requestedRestaurant = String(restaurantId)
+    const generation = loadRequestRef.current
+    const requestId = ++loadSequenceRef.current
+    if (!background) { setLoading(true); setError('') }
     try {
       const data = await fetchKdsConfiguration(restaurantId, signal)
+      if (signal.aborted || restaurantRef.current !== requestedRestaurant || generation !== loadRequestRef.current || requestId < appliedLoadRef.current) return
+      appliedLoadRef.current = requestId
       setConfiguration(data)
-      setDraft(current => {
-        if (!current) return data.profiles.length ? normalizeProfile(data.profiles[0]) : blankProfile(data.stations)
-        const fresh = current.id && data.profiles.find(profile => profile.id === current.id)
-        return fresh ? normalizeProfile(fresh) : current
-      })
+      if (replaceDraft) setDraft(data.profiles.length ? normalizeProfile(data.profiles[0]) : blankProfile(data.stations))
     } catch (err) {
-      if (err?.name !== 'AbortError') setError(err?.message || 'Could not load KDS configuration')
-    } finally { setLoading(false) }
+      if (!background && err?.name !== 'AbortError' && restaurantRef.current === requestedRestaurant) {
+        setError(err?.message || 'Could not load KDS configuration')
+      }
+    } finally {
+      if (!background && !signal.aborted && restaurantRef.current === requestedRestaurant && generation === loadRequestRef.current) setLoading(false)
+    }
   }
 
   useEffect(() => {
     const controller = new AbortController()
-    void load(controller.signal)
-    return () => controller.abort()
+    restaurantRef.current = String(restaurantId)
+    loadRequestRef.current += 1
+    setConfiguration(emptyConfiguration())
+    setDraft(null)
+    setReason('')
+    setError('')
+    setMessage('')
+    setSaving(false)
+    setLoading(true)
+    void load(controller.signal, { replaceDraft: true })
+    const refreshTimer = setInterval(() => void load(controller.signal, { background: true }), 15_000)
+    return () => { controller.abort(); clearInterval(refreshTimer); loadRequestRef.current += 1 }
   }, [restaurantId])
 
   const prepStations = configuration.stations.filter(station => station.station_type !== 'expo')
   const expoStations = configuration.stations.filter(station => station.station_type === 'expo')
+  const canCreateProfile = prepStations.length > 0
   const viewLinks = draft?.stations.filter(row => row.purpose === 'view') || []
   const superviseLinks = draft?.stations.filter(row => row.purpose === 'supervise') || []
 
@@ -159,6 +183,9 @@ export default function KdsConfigurationCard({ restaurantId }) {
     if (!draft?.name.trim()) return setError('Name this KDS profile.')
     if (!viewLinks.length) return setError('Choose at least one station this KDS displays.')
     if (draft.role === 'expo' && !superviseLinks.length) return setError('Choose at least one prep station for expo to supervise.')
+    if (!reason.trim()) return setError('Enter a reason for this KDS configuration change.')
+    const requestedRestaurant = String(restaurantId)
+    const generation = ++loadRequestRef.current
     setSaving(true); setError(''); setMessage('')
     try {
       const payload = {
@@ -172,26 +199,42 @@ export default function KdsConfigurationCard({ restaurantId }) {
         settings: draft.settings || {}, is_active: draft.is_active !== false,
         expected_version: Number(draft.expected_version || 0),
         stations: draft.stations.map((row, index) => ({ ...row, display_order: index })),
+        reason: reason.trim(),
       }
       const data = draft.id
         ? await updateKdsProfile(restaurantId, draft.id, payload)
         : await createKdsProfile(restaurantId, payload)
+      if (restaurantRef.current !== requestedRestaurant || generation !== loadRequestRef.current) return
       setConfiguration(data)
       const saved = draft.id
         ? data.profiles.find(profile => profile.id === draft.id)
         : [...data.profiles].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0]
       setDraft(saved ? normalizeProfile(saved) : blankProfile(data.stations))
+      setReason('')
       setMessage('KDS profile saved. Assigned iPads will receive it on their next sync.')
-    } catch (err) { setError(err?.message || 'Could not save KDS profile') } finally { setSaving(false) }
+    } catch (err) {
+      if (restaurantRef.current === requestedRestaurant && generation === loadRequestRef.current) setError(err?.message || 'Could not save KDS profile')
+    } finally {
+      if (restaurantRef.current === requestedRestaurant && generation === loadRequestRef.current) setSaving(false)
+    }
   }
 
   const assign = async (deviceId, profileId) => {
+    if (!reason.trim()) return setError('Enter a reason before assigning a KDS iPad.')
+    const requestedRestaurant = String(restaurantId)
+    const generation = ++loadRequestRef.current
     setSaving(true); setError(''); setMessage('')
     try {
-      const data = await assignKdsDevice(restaurantId, deviceId, profileId)
+      const data = await assignKdsDevice(restaurantId, deviceId, profileId, reason.trim())
+      if (restaurantRef.current !== requestedRestaurant || generation !== loadRequestRef.current) return
       setConfiguration(data)
+      setReason('')
       setMessage('KDS iPad assigned. Its display target now follows the selected profile stations.')
-    } catch (err) { setError(err?.message || 'Could not assign KDS iPad') } finally { setSaving(false) }
+    } catch (err) {
+      if (restaurantRef.current === requestedRestaurant && generation === loadRequestRef.current) setError(err?.message || 'Could not assign KDS iPad')
+    } finally {
+      if (restaurantRef.current === requestedRestaurant && generation === loadRequestRef.current) setSaving(false)
+    }
   }
 
   if (loading && !draft) return <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-6"><Loader2 className="h-5 w-5 animate-spin text-dash-gold" /></section>
@@ -201,11 +244,17 @@ export default function KdsConfigurationCard({ restaurantId }) {
       <p className="label-mono">Printing & Routing</p>
       <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
         <div><h1 className="text-3xl font-semibold tracking-tight">Kitchen displays</h1><p className="mt-2 max-w-3xl text-sm text-dash-secondary">A KDS receives the same station-routed item subset as that station's printer. Display groups organize the left all-day rail; they never reroute food.</p></div>
-        <button type="button" onClick={() => setDraft(blankProfile(configuration.stations))} className="inline-flex items-center gap-2 rounded-xl border border-dash-gold/40 px-4 py-2.5 text-sm font-semibold text-dash-gold"><Plus className="h-4 w-4" /> New profile</button>
+        <button type="button" disabled={!canCreateProfile} title={!canCreateProfile ? 'Create an active prep station in Kitchen Routing first' : undefined} onClick={() => setDraft(blankProfile(configuration.stations))} className="inline-flex items-center gap-2 rounded-xl border border-dash-gold/40 px-4 py-2.5 text-sm font-semibold text-dash-gold disabled:cursor-not-allowed disabled:opacity-40"><Plus className="h-4 w-4" /> New profile</button>
       </div>
     </div>
     {error && <div role="alert" className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200">{error}</div>}
     {message && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">{message}</div>}
+    {!loading && !canCreateProfile && <div className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">Create at least one active non-Expo production station in Kitchen Routing before creating a KDS profile. Expo profiles also need a prep station to supervise.</div>}
+
+    <section className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+      <Field label="Manager reason"><input maxLength={300} value={reason} onChange={event => setReason(event.target.value)} placeholder="Why is this KDS configuration changing?" className={inputClass} /></Field>
+      <p className="mt-2 text-xs text-dash-tertiary">Required for profile saves and iPad assignments; stored with the existing KDS audit event.</p>
+    </section>
 
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {[

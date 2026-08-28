@@ -15,8 +15,8 @@ export const updateKdsProfile = (restaurantId, profileId, profile) =>
     body: JSON.stringify(profile),
   })
 
-export const assignKdsDevice = (restaurantId, deviceId, profileId) =>
+export const assignKdsDevice = (restaurantId, deviceId, profileId, reason) =>
   fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kds/devices/assignment`, {
     method: 'PUT',
-    body: JSON.stringify({ device_id: deviceId, profile_id: profileId, platform: 'ios' }),
+    body: JSON.stringify({ device_id: deviceId, profile_id: profileId, platform: 'ios', reason }),
   })

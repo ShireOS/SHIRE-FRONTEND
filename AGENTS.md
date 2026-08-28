@@ -123,6 +123,17 @@
   surface must never suppress its server permission check or alter POS data.
 - Existing accounts without an assignment resolve to Advanced for compatibility;
   newly created restaurant owners receive an explicit Simple assignment.
+- Printing & Routing uses stable child capabilities for Overview, Routing, KDS,
+  Receipts, and advanced ticket layout. `printing.kds` gates both the Kitchen
+  Displays sidebar section and direct `#kds` rendering; presentation never
+  replaces the existing `settings.edit` authorization check.
+- KDS profile saves and iPad assignments require one manager reason and use
+  the POS backend KDS APIs; do not write KDS configuration directly. A
+  restaurant change must clear the previous restaurant's draft immediately,
+  and the 15-second health/metric refresh must not overwrite active edits.
+- New KDS profiles require an active non-Expo production station. Expo remains
+  a view/supervision role and must never be silently substituted as a prep
+  profile's default station.
 - `settings.lifecycle` is the stable presentation capability for Store Settings
   -> Danger Zone. It is visible in Simple, Medium, and Advanced, but presentation
   never grants lifecycle authority. The page continues to use `settings.edit`

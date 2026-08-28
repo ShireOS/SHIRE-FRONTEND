@@ -62,6 +62,12 @@ function mergeChangedPrintingValues(baseline, draft, fresh) {
   return result
 }
 const sectionFromHash = hash => ['overview', 'routing', 'kds', 'receipts'].includes(hash.replace('#', '')) ? hash.replace('#', '') : 'overview'
+const PRINTING_SECTION_CAPABILITIES = {
+  overview: 'printing.overview',
+  routing: 'printing.routing',
+  kds: 'printing.kds',
+  receipts: 'printing.receipts',
+}
 const PRICING_PROGRAM_LABELS = {
   standard: 'Standard pricing receipt',
   dual_pricing_posted_electronic: 'Dual posted prices · Cash / Card columns',
@@ -111,15 +117,23 @@ function Select({ label, value, onChange, children }) {
 }
 
 export default function PrintingRoutingPage({ restaurantId }) {
-  const location = useLocation()
-  const section = sectionFromHash(location.hash)
-  if (section === 'kds') return <KdsConfigurationCard restaurantId={restaurantId} />
-  return <PrintingRoutingContent restaurantId={restaurantId} section={section} />
-}
-
-function PrintingRoutingContent({ restaurantId, section }) {
   const auth = useAuth()
   const access = useBackOfficeAccess(auth, restaurantId)
+  const location = useLocation()
+  const requestedSection = sectionFromHash(location.hash)
+  if (requestedSection === 'kds' && access.loading) {
+    return <div className="flex min-h-48 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-dash-gold" /></div>
+  }
+  const section = access.loading || access.viewVisible(PRINTING_SECTION_CAPABILITIES[requestedSection])
+    ? requestedSection
+    : Object.keys(PRINTING_SECTION_CAPABILITIES).find(candidate => access.viewVisible(PRINTING_SECTION_CAPABILITIES[candidate]))
+  if (!section) return <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-6 text-sm text-dash-secondary">Printing & Routing is hidden by your Back Office view.</div>
+  if (section === 'kds') return <KdsConfigurationCard key={restaurantId} restaurantId={restaurantId} />
+  return <PrintingRoutingContent restaurantId={restaurantId} section={section} access={access} />
+}
+
+function PrintingRoutingContent({ restaurantId, section, access }) {
+  const auth = useAuth()
   const [config, setConfig] = useState(DEFAULT_CONFIG)
   const [savedConfig, setSavedConfig] = useState(DEFAULT_CONFIG)
   const [savedAutoPrintAfterPayment, setSavedAutoPrintAfterPayment] = useState(true)
