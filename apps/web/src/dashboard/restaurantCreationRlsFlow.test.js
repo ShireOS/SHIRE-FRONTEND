@@ -31,3 +31,13 @@ test('restaurant creation reads the row only after the lifecycle trigger commits
   assertLifecycleSafeInsert(boarding, 'const restaurantId = crypto.randomUUID()', 'draft boarding')
   assertLifecycleSafeInsert(onboarding, 'const newRestaurantId = crypto.randomUUID()', 'owner onboarding')
 })
+
+test('draft boarding reads the seeded pricing version before replacing the rate plan', () => {
+  const readIndex = boarding.indexOf('const currentRatePlans = await fetchRatePlans([restaurant.id])')
+  const writeIndex = boarding.indexOf('await upsertRatePlan(restaurant.id, {')
+
+  assert.notEqual(readIndex, -1)
+  assert.notEqual(writeIndex, -1)
+  assert.ok(readIndex < writeIndex)
+  assert.match(boarding.slice(writeIndex, writeIndex + 220), /version: currentRatePlans\[restaurant\.id\]\?\.version/)
+})

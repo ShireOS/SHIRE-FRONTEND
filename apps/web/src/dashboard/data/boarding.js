@@ -1,5 +1,5 @@
 import { supabase } from '../../shared/lib/supabase'
-import { DEFAULT_RATE_PLAN, formatRate, upsertRatePlan } from './ratePlans'
+import { DEFAULT_RATE_PLAN, fetchRatePlans, formatRate, upsertRatePlan } from './ratePlans'
 
 export const PENDING_CLAIM_STORAGE_KEY = 'shire_pending_claim_token'
 
@@ -73,7 +73,14 @@ export async function createDraftInvite({ userId, email, draft, ratePlan }) {
     .single()
   if (restaurantReadError) throw restaurantReadError
 
-  await upsertRatePlan(restaurant.id, { ...plan, version: 0 })
+  // Restaurant creation seeds a default pricing-policy version. Read that
+  // authoritative version before replacing the defaults so optimistic locking
+  // does not reject the initial reseller rate plan.
+  const currentRatePlans = await fetchRatePlans([restaurant.id])
+  await upsertRatePlan(restaurant.id, {
+    ...plan,
+    version: currentRatePlans[restaurant.id]?.version,
+  })
 
   const { data: invite, error: inviteError } = await supabase
     .from('store_invites')
