@@ -24,8 +24,52 @@ test('Close Day renders POS readiness while reconciliation is still delayed', ()
 test('Close Day lets advisory reconciliation fall through to the audited exception path', () => {
   assert.match(page, /disabled=\{closing \|\| !preview\}/)
   assert.doesNotMatch(page, /if \(reconLoading\) \{[\s\S]*Wait for independent financial verification/)
-  assert.match(page, /verificationStatus !== 'verified'[\s\S]*setModal\('verification'\)/)
+  assert.match(page, /verificationStatus !== 'verified'[\s\S]*setActiveStep\('review'\)/)
+  assert.match(page, /Manager reason for verification exception/)
   assert.match(page, /signal, timeoutMs: CLOSE_DAY_RECONCILIATION_TIMEOUT_MS/)
+})
+
+test('Close Day uses a four-stage page flow without modal confirmation chaining', () => {
+  assert.match(page, /id: 'readiness', label: 'Readiness'/)
+  assert.match(page, /id: 'cash', label: 'Cash'/)
+  assert.match(page, /id: 'team', label: 'Team'/)
+  assert.match(page, /id: 'review', label: 'Review'/)
+  assert.match(page, /aria-label="Close Day progress"/)
+  assert.match(page, /Nothing is submitted until you select the final Close Day action\./)
+  assert.doesNotMatch(page, /modal === '(verification|employees|confirm|recent-activity)'/)
+})
+
+test('cash entry uses current and expected drawer wording', () => {
+  assert.match(page, /label="Current cash"/)
+  assert.match(page, />Expected cash</)
+  assert.match(page, /label="Cash left in drawer"/)
+  assert.doesNotMatch(page, /label="Float left in drawer"/)
+})
+
+test('the staged flow preserves the canonical audited close payload', () => {
+  for (const field of [
+    'business_date',
+    'close_attempt_id',
+    'confirm_auto_clock_out',
+    'clock_out_mode',
+    'clock_out_entry_ids',
+    'confirm_recent_activity',
+    'opening_bank',
+    'cash_count_status',
+    'counted_cash',
+    'confirm_uncounted_cash',
+    'uncounted_cash_reason',
+    'retained_bank',
+    'deposit_amount',
+    'variance_reason',
+    'verification_status',
+    'verification_checks',
+    'confirm_verification_exception',
+    'verification_reason',
+  ]) {
+    assert.match(page, new RegExp(`${field}:`))
+  }
+  assert.match(page, /posCloseDayApi\.close\(restaurantId,/)
 })
 
 test('Close Day reuses preview settings and requests a bounded compact payload', () => {

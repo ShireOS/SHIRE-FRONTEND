@@ -465,7 +465,12 @@ gate; the bell remains disabled while access is unresolved or denied.
   reconciliation independently; a slow reconciliation may enter the existing
   explicit unverified-reason flow but must never block the authoritative POS
   close. Client attempt state is scoped to the numbered close period, and a
-  successful close removes alternate active/date preview cache entries.
+  successful close removes alternate active/date preview cache entries. The
+  browser presents the existing contract as a four-stage Readiness, Cash, Team,
+  and Review flow using the existing `close_day.readiness`, `close_day.cash`,
+  `close_day.clockouts`, and `close_day.finalize` view capabilities. Closeout
+  configuration remains separately gated by `settings.edit`; the staged UI does
+  not add, remove, or reorder any server mutation.
 - Portfolio email recipient schedules are shared reseller setup: the reseller
   account and its active employees see the same recipient list, and the same
   scope is enforced for edit, delete, test-send, and delivery history. Platform
