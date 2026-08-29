@@ -14,6 +14,7 @@ import {
 
 const page = readFileSync(new URL('./pages/CloseDayPage.jsx', import.meta.url), 'utf8')
 const settings = readFileSync(new URL('./components/CashCloseDaySettings.jsx', import.meta.url), 'utf8')
+const teamRoster = readFileSync(new URL('./components/CloseDayTeamRoster.jsx', import.meta.url), 'utf8')
 const posClient = readFileSync(new URL('../shared/api/posClient.ts', import.meta.url), 'utf8')
 
 test('Close Day renders POS readiness while reconciliation is still delayed', () => {
@@ -88,6 +89,16 @@ test('future Close Day stages stay locked until Continue unlocks them', () => {
 test('required team confirmations remain reachable when presentation is hidden', () => {
   assert.match(page, /const showTeamStep = access\.viewVisible\('close_day\.clockouts'\)[\s\S]*openEmployees\.length > 0[\s\S]*recentActivityRequiresReview/)
   assert.match(page, /currentStep\?\.id === 'team' && showTeamStep/)
+})
+
+test('team review uses a fixed dashboard roster grid and preserves automatic clock-out', () => {
+  assert.match(page, /<CloseDayTeamRoster/)
+  assert.match(teamRoster, /xl:grid-cols-3/)
+  assert.match(teamRoster, /Currently clocked in/)
+  assert.match(teamRoster, /Last POS activity/)
+  assert.match(teamRoster, /LONG_SHIFT_MINUTES/)
+  assert.match(teamRoster, /Automatic clock-out is on/)
+  assert.match(teamRoster, /will be clocked out automatically when the day closes/)
 })
 
 test('required cash entry remains reachable whenever finalization is visible', () => {

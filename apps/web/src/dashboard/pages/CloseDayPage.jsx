@@ -25,6 +25,7 @@ import {
 import { useAuth } from '../../auth'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import CashCloseDaySettings from '../components/CashCloseDaySettings'
+import CloseDayTeamRoster from '../components/CloseDayTeamRoster'
 import {
   canNavigateCloseDayStep,
   closeDayCashAllocationError,
@@ -75,20 +76,6 @@ const money = (value) => new Intl.NumberFormat('en-US', {
 }).format(Number(value || 0))
 
 const numberValue = (value) => Number.parseFloat(String(value || '0')) || 0
-
-const durationLabel = (minutes) => {
-  const total = Math.max(0, Number(minutes || 0))
-  const hours = Math.floor(total / 60)
-  const remainder = total % 60
-  return hours ? `${hours}h ${remainder}m` : `${remainder}m`
-}
-
-const clockLabel = (value) => {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime())
-    ? 'Unknown time'
-    : date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-}
 
 function newAttemptId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
@@ -935,7 +922,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
                     : `${pendingPrintJobs} queued job${pendingPrintJobs === 1 ? '' : 's'} need a wait-or-discard decision in Review`
                   : 'No pending server print work'}
               />
-              <ReadinessRow ready={!openEmployees.length} warning={Boolean(openEmployees.length)} label="Employees" detail={openEmployees.length ? `${openEmployees.length} will require confirmation` : 'Everyone is clocked out'} />
+              <ReadinessRow ready={!openEmployees.length} warning={Boolean(openEmployees.length)} label="Employees" detail={openEmployees.length ? preview?.closeout_settings?.show_clockout_options_at_close ? `${openEmployees.length} require a clock-out decision` : `${openEmployees.length} will be clocked out automatically` : 'Everyone is clocked out'} />
             </div>
             {Number(preview?.open_checks || 0) > 0 && (
               <button type="button" onClick={() => setModal('open-checks')} className="mt-5 min-h-[40px] border border-red-300/30 px-4 text-sm font-semibold text-red-200 hover:border-red-200/60">Review open checks</button>
@@ -947,7 +934,11 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
               <Users size={17} className="text-dash-tertiary" aria-hidden="true" />
               <h2 className="text-lg font-semibold text-dash-cream">Review the team</h2>
             </div>
-            <p className="mt-1 text-sm text-dash-secondary">Choose who should be clocked out with this close. Every adjustment remains in the manager audit trail.</p>
+            <p className="mt-1 text-sm text-dash-secondary">
+              {preview?.closeout_settings?.show_clockout_options_at_close
+                ? 'Choose who should be clocked out with this close. Every adjustment remains in the manager audit trail.'
+                : `${openEmployees.length} ${openEmployees.length === 1 ? 'person is' : 'people are'} currently clocked in. Review the roster before continuing.`}
+            </p>
 
             {recentActivityRequiresReview && (
               <label className="mt-5 flex cursor-pointer items-start gap-3 border border-amber-400/35 bg-amber-500/10 p-4 text-sm text-amber-100">
@@ -960,29 +951,14 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             )}
 
             {openEmployees.length > 0 ? (
-              <>
-                {preview?.closeout_settings?.show_clockout_options_at_close && (
-                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-dash-cream">{clockOutEntryIds.length} of {openEmployees.length} selected</p>
-                    <div className="flex gap-2">
-                      <button type="button" onClick={selectAllClockOutEntries} className="min-h-[38px] border border-dash-border px-3 text-xs font-semibold text-dash-cream">Everyone</button>
-                      <button type="button" onClick={selectNoClockOutEntries} className="min-h-[38px] border border-dash-border px-3 text-xs font-semibold text-dash-secondary">Nobody</button>
-                    </div>
-                  </div>
-                )}
-                {!preview?.closeout_settings?.show_clockout_options_at_close && <p className="mt-5 text-sm font-semibold text-dash-cream">All {openEmployees.length} clocked-in employee{openEmployees.length === 1 ? '' : 's'} will be clocked out.</p>}
-                <div className="mt-3 divide-y divide-dash-border border-y border-dash-border">
-                  {openEmployees.map((entry) => (
-                    <label key={entry.id} className={`flex min-h-[62px] items-center justify-between gap-4 py-3 ${preview?.closeout_settings?.show_clockout_options_at_close ? 'cursor-pointer' : ''}`}>
-                      <span className="flex min-w-0 items-start gap-3">
-                        <input type="checkbox" checked={clockOutEntryIds.includes(entry.id)} disabled={!preview?.closeout_settings?.show_clockout_options_at_close} onChange={() => toggleClockOutEntry(entry.id)} className="mt-1" />
-                        <span className="min-w-0"><span className="block truncate font-semibold text-dash-cream">{entry.staff_name}</span><span className="mt-0.5 block text-xs text-dash-tertiary">Clocked in {clockLabel(entry.clock_in_at)}{entry.last_activity_at ? ` · last POS activity ${clockLabel(entry.last_activity_at)}` : ''}</span></span>
-                      </span>
-                      <span className="shrink-0 text-sm font-semibold text-amber-200">{durationLabel(entry.worked_minutes)}</span>
-                    </label>
-                  ))}
-                </div>
-              </>
+              <CloseDayTeamRoster
+                entries={openEmployees}
+                allowSelection={Boolean(preview?.closeout_settings?.show_clockout_options_at_close)}
+                selectedIds={clockOutEntryIds}
+                onSelectAll={selectAllClockOutEntries}
+                onSelectNone={selectNoClockOutEntries}
+                onToggle={toggleClockOutEntry}
+              />
             ) : (
               <div className="mt-5 flex items-start gap-3 border border-emerald-400/30 bg-emerald-500/10 p-4">
                 <CheckCircle2 size={19} className="mt-0.5 shrink-0 text-emerald-300" aria-hidden="true" />
@@ -1057,7 +1033,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             <div className="mt-5 divide-y divide-dash-border border-y border-dash-border">
               <ReviewRow label="Business date" value={`${preview?.business_date || '—'} · Close ${preview?.close_period?.sequence || 1}`} />
               <ReviewRow label="Cash" value={cashCountStatus === 'not_counted' ? 'Not physically counted — exception recorded' : cashCountEntered ? `${money(numberValue(cash.counted_cash))} current · ${money(variance)} variance` : 'Current cash required'} warning={!cashCountEntered || cashCountStatus === 'not_counted' || Math.abs(variance || 0) > threshold} />
-              {showTeamStep && <ReviewRow label="Employees" value={openEmployees.length ? `${clockOutEntryIds.length} of ${openEmployees.length} will be clocked out and audited` : 'No clock-outs required'} warning={openEmployees.length > 0} />}
+              {showTeamStep && <ReviewRow label="Employees" value={openEmployees.length ? preview?.closeout_settings?.show_clockout_options_at_close ? `${clockOutEntryIds.length} of ${openEmployees.length} will be clocked out and audited` : `${openEmployees.length} will be clocked out automatically and audited` : 'No clock-outs required'} warning={openEmployees.length > 0} />}
               <ReviewRow label="Print work" value={pendingPrintJobs > 0 ? discardPrintJobs ? `${pendingPrintJobs} queued job${pendingPrintJobs === 1 ? '' : 's'} will be discarded with this close` : `${pendingPrintJobs} queued job${pendingPrintJobs === 1 ? '' : 's'} — waiting for POS review` : 'Server queue clear'} warning={pendingPrintJobs > 0} />
               <ReviewRow label="Financial verification" value={verificationStatus === 'verified' ? 'Totals verified' : verificationStatus === 'mismatch' ? `${verificationMismatchCount} mismatch${verificationMismatchCount === 1 ? '' : 'es'} — manager reason required` : 'Unavailable — manager reason required'} warning={verificationStatus !== 'verified'} />
             </div>
