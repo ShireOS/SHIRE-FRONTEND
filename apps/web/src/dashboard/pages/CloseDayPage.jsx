@@ -25,6 +25,7 @@ import {
 import { useAuth } from '../../auth'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import CashCloseDaySettings from '../components/CashCloseDaySettings'
+import CloseDayPrintDecisionCard from '../components/CloseDayPrintDecisionCard'
 import CloseDayTeamRoster from '../components/CloseDayTeamRoster'
 import {
   canNavigateCloseDayStep,
@@ -974,55 +975,16 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             </div>
             <p className="mt-1 text-sm text-dash-secondary">Nothing is submitted until you select the final Close Day action.</p>
 
-            <div className={`mt-5 border p-4 ${pendingPrintJobs > 0 ? discardPrintJobs ? 'border-red-400/35 bg-red-500/10' : 'border-amber-400/35 bg-amber-500/10' : 'border-emerald-400/30 bg-emerald-500/10'}`}>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-dash-cream">Queued print work</p>
-                  <p className="mt-1 text-sm text-dash-secondary">
-                    {pendingPrintJobs > 0
-                      ? `${pendingPrintJobs} server print job${pendingPrintJobs === 1 ? '' : 's'} still need a decision.`
-                      : 'The server print queue is clear. No print decision is required.'}
-                  </p>
-                </div>
-                {pendingPrintJobs > 0 && (pendingReceiptPrintJobs + pendingKitchenPrintJobs > 0) && (
-                  <p className="text-xs font-semibold text-dash-tertiary">
-                    {pendingReceiptPrintJobs} receipt · {pendingKitchenPrintJobs} kitchen
-                  </p>
-                )}
-              </div>
-
-              {pendingPrintJobs > 0 && (
-                <>
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Pending print work decision">
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={!discardPrintJobs}
-                      onClick={keepPrintWorkQueued}
-                      className={`min-h-[88px] border p-3 text-left ${!discardPrintJobs ? 'border-amber-300/60 bg-amber-300/10' : 'border-dash-border bg-dash-base/50'}`}
-                    >
-                      <span className={`text-sm font-semibold ${!discardPrintJobs ? 'text-amber-100' : 'text-dash-cream'}`}>Wait and review on POS</span>
-                      <span className="mt-1 block text-xs leading-5 text-dash-tertiary">Leave the queue intact. Retry or reroute in POS Tasks, then refresh this status.</span>
-                    </button>
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={discardPrintJobs}
-                      onClick={() => { if (!discardPrintJobs) setModal('discard-print-work') }}
-                      className={`min-h-[88px] border p-3 text-left ${discardPrintJobs ? 'border-red-300/60 bg-red-400/10' : 'border-dash-border bg-dash-base/50'}`}
-                    >
-                      <span className={`text-sm font-semibold ${discardPrintJobs ? 'text-red-100' : 'text-dash-cream'}`}>Discard during Close Day</span>
-                      <span className="mt-1 block text-xs leading-5 text-dash-tertiary">Expire the server queue records only if this Close Day succeeds.</span>
-                    </button>
-                  </div>
-                  <div className="mt-3 flex items-start gap-2 text-xs leading-5 text-amber-100/80">
-                    <AlertTriangle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-                    <p>Paper already sent to or printed by a printer cannot be recalled. POS-local held or dead-letter work is not included and still requires separate review on the POS.</p>
-                  </div>
-                  <button type="button" onClick={() => void refreshPreview()} disabled={loading || closing} className="mt-3 min-h-[38px] border border-dash-border px-3 text-xs font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">Refresh print status</button>
-                </>
-              )}
-            </div>
+            <CloseDayPrintDecisionCard
+              totalJobs={pendingPrintJobs}
+              receiptJobs={pendingReceiptPrintJobs}
+              kitchenJobs={pendingKitchenPrintJobs}
+              discardSelected={discardPrintJobs}
+              onWait={keepPrintWorkQueued}
+              onDiscard={() => { if (!discardPrintJobs) setModal('discard-print-work') }}
+              onRefresh={() => void refreshPreview()}
+              busy={loading || closing}
+            />
 
             {hardBlockers.length > 0 && (
               <div className="mt-5 border border-red-400/35 bg-red-500/10 p-4">
