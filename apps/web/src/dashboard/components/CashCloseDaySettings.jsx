@@ -116,13 +116,13 @@ function ManagerPreview({ floatMode, floatAmount, blindClose, trackDeposit }) {
             </div>
           )}
           <div className="border border-dash-border bg-white/[0.04] px-2.5 py-2">
-            <p className="label-mono">Expected in drawer</p>
+            <p className="label-mono">Expected cash</p>
             <p className={`mt-1 font-semibold tabular-nums ${blindClose ? 'text-xs text-dash-tertiary' : 'text-sm text-dash-cream'}`}>
               {blindClose ? 'Hidden by policy' : money(expected)}
             </p>
           </div>
           <div className="border border-dashed border-sky-400/70 px-2.5 py-2">
-            <p className="label-mono">Counted cash</p>
+            <p className="label-mono">Current cash</p>
             <p className="mt-1 text-sm font-semibold tabular-nums text-dash-cream">{counted.toFixed(2)}</p>
           </div>
         </div>
@@ -133,7 +133,7 @@ function ManagerPreview({ floatMode, floatAmount, blindClose, trackDeposit }) {
         {trackDeposit && (
           <div className="mt-2 grid grid-cols-2 gap-2">
             <div className="border border-dashed border-sky-400/70 px-2.5 py-1.5"><p className="label-mono">Deposit</p></div>
-            <div className="border border-dashed border-sky-400/70 px-2.5 py-1.5"><p className="label-mono">Float left in drawer</p></div>
+            <div className="border border-dashed border-sky-400/70 px-2.5 py-1.5"><p className="label-mono">Cash left in drawer</p></div>
           </div>
         )}
       </div>

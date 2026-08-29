@@ -44,6 +44,10 @@ test('cash entry uses current and expected drawer wording', () => {
   assert.match(page, />Expected cash</)
   assert.match(page, /label="Cash left in drawer"/)
   assert.doesNotMatch(page, /label="Float left in drawer"/)
+  assert.match(settings, />Current cash</)
+  assert.match(settings, />Expected cash</)
+  assert.match(settings, />Cash left in drawer</)
+  assert.doesNotMatch(settings, />Float left in drawer</)
 })
 
 test('the staged flow preserves the canonical audited close payload', () => {
