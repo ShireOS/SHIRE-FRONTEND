@@ -2,9 +2,12 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import {
+  canNavigateCloseDayStep,
+  closeDayCashAllocationError,
   closeDayOperationKey,
   isAlternateCloseDayPreviewKey,
   mergeCloseDaySettings,
+  normalizeCloseDayErrorMessage,
   reconcileClockOutEntryIds,
 } from './closeDayState.js'
 
@@ -24,7 +27,7 @@ test('Close Day renders POS readiness while reconciliation is still delayed', ()
 test('Close Day lets advisory reconciliation fall through to the audited exception path', () => {
   assert.match(page, /disabled=\{closing \|\| !preview\}/)
   assert.doesNotMatch(page, /if \(reconLoading\) \{[\s\S]*Wait for independent financial verification/)
-  assert.match(page, /verificationStatus !== 'verified'[\s\S]*setActiveStep\('review'\)/)
+  assert.match(page, /verificationStatus !== 'verified'[\s\S]*showStepError\('review'/)
   assert.match(page, /Manager reason for verification exception/)
   assert.match(page, /signal, timeoutMs: CLOSE_DAY_RECONCILIATION_TIMEOUT_MS/)
 })
@@ -48,6 +51,53 @@ test('cash entry uses current and expected drawer wording', () => {
   assert.match(settings, />Expected cash</)
   assert.match(settings, />Cash left in drawer</)
   assert.doesNotMatch(settings, />Float left in drawer</)
+})
+
+test('cash allocation is validated before the close request', () => {
+  assert.equal(closeDayCashAllocationError({
+    cashCountStatus: 'counted', countedCash: '100', retainedBank: '101', depositAmount: '0', trackDeposit: false,
+  }), 'Cash left in drawer cannot exceed current cash.')
+  assert.equal(closeDayCashAllocationError({
+    cashCountStatus: 'counted', countedCash: '100', retainedBank: '20', depositAmount: '70', trackDeposit: true,
+  }), 'Deposit plus cash left in drawer must equal current cash.')
+  assert.equal(closeDayCashAllocationError({
+    cashCountStatus: 'counted', countedCash: '100', retainedBank: '20', depositAmount: '80', trackDeposit: true,
+  }), '')
+  assert.equal(closeDayCashAllocationError({
+    cashCountStatus: 'not_counted', countedCash: '', retainedBank: '200', depositAmount: '300', trackDeposit: true,
+  }), '')
+  assert.match(page, /if \(cashAllocationError\)[\s\S]*showStepError\('cash', cashAllocationError\)/)
+})
+
+test('legacy backend cash terms are normalized for the manager', () => {
+  assert.equal(
+    normalizeCloseDayErrorMessage('Deposit plus float left in the drawer must equal counted cash'),
+    'Deposit plus cash left in drawer must equal current cash',
+  )
+})
+
+test('future Close Day stages stay locked until Continue unlocks them', () => {
+  assert.equal(canNavigateCloseDayStep(0, 0), true)
+  assert.equal(canNavigateCloseDayStep(1, 0), false)
+  assert.equal(canNavigateCloseDayStep(2, 3), true)
+  assert.match(page, /disabled=\{!unlocked \|\| closing\}/)
+  assert.match(page, /index < furthestStepIndex && stepIsReady\(step\.id\)/)
+})
+
+test('required team confirmations remain reachable when presentation is hidden', () => {
+  assert.match(page, /const showTeamStep = access\.viewVisible\('close_day\.clockouts'\)[\s\S]*openEmployees\.length > 0[\s\S]*recentActivityRequiresReview/)
+  assert.match(page, /currentStep\?\.id === 'team' && showTeamStep/)
+})
+
+test('required cash entry remains reachable whenever finalization is visible', () => {
+  assert.match(page, /const showCashStep = access\.viewVisible\('close_day\.cash'\)[\s\S]*access\.viewVisible\('close_day\.finalize'\)/)
+  assert.match(page, /currentStep\?\.id === 'cash' && showCashStep/)
+})
+
+test('workflow errors scroll into view beside the active stage', () => {
+  assert.match(page, /const showStepError = \(stepId, message\)/)
+  assert.match(page, /workflowErrorRef\.current\?\.scrollIntoView/)
+  assert.match(page, /ref=\{workflowErrorRef\} role="alert"/)
 })
 
 test('the staged flow preserves the canonical audited close payload', () => {

@@ -26,9 +26,12 @@ import { useAuth } from '../../auth'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import CashCloseDaySettings from '../components/CashCloseDaySettings'
 import {
+  canNavigateCloseDayStep,
+  closeDayCashAllocationError,
   closeDayOperationKey,
   isAlternateCloseDayPreviewKey,
   mergeCloseDaySettings,
+  normalizeCloseDayErrorMessage,
   reconcileClockOutEntryIds,
 } from '../closeDayState'
 
@@ -164,10 +167,12 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const [verificationReason, setVerificationReason] = useState('')
   const [verificationExceptionStatus, setVerificationExceptionStatus] = useState(null)
   const [activeStep, setActiveStep] = useState('readiness')
+  const [furthestStepIndex, setFurthestStepIndex] = useState(0)
   const attemptId = useRef(newAttemptId())
   const closeOperationKey = useRef(null)
   const clockOutSelectionCustomized = useRef(false)
   const workflowTopRef = useRef(null)
+  const workflowErrorRef = useRef(null)
 
   const previewQuery = useQuery({
     queryKey: closeDayPreviewKey(restaurantId, selectedBusinessDate),
@@ -257,6 +262,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     setResult(null)
     setSelectedBusinessDate(null)
     setActiveStep('readiness')
+    setFurthestStepIndex(0)
   }, [restaurantId])
 
   useEffect(() => {
@@ -285,6 +291,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     setVerificationReason('')
     setVerificationExceptionStatus(null)
     setActiveStep('readiness')
+    setFurthestStepIndex(0)
     setCash((current) => ({
       ...current,
       opening_bank: Number(reconciliation.opening_bank || 0).toFixed(2),
@@ -322,15 +329,6 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const cashMovementBlockers = pendingCashMovements
     + (requirePaidOutReview ? unreviewedPaidOuts : 0)
   const overdueCloseAlerts = preview?.overdue_close_alerts || []
-  const workflowSteps = [
-    access.viewVisible('close_day.readiness') && { id: 'readiness', label: 'Readiness' },
-    access.viewVisible('close_day.cash') && { id: 'cash', label: 'Cash' },
-    access.viewVisible('close_day.clockouts') && { id: 'team', label: 'Team' },
-    access.viewVisible('close_day.finalize') && { id: 'review', label: 'Review' },
-  ].filter(Boolean)
-  const workflowStepKey = workflowSteps.map((step) => step.id).join(':')
-  const currentStepIndex = Math.max(0, workflowSteps.findIndex((step) => step.id === activeStep))
-  const currentStep = workflowSteps[currentStepIndex] || null
   const hardBlockers = [
     Number(preview?.open_checks || 0) > 0 && `${preview.open_checks} open check${preview.open_checks === 1 ? '' : 's'}`,
     blockingExceptions > 0 && `${blockingExceptions} blocking payment or check exception${blockingExceptions === 1 ? '' : 's'}`,
@@ -339,11 +337,55 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     requirePaidOutReview && unreviewedPaidOuts > 0 && `${unreviewedPaidOuts} paid-out movement${unreviewedPaidOuts === 1 ? '' : 's'} awaiting review`,
     pendingPrintJobs > 0 && `${pendingPrintJobs} pending print job${pendingPrintJobs === 1 ? '' : 's'}`,
   ].filter(Boolean)
+  const recentActivityRequiresReview = Boolean(preview?.close_period?.recent_activity)
+  const showCashStep = access.viewVisible('close_day.cash')
+    || access.viewVisible('close_day.finalize')
+  const showTeamStep = access.viewVisible('close_day.clockouts')
+    || openEmployees.length > 0
+    || recentActivityRequiresReview
+  const cashAllocationError = closeDayCashAllocationError({
+    cashCountStatus,
+    countedCash: cash.counted_cash,
+    retainedBank: cash.retained_bank,
+    depositAmount: cash.deposit_amount,
+    trackDeposit,
+  })
+  const cashStepReady = cashCountStatus === 'not_counted'
+    ? uncountedCashReason.trim().length >= 5
+    : cashCountEntered
+      && !cashAllocationError
+      && (variance == null || Math.abs(variance) <= threshold || Boolean(cash.variance_reason.trim()))
+  const teamStepReady = !recentActivityRequiresReview || recentActivityConfirmed
+  const workflowSteps = [
+    access.viewVisible('close_day.readiness') && { id: 'readiness', label: 'Readiness' },
+    showCashStep && { id: 'cash', label: 'Cash' },
+    showTeamStep && { id: 'team', label: 'Team' },
+    access.viewVisible('close_day.finalize') && { id: 'review', label: 'Review' },
+  ].filter(Boolean)
+  const workflowStepKey = workflowSteps.map((step) => step.id).join(':')
+  const currentStepIndex = Math.max(0, workflowSteps.findIndex((step) => step.id === activeStep))
+  const currentStep = workflowSteps[currentStepIndex] || null
+  const stepIsReady = (stepId) => stepId === 'readiness'
+    ? hardBlockers.length === 0
+    : stepId === 'cash'
+      ? cashStepReady
+      : stepId === 'team'
+        ? teamStepReady
+        : false
 
   useEffect(() => {
     if (!workflowSteps.length || workflowSteps.some((step) => step.id === activeStep)) return
     setActiveStep(workflowSteps[0].id)
+    setFurthestStepIndex(0)
   }, [activeStep, workflowStepKey])
+
+  useEffect(() => {
+    if (!workflowSteps.length) return
+    setFurthestStepIndex((current) => Math.min(
+      Math.max(current, currentStepIndex),
+      workflowSteps.length - 1,
+    ))
+  }, [currentStepIndex, workflowStepKey])
 
   const updateCash = (key, value) => setCash((current) => ({ ...current, [key]: value }))
   const selectAllClockOutEntries = () => {
@@ -409,6 +451,14 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       : advisoryVerificationStatus
   const verificationStatus = verificationExceptionStatus || computedVerificationStatus
 
+  const showStepError = (stepId, message) => {
+    if (workflowSteps.some((step) => step.id === stepId)) setActiveStep(stepId)
+    setError(message)
+    window.requestAnimationFrame(() => {
+      workflowErrorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }
+
   const handleConflict = (nextError) => {
     const detail = nextError?.detail
     if (detail && typeof detail === 'object') {
@@ -418,8 +468,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         return
       }
       if (detail.code === 'employees_clocked_in') {
-        setActiveStep('team')
-        setError('The team clock status changed. Review the current employees before closing.')
+        showStepError('team', 'The team clock status changed. Review the current employees before closing.')
         return
       }
       if (detail.code === 'invalid_verification_claim') {
@@ -428,37 +477,41 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         // explicit exception instead of retrying the same verified claim.
         setVerificationExceptionStatus('unavailable')
         setVerificationReason('')
-        setActiveStep('review')
-        setError('The POS could not independently verify the totals. Record a manager reason to continue.')
+        showStepError('review', 'The POS could not independently verify the totals. Record a manager reason to continue.')
         return
       }
       if (detail.message) {
-        setError(detail.message)
+        showStepError(currentStep?.id, normalizeCloseDayErrorMessage(detail.message))
         return
       }
     }
-    setError(nextError instanceof Error ? nextError.message : 'Could not close the business day.')
+    showStepError(currentStep?.id, nextError instanceof Error ? nextError.message : 'Could not close the business day.')
   }
 
   const submitClose = async (confirmAutoClockOut) => {
     if (!preview) return
     if (cashCountStatus === 'counted' && !cashCountEntered) {
-      setError('Count the physical cash in the drawer before closing the day.')
+      showStepError('cash', 'Count the physical cash in the drawer before closing the day.')
       setModal(null)
       return
     }
     if (cashCountStatus === 'not_counted' && uncountedCashReason.trim().length < 5) {
-      setError('Explain why the drawer could not be physically counted.')
+      showStepError('cash', 'Explain why the drawer could not be physically counted.')
+      setModal(null)
+      return
+    }
+    if (cashAllocationError) {
+      showStepError('cash', cashAllocationError)
       setModal(null)
       return
     }
     if (variance != null && Math.abs(variance) > threshold && !cash.variance_reason.trim()) {
-      setError(`Explain the ${money(variance)} cash variance before closing.`)
+      showStepError('cash', `Explain the ${money(variance)} cash variance before closing.`)
       setModal(null)
       return
     }
     if (verificationStatus !== 'verified' && verificationReason.trim().length < 5) {
-      setError('Record a reason for the financial verification exception.')
+      showStepError('review', 'Record a reason for the financial verification exception.')
       setModal(null)
       return
     }
@@ -537,54 +590,55 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       return
     }
     if (blockingExceptions > 0) {
-      setError('Resolve the blocking close-day payment and check exceptions before closing remotely.')
+      showStepError('readiness', 'Resolve the blocking close-day payment and check exceptions before closing remotely.')
       return
     }
     if (pendingPrintJobs > 0) {
-      setError('Resolve pending print work on the POS before closing remotely.')
+      showStepError('readiness', 'Resolve pending print work on the POS before closing remotely.')
       return
     }
     if (paidUnsentChecks > 0) {
-      setError(`Resolve ${paidUnsentChecks} paid check${paidUnsentChecks === 1 ? '' : 's'} with unsent routed items before closing.`)
+      showStepError('readiness', `Resolve ${paidUnsentChecks} paid check${paidUnsentChecks === 1 ? '' : 's'} with unsent routed items before closing.`)
       return
     }
     if (pendingCashMovements > 0) {
-      setError('Resolve pending or uncertain cash movements before closing remotely.')
+      showStepError('readiness', 'Resolve pending or uncertain cash movements before closing remotely.')
       return
     }
     if (requirePaidOutReview && unreviewedPaidOuts > 0) {
-      setError('Review every paid-out movement before closing remotely.')
+      showStepError('readiness', 'Review every paid-out movement before closing remotely.')
       return
     }
     if (cashCountStatus === 'counted' && !cashCountEntered) {
-      setActiveStep('cash')
-      setError('Count the physical cash in the drawer before closing the day.')
+      showStepError('cash', 'Count the physical cash in the drawer before closing the day.')
       return
     }
     if (cashCountStatus === 'not_counted' && uncountedCashReason.trim().length < 5) {
-      setActiveStep('cash')
-      setError('Explain why the drawer could not be physically counted.')
+      showStepError('cash', 'Explain why the drawer could not be physically counted.')
+      return
+    }
+    if (cashAllocationError) {
+      showStepError('cash', cashAllocationError)
       return
     }
     if (variance != null && Math.abs(variance) > threshold && !cash.variance_reason.trim()) {
-      setActiveStep('cash')
-      setError(`Explain the ${money(variance)} cash variance before closing.`)
+      showStepError('cash', `Explain the ${money(variance)} cash variance before closing.`)
       return
     }
     if (verificationStatus !== 'verified' && verificationReason.trim().length < 5) {
-      setActiveStep('review')
-      setError('Record a reason for the financial verification exception.')
+      showStepError('review', 'Record a reason for the financial verification exception.')
       return
     }
-    if (preview?.close_period?.recent_activity && !recentActivityConfirmed) {
-      setActiveStep('team')
-      setError('Confirm that you reviewed the floor after the restaurant’s recent activity.')
+    if (recentActivityRequiresReview && !recentActivityConfirmed) {
+      showStepError('team', 'Confirm that you reviewed the floor after the restaurant’s recent activity.')
       return
     }
     void submitClose(openEmployees.length > 0)
   }
 
-  const goToStep = (stepId) => {
+  const goToStep = (stepId, force = false) => {
+    const stepIndex = workflowSteps.findIndex((step) => step.id === stepId)
+    if (stepIndex < 0 || (!force && !canNavigateCloseDayStep(stepIndex, furthestStepIndex))) return
     setError('')
     setActiveStep(stepId)
     workflowTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -598,24 +652,31 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const goNext = () => {
     if (currentStep?.id === 'cash') {
       if (cashCountStatus === 'counted' && !cashCountEntered) {
-        setError('Count the physical cash in the drawer before continuing.')
+        showStepError('cash', 'Count the physical cash in the drawer before continuing.')
         return
       }
       if (cashCountStatus === 'not_counted' && uncountedCashReason.trim().length < 5) {
-        setError('Explain why the drawer could not be physically counted.')
+        showStepError('cash', 'Explain why the drawer could not be physically counted.')
+        return
+      }
+      if (cashAllocationError) {
+        showStepError('cash', cashAllocationError)
         return
       }
       if (variance != null && Math.abs(variance) > threshold && !cash.variance_reason.trim()) {
-        setError(`Explain the ${money(variance)} cash variance before continuing.`)
+        showStepError('cash', `Explain the ${money(variance)} cash variance before continuing.`)
         return
       }
     }
-    if (currentStep?.id === 'team' && preview?.close_period?.recent_activity && !recentActivityConfirmed) {
-      setError('Confirm that you reviewed the floor after the restaurant’s recent activity.')
+    if (currentStep?.id === 'team' && recentActivityRequiresReview && !recentActivityConfirmed) {
+      showStepError('team', 'Confirm that you reviewed the floor after the restaurant’s recent activity.')
       return
     }
     const nextStep = workflowSteps[currentStepIndex + 1]
-    if (nextStep) goToStep(nextStep.id)
+    if (nextStep) {
+      setFurthestStepIndex((current) => Math.max(current, currentStepIndex + 1))
+      goToStep(nextStep.id, true)
+    }
   }
 
   return (
@@ -649,10 +710,10 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         </div>
       )}
 
-      {(error || loadError) && (
-        <div className="flex items-start gap-3 border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+      {loadError && (
+        <div role="alert" className="flex items-start gap-3 border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
           <AlertTriangle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <p>{error || loadError}</p>
+          <p>{loadError}</p>
         </div>
       )}
 
@@ -690,14 +751,16 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         <nav className="grid grid-cols-2 gap-px border border-dash-border bg-dash-border sm:grid-cols-4" aria-label="Close Day progress">
           {workflowSteps.map((step, index) => {
             const active = step.id === currentStep?.id
-            const complete = index < currentStepIndex
+            const complete = index < furthestStepIndex && stepIsReady(step.id)
+            const unlocked = canNavigateCloseDayStep(index, furthestStepIndex)
             return (
               <button
                 key={step.id}
                 type="button"
                 onClick={() => goToStep(step.id)}
+                disabled={!unlocked || closing}
                 aria-current={active ? 'step' : undefined}
-                className={`min-h-[62px] bg-dash-base px-4 py-3 text-left transition ${active ? 'text-dash-cream' : complete ? 'text-emerald-300' : 'text-dash-tertiary hover:text-dash-cream'}`}
+                className={`min-h-[62px] bg-dash-base px-4 py-3 text-left transition disabled:cursor-not-allowed ${active ? 'text-dash-cream' : complete ? 'text-emerald-300' : unlocked ? 'text-dash-tertiary hover:text-dash-cream' : 'text-dash-tertiary opacity-45'}`}
               >
                 <span className={`block h-0.5 w-full ${active || complete ? 'bg-dash-gold' : 'bg-dash-border'}`} aria-hidden="true" />
                 <span className="mt-2 block text-xs font-semibold">{index + 1}. {step.label}</span>
@@ -705,6 +768,13 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             )
           })}
         </nav>
+      )}
+
+      {error && (
+        <div ref={workflowErrorRef} role="alert" className="flex items-start gap-3 border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <p>{error}</p>
+        </div>
       )}
 
       {currentStep?.id === 'readiness' && !isClosed && recon && (
@@ -740,7 +810,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         </section>
       ) : (
         <div>
-          {currentStep?.id === 'cash' && access.viewVisible('close_day.cash') && <section className="border border-dash-border bg-[var(--glass-bg)] p-5 sm:p-6">
+          {currentStep?.id === 'cash' && showCashStep && <section className="border border-dash-border bg-[var(--glass-bg)] p-5 sm:p-6">
             <div className="flex items-center gap-2">
               <Banknote size={17} className="text-dash-tertiary" aria-hidden="true" />
               <h2 className="text-lg font-semibold text-dash-cream">Cash reconciliation</h2>
@@ -780,6 +850,12 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
                 </>
               )}
             </div>
+            {cashCountStatus === 'counted' && cashCountEntered && cashAllocationError && (
+              <div role="status" className="mt-4 flex items-start gap-3 border border-amber-400/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                <AlertTriangle size={17} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <p>{cashAllocationError}</p>
+              </div>
+            )}
             {cashCountStatus === 'not_counted' && (
               <label className="mt-4 block border border-amber-400/35 bg-amber-500/10 p-4">
                 <span className="label-mono text-amber-100">Why was the drawer not counted?</span>
@@ -820,14 +896,14 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             )}
           </section>}
 
-          {currentStep?.id === 'team' && access.viewVisible('close_day.clockouts') && <section className="border border-dash-border bg-[var(--glass-bg)] p-5 sm:p-6">
+          {currentStep?.id === 'team' && showTeamStep && <section className="border border-dash-border bg-[var(--glass-bg)] p-5 sm:p-6">
             <div className="flex items-center gap-2">
               <Users size={17} className="text-dash-tertiary" aria-hidden="true" />
               <h2 className="text-lg font-semibold text-dash-cream">Review the team</h2>
             </div>
             <p className="mt-1 text-sm text-dash-secondary">Choose who should be clocked out with this close. Every adjustment remains in the manager audit trail.</p>
 
-            {preview?.close_period?.recent_activity && (
+            {recentActivityRequiresReview && (
               <label className="mt-5 flex cursor-pointer items-start gap-3 border border-amber-400/35 bg-amber-500/10 p-4 text-sm text-amber-100">
                 <input type="checkbox" checked={recentActivityConfirmed} onChange={(event) => setRecentActivityConfirmed(event.target.checked)} className="mt-0.5" />
                 <span>
@@ -885,7 +961,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             <div className="mt-5 divide-y divide-dash-border border-y border-dash-border">
               <ReviewRow label="Business date" value={`${preview?.business_date || '—'} · Close ${preview?.close_period?.sequence || 1}`} />
               <ReviewRow label="Cash" value={cashCountStatus === 'not_counted' ? 'Not physically counted — exception recorded' : cashCountEntered ? `${money(numberValue(cash.counted_cash))} current · ${money(variance)} variance` : 'Current cash required'} warning={!cashCountEntered || cashCountStatus === 'not_counted' || Math.abs(variance || 0) > threshold} />
-              <ReviewRow label="Employees" value={openEmployees.length ? `${clockOutEntryIds.length} of ${openEmployees.length} will be clocked out and audited` : 'No clock-outs required'} warning={openEmployees.length > 0} />
+              {showTeamStep && <ReviewRow label="Employees" value={openEmployees.length ? `${clockOutEntryIds.length} of ${openEmployees.length} will be clocked out and audited` : 'No clock-outs required'} warning={openEmployees.length > 0} />}
               <ReviewRow label="Financial verification" value={verificationStatus === 'verified' ? 'Totals verified' : verificationStatus === 'mismatch' ? `${verificationMismatchCount} mismatch${verificationMismatchCount === 1 ? '' : 'es'} — manager reason required` : 'Unavailable — manager reason required'} warning={verificationStatus !== 'verified'} />
             </div>
 

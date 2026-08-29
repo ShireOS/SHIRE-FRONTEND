@@ -470,7 +470,11 @@ gate; the bell remains disabled while access is unresolved or denied.
   and Review flow using the existing `close_day.readiness`, `close_day.cash`,
   `close_day.clockouts`, and `close_day.finalize` view capabilities. Closeout
   configuration remains separately gated by `settings.edit`; the staged UI does
-  not add, remove, or reorder any server mutation.
+  not add, remove, or reorder any server mutation. Cash entry stays reachable
+  whenever Finalize is visible, and recent activity or an open employee clock
+  entry keeps the Team stage reachable, because those are required operational
+  safeguards even when their presentation capabilities are hidden; this does
+  not grant any additional mutation authority.
 - Portfolio email recipient schedules are shared reseller setup: the reseller
   account and its active employees see the same recipient list, and the same
   scope is enforced for edit, delete, test-send, and delivery history. Platform
