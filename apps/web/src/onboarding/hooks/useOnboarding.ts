@@ -1557,23 +1557,37 @@ export function useOnboarding() {
 
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const slug = buildUniqueSlug(data.name)
-        const { data: restaurant, error: createError } = await runWithTimeout(
+        const newRestaurantId = crypto.randomUUID()
+        const { error: createError } = await runWithTimeout(
           () =>
             supabase
               .from('restaurants')
               .insert({
+                id: newRestaurantId,
                 ...basePayload,
                 status: 'onboarding',
                 onboarding_step: 1,
                 slug,
                 public_slug: slug,
-              })
-              .select()
-              .single(),
+              }),
           'Creating restaurant timed out. Please retry.'
         )
 
-        if (!createError && restaurant) {
+        if (!createError) {
+          // The operational SELECT RLS guard depends on an AFTER INSERT
+          // lifecycle trigger. Read the row in a separate statement after the
+          // insert has committed so the trigger-created lifecycle is visible.
+          const { data: restaurant, error: restaurantReadError } = await runWithTimeout(
+            () =>
+              supabase
+                .from('restaurants')
+                .select()
+                .eq('id', newRestaurantId)
+                .single(),
+            'Loading the new restaurant timed out. Please refresh and continue setup.'
+          )
+          if (restaurantReadError) throw restaurantReadError
+
           createdRestaurant = restaurant
           break
         }

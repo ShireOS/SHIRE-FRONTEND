@@ -43,11 +43,16 @@ export async function createQuickInvite({ userId, email, restaurantName, ratePla
 
 export async function createDraftInvite({ userId, email, draft, ratePlan }) {
   const plan = { ...DEFAULT_RATE_PLAN, ...ratePlan }
+  const restaurantId = crypto.randomUUID()
 
   // Draft store belongs to the reseller until claimed; claim_store() transfers it.
-  const { data: restaurant, error: restaurantError } = await supabase
+  // Do not request the row in the INSERT response. The operational SELECT RLS
+  // guard depends on an AFTER INSERT lifecycle trigger, so it can only see the
+  // new lifecycle row in a subsequent statement.
+  const { error: restaurantError } = await supabase
     .from('restaurants')
     .insert({
+      id: restaurantId,
       name: draft.name,
       owner_id: userId,
       status: 'draft',
@@ -59,9 +64,14 @@ export async function createDraftInvite({ userId, email, draft, ratePlan }) {
         payout_schedule: draft.payout_schedule || 'daily',
       },
     })
-    .select()
-    .single()
   if (restaurantError) throw restaurantError
+
+  const { data: restaurant, error: restaurantReadError } = await supabase
+    .from('restaurants')
+    .select()
+    .eq('id', restaurantId)
+    .single()
+  if (restaurantReadError) throw restaurantReadError
 
   await upsertRatePlan(restaurant.id, { ...plan, version: 0 })
 
