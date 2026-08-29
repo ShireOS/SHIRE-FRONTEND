@@ -8,6 +8,18 @@ export function closeDayOperationKey(preview) {
   ].join(':')
 }
 
+export function closeDayPrintQueueSignature(preview) {
+  const operationKey = closeDayOperationKey(preview)
+  if (!operationKey) return null
+  const count = (value) => Math.max(0, Number(value) || 0)
+  return [
+    operationKey,
+    count(preview.pending_print_jobs),
+    count(preview.pending_receipt_print_jobs),
+    count(preview.pending_kitchen_print_jobs),
+  ].join(':')
+}
+
 export function mergeCloseDaySettings(current, settings) {
   return current ? { ...current, closeout_settings: settings } : current
 }

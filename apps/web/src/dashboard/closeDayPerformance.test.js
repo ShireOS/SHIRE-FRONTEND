@@ -5,6 +5,7 @@ import {
   canNavigateCloseDayStep,
   closeDayCashAllocationError,
   closeDayOperationKey,
+  closeDayPrintQueueSignature,
   isAlternateCloseDayPreviewKey,
   mergeCloseDaySettings,
   normalizeCloseDayErrorMessage,
@@ -104,6 +105,7 @@ test('the staged flow preserves the canonical audited close payload', () => {
   for (const field of [
     'business_date',
     'close_attempt_id',
+    'discard_print_jobs',
     'confirm_auto_clock_out',
     'clock_out_mode',
     'clock_out_entry_ids',
@@ -148,6 +150,35 @@ test('Close Day scopes idempotency and operator state to each numbered close per
   assert.notEqual(first, second)
   assert.match(page, /const operationChanged = closeOperationKey\.current !== operationKey/)
   assert.match(page, /closeOperationKey\.current = operationKey[\s\S]*attemptId\.current = newAttemptId\(\)/)
+})
+
+test('print discard approval is scoped to the exact period and queue counts', () => {
+  const first = closeDayPrintQueueSignature({
+    business_date: '2026-08-22',
+    close_period: { sequence: 1, previous_close_id: 'first', opened_at: '10:00' },
+    pending_print_jobs: 3,
+    pending_receipt_print_jobs: 2,
+    pending_kitchen_print_jobs: 1,
+  })
+  const changedQueue = closeDayPrintQueueSignature({
+    business_date: '2026-08-22',
+    close_period: { sequence: 1, previous_close_id: 'first', opened_at: '10:00' },
+    pending_print_jobs: 4,
+    pending_receipt_print_jobs: 3,
+    pending_kitchen_print_jobs: 1,
+  })
+  const changedPeriod = closeDayPrintQueueSignature({
+    business_date: '2026-08-22',
+    close_period: { sequence: 2, previous_close_id: 'second', opened_at: '18:00' },
+    pending_print_jobs: 3,
+    pending_receipt_print_jobs: 2,
+    pending_kitchen_print_jobs: 1,
+  })
+
+  assert.notEqual(first, changedQueue)
+  assert.notEqual(first, changedPeriod)
+  assert.match(page, /current === printQueueSignature \? current : null/)
+  assert.match(page, /discardPrintQueueSignature === currentPrintQueueSignature/)
 })
 
 test('same-period readiness expands default Everyone but preserves a customized subset', () => {

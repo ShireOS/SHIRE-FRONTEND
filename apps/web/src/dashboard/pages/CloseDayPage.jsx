@@ -29,6 +29,7 @@ import {
   canNavigateCloseDayStep,
   closeDayCashAllocationError,
   closeDayOperationKey,
+  closeDayPrintQueueSignature,
   isAlternateCloseDayPreviewKey,
   mergeCloseDaySettings,
   normalizeCloseDayErrorMessage,
@@ -162,6 +163,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const [result, setResult] = useState(null)
   const [clockOutEntryIds, setClockOutEntryIds] = useState([])
   const [recentActivityConfirmed, setRecentActivityConfirmed] = useState(false)
+  const [discardPrintQueueSignature, setDiscardPrintQueueSignature] = useState(null)
   const [cashCountStatus, setCashCountStatus] = useState('counted')
   const [uncountedCashReason, setUncountedCashReason] = useState('')
   const [verificationReason, setVerificationReason] = useState('')
@@ -259,6 +261,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     setUncountedCashReason('')
     setVerificationReason('')
     setVerificationExceptionStatus(null)
+    setDiscardPrintQueueSignature(null)
     setResult(null)
     setSelectedBusinessDate(null)
     setActiveStep('readiness')
@@ -272,7 +275,11 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     // state to that numbered close period so an old idempotency key can never
     // replay the prior close.
     const operationKey = closeDayOperationKey(preview)
+    const printQueueSignature = closeDayPrintQueueSignature(preview)
     const operationChanged = closeOperationKey.current !== operationKey
+    setDiscardPrintQueueSignature((current) => (
+      current === printQueueSignature ? current : null
+    ))
     setClockOutEntryIds((current) => reconcileClockOutEntryIds(
       current,
       preview.open_timeclock_entries,
@@ -321,6 +328,11 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const unresolvedExceptions = Number(preview?.exception_count || 0)
   const blockingExceptions = Number(preview?.blocking_exception_count || 0)
   const pendingPrintJobs = Number(preview?.pending_print_jobs || 0)
+  const pendingReceiptPrintJobs = Number(preview?.pending_receipt_print_jobs || 0)
+  const pendingKitchenPrintJobs = Number(preview?.pending_kitchen_print_jobs || 0)
+  const currentPrintQueueSignature = closeDayPrintQueueSignature(preview)
+  const discardPrintJobs = pendingPrintJobs > 0
+    && discardPrintQueueSignature === currentPrintQueueSignature
   const paidUnsentChecks = Number(preview?.paid_unsent_fulfillment_checks || 0)
   const paidUnsentItems = Number(preview?.paid_unsent_fulfillment_items || 0)
   const pendingCashMovements = Number(preview?.cash_accountability?.pending_count || 0)
@@ -335,7 +347,6 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     paidUnsentChecks > 0 && `${paidUnsentChecks} paid check${paidUnsentChecks === 1 ? '' : 's'} with unsent routed items`,
     pendingCashMovements > 0 && `${pendingCashMovements} pending or uncertain cash movement${pendingCashMovements === 1 ? '' : 's'}`,
     requirePaidOutReview && unreviewedPaidOuts > 0 && `${unreviewedPaidOuts} paid-out movement${unreviewedPaidOuts === 1 ? '' : 's'} awaiting review`,
-    pendingPrintJobs > 0 && `${pendingPrintJobs} pending print job${pendingPrintJobs === 1 ? '' : 's'}`,
   ].filter(Boolean)
   const recentActivityRequiresReview = Boolean(preview?.close_period?.recent_activity)
   const showCashStep = access.viewVisible('close_day.cash')
@@ -401,6 +412,16 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     setClockOutEntryIds((current) => current.includes(entryId)
       ? current.filter((id) => id !== entryId)
       : [...current, entryId])
+  }
+  const keepPrintWorkQueued = () => {
+    setDiscardPrintQueueSignature(null)
+    setError('')
+  }
+  const confirmDiscardPrintWork = () => {
+    if (!currentPrintQueueSignature || pendingPrintJobs <= 0) return
+    setDiscardPrintQueueSignature(currentPrintQueueSignature)
+    setModal(null)
+    setError('')
   }
 
   // Close-day preview totals vs the independent recompute (client-side diff:
@@ -480,6 +501,11 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         showStepError('review', 'The POS could not independently verify the totals. Record a manager reason to continue.')
         return
       }
+      if (/pending print work/i.test(String(detail.message || ''))) {
+        setDiscardPrintQueueSignature(null)
+        showStepError('review', 'The print queue changed. Review the current work and confirm a new discard decision if you still want to close.')
+        return
+      }
       if (detail.message) {
         showStepError(currentStep?.id, normalizeCloseDayErrorMessage(detail.message))
         return
@@ -490,6 +516,11 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
 
   const submitClose = async (confirmAutoClockOut) => {
     if (!preview) return
+    if (pendingPrintJobs > 0 && !discardPrintJobs) {
+      showStepError('review', 'Choose whether to keep waiting for print work or explicitly discard it during Close Day.')
+      setModal(null)
+      return
+    }
     if (cashCountStatus === 'counted' && !cashCountEntered) {
       showStepError('cash', 'Count the physical cash in the drawer before closing the day.')
       setModal(null)
@@ -521,6 +552,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       const closed = await posCloseDayApi.close(restaurantId, {
         business_date: preview.business_date,
         close_attempt_id: attemptId.current,
+        discard_print_jobs: discardPrintJobs,
         confirm_auto_clock_out: confirmAutoClockOut,
         clock_out_mode: !preview.closeout_settings?.show_clockout_options_at_close
           ? 'all'
@@ -593,8 +625,8 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       showStepError('readiness', 'Resolve the blocking close-day payment and check exceptions before closing remotely.')
       return
     }
-    if (pendingPrintJobs > 0) {
-      showStepError('readiness', 'Resolve pending print work on the POS before closing remotely.')
+    if (pendingPrintJobs > 0 && !discardPrintJobs) {
+      showStepError('review', 'Choose whether to keep waiting for print work or explicitly discard it during Close Day.')
       return
     }
     if (paidUnsentChecks > 0) {
@@ -806,6 +838,11 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             {preview?.financial_verification?.status && preview.financial_verification.status !== 'verified' && (
               <p className="mt-2 text-sm font-semibold text-amber-200">Financial verification exception recorded: {preview.financial_verification.status.replaceAll('_', ' ')}.</p>
             )}
+            {Number(result?.expired_print_jobs ?? preview?.discarded_print_jobs ?? 0) > 0 && (
+              <p className="mt-2 text-sm font-semibold text-amber-200">
+                {Number(result?.expired_print_jobs ?? preview?.discarded_print_jobs ?? 0)} queued print job{Number(result?.expired_print_jobs ?? preview?.discarded_print_jobs ?? 0) === 1 ? '' : 's'} were discarded and retained in the close audit.
+              </p>
+            )}
           </div>
         </section>
       ) : (
@@ -888,7 +925,16 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
               <ReadinessRow ready={!paidUnsentChecks} label="Fulfillment" detail={paidUnsentChecks ? `${paidUnsentChecks} paid check(s) have ${paidUnsentItems} unsent routed item(s)` : 'No paid checks have unsent routed items'} />
               <ReadinessRow ready={!cashMovementBlockers} label="Cash movements" detail={pendingCashMovements ? `${pendingCashMovements} pending or uncertain movement(s)` : requirePaidOutReview && unreviewedPaidOuts ? `${unreviewedPaidOuts} paid-out movement(s) require review` : 'No cash movement blockers'} />
               <ReadinessRow ready={verificationStatus === 'verified'} warning={verificationStatus !== 'mismatch'} label="Financial verification" detail={reconLoading ? 'Independent recompute still running' : verificationStatus === 'verified' ? 'Totals match raw transactions' : verificationStatus === 'mismatch' ? `${verificationMismatchCount} mismatch(es) require an override reason` : 'Independent verifier unavailable; close will be marked unverified'} />
-              <ReadinessRow ready={!pendingPrintJobs} label="Print work" detail={pendingPrintJobs ? `${pendingPrintJobs} jobs still pending` : 'No pending print work'} />
+              <ReadinessRow
+                ready={!pendingPrintJobs || discardPrintJobs}
+                warning={pendingPrintJobs > 0 && !discardPrintJobs}
+                label="Print work"
+                detail={pendingPrintJobs
+                  ? discardPrintJobs
+                    ? `${pendingPrintJobs} queued job${pendingPrintJobs === 1 ? '' : 's'} will be discarded only when this close succeeds`
+                    : `${pendingPrintJobs} queued job${pendingPrintJobs === 1 ? '' : 's'} need a wait-or-discard decision in Review`
+                  : 'No pending server print work'}
+              />
               <ReadinessRow ready={!openEmployees.length} warning={Boolean(openEmployees.length)} label="Employees" detail={openEmployees.length ? `${openEmployees.length} will require confirmation` : 'Everyone is clocked out'} />
             </div>
             {Number(preview?.open_checks || 0) > 0 && (
@@ -952,6 +998,56 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             </div>
             <p className="mt-1 text-sm text-dash-secondary">Nothing is submitted until you select the final Close Day action.</p>
 
+            <div className={`mt-5 border p-4 ${pendingPrintJobs > 0 ? discardPrintJobs ? 'border-red-400/35 bg-red-500/10' : 'border-amber-400/35 bg-amber-500/10' : 'border-emerald-400/30 bg-emerald-500/10'}`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-dash-cream">Queued print work</p>
+                  <p className="mt-1 text-sm text-dash-secondary">
+                    {pendingPrintJobs > 0
+                      ? `${pendingPrintJobs} server print job${pendingPrintJobs === 1 ? '' : 's'} still need a decision.`
+                      : 'The server print queue is clear. No print decision is required.'}
+                  </p>
+                </div>
+                {pendingPrintJobs > 0 && (pendingReceiptPrintJobs + pendingKitchenPrintJobs > 0) && (
+                  <p className="text-xs font-semibold text-dash-tertiary">
+                    {pendingReceiptPrintJobs} receipt · {pendingKitchenPrintJobs} kitchen
+                  </p>
+                )}
+              </div>
+
+              {pendingPrintJobs > 0 && (
+                <>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Pending print work decision">
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={!discardPrintJobs}
+                      onClick={keepPrintWorkQueued}
+                      className={`min-h-[88px] border p-3 text-left ${!discardPrintJobs ? 'border-amber-300/60 bg-amber-300/10' : 'border-dash-border bg-dash-base/50'}`}
+                    >
+                      <span className={`text-sm font-semibold ${!discardPrintJobs ? 'text-amber-100' : 'text-dash-cream'}`}>Wait and review on POS</span>
+                      <span className="mt-1 block text-xs leading-5 text-dash-tertiary">Leave the queue intact. Retry or reroute in POS Tasks, then refresh this status.</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={discardPrintJobs}
+                      onClick={() => { if (!discardPrintJobs) setModal('discard-print-work') }}
+                      className={`min-h-[88px] border p-3 text-left ${discardPrintJobs ? 'border-red-300/60 bg-red-400/10' : 'border-dash-border bg-dash-base/50'}`}
+                    >
+                      <span className={`text-sm font-semibold ${discardPrintJobs ? 'text-red-100' : 'text-dash-cream'}`}>Discard during Close Day</span>
+                      <span className="mt-1 block text-xs leading-5 text-dash-tertiary">Expire the server queue records only if this Close Day succeeds.</span>
+                    </button>
+                  </div>
+                  <div className="mt-3 flex items-start gap-2 text-xs leading-5 text-amber-100/80">
+                    <AlertTriangle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+                    <p>Paper already sent to or printed by a printer cannot be recalled. POS-local held or dead-letter work is not included and still requires separate review on the POS.</p>
+                  </div>
+                  <button type="button" onClick={() => void refreshPreview()} disabled={loading || closing} className="mt-3 min-h-[38px] border border-dash-border px-3 text-xs font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">Refresh print status</button>
+                </>
+              )}
+            </div>
+
             {hardBlockers.length > 0 && (
               <div className="mt-5 border border-red-400/35 bg-red-500/10 p-4">
                 <div className="flex items-start gap-3"><AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-300" aria-hidden="true" /><div><p className="font-semibold text-red-100">Resolve {hardBlockers.length} blocker{hardBlockers.length === 1 ? '' : 's'} before closing</p><ul className="mt-2 space-y-1 text-sm text-red-100/75">{hardBlockers.map((blocker) => <li key={blocker}>• {blocker}</li>)}</ul></div></div>
@@ -962,6 +1058,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
               <ReviewRow label="Business date" value={`${preview?.business_date || '—'} · Close ${preview?.close_period?.sequence || 1}`} />
               <ReviewRow label="Cash" value={cashCountStatus === 'not_counted' ? 'Not physically counted — exception recorded' : cashCountEntered ? `${money(numberValue(cash.counted_cash))} current · ${money(variance)} variance` : 'Current cash required'} warning={!cashCountEntered || cashCountStatus === 'not_counted' || Math.abs(variance || 0) > threshold} />
               {showTeamStep && <ReviewRow label="Employees" value={openEmployees.length ? `${clockOutEntryIds.length} of ${openEmployees.length} will be clocked out and audited` : 'No clock-outs required'} warning={openEmployees.length > 0} />}
+              <ReviewRow label="Print work" value={pendingPrintJobs > 0 ? discardPrintJobs ? `${pendingPrintJobs} queued job${pendingPrintJobs === 1 ? '' : 's'} will be discarded with this close` : `${pendingPrintJobs} queued job${pendingPrintJobs === 1 ? '' : 's'} — waiting for POS review` : 'Server queue clear'} warning={pendingPrintJobs > 0} />
               <ReviewRow label="Financial verification" value={verificationStatus === 'verified' ? 'Totals verified' : verificationStatus === 'mismatch' ? `${verificationMismatchCount} mismatch${verificationMismatchCount === 1 ? '' : 'es'} — manager reason required` : 'Unavailable — manager reason required'} warning={verificationStatus !== 'verified'} />
             </div>
 
@@ -1003,6 +1100,23 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
           <div className="flex gap-3">
             <AlertTriangle size={22} className="shrink-0 text-red-300" aria-hidden="true" />
             <div><p className="font-semibold text-dash-cream">Close all checks before closing the day.</p><p className="mt-2 text-sm text-dash-secondary">There is no override. The POS must finish or void all {preview?.open_checks || 0} open check{preview?.open_checks === 1 ? '' : 's'} first.</p></div>
+          </div>
+        </ActionModal>
+      )}
+
+      {modal === 'discard-print-work' && pendingPrintJobs > 0 && (
+        <ActionModal
+          title="Discard pending print work?"
+          onClose={() => setModal(null)}
+          footer={<><button type="button" onClick={() => setModal(null)} className="min-h-[40px] border border-dash-border px-4 text-sm font-semibold text-dash-secondary">Keep waiting</button><button type="button" onClick={confirmDiscardPrintWork} className="min-h-[40px] bg-red-400 px-4 text-sm font-bold text-black">Confirm discard on close</button></>}
+        >
+          <div className="flex gap-3">
+            <AlertTriangle size={22} className="shrink-0 text-red-300" aria-hidden="true" />
+            <div>
+              <p className="font-semibold text-dash-cream">Close Day will stop waiting for {pendingPrintJobs} server print job{pendingPrintJobs === 1 ? '' : 's'}.</p>
+              <p className="mt-2 text-sm text-dash-secondary">The queue records are expired only if the audited close succeeds. Paper already sent to or printed by a printer cannot be recalled.</p>
+              <p className="mt-2 text-sm text-dash-secondary">This does not discard POS-local held or dead-letter work. Those records remain on the POS for separate review.</p>
+            </div>
           </div>
         </ActionModal>
       )}
