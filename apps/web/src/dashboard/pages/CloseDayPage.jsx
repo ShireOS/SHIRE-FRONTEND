@@ -509,6 +509,11 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       setModal(null)
       return
     }
+    if (pendingPrintJobs > 0 && discardPrintJobs && !preview.print_queue_revision) {
+      showStepError('review', 'Refresh Close Day before discarding print work so the exact reviewed queue can be verified.')
+      setModal(null)
+      return
+    }
     if (cashCountStatus === 'counted' && !cashCountEntered) {
       showStepError('cash', 'Count the physical cash in the drawer before closing the day.')
       setModal(null)
@@ -541,6 +546,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         business_date: preview.business_date,
         close_attempt_id: attemptId.current,
         discard_print_jobs: discardPrintJobs,
+        expected_print_queue_revision: discardPrintJobs ? preview.print_queue_revision : undefined,
         confirm_auto_clock_out: confirmAutoClockOut,
         clock_out_mode: !preview.closeout_settings?.show_clockout_options_at_close
           ? 'all'

@@ -117,6 +117,7 @@ test('the staged flow preserves the canonical audited close payload', () => {
     'business_date',
     'close_attempt_id',
     'discard_print_jobs',
+    'expected_print_queue_revision',
     'confirm_auto_clock_out',
     'clock_out_mode',
     'clock_out_entry_ids',
@@ -167,6 +168,7 @@ test('print discard approval is scoped to the exact period and queue counts', ()
   const first = closeDayPrintQueueSignature({
     business_date: '2026-08-22',
     close_period: { sequence: 1, previous_close_id: 'first', opened_at: '10:00' },
+    print_queue_revision: 'queue-a',
     pending_print_jobs: 3,
     pending_receipt_print_jobs: 2,
     pending_kitchen_print_jobs: 1,
@@ -174,13 +176,15 @@ test('print discard approval is scoped to the exact period and queue counts', ()
   const changedQueue = closeDayPrintQueueSignature({
     business_date: '2026-08-22',
     close_period: { sequence: 1, previous_close_id: 'first', opened_at: '10:00' },
-    pending_print_jobs: 4,
-    pending_receipt_print_jobs: 3,
+    print_queue_revision: 'queue-b',
+    pending_print_jobs: 3,
+    pending_receipt_print_jobs: 2,
     pending_kitchen_print_jobs: 1,
   })
   const changedPeriod = closeDayPrintQueueSignature({
     business_date: '2026-08-22',
     close_period: { sequence: 2, previous_close_id: 'second', opened_at: '18:00' },
+    print_queue_revision: 'queue-a',
     pending_print_jobs: 3,
     pending_receipt_print_jobs: 2,
     pending_kitchen_print_jobs: 1,

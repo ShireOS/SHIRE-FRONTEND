@@ -38,7 +38,11 @@ test('the warning distinguishes server queue records from physical and POS-local
 
 test('the canonical close payload carries the confirmed discard choice', () => {
   assert.match(page, /discard_print_jobs: discardPrintJobs/)
+  assert.match(page, /expected_print_queue_revision: discardPrintJobs \? preview\.print_queue_revision : undefined/)
+  assert.match(page, /discardPrintJobs && !preview\.print_queue_revision/)
   assert.match(posClient, /export interface CloseDayInput \{[\s\S]*discard_print_jobs: boolean/)
+  assert.match(posClient, /export interface CloseDayInput \{[\s\S]*expected_print_queue_revision\?: string/)
+  assert.match(posClient, /print_queue_revision\?: string/)
   assert.match(posClient, /pending_receipt_print_jobs\?: number/)
   assert.match(posClient, /pending_kitchen_print_jobs\?: number/)
   assert.match(posClient, /expired_print_jobs\?: number/)

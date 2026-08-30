@@ -81,6 +81,7 @@ export default function CloseDayReview({ restaurantId, onBack }) {
   const hasBlockingWork = openChecks > 0
     || blockingExceptionCount > 0
     || (pendingPrintJobs > 0 && !discardPrintJobs)
+    || (pendingPrintJobs > 0 && discardPrintJobs && !preview?.print_queue_revision)
     || (requiresClockOutConfirmation && !clockOutConfirmed)
     || !cashCountEntered
     || (needsVarianceReason && !varianceReason.trim())
@@ -93,6 +94,7 @@ export default function CloseDayReview({ restaurantId, onBack }) {
       close_attempt_id: closeAttemptId,
       notes: notes.trim() || undefined,
       discard_print_jobs: discardPrintJobs,
+      expected_print_queue_revision: discardPrintJobs ? preview.print_queue_revision : undefined,
       confirm_auto_clock_out: clockOutConfirmed,
       opening_bank: numberValue(cash.opening_bank),
       paid_in: numberValue(cash.paid_in),

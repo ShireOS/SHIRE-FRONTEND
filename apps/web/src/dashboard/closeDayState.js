@@ -11,6 +11,8 @@ export function closeDayOperationKey(preview) {
 export function closeDayPrintQueueSignature(preview) {
   const operationKey = closeDayOperationKey(preview)
   if (!operationKey) return null
+  const queueRevision = String(preview?.print_queue_revision || '').trim()
+  if (queueRevision) return [operationKey, queueRevision].join(':')
   const count = (value) => Math.max(0, Number(value) || 0)
   return [
     operationKey,
