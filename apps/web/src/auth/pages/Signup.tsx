@@ -12,6 +12,7 @@ export function SignupPage() {
   const [searchParams] = useSearchParams()
   const invited = searchParams.get('invited') === '1'
   const invitedEmail = searchParams.get('email') || ''
+  const hasInvitedEmail = invitedEmail.trim().length > 0
   const next = searchParams.get('next')
   const loginHref = next ? `/auth/login?next=${encodeURIComponent(next)}` : '/auth/login'
   const [firstName, setFirstName] = useState('')
@@ -28,13 +29,21 @@ export function SignupPage() {
     setError(null)
     setIsLoading(true)
 
+    const normalizedEmail = email.trim()
+
+    if (!normalizedEmail) {
+      setError('Enter the email address that received this invitation')
+      setIsLoading(false)
+      return
+    }
+
     if (password.length < 8) {
       setError('Password must be at least 8 characters')
       setIsLoading(false)
       return
     }
 
-    const result = await signUp(email, password, {
+    const result = await signUp(normalizedEmail, password, {
       first_name: firstName,
       last_name: lastName,
       account_type: invited ? 'owner' : accountType,
@@ -179,7 +188,7 @@ export function SignupPage() {
               type="email"
               autoComplete="email"
               required
-              readOnly={invited}
+              readOnly={invited && hasInvitedEmail}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full px-4 py-3 rounded-xl bg-white dark:bg-white/10 border border-black/10 dark:border-white/10 text-primary placeholder:text-tertiary/50 focus:outline-none focus:ring-2 focus:ring-[#36454F]/20 dark:focus:ring-white/20 transition-all text-[15px]"
