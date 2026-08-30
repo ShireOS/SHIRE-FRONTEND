@@ -150,7 +150,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const [modal, setModal] = useState(null)
   const [result, setResult] = useState(null)
   const [clockOutEntryIds, setClockOutEntryIds] = useState([])
-  const [recentActivityConfirmed, setRecentActivityConfirmed] = useState(false)
+  const [confirmedRecentActivityAt, setConfirmedRecentActivityAt] = useState(null)
   const [discardPrintQueueSignature, setDiscardPrintQueueSignature] = useState(null)
   const [cashCountStatus, setCashCountStatus] = useState('counted')
   const [uncountedCashReason, setUncountedCashReason] = useState('')
@@ -249,6 +249,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     setUncountedCashReason('')
     setVerificationReason('')
     setVerificationExceptionStatus(null)
+    setConfirmedRecentActivityAt(null)
     setDiscardPrintQueueSignature(null)
     setResult(null)
     setSelectedBusinessDate(null)
@@ -279,7 +280,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     closeOperationKey.current = operationKey
     clockOutSelectionCustomized.current = false
     attemptId.current = newAttemptId()
-    setRecentActivityConfirmed(false)
+    setConfirmedRecentActivityAt(null)
     setResult(null)
     setCashCountStatus('counted')
     setUncountedCashReason('')
@@ -337,6 +338,10 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     requirePaidOutReview && unreviewedPaidOuts > 0 && `${unreviewedPaidOuts} paid-out movement${unreviewedPaidOuts === 1 ? '' : 's'} awaiting review`,
   ].filter(Boolean)
   const recentActivityRequiresReview = Boolean(preview?.close_period?.recent_activity)
+  const recentActivityAt = preview?.close_period?.last_activity_at || null
+  const recentActivityConfirmed = Boolean(
+    recentActivityAt && confirmedRecentActivityAt === recentActivityAt,
+  )
   const showCashStep = access.viewVisible('close_day.cash')
     || access.viewVisible('close_day.finalize')
   const showTeamStep = access.viewVisible('close_day.clockouts')
@@ -555,6 +560,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             : clockOutEntryIds.length === 0 ? 'none' : 'selected',
         clock_out_entry_ids: clockOutEntryIds,
         confirm_recent_activity: recentActivityConfirmed,
+        expected_recent_activity_at: recentActivityConfirmed ? recentActivityAt : undefined,
         opening_bank: effectiveOpeningBank,
         cash_count_status: cashCountStatus,
         counted_cash: cashCountStatus === 'counted' ? numberValue(cash.counted_cash) : null,
@@ -949,7 +955,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
 
             {recentActivityRequiresReview && (
               <label className="mt-5 flex cursor-pointer items-start gap-3 border border-amber-400/35 bg-amber-500/10 p-4 text-sm text-amber-100">
-                <input type="checkbox" checked={recentActivityConfirmed} onChange={(event) => setRecentActivityConfirmed(event.target.checked)} className="mt-0.5" />
+                <input type="checkbox" checked={recentActivityConfirmed} onChange={(event) => setConfirmedRecentActivityAt(event.target.checked ? recentActivityAt : null)} className="mt-0.5" />
                 <span>
                   <span className="font-semibold">I reviewed the floor after the recent activity.</span>
                   <span className="mt-1 block text-xs text-amber-100/75">An order, payment, or cash action occurred within the last {preview?.close_period?.quiet_minutes || 10} minutes.</span>

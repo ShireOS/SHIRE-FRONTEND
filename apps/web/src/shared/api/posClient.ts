@@ -340,6 +340,7 @@ export interface CloseDayInput {
   clock_out_mode?: 'all' | 'selected' | 'none'
   clock_out_entry_ids?: string[]
   confirm_recent_activity?: boolean
+  expected_recent_activity_at?: string
   opening_bank: number
   paid_in: number
   paid_out: number

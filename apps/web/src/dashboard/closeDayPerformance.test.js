@@ -122,6 +122,7 @@ test('the staged flow preserves the canonical audited close payload', () => {
     'clock_out_mode',
     'clock_out_entry_ids',
     'confirm_recent_activity',
+    'expected_recent_activity_at',
     'opening_bank',
     'cash_count_status',
     'counted_cash',
@@ -194,6 +195,18 @@ test('print discard approval is scoped to the exact period and queue counts', ()
   assert.notEqual(first, changedPeriod)
   assert.match(page, /current === printQueueSignature \? current : null/)
   assert.match(page, /discardPrintQueueSignature === currentPrintQueueSignature/)
+})
+
+test('recent-activity approval is scoped to the exact last activity timestamp', () => {
+  assert.match(page, /confirmedRecentActivityAt === recentActivityAt/)
+  assert.match(
+    page,
+    /expected_recent_activity_at: recentActivityConfirmed \? recentActivityAt : undefined/,
+  )
+  assert.match(
+    page,
+    /setConfirmedRecentActivityAt\(event\.target\.checked \? recentActivityAt : null\)/,
+  )
 })
 
 test('same-period readiness expands default Everyone but preserves a customized subset', () => {
