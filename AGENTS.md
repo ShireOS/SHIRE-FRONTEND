@@ -323,6 +323,12 @@ gate; the bell remains disabled while access is unresolved or denied.
   and guarded the same way by the ML backend. POS applies the largest
   restaurant-wide auto-gratuity tier whose minimum party size is met, unless a
   section/table service-charge rule overrides it.
+  Setup -> Basics also owns the restaurant's Workweek Start Day under existing
+  `settings.edit`. It is stored as `restaurants.config.workweek_start_weekday`
+  using Monday=0 through Sunday=6 (default Monday) and is saved only through the
+  guarded setup-profile API. Clock-out receipts may use it to calculate a
+  read-only week-to-date total; changing it must never rewrite time entries,
+  payroll results, or historical hours.
 - Migrations (manual run): ML `supabase/migrations/0055_team_hub_access.sql`
   (restaurant_members + back_office_permissions + invitations alter), POS repo
   `0022_pos_timeclock_breaks_v1.sql` (pos_time_clock_breaks).
