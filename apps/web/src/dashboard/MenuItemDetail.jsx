@@ -847,6 +847,9 @@ export function MenuItemDetail({
   reloadGroups, reloadModifiers, reloadSpecials, reloadImages,
   itemModifierOverrides = {}, reloadItemModifierOverrides = null,
   canEditPrices = false, onDuplicate = null,
+  kitchenAlias = '', kitchenAliasesEnabled = true,
+  canEditKitchenAlias = false, onSaveKitchenAlias = null,
+  onOpenPrintingRouting = null,
   editorPrefs = null, onSaveEditorPrefs = null,
   saveStatuses = {},
 }) {
@@ -858,8 +861,16 @@ export function MenuItemDetail({
   const [schedule, setSchedule] = useState(() => availabilityDraft(item))
   const [pendingProductionRouteValue, setPendingProductionRouteValue] = useState(null)
   const [routeSaveState, setRouteSaveState] = useState('')
+  const [kitchenNameMode, setKitchenNameMode] = useState(kitchenAlias ? 'alias' : 'full')
+  const [kitchenAliasDraft, setKitchenAliasDraft] = useState(kitchenAlias)
+  const [kitchenAliasReason, setKitchenAliasReason] = useState('')
   const routeSaveTimerRef = useRef(null)
   useEffect(() => setSchedule(availabilityDraft(item)), [item])
+  useEffect(() => {
+    setKitchenNameMode(kitchenAlias ? 'alias' : 'full')
+    setKitchenAliasDraft(kitchenAlias)
+    setKitchenAliasReason('')
+  }, [item.id, kitchenAlias])
   useEffect(() => () => clearTimeout(routeSaveTimerRef.current), [])
 
   const modifiersById = Object.fromEntries(modifiers.map(m => [m.id, m]))
@@ -1763,6 +1774,90 @@ export function MenuItemDetail({
       case 'kitchen': return (
           <DetailCard {...controls} title="Kitchen" hint={productionRouting?.categoryRouting?.description || (category?.routing_station_id ? `Category default: ${stationName(category.routing_station_id) || 'station'}` : 'No category default station set.')}>
             <div className="space-y-3">
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-dash-cream">Kitchen ticket name</p>
+                    <p className="mt-1 text-xs text-dash-tertiary">Set the default printed name without changing the POS or guest-facing name. Station-specific overrides still win.</p>
+                  </div>
+                  <SaveStatus message={saved('kitchen-name')} />
+                </div>
+                <div className="mt-3 grid gap-2">
+                  <label className={`flex items-start gap-3 rounded-lg border p-3 ${kitchenNameMode === 'full' ? 'border-dash-gold/50 bg-dash-gold/[0.08]' : 'border-white/10'}`}>
+                    <input
+                      type="radio"
+                      name={`kitchen-name-${item.id}`}
+                      value="full"
+                      checked={kitchenNameMode === 'full'}
+                      disabled={!canEditKitchenAlias || busy}
+                      onChange={() => setKitchenNameMode('full')}
+                      className="mt-0.5 accent-dash-gold"
+                    />
+                    <span><strong className="block text-sm">Use full POS name</strong><span className="mt-1 block text-xs text-dash-tertiary">{item.name}</span></span>
+                  </label>
+                  <label className={`flex items-start gap-3 rounded-lg border p-3 ${kitchenNameMode === 'alias' ? 'border-dash-gold/50 bg-dash-gold/[0.08]' : 'border-white/10'}`}>
+                    <input
+                      type="radio"
+                      name={`kitchen-name-${item.id}`}
+                      value="alias"
+                      checked={kitchenNameMode === 'alias'}
+                      disabled={!canEditKitchenAlias || busy}
+                      onChange={() => setKitchenNameMode('alias')}
+                      className="mt-0.5 accent-dash-gold"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <strong className="block text-sm">Use a shorter kitchen alias</strong>
+                      <TextInput
+                        value={kitchenAliasDraft}
+                        maxLength={40}
+                        disabled={!canEditKitchenAlias || busy || kitchenNameMode !== 'alias'}
+                        onFocus={() => setKitchenNameMode('alias')}
+                        onChange={event => setKitchenAliasDraft(event.target.value)}
+                        placeholder="Example: CHX PARM"
+                      />
+                      <span className="mt-1 block text-xs text-dash-tertiary">Ticket preview: {kitchenNameMode === 'alias' && kitchenAliasDraft.trim() ? kitchenAliasDraft.trim() : item.name}</span>
+                    </span>
+                  </label>
+                </div>
+                {!kitchenAliasesEnabled && kitchenNameMode === 'alias' && (
+                  <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-100">
+                    This alias can be saved, but kitchen tickets are currently set to always print full item names.
+                  </p>
+                )}
+                {!canEditKitchenAlias && (
+                  <p className="mt-3 text-xs text-dash-tertiary">Editing printed names requires Store Settings access.</p>
+                )}
+                {canEditKitchenAlias && (
+                  <div className="mt-3">
+                    <p className="label-mono">Change reason</p>
+                    <TextInput
+                      value={kitchenAliasReason}
+                      maxLength={300}
+                      disabled={busy}
+                      onChange={event => setKitchenAliasReason(event.target.value)}
+                      placeholder="Why is this printed name changing?"
+                    />
+                  </div>
+                )}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <SmallButton
+                    variant="primary"
+                    disabled={!canEditKitchenAlias || busy || !onSaveKitchenAlias || kitchenAliasReason.trim().length < 2 || (kitchenNameMode === 'alias' && !kitchenAliasDraft.trim())}
+                    onClick={async () => {
+                      const didSave = await onSaveKitchenAlias(
+                        kitchenNameMode === 'alias' ? kitchenAliasDraft : '',
+                        kitchenAliasReason,
+                      )
+                      if (didSave) setKitchenAliasReason('')
+                    }}
+                  >
+                    Save kitchen name
+                  </SmallButton>
+                  {onOpenPrintingRouting && (
+                    <SmallButton onClick={onOpenPrintingRouting}>Advanced printing options</SmallButton>
+                  )}
+                </div>
+              </div>
               <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${productionRouteValue === ROUTE_NO_PRODUCTION_VALUE ? 'border-amber-300/30 bg-amber-300/10' : 'border-white/10 bg-white/[0.025]'}`}>
                 <input
                   type="checkbox"

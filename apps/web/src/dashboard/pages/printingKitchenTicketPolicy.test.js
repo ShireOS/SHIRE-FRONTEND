@@ -50,3 +50,10 @@ test('full-document saves rebase edits onto a fresh canonical read', () => {
   assert.match(page, /const fresh = await fetchPosApi\(restaurantId, `\/restaurants\/\$\{restaurantId\}\/printing-config`/)
   assert.match(page, /mergeChangedPrintingValues\(loadedConfigRef\.current \|\| fresh, config, fresh\)/)
 })
+
+test('printed-name changes require the shared audit reason', () => {
+  assert.match(page, /function printingAliasSnapshot|const printingAliasSnapshot/)
+  assert.match(page, /Reason for printed-name change/)
+  assert.match(page, /aliasesChanged.*auditedBehaviorChanged/s)
+  assert.match(page, /before-and-after aliases in the printing configuration audit log/)
+})

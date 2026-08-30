@@ -352,6 +352,11 @@ gate; the bell remains disabled while access is unresolved or denied.
   a reason when changed, and is audited by the POS backend. Turning it off skips
   only the automatic post-payment print; payment completion and manual reprints
   remain available.
+- The Menu item Kitchen card may update its base printed alias through the
+  existing whole-document printing-config contract. It requires `settings.edit`,
+  an operator reason, a durable before/after audit, and a fresh read before the
+  write. Bulk aliases, ticket-wide behavior, and station-specific overrides stay
+  in Printing & Routing.
 - External-card signed tip slips use a single default-off toggle within Back
   Office's existing Suggested Tips receipt section and persist at
   `restaurants.config.pos.printing.customer.signed_tip_slip.external_card`.

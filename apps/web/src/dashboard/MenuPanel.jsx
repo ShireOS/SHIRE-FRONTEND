@@ -71,6 +71,7 @@ import { PropagationModal } from '../shared/components/PropagationModal'
 import { scheduleChange } from '../shared/api/scheduledChanges'
 import { fetchResellerPortfolioForUser } from '../reseller/data/resellerPortfolio'
 import { copyItemConfig } from './data/menuDuplicate'
+import { withKitchenItemAlias } from './data/menuPrintingAliases.js'
 import {
   directQuestionGroupsForItem,
   inheritedQuestionIdsToOptOut,
@@ -1309,6 +1310,24 @@ export function MenuPanel({
     }
   }
 
+  const saveItemKitchenAlias = (itemId, alias, reason) => run(async () => {
+    // Printing configuration is a whole-document contract. Re-read before the
+    // PUT so this small editor cannot overwrite newer bulk or station changes.
+    const fresh = await fetchPosApi(
+      restaurantId,
+      `/restaurants/${restaurantId}/printing-config`,
+      { cache: 'no-store' },
+    )
+    const next = withKitchenItemAlias(fresh, itemId, alias)
+    const savedConfig = await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/printing-config`, {
+      method: 'PUT',
+      body: JSON.stringify({ ...next, change_reason: reason.trim() }),
+    })
+    const normalized = savedConfig || next
+    setPrintingConfig(normalized)
+    queryClient.setQueryData(queryKeys.menuPrintingConfig(restaurantId), normalized)
+  }, { localKey: `item:${itemId}:kitchen-name`, message: 'Kitchen ticket name saved' }, 'Couldn’t save the kitchen ticket name')
+
   const stations = routing?.stations || []
   const stationsById = useMemo(() => Object.fromEntries(stations.map(station => [station.id, station])), [stations])
   const activeOutputTargetsById = useMemo(
@@ -2474,6 +2493,11 @@ export function MenuPanel({
           itemModifierOverrides={itemModifierOverrides[selectedItem.id] || {}}
           reloadItemModifierOverrides={loadItemModifierOverrides}
           canEditPrices={canEditPrices}
+          kitchenAlias={printingConfig.aliases?.items?.[selectedItem.id] || ''}
+          kitchenAliasesEnabled={printingConfig.kitchen?.item_name_mode !== 'full'}
+          canEditKitchenAlias={canEditPrinting}
+          onSaveKitchenAlias={(alias, reason) => saveItemKitchenAlias(selectedItem.id, alias, reason)}
+          onOpenPrintingRouting={() => setActiveTab('printing')}
           onDuplicate={item => startCreateItem(item)}
           editorPrefs={editorPrefs}
           onSaveEditorPrefs={saveEditorPrefs}

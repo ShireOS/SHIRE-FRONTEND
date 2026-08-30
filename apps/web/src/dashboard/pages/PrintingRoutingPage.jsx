@@ -41,6 +41,12 @@ const DEFAULT_CONFIG = {
 
 const clone = value => JSON.parse(JSON.stringify(value))
 const jsonEqual = (left, right) => JSON.stringify(left) === JSON.stringify(right)
+const printingAliasSnapshot = value => ({
+  aliases: value?.aliases || {},
+  stations: Object.fromEntries(Object.entries(value?.stations || {})
+    .filter(([, station]) => station?.aliases && Object.keys(station.aliases).length > 0)
+    .map(([stationId, station]) => [stationId, station.aliases])),
+})
 
 // The printing endpoint intentionally accepts a complete document. Rebase only
 // edits made since this page loaded onto a fresh canonical read so a manager
@@ -393,7 +399,8 @@ export default function PrintingRoutingPage({ restaurantId }) {
     const externalSignedSlipChanged = (config.customer?.signed_tip_slip?.external_card === true) !== savedExternalCardSignedSlip
     const kitchenPresentationChanged = (config.kitchen?.modifier_marker ?? 'indent') !== savedKitchenPresentation.modifier_marker
       || (config.kitchen?.line_density ?? 'tight') !== savedKitchenPresentation.line_density
-    const auditedBehaviorChanged = autoPrintChanged || externalSignedSlipChanged || kitchenPresentationChanged
+    const aliasesChanged = !jsonEqual(printingAliasSnapshot(config), printingAliasSnapshot(savedConfig))
+    const auditedBehaviorChanged = autoPrintChanged || externalSignedSlipChanged || kitchenPresentationChanged || aliasesChanged
     const reason = receiptPolicyReason.trim()
     setError(''); setMessage('')
     if (auditedBehaviorChanged && reason.length < 2) {
@@ -709,6 +716,7 @@ export default function PrintingRoutingPage({ restaurantId }) {
                 <div className="mt-4 max-h-[420px] overflow-y-auto rounded-xl border border-white/10">
                   {filtered.map(row => { const aliases = effectiveAliases(row.kind); const inherited = config.aliases?.[row.kind]?.[row.id]; return <div key={`${row.kind}-${row.id}`} className="grid gap-2 border-b border-white/10 p-3 last:border-0 md:grid-cols-[1.2fr_.9fr_.5fr] md:items-center"><div><p className="text-sm font-medium text-dash-cream">{row.name}</p><p className="text-xs text-dash-tertiary">{row.type}{row.category ? ` · ${row.category}` : ''}</p></div><input value={aliases[row.id] || ''} onChange={event => setAlias(row.kind, row.id, event.target.value)} placeholder={scope !== 'whole' && inherited ? `Inherits ${inherited}` : 'Uses full name'} className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm outline-none focus:border-dash-gold/60" /><span className="text-xs text-dash-tertiary">{scope === 'whole' ? 'Whole Kitchen' : aliases[row.id] && aliases[row.id] !== inherited ? 'Station override' : 'Inherited'}</span></div> })}
                 </div>
+                {!jsonEqual(printingAliasSnapshot(config), printingAliasSnapshot(savedConfig)) && <label className="mt-4 block"><span className="label-mono">Reason for printed-name change</span><input maxLength={300} value={receiptPolicyReason} onChange={event => setReceiptPolicyReason(event.target.value)} placeholder="Example: Keep kitchen tickets readable" className="mt-2 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm outline-none focus:border-dash-gold/60" /><span className="mt-2 block text-xs text-dash-tertiary">Saved with the before-and-after aliases in the printing configuration audit log.</span></label>}
               </div>}
             </>
           )}
