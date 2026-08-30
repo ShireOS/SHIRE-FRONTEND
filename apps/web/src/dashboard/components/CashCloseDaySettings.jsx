@@ -130,17 +130,13 @@ function ManagerPreview({ floatMode, floatAmount, blindClose, trackDeposit }) {
           <span>Over / short</span>
           <span className="font-semibold tabular-nums text-amber-300">−$2.50</span>
         </div>
-        {trackDeposit && (
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <div className="border border-dashed border-sky-400/70 px-2.5 py-1.5"><p className="label-mono">Deposit</p></div>
-            <div className="border border-dashed border-sky-400/70 px-2.5 py-1.5"><p className="label-mono">Cash left in drawer</p></div>
-          </div>
-        )}
+        <div className={`mt-2 grid gap-2 ${trackDeposit ? 'grid-cols-2' : 'grid-cols-1'}`}>
+          {trackDeposit && <div className="border border-dashed border-sky-400/70 px-2.5 py-1.5"><p className="label-mono">Deposit</p></div>}
+          <div className="border border-dashed border-sky-400/70 px-2.5 py-1.5"><p className="label-mono">Cash left in drawer</p></div>
+        </div>
       </div>
       <p className="mt-3 text-xs leading-5 text-dash-tertiary">
-        {showFloat
-          ? 'Three fields. The float is context for the count, not a decision the manager re-makes each night.'
-          : 'Two fields. One is calculated, one is counted.'}
+        Cash left in drawer is entered at every counted close. Starting cash is context from restaurant policy, not a number the manager re-enters.
       </p>
     </div>
   )
@@ -301,7 +297,6 @@ export default function CashCloseDaySettings({ restaurantId, initialSettings = n
                 selected={floatMode === FLOAT_MODES.none}
                 onSelect={() => setFloatMode(FLOAT_MODES.none)}
                 title="No, the drawer starts empty"
-                badge="Default"
                 detail="The manager counts the drawer and compares it to the day's sales. Two numbers, nothing to remember."
               />
               <Choice
@@ -317,8 +312,9 @@ export default function CashCloseDaySettings({ restaurantId, initialSettings = n
               <Choice
                 selected={floatMode === FLOAT_MODES.previousRetained}
                 onSelect={() => setFloatMode(FLOAT_MODES.previousRetained)}
-                title="Use what was left at the prior close"
-                detail="The POS automatically carries forward the prior finalized retained amount. No cashier confirmation is required."
+                title="Use cash left from the last Close Day"
+                badge="Recommended"
+                detail="The manager enters Cash left in drawer at close. The POS automatically uses that amount as the next business day’s starting cash."
               >
                 {floatMode === FLOAT_MODES.previousRetained && (
                   <MoneyField
@@ -378,8 +374,8 @@ export default function CashCloseDaySettings({ restaurantId, initialSettings = n
                   className={`mt-0.5 h-3.5 w-3.5 shrink-0 border ${trackDeposit ? 'border-shell-accent bg-shell-accent' : 'border-dash-tertiary'}`}
                 />
                 <span>
-                  <span className="block text-sm font-semibold text-dash-cream">Also track the deposit and what&apos;s left in the drawer</span>
-                  <span className="mt-1 block text-xs leading-5 text-dash-tertiary">Adds two optional fields at close. Off by default.</span>
+                  <span className="block text-sm font-semibold text-dash-cream">Also require the deposit amount</span>
+                  <span className="mt-1 block text-xs leading-5 text-dash-tertiary">Cash left in drawer is always recorded. This also requires deposit plus cash left to equal the current cash count.</span>
                 </span>
               </span>
             </button>

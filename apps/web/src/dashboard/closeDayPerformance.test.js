@@ -16,6 +16,7 @@ const page = readFileSync(new URL('./pages/CloseDayPage.jsx', import.meta.url), 
 const settings = readFileSync(new URL('./components/CashCloseDaySettings.jsx', import.meta.url), 'utf8')
 const teamRoster = readFileSync(new URL('./components/CloseDayTeamRoster.jsx', import.meta.url), 'utf8')
 const posClient = readFileSync(new URL('../shared/api/posClient.ts', import.meta.url), 'utf8')
+const closeoutDefaults = readFileSync(new URL('../../../../packages/settings/src/closeout.ts', import.meta.url), 'utf8')
 
 test('Close Day renders POS readiness while reconciliation is still delayed', () => {
   assert.match(page, /const previewQuery = useQuery\(/)
@@ -53,6 +54,12 @@ test('cash entry uses current and expected drawer wording', () => {
   assert.match(settings, />Expected cash</)
   assert.match(settings, />Cash left in drawer</)
   assert.doesNotMatch(settings, />Float left in drawer</)
+  assert.match(page, /Actual drawer change/)
+  assert.match(page, /Software-expected change/)
+  assert.match(page, /cashLeftEntered/)
+  assert.match(settings, /Cash left in drawer is entered at every counted close/)
+  assert.match(settings, /badge="Recommended"/)
+  assert.match(closeoutDefaults, /opening_bank_source: 'previous_retained'/)
 })
 
 test('cash allocation is validated before the close request', () => {

@@ -38,7 +38,7 @@ function MoneyInput({ label, value, onChange }) {
 
 export default function CloseDayReview({ restaurantId, onBack }) {
   const [countedCash, setCountedCash] = useState('')
-  const [retainedBank, setRetainedBank] = useState('0')
+  const [retainedBank, setRetainedBank] = useState('')
   const [depositAmount, setDepositAmount] = useState('0')
   const [varianceReason, setVarianceReason] = useState('')
   const [notes, setNotes] = useState('')
@@ -59,10 +59,15 @@ export default function CloseDayReview({ restaurantId, onBack }) {
   const openingBankPolicy = cash.opening_bank_policy
   const expectedCash = numberValue(cash.expected_cash)
   const cashCountEntered = String(countedCash).trim() !== ''
+  const cashLeftEntered = String(retainedBank).trim() !== ''
+    && Number.isFinite(Number(retainedBank))
+    && Number(retainedBank) >= 0
   const revealExpected = !preview?.closeout_settings?.blind_drawer_close || cashCountEntered
   const trackDeposit = Boolean(preview?.closeout_settings?.track_deposit_at_close)
-  const showRetainedBank = trackDeposit || openingBankPolicy?.source === 'previous_retained'
   const variance = numberValue(countedCash) - expectedCash
+  const openingBank = numberValue(cash.opening_bank)
+  const actualDrawerChange = cashCountEntered ? numberValue(countedCash) - openingBank : null
+  const expectedDrawerChange = expectedCash - openingBank
   const threshold = numberValue(preview?.closeout_settings?.cash_variance_threshold)
   const needsVarianceReason = cashCountEntered && Math.abs(variance) > threshold
   const blockingExceptionCount = numberValue(preview?.blocking_exception_count)
@@ -84,6 +89,7 @@ export default function CloseDayReview({ restaurantId, onBack }) {
     || (pendingPrintJobs > 0 && discardPrintJobs && !preview?.print_queue_revision)
     || (requiresClockOutConfirmation && !clockOutConfirmed)
     || !cashCountEntered
+    || !cashLeftEntered
     || (needsVarianceReason && !varianceReason.trim())
     || !unverifiedConfirmed
     || alreadyClosed
@@ -198,15 +204,23 @@ export default function CloseDayReview({ restaurantId, onBack }) {
               </div>
               <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <MoneyInput label="Counted cash" value={countedCash} onChange={setCountedCash} />
-                {showRetainedBank && <MoneyInput label="Retained bank" value={retainedBank} onChange={setRetainedBank} />}
+                <MoneyInput label="Cash left in drawer" value={retainedBank} onChange={setRetainedBank} />
                 {trackDeposit && <MoneyInput label="Deposit amount" value={depositAmount} onChange={setDepositAmount} />}
               </div>
+              <p className="mt-2 text-xs leading-5 text-dash-tertiary">
+                {openingBankPolicy?.source === 'previous_retained'
+                  ? 'Cash left in drawer becomes the next business day’s starting cash.'
+                  : 'Cash left in drawer is recorded with this close. Tomorrow still follows the restaurant’s configured starting-cash policy.'}
+              </p>
               <div className="mt-3 flex flex-wrap gap-2 text-sm">
                 <span className="rounded-lg bg-white/[0.04] px-3 py-2 text-dash-secondary">Expected {revealExpected ? money(expectedCash) : 'hidden until counted'}</span>
                 <span className={`rounded-lg px-3 py-2 ${needsVarianceReason ? 'bg-red-400/10 text-red-200' : 'bg-emerald-400/10 text-emerald-200'}`}>
                   Variance {revealExpected ? money(variance) : 'hidden until counted'}
                 </span>
+                <span className="rounded-lg bg-white/[0.04] px-3 py-2 text-dash-secondary">Actual drawer change {actualDrawerChange == null ? 'after counting' : money(actualDrawerChange)}</span>
+                <span className="rounded-lg bg-white/[0.04] px-3 py-2 text-dash-secondary">Software-expected change {revealExpected ? money(expectedDrawerChange) : 'hidden until counted'}</span>
               </div>
+              <p className="mt-2 text-xs leading-5 text-dash-tertiary">Drawer change is counted cash minus opening cash. It is not gross sales because payouts, paid in/out, drops, refunds, and tips also move drawer cash.</p>
               {needsVarianceReason && (
                 <label className="mt-3 block">
                   <span className="label-mono !text-[9px]">Variance explanation required</span>

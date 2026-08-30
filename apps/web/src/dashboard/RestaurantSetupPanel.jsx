@@ -3715,7 +3715,7 @@ export default function RestaurantSetupPanel({
                 <SelectInput value={closeoutSettings.opening_bank_source} onChange={event => updateCloseoutSettings({ opening_bank_source: event.target.value, require_starting_bank: false })}>
                   <option value="none">Opening bank: $0 automatically</option>
                   <option value="fixed">Opening bank: fixed amount</option>
-                  <option value="previous_retained">Opening bank: prior retained cash</option>
+                  <option value="previous_retained">Starting cash: use cash left at last Close Day (recommended)</option>
                 </SelectInput>
                 {closeoutSettings.opening_bank_source !== 'none' && (
                   <TextInput
@@ -3728,7 +3728,7 @@ export default function RestaurantSetupPanel({
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {[
-                  ['track_deposit_at_close', 'Deposit & float left in drawer'],
+                  ['track_deposit_at_close', 'Require deposit amount'],
                   ['blind_drawer_close', 'Blind close'],
                   ['allow_paid_in_out', 'Paid in/out'],
                 ].map(([field, label]) => (

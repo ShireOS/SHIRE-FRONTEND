@@ -44,7 +44,7 @@ const INITIAL_CASH = {
   paid_out: '0.00',
   cash_refunds: '0.00',
   counted_cash: '',
-  retained_bank: '0.00',
+  retained_bank: '',
   deposit_amount: '0.00',
   variance_reason: '',
 }
@@ -295,7 +295,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       paid_out: Number(reconciliation.paid_out || 0).toFixed(2),
       cash_refunds: Number(reconciliation.cash_refunds || 0).toFixed(2),
       counted_cash: '',
-      retained_bank: '0.00',
+      retained_bank: '',
       deposit_amount: '0.00',
       variance_reason: '',
     }))
@@ -306,11 +306,17 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const effectiveOpeningBank = numberValue(preview?.cash_reconciliation?.opening_bank)
   const showFloat = effectiveOpeningBank > 0 || openingBankPolicy?.source === 'previous_retained'
   const trackDeposit = Boolean(closeoutSettings?.track_deposit_at_close)
-  const showRetainedBank = trackDeposit || openingBankPolicy?.source === 'previous_retained'
   const expectedCash = numberValue(preview?.cash_reconciliation?.expected_cash)
   const cashCountEntered = cashCountStatus === 'not_counted' || String(cash.counted_cash).trim() !== ''
+  const cashLeftEntered = String(cash.retained_bank).trim() !== ''
+    && Number.isFinite(Number(cash.retained_bank))
+    && Number(cash.retained_bank) >= 0
   const revealExpected = !closeoutSettings?.blind_drawer_close || (cashCountStatus === 'counted' && cashCountEntered)
   const variance = cashCountStatus === 'counted' ? numberValue(cash.counted_cash) - expectedCash : null
+  const actualDrawerChange = cashCountStatus === 'counted' && cashCountEntered
+    ? numberValue(cash.counted_cash) - effectiveOpeningBank
+    : null
+  const expectedDrawerChange = expectedCash - effectiveOpeningBank
   const threshold = Number(preview?.closeout_settings?.cash_variance_threshold || 0)
   const openEmployees = preview?.open_timeclock_entries || []
   const isClosed = previewIsClosed
@@ -357,6 +363,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const cashStepReady = cashCountStatus === 'not_counted'
     ? uncountedCashReason.trim().length >= 5
     : cashCountEntered
+      && cashLeftEntered
       && !cashAllocationError
       && (variance == null || Math.abs(variance) <= threshold || Boolean(cash.variance_reason.trim()))
   const teamStepReady = !recentActivityRequiresReview || recentActivityConfirmed
@@ -524,6 +531,11 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       setModal(null)
       return
     }
+    if (cashCountStatus === 'counted' && !cashLeftEntered) {
+      showStepError('cash', 'Enter the cash left in the drawer. Enter 0.00 if no cash will remain.')
+      setModal(null)
+      return
+    }
     if (cashCountStatus === 'not_counted' && uncountedCashReason.trim().length < 5) {
       showStepError('cash', 'Explain why the drawer could not be physically counted.')
       setModal(null)
@@ -645,6 +657,10 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       showStepError('cash', 'Count the physical cash in the drawer before closing the day.')
       return
     }
+    if (cashCountStatus === 'counted' && !cashLeftEntered) {
+      showStepError('cash', 'Enter the cash left in the drawer. Enter 0.00 if no cash will remain.')
+      return
+    }
     if (cashCountStatus === 'not_counted' && uncountedCashReason.trim().length < 5) {
       showStepError('cash', 'Explain why the drawer could not be physically counted.')
       return
@@ -685,6 +701,10 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     if (currentStep?.id === 'cash') {
       if (cashCountStatus === 'counted' && !cashCountEntered) {
         showStepError('cash', 'Count the physical cash in the drawer before continuing.')
+        return
+      }
+      if (cashCountStatus === 'counted' && !cashLeftEntered) {
+        showStepError('cash', 'Enter the cash left in the drawer. Enter 0.00 if no cash will remain.')
         return
       }
       if (cashCountStatus === 'not_counted' && uncountedCashReason.trim().length < 5) {
@@ -878,7 +898,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
                 </div>
               )}
               {cashCountStatus === 'counted' && <CashInput label="Current cash" value={cash.counted_cash} onChange={(value) => updateCash('counted_cash', value)} />}
-              {cashCountStatus === 'counted' && showRetainedBank && (
+              {cashCountStatus === 'counted' && (
                 <CashInput label="Cash left in drawer" value={cash.retained_bank} onChange={(value) => updateCash('retained_bank', value)} />
               )}
               {cashCountStatus === 'counted' && trackDeposit && (
@@ -887,6 +907,13 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
                 </>
               )}
             </div>
+            {cashCountStatus === 'counted' && (
+              <p className="mt-3 text-xs leading-5 text-dash-tertiary">
+                {openingBankPolicy?.source === 'previous_retained'
+                  ? 'Cash left in drawer becomes the next business day’s starting cash.'
+                  : 'Cash left in drawer is recorded with this close. Tomorrow still follows the restaurant’s configured starting-cash policy.'}
+              </p>
+            )}
             {cashCountStatus === 'counted' && cashCountEntered && cashAllocationError && (
               <div role="status" className="mt-4 flex items-start gap-3 border border-amber-400/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
                 <AlertTriangle size={17} className="mt-0.5 shrink-0" aria-hidden="true" />
@@ -906,10 +933,13 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
               <div><p className="label-mono">Cash drops</p><p className="mt-1 font-semibold text-dash-cream">{money(preview?.cash_reconciliation?.cash_drop)}</p></div>
               <div><p className="label-mono">Cash refunds</p><p className="mt-1 font-semibold text-dash-cream">{money(preview?.cash_reconciliation?.cash_refunds)}</p></div>
             </div>
-            <div className="grid gap-3 border-b border-dash-border py-4 sm:grid-cols-2">
+            <div className="grid gap-3 border-b border-dash-border py-4 sm:grid-cols-2 xl:grid-cols-4">
               <div><p className="label-mono">Expected cash</p><p className="mt-1 font-semibold text-dash-cream">{revealExpected ? money(expectedCash) : 'Hidden until count is entered'}</p></div>
               <div><p className="label-mono">Variance</p><p className={`mt-1 font-semibold ${variance != null && revealExpected && Math.abs(variance) > threshold ? 'text-amber-300' : 'text-dash-cream'}`}>{cashCountStatus === 'not_counted' ? 'Not available — drawer uncounted' : revealExpected ? money(variance) : 'Hidden until count is entered'}</p></div>
+              <div><p className="label-mono">Actual drawer change</p><p className="mt-1 font-semibold text-dash-cream">{actualDrawerChange == null ? 'Enter current cash' : money(actualDrawerChange)}</p></div>
+              <div><p className="label-mono">Software-expected change</p><p className="mt-1 font-semibold text-dash-cream">{revealExpected ? money(expectedDrawerChange) : 'Hidden until count is entered'}</p></div>
             </div>
+            <p className="mt-3 text-xs leading-5 text-dash-tertiary">Drawer change is current cash minus starting cash. It is not gross sales because payouts, paid in/out, drops, refunds, and tips also move drawer cash.</p>
             {cashCountStatus === 'counted' && <label className="mt-4 block">
               <span className="label-mono">Variance reason</span>
               <textarea value={cash.variance_reason} onChange={(event) => updateCash('variance_reason', event.target.value)} rows={3} placeholder="Required when variance exceeds the configured threshold" className="mt-1.5 w-full resize-none border border-dash-border bg-[var(--glass-bg)] px-3 py-2 text-sm text-dash-cream outline-none focus:border-shell-accent/70" />
@@ -1007,6 +1037,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             <div className="mt-5 divide-y divide-dash-border border-y border-dash-border">
               <ReviewRow label="Business date" value={`${preview?.business_date || '—'} · Close ${preview?.close_period?.sequence || 1}`} />
               <ReviewRow label="Cash" value={cashCountStatus === 'not_counted' ? 'Not physically counted — exception recorded' : cashCountEntered ? `${money(numberValue(cash.counted_cash))} current · ${money(variance)} variance` : 'Current cash required'} warning={!cashCountEntered || cashCountStatus === 'not_counted' || Math.abs(variance || 0) > threshold} />
+              {cashCountStatus === 'counted' && <ReviewRow label="Cash left in drawer" value={cashLeftEntered ? money(cash.retained_bank) : 'Required'} warning={!cashLeftEntered} />}
               {showTeamStep && <ReviewRow label="Employees" value={openEmployees.length ? preview?.closeout_settings?.show_clockout_options_at_close ? `${clockOutEntryIds.length} of ${openEmployees.length} will be clocked out and audited` : `${openEmployees.length} will be clocked out automatically and audited` : 'No clock-outs required'} warning={openEmployees.length > 0} />}
               <ReviewRow label="Print work" value={pendingPrintJobs > 0 ? discardPrintJobs ? `${pendingPrintJobs} queued job${pendingPrintJobs === 1 ? '' : 's'} will be discarded with this close` : `${pendingPrintJobs} queued job${pendingPrintJobs === 1 ? '' : 's'} — waiting for POS review` : 'Server queue clear'} warning={pendingPrintJobs > 0} />
               <ReviewRow label="Financial verification" value={verificationStatus === 'verified' ? 'Totals verified' : verificationStatus === 'mismatch' ? `${verificationMismatchCount} mismatch${verificationMismatchCount === 1 ? '' : 'es'} — manager reason required` : 'Unavailable — manager reason required'} warning={verificationStatus !== 'verified'} />
