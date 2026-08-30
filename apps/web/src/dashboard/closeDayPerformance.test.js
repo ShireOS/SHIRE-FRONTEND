@@ -146,6 +146,8 @@ test('the staged flow preserves the canonical audited close payload', () => {
     assert.match(page, new RegExp(`${field}:`))
   }
   assert.match(page, /posCloseDayApi\.close\(restaurantId,/)
+  assert.match(page, /End-of-day report:/)
+  assert.match(page, /result\.manager_report\.queued/)
 })
 
 test('Close Day reuses preview settings and requests a bounded compact payload', () => {

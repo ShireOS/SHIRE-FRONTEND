@@ -855,6 +855,15 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             {result?.auto_clocked_out?.length > 0 && (
               <p className="mt-2 text-sm text-emerald-100/75">{result.auto_clocked_out.length} employee{result.auto_clocked_out.length === 1 ? '' : 's'} were clocked out and audited.</p>
             )}
+            {result?.manager_report && (
+              <p className={`mt-2 text-sm font-semibold ${result.manager_report.printed || result.manager_report.queued ? 'text-emerald-100' : 'text-amber-200'}`}>
+                End-of-day report: {result.manager_report.printed
+                  ? 'printed.'
+                  : result.manager_report.queued
+                    ? 'queued to the receipt printer.'
+                    : 'no receipt printer was available; reprint it from the POS when the printer is ready.'}
+              </p>
+            )}
             {preview?.financial_verification?.status && preview.financial_verification.status !== 'verified' && (
               <p className="mt-2 text-sm font-semibold text-amber-200">Financial verification exception recorded: {preview.financial_verification.status.replaceAll('_', ' ')}.</p>
             )}
