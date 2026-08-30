@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Clock3,
@@ -24,6 +24,11 @@ import {
   fetchDeviceUpdateOverview,
   saveDeviceUpdatePolicy,
 } from '../data/deviceUpdates'
+import {
+  deviceCompatibilityReasons,
+  requestIdForDeploymentIntent,
+  resetDeploymentRequestId,
+} from '../data/deviceUpdateEligibility'
 
 const PAGE_TABS = [
   { id: 'fleet', label: 'Fleet', icon: MonitorSmartphone },
@@ -92,7 +97,7 @@ function FleetView({ overview }) {
 }
 
 function RolloutView({ restaurantId, overview, onChanged }) {
-  const releases = overview.releases || []
+  const releases = (overview.releases || []).filter(release => release.artifact_kind === 'ota' && ['ios', 'android'].includes(release.platform))
   const devices = (overview.devices || []).filter(device => device.status === 'active')
   const [releaseId, setReleaseId] = useState(releases[0]?.id || '')
   const [policy, setPolicy] = useState(overview.policy?.default_activation_policy || 'after_close_day')
@@ -100,26 +105,35 @@ function RolloutView({ restaurantId, overview, onChanged }) {
   const [selected, setSelected] = useState([])
   const [reason, setReason] = useState('')
   const [confirmed, setConfirmed] = useState(false)
+  const requestIdRef = useRef(null)
+  const release = releases.find(item => item.id === releaseId)
+  const compatibleDevices = devices.filter(device => deviceCompatibilityReasons(device, release).length === 0)
+  const incompatibleDevices = devices.filter(device => deviceCompatibilityReasons(device, release).length > 0)
+  const compatibleDeviceIds = new Set(compatibleDevices.map(device => device.id))
+  const targetDeviceIds = selected.length === 0 ? [...compatibleDeviceIds] : selected.filter(id => compatibleDeviceIds.has(id))
   useEffect(() => { if (!releaseId && releases[0]?.id) setReleaseId(releases[0].id) }, [releaseId, releases])
+  const deploymentIntent = {
+    release_id: releaseId,
+    activation_policy: policy,
+    scheduled_for: policy === 'scheduled' && scheduledFor ? new Date(scheduledFor).toISOString() : null,
+    mandatory: policy !== 'download_only',
+    device_ids: targetDeviceIds,
+    reason: reason.trim(),
+  }
   const mutation = useMutation({
     mutationFn: () => createDeviceUpdateDeployment(restaurantId, {
-      request_id: crypto.randomUUID(),
-      release_id: releaseId,
-      activation_policy: policy,
-      scheduled_for: policy === 'scheduled' ? new Date(scheduledFor).toISOString() : null,
-      mandatory: policy !== 'download_only',
-      device_ids: selected.length === 0 ? null : selected,
-      reason,
+      request_id: requestIdForDeploymentIntent(requestIdRef, deploymentIntent),
+      ...deploymentIntent,
     }),
-    onSuccess: () => { setReason(''); setConfirmed(false); onChanged(); },
+    onSuccess: () => { resetDeploymentRequestId(requestIdRef); setReason(''); setConfirmed(false); setSelected([]); onChanged(); },
   })
-  const canSubmit = releaseId && reason.trim().length >= 3 && confirmed && (policy !== 'scheduled' || scheduledFor)
+  const canSubmit = releaseId && targetDeviceIds.length > 0 && reason.trim().length >= 3 && confirmed && (policy !== 'scheduled' || scheduledFor)
   return <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
     <Card><CardHeader><h2 className="font-semibold text-dash-cream">Create rollout</h2><p className="mt-1 text-sm text-dash-secondary">Choose the release, devices, and when it becomes eligible. Device safety gates always have final authority.</p></CardHeader><CardContent className="space-y-6">
-      <label className="block"><span className="font-mono text-[10px] uppercase tracking-wider text-dash-tertiary">Approved release</span><select value={releaseId} onChange={event => setReleaseId(event.target.value)} className="mt-2 w-full rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-sm text-dash-cream"><option value="">Choose a release…</option>{releases.map(release => <option key={release.id} value={release.id}>{release.version_label} · {release.artifact_kind.toUpperCase()} · {release.platform}</option>)}</select></label>
+      <label className="block"><span className="font-mono text-[10px] uppercase tracking-wider text-dash-tertiary">Approved OTA release</span><select value={releaseId} onChange={event => { setReleaseId(event.target.value); setSelected([]) }} className="mt-2 w-full rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-sm text-dash-cream"><option value="">Choose a release…</option>{releases.map(release => <option key={release.id} value={release.id}>{release.version_label} · {release.platform.toUpperCase()} · runtime {release.runtime_version}</option>)}</select><span className="mt-2 block text-xs text-dash-secondary">Each Expo update ID belongs to one platform. Publish and approve separate iOS and Android release records.</span></label>
       <fieldset><legend className="font-mono text-[10px] uppercase tracking-wider text-dash-tertiary">Activation policy</legend><div className="mt-2 grid gap-2">{ACTIVATION_POLICIES.map(option => <label key={option.id} className={`flex cursor-pointer gap-3 rounded-xl border p-4 ${policy === option.id ? 'border-dash-gold/60 bg-dash-gold/5' : 'border-dash-border'}`}><input type="radio" name="activation-policy" value={option.id} checked={policy === option.id} onChange={() => setPolicy(option.id)} className="mt-1 accent-[#d4a854]"/><span><span className="block text-sm font-semibold text-dash-cream">{option.label}</span><span className="mt-1 block text-xs leading-5 text-dash-secondary">{option.detail}</span></span></label>)}</div></fieldset>
       {policy === 'scheduled' ? <label className="block"><span className="text-sm text-dash-secondary">Eligible at</span><input type="datetime-local" value={scheduledFor} min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)} onChange={event => setScheduledFor(event.target.value)} className="mt-2 w-full rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream" /></label> : null}
-      <fieldset><legend className="font-mono text-[10px] uppercase tracking-wider text-dash-tertiary">Target devices</legend><p className="mt-1 text-xs text-dash-secondary">No boxes selected means every active device.</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{devices.map(device => <label key={device.id} className="flex items-center gap-3 rounded-xl border border-dash-border p-3 text-sm text-dash-cream"><input type="checkbox" checked={selected.includes(device.id)} onChange={() => setSelected(current => current.includes(device.id) ? current.filter(id => id !== device.id) : [...current, device.id])} className="accent-[#d4a854]" />{device.name}</label>)}</div></fieldset>
+      <fieldset><legend className="font-mono text-[10px] uppercase tracking-wider text-dash-tertiary">Target devices</legend><p className="mt-1 text-xs text-dash-secondary">No boxes selected targets every device that has recently proved the selected platform, runtime, and channel. Incompatible or unreported devices are never sent the command.</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{devices.map(device => { const reasons = deviceCompatibilityReasons(device, release); const compatible = reasons.length === 0; return <label key={device.id} className={`flex items-start gap-3 rounded-xl border p-3 text-sm ${compatible ? 'border-dash-border text-dash-cream' : 'border-red-300/20 text-dash-tertiary'}`}><input type="checkbox" disabled={!compatible} checked={compatible && selected.includes(device.id)} onChange={() => setSelected(current => current.includes(device.id) ? current.filter(id => id !== device.id) : [...current, device.id])} className="mt-0.5 accent-[#d4a854]" /><span><span className="block">{device.name}</span><span className="mt-1 block text-[11px]">{compatible ? `${device.update_platform} · runtime ${device.update_runtime_version} · ${device.update_channel}` : reasons.map(humanize).join(', ')}</span></span></label> })}</div>{incompatibleDevices.length ? <p className="mt-3 text-xs text-amber-200">{incompatibleDevices.length} active device{incompatibleDevices.length === 1 ? '' : 's'} will not be targeted until a compatible native build reports fresh update capability.</p> : null}</fieldset>
       <label className="block"><span className="text-sm text-dash-secondary">Audit reason</span><textarea value={reason} onChange={event => setReason(event.target.value)} maxLength={500} rows={3} placeholder="Why is this release being sent?" className="mt-2 w-full rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-sm text-dash-cream" /></label>
       <label className="flex gap-3 rounded-xl border border-amber-300/20 bg-amber-300/5 p-4 text-sm text-amber-100"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} className="mt-1 accent-[#d4a854]" /><span>I understand that “force” makes the update mandatory, but the POS will still refuse to restart during payment, order persistence, required print delivery, or unsynced work.</span></label>
       {mutation.error ? <p role="alert" className="text-sm text-red-300">{mutation.error.message}</p> : null}
@@ -132,7 +146,7 @@ function RolloutView({ restaurantId, overview, onChanged }) {
 function ReleasesView({ restaurantId, overview, onChanged }) {
   const auth = useAuth()
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState({ version_label: '', artifact_kind: 'ota', platform: 'all', runtime_version: '', channel: '', expo_update_id: '', native_version: '', native_build: '', git_commit: '', release_notes: '' })
+  const [form, setForm] = useState({ version_label: '', artifact_kind: 'ota', platform: 'ios', runtime_version: '', channel: '', expo_update_id: '', native_version: '', native_build: '', git_commit: '', release_notes: '' })
   const isPlatformAdmin = auth.accountType === 'admin'
   const mutation = useMutation({
     mutationFn: () => createDeviceUpdateRelease(restaurantId, {
@@ -147,9 +161,14 @@ function ReleasesView({ restaurantId, overview, onChanged }) {
     }),
     onSuccess: () => { setOpen(false); onChanged(); },
   })
+  const canApprove = form.version_label.trim()
+    && form.platform
+    && (form.artifact_kind === 'ota'
+      ? form.runtime_version.trim() && form.channel.trim() && form.expo_update_id.trim()
+      : form.native_version.trim() && form.native_build.trim())
   return <div className="space-y-5"><div className="flex items-center justify-between"><div><h2 className="text-lg font-semibold text-dash-cream">Approved releases</h2><p className="mt-1 text-sm text-dash-secondary">Resellers and owners can deploy approved artifacts; only platform admins can approve a new artifact.</p></div>{isPlatformAdmin ? <Button onClick={() => setOpen(value => !value)}>{open ? 'Close' : 'Approve release'}</Button> : null}</div>
-    {open ? <Card><CardContent className="grid gap-3 md:grid-cols-2"><input value={form.version_label} onChange={event => setForm({ ...form, version_label: event.target.value })} placeholder="Version label" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"/><select value={form.artifact_kind} onChange={event => setForm({ ...form, artifact_kind: event.target.value })} className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"><option value="ota">OTA bundle</option><option value="native">Native binary</option></select><select value={form.platform} onChange={event => setForm({ ...form, platform: event.target.value })} className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"><option value="all">All platforms</option><option value="ios">iOS</option><option value="android">Android</option></select>{form.artifact_kind === 'ota' ? <><input value={form.runtime_version} onChange={event => setForm({ ...form, runtime_version: event.target.value })} placeholder="Runtime version" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"/><input value={form.channel} onChange={event => setForm({ ...form, channel: event.target.value })} placeholder="Immutable EAS channel" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"/><input value={form.expo_update_id} onChange={event => setForm({ ...form, expo_update_id: event.target.value })} placeholder="Exact Expo update ID" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"/></> : <><input value={form.native_version} onChange={event => setForm({ ...form, native_version: event.target.value })} placeholder="Native app version" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"/><input value={form.native_build} onChange={event => setForm({ ...form, native_build: event.target.value })} placeholder="Build number" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"/></>}<input value={form.git_commit} onChange={event => setForm({ ...form, git_commit: event.target.value })} placeholder="Git commit" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"/><textarea value={form.release_notes} onChange={event => setForm({ ...form, release_notes: event.target.value })} placeholder="Release notes" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream md:col-span-2"/>{mutation.error ? <p role="alert" className="text-sm text-red-300 md:col-span-2">{mutation.error.message}</p> : null}<Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.version_label}>{mutation.isPending ? 'Approving…' : 'Approve immutable release'}</Button></CardContent></Card> : null}
-    <div className="grid gap-4 lg:grid-cols-2">{(overview.releases || []).map(release => <Card key={release.id}><CardContent><div className="flex items-start justify-between gap-3"><div><p className="text-lg font-semibold text-dash-cream">{release.version_label}</p><p className="mt-1 text-xs text-dash-tertiary">{release.artifact_kind.toUpperCase()} · {release.platform} · approved {formatTime(release.approved_at)}</p></div><Badge variant={release.status === 'approved' ? 'success' : 'neutral'}>{release.status}</Badge></div><dl className="mt-4 grid gap-2 text-xs text-dash-secondary"><div><dt className="inline text-dash-tertiary">Runtime: </dt><dd className="inline font-mono">{release.runtime_version || 'native'}</dd></div><div><dt className="inline text-dash-tertiary">Channel: </dt><dd className="inline font-mono">{release.channel || '—'}</dd></div><div><dt className="inline text-dash-tertiary">Exact update ID: </dt><dd className="break-all font-mono">{release.expo_update_id || '—'}</dd></div></dl>{release.release_notes ? <p className="mt-4 text-sm leading-6 text-dash-secondary">{release.release_notes}</p> : null}</CardContent></Card>)}{(overview.releases || []).length === 0 ? <Empty>No approved releases yet.</Empty> : null}</div>
+    {open ? <Card><CardContent className="grid gap-3 md:grid-cols-2"><input value={form.version_label} onChange={event => setForm({ ...form, version_label: event.target.value })} placeholder="Version label" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"/><select value={form.artifact_kind} onChange={event => setForm({ ...form, artifact_kind: event.target.value })} className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"><option value="ota">EAS Update OTA bundle</option><option value="native">EAS Build native installer record</option></select><select value={form.platform} onChange={event => setForm({ ...form, platform: event.target.value })} className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"><option value="ios">iOS</option><option value="android">Android</option></select>{form.artifact_kind === 'ota' ? <><input value={form.runtime_version} onChange={event => setForm({ ...form, runtime_version: event.target.value })} placeholder="Runtime version" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"/><input value={form.channel} onChange={event => setForm({ ...form, channel: event.target.value })} placeholder="Dedicated EAS channel" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"/><input value={form.expo_update_id} onChange={event => setForm({ ...form, expo_update_id: event.target.value })} placeholder="Exact Expo update ID" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"/></> : <><input value={form.native_version} onChange={event => setForm({ ...form, native_version: event.target.value })} placeholder="Native app version" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"/><input value={form.native_build} onChange={event => setForm({ ...form, native_build: event.target.value })} placeholder="EAS build number" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"/><p className="rounded-xl border border-amber-300/20 bg-amber-300/5 p-3 text-xs leading-5 text-amber-100 md:col-span-2">This records an EAS Build artifact only. It is not eligible for a Back Office rollout until an MDM or managed app-store installer is connected; EAS Build does not silently replace a running native app.</p></>}<input value={form.git_commit} onChange={event => setForm({ ...form, git_commit: event.target.value })} placeholder="Git commit" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream"/><textarea value={form.release_notes} onChange={event => setForm({ ...form, release_notes: event.target.value })} placeholder="Release notes" className="rounded-xl border border-dash-border bg-dash-base px-3 py-3 text-dash-cream md:col-span-2"/>{mutation.error ? <p role="alert" className="text-sm text-red-300 md:col-span-2">{mutation.error.message}</p> : null}<Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !canApprove}>{mutation.isPending ? 'Approving…' : 'Approve immutable release'}</Button></CardContent></Card> : null}
+    <div className="grid gap-4 lg:grid-cols-2">{(overview.releases || []).map(release => <Card key={release.id}><CardContent><div className="flex items-start justify-between gap-3"><div><p className="text-lg font-semibold text-dash-cream">{release.version_label}</p><p className="mt-1 text-xs text-dash-tertiary">{release.artifact_kind.toUpperCase()} · {release.platform} · approved {formatTime(release.approved_at)}</p></div><Badge variant={release.status === 'approved' ? 'success' : 'neutral'}>{release.status}</Badge></div><dl className="mt-4 grid gap-2 text-xs text-dash-secondary"><div><dt className="inline text-dash-tertiary">Runtime: </dt><dd className="inline font-mono">{release.runtime_version || 'native'}</dd></div><div><dt className="inline text-dash-tertiary">Channel: </dt><dd className="inline font-mono">{release.channel || '—'}</dd></div><div><dt className="inline text-dash-tertiary">Exact update ID: </dt><dd className="break-all font-mono">{release.expo_update_id || '—'}</dd></div></dl>{release.artifact_kind === 'native' ? <p className="mt-4 rounded-lg border border-amber-300/20 bg-amber-300/5 p-3 text-xs leading-5 text-amber-100">Catalog only: install this EAS Build through an MDM or managed store. It cannot be sent as an OTA rollout.</p> : null}{release.release_notes ? <p className="mt-4 text-sm leading-6 text-dash-secondary">{release.release_notes}</p> : null}</CardContent></Card>)}{(overview.releases || []).length === 0 ? <Empty>No approved releases yet.</Empty> : null}</div>
   </div>
 }
 

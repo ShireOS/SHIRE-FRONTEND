@@ -8,6 +8,7 @@ const shell = await readFile(new URL('../shell/DashboardShell.jsx', import.meta.
 const loaders = await readFile(new URL('../workspaceModuleLoaders.js', import.meta.url), 'utf8')
 const permissions = await readFile(new URL('../../shared/permissions.ts', import.meta.url), 'utf8')
 const views = await readFile(new URL('../../shared/backOfficeView.ts', import.meta.url), 'utf8')
+const eligibility = await readFile(new URL('../data/deviceUpdateEligibility.js', import.meta.url), 'utf8')
 
 test('Device Updates is reachable through every workspace registry', () => {
   assert.match(shell, /id: 'device-updates', label: 'Device Updates'/)
@@ -32,6 +33,22 @@ test('Back Office cannot present an unsafe force-update promise', () => {
   assert.match(page, /cannot bypass the local payment, order, printing, or offline-queue gates/)
   assert.match(page, /refuse to restart during payment, order persistence, required print delivery, or unsynced work/)
   assert.match(page, /exact Expo update ID/i)
+})
+
+test('release and rollout identity is platform-specific and retry-stable', () => {
+  assert.doesNotMatch(page, /All platforms/)
+  assert.match(page, /separate iOS and Android release records/)
+  assert.match(page, /requestIdRef = useRef\(null\)/)
+  assert.match(page, /requestIdForDeploymentIntent\(requestIdRef, deploymentIntent\)/)
+  assert.match(page, /Incompatible or unreported devices are never sent the command/)
+  assert.match(eligibility, /update_channel/)
+  assert.match(eligibility, /update_capabilities_reported_at/)
+})
+
+test('native EAS builds are not presented as silently installable', () => {
+  assert.match(page, /EAS Build artifact only/i)
+  assert.match(page, /MDM or managed app-store installer/i)
+  assert.match(page, /cannot be sent as an OTA rollout/i)
 })
 
 test('Device Updates stays lazy and avoids page-wide polling', () => {
