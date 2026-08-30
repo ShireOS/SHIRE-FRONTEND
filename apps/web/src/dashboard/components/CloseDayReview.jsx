@@ -38,8 +38,7 @@ function MoneyInput({ label, value, onChange }) {
 
 export default function CloseDayReview({ restaurantId, onBack }) {
   const [countedCash, setCountedCash] = useState('')
-  const [retainedBank, setRetainedBank] = useState('0')
-  const [depositAmount, setDepositAmount] = useState('0')
+  const [retainedBank, setRetainedBank] = useState('')
   const [varianceReason, setVarianceReason] = useState('')
   const [notes, setNotes] = useState('')
   const [discardPrintJobs, setDiscardPrintJobs] = useState(false)
@@ -61,7 +60,14 @@ export default function CloseDayReview({ restaurantId, onBack }) {
   const cashCountEntered = String(countedCash).trim() !== ''
   const revealExpected = !preview?.closeout_settings?.blind_drawer_close || cashCountEntered
   const trackDeposit = Boolean(preview?.closeout_settings?.track_deposit_at_close)
-  const showRetainedBank = trackDeposit || openingBankPolicy?.source === 'previous_retained'
+  const asksForRetainedBank = openingBankPolicy?.source === 'previous_retained'
+  const retainedBankEntered = !asksForRetainedBank || String(retainedBank).trim() !== ''
+  const policyRetainedBank = asksForRetainedBank
+    ? numberValue(retainedBank)
+    : openingBankPolicy?.source === 'fixed' ? numberValue(cash.opening_bank) : 0
+  const calculatedDeposit = trackDeposit
+    ? Math.max(0, numberValue(countedCash) - policyRetainedBank)
+    : 0
   const variance = numberValue(countedCash) - expectedCash
   const threshold = numberValue(preview?.closeout_settings?.cash_variance_threshold)
   const needsVarianceReason = cashCountEntered && Math.abs(variance) > threshold
@@ -83,6 +89,7 @@ export default function CloseDayReview({ restaurantId, onBack }) {
     || (pendingPrintJobs > 0 && !discardPrintJobs)
     || (requiresClockOutConfirmation && !clockOutConfirmed)
     || !cashCountEntered
+    || !retainedBankEntered
     || (needsVarianceReason && !varianceReason.trim())
     || !unverifiedConfirmed
     || alreadyClosed
@@ -99,8 +106,8 @@ export default function CloseDayReview({ restaurantId, onBack }) {
       paid_out: numberValue(cash.paid_out),
       cash_refunds: numberValue(cash.cash_refunds),
       counted_cash: numberValue(countedCash),
-      retained_bank: numberValue(retainedBank),
-      deposit_amount: numberValue(depositAmount),
+      retained_bank: policyRetainedBank,
+      deposit_amount: calculatedDeposit,
       variance_reason: varianceReason.trim() || undefined,
       verification_status: 'not_performed',
       confirm_verification_exception: true,
@@ -196,8 +203,8 @@ export default function CloseDayReview({ restaurantId, onBack }) {
               </div>
               <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <MoneyInput label="Counted cash" value={countedCash} onChange={setCountedCash} />
-                {showRetainedBank && <MoneyInput label="Retained bank" value={retainedBank} onChange={setRetainedBank} />}
-                {trackDeposit && <MoneyInput label="Deposit amount" value={depositAmount} onChange={setDepositAmount} />}
+                {asksForRetainedBank && <MoneyInput label="Cash left for next day" value={retainedBank} onChange={setRetainedBank} />}
+                {trackDeposit && <Summary label="Calculated deposit" value={money(calculatedDeposit)} />}
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-sm">
                 <span className="rounded-lg bg-white/[0.04] px-3 py-2 text-dash-secondary">Expected {revealExpected ? money(expectedCash) : 'hidden until counted'}</span>

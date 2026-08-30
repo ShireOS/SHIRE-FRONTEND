@@ -3728,7 +3728,7 @@ export default function RestaurantSetupPanel({
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {[
-                  ['track_deposit_at_close', 'Deposit & float left in drawer'],
+                  ['track_deposit_at_close', 'Record calculated deposit'],
                   ['blind_drawer_close', 'Blind close'],
                   ['allow_paid_in_out', 'Paid in/out'],
                 ].map(([field, label]) => (

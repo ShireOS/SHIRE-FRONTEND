@@ -35,8 +35,7 @@ const INITIAL_CASH = {
   paid_out: '0.00',
   cash_refunds: '0.00',
   counted_cash: '',
-  retained_bank: '0.00',
-  deposit_amount: '0.00',
+  retained_bank: '',
   variance_reason: '',
 }
 
@@ -285,8 +284,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       paid_out: Number(reconciliation.paid_out || 0).toFixed(2),
       cash_refunds: Number(reconciliation.cash_refunds || 0).toFixed(2),
       counted_cash: '',
-      retained_bank: '0.00',
-      deposit_amount: '0.00',
+      retained_bank: '',
       variance_reason: '',
     }))
   }, [preview])
@@ -296,9 +294,16 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const effectiveOpeningBank = numberValue(preview?.cash_reconciliation?.opening_bank)
   const showFloat = effectiveOpeningBank > 0 || openingBankPolicy?.source === 'previous_retained'
   const trackDeposit = Boolean(closeoutSettings?.track_deposit_at_close)
-  const showRetainedBank = trackDeposit || openingBankPolicy?.source === 'previous_retained'
+  const asksForRetainedBank = openingBankPolicy?.source === 'previous_retained'
   const expectedCash = numberValue(preview?.cash_reconciliation?.expected_cash)
   const cashCountEntered = cashCountStatus === 'not_counted' || String(cash.counted_cash).trim() !== ''
+  const retainedBankEntered = !asksForRetainedBank || String(cash.retained_bank).trim() !== ''
+  const policyRetainedBank = asksForRetainedBank
+    ? numberValue(cash.retained_bank)
+    : openingBankPolicy?.source === 'fixed' ? effectiveOpeningBank : 0
+  const calculatedDeposit = cashCountStatus === 'counted' && trackDeposit
+    ? Math.max(0, numberValue(cash.counted_cash) - policyRetainedBank)
+    : 0
   const revealExpected = !closeoutSettings?.blind_drawer_close || (cashCountStatus === 'counted' && cashCountEntered)
   const variance = cashCountStatus === 'counted' ? numberValue(cash.counted_cash) - expectedCash : null
   const threshold = Number(preview?.closeout_settings?.cash_variance_threshold || 0)
@@ -421,6 +426,11 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       setModal(null)
       return
     }
+    if (cashCountStatus === 'counted' && !retainedBankEntered) {
+      setError('Enter how much cash will remain in the drawer for the next business day.')
+      setModal(null)
+      return
+    }
     if (variance != null && Math.abs(variance) > threshold && !cash.variance_reason.trim()) {
       setError(`Explain the ${money(variance)} cash variance before closing.`)
       setModal(null)
@@ -445,8 +455,8 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         counted_cash: cashCountStatus === 'counted' ? numberValue(cash.counted_cash) : null,
         confirm_uncounted_cash: cashCountStatus === 'not_counted',
         uncounted_cash_reason: cashCountStatus === 'not_counted' ? uncountedCashReason.trim() : undefined,
-        retained_bank: cashCountStatus === 'counted' ? numberValue(cash.retained_bank) : 0,
-        deposit_amount: cashCountStatus === 'counted' ? numberValue(cash.deposit_amount) : 0,
+        retained_bank: cashCountStatus === 'counted' ? policyRetainedBank : 0,
+        deposit_amount: cashCountStatus === 'counted' ? calculatedDeposit : 0,
         variance_reason: cashCountStatus === 'counted' ? cash.variance_reason.trim() || undefined : undefined,
         verification_status: verificationStatus,
         // A verified claim is recomputed entirely by POS from its own cash and
@@ -656,13 +666,14 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
                 </div>
               )}
               {cashCountStatus === 'counted' && <CashInput label="Counted cash" value={cash.counted_cash} onChange={(value) => updateCash('counted_cash', value)} />}
-              {cashCountStatus === 'counted' && showRetainedBank && (
-                <CashInput label="Float left in drawer" value={cash.retained_bank} onChange={(value) => updateCash('retained_bank', value)} />
+              {cashCountStatus === 'counted' && asksForRetainedBank && (
+                <CashInput label="Cash left for next day" value={cash.retained_bank} onChange={(value) => updateCash('retained_bank', value)} />
               )}
               {cashCountStatus === 'counted' && trackDeposit && (
-                <>
-                  <CashInput label="Deposit amount" value={cash.deposit_amount} onChange={(value) => updateCash('deposit_amount', value)} />
-                </>
+                <div>
+                  <p className="label-mono">Calculated deposit</p>
+                  <p className="mt-1.5 flex min-h-[42px] items-center border border-dash-border bg-[var(--glass-bg)] px-3 font-semibold text-dash-cream">{money(calculatedDeposit)}</p>
+                </div>
               )}
             </div>
             {cashCountStatus === 'not_counted' && (

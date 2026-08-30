@@ -423,8 +423,12 @@ gate; the bell remains disabled while access is unresolved or denied.
   bootstrap cache key used by the destination page.
 - Opening cash is a `settings.edit` restaurant policy on the existing
   `pos_closeout_settings` row: zero, fixed, or the latest finalized
-  `pos_cash_reconciliations.retained_bank` with a configured fallback. Staff are
-  never asked to confirm an opening amount before taking cash. Close Day displays
+  `pos_cash_reconciliations.retained_bank` with a configured fallback. New
+  restaurants default to prior retained cash, while existing explicit zero/fixed
+  choices remain authoritative. Staff are never asked to confirm an opening
+  amount before taking cash. Close Day asks how much cash is being left only for
+  the prior-retained policy; fixed and zero modes derive it automatically, and a
+  tracked deposit is calculated from the drawer count. Close Day displays
   backend-resolved lineage and keeps ledger-derived cash totals read-only.
 - Server checkout receipt templates are configured only from Back Office's
   Server Reports panel. `reports.view` authorizes reading and production-rendered

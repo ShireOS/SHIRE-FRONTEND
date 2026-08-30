@@ -33,6 +33,7 @@ const FLOAT_MODES = {
 }
 
 function floatModeFrom(settings) {
+  if (!settings) return FLOAT_MODES.previousRetained
   if (settings?.opening_bank_source === FLOAT_MODES.previousRetained || settings?.require_starting_bank) return FLOAT_MODES.previousRetained
   if (settings?.opening_bank_source === FLOAT_MODES.fixed) return FLOAT_MODES.fixed
   if (Number(settings?.opening_bank_default || 0) > 0) return FLOAT_MODES.fixed
@@ -130,17 +131,17 @@ function ManagerPreview({ floatMode, floatAmount, blindClose, trackDeposit }) {
           <span>Over / short</span>
           <span className="font-semibold tabular-nums text-amber-300">−$2.50</span>
         </div>
-        {trackDeposit && (
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <div className="border border-dashed border-sky-400/70 px-2.5 py-1.5"><p className="label-mono">Deposit</p></div>
-            <div className="border border-dashed border-sky-400/70 px-2.5 py-1.5"><p className="label-mono">Float left in drawer</p></div>
+        {(trackDeposit || floatMode === FLOAT_MODES.previousRetained) && (
+          <div className={`mt-2 grid gap-2 ${trackDeposit && floatMode === FLOAT_MODES.previousRetained ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            {floatMode === FLOAT_MODES.previousRetained && <div className="border border-dashed border-sky-400/70 px-2.5 py-1.5"><p className="label-mono">Cash left for next day</p></div>}
+            {trackDeposit && <div className="border border-dash-border bg-white/[0.04] px-2.5 py-1.5"><p className="label-mono">Calculated deposit</p></div>}
           </div>
         )}
       </div>
       <p className="mt-3 text-xs leading-5 text-dash-tertiary">
-        {showFloat
-          ? 'Three fields. The float is context for the count, not a decision the manager re-makes each night.'
-          : 'Two fields. One is calculated, one is counted.'}
+        {floatMode === FLOAT_MODES.previousRetained
+          ? 'The manager enters only the cash being left for the next day. Any tracked deposit is calculated.'
+          : 'The opening-bank policy is already configured. The manager only counts the drawer.'}
       </p>
     </div>
   )
@@ -301,7 +302,6 @@ export default function CashCloseDaySettings({ restaurantId, initialSettings = n
                 selected={floatMode === FLOAT_MODES.none}
                 onSelect={() => setFloatMode(FLOAT_MODES.none)}
                 title="No, the drawer starts empty"
-                badge="Default"
                 detail="The manager counts the drawer and compares it to the day's sales. Two numbers, nothing to remember."
               />
               <Choice
@@ -318,6 +318,7 @@ export default function CashCloseDaySettings({ restaurantId, initialSettings = n
                 selected={floatMode === FLOAT_MODES.previousRetained}
                 onSelect={() => setFloatMode(FLOAT_MODES.previousRetained)}
                 title="Use what was left at the prior close"
+                badge="Default"
                 detail="The POS automatically carries forward the prior finalized retained amount. No cashier confirmation is required."
               >
                 {floatMode === FLOAT_MODES.previousRetained && (
@@ -378,8 +379,8 @@ export default function CashCloseDaySettings({ restaurantId, initialSettings = n
                   className={`mt-0.5 h-3.5 w-3.5 shrink-0 border ${trackDeposit ? 'border-shell-accent bg-shell-accent' : 'border-dash-tertiary'}`}
                 />
                 <span>
-                  <span className="block text-sm font-semibold text-dash-cream">Also track the deposit and what&apos;s left in the drawer</span>
-                  <span className="mt-1 block text-xs leading-5 text-dash-tertiary">Adds two optional fields at close. Off by default.</span>
+                  <span className="block text-sm font-semibold text-dash-cream">Also record the calculated deposit</span>
+                  <span className="mt-1 block text-xs leading-5 text-dash-tertiary">Close Day calculates it from the counted drawer and configured cash-left policy. Off by default.</span>
                 </span>
               </span>
             </button>

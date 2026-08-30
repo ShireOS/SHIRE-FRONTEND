@@ -18,3 +18,10 @@ test('close-day safeguards remain inside their configured views', () => {
   assert.match(closeDay, /cashCountStatus === 'counted' && <label className="mt-4 block">/)
   assert.doesNotMatch(closeDay, /^(<<<<<<<|=======|>>>>>>>)/m)
 })
+
+test('cash-left entry is isolated to prior-retained Close Day policy', () => {
+  assert.match(closeDay, /const asksForRetainedBank = openingBankPolicy\?\.source === 'previous_retained'/)
+  assert.match(closeDay, /Cash left for next day/)
+  assert.match(closeDay, /Calculated deposit/)
+  assert.doesNotMatch(closeDay, /CashInput label="Deposit amount"/)
+})
