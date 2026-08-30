@@ -3076,7 +3076,7 @@ export default function RestaurantSetupPanel({
                 ))}
               </SelectInput>
               <span className="block text-xs leading-5 text-dash-tertiary">
-                The receipt total resets when this restaurant business day begins.
+                Week-to-date hours reset when the selected workweek start business day begins.
               </span>
             </Field>
           </div>
