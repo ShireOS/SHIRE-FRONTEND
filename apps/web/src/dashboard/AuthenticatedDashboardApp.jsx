@@ -5260,6 +5260,7 @@ export function RestaurantWorkspace({
   const allowedStoreTabs = useAllowedStoreTabs(restaurant)
   const backOfficeAccess = useBackOfficeAccess(auth, restaurantId)
   const activeSection = (location.hash || '').replace(/^#/, '') || 'overview'
+  const menuWorkspaceSectionRequested = ['organization', 'pos-menus'].includes(activeSection)
   const viewCapability = SECTION_VIEW_CAPABILITIES[`${activeTab}#${activeSection}`]
     || TAB_VIEW_CAPABILITIES[activeTab]
   const presentationHidden = activeTab !== 'setup'
@@ -5574,12 +5575,19 @@ export function RestaurantWorkspace({
         )}
         {activeTab === 'menu' && (
           <ConfigurationHub tabs={[
-            ...(backOfficeAccess.viewVisible('menu.items') ? [{ id: 'menu', label: 'Menu' }] : []),
+            ...(backOfficeAccess.viewVisible(menuWorkspaceSectionRequested ? 'pos_menu.navigation' : 'menu.items') ? [{ id: 'menu', label: 'Menu' }] : []),
             ...(backOfficeAccess.can('menu.edit_items') && backOfficeAccess.viewVisible('menu.discounts') ? [{ id: 'discounts', label: 'Discounts' }] : []),
             ...(backOfficeAccess.can('settings.edit') && backOfficeAccess.viewVisible('menu.routing') ? [{ id: 'routing', label: 'Kitchen Routing' }] : []),
-          ]} initialTab={backOfficeAccess.viewVisible('menu.items') ? 'menu' : backOfficeAccess.viewVisible('menu.discounts') ? 'discounts' : 'routing'}>
+          ]} initialTab={backOfficeAccess.viewVisible(menuWorkspaceSectionRequested ? 'pos_menu.navigation' : 'menu.items') ? 'menu' : backOfficeAccess.viewVisible('menu.discounts') ? 'discounts' : 'routing'}>
             {(section) => section === 'menu' ? (
-              <MenuPanel restaurantId={restaurantId} canEditPrices={backOfficeAccess.can('menu.edit_prices')} viewPolicy={backOfficeAccess.viewPolicy} />
+              <MenuPanel
+                restaurantId={restaurantId}
+                initialTab={menuWorkspaceSectionRequested ? activeSection : 'items'}
+                canEditPrices={backOfficeAccess.can('menu.edit_prices')}
+                canEditMenuItems={backOfficeAccess.can('menu.edit_items')}
+                canEditPrinting={backOfficeAccess.can('settings.edit')}
+                viewPolicy={backOfficeAccess.viewPolicy}
+              />
             ) : (
               <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[section === 'taxes' ? 'taxes_charges' : section]} summaryTabs={backOfficeAccess.viewMode(section === 'discounts' ? 'menu.discounts' : 'menu.routing') === 'summary' ? [section] : []} showHeader={false} />
             )}
@@ -5590,6 +5598,7 @@ export function RestaurantWorkspace({
             restaurantId={restaurantId}
             canEdit={backOfficeAccess.can('menu.edit_items')}
             viewPolicy={backOfficeAccess.viewPolicy}
+            onNavigateToOrganization={() => navigate(`${restaurantBase}/${restaurantId}/menu#organization`)}
           />
         )}
         {activeTab === 'taxes' && <Navigate to={`${restaurantBase}/${restaurantId}/menu`} replace />}

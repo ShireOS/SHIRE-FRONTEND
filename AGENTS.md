@@ -250,6 +250,10 @@ gate; the bell remains disabled while access is unresolved or denied.
   when the email service endpoint is not configured. Menu item price-allocation
   changes use `menu.edit_prices`; members with only `menu.view` retain read-only
   visibility, while the ML backend enforces the same permission on writes.
+  Menu -> Organization owns Overall Group and Department assignment, while
+  Menu -> POS Menus and the existing POS Menus sidebar destination share the
+  same navigation/shortcut workspace. These surfaces use `menu.view` for entry
+  and `menu.edit_items` for changes.
   Menu-category and item-level
   tipout configuration uses existing `payroll.adjust_tips`: item overrides replace
   category rules, category rules replace restaurant defaults, and configuration

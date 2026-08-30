@@ -190,6 +190,8 @@ export const TAB_VIEW_CAPABILITIES: Record<string, string> = {
 }
 
 export const SECTION_VIEW_CAPABILITIES: Record<string, string> = {
+  'menu#organization': 'pos_menu.navigation',
+  'menu#pos-menus': 'pos_menu.navigation',
   'printing-routing#overview': 'printing.overview',
   'printing-routing#routing': 'printing.routing',
   'printing-routing#receipts': 'printing.receipts',

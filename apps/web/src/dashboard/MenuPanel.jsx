@@ -66,6 +66,7 @@ import { SmartDateTimeInput } from '../shared/components/SmartDateTimeInput'
 import { SmartTimeInput } from '../shared/components/SmartTimeInput'
 import { formatTimeLabel } from '../shared/utils/timeInput.js'
 import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
+import MenuWorkspaceEditor from '../shared/components/MenuWorkspaceEditor'
 import { PropagationModal } from '../shared/components/PropagationModal'
 import { scheduleChange } from '../shared/api/scheduledChanges'
 import { fetchResellerPortfolioForUser } from '../reseller/data/resellerPortfolio'
@@ -117,6 +118,8 @@ import {
 const MENU_TABS = [
   { id: 'items', label: 'Items' },
   { id: 'categories', label: 'Categories' },
+  { id: 'organization', label: 'Organization' },
+  { id: 'pos-menus', label: 'POS Menus' },
   { id: 'combos', label: 'Combos' },
   { id: 'modifiers', label: 'Modifiers' },
   { id: 'groups', label: 'Questions' },
@@ -720,13 +723,22 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
 
 // ── Main panel ──────────────────────────────────────────────────────────────
 
-export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, canEditPrices = false, viewPolicy = null }) {
+export function MenuPanel({
+  restaurantId,
+  initialTab = 'items',
+  onlyTab = null,
+  canEditPrices = false,
+  canEditMenuItems = false,
+  canEditPrinting = false,
+  viewPolicy = null,
+}) {
   const [activeTab, setActiveTab] = useState(initialTab)
   const visibleMenuTabs = useMemo(() => MENU_TABS.filter((tab) => {
     const capability = {
       items: 'menu.items', categories: 'menu.categories', combos: 'menu.combos',
       modifiers: 'menu.modifiers', groups: 'menu.modifiers', allergies: 'menu.allergies',
       pricing: 'menu.pricing', specials: 'menu.availability', printing: 'menu.routing',
+      organization: 'pos_menu.navigation', 'pos-menus': 'pos_menu.navigation',
     }[tab.id]
     return !viewPolicy || !capability || viewVisible(viewPolicy, capability)
   }), [viewPolicy])
@@ -2365,6 +2377,26 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       {loading && <div className="text-sm text-dash-tertiary">Loading menu...</div>}
       {!loading && activeTabLoading && <div className="text-sm text-dash-tertiary">Loading {MENU_TABS.find(tab => tab.id === activeTab)?.label || 'menu details'}...</div>}
       {!loading && itemEditorLoading && <div className="text-sm text-dash-tertiary">Loading item details...</div>}
+
+      {contentReady && activeTab === 'organization' && (
+        <MenuWorkspaceEditor
+          restaurantId={restaurantId}
+          canEdit={canEditMenuItems}
+          section="organization"
+          viewPolicy={viewPolicy}
+          onNavigateToPosMenus={() => setActiveTab('pos-menus')}
+        />
+      )}
+
+      {contentReady && activeTab === 'pos-menus' && (
+        <MenuWorkspaceEditor
+          restaurantId={restaurantId}
+          canEdit={canEditMenuItems}
+          section="pos-menus"
+          viewPolicy={viewPolicy}
+          onNavigateToOrganization={() => setActiveTab('organization')}
+        />
+      )}
 
       {contentReady && activeTab === 'items' && importing && (
         <SectionShell
