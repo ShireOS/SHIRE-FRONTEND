@@ -12,3 +12,7 @@ test('new settings enable assigned bartender No Sale without broadening movement
   assert.match(rolesSource, /can_paid_in_out: elevated \|\| cashier/)
   assert.match(rolesSource, /require_manager_pin_for_approval: !elevated/)
 })
+
+test('new restaurants carry the finalized retained cash into the next opening bank', () => {
+  assert.match(closeoutSource, /opening_bank_source: 'previous_retained'/)
+})

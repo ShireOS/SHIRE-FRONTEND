@@ -11,10 +11,10 @@ import type { CloseoutSettingsData } from './types'
 export function defaultCloseoutSettings(): CloseoutSettingsData {
   return {
     cash_tracking_mode: 'shared_drawer',
-    // The drawer starts empty unless a restaurant says otherwise; the float is
-    // configured rather than typed by the manager every night.
+    // New restaurants carry forward the cash explicitly left at Close Day.
+    // Back Office can still choose a fixed bank or an empty drawer.
     require_starting_bank: false,
-    opening_bank_source: 'none',
+    opening_bank_source: 'previous_retained',
     opening_bank_default: '',
     track_deposit_at_close: false,
     blind_drawer_close: true,
