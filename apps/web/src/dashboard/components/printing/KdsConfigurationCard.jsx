@@ -87,8 +87,10 @@ export default function KdsConfigurationCard({ restaurantId }) {
   const loadRequestRef = useRef(0)
   const loadSequenceRef = useRef(0)
   const appliedLoadRef = useRef(0)
+  const mutationInFlightRef = useRef(false)
 
   const load = async (signal, { replaceDraft = false, background = false } = {}) => {
+    if (background && mutationInFlightRef.current) return
     const requestedRestaurant = String(restaurantId)
     const generation = loadRequestRef.current
     const requestId = ++loadSequenceRef.current
@@ -118,6 +120,7 @@ export default function KdsConfigurationCard({ restaurantId }) {
     setError('')
     setMessage('')
     setSaving(false)
+    mutationInFlightRef.current = false
     setLoading(true)
     void load(controller.signal, { replaceDraft: true })
     const refreshTimer = setInterval(() => void load(controller.signal, { background: true }), 15_000)
@@ -186,6 +189,7 @@ export default function KdsConfigurationCard({ restaurantId }) {
     if (!reason.trim()) return setError('Enter a reason for this KDS configuration change.')
     const requestedRestaurant = String(restaurantId)
     const generation = ++loadRequestRef.current
+    mutationInFlightRef.current = true
     setSaving(true); setError(''); setMessage('')
     try {
       const payload = {
@@ -215,6 +219,7 @@ export default function KdsConfigurationCard({ restaurantId }) {
     } catch (err) {
       if (restaurantRef.current === requestedRestaurant && generation === loadRequestRef.current) setError(err?.message || 'Could not save KDS profile')
     } finally {
+      mutationInFlightRef.current = false
       if (restaurantRef.current === requestedRestaurant && generation === loadRequestRef.current) setSaving(false)
     }
   }
@@ -223,6 +228,7 @@ export default function KdsConfigurationCard({ restaurantId }) {
     if (!reason.trim()) return setError('Enter a reason before assigning a KDS iPad.')
     const requestedRestaurant = String(restaurantId)
     const generation = ++loadRequestRef.current
+    mutationInFlightRef.current = true
     setSaving(true); setError(''); setMessage('')
     try {
       const data = await assignKdsDevice(restaurantId, deviceId, profileId, reason.trim())
@@ -233,6 +239,7 @@ export default function KdsConfigurationCard({ restaurantId }) {
     } catch (err) {
       if (restaurantRef.current === requestedRestaurant && generation === loadRequestRef.current) setError(err?.message || 'Could not assign KDS iPad')
     } finally {
+      mutationInFlightRef.current = false
       if (restaurantRef.current === requestedRestaurant && generation === loadRequestRef.current) setSaving(false)
     }
   }

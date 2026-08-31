@@ -81,3 +81,9 @@ test('health and ticket metrics refresh without overwriting an active draft', ()
   assert.match(card, /if \(replaceDraft\) setDraft/)
   assert.doesNotMatch(card, /if \(background\)[\s\S]{0,120}setDraft/)
 })
+
+test('background metrics polling cannot overwrite an in-flight KDS mutation', () => {
+  assert.match(card, /if \(background && mutationInFlightRef\.current\) return/)
+  assert.ok((card.match(/mutationInFlightRef\.current = true/g) || []).length >= 2)
+  assert.ok((card.match(/mutationInFlightRef\.current = false/g) || []).length >= 2)
+})
