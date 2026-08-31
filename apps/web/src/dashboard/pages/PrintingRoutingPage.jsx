@@ -280,7 +280,7 @@ function PrintingRoutingContent({ restaurantId, section, access }) {
           signal: controller.signal,
           cache: 'no-store',
         })
-        if (!['printing-v5', 'printing-v6', 'printing-v7', 'printing-v8', 'printing-v9'].includes(result.renderer_version)) {
+        if (!['printing-v5', 'printing-v6', 'printing-v7', 'printing-v8', 'printing-v9', 'printing-v10'].includes(result.renderer_version)) {
           throw new Error('Receipt preview version is not supported. Refresh this page after the POS backend finishes updating.')
         }
         if (requestId === previewRequestRef.current) {
@@ -659,12 +659,10 @@ function PrintingRoutingContent({ restaurantId, section, access }) {
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
                 <h2 className="text-lg font-semibold">Check information</h2>
-                <p className="mt-1 text-sm text-dash-tertiary">Table numbers and bar-tab names are separate so customer-facing tab names remain optional.</p>
+                <p className="mt-1 text-sm text-dash-tertiary">Table or order identity and check number print at one matched readable size. Customer-facing bar-tab names remain optional.</p>
                 <div className="mt-3"><Toggle label="Show table number" checked={config.customer?.show_table ?? true} onChange={value => patchCustomer({ show_table: value })} />
-                  {config.customer?.show_table !== false && <div className="pb-3"><Select label="Table row size" value={config.customer?.table_size || 'standard'} onChange={value => patchCustomer({ table_size: value })}><option value="standard">Standard · inline</option><option value="large">Large · own row</option></Select></div>}
                   <Toggle label="Show bar tab name" checked={config.customer?.show_tab_name ?? false} onChange={value => patchCustomer({ show_tab_name: value })} />
                   <Toggle label="Show check number" checked={config.customer?.show_check_number ?? true} onChange={value => patchCustomer({ show_check_number: value })} />
-                  {config.customer?.show_check_number !== false && <div className="pb-3"><Select label="Check number size" value={config.customer?.check_number_size || 'standard'} onChange={value => patchCustomer({ check_number_size: value })}><option value="standard">Standard · inline</option><option value="large">Large · own row</option></Select></div>}
                   <Toggle label="Show date and time" checked={config.customer?.show_date_time ?? true} onChange={value => patchCustomer({ show_date_time: value })} />
                   <Toggle label="Show server name" checked={config.customer?.show_server ?? true} onChange={value => patchCustomer({ show_server: value })} />
                   <Toggle label="Show guest count" checked={config.customer?.show_guest_count ?? true} onChange={value => patchCustomer({ show_guest_count: value })} />
