@@ -34,8 +34,9 @@ export function OnboardingPage() {
   const onboarding = useOnboarding()
   const [isSwitchingAccount, setIsSwitchingAccount] = useState(false)
   const [switchAccountError, setSwitchAccountError] = useState<string | null>(null)
+  const [showCancelConfirmation, setShowCancelConfirmation] = useState(false)
 
-  const { currentStep, nextStep, prevStep, showLaunchScreen, isHydrating } = onboarding
+  const { currentStep, nextStep, prevStep, showLaunchScreen, isHydrating, isLoading } = onboarding
 
   const handleSwitchAccount = useCallback(async () => {
     setSwitchAccountError(null)
@@ -53,6 +54,19 @@ export function OnboardingPage() {
       setIsSwitchingAccount(false)
     }
   }, [navigate, signOut])
+
+  const handleExit = useCallback(async () => {
+    try {
+      await onboarding.exitToBackOffice()
+    } catch {
+      // The hook owns the visible error and keeps the user on the current step.
+    }
+  }, [onboarding.exitToBackOffice])
+
+  const handleCancel = useCallback(() => {
+    setShowCancelConfirmation(false)
+    onboarding.cancelOnboarding()
+  }, [onboarding.cancelOnboarding])
 
   // Loading state
   if (!isReady || isHydrating) {
@@ -147,6 +161,9 @@ export function OnboardingPage() {
       onSwitchAccount={handleSwitchAccount}
       isSwitchingAccount={isSwitchingAccount}
       switchAccountError={switchAccountError}
+      onCancel={() => setShowCancelConfirmation(true)}
+      onExit={() => void handleExit()}
+      isFlowActionPending={isLoading}
     >
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
@@ -159,6 +176,45 @@ export function OnboardingPage() {
           {renderStep()}
         </motion.div>
       </AnimatePresence>
+      {showCancelConfirmation && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setShowCancelConfirmation(false)
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cancel-onboarding-title"
+            className="w-full max-w-md rounded-2xl border border-white/10 bg-[#151515] p-6 shadow-2xl"
+          >
+            <h2 id="cancel-onboarding-title" className="text-xl font-semibold text-white">
+              Cancel guided setup?
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-[rgb(var(--text-secondary))]">
+              Unsaved changes on this page will be discarded. Any setup you already saved will stay with the restaurant and can be resumed later from Setup.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCancelConfirmation(false)}
+                className="rounded-lg border border-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/5"
+              >
+                Keep setting up
+              </button>
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-gray-100"
+              >
+                Cancel setup
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </OnboardingLayout>
   )
 }

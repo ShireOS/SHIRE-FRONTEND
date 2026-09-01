@@ -480,12 +480,13 @@ const normalizeOperatingHours = (value: unknown): OperatingHoursData[] => {
 }
 
 const taxesChargesToPayload = (data: OnboardingData) => {
-  return taxesChargesPayload(
+  const { tax_rates: _taxRates, category_assignments: _assignments, ...chargesOnly } = taxesChargesPayload(
     data.tax_rates,
     data.service_charges,
     data.auto_gratuity,
     data.tax_category_assignments,
   )
+  return chargesOnly
 }
 
 const discountRulesToPayload = (data: OnboardingData) => discountRulesPayload(data.discount_rules)
@@ -1033,6 +1034,15 @@ const getRequiredBasicsIssues = (data: OnboardingData): OnboardingValidationIssu
     })
   }
 
+  for (const [field, label, value] of [
+    ['address', 'Street address', data.address],
+    ['city', 'City', data.city],
+    ['state', 'State', data.state],
+    ['postal_code', 'ZIP code', data.postal_code],
+  ] as const) {
+    if (!value.trim()) issues.push({ field, message: `${label} is required.` })
+  }
+
   return issues
 }
 
@@ -1505,32 +1515,25 @@ export function useOnboarding() {
       // If a restaurant already exists, update instead of creating a duplicate.
       const existingRestaurantId =
         restaurantId || (shouldUseCurrentRestaurant ? currentRestaurant?.id : null) || null
-      const existingIsCompleted = Boolean(
-        existingRestaurantId &&
-        currentRestaurant?.id === existingRestaurantId &&
-        currentRestaurant.onboarding_completed_at
-      )
       if (existingRestaurantId) {
-        const { data: updatedRestaurant, error: updateError } = await runWithTimeout(
-          () =>
-            supabase
-              .from('restaurants')
-              .update({
-                ...basePayload,
-                ...(!existingIsCompleted
-                  ? {
-                      status: 'onboarding',
-                      onboarding_step: Math.max(1, currentRestaurant?.onboarding_step || 1),
-                    }
-                  : {}),
-              })
-              .eq('id', existingRestaurantId)
-              .select()
-              .single(),
+        const profilePatch = {
+          name: basePayload.name,
+          address: basePayload.address,
+          city: basePayload.city,
+          state: basePayload.state,
+          postal_code: basePayload.postal_code,
+          country: basePayload.country,
+          type: basePayload.type,
+          cuisine_types: basePayload.cuisine_types,
+          phone: basePayload.phone,
+        }
+        const updatedRestaurant = await runWithTimeout(
+          () => fetchWithSupabaseAuth<Restaurant>(`/restaurants/${existingRestaurantId}/setup-profile`, {
+            method: 'PATCH',
+            body: JSON.stringify({ patch: profilePatch }),
+          }),
           'Saving restaurant basics timed out. Please retry.'
         )
-
-        if (updateError) throw updateError
 
         setRestaurantId(updatedRestaurant.id)
         setCurrentStep(prev => Math.max(prev, 1))
@@ -1620,14 +1623,61 @@ export function useOnboarding() {
     data,
     restaurantId,
     currentRestaurant?.id,
-    currentRestaurant?.onboarding_completed_at,
-    currentRestaurant?.onboarding_step,
     isSetupEditor,
     shouldUseCurrentRestaurant,
     refreshRestaurants,
     runWithTimeout,
     seedCurrentRestaurant,
   ])
+
+  // Leave the guided flow without manufacturing a completed setup state.
+  // The dashboard derives Setup visibility from canonical restaurant data, so
+  // an incomplete restaurant remains recoverable from its normal workspace.
+  const exitToBackOffice = useCallback(async () => {
+    setError(null)
+
+    try {
+      const restaurant = activeRestaurantId
+        ? null
+        : await createRestaurant()
+      const targetRestaurantId = restaurant?.id || activeRestaurantId
+
+      if (!targetRestaurantId) {
+        throw new Error('Save restaurant basics before exiting setup.')
+      }
+
+      if (user) {
+        clearDraft(user.id)
+      }
+      // Creation already seeds and refreshes the restaurant. A resumed flow
+      // still refreshes once so its normal workspace receives the latest row.
+      if (!restaurant) {
+        await refreshRestaurants(targetRestaurantId)
+      }
+      navigate(`/restaurants/${targetRestaurantId}/setup`, { replace: true })
+    } catch (err) {
+      const message = toErrorMessage(err, 'Could not exit restaurant setup')
+      setError(message)
+      throw err instanceof Error ? err : new Error(message)
+    }
+  }, [
+    activeRestaurantId,
+    createRestaurant,
+    navigate,
+    refreshRestaurants,
+    user,
+  ])
+
+  // Cancel closes the wizard and discards only its browser draft. Any steps
+  // already published to a restaurant remain safely available from Setup;
+  // deleting a restaurant stays behind the existing owner-confirmed lifecycle.
+  const cancelOnboarding = useCallback(() => {
+    if (user) {
+      clearDraft(user.id)
+    }
+    setError(null)
+    navigate('/enterprise/stores', { replace: true })
+  }, [navigate, user])
 
   // Save goals & priorities (after step 1)
   const saveLegal = useCallback(async () => {
@@ -1708,11 +1758,16 @@ export function useOnboarding() {
 
       if (updateError) throw updateError
 
+      const pricingPayload: Record<string, unknown> = {
+        ...data.pricing_policy,
+        expected_version: data.pricing_policy.version,
+      }
+      delete pricingPayload.jurisdiction_state
       const pricingResponse = await runWithTimeout(
         async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/pricing-policy`, {
           method: 'PUT',
           headers: await getApiHeaders(),
-          body: JSON.stringify({ ...data.pricing_policy, expected_version: data.pricing_policy.version }),
+          body: JSON.stringify(pricingPayload),
         }),
         'Saving pricing policy timed out. Please retry.'
       )
@@ -2347,28 +2402,8 @@ export function useOnboarding() {
       }
 
       const saved = await response.json().catch(() => ({}))
-      let savedTaxes: unknown = null
-      if (data.tax_category_assignments?.length) {
-        const taxResponse = await runWithTimeout(
-          async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/taxes-charges`, {
-            method: 'PUT',
-            headers: await getApiHeaders(),
-            body: JSON.stringify(taxesChargesToPayload(data)),
-          }),
-          'Assigning category tax rates timed out. Please retry.'
-        )
-        if (!taxResponse.ok) {
-          const body = await taxResponse.json().catch(() => ({}))
-          throw new Error(asString(body.detail) || asString(body.message) || `Assigning category tax rates failed (${taxResponse.status})`)
-        }
-        savedTaxes = await taxResponse.json().catch(() => ({}))
-      }
       setData(prev => mergeOnboardingData(prev, {
         menu_categories: normalizeMenuCategories(isRecord(saved) ? saved.categories : []),
-        ...(isRecord(savedTaxes) ? {
-          tax_rates: normalizeTaxRates(savedTaxes.tax_rates),
-          service_charges: normalizeServiceCharges(savedTaxes.service_charges),
-        } : {}),
         tax_category_assignments: undefined,
       }))
 
@@ -2604,6 +2639,8 @@ export function useOnboarding() {
     prevStep,
     goToStep,
     createRestaurant,
+    exitToBackOffice,
+    cancelOnboarding,
     saveLegal,
     savePayments,
     saveTaxesCharges,

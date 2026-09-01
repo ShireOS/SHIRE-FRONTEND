@@ -1,11 +1,6 @@
-import {
-  CHARGE_APPLIES_TO_OPTIONS,
-  MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET,
-  defaultTaxRate,
-  taxAppliesToOptions,
-  taxPresetDraft,
-} from '@shire/settings'
-import type { ServiceChargeData, TaxRateData, UseOnboardingReturn } from '../../hooks/useOnboarding'
+import { CHARGE_APPLIES_TO_OPTIONS } from '@shire/settings'
+import type { ServiceChargeData, UseOnboardingReturn } from '../../hooks/useOnboarding'
+import { TaxJurisdictionPanel } from '../../../dashboard/components/TaxJurisdictionPanel'
 
 interface TaxesChargesStepProps {
   onboarding: UseOnboardingReturn
@@ -57,43 +52,12 @@ function ToggleButton({
 }
 
 export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
-  const { data, updateData, saveTaxesCharges, nextStep, isLoading, error } = onboarding
-  const taxRates = data.tax_rates.length > 0 ? data.tax_rates : [defaultTaxRate()]
+  const { data, restaurantId, updateData, saveTaxesCharges, nextStep, isLoading, error } = onboarding
   const serviceCharges = data.service_charges
-
-  const updateTax = (index: number, patch: Partial<TaxRateData>) => {
-    const next = taxRates.map((row, currentIndex) => {
-      const updated = currentIndex === index ? { ...row, ...patch } : row
-      if (patch.is_default && currentIndex !== index) return { ...updated, is_default: false }
-      return updated
-    })
-    updateData({ tax_rates: next })
-  }
-
-  const removeTax = (index: number) => {
-    const next = taxRates.filter((_, currentIndex) => currentIndex !== index)
-    if (next.length === 0) {
-      updateData({ tax_rates: [defaultTaxRate()] })
-      return
-    }
-    if (!next.some(row => row.is_default)) {
-      next[0] = { ...next[0], is_default: true }
-    }
-    updateData({ tax_rates: next })
-  }
 
   const updateCharge = (index: number, patch: Partial<ServiceChargeData>) => {
     updateData({
       service_charges: serviceCharges.map((row, currentIndex) => currentIndex === index ? { ...row, ...patch } : row),
-    })
-  }
-
-  const applyMyrtleBeachTaxes = () => {
-    if (!window.confirm('Confirm this restaurant is inside Myrtle Beach city limits. This replaces the tax-rate draft and assigns Beer & Wine and Cocktails to their correct rates.')) return
-    const preset = taxPresetDraft(MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET)
-    updateData({
-      tax_rates: preset.tax_rates,
-      tax_category_assignments: preset.category_assignments,
     })
   }
 
@@ -119,64 +83,14 @@ export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
         <div>
           <p className="label-mono text-[rgb(var(--gold))]">Tax Rates</p>
           <p className="mt-2 text-sm leading-6 text-[rgb(var(--text-secondary))]">
-            Define the tax categories the POS will use for order totals, refunds, closeout, and reports.
+            SHIRE validates the restaurant address and resolves product-specific jurisdictions. Choose what the store sells; restaurant users never type or override a percentage.
           </p>
-          <button
-            type="button"
-            onClick={applyMyrtleBeachTaxes}
-            className="mt-3 rounded-lg border border-[rgba(201,169,98,0.45)] px-3 py-2 text-sm text-[rgb(var(--text-primary))] transition-colors hover:bg-[rgba(201,169,98,0.08)]"
-          >
-            Use Myrtle Beach city-limits rates
-          </button>
         </div>
 
-        <div className="space-y-3">
-          {taxRates.map((tax, index) => (
-            <div key={tax.id || `tax:${index}`} className="rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] p-4">
-              <div className="grid gap-3 sm:grid-cols-[1.2fr_0.7fr_1fr]">
-                <input
-                  value={tax.name}
-                  onChange={(event) => updateTax(index, { name: event.target.value })}
-                  className={compactInputClass}
-                  placeholder="Sales Tax"
-                />
-                <input
-                  inputMode="decimal"
-                  value={tax.rate}
-                  onChange={(event) => updateTax(index, { rate: sanitizeNumber(event.target.value) })}
-                  className={compactInputClass}
-                  placeholder="Rate %"
-                />
-                <select
-                  value={tax.applies_to}
-                  onChange={(event) => updateTax(index, { applies_to: event.target.value as TaxRateData['applies_to'] })}
-                  className={compactInputClass}
-                >
-                  {taxAppliesToOptions(tax.applies_to).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <ToggleButton active={tax.is_default} onClick={() => updateTax(index, { is_default: true })}>Default tax</ToggleButton>
-                <ToggleButton active={tax.is_inclusive} onClick={() => updateTax(index, { is_inclusive: !tax.is_inclusive })}>Tax included in price</ToggleButton>
-                <button
-                  type="button"
-                  onClick={() => removeTax(index)}
-                  className="rounded-lg border border-red-500/20 px-3 py-2 text-xs font-semibold text-red-300 transition hover:border-red-400/50"
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <button
-          type="button"
-          onClick={() => updateData({ tax_rates: [...taxRates, { ...defaultTaxRate(), name: 'Additional Tax', is_default: false }] })}
-          className="rounded-lg border border-[rgba(255,255,255,0.1)] px-3 py-2 text-sm text-[rgb(var(--text-secondary))] transition-colors hover:border-[rgba(201,169,98,0.45)] hover:text-[rgb(var(--text-primary))]"
-        >
-          + Add tax rate
-        </button>
+        <TaxJurisdictionPanel
+          restaurantId={restaurantId}
+          locationDisplay={[data.address, [data.city, data.state].filter(Boolean).join(', '), data.postal_code].filter(Boolean).join(' · ')}
+        />
       </section>
 
       <section className="space-y-4">

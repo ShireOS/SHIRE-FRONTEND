@@ -45,7 +45,6 @@ export function menuCategoriesPayload(categories: unknown) {
     categories: normalizeMenuCategories(categories).map(row => ({
       id: row.id || undefined,
       name: row.name,
-      tax_rate_id: row.tax_rate_id || null,
       routing_station_id: row.routing_station_id || null,
       routing_station_name: row.routing_station_name || null,
       default_course_type: row.default_course_type || null,

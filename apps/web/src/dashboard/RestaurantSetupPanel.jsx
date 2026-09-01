@@ -2,10 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   SERVICE_MODE_OPTIONS,
   GUEST_FLOW_OPTIONS,
-  TAX_APPLIES_TO_OPTIONS,
-  taxAppliesToOptions,
-  MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET,
-  taxPresetDraft,
   CHARGE_APPLIES_TO_OPTIONS,
   DISCOUNT_TYPE_OPTIONS,
   DISCOUNT_APPLIES_TO_OPTIONS,
@@ -33,7 +29,6 @@ import {
   normalizeSectionNames,
   defaultSectionProfile,
   normalizeSectionProfiles,
-  defaultTaxRate,
   normalizeTaxRates,
   defaultAutoGratuity,
   normalizeAutoGratuity,
@@ -82,6 +77,7 @@ import {
 import { PublishControls } from '../shared/components/PublishControls'
 import { SmartTimeInput } from '../shared/components/SmartTimeInput'
 import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
+import { TaxJurisdictionPanel } from './components/TaxJurisdictionPanel'
 import { scheduleChange } from '../shared/api/scheduledChanges'
 import { cashDrawerRoleSummary } from './utils/cashDrawerPermissions'
 import StoreDangerZone from './components/StoreDangerZone'
@@ -308,7 +304,6 @@ const pricingPolicyPayload = (policy) => {
     listed_price_basis: policy.listed_price_basis || DEFAULT_PRICING_POLICY.listed_price_basis,
     display_order: policy.display_order || `${policy.listed_price_basis || DEFAULT_PRICING_POLICY.listed_price_basis}_first`,
     applies_to: Array.isArray(policy.applies_to) ? policy.applies_to : DEFAULT_PRICING_POLICY.applies_to,
-    jurisdiction_state: String(policy.jurisdiction_state || 'SC').toUpperCase().slice(0, 2),
     label: policy.label || defaultPricingLabel(policy.mode),
     disclosure: policy.disclosure || defaultPricingDisclosure(policy.mode),
     expected_version: Number(policy.version) || 0,
@@ -1528,7 +1523,6 @@ export default function RestaurantSetupPanel({
   const visibleSetupTabIds = visibleSetupTabs.map(tab => tab.id).join(',')
   const [activeSetupTab, setActiveSetupTab] = useState(() => initialTab || visibleSetupTabs[0]?.id || 'basics')
   const activeTabIsSummary = summaryTabs.includes(activeSetupTab)
-  const canEditTaxRates = auth?.accountType === 'admin'
   const [coverImageUrl, setCoverImageUrl] = useState(restaurant.cover_image_url || '')
   const [pendingCoverFile, setPendingCoverFile] = useState(null)
   const [pendingCoverPreviewUrl, setPendingCoverPreviewUrl] = useState('')
@@ -1550,7 +1544,7 @@ export default function RestaurantSetupPanel({
   const [pricingPolicy, setPricingPolicy] = useState(() => normalizePricingPolicy({ jurisdiction_state: restaurant.state || 'SC' }))
   const [serviceModel, setServiceModel] = useState(() => initialServiceModel(restaurant))
   const [goals, setGoals] = useState(() => initialGoals(restaurant))
-  const [taxRates, setTaxRates] = useState([defaultTaxRate()])
+  const [taxRates, setTaxRates] = useState([])
   const [taxCategoryAssignments, setTaxCategoryAssignments] = useState(undefined)
   const [serviceCharges, setServiceCharges] = useState([])
   const [autoGratuity, setAutoGratuity] = useState(defaultAutoGratuity())
@@ -2132,8 +2126,13 @@ export default function RestaurantSetupPanel({
   }
 
   const saveBasics = async (publication) => {
+    const restaurantName = profile.name.trim()
+    if (!restaurantName) {
+      setSetupError('Restaurant name is required.')
+      return
+    }
     const payload = {
-      name: profile.name.trim(),
+      name: restaurantName,
       address: profile.address.trim() || null,
       city: profile.city.trim() || null,
       state: profile.state.trim() || null,
@@ -2298,23 +2297,6 @@ export default function RestaurantSetupPanel({
     })
   }
 
-  const updateTaxRate = (index, patch) => {
-    setTaxRates(prev => normalizeTaxRates(prev).map((row, currentIndex) => {
-      const updated = currentIndex === index ? { ...row, ...patch } : row
-      if (patch.is_default && currentIndex !== index) return { ...updated, is_default: false }
-      return updated
-    }))
-  }
-
-  const removeTaxRate = (index) => {
-    setTaxRates(prev => {
-      const next = normalizeTaxRates(prev).filter((_, currentIndex) => currentIndex !== index)
-      if (next.length === 0) return [defaultTaxRate()]
-      if (!next.some(row => row.is_default)) next[0] = { ...next[0], is_default: true }
-      return next
-    })
-  }
-
   const updateServiceCharge = (index, patch) => {
     setServiceCharges(prev => prev.map((row, currentIndex) => currentIndex === index ? { ...row, ...patch } : row))
   }
@@ -2352,12 +2334,9 @@ export default function RestaurantSetupPanel({
 
   const saveTaxesCharges = async (publication) => {
     const rawPayload = taxesChargesPayload(taxRates, serviceCharges, autoGratuity, taxCategoryAssignments)
-    const payload = canEditTaxRates
-      ? rawPayload
-      : (({ tax_rates, category_assignments, ...chargesOnlyPayload }) => chargesOnlyPayload)(rawPayload)
+    const payload = (({ tax_rates, category_assignments, ...chargesOnlyPayload }) => chargesOnlyPayload)(rawPayload)
     const propagationPayload = {
       ...payload,
-      ...(payload.tax_rates ? { tax_rates: payload.tax_rates.map(({ id, ...row }) => row) } : {}),
       service_charges: payload.service_charges.map(({ id, ...row }) => row),
     }
     await saveWithPropagation({
@@ -2390,14 +2369,6 @@ export default function RestaurantSetupPanel({
         target_id: targetId,
       }),
     })
-  }
-
-  const applyMyrtleBeachTaxes = () => {
-    if (!canEditTaxRates) return
-    if (!window.confirm('Confirm this restaurant is inside Myrtle Beach city limits. This replaces the tax-rate draft and assigns Beer & Wine and Cocktails to their correct rates.')) return
-    const preset = taxPresetDraft(MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET)
-    setTaxRates(preset.tax_rates)
-    setTaxCategoryAssignments(preset.category_assignments)
   }
 
   const updateDiscountRule = (index, patch) => {
@@ -3398,12 +3369,10 @@ export default function RestaurantSetupPanel({
                   <option value="electronic_first">Electronic</option>
                 </SelectInput>
               </Field>
-              <Field label="State">
-                <TextInput
-                  value={pricingPolicy.jurisdiction_state}
-                  onChange={event => updatePricingPolicy({ jurisdiction_state: event.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2) })}
-                  placeholder="SC"
-                />
+              <Field label="Pricing Jurisdiction">
+                <div className="flex min-h-10 items-center rounded-xl border border-white/10 bg-white/[0.025] px-3 py-2 text-sm text-dash-secondary">
+                  {profile.state || 'Complete Store Information'}
+                </div>
               </Field>
               <Field label="Label">
                 <TextInput value={pricingPolicy.label} onChange={event => updatePricingPolicy({ label: event.target.value.slice(0, 120) })} placeholder={pricingPolicy.mode === 'cash_discount' ? 'Cash discount' : 'Dual pricing'} />
@@ -3451,31 +3420,24 @@ export default function RestaurantSetupPanel({
               <div>
                 <p className="label-mono">Tax Rates</p>
                 <p className="mt-2 text-sm text-dash-secondary">
-                  {canEditTaxRates
-                    ? 'Tax categories are maintained by platform support from the restaurant address. The default tax also syncs to legacy POS tax settings.'
-                    : 'Tax categories are derived from the restaurant address and shown here for review. Platform support updates them when the address or jurisdiction changes.'}
+                  SHIRE validates the canonical restaurant location and resolves product-specific jurisdictions. Choose what the store sells; restaurant users never type or override a percentage.
                 </p>
-                {canEditTaxRates && <SmallButton onClick={applyMyrtleBeachTaxes} className="mt-3">Use Myrtle Beach city-limits rates</SmallButton>}
               </div>
-              {normalizeTaxRates(taxRates).map((tax, index) => (
-                <div key={tax.id || `tax:${index}`} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-                  <div className="grid gap-3 md:grid-cols-[1.2fr_0.7fr_1fr]">
-                    <TextInput value={tax.name} onChange={event => updateTaxRate(index, { name: event.target.value })} placeholder="Sales Tax" disabled={!canEditTaxRates} />
-                    <TextInput inputMode="decimal" value={tax.rate} onChange={event => updateTaxRate(index, { rate: sanitizeNumber(event.target.value) })} placeholder="Rate %" disabled={!canEditTaxRates} />
-                    <SelectInput value={tax.applies_to} onChange={event => updateTaxRate(index, { applies_to: event.target.value })} disabled={!canEditTaxRates}>
-                      {taxAppliesToOptions(tax.applies_to).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </SelectInput>
-                  </div>
-                  {canEditTaxRates && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <SmallButton variant={tax.is_default ? 'primary' : 'secondary'} onClick={() => updateTaxRate(index, { is_default: true })}>Default tax</SmallButton>
-                      <SmallButton variant={tax.is_inclusive ? 'primary' : 'secondary'} onClick={() => updateTaxRate(index, { is_inclusive: !tax.is_inclusive })}>Tax included in price</SmallButton>
-                      <SmallButton variant="danger" onClick={() => removeTaxRate(index)}>Remove</SmallButton>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {canEditTaxRates && <SmallButton onClick={() => setTaxRates(prev => [...normalizeTaxRates(prev), { ...defaultTaxRate(), name: 'Additional Tax', is_default: false }])}>Add tax rate</SmallButton>}
+              <TaxJurisdictionPanel
+                restaurantId={restaurantId}
+                locationDisplay={[profile.address, [profile.city, profile.state].filter(Boolean).join(', '), profile.postal_code].filter(Boolean).join(' · ')}
+                onResolved={(saved) => {
+                  const nextTaxRates = normalizeTaxRates(saved?.tax_rates)
+                  setTaxRates(nextTaxRates)
+                  queryClient.setQueryData(queryKeys.taxesCharges(restaurantId), saved)
+                  rememberSavedDraft('taxes_charges', {
+                    taxRates: nextTaxRates,
+                    taxCategoryAssignments: undefined,
+                    serviceCharges,
+                    autoGratuity,
+                  })
+                }}
+              />
             </div>
 
             <div className="space-y-4 border-t border-white/10 pt-6">

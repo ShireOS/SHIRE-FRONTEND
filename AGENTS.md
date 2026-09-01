@@ -148,6 +148,8 @@
   surface must never suppress its server permission check or alter POS data.
 - Existing accounts without an assignment resolve to Advanced for compatibility;
   newly created restaurant owners receive an explicit Simple assignment.
+  Restaurant Basics remains Standard in Simple view so authorized users can
+  always update the restaurant name and core contact information.
 - Printing & Routing uses stable child capabilities for Overview, Routing, KDS,
   Receipts, and advanced ticket layout. `printing.kds` gates both the Kitchen
   Displays sidebar section and direct `#kds` rendering; presentation never
@@ -351,9 +353,17 @@ gate; the bell remains disabled while access is unresolved or denied.
   canonical save contracts. Discount reads require `menu.view`; writes require
   `menu.edit_items`. Taxes & Charges is visible from Store Settings to owners,
   authorized managers, and authorized resellers through `settings.edit`;
-  service charges and large-party auto-gratuity tiers are editable there, while
-  tax rates/category assignments are address-derived, read-only for non-admins,
-  and guarded the same way by the ML backend. POS applies the largest
+  service charges and large-party auto-gratuity tiers are editable there. Tax
+  percentages remain address-derived and read-only: restaurant users select
+  semantic sales classes and explicitly classify every menu category when multiple
+  classes are enabled. The `settings.edit`-guarded ML resolver validates a
+  deliverable address and obtains product-level AvaTax jurisdiction details before
+  atomically updating `tax_rates`, category assignments, the POS default rate,
+  normalized location, pricing jurisdiction, and an audited jurisdiction snapshot.
+  It rechecks address/category state under lock; provider, precision, mapping, or
+  stale-state failures change nothing. An unverified 0% bootstrap row is never valid
+  setup. Manual percentage overrides remain platform-admin-only with a reason, and
+  POS continues to consume the existing shared tax tables and snapshots. POS applies the largest
   restaurant-wide auto-gratuity tier whose minimum party size is met, unless a
   section/table service-charge rule overrides it.
   Setup -> Basics also owns the restaurant's Workweek Start Day under existing
