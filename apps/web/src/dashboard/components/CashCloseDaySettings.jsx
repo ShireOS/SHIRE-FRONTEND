@@ -117,13 +117,13 @@ function ManagerPreview({ floatMode, floatAmount, blindClose, trackDeposit }) {
             </div>
           )}
           <div className="border border-dash-border bg-white/[0.04] px-2.5 py-2">
-            <p className="label-mono">Expected in drawer</p>
+            <p className="label-mono">Expected cash</p>
             <p className={`mt-1 font-semibold tabular-nums ${blindClose ? 'text-xs text-dash-tertiary' : 'text-sm text-dash-cream'}`}>
               {blindClose ? 'Hidden by policy' : money(expected)}
             </p>
           </div>
           <div className="border border-dashed border-sky-400/70 px-2.5 py-2">
-            <p className="label-mono">Counted cash</p>
+            <p className="label-mono">Current cash</p>
             <p className="mt-1 text-sm font-semibold tabular-nums text-dash-cream">{counted.toFixed(2)}</p>
           </div>
         </div>
@@ -317,9 +317,9 @@ export default function CashCloseDaySettings({ restaurantId, initialSettings = n
               <Choice
                 selected={floatMode === FLOAT_MODES.previousRetained}
                 onSelect={() => setFloatMode(FLOAT_MODES.previousRetained)}
-                title="Use what was left at the prior close"
-                badge="Default"
-                detail="The POS automatically carries forward the prior finalized retained amount. No cashier confirmation is required."
+                title="Use cash left from the last Close Day"
+                badge="Recommended"
+                detail="The manager enters Cash left in drawer at close. The POS automatically uses that amount as the next business day’s starting cash."
               >
                 {floatMode === FLOAT_MODES.previousRetained && (
                   <MoneyField

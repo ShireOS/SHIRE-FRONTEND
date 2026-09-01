@@ -14,7 +14,11 @@ test('check actions retain permission and view-policy guards after merging', () 
 
 test('close-day safeguards remain inside their configured views', () => {
   assert.match(closeDay, /access\.viewVisible\('close_day\.readiness'\) && <>[\s\S]*overdueCloseAlerts\.length > 0/)
-  assert.match(closeDay, /access\.viewVisible\('close_day\.cash'\) && <section/)
+  assert.match(closeDay, /const showCashStep = access\.viewVisible\('close_day\.cash'\)/)
+  assert.match(closeDay, /currentStep\?\.id === 'cash' && showCashStep && <section/)
+  assert.match(closeDay, /const showTeamStep = access\.viewVisible\('close_day\.clockouts'\)/)
+  assert.match(closeDay, /currentStep\?\.id === 'team' && showTeamStep && <section/)
+  assert.match(closeDay, /access\.viewVisible\('close_day\.finalize'\) && <section/)
   assert.match(closeDay, /cashCountStatus === 'counted' && <label className="mt-4 block">/)
   assert.doesNotMatch(closeDay, /^(<<<<<<<|=======|>>>>>>>)/m)
 })

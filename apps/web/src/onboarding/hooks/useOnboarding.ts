@@ -1014,16 +1014,14 @@ const savePublicSlug = async (restaurantId: string, slug: string) => {
   )
 }
 
-const isSlugConflict = (error: unknown): boolean => {
-  if (!isRecord(error)) return false
-  const code = asString(error.code).trim()
-  const message = asString(error.message).toLowerCase()
-
-  return code === '23505' && message.includes('slug')
+const toErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof Error) return error.message
+  if (isRecord(error)) {
+    const message = asString(error.message).trim()
+    if (message) return message
+  }
+  return fallback
 }
-
-const toErrorMessage = (error: unknown, fallback: string): string =>
-  error instanceof Error ? error.message : fallback
 
 const getRequiredBasicsIssues = (data: OnboardingData): OnboardingValidationIssue[] => {
   const issues: OnboardingValidationIssue[] = []
@@ -1552,41 +1550,21 @@ export function useOnboarding() {
         return updatedRestaurant
       }
 
-      let createdRestaurant: Restaurant | null = null
-      let lastCreateError: unknown = null
-
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const slug = buildUniqueSlug(data.name)
-        const { data: restaurant, error: createError } = await runWithTimeout(
-          () =>
-            supabase
-              .from('restaurants')
-              .insert({
-                ...basePayload,
-                status: 'onboarding',
-                onboarding_step: 1,
-                slug,
-                public_slug: slug,
-              })
-              .select()
-              .single(),
-          'Creating restaurant timed out. Please retry.'
-        )
-
-        if (!createError && restaurant) {
-          createdRestaurant = restaurant
-          break
-        }
-
-        lastCreateError = createError
-        if (!isSlugConflict(createError)) {
-          throw createError
-        }
-      }
-
-      if (!createdRestaurant) {
-        throw lastCreateError || new Error('Failed to create restaurant')
-      }
+      // Creation is service-owned: its transaction also initializes lifecycle,
+      // Host access, and the owner's default back-office view. A direct browser
+      // insert bypasses those invariants and cannot safely write the private
+      // public-slug reservation registry used by the database trigger.
+      const createdRestaurant = await runWithTimeout(
+        () =>
+          fetchWithSupabaseAuth<Restaurant>('/restaurants', {
+            method: 'POST',
+            body: JSON.stringify({
+              ...basePayload,
+              public_slug: buildUniqueSlug(data.name),
+            }),
+          }),
+        'Creating restaurant timed out. Please retry.'
+      )
 
       // Try to create owner membership — soft fail.
       // owner_id on restaurants is the source of truth for onboarding.
@@ -1633,7 +1611,7 @@ export function useOnboarding() {
     } catch (err) {
       const message = toErrorMessage(err, 'Failed to create restaurant')
       setError(message)
-      throw err
+      throw err instanceof Error ? err : new Error(message)
     } finally {
       setIsLoading(false)
     }

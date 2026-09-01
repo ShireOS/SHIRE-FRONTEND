@@ -198,6 +198,9 @@ export default function StoresPage() {
   const [modal, setModal] = useState(null) // 'board' | 'groups' | 'apply'
 
   const canBoard = auth.accountType === 'reseller' || auth.accountType === 'admin'
+  const restaurantBase = ['reseller', 'reseller_employee'].includes(auth.accountType)
+    ? '/reseller/restaurants'
+    : '/restaurants'
 
   const reloadGroups = useCallback(async () => {
     if (!auth.user?.id) return
@@ -267,7 +270,7 @@ export default function StoresPage() {
 
   const openStore = async (restaurant) => {
     await auth.switchRestaurant(restaurant.id)
-    navigate(`/restaurants/${restaurant.id}/analytics`)
+    navigate(`${restaurantBase}/${restaurant.id}/analytics`)
   }
 
   const prefetchStoreHome = useCallback((restaurantId) => {
@@ -285,7 +288,7 @@ export default function StoresPage() {
     if (auth.accountType === 'owner') {
       navigate('/onboarding')
     } else {
-      navigate(`/restaurants/${restaurant.id}/setup`)
+      navigate(`${restaurantBase}/${restaurant.id}/setup`)
     }
   }
 

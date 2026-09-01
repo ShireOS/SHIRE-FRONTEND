@@ -12,8 +12,8 @@ test('Back Office exposes the hybrid kitchen defaults and legacy choices', () =>
   assert.match(page, /<option value="standard">Standard printer spacing<\/option>/)
 })
 
-test('Back Office accepts renderer v9 and uses the printer-faithful SVG artifact', () => {
-  assert.match(page, /'printing-v9'/)
+test('Back Office accepts renderer v10 and uses the printer-faithful SVG artifact', () => {
+  assert.match(page, /'printing-v10'/)
   assert.match(page, /setPreviewSvg\(result\.preview_svg \|\| ''\)/)
   assert.match(page, /<PrinterFaithfulPreview svg=\{previewSvg\}/)
   assert.match(page, /Physical model for preview/)

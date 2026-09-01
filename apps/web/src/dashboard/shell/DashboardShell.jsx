@@ -159,6 +159,7 @@ const STORE_NAV = [
     children: [
       { id: 'printing-routing', section: 'overview', label: 'Overview', icon: LayoutGrid },
       { id: 'printing-routing', section: 'routing', label: 'Routing', icon: SlidersHorizontal },
+      { id: 'printing-routing', section: 'kds', label: 'Kitchen Displays', icon: Monitor },
       { id: 'printing-routing', section: 'receipts', label: 'Receipts & Tickets', icon: Printer },
     ],
   },

@@ -56,9 +56,9 @@ import DeletedStoresPanel, { AccountSecurityPanel } from '../dashboard/component
 
 const GROUP_COLORS = ['#2EA6A1', '#D4A854', '#7C8CF8', '#E06B4F', '#6DAF5C', '#B66DD8']
 const RESELLER_SHELL_ROUTES = {
-  brand: '/reseller',
+  brand: '/enterprise/stores',
   overview: '/reseller/overview',
-  stores: '/reseller',
+  stores: '/enterprise/stores',
   rates: '/reseller/rates',
   devices: '/reseller/devices',
   users: '/reseller/users',
@@ -104,7 +104,7 @@ function ResellerOnboardingShell({ children }) {
       <main className="min-h-screen bg-dash-base text-dash-cream">
         <header className="border-b border-white/10 bg-black/20 px-4 py-4 sm:px-6">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4">
-            <Link to="/reseller" className="flex items-center gap-3">
+            <Link to="/enterprise/stores" className="flex items-center gap-3">
               <span className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.04]">
                 <Store className="h-5 w-5 text-dash-gold" />
               </span>
@@ -140,7 +140,7 @@ function ResellerShell({ children, activeItem = 'stores', breadcrumb = null }) {
         activeItem={activeItem}
         routes={RESELLER_SHELL_ROUTES}
         breadcrumb={breadcrumb || [
-          { label: 'Home', to: '/reseller' },
+          { label: 'Home', to: '/enterprise/stores' },
           { label: 'Enterprise' },
           { label: activeItem === 'settings' ? 'Profile' : 'Stores' },
         ]}
@@ -499,7 +499,7 @@ function ResellerLandingPage() {
 
   if (profileState === 'loading') return <LoadingScreen />
   if (profileState === 'incomplete') return <Navigate to="/reseller/onboarding" replace />
-  return <PortfolioPage />
+  return <Navigate to="/enterprise/stores" replace />
 }
 
 function ResellerOnboardingPage() {
@@ -527,7 +527,7 @@ function ResellerProfilePage() {
             return (
               <Link
                 key={item.id}
-                to={item.id === 'portfolio' ? '/reseller' : '/reseller/profile'}
+                to={item.id === 'portfolio' ? '/enterprise/stores' : '/reseller/profile'}
                 className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
                   item.id === 'profile' ? 'bg-white text-black' : 'text-dash-secondary hover:bg-white/10 hover:text-dash-cream'
                 }`}
@@ -599,7 +599,7 @@ function ResellerProfileEditor({ onboarding = false }) {
 
   useEffect(() => {
     if (onboarding && !loading && profileComplete) {
-      navigate('/reseller', { replace: true })
+      navigate('/enterprise/stores', { replace: true })
     }
   }, [loading, navigate, onboarding, profileComplete])
 
@@ -668,7 +668,7 @@ function ResellerProfileEditor({ onboarding = false }) {
       setProfile(saved)
       setSavedProfile(saved)
       setMessage(complete ? 'Reseller onboarding complete.' : 'Saved reseller profile.')
-      if (complete) navigate('/reseller', { replace: true })
+      if (complete) navigate('/enterprise/stores', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save reseller profile.')
     } finally {
@@ -924,7 +924,7 @@ function ResellerProfileEditor({ onboarding = false }) {
       )}
 
       <div className="flex flex-wrap justify-end gap-2">
-        {!onboarding && <SmallButton onClick={() => navigate('/reseller')}>Back to portfolio</SmallButton>}
+        {!onboarding && <SmallButton onClick={() => navigate('/enterprise/stores')}>Back to portfolio</SmallButton>}
         {onboarding ? (
           <SmallButton variant="primary" onClick={() => void saveProfile({ complete: true })} disabled={saving || !profileComplete}>
             {saving ? 'Saving...' : 'Complete reseller onboarding'}
@@ -1272,7 +1272,7 @@ function ResellerSetupEditor() {
   }, [])
 
   if (!restaurant) {
-    return <Navigate to="/reseller" replace />
+    return <Navigate to="/enterprise/stores" replace />
   }
 
   if (allowedStoreTabs && !allowedStoreTabs.includes('setup')) {
@@ -1356,7 +1356,7 @@ function ResellerUiEditorRoute() {
     void refreshSetupStatus()
   }, [refreshSetupStatus])
 
-  if (!restaurant) return <Navigate to="/reseller" replace />
+  if (!restaurant) return <Navigate to="/enterprise/stores" replace />
   if (isLoading) return <LoadingScreen />
   if (allowedStoreTabs && !allowedStoreTabs.includes('ui')) {
     return <Navigate to={`/reseller/restaurants/${restaurantId}/analytics`} replace />
@@ -1402,9 +1402,9 @@ export default function ResellerApp() {
       <Route path="onboarding" element={<ResellerOnboardingPage />} />
       <Route path="profile" element={<ResellerProfilePage />} />
       <Route path="overview" element={<ResellerShell activeItem="overview"><OverviewPage restaurantBase="/reseller/restaurants" /></ResellerShell>} />
-      <Route path="rates" element={<ResellerShell activeItem="rates"><RatesPage restaurantBase="/reseller/restaurants" fallbackPath="/reseller" /></ResellerShell>} />
+      <Route path="rates" element={<ResellerShell activeItem="rates"><RatesPage restaurantBase="/reseller/restaurants" fallbackPath="/enterprise/stores" /></ResellerShell>} />
       <Route path="devices" element={<ResellerShell activeItem="devices"><DevicesPage /></ResellerShell>} />
-      <Route path="users" element={<ResellerShell activeItem="users"><UsersPage fallbackPath="/reseller" /></ResellerShell>} />
+      <Route path="users" element={<ResellerShell activeItem="users"><UsersPage fallbackPath="/enterprise/stores" /></ResellerShell>} />
       <Route path="restaurants/:restaurantId/setup" element={<ResellerGate><ResellerSetupEditor /></ResellerGate>} />
       <Route path="restaurants/:restaurantId/ui" element={<ResellerGate><ResellerUiEditorRoute /></ResellerGate>} />
       <Route path="restaurants/:restaurantId" element={<Navigate to="analytics" replace />} />
@@ -1412,12 +1412,12 @@ export default function ResellerApp() {
         <ResellerGate>
           <ResellerRestaurantWorkspace
             restaurantBase="/reseller/restaurants"
-            restaurantListPath="/reseller"
+            restaurantListPath="/enterprise/stores"
             shellRoutes={RESELLER_SHELL_ROUTES}
           />
         </ResellerGate>
       )} />
-      <Route path="*" element={<Navigate to="/reseller" replace />} />
+      <Route path="*" element={<Navigate to="/enterprise/stores" replace />} />
     </Routes>
   )
 }

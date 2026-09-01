@@ -165,7 +165,7 @@ export function CloseoutSettingsStep({ onboarding }: CloseoutSettingsStepProps) 
         <select value={settings.opening_bank_source} onChange={(event) => update({ opening_bank_source: event.target.value as CloseoutSettingsData['opening_bank_source'], require_starting_bank: false })} className={`${inputClass} mt-3`}>
           <option value="none">Opening bank: $0 automatically</option>
           <option value="fixed">Opening bank: fixed amount</option>
-          <option value="previous_retained">Opening bank: prior retained cash</option>
+          <option value="previous_retained">Starting cash: use cash left at last Close Day (recommended)</option>
         </select>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {settings.opening_bank_source !== 'none' && (

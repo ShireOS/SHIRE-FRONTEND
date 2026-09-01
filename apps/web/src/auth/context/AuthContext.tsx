@@ -2,12 +2,14 @@ import { createContext, useContext, useEffect, useState, useCallback, useRef, ty
 import type { Query } from '@tanstack/react-query'
 import { isSupabaseConfigured, supabase, supabaseConfigError } from '../../shared/lib/supabase'
 import { queryClient } from '../../shared/query/queryClient'
+import { fetchWithSupabaseAuth } from '../../shared/query/fetchWithSupabaseAuth'
 import type { User, Session, AuthError } from '@supabase/supabase-js'
 import type { Profile, Restaurant, RestaurantMember } from '@shire/db'
 import { isAbortError } from '../utils/authErrors'
 import { isUnrecoverableSessionError } from '../../shared/auth/sessionErrors'
 import { redirectForUnrecoverableSession } from '../../shared/auth/sessionRecovery'
 import { createAuthHydrationCoordinator } from './authHydrationCoordinator'
+import { createAppAuthUrl } from '../inviteFlow'
 
 const isRestaurantMemberPolicyRecursion = (message: string): boolean =>
   message
@@ -49,9 +51,6 @@ const withAbortSignal = <T,>(operation: T, signal?: AbortSignal): T => {
 const throwIfAborted = (signal?: AbortSignal) => {
   if (signal?.aborted) throw new DOMException('Account hydration was superseded.', 'AbortError')
 }
-
-const createAppAuthUrl = (path: 'callback' | 'reset-password') =>
-  `${window.location.origin}/auth/${path}`
 
 const pickRestaurant = (
   availableRestaurants: Restaurant[],
@@ -112,9 +111,14 @@ interface AuthContextValue extends AuthState {
   accountType: AccountType
   restaurant: RestaurantState
   // Auth methods
-  signUp: (email: string, password: string, metadata?: SignUpMetadata) => Promise<AuthResult>
+  signUp: (
+    email: string,
+    password: string,
+    metadata?: SignUpMetadata,
+    redirectPath?: string | null,
+  ) => Promise<AuthResult>
   signIn: (email: string, password: string) => Promise<AuthResult>
-  signInWithGoogle: () => Promise<AuthResult>
+  signInWithGoogle: (redirectPath?: string | null) => Promise<AuthResult>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<AuthResult>
   updatePassword: (newPassword: string) => Promise<AuthResult>
@@ -328,6 +332,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!isSupabaseConfigured) return []
 
     try {
+      const servicePortfolioRequest = fetchWithSupabaseAuth<Restaurant[]>('/account/restaurants', {
+        signal,
+        timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
+      }).catch((error) => {
+        if (isAbortError(error)) throw error
+        console.warn('[Auth] Could not fetch canonical restaurant portfolio:', error)
+        return []
+      })
+
       if (accountType === 'reseller_employee') {
         const { data: employee, error: employeeError } = await withTimeout(
           withAbortSignal(supabase
@@ -385,8 +398,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
 
+        const serviceRestaurants = await servicePortfolioRequest
+        throwIfAborted(signal)
         const scopedRestaurants: Restaurant[] = []
-        for (const restaurant of [...directRestaurants, ...groupRestaurants]) {
+        for (const restaurant of [...directRestaurants, ...groupRestaurants, ...serviceRestaurants]) {
           if (!scopedRestaurants.some((item) => item.id === restaurant.id)) {
             scopedRestaurants.push(restaurant)
           }
@@ -412,7 +427,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (allError) {
           console.warn('[Auth] Could not fetch restaurants as admin:', allError.message)
         }
-        const resolved = allRestaurants || []
+        const serviceRestaurants = await servicePortfolioRequest
+        throwIfAborted(signal)
+        const resolved = [...(allRestaurants || [])]
+        for (const restaurant of serviceRestaurants) {
+          if (!resolved.some((item) => item.id === restaurant.id)) resolved.push(restaurant)
+        }
         return resolved
       }
 
@@ -449,12 +469,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           'Member restaurant lookup timed out.'
         )
         : Promise.resolve({ data: [], error: null })
-
       const [
         { data: ownedRestaurants, error: ownedError },
         { data: assignments, error: portfolioError },
         { data: memberships, error: memberError },
-      ] = await Promise.all([ownedRequest, portfolioRequest, membershipRequest])
+        serviceRestaurants,
+      ] = await Promise.all([
+        ownedRequest,
+        portfolioRequest,
+        membershipRequest,
+        servicePortfolioRequest,
+      ])
       throwIfAborted(signal)
 
       if (ownedError) {
@@ -483,7 +508,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Combine owned, member, and portfolio restaurants (dedupe)
       const allRestaurants = [...(ownedRestaurants || [])]
 
-      for (const restaurant of [...memberRestaurants, ...portfolioRestaurants]) {
+      for (const restaurant of [...memberRestaurants, ...portfolioRestaurants, ...serviceRestaurants]) {
         if (!allRestaurants.some(owned => owned.id === restaurant.id)) {
           allRestaurants.push(restaurant)
         }
@@ -779,7 +804,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = async (
     email: string,
     password: string,
-    metadata?: SignUpMetadata
+    metadata?: SignUpMetadata,
+    redirectPath?: string | null,
   ): Promise<AuthResult> => {
     if (!isSupabaseConfigured) {
       return { success: false, error: AUTH_NOT_CONFIGURED_ERROR }
@@ -797,7 +823,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               phone: metadata?.phone,
               account_type: metadata?.account_type || 'owner',
             },
-            emailRedirectTo: createAppAuthUrl('callback'),
+            emailRedirectTo: createAppAuthUrl(window.location.origin, 'callback', redirectPath),
           },
         }),
         'Sign up timed out. Please check your connection and try again.'
@@ -865,7 +891,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const signInWithGoogle = async (): Promise<AuthResult> => {
+  const signInWithGoogle = async (redirectPath?: string | null): Promise<AuthResult> => {
     if (!isSupabaseConfigured) {
       return { success: false, error: AUTH_NOT_CONFIGURED_ERROR }
     }
@@ -875,7 +901,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
-            redirectTo: createAppAuthUrl('callback'),
+            redirectTo: createAppAuthUrl(window.location.origin, 'callback', redirectPath),
           },
         }),
         'Google sign in timed out. Please check your connection and try again.'
@@ -908,7 +934,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { error } = await withTimeout(
         supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: createAppAuthUrl('reset-password'),
+          redirectTo: createAppAuthUrl(window.location.origin, 'reset-password'),
         }),
         'Password reset timed out. Please check your connection and try again.'
       )

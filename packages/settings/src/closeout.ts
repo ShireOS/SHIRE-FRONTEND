@@ -11,8 +11,9 @@ import type { CloseoutSettingsData } from './types'
 export function defaultCloseoutSettings(): CloseoutSettingsData {
   return {
     cash_tracking_mode: 'shared_drawer',
-    // New restaurants carry forward the cash explicitly left at Close Day.
-    // Back Office can still choose a fixed bank or an empty drawer.
+    // New restaurants carry forward the cash explicitly left in the drawer at
+    // the prior finalized Close Day. Back Office can still choose a fixed bank
+    // or an empty drawer, and existing saved policies remain unchanged.
     require_starting_bank: false,
     opening_bank_source: 'previous_retained',
     opening_bank_default: '',

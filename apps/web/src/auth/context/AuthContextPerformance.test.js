@@ -10,7 +10,12 @@ test('cold auth hydration batches independent restaurant scopes', () => {
   assert.match(source, /const ownedRequest = withTimeout/)
   assert.match(source, /const portfolioRequest = accountType === 'reseller'/)
   assert.match(source, /const membershipRequest = !membershipQueryDisabledRef\.current/)
-  assert.match(source, /Promise\.all\(\[ownedRequest, portfolioRequest, membershipRequest\]\)/)
+  assert.match(source, /const servicePortfolioRequest = fetchWithSupabaseAuth<Restaurant\[]>\('\/account\/restaurants'/)
+  assert.match(
+    source,
+    /Promise\.all\(\[[\s\S]*ownedRequest,[\s\S]*portfolioRequest,[\s\S]*membershipRequest,[\s\S]*servicePortfolioRequest,[\s\S]*\]\)/,
+  )
+  assert.match(source, /\.\.\.serviceRestaurants/)
 })
 
 test('admin hydration excludes closed restaurants from the operational portfolio', () => {

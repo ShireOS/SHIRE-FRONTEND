@@ -2,15 +2,21 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import {
+  canNavigateCloseDayStep,
+  closeDayCashAllocationError,
   closeDayOperationKey,
+  closeDayPrintQueueSignature,
   isAlternateCloseDayPreviewKey,
   mergeCloseDaySettings,
+  normalizeCloseDayErrorMessage,
   reconcileClockOutEntryIds,
 } from './closeDayState.js'
 
 const page = readFileSync(new URL('./pages/CloseDayPage.jsx', import.meta.url), 'utf8')
 const settings = readFileSync(new URL('./components/CashCloseDaySettings.jsx', import.meta.url), 'utf8')
+const teamRoster = readFileSync(new URL('./components/CloseDayTeamRoster.jsx', import.meta.url), 'utf8')
 const posClient = readFileSync(new URL('../shared/api/posClient.ts', import.meta.url), 'utf8')
+const closeoutDefaults = readFileSync(new URL('../../../../packages/settings/src/closeout.ts', import.meta.url), 'utf8')
 
 test('Close Day renders POS readiness while reconciliation is still delayed', () => {
   assert.match(page, /const previewQuery = useQuery\(/)
@@ -24,8 +30,124 @@ test('Close Day renders POS readiness while reconciliation is still delayed', ()
 test('Close Day lets advisory reconciliation fall through to the audited exception path', () => {
   assert.match(page, /disabled=\{closing \|\| !preview\}/)
   assert.doesNotMatch(page, /if \(reconLoading\) \{[\s\S]*Wait for independent financial verification/)
-  assert.match(page, /verificationStatus !== 'verified'[\s\S]*setModal\('verification'\)/)
+  assert.match(page, /verificationStatus !== 'verified'[\s\S]*showStepError\('review'/)
+  assert.match(page, /Manager reason for verification exception/)
   assert.match(page, /signal, timeoutMs: CLOSE_DAY_RECONCILIATION_TIMEOUT_MS/)
+})
+
+test('Close Day uses a four-stage page flow without modal confirmation chaining', () => {
+  assert.match(page, /id: 'readiness', label: 'Readiness'/)
+  assert.match(page, /id: 'cash', label: 'Cash'/)
+  assert.match(page, /id: 'team', label: 'Team'/)
+  assert.match(page, /id: 'review', label: 'Review'/)
+  assert.match(page, /aria-label="Close Day progress"/)
+  assert.match(page, /Nothing is submitted until you select the final Close Day action\./)
+  assert.doesNotMatch(page, /modal === '(verification|employees|confirm|recent-activity)'/)
+})
+
+test('cash entry uses current and expected drawer wording', () => {
+  assert.match(page, /label="Current cash"/)
+  assert.match(page, />Expected cash</)
+  assert.match(page, /label="Cash left for next day"/)
+  assert.doesNotMatch(page, /label="Float left in drawer"/)
+  assert.match(settings, />Current cash</)
+  assert.match(settings, />Expected cash</)
+  assert.match(settings, />Cash left for next day</)
+  assert.doesNotMatch(settings, />Float left in drawer</)
+  assert.match(page, /Actual drawer change/)
+  assert.match(page, /Software-expected change/)
+  assert.match(page, /asksForRetainedBank/)
+  assert.match(page, /retainedBankEntered/)
+  assert.doesNotMatch(page, /cashLeftEntered/)
+  assert.match(settings, /The manager enters only the cash being left for the next day/)
+  assert.match(settings, /badge="Recommended"/)
+  assert.match(closeoutDefaults, /opening_bank_source: 'previous_retained'/)
+})
+
+test('cash allocation is validated before the close request', () => {
+  assert.equal(closeDayCashAllocationError({
+    cashCountStatus: 'counted', countedCash: '100', retainedBank: '101', depositAmount: '0', trackDeposit: false,
+  }), 'Cash left in drawer cannot exceed current cash.')
+  assert.equal(closeDayCashAllocationError({
+    cashCountStatus: 'counted', countedCash: '100', retainedBank: '20', depositAmount: '80', trackDeposit: true,
+  }), '')
+  assert.equal(closeDayCashAllocationError({
+    cashCountStatus: 'not_counted', countedCash: '', retainedBank: '200', depositAmount: '300', trackDeposit: true,
+  }), '')
+  assert.match(page, /if \(cashAllocationError\)[\s\S]*showStepError\('cash', cashAllocationError\)/)
+  assert.match(page, /depositAmount: calculatedDeposit/)
+})
+
+test('legacy backend cash terms are normalized for the manager', () => {
+  assert.equal(
+    normalizeCloseDayErrorMessage('Deposit plus float left in the drawer must equal counted cash'),
+    'Deposit plus cash left in drawer must equal current cash',
+  )
+})
+
+test('future Close Day stages stay locked until Continue unlocks them', () => {
+  assert.equal(canNavigateCloseDayStep(0, 0), true)
+  assert.equal(canNavigateCloseDayStep(1, 0), false)
+  assert.equal(canNavigateCloseDayStep(2, 3), true)
+  assert.match(page, /disabled=\{!unlocked \|\| closing\}/)
+  assert.match(page, /index < furthestStepIndex && stepIsReady\(step\.id\)/)
+})
+
+test('required team confirmations remain reachable when presentation is hidden', () => {
+  assert.match(page, /const showTeamStep = access\.viewVisible\('close_day\.clockouts'\)[\s\S]*openEmployees\.length > 0[\s\S]*recentActivityRequiresReview/)
+  assert.match(page, /currentStep\?\.id === 'team' && showTeamStep/)
+})
+
+test('team review uses a fixed dashboard roster grid and preserves automatic clock-out', () => {
+  assert.match(page, /<CloseDayTeamRoster/)
+  assert.match(teamRoster, /xl:grid-cols-3/)
+  assert.match(teamRoster, /Currently clocked in/)
+  assert.match(teamRoster, /Last POS activity/)
+  assert.match(teamRoster, /LONG_SHIFT_MINUTES/)
+  assert.match(teamRoster, /Automatic clock-out is on/)
+  assert.match(teamRoster, /will be clocked out automatically when the day closes/)
+})
+
+test('required cash entry remains reachable whenever finalization is visible', () => {
+  assert.match(page, /const showCashStep = access\.viewVisible\('close_day\.cash'\)[\s\S]*access\.viewVisible\('close_day\.finalize'\)/)
+  assert.match(page, /currentStep\?\.id === 'cash' && showCashStep/)
+})
+
+test('workflow errors scroll into view beside the active stage', () => {
+  assert.match(page, /const showStepError = \(stepId, message\)/)
+  assert.match(page, /workflowErrorRef\.current\?\.scrollIntoView/)
+  assert.match(page, /ref=\{workflowErrorRef\} role="alert"/)
+})
+
+test('the staged flow preserves the canonical audited close payload', () => {
+  for (const field of [
+    'business_date',
+    'close_attempt_id',
+    'discard_print_jobs',
+    'expected_print_queue_revision',
+    'confirm_auto_clock_out',
+    'clock_out_mode',
+    'clock_out_entry_ids',
+    'confirm_recent_activity',
+    'expected_recent_activity_at',
+    'opening_bank',
+    'cash_count_status',
+    'counted_cash',
+    'confirm_uncounted_cash',
+    'uncounted_cash_reason',
+    'retained_bank',
+    'deposit_amount',
+    'variance_reason',
+    'verification_status',
+    'verification_checks',
+    'confirm_verification_exception',
+    'verification_reason',
+  ]) {
+    assert.match(page, new RegExp(`${field}:`))
+  }
+  assert.match(page, /posCloseDayApi\.close\(restaurantId,/)
+  assert.match(page, /End-of-day report:/)
+  assert.match(page, /result\.manager_report\.queued/)
 })
 
 test('Close Day reuses preview settings and requests a bounded compact payload', () => {
@@ -50,6 +172,50 @@ test('Close Day scopes idempotency and operator state to each numbered close per
   assert.notEqual(first, second)
   assert.match(page, /const operationChanged = closeOperationKey\.current !== operationKey/)
   assert.match(page, /closeOperationKey\.current = operationKey[\s\S]*attemptId\.current = newAttemptId\(\)/)
+})
+
+test('print discard approval is scoped to the exact period and queue counts', () => {
+  const first = closeDayPrintQueueSignature({
+    business_date: '2026-08-22',
+    close_period: { sequence: 1, previous_close_id: 'first', opened_at: '10:00' },
+    print_queue_revision: 'queue-a',
+    pending_print_jobs: 3,
+    pending_receipt_print_jobs: 2,
+    pending_kitchen_print_jobs: 1,
+  })
+  const changedQueue = closeDayPrintQueueSignature({
+    business_date: '2026-08-22',
+    close_period: { sequence: 1, previous_close_id: 'first', opened_at: '10:00' },
+    print_queue_revision: 'queue-b',
+    pending_print_jobs: 3,
+    pending_receipt_print_jobs: 2,
+    pending_kitchen_print_jobs: 1,
+  })
+  const changedPeriod = closeDayPrintQueueSignature({
+    business_date: '2026-08-22',
+    close_period: { sequence: 2, previous_close_id: 'second', opened_at: '18:00' },
+    print_queue_revision: 'queue-a',
+    pending_print_jobs: 3,
+    pending_receipt_print_jobs: 2,
+    pending_kitchen_print_jobs: 1,
+  })
+
+  assert.notEqual(first, changedQueue)
+  assert.notEqual(first, changedPeriod)
+  assert.match(page, /current === printQueueSignature \? current : null/)
+  assert.match(page, /discardPrintQueueSignature === currentPrintQueueSignature/)
+})
+
+test('recent-activity approval is scoped to the exact last activity timestamp', () => {
+  assert.match(page, /confirmedRecentActivityAt === recentActivityAt/)
+  assert.match(
+    page,
+    /expected_recent_activity_at: recentActivityConfirmed \? recentActivityAt : undefined/,
+  )
+  assert.match(
+    page,
+    /setConfirmedRecentActivityAt\(event\.target\.checked \? recentActivityAt : null\)/,
+  )
 })
 
 test('same-period readiness expands default Everyone but preserves a customized subset', () => {

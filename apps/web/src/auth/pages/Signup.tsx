@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useRedirectIfAuthenticated } from '../hooks/useRequireAuth'
 import { AuthLayout } from '../components/AuthLayout'
 import { SocialLogin } from '../components/SocialLogin'
+import { safeAuthNext } from '../inviteFlow'
 
 export function SignupPage() {
   const { signUp, signInWithGoogle } = useAuth()
@@ -13,8 +14,10 @@ export function SignupPage() {
   const invited = searchParams.get('invited') === '1'
   const invitedEmail = searchParams.get('email') || ''
   const hasInvitedEmail = invitedEmail.trim().length > 0
-  const next = searchParams.get('next')
-  const loginHref = next ? `/auth/login?next=${encodeURIComponent(next)}` : '/auth/login'
+  const next = safeAuthNext(searchParams.get('next'))
+  const loginHref = next
+    ? `/auth/login?next=${encodeURIComponent(next)}&email=${encodeURIComponent(invitedEmail)}`
+    : '/auth/login'
   const [firstName, setFirstName] = useState('')
   const lastName = ''
   const [accountType, setAccountType] = useState<'owner' | 'reseller'>('owner')
@@ -47,7 +50,7 @@ export function SignupPage() {
       first_name: firstName,
       last_name: lastName,
       account_type: invited ? 'owner' : accountType,
-    })
+    }, next)
 
     if (!result.success) {
       setError(result.error || 'Failed to create account')
@@ -62,7 +65,7 @@ export function SignupPage() {
     setError(null)
     setIsLoading(true)
 
-    const result = await signInWithGoogle()
+    const result = await signInWithGoogle(next)
 
     if (!result.success) {
       setError(result.error || 'Failed to sign in with Google')

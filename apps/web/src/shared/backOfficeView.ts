@@ -139,6 +139,7 @@ export const BACK_OFFICE_VIEW_CATALOG: ViewCapability[] = [
   node('nav.printing-routing', 'Printing & Routing', [
     node('printing.overview', 'Printing overview and recovery'),
     node('printing.routing', 'Production workflow and routing'),
+    node('printing.kds', 'Kitchen display configuration'),
     node('printing.receipts', 'Receipt and ticket design'),
     node('printing.ticket_layout', 'Advanced ticket layout'),
   ]),
@@ -194,6 +195,7 @@ export const SECTION_VIEW_CAPABILITIES: Record<string, string> = {
   'menu#pos-menus': 'pos_menu.navigation',
   'printing-routing#overview': 'printing.overview',
   'printing-routing#routing': 'printing.routing',
+  'printing-routing#kds': 'printing.kds',
   'printing-routing#receipts': 'printing.receipts',
   'tip-pooling#overview': 'payroll.overview',
   'tip-pooling#timecards': 'time_clock.entries',

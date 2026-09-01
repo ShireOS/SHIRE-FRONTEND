@@ -5,6 +5,7 @@ import { useRedirectIfAuthenticated } from '../hooks/useRequireAuth'
 import { AuthLayout } from '../components/AuthLayout'
 import { SocialLogin } from '../components/SocialLogin'
 import { API_CONFIG } from '../../shared/api/config'
+import { safeAuthNext } from '../inviteFlow'
 
 interface EmployeeRestaurant {
   id: string
@@ -21,7 +22,7 @@ export function LoginPage() {
   const sessionEnded = searchParams.get('reason') === 'session-ended'
   const requestedNext = searchParams.get('next')
   const invitedEmail = searchParams.get('email') || ''
-  const safeNext = requestedNext?.startsWith('/') && !requestedNext.startsWith('//') ? requestedNext : '/'
+  const safeNext = safeAuthNext(requestedNext) || '/'
 
   const [mode, setMode] = useState<'manager' | 'employee'>('manager')
   const [email, setEmail] = useState(invitedEmail)
@@ -135,7 +136,7 @@ export function LoginPage() {
     setError(null)
     setIsLoading(true)
 
-    const result = await signInWithGoogle()
+    const result = await signInWithGoogle(safeNext)
 
     if (!result.success) {
       setError(result.error || 'Failed to sign in with Google')

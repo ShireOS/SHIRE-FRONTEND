@@ -156,6 +156,7 @@ export interface CloseDayFinalizeInput {
   close_attempt_id: string
   notes?: string
   discard_print_jobs: boolean
+  expected_print_queue_revision?: string
   confirm_auto_clock_out?: boolean
   opening_bank: number
   paid_in: number
@@ -261,6 +262,10 @@ export interface CloseDayPreview {
   closed_checks: number
   voided_checks: number
   pending_print_jobs?: number
+  pending_receipt_print_jobs?: number
+  pending_kitchen_print_jobs?: number
+  print_queue_revision?: string
+  discarded_print_jobs?: number
   paid_unsent_fulfillment_checks?: number
   paid_unsent_fulfillment_items?: number
   cash_accountability?: {
@@ -329,10 +334,13 @@ export interface CloseDayPreview {
 export interface CloseDayInput {
   business_date: string
   close_attempt_id: string
+  discard_print_jobs: boolean
+  expected_print_queue_revision?: string
   confirm_auto_clock_out: boolean
   clock_out_mode?: 'all' | 'selected' | 'none'
   clock_out_entry_ids?: string[]
   confirm_recent_activity?: boolean
+  expected_recent_activity_at?: string
   opening_bank: number
   paid_in: number
   paid_out: number
@@ -360,6 +368,7 @@ export interface CloseDayResult {
   closed_at: string
   totals: CloseDayPreview
   auto_clocked_out: OpenTimeClockEntry[]
+  expired_print_jobs?: number
   email_delivery?: { status?: string; recipients?: string[] }
   idempotent_replay?: boolean
 }

@@ -6,9 +6,12 @@ import {
   Banknote,
   CalendarCheck,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   RefreshCw,
   ReceiptText,
+  Settings2,
   Users,
   X,
 } from 'lucide-react'
@@ -22,10 +25,16 @@ import {
 import { useAuth } from '../../auth'
 import { useBackOfficeAccess } from '../../shared/hooks/useBackOfficeAccess'
 import CashCloseDaySettings from '../components/CashCloseDaySettings'
+import CloseDayPrintDecisionCard from '../components/CloseDayPrintDecisionCard'
+import CloseDayTeamRoster from '../components/CloseDayTeamRoster'
 import {
+  canNavigateCloseDayStep,
+  closeDayCashAllocationError,
   closeDayOperationKey,
+  closeDayPrintQueueSignature,
   isAlternateCloseDayPreviewKey,
   mergeCloseDaySettings,
+  normalizeCloseDayErrorMessage,
   reconcileClockOutEntryIds,
 } from '../closeDayState'
 
@@ -67,20 +76,6 @@ const money = (value) => new Intl.NumberFormat('en-US', {
 }).format(Number(value || 0))
 
 const numberValue = (value) => Number.parseFloat(String(value || '0')) || 0
-
-const durationLabel = (minutes) => {
-  const total = Math.max(0, Number(minutes || 0))
-  const hours = Math.floor(total / 60)
-  const remainder = total % 60
-  return hours ? `${hours}h ${remainder}m` : `${remainder}m`
-}
-
-const clockLabel = (value) => {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime())
-    ? 'Unknown time'
-    : date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-}
 
 function newAttemptId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
@@ -126,10 +121,10 @@ function CashInput({ label, value, onChange }) {
   )
 }
 
-function ActionModal({ title, children, onClose, footer }) {
+function ActionModal({ title, children, onClose, footer, wide = false }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="w-full max-w-lg border border-dash-border bg-dash-base shadow-2xl">
+      <div className={`w-full ${wide ? 'max-w-4xl' : 'max-w-lg'} border border-dash-border bg-dash-base shadow-2xl`}>
         <div className="flex items-center justify-between border-b border-dash-border px-5 py-4">
           <h2 className="text-lg font-semibold text-dash-cream">{title}</h2>
           <button type="button" onClick={onClose} aria-label="Close" className="flex h-9 w-9 items-center justify-center text-dash-tertiary hover:text-dash-cream">
@@ -154,14 +149,19 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const [modal, setModal] = useState(null)
   const [result, setResult] = useState(null)
   const [clockOutEntryIds, setClockOutEntryIds] = useState([])
-  const [recentActivityConfirmed, setRecentActivityConfirmed] = useState(false)
+  const [confirmedRecentActivityAt, setConfirmedRecentActivityAt] = useState(null)
+  const [discardPrintQueueSignature, setDiscardPrintQueueSignature] = useState(null)
   const [cashCountStatus, setCashCountStatus] = useState('counted')
   const [uncountedCashReason, setUncountedCashReason] = useState('')
   const [verificationReason, setVerificationReason] = useState('')
   const [verificationExceptionStatus, setVerificationExceptionStatus] = useState(null)
+  const [activeStep, setActiveStep] = useState('readiness')
+  const [furthestStepIndex, setFurthestStepIndex] = useState(0)
   const attemptId = useRef(newAttemptId())
   const closeOperationKey = useRef(null)
   const clockOutSelectionCustomized = useRef(false)
+  const workflowTopRef = useRef(null)
+  const workflowErrorRef = useRef(null)
 
   const previewQuery = useQuery({
     queryKey: closeDayPreviewKey(restaurantId, selectedBusinessDate),
@@ -248,8 +248,12 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     setUncountedCashReason('')
     setVerificationReason('')
     setVerificationExceptionStatus(null)
+    setConfirmedRecentActivityAt(null)
+    setDiscardPrintQueueSignature(null)
     setResult(null)
     setSelectedBusinessDate(null)
+    setActiveStep('readiness')
+    setFurthestStepIndex(0)
   }, [restaurantId])
 
   useEffect(() => {
@@ -259,7 +263,11 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     // state to that numbered close period so an old idempotency key can never
     // replay the prior close.
     const operationKey = closeDayOperationKey(preview)
+    const printQueueSignature = closeDayPrintQueueSignature(preview)
     const operationChanged = closeOperationKey.current !== operationKey
+    setDiscardPrintQueueSignature((current) => (
+      current === printQueueSignature ? current : null
+    ))
     setClockOutEntryIds((current) => reconcileClockOutEntryIds(
       current,
       preview.open_timeclock_entries,
@@ -271,12 +279,14 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     closeOperationKey.current = operationKey
     clockOutSelectionCustomized.current = false
     attemptId.current = newAttemptId()
-    setRecentActivityConfirmed(false)
+    setConfirmedRecentActivityAt(null)
     setResult(null)
     setCashCountStatus('counted')
     setUncountedCashReason('')
     setVerificationReason('')
     setVerificationExceptionStatus(null)
+    setActiveStep('readiness')
+    setFurthestStepIndex(0)
     setCash((current) => ({
       ...current,
       opening_bank: Number(reconciliation.opening_bank || 0).toFixed(2),
@@ -297,7 +307,11 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const asksForRetainedBank = openingBankPolicy?.source === 'previous_retained'
   const expectedCash = numberValue(preview?.cash_reconciliation?.expected_cash)
   const cashCountEntered = cashCountStatus === 'not_counted' || String(cash.counted_cash).trim() !== ''
-  const retainedBankEntered = !asksForRetainedBank || String(cash.retained_bank).trim() !== ''
+  const retainedBankEntered = !asksForRetainedBank || (
+    String(cash.retained_bank).trim() !== ''
+    && Number.isFinite(Number(cash.retained_bank))
+    && Number(cash.retained_bank) >= 0
+  )
   const policyRetainedBank = asksForRetainedBank
     ? numberValue(cash.retained_bank)
     : openingBankPolicy?.source === 'fixed' ? effectiveOpeningBank : 0
@@ -306,12 +320,21 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     : 0
   const revealExpected = !closeoutSettings?.blind_drawer_close || (cashCountStatus === 'counted' && cashCountEntered)
   const variance = cashCountStatus === 'counted' ? numberValue(cash.counted_cash) - expectedCash : null
+  const actualDrawerChange = cashCountStatus === 'counted' && cashCountEntered
+    ? numberValue(cash.counted_cash) - effectiveOpeningBank
+    : null
+  const expectedDrawerChange = expectedCash - effectiveOpeningBank
   const threshold = Number(preview?.closeout_settings?.cash_variance_threshold || 0)
   const openEmployees = preview?.open_timeclock_entries || []
   const isClosed = previewIsClosed
   const unresolvedExceptions = Number(preview?.exception_count || 0)
   const blockingExceptions = Number(preview?.blocking_exception_count || 0)
   const pendingPrintJobs = Number(preview?.pending_print_jobs || 0)
+  const pendingReceiptPrintJobs = Number(preview?.pending_receipt_print_jobs || 0)
+  const pendingKitchenPrintJobs = Number(preview?.pending_kitchen_print_jobs || 0)
+  const currentPrintQueueSignature = closeDayPrintQueueSignature(preview)
+  const discardPrintJobs = pendingPrintJobs > 0
+    && discardPrintQueueSignature === currentPrintQueueSignature
   const paidUnsentChecks = Number(preview?.paid_unsent_fulfillment_checks || 0)
   const paidUnsentItems = Number(preview?.paid_unsent_fulfillment_items || 0)
   const pendingCashMovements = Number(preview?.cash_accountability?.pending_count || 0)
@@ -320,6 +343,67 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
   const cashMovementBlockers = pendingCashMovements
     + (requirePaidOutReview ? unreviewedPaidOuts : 0)
   const overdueCloseAlerts = preview?.overdue_close_alerts || []
+  const hardBlockers = [
+    Number(preview?.open_checks || 0) > 0 && `${preview.open_checks} open check${preview.open_checks === 1 ? '' : 's'}`,
+    blockingExceptions > 0 && `${blockingExceptions} blocking payment or check exception${blockingExceptions === 1 ? '' : 's'}`,
+    paidUnsentChecks > 0 && `${paidUnsentChecks} paid check${paidUnsentChecks === 1 ? '' : 's'} with unsent routed items`,
+    pendingCashMovements > 0 && `${pendingCashMovements} pending or uncertain cash movement${pendingCashMovements === 1 ? '' : 's'}`,
+    requirePaidOutReview && unreviewedPaidOuts > 0 && `${unreviewedPaidOuts} paid-out movement${unreviewedPaidOuts === 1 ? '' : 's'} awaiting review`,
+  ].filter(Boolean)
+  const recentActivityRequiresReview = Boolean(preview?.close_period?.recent_activity)
+  const recentActivityAt = preview?.close_period?.last_activity_at || null
+  const recentActivityConfirmed = Boolean(
+    recentActivityAt && confirmedRecentActivityAt === recentActivityAt,
+  )
+  const showCashStep = access.viewVisible('close_day.cash')
+    || access.viewVisible('close_day.finalize')
+  const showTeamStep = access.viewVisible('close_day.clockouts')
+    || openEmployees.length > 0
+    || recentActivityRequiresReview
+  const cashAllocationError = closeDayCashAllocationError({
+    cashCountStatus,
+    countedCash: cash.counted_cash,
+    retainedBank: policyRetainedBank,
+    depositAmount: calculatedDeposit,
+    trackDeposit,
+  })
+  const cashStepReady = cashCountStatus === 'not_counted'
+    ? uncountedCashReason.trim().length >= 5
+    : cashCountEntered
+      && retainedBankEntered
+      && !cashAllocationError
+      && (variance == null || Math.abs(variance) <= threshold || Boolean(cash.variance_reason.trim()))
+  const teamStepReady = !recentActivityRequiresReview || recentActivityConfirmed
+  const workflowSteps = [
+    access.viewVisible('close_day.readiness') && { id: 'readiness', label: 'Readiness' },
+    showCashStep && { id: 'cash', label: 'Cash' },
+    showTeamStep && { id: 'team', label: 'Team' },
+    access.viewVisible('close_day.finalize') && { id: 'review', label: 'Review' },
+  ].filter(Boolean)
+  const workflowStepKey = workflowSteps.map((step) => step.id).join(':')
+  const currentStepIndex = Math.max(0, workflowSteps.findIndex((step) => step.id === activeStep))
+  const currentStep = workflowSteps[currentStepIndex] || null
+  const stepIsReady = (stepId) => stepId === 'readiness'
+    ? hardBlockers.length === 0
+    : stepId === 'cash'
+      ? cashStepReady
+      : stepId === 'team'
+        ? teamStepReady
+        : false
+
+  useEffect(() => {
+    if (!workflowSteps.length || workflowSteps.some((step) => step.id === activeStep)) return
+    setActiveStep(workflowSteps[0].id)
+    setFurthestStepIndex(0)
+  }, [activeStep, workflowStepKey])
+
+  useEffect(() => {
+    if (!workflowSteps.length) return
+    setFurthestStepIndex((current) => Math.min(
+      Math.max(current, currentStepIndex),
+      workflowSteps.length - 1,
+    ))
+  }, [currentStepIndex, workflowStepKey])
 
   const updateCash = (key, value) => setCash((current) => ({ ...current, [key]: value }))
   const selectAllClockOutEntries = () => {
@@ -335,6 +419,16 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     setClockOutEntryIds((current) => current.includes(entryId)
       ? current.filter((id) => id !== entryId)
       : [...current, entryId])
+  }
+  const keepPrintWorkQueued = () => {
+    setDiscardPrintQueueSignature(null)
+    setError('')
+  }
+  const confirmDiscardPrintWork = () => {
+    if (!currentPrintQueueSignature || pendingPrintJobs <= 0) return
+    setDiscardPrintQueueSignature(currentPrintQueueSignature)
+    setModal(null)
+    setError('')
   }
 
   // Close-day preview totals vs the independent recompute (client-side diff:
@@ -385,6 +479,14 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       : advisoryVerificationStatus
   const verificationStatus = verificationExceptionStatus || computedVerificationStatus
 
+  const showStepError = (stepId, message) => {
+    if (workflowSteps.some((step) => step.id === stepId)) setActiveStep(stepId)
+    setError(message)
+    window.requestAnimationFrame(() => {
+      workflowErrorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }
+
   const handleConflict = (nextError) => {
     const detail = nextError?.detail
     if (detail && typeof detail === 'object') {
@@ -394,7 +496,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         return
       }
       if (detail.code === 'employees_clocked_in') {
-        setModal('employees')
+        showStepError('team', 'The team clock status changed. Review the current employees before closing.')
         return
       }
       if (detail.code === 'invalid_verification_claim') {
@@ -403,36 +505,61 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         // explicit exception instead of retrying the same verified claim.
         setVerificationExceptionStatus('unavailable')
         setVerificationReason('')
-        setModal('verification')
+        showStepError('review', 'The POS could not independently verify the totals. Record a manager reason to continue.')
+        return
+      }
+      if (/pending print work/i.test(String(detail.message || ''))) {
+        setDiscardPrintQueueSignature(null)
+        showStepError('review', 'The print queue changed. Review the current work and confirm a new discard decision if you still want to close.')
         return
       }
       if (detail.message) {
-        setError(detail.message)
+        showStepError(currentStep?.id, normalizeCloseDayErrorMessage(detail.message))
         return
       }
     }
-    setError(nextError instanceof Error ? nextError.message : 'Could not close the business day.')
+    showStepError(currentStep?.id, nextError instanceof Error ? nextError.message : 'Could not close the business day.')
   }
 
   const submitClose = async (confirmAutoClockOut) => {
     if (!preview) return
+    if (pendingPrintJobs > 0 && !discardPrintJobs) {
+      showStepError('review', 'Choose whether to keep waiting for print work or explicitly discard it during Close Day.')
+      setModal(null)
+      return
+    }
+    if (pendingPrintJobs > 0 && discardPrintJobs && !preview.print_queue_revision) {
+      showStepError('review', 'Refresh Close Day before discarding print work so the exact reviewed queue can be verified.')
+      setModal(null)
+      return
+    }
     if (cashCountStatus === 'counted' && !cashCountEntered) {
-      setError('Count the physical cash in the drawer before closing the day.')
+      showStepError('cash', 'Count the physical cash in the drawer before closing the day.')
       setModal(null)
       return
     }
     if (cashCountStatus === 'not_counted' && uncountedCashReason.trim().length < 5) {
-      setError('Explain why the drawer could not be physically counted.')
+      showStepError('cash', 'Explain why the drawer could not be physically counted.')
+      setModal(null)
+      return
+    }
+    if (cashAllocationError) {
+      showStepError('cash', cashAllocationError)
       setModal(null)
       return
     }
     if (cashCountStatus === 'counted' && !retainedBankEntered) {
-      setError('Enter how much cash will remain in the drawer for the next business day.')
+      showStepError('cash', 'Enter how much cash will remain in the drawer for the next business day.')
       setModal(null)
       return
     }
     if (variance != null && Math.abs(variance) > threshold && !cash.variance_reason.trim()) {
-      setError(`Explain the ${money(variance)} cash variance before closing.`)
+      showStepError('cash', `Explain the ${money(variance)} cash variance before closing.`)
+      setModal(null)
+      return
+    }
+    if (verificationStatus !== 'verified' && verificationReason.trim().length < 5) {
+      showStepError('review', 'Record a reason for the financial verification exception.')
       setModal(null)
       return
     }
@@ -442,6 +569,8 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       const closed = await posCloseDayApi.close(restaurantId, {
         business_date: preview.business_date,
         close_attempt_id: attemptId.current,
+        discard_print_jobs: discardPrintJobs,
+        expected_print_queue_revision: discardPrintJobs ? preview.print_queue_revision : undefined,
         confirm_auto_clock_out: confirmAutoClockOut,
         clock_out_mode: !preview.closeout_settings?.show_clockout_options_at_close
           ? 'all'
@@ -450,6 +579,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             : clockOutEntryIds.length === 0 ? 'none' : 'selected',
         clock_out_entry_ids: clockOutEntryIds,
         confirm_recent_activity: recentActivityConfirmed,
+        expected_recent_activity_at: recentActivityConfirmed ? recentActivityAt : undefined,
         opening_bank: effectiveOpeningBank,
         cash_count_status: cashCountStatus,
         counted_cash: cashCountStatus === 'counted' ? numberValue(cash.counted_cash) : null,
@@ -485,7 +615,6 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
           selectedBusinessDate,
         ),
       })
-      setModal('success')
       if (reconMismatches.length > 0) {
         acknowledgeReconciliation(restaurantId, {
           context: 'close_day',
@@ -505,45 +634,112 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
     }
   }
 
-  const beginClose = (verificationReviewed = false) => {
+  const beginClose = () => {
     setError('')
     if (Number(preview?.open_checks || 0) > 0) {
       setModal('open-checks')
       return
     }
     if (blockingExceptions > 0) {
-      setError('Resolve the blocking close-day payment and check exceptions before closing remotely.')
+      showStepError('readiness', 'Resolve the blocking close-day payment and check exceptions before closing remotely.')
       return
     }
-    if (pendingPrintJobs > 0) {
-      setError('Resolve pending print work on the POS before closing remotely.')
+    if (pendingPrintJobs > 0 && !discardPrintJobs) {
+      showStepError('review', 'Choose whether to keep waiting for print work or explicitly discard it during Close Day.')
       return
     }
     if (paidUnsentChecks > 0) {
-      setError(`Resolve ${paidUnsentChecks} paid check${paidUnsentChecks === 1 ? '' : 's'} with unsent routed items before closing.`)
+      showStepError('readiness', `Resolve ${paidUnsentChecks} paid check${paidUnsentChecks === 1 ? '' : 's'} with unsent routed items before closing.`)
       return
     }
     if (pendingCashMovements > 0) {
-      setError('Resolve pending or uncertain cash movements before closing remotely.')
+      showStepError('readiness', 'Resolve pending or uncertain cash movements before closing remotely.')
       return
     }
     if (requirePaidOutReview && unreviewedPaidOuts > 0) {
-      setError('Review every paid-out movement before closing remotely.')
+      showStepError('readiness', 'Review every paid-out movement before closing remotely.')
       return
     }
-    if (verificationStatus !== 'verified' && !verificationReviewed) {
-      setModal('verification')
+    if (cashCountStatus === 'counted' && !cashCountEntered) {
+      showStepError('cash', 'Count the physical cash in the drawer before closing the day.')
       return
     }
-    if (preview?.close_period?.recent_activity && !recentActivityConfirmed) {
-      setModal('recent-activity')
+    if (cashCountStatus === 'counted' && !retainedBankEntered) {
+      showStepError('cash', 'Enter how much cash will remain in the drawer for the next business day.')
       return
     }
-    setModal(openEmployees.length ? 'employees' : 'confirm')
+    if (cashCountStatus === 'not_counted' && uncountedCashReason.trim().length < 5) {
+      showStepError('cash', 'Explain why the drawer could not be physically counted.')
+      return
+    }
+    if (cashAllocationError) {
+      showStepError('cash', cashAllocationError)
+      return
+    }
+    if (variance != null && Math.abs(variance) > threshold && !cash.variance_reason.trim()) {
+      showStepError('cash', `Explain the ${money(variance)} cash variance before closing.`)
+      return
+    }
+    if (verificationStatus !== 'verified' && verificationReason.trim().length < 5) {
+      showStepError('review', 'Record a reason for the financial verification exception.')
+      return
+    }
+    if (recentActivityRequiresReview && !recentActivityConfirmed) {
+      showStepError('team', 'Confirm that you reviewed the floor after the restaurant’s recent activity.')
+      return
+    }
+    void submitClose(openEmployees.length > 0)
+  }
+
+  const goToStep = (stepId, force = false) => {
+    const stepIndex = workflowSteps.findIndex((step) => step.id === stepId)
+    if (stepIndex < 0 || (!force && !canNavigateCloseDayStep(stepIndex, furthestStepIndex))) return
+    setError('')
+    setActiveStep(stepId)
+    workflowTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const goBack = () => {
+    if (currentStepIndex <= 0) return
+    goToStep(workflowSteps[currentStepIndex - 1].id)
+  }
+
+  const goNext = () => {
+    if (currentStep?.id === 'cash') {
+      if (cashCountStatus === 'counted' && !cashCountEntered) {
+        showStepError('cash', 'Count the physical cash in the drawer before continuing.')
+        return
+      }
+      if (cashCountStatus === 'counted' && !retainedBankEntered) {
+        showStepError('cash', 'Enter how much cash will remain in the drawer for the next business day.')
+        return
+      }
+      if (cashCountStatus === 'not_counted' && uncountedCashReason.trim().length < 5) {
+        showStepError('cash', 'Explain why the drawer could not be physically counted.')
+        return
+      }
+      if (cashAllocationError) {
+        showStepError('cash', cashAllocationError)
+        return
+      }
+      if (variance != null && Math.abs(variance) > threshold && !cash.variance_reason.trim()) {
+        showStepError('cash', `Explain the ${money(variance)} cash variance before continuing.`)
+        return
+      }
+    }
+    if (currentStep?.id === 'team' && recentActivityRequiresReview && !recentActivityConfirmed) {
+      showStepError('team', 'Confirm that you reviewed the floor after the restaurant’s recent activity.')
+      return
+    }
+    const nextStep = workflowSteps[currentStepIndex + 1]
+    if (nextStep) {
+      setFurthestStepIndex((current) => Math.max(current, currentStepIndex + 1))
+      goToStep(nextStep.id, true)
+    }
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 pb-12">
+    <div ref={workflowTopRef} className="mx-auto w-full max-w-5xl space-y-6 pb-12">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="label-mono">Operations</p>
@@ -553,6 +749,11 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {preview && access.can('settings.edit') && access.viewMode('close_day.cash') === 'full' && (
+            <button type="button" onClick={() => setModal('settings')} disabled={closing} className="flex min-h-[40px] items-center gap-2 border border-dash-border px-4 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">
+              <Settings2 size={15} aria-hidden="true" /> Close settings
+            </button>
+          )}
           {selectedBusinessDate && <button type="button" onClick={() => void showActivePreview()} disabled={closing || !restaurantId} className="flex min-h-[40px] items-center gap-2 border border-dash-border px-4 text-sm font-semibold text-dash-cream hover:border-dash-cream disabled:opacity-50"><CalendarCheck size={15} aria-hidden="true" />Active day</button>}
           <button type="button" onClick={() => void refreshPreview()} disabled={loading || closing || !restaurantId} className="flex min-h-[40px] items-center gap-2 border border-dash-border px-4 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} aria-hidden="true" />
@@ -568,10 +769,10 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         </div>
       )}
 
-      {(error || loadError) && (
-        <div className="flex items-start gap-3 border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+      {loadError && (
+        <div role="alert" className="flex items-start gap-3 border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
           <AlertTriangle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <p>{error || loadError}</p>
+          <p>{loadError}</p>
         </div>
       )}
 
@@ -591,7 +792,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
       )}
 
       {preview && access.viewVisible('close_day.readiness') && <>
-        {overdueCloseAlerts.length > 0 && (
+        {currentStep?.id === 'readiness' && overdueCloseAlerts.length > 0 && (
           <section className="border border-amber-400/40 bg-amber-500/10 p-4">
             <div className="flex items-start gap-3"><AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-300" aria-hidden="true" /><div className="min-w-0 flex-1"><h2 className="font-semibold text-amber-100">Close Day overdue</h2><p className="mt-1 text-sm text-amber-100/75">The backend watchdog found business activity that crossed the restaurant’s day boundary without a completed close.</p><div className="mt-3 flex flex-wrap gap-2">{overdueCloseAlerts.map((alert) => <button type="button" key={alert.id} onClick={() => void loadPreview(alert.business_date)} className="border border-amber-300/35 px-3 py-2 text-xs font-semibold text-amber-100">Review {alert.business_date}</button>)}</div></div></div>
           </section>
@@ -605,7 +806,37 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         </section>
       </>}
 
-      {!isClosed && recon && (
+      {preview && !isClosed && workflowSteps.length > 0 && (
+        <nav className="grid grid-cols-2 gap-px border border-dash-border bg-dash-border sm:grid-cols-4" aria-label="Close Day progress">
+          {workflowSteps.map((step, index) => {
+            const active = step.id === currentStep?.id
+            const complete = index < furthestStepIndex && stepIsReady(step.id)
+            const unlocked = canNavigateCloseDayStep(index, furthestStepIndex)
+            return (
+              <button
+                key={step.id}
+                type="button"
+                onClick={() => goToStep(step.id)}
+                disabled={!unlocked || closing}
+                aria-current={active ? 'step' : undefined}
+                className={`min-h-[62px] bg-dash-base px-4 py-3 text-left transition disabled:cursor-not-allowed ${active ? 'text-dash-cream' : complete ? 'text-emerald-300' : unlocked ? 'text-dash-tertiary hover:text-dash-cream' : 'text-dash-tertiary opacity-45'}`}
+              >
+                <span className={`block h-0.5 w-full ${active || complete ? 'bg-dash-gold' : 'bg-dash-border'}`} aria-hidden="true" />
+                <span className="mt-2 block text-xs font-semibold">{index + 1}. {step.label}</span>
+              </button>
+            )
+          })}
+        </nav>
+      )}
+
+      {error && (
+        <div ref={workflowErrorRef} role="alert" className="flex items-start gap-3 border border-red-400/35 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <p>{error}</p>
+        </div>
+      )}
+
+      {currentStep?.id === 'readiness' && !isClosed && recon && (
         <ReconciliationBanner
           recon={recon}
           extraChecks={reconExtraChecks}
@@ -613,7 +844,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         />
       )}
 
-      {preview && !isClosed && reconLoading && (
+      {currentStep?.id === 'readiness' && preview && !isClosed && reconLoading && (
         <div className="flex items-center gap-3 border border-sky-400/25 bg-sky-400/[0.06] px-4 py-3 text-sm text-sky-100" aria-live="polite">
           <RefreshCw size={16} className="animate-spin" aria-hidden="true" />
           POS readiness is available. Independently verifying transaction totals in the background…
@@ -628,14 +859,31 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
             <p className="mt-1 text-sm text-emerald-100/75">
               Closed {preview?.business_day?.closed_at ? new Date(preview.business_day.closed_at).toLocaleString() : 'successfully'}{preview?.business_day?.closed_by_name ? ` by ${preview.business_day.closed_by_name}` : ''}.
             </p>
+            {result?.auto_clocked_out?.length > 0 && (
+              <p className="mt-2 text-sm text-emerald-100/75">{result.auto_clocked_out.length} employee{result.auto_clocked_out.length === 1 ? '' : 's'} were clocked out and audited.</p>
+            )}
+            {result?.manager_report && (
+              <p className={`mt-2 text-sm font-semibold ${result.manager_report.printed || result.manager_report.queued ? 'text-emerald-100' : 'text-amber-200'}`}>
+                End-of-day report: {result.manager_report.printed
+                  ? 'printed.'
+                  : result.manager_report.queued
+                    ? 'queued to the receipt printer.'
+                    : 'no receipt printer was available; reprint it from the POS when the printer is ready.'}
+              </p>
+            )}
             {preview?.financial_verification?.status && preview.financial_verification.status !== 'verified' && (
               <p className="mt-2 text-sm font-semibold text-amber-200">Financial verification exception recorded: {preview.financial_verification.status.replaceAll('_', ' ')}.</p>
+            )}
+            {Number(result?.expired_print_jobs ?? preview?.discarded_print_jobs ?? 0) > 0 && (
+              <p className="mt-2 text-sm font-semibold text-amber-200">
+                {Number(result?.expired_print_jobs ?? preview?.discarded_print_jobs ?? 0)} queued print job{Number(result?.expired_print_jobs ?? preview?.discarded_print_jobs ?? 0) === 1 ? '' : 's'} were discarded and retained in the close audit.
+              </p>
             )}
           </div>
         </section>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(300px,0.8fr)]">
-          {access.viewVisible('close_day.cash') && <section className="border border-dash-border bg-[var(--glass-bg)] p-5">
+        <div>
+          {currentStep?.id === 'cash' && showCashStep && <section className="border border-dash-border bg-[var(--glass-bg)] p-5 sm:p-6">
             <div className="flex items-center gap-2">
               <Banknote size={17} className="text-dash-tertiary" aria-hidden="true" />
               <h2 className="text-lg font-semibold text-dash-cream">Cash reconciliation</h2>
@@ -665,7 +913,7 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
                   </p>
                 </div>
               )}
-              {cashCountStatus === 'counted' && <CashInput label="Counted cash" value={cash.counted_cash} onChange={(value) => updateCash('counted_cash', value)} />}
+              {cashCountStatus === 'counted' && <CashInput label="Current cash" value={cash.counted_cash} onChange={(value) => updateCash('counted_cash', value)} />}
               {cashCountStatus === 'counted' && asksForRetainedBank && (
                 <CashInput label="Cash left for next day" value={cash.retained_bank} onChange={(value) => updateCash('retained_bank', value)} />
               )}
@@ -676,6 +924,19 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
                 </div>
               )}
             </div>
+            {cashCountStatus === 'counted' && (
+              <p className="mt-3 text-xs leading-5 text-dash-tertiary">
+                {asksForRetainedBank
+                  ? 'Cash left in drawer becomes the next business day’s starting cash.'
+                  : 'The configured starting-cash policy determines what remains in the drawer; any tracked deposit is calculated from the count.'}
+              </p>
+            )}
+            {cashCountStatus === 'counted' && cashCountEntered && cashAllocationError && (
+              <div role="status" className="mt-4 flex items-start gap-3 border border-amber-400/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                <AlertTriangle size={17} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <p>{cashAllocationError}</p>
+              </div>
+            )}
             {cashCountStatus === 'not_counted' && (
               <label className="mt-4 block border border-amber-400/35 bg-amber-500/10 p-4">
                 <span className="label-mono text-amber-100">Why was the drawer not counted?</span>
@@ -689,53 +950,144 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
               <div><p className="label-mono">Cash drops</p><p className="mt-1 font-semibold text-dash-cream">{money(preview?.cash_reconciliation?.cash_drop)}</p></div>
               <div><p className="label-mono">Cash refunds</p><p className="mt-1 font-semibold text-dash-cream">{money(preview?.cash_reconciliation?.cash_refunds)}</p></div>
             </div>
-            <div className="grid gap-3 border-b border-dash-border py-4 sm:grid-cols-2">
+            <div className="grid gap-3 border-b border-dash-border py-4 sm:grid-cols-2 xl:grid-cols-4">
               <div><p className="label-mono">Expected cash</p><p className="mt-1 font-semibold text-dash-cream">{revealExpected ? money(expectedCash) : 'Hidden until count is entered'}</p></div>
               <div><p className="label-mono">Variance</p><p className={`mt-1 font-semibold ${variance != null && revealExpected && Math.abs(variance) > threshold ? 'text-amber-300' : 'text-dash-cream'}`}>{cashCountStatus === 'not_counted' ? 'Not available — drawer uncounted' : revealExpected ? money(variance) : 'Hidden until count is entered'}</p></div>
+              <div><p className="label-mono">Actual drawer change</p><p className="mt-1 font-semibold text-dash-cream">{actualDrawerChange == null ? 'Enter current cash' : money(actualDrawerChange)}</p></div>
+              <div><p className="label-mono">Software-expected change</p><p className="mt-1 font-semibold text-dash-cream">{revealExpected ? money(expectedDrawerChange) : 'Hidden until count is entered'}</p></div>
             </div>
+            <p className="mt-3 text-xs leading-5 text-dash-tertiary">Drawer change is current cash minus starting cash. It is not gross sales because payouts, paid in/out, drops, refunds, and tips also move drawer cash.</p>
             {cashCountStatus === 'counted' && <label className="mt-4 block">
               <span className="label-mono">Variance reason</span>
               <textarea value={cash.variance_reason} onChange={(event) => updateCash('variance_reason', event.target.value)} rows={3} placeholder="Required when variance exceeds the configured threshold" className="mt-1.5 w-full resize-none border border-dash-border bg-[var(--glass-bg)] px-3 py-2 text-sm text-dash-cream outline-none focus:border-shell-accent/70" />
             </label>}
           </section>}
 
-          {access.viewVisible('close_day.readiness') && <section className="border border-dash-border bg-[var(--glass-bg)] p-5">
-            <h2 className="text-lg font-semibold text-dash-cream">Readiness</h2>
+          {currentStep?.id === 'readiness' && access.viewVisible('close_day.readiness') && <section className="border border-dash-border bg-[var(--glass-bg)] p-5 sm:p-6">
+            <h2 className="text-lg font-semibold text-dash-cream">Finish service first</h2>
+            <p className="mt-1 text-sm text-dash-secondary">Review live POS blockers before moving through the close. You can continue preparing cash while staff resolves them.</p>
             <div className="mt-4 space-y-4">
               <ReadinessRow ready={!preview?.open_checks} label="Checks" detail={preview?.open_checks ? `${preview.open_checks} must be closed on POS` : 'All checks are closed'} />
               <ReadinessRow ready={!blockingExceptions} label="Exceptions" detail={blockingExceptions ? `${blockingExceptions} block close (${unresolvedExceptions} total for review)` : unresolvedExceptions ? `${unresolvedExceptions} audit item(s), none blocking` : 'No payment or check exceptions'} />
               <ReadinessRow ready={!paidUnsentChecks} label="Fulfillment" detail={paidUnsentChecks ? `${paidUnsentChecks} paid check(s) have ${paidUnsentItems} unsent routed item(s)` : 'No paid checks have unsent routed items'} />
               <ReadinessRow ready={!cashMovementBlockers} label="Cash movements" detail={pendingCashMovements ? `${pendingCashMovements} pending or uncertain movement(s)` : requirePaidOutReview && unreviewedPaidOuts ? `${unreviewedPaidOuts} paid-out movement(s) require review` : 'No cash movement blockers'} />
               <ReadinessRow ready={verificationStatus === 'verified'} warning={verificationStatus !== 'mismatch'} label="Financial verification" detail={reconLoading ? 'Independent recompute still running' : verificationStatus === 'verified' ? 'Totals match raw transactions' : verificationStatus === 'mismatch' ? `${verificationMismatchCount} mismatch(es) require an override reason` : 'Independent verifier unavailable; close will be marked unverified'} />
-              <ReadinessRow ready={!pendingPrintJobs} label="Print work" detail={pendingPrintJobs ? `${pendingPrintJobs} jobs still pending` : 'No pending print work'} />
-              <ReadinessRow ready={!openEmployees.length} warning={Boolean(openEmployees.length)} label="Employees" detail={openEmployees.length ? `${openEmployees.length} will require confirmation` : 'Everyone is clocked out'} />
+              <ReadinessRow
+                ready={!pendingPrintJobs || discardPrintJobs}
+                warning={pendingPrintJobs > 0 && !discardPrintJobs}
+                label="Print work"
+                detail={pendingPrintJobs
+                  ? discardPrintJobs
+                    ? `${pendingPrintJobs} queued job${pendingPrintJobs === 1 ? '' : 's'} will be discarded only when this close succeeds`
+                    : `${pendingPrintJobs} queued job${pendingPrintJobs === 1 ? '' : 's'} need a wait-or-discard decision in Review`
+                  : 'No pending server print work'}
+              />
+              <ReadinessRow ready={!openEmployees.length} warning={Boolean(openEmployees.length)} label="Employees" detail={openEmployees.length ? preview?.closeout_settings?.show_clockout_options_at_close ? `${openEmployees.length} require a clock-out decision` : `${openEmployees.length} will be clocked out automatically` : 'Everyone is clocked out'} />
             </div>
-            {openEmployees.length > 0 && (
-              <div className="mt-5 border-t border-dash-border pt-4">
-                {openEmployees.slice(0, 5).map((entry) => (
-                  <div key={entry.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                    <span className="min-w-0 truncate font-semibold text-dash-cream">{entry.staff_name}</span>
-                    <span className="shrink-0 text-dash-tertiary">{durationLabel(entry.worked_minutes)}</span>
-                  </div>
-                ))}
+            {Number(preview?.open_checks || 0) > 0 && (
+              <button type="button" onClick={() => setModal('open-checks')} className="mt-5 min-h-[40px] border border-red-300/30 px-4 text-sm font-semibold text-red-200 hover:border-red-200/60">Review open checks</button>
+            )}
+          </section>}
+
+          {currentStep?.id === 'team' && showTeamStep && <section className="border border-dash-border bg-[var(--glass-bg)] p-5 sm:p-6">
+            <div className="flex items-center gap-2">
+              <Users size={17} className="text-dash-tertiary" aria-hidden="true" />
+              <h2 className="text-lg font-semibold text-dash-cream">Review the team</h2>
+            </div>
+            <p className="mt-1 text-sm text-dash-secondary">
+              {preview?.closeout_settings?.show_clockout_options_at_close
+                ? 'Choose who should be clocked out with this close. Every adjustment remains in the manager audit trail.'
+                : `${openEmployees.length} ${openEmployees.length === 1 ? 'person is' : 'people are'} currently clocked in. Review the roster before continuing.`}
+            </p>
+
+            {recentActivityRequiresReview && (
+              <label className="mt-5 flex cursor-pointer items-start gap-3 border border-amber-400/35 bg-amber-500/10 p-4 text-sm text-amber-100">
+                <input type="checkbox" checked={recentActivityConfirmed} onChange={(event) => setConfirmedRecentActivityAt(event.target.checked ? recentActivityAt : null)} className="mt-0.5" />
+                <span>
+                  <span className="font-semibold">I reviewed the floor after the recent activity.</span>
+                  <span className="mt-1 block text-xs text-amber-100/75">An order, payment, or cash action occurred within the last {preview?.close_period?.quiet_minutes || 10} minutes.</span>
+                </span>
+              </label>
+            )}
+
+            {openEmployees.length > 0 ? (
+              <CloseDayTeamRoster
+                entries={openEmployees}
+                allowSelection={Boolean(preview?.closeout_settings?.show_clockout_options_at_close)}
+                selectedIds={clockOutEntryIds}
+                onSelectAll={selectAllClockOutEntries}
+                onSelectNone={selectNoClockOutEntries}
+                onToggle={toggleClockOutEntry}
+              />
+            ) : (
+              <div className="mt-5 flex items-start gap-3 border border-emerald-400/30 bg-emerald-500/10 p-4">
+                <CheckCircle2 size={19} className="mt-0.5 shrink-0 text-emerald-300" aria-hidden="true" />
+                <div><p className="font-semibold text-emerald-100">Everyone is clocked out</p><p className="mt-1 text-sm text-emerald-100/70">No time-clock adjustment will be included in this close.</p></div>
               </div>
             )}
-            {access.viewVisible('close_day.finalize') && <button type="button" onClick={beginClose} disabled={closing || !preview} className="mt-6 flex min-h-[44px] w-full items-center justify-center gap-2 bg-dash-cream px-4 text-sm font-bold text-dash-base transition hover:opacity-90 disabled:opacity-50">
-              <CalendarCheck size={17} aria-hidden="true" />
-              {closing ? 'Closing day...' : 'Close business day'}
-            </button>}
           </section>}
+
+          {currentStep?.id === 'review' && access.viewVisible('close_day.finalize') && <section className="border border-dash-border bg-[var(--glass-bg)] p-5 sm:p-6">
+            <div className="flex items-center gap-2">
+              <CalendarCheck size={17} className="text-dash-tertiary" aria-hidden="true" />
+              <h2 className="text-lg font-semibold text-dash-cream">Review and close</h2>
+            </div>
+            <p className="mt-1 text-sm text-dash-secondary">Nothing is submitted until you select the final Close Day action.</p>
+
+            <CloseDayPrintDecisionCard
+              totalJobs={pendingPrintJobs}
+              receiptJobs={pendingReceiptPrintJobs}
+              kitchenJobs={pendingKitchenPrintJobs}
+              discardSelected={discardPrintJobs}
+              onWait={keepPrintWorkQueued}
+              onDiscard={() => { if (!discardPrintJobs) setModal('discard-print-work') }}
+              onRefresh={() => void refreshPreview()}
+              busy={loading || closing}
+            />
+
+            {hardBlockers.length > 0 && (
+              <div className="mt-5 border border-red-400/35 bg-red-500/10 p-4">
+                <div className="flex items-start gap-3"><AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-300" aria-hidden="true" /><div><p className="font-semibold text-red-100">Resolve {hardBlockers.length} blocker{hardBlockers.length === 1 ? '' : 's'} before closing</p><ul className="mt-2 space-y-1 text-sm text-red-100/75">{hardBlockers.map((blocker) => <li key={blocker}>• {blocker}</li>)}</ul></div></div>
+              </div>
+            )}
+
+            <div className="mt-5 divide-y divide-dash-border border-y border-dash-border">
+              <ReviewRow label="Business date" value={`${preview?.business_date || '—'} · Close ${preview?.close_period?.sequence || 1}`} />
+              <ReviewRow label="Cash" value={cashCountStatus === 'not_counted' ? 'Not physically counted — exception recorded' : cashCountEntered ? `${money(numberValue(cash.counted_cash))} current · ${money(variance)} variance` : 'Current cash required'} warning={!cashCountEntered || cashCountStatus === 'not_counted' || Math.abs(variance || 0) > threshold} />
+              {cashCountStatus === 'counted' && asksForRetainedBank && <ReviewRow label="Cash left for next day" value={retainedBankEntered ? money(policyRetainedBank) : 'Required'} warning={!retainedBankEntered} />}
+              {showTeamStep && <ReviewRow label="Employees" value={openEmployees.length ? preview?.closeout_settings?.show_clockout_options_at_close ? `${clockOutEntryIds.length} of ${openEmployees.length} will be clocked out and audited` : `${openEmployees.length} will be clocked out automatically and audited` : 'No clock-outs required'} warning={openEmployees.length > 0} />}
+              <ReviewRow label="Print work" value={pendingPrintJobs > 0 ? discardPrintJobs ? `${pendingPrintJobs} queued job${pendingPrintJobs === 1 ? '' : 's'} will be discarded with this close` : `${pendingPrintJobs} queued job${pendingPrintJobs === 1 ? '' : 's'} — waiting for POS review` : 'Server queue clear'} warning={pendingPrintJobs > 0} />
+              <ReviewRow label="Financial verification" value={verificationStatus === 'verified' ? 'Totals verified' : verificationStatus === 'mismatch' ? `${verificationMismatchCount} mismatch${verificationMismatchCount === 1 ? '' : 'es'} — manager reason required` : 'Unavailable — manager reason required'} warning={verificationStatus !== 'verified'} />
+            </div>
+
+            {verificationStatus !== 'verified' && (
+              <label className="mt-5 block border border-amber-400/35 bg-amber-500/10 p-4">
+                <span className="label-mono text-amber-100">Manager reason for verification exception</span>
+                <p className="mt-1 text-xs text-amber-100/75">This close will be marked unverified. Record what you reviewed and why closing is still appropriate.</p>
+                <textarea value={verificationReason} onChange={(event) => setVerificationReason(event.target.value)} rows={3} placeholder="Required — at least 5 characters" className="mt-3 w-full resize-none border border-amber-300/30 bg-transparent px-3 py-2 text-sm text-amber-50 outline-none focus:border-amber-200/60" />
+              </label>
+            )}
+
+            <div className="mt-5 border border-dash-border bg-dash-base/60 p-4 text-sm text-dash-secondary">
+              Closing saves Close {preview?.close_period?.sequence || 1} for {preview?.business_date}. Same-date activity starts another numbered close; it does not advance the calendar.
+            </div>
+          </section>}
+
+          {workflowSteps.length > 0 && (
+            <footer className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-dash-border bg-dash-base px-4 py-4 sm:px-5">
+              <p className="text-xs font-semibold text-dash-tertiary">Step {currentStepIndex + 1} of {workflowSteps.length}</p>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" onClick={goBack} disabled={currentStepIndex === 0 || closing} className="flex min-h-[42px] items-center gap-2 border border-dash-border px-4 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-40"><ChevronLeft size={16} aria-hidden="true" /> Back</button>
+                {currentStepIndex < workflowSteps.length - 1 ? (
+                  <button type="button" onClick={goNext} disabled={closing} className="flex min-h-[42px] items-center gap-2 bg-dash-cream px-5 text-sm font-bold text-dash-base disabled:opacity-50">Continue <ChevronRight size={16} aria-hidden="true" /></button>
+                ) : currentStep?.id === 'review' ? (
+                  <button type="button" onClick={beginClose} disabled={closing || !preview} className="flex min-h-[42px] items-center gap-2 bg-dash-cream px-5 text-sm font-bold text-dash-base disabled:opacity-50"><CalendarCheck size={16} aria-hidden="true" /> {closing ? 'Closing day…' : clockOutEntryIds.length > 0 ? `Clock out ${clockOutEntryIds.length} & close day` : 'Close business day'}</button>
+                ) : null}
+              </div>
+            </footer>
+          )}
         </div>
       ))}
-
-      {preview && access.can('settings.edit') && access.viewMode('close_day.cash') === 'full' && (
-        <CashCloseDaySettings
-          key={`${restaurantId}:${preview.business_date}`}
-          restaurantId={restaurantId}
-          initialSettings={preview.closeout_settings}
-          onSaved={(settings) => replacePreview((current) => mergeCloseDaySettings(current, settings))}
-        />
-      )}
 
       {modal === 'open-checks' && (
         <ActionModal
@@ -750,61 +1102,36 @@ export default function CloseDayPage({ restaurantId, restaurantName }) {
         </ActionModal>
       )}
 
-      {modal === 'verification' && (
+      {modal === 'discard-print-work' && pendingPrintJobs > 0 && (
         <ActionModal
-          title={verificationStatus === 'mismatch' ? 'Financial totals do not match' : 'Independent verification unavailable'}
+          title="Discard pending print work?"
           onClose={() => setModal(null)}
-          footer={<><button type="button" onClick={() => setModal(null)} className="min-h-[40px] border border-dash-border px-4 text-sm font-semibold text-dash-secondary">Cancel</button><button type="button" onClick={() => { if (verificationReason.trim().length < 5) { setError('Record a reason for the financial verification exception.'); return } beginClose(true) }} className="min-h-[40px] bg-amber-300 px-4 text-sm font-bold text-black">Record exception & continue</button></>}
+          footer={<><button type="button" onClick={() => setModal(null)} className="min-h-[40px] border border-dash-border px-4 text-sm font-semibold text-dash-secondary">Keep waiting</button><button type="button" onClick={confirmDiscardPrintWork} className="min-h-[40px] bg-red-400 px-4 text-sm font-bold text-black">Confirm discard on close</button></>}
         >
           <div className="flex gap-3">
-            <AlertTriangle size={22} className="shrink-0 text-amber-300" aria-hidden="true" />
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold text-dash-cream">This close will be marked unverified.</p>
-              <p className="mt-2 text-sm text-dash-secondary">{verificationStatus === 'mismatch' ? `${verificationMismatchCount} independent check${verificationMismatchCount === 1 ? '' : 's'} disagree with the Close Day totals. Review the deltas before continuing.` : 'The independent transaction recompute could not complete. Continuing records that limitation; it does not claim the totals matched.'}</p>
-              <label className="mt-4 block"><span className="label-mono">Manager reason</span><textarea value={verificationReason} onChange={(event) => setVerificationReason(event.target.value)} rows={3} placeholder="What was reviewed, and why is closing still appropriate?" className="mt-1.5 w-full resize-none border border-dash-border bg-[var(--glass-bg)] px-3 py-2 text-sm text-dash-cream outline-none focus:border-shell-accent/70" /></label>
+            <AlertTriangle size={22} className="shrink-0 text-red-300" aria-hidden="true" />
+            <div>
+              <p className="font-semibold text-dash-cream">Close Day will stop waiting for {pendingPrintJobs} server print job{pendingPrintJobs === 1 ? '' : 's'}.</p>
+              <p className="mt-2 text-sm text-dash-secondary">The queue records are expired only if the audited close succeeds. Paper already sent to or printed by a printer cannot be recalled.</p>
+              <p className="mt-2 text-sm text-dash-secondary">This does not discard POS-local held or dead-letter work. Those records remain on the POS for separate review.</p>
             </div>
           </div>
         </ActionModal>
       )}
 
-      {modal === 'employees' && (
+      {modal === 'settings' && preview && (
         <ActionModal
-          title="Employees are still clocked in"
+          title="Cash & Close Day settings"
           onClose={() => setModal(null)}
-          footer={<><button type="button" onClick={() => setModal(null)} disabled={closing} className="min-h-[40px] border border-dash-border px-4 text-sm font-semibold text-dash-secondary">Cancel</button><button type="button" onClick={() => void submitClose(true)} disabled={closing} className="min-h-[40px] bg-amber-300 px-4 text-sm font-bold text-black disabled:opacity-50">{closing ? 'Closing...' : 'Clock out employees & close'}</button></>}
+          wide
+          footer={<button type="button" onClick={() => setModal(null)} className="min-h-[40px] bg-dash-cream px-4 text-sm font-bold text-dash-base">Done</button>}
         >
-          <p className="text-sm text-dash-secondary">Everyone is selected by default. This choice affects payroll only; it does not change the saved financial close.</p>
-          {preview?.closeout_settings?.show_clockout_options_at_close && <div className="mt-3 flex gap-2"><button type="button" onClick={selectAllClockOutEntries} className="border border-dash-border px-3 py-2 text-xs font-semibold text-dash-cream">Everyone</button><button type="button" onClick={selectNoClockOutEntries} className="border border-dash-border px-3 py-2 text-xs font-semibold text-dash-secondary">Nobody</button></div>}
-          <div className="mt-4 divide-y divide-dash-border border-y border-dash-border">
-            {openEmployees.map((entry) => (
-              <button type="button" key={entry.id} disabled={!preview?.closeout_settings?.show_clockout_options_at_close} onClick={() => toggleClockOutEntry(entry.id)} className="flex w-full items-center justify-between gap-4 py-3 text-left disabled:cursor-default">
-                <div><p className="font-semibold text-dash-cream">{clockOutEntryIds.includes(entry.id) ? '✓ ' : '○ '}{entry.staff_name}</p><p className="mt-0.5 text-xs text-dash-tertiary">Clocked in {clockLabel(entry.clock_in_at)}{entry.last_activity_at ? ` · last POS activity ${clockLabel(entry.last_activity_at)}` : ''}</p></div>
-                <span className="text-sm font-semibold text-amber-200">{durationLabel(entry.worked_minutes)}</span>
-              </button>
-            ))}
-          </div>
-        </ActionModal>
-      )}
-
-      {modal === 'confirm' && (
-        <ActionModal
-          title="Close business day?"
-          onClose={() => setModal(null)}
-          footer={<><button type="button" onClick={() => setModal(null)} disabled={closing} className="min-h-[40px] border border-dash-border px-4 text-sm font-semibold text-dash-secondary">Cancel</button><button type="button" onClick={() => void submitClose(false)} disabled={closing} className="min-h-[40px] bg-dash-cream px-4 text-sm font-bold text-dash-base disabled:opacity-50">{closing ? 'Closing...' : 'Close day now'}</button></>}
-        >
-          <p className="text-sm text-dash-secondary">This saves Close {preview?.close_period?.sequence || 1} for {preview?.business_date}. Same-date activity starts another numbered close; it does not advance the calendar.</p>
-        </ActionModal>
-      )}
-
-      {modal === 'recent-activity' && (
-        <ActionModal title="Restaurant activity is still recent" onClose={() => setModal(null)} footer={<><button type="button" onClick={() => setModal(null)} className="min-h-[40px] border border-dash-border px-4 text-sm font-semibold text-dash-secondary">Cancel</button><button type="button" onClick={() => { setRecentActivityConfirmed(true); setModal(openEmployees.length ? 'employees' : 'confirm') }} className="min-h-[40px] bg-amber-300 px-4 text-sm font-bold text-black">Review complete — continue</button></>}>
-          <p className="text-sm text-dash-secondary">An order, payment, or cash action occurred within the last {preview?.close_period?.quiet_minutes || 10} minutes. Confirm the floor is ready before closing.</p>
-        </ActionModal>
-      )}
-
-      {modal === 'success' && result && (
-        <ActionModal title="Day closed" onClose={() => setModal(null)} footer={<button type="button" onClick={() => setModal(null)} className="min-h-[40px] bg-dash-cream px-4 text-sm font-bold text-dash-base">Done</button>}>
-          <div className="flex gap-3"><CheckCircle2 size={24} className="shrink-0 text-emerald-300" aria-hidden="true" /><div><p className="font-semibold text-dash-cream">{result.business_date} is finalized.</p><p className="mt-2 text-sm text-dash-secondary">{result.auto_clocked_out?.length ? `${result.auto_clocked_out.length} employee${result.auto_clocked_out.length === 1 ? '' : 's'} were clocked out and audited.` : 'No employee clock-outs were required.'}</p>{result.totals?.financial_verification?.status !== 'verified' && <p className="mt-2 text-sm font-semibold text-amber-200">Saved with an explicit financial verification exception.</p>}</div></div>
+          <CashCloseDaySettings
+            key={`${restaurantId}:${preview.business_date}`}
+            restaurantId={restaurantId}
+            initialSettings={preview.closeout_settings}
+            onSaved={(settings) => replacePreview((current) => mergeCloseDaySettings(current, settings))}
+          />
         </ActionModal>
       )}
     </div>
@@ -818,6 +1145,15 @@ function ReadinessRow({ ready, warning = false, label, detail }) {
     <div className="flex items-start gap-3">
       <Icon size={17} className={`mt-0.5 shrink-0 ${color}`} aria-hidden="true" />
       <div><p className="text-sm font-semibold text-dash-cream">{label}</p><p className="mt-0.5 text-xs text-dash-tertiary">{detail}</p></div>
+    </div>
+  )
+}
+
+function ReviewRow({ label, value, warning = false }) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-2 py-4">
+      <p className="text-sm text-dash-tertiary">{label}</p>
+      <p className={`max-w-xl text-right text-sm font-semibold ${warning ? 'text-amber-200' : 'text-dash-cream'}`}>{value}</p>
     </div>
   )
 }

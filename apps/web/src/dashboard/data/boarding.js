@@ -1,5 +1,5 @@
 import { supabase } from '../../shared/lib/supabase'
-import { DEFAULT_RATE_PLAN, formatRate, upsertRatePlan } from './ratePlans'
+import { DEFAULT_RATE_PLAN, fetchRatePlans, formatRate, upsertRatePlan } from './ratePlans'
 
 export const PENDING_CLAIM_STORAGE_KEY = 'shire_pending_claim_token'
 
@@ -43,11 +43,16 @@ export async function createQuickInvite({ userId, email, restaurantName, ratePla
 
 export async function createDraftInvite({ userId, email, draft, ratePlan }) {
   const plan = { ...DEFAULT_RATE_PLAN, ...ratePlan }
+  const restaurantId = crypto.randomUUID()
 
   // Draft store belongs to the reseller until claimed; claim_store() transfers it.
-  const { data: restaurant, error: restaurantError } = await supabase
+  // Do not request the row in the INSERT response. The operational SELECT RLS
+  // guard depends on an AFTER INSERT lifecycle trigger, so it can only see the
+  // new lifecycle row in a subsequent statement.
+  const { error: restaurantError } = await supabase
     .from('restaurants')
     .insert({
+      id: restaurantId,
       name: draft.name,
       owner_id: userId,
       status: 'draft',
@@ -59,11 +64,23 @@ export async function createDraftInvite({ userId, email, draft, ratePlan }) {
         payout_schedule: draft.payout_schedule || 'daily',
       },
     })
-    .select()
-    .single()
   if (restaurantError) throw restaurantError
 
-  await upsertRatePlan(restaurant.id, { ...plan, version: 0 })
+  const { data: restaurant, error: restaurantReadError } = await supabase
+    .from('restaurants')
+    .select()
+    .eq('id', restaurantId)
+    .single()
+  if (restaurantReadError) throw restaurantReadError
+
+  // Restaurant creation seeds a default pricing-policy version. Read that
+  // authoritative version before replacing the defaults so optimistic locking
+  // does not reject the initial reseller rate plan.
+  const currentRatePlans = await fetchRatePlans([restaurant.id])
+  await upsertRatePlan(restaurant.id, {
+    ...plan,
+    version: currentRatePlans[restaurant.id]?.version,
+  })
 
   const { data: invite, error: inviteError } = await supabase
     .from('store_invites')

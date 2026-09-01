@@ -42,6 +42,7 @@ import {
   inviteReseller,
   updateResellerPermissions,
 } from '../data/resellerAccess'
+import { employeeNameConfirmationMatches } from '../utils/employeeForget'
 
 const RESELLER_PERMISSION_LABELS = {
   devices: 'Devices & peripherals',
@@ -955,6 +956,86 @@ function MemberPermissionsModal({ restaurantId, member, waiters, roleDefaultsFor
   )
 }
 
+function ForgetEmployeeModal({ waiter, member, onClose, onForgotten }) {
+  const [confirmationName, setConfirmationName] = useState('')
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const nameMatches = employeeNameConfirmationMatches(confirmationName, waiter.name)
+  const canSubmit = nameMatches && reason.trim().length >= 3
+
+  const forget = async () => {
+    if (!canSubmit || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await onForgotten({ confirmationName, reason: reason.trim() })
+      onClose()
+    } catch (forgetError) {
+      setError(forgetError?.message || 'Could not permanently delete this employee.')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal isOpen onClose={busy ? undefined : onClose} title={`Delete ${waiter.name} permanently?`} size="md">
+      <div className="space-y-4">
+        <p className="text-sm leading-6 text-dash-secondary">
+          This cannot be undone. Their personal details, PIN, login, pay setup, and Team profile will be erased.
+          {member ? ' Their linked Back Office access will also be revoked.' : ''}
+          {' '}Past checks, timecards, payroll, and audit records remain under an anonymous former-employee identity.
+        </p>
+        <label className="block">
+          <span className="label-mono !text-[9px]">Type {waiter.name} to confirm</span>
+          <input
+            value={confirmationName}
+            disabled={busy}
+            onChange={(event) => setConfirmationName(event.target.value)}
+            autoComplete="off"
+            className="mt-1 w-full rounded-xl border border-dash-border bg-[var(--glass-bg)] px-3 py-2 text-sm text-dash-cream outline-none focus:border-dash-danger/60"
+          />
+          {confirmationName && !nameMatches && (
+            <span className="mt-1 block text-xs text-dash-danger">
+              Enter the employee&rsquo;s full name. Capitalization does not matter.
+            </span>
+          )}
+        </label>
+        <label className="block">
+          <span className="label-mono !text-[9px]">Manager reason</span>
+          <textarea
+            value={reason}
+            disabled={busy}
+            onChange={(event) => setReason(event.target.value)}
+            rows={3}
+            maxLength={500}
+            placeholder="Why is this employee being permanently removed?"
+            className="mt-1 w-full resize-none rounded-xl border border-dash-border bg-[var(--glass-bg)] px-3 py-2 text-sm text-dash-cream outline-none focus:border-dash-danger/60"
+          />
+        </label>
+        {error && <p className="text-xs text-dash-danger">{error}</p>}
+        <ModalFooter>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="rounded-xl border border-dash-border px-4 py-2 text-sm font-semibold text-dash-secondary disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void forget()}
+            disabled={!canSubmit || busy}
+            className="rounded-xl bg-dash-danger px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+          >
+            {busy ? 'Deleting…' : 'Delete permanently'}
+          </button>
+        </ModalFooter>
+      </div>
+    </Modal>
+  )
+}
+
 export default function TeamPage({ restaurantId }) {
   const auth = useAuth()
   const access = useBackOfficeAccess(auth, restaurantId)
@@ -978,6 +1059,7 @@ export default function TeamPage({ restaurantId }) {
   const [boBootstrapped, setBoBootstrapped] = useState(null)
   const [addMemberState, setAddMemberState] = useState(null) // { waiterId: string|null, role?: string } | null
   const [editingMember, setEditingMember] = useState(null)
+  const [forgettingEmployee, setForgettingEmployee] = useState(null)
   const [viewTemplates, setViewTemplates] = useState([])
 
   const canViewMembers = access.can('team.view')
@@ -1188,6 +1270,18 @@ export default function TeamPage({ restaurantId }) {
       setWaiters((prev) => prev.map((waiter) => (waiter.id === waiterId ? updated : waiter)))
     })
 
+  const forgetEmployee = async (waiter, { confirmationName, reason }) => {
+    await fetchWithSupabaseAuth(`/waiters/${waiter.id}/forget`, {
+      method: 'POST',
+      body: JSON.stringify({ confirmation_name: confirmationName, reason }),
+    })
+    setWaiters((current) => current.filter((item) => item.id !== waiter.id))
+    setBoMembers((current) => current.filter((member) => member.waiter_id !== waiter.id))
+    setBoInvites((current) => current.filter((invitation) => invitation.waiter_id !== waiter.id))
+    queryClient.invalidateQueries({ queryKey: queryKeys.waiters(restaurantId) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.backOfficeMembers(restaurantId) })
+  }
+
   const saveEmployeeJobsPay = async (waiter, payload) => {
     const updated = await fetchWithSupabaseAuth(`/waiters/${waiter.id}`, {
       method: 'PATCH',
@@ -1384,6 +1478,7 @@ export default function TeamPage({ restaurantId }) {
                     {hasDuplicatePin && <Badge variant="warning" dot>duplicate PIN</Badge>}
                     {invitation && <Badge variant="gold" dot>invite pending</Badge>}
                     {suspended && <Badge variant="warning" dot>suspended</Badge>}
+                    {waiter?.is_active === false && <Badge variant="neutral">deactivated</Badge>}
                   </span>
                 </span>
 
@@ -1462,6 +1557,15 @@ export default function TeamPage({ restaurantId }) {
                       className="text-xs font-semibold text-dash-tertiary transition hover:text-dash-secondary disabled:opacity-50"
                     >
                       {waiter.is_active === false ? 'Reactivate' : 'Deactivate'}
+                    </button>
+                  )}
+                  {waiter?.is_active === false && mayManageWaiter && !member?.is_primary_owner && (
+                    <button
+                      type="button"
+                      onClick={() => setForgettingEmployee({ waiter, member })}
+                      className="text-xs font-semibold text-dash-danger/80 transition hover:text-dash-danger"
+                    >
+                      Delete permanently
                     </button>
                   )}
                 </span>
@@ -1706,6 +1810,15 @@ export default function TeamPage({ restaurantId }) {
             setBoMembers((prev) => prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)))
             queryClient.invalidateQueries({ queryKey: queryKeys.backOfficeMembers(restaurantId) })
           }}
+        />
+      )}
+
+      {forgettingEmployee && (
+        <ForgetEmployeeModal
+          waiter={forgettingEmployee.waiter}
+          member={forgettingEmployee.member}
+          onClose={() => setForgettingEmployee(null)}
+          onForgotten={(payload) => forgetEmployee(forgettingEmployee.waiter, payload)}
         />
       )}
     </div>

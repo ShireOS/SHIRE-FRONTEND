@@ -5,8 +5,8 @@ import { isSupabaseConfigured, supabase, supabaseConfigError } from '../../share
 import type { EmailOtpType } from '@supabase/supabase-js'
 import type { Restaurant } from '@shire/db'
 import { isAbortError } from '../utils/authErrors'
+import { callbackNext, PENDING_INVITE_STORAGE_KEY } from '../inviteFlow'
 
-const PENDING_INVITE_STORAGE_KEY = 'shire_pending_access_invite_token'
 const PENDING_CLAIM_STORAGE_KEY = 'shire_pending_claim_token'
 
 const SUPPORTED_EMAIL_OTP_TYPES: EmailOtpType[] = [
@@ -134,6 +134,7 @@ function runCallbackFlowOnce(): Promise<void> {
 export function AuthCallbackPage() {
   const auth = useAuth()
   const navigate = useNavigate()
+  const [nextAfterAuth] = useState(() => callbackNext(window.location.search))
   const [isProcessingCallback, setIsProcessingCallback] = useState(true)
   const [fatalError, setFatalError] = useState<string | null>(null)
   const redirectedRef = useRef(false)
@@ -184,6 +185,11 @@ export function AuthCallbackPage() {
       return
     }
 
+    if (nextAfterAuth) {
+      navigate(nextAfterAuth, { replace: true })
+      return
+    }
+
     const pendingInvite = localStorage.getItem(PENDING_INVITE_STORAGE_KEY)
     if (pendingInvite) {
       navigate(`/invite?token=${encodeURIComponent(pendingInvite)}`, { replace: true })
@@ -215,6 +221,7 @@ export function AuthCallbackPage() {
     auth.restaurant.restaurants,
     auth.switchRestaurant,
     completedRestaurant,
+    nextAfterAuth,
     navigate,
   ])
 

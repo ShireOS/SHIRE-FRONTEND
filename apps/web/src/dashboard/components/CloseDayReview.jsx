@@ -61,7 +61,11 @@ export default function CloseDayReview({ restaurantId, onBack }) {
   const revealExpected = !preview?.closeout_settings?.blind_drawer_close || cashCountEntered
   const trackDeposit = Boolean(preview?.closeout_settings?.track_deposit_at_close)
   const asksForRetainedBank = openingBankPolicy?.source === 'previous_retained'
-  const retainedBankEntered = !asksForRetainedBank || String(retainedBank).trim() !== ''
+  const retainedBankEntered = !asksForRetainedBank || (
+    String(retainedBank).trim() !== ''
+    && Number.isFinite(Number(retainedBank))
+    && Number(retainedBank) >= 0
+  )
   const policyRetainedBank = asksForRetainedBank
     ? numberValue(retainedBank)
     : openingBankPolicy?.source === 'fixed' ? numberValue(cash.opening_bank) : 0
@@ -69,6 +73,9 @@ export default function CloseDayReview({ restaurantId, onBack }) {
     ? Math.max(0, numberValue(countedCash) - policyRetainedBank)
     : 0
   const variance = numberValue(countedCash) - expectedCash
+  const openingBank = numberValue(cash.opening_bank)
+  const actualDrawerChange = cashCountEntered ? numberValue(countedCash) - openingBank : null
+  const expectedDrawerChange = expectedCash - openingBank
   const threshold = numberValue(preview?.closeout_settings?.cash_variance_threshold)
   const needsVarianceReason = cashCountEntered && Math.abs(variance) > threshold
   const blockingExceptionCount = numberValue(preview?.blocking_exception_count)
@@ -87,6 +94,7 @@ export default function CloseDayReview({ restaurantId, onBack }) {
   const hasBlockingWork = openChecks > 0
     || blockingExceptionCount > 0
     || (pendingPrintJobs > 0 && !discardPrintJobs)
+    || (pendingPrintJobs > 0 && discardPrintJobs && !preview?.print_queue_revision)
     || (requiresClockOutConfirmation && !clockOutConfirmed)
     || !cashCountEntered
     || !retainedBankEntered
@@ -100,6 +108,7 @@ export default function CloseDayReview({ restaurantId, onBack }) {
       close_attempt_id: closeAttemptId,
       notes: notes.trim() || undefined,
       discard_print_jobs: discardPrintJobs,
+      expected_print_queue_revision: discardPrintJobs ? preview.print_queue_revision : undefined,
       confirm_auto_clock_out: clockOutConfirmed,
       opening_bank: numberValue(cash.opening_bank),
       paid_in: numberValue(cash.paid_in),
@@ -206,12 +215,20 @@ export default function CloseDayReview({ restaurantId, onBack }) {
                 {asksForRetainedBank && <MoneyInput label="Cash left for next day" value={retainedBank} onChange={setRetainedBank} />}
                 {trackDeposit && <Summary label="Calculated deposit" value={money(calculatedDeposit)} />}
               </div>
+              <p className="mt-2 text-xs leading-5 text-dash-tertiary">
+                {asksForRetainedBank
+                  ? 'Cash left in drawer becomes the next business day’s starting cash.'
+                  : 'The configured starting-cash policy determines what remains in the drawer; any tracked deposit is calculated from the count.'}
+              </p>
               <div className="mt-3 flex flex-wrap gap-2 text-sm">
                 <span className="rounded-lg bg-white/[0.04] px-3 py-2 text-dash-secondary">Expected {revealExpected ? money(expectedCash) : 'hidden until counted'}</span>
                 <span className={`rounded-lg px-3 py-2 ${needsVarianceReason ? 'bg-red-400/10 text-red-200' : 'bg-emerald-400/10 text-emerald-200'}`}>
                   Variance {revealExpected ? money(variance) : 'hidden until counted'}
                 </span>
+                <span className="rounded-lg bg-white/[0.04] px-3 py-2 text-dash-secondary">Actual drawer change {actualDrawerChange == null ? 'after counting' : money(actualDrawerChange)}</span>
+                <span className="rounded-lg bg-white/[0.04] px-3 py-2 text-dash-secondary">Software-expected change {revealExpected ? money(expectedDrawerChange) : 'hidden until counted'}</span>
               </div>
+              <p className="mt-2 text-xs leading-5 text-dash-tertiary">Drawer change is counted cash minus opening cash. It is not gross sales because payouts, paid in/out, drops, refunds, and tips also move drawer cash.</p>
               {needsVarianceReason && (
                 <label className="mt-3 block">
                   <span className="label-mono !text-[9px]">Variance explanation required</span>

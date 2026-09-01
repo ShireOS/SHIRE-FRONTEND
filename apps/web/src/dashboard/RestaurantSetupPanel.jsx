@@ -85,6 +85,10 @@ import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPane
 import { scheduleChange } from '../shared/api/scheduledChanges'
 import { cashDrawerRoleSummary } from './utils/cashDrawerPermissions'
 import StoreDangerZone from './components/StoreDangerZone'
+import {
+  normalizeWorkweekStartWeekday,
+  WORKWEEK_START_DAY_OPTIONS,
+} from './workweekSettings'
 
 const SETUP_TABS = [
   { id: 'basics', label: 'Basics' },
@@ -1539,6 +1543,7 @@ export default function RestaurantSetupPanel({
     cuisine_types: Array.isArray(restaurant.cuisine_types) ? restaurant.cuisine_types : [],
     seating_capacity: restaurant.seating_capacity || '',
     table_count: restaurant.table_count || '',
+    workweek_start_weekday: normalizeWorkweekStartWeekday(restaurant.config?.workweek_start_weekday),
   }))
   const [legal, setLegal] = useState(() => initialLegal(restaurant))
   const [payments, setPayments] = useState(() => initialPayments(restaurant))
@@ -1919,6 +1924,7 @@ export default function RestaurantSetupPanel({
       cuisine_types: Array.isArray(restaurant.cuisine_types) ? restaurant.cuisine_types : [],
       seating_capacity: restaurant.seating_capacity || '',
       table_count: restaurant.table_count || '',
+      workweek_start_weekday: normalizeWorkweekStartWeekday(restaurant.config?.workweek_start_weekday),
     }
     const nextLegal = initialLegal(restaurant)
     const nextPayments = initialPayments(restaurant)
@@ -1946,6 +1952,7 @@ export default function RestaurantSetupPanel({
       phone: nextProfile.phone,
       type: nextProfile.type,
       cuisine_types: nextProfile.cuisine_types,
+      workweek_start_weekday: nextProfile.workweek_start_weekday,
     })
     rememberSavedDraft('capacity', {
       seating_capacity: nextProfile.seating_capacity,
@@ -2134,9 +2141,13 @@ export default function RestaurantSetupPanel({
       phone: profile.phone.trim() || null,
       type: profile.type || 'casual',
       cuisine_types: profile.cuisine_types,
+      workweek_start_weekday: normalizeWorkweekStartWeekday(profile.workweek_start_weekday),
     }
     const saveRestaurantBasics = async (targetId) => {
-      return updateRestaurantRow(targetId, payload)
+      return fetchWithSupabaseAuth(`/restaurants/${targetId}/setup-profile`, {
+        method: 'PATCH',
+        body: JSON.stringify({ patch: payload }),
+      })
     }
     await saveWithPropagation({
       sectionId: 'basics',
@@ -2154,6 +2165,7 @@ export default function RestaurantSetupPanel({
         phone: saved?.phone || '',
         type: saved?.type || 'casual',
         cuisine_types: Array.isArray(saved?.cuisine_types) ? saved.cuisine_types : [],
+        workweek_start_weekday: normalizeWorkweekStartWeekday(saved?.config?.workweek_start_weekday),
       }),
       publication,
       buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-profile`, body: { patch: payload }, target_type: 'restaurant', target_id: targetId }),
@@ -3051,6 +3063,22 @@ export default function RestaurantSetupPanel({
                 ))}
               </div>
             </Field>
+            <Field label="Workweek Start Day">
+              <SelectInput
+                value={profile.workweek_start_weekday}
+                onChange={event => setProfile(prev => ({
+                  ...prev,
+                  workweek_start_weekday: normalizeWorkweekStartWeekday(event.target.value),
+                }))}
+              >
+                {WORKWEEK_START_DAY_OPTIONS.map(day => (
+                  <option key={day.value} value={day.value}>{day.label}</option>
+                ))}
+              </SelectInput>
+              <span className="block text-xs leading-5 text-dash-tertiary">
+                Week-to-date hours reset when the selected workweek start business day begins.
+              </span>
+            </Field>
           </div>
         </SectionShell>
       )}
@@ -3715,7 +3743,7 @@ export default function RestaurantSetupPanel({
                 <SelectInput value={closeoutSettings.opening_bank_source} onChange={event => updateCloseoutSettings({ opening_bank_source: event.target.value, require_starting_bank: false })}>
                   <option value="none">Opening bank: $0 automatically</option>
                   <option value="fixed">Opening bank: fixed amount</option>
-                  <option value="previous_retained">Opening bank: prior retained cash</option>
+                  <option value="previous_retained">Starting cash: use cash left at last Close Day (recommended)</option>
                 </SelectInput>
                 {closeoutSettings.opening_bank_source !== 'none' && (
                   <TextInput

@@ -22,6 +22,15 @@ const CUISINE_TYPES = [
   'Pizza', 'Burgers', 'Sushi', 'BBQ', 'Vegan', 'Farm-to-Table',
 ]
 
+const errorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message
+    if (typeof message === 'string' && message.trim()) return message
+  }
+  return 'Could not save restaurant basics'
+}
+
 export function BasicsStep({ onboarding }: BasicsStepProps) {
   const { data, updateData, createRestaurant, goToStep, isLoading, error } = onboarding
   const [localError, setLocalError] = useState<string | null>(null)
@@ -52,7 +61,7 @@ export function BasicsStep({ onboarding }: BasicsStepProps) {
       }
       goToStep(1)
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : 'Could not save restaurant basics')
+      setLocalError(errorMessage(err))
     }
   }
 
