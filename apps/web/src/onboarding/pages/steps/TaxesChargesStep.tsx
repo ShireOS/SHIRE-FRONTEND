@@ -1,11 +1,8 @@
 import {
   CHARGE_APPLIES_TO_OPTIONS,
-  MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET,
-  defaultTaxRate,
   taxAppliesToOptions,
-  taxPresetDraft,
 } from '@shire/settings'
-import type { ServiceChargeData, TaxRateData, UseOnboardingReturn } from '../../hooks/useOnboarding'
+import type { ServiceChargeData, UseOnboardingReturn } from '../../hooks/useOnboarding'
 
 interface TaxesChargesStepProps {
   onboarding: UseOnboardingReturn
@@ -58,42 +55,12 @@ function ToggleButton({
 
 export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
   const { data, updateData, saveTaxesCharges, nextStep, isLoading, error } = onboarding
-  const taxRates = data.tax_rates.length > 0 ? data.tax_rates : [defaultTaxRate()]
+  const taxRates = data.tax_rates
   const serviceCharges = data.service_charges
-
-  const updateTax = (index: number, patch: Partial<TaxRateData>) => {
-    const next = taxRates.map((row, currentIndex) => {
-      const updated = currentIndex === index ? { ...row, ...patch } : row
-      if (patch.is_default && currentIndex !== index) return { ...updated, is_default: false }
-      return updated
-    })
-    updateData({ tax_rates: next })
-  }
-
-  const removeTax = (index: number) => {
-    const next = taxRates.filter((_, currentIndex) => currentIndex !== index)
-    if (next.length === 0) {
-      updateData({ tax_rates: [defaultTaxRate()] })
-      return
-    }
-    if (!next.some(row => row.is_default)) {
-      next[0] = { ...next[0], is_default: true }
-    }
-    updateData({ tax_rates: next })
-  }
 
   const updateCharge = (index: number, patch: Partial<ServiceChargeData>) => {
     updateData({
       service_charges: serviceCharges.map((row, currentIndex) => currentIndex === index ? { ...row, ...patch } : row),
-    })
-  }
-
-  const applyMyrtleBeachTaxes = () => {
-    if (!window.confirm('Confirm this restaurant is inside Myrtle Beach city limits. This replaces the tax-rate draft and assigns Beer & Wine and Cocktails to their correct rates.')) return
-    const preset = taxPresetDraft(MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET)
-    updateData({
-      tax_rates: preset.tax_rates,
-      tax_category_assignments: preset.category_assignments,
     })
   }
 
@@ -119,64 +86,40 @@ export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
         <div>
           <p className="label-mono text-[rgb(var(--gold))]">Tax Rates</p>
           <p className="mt-2 text-sm leading-6 text-[rgb(var(--text-secondary))]">
-            Define the tax categories the POS will use for order totals, refunds, closeout, and reports.
+            SHIRE derives these values from the restaurant location. Platform support verifies and updates the rates; restaurant users cannot override them.
           </p>
-          <button
-            type="button"
-            onClick={applyMyrtleBeachTaxes}
-            className="mt-3 rounded-lg border border-[rgba(201,169,98,0.45)] px-3 py-2 text-sm text-[rgb(var(--text-primary))] transition-colors hover:bg-[rgba(201,169,98,0.08)]"
-          >
-            Use Myrtle Beach city-limits rates
-          </button>
         </div>
 
-        <div className="space-y-3">
-          {taxRates.map((tax, index) => (
-            <div key={tax.id || `tax:${index}`} className="rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] p-4">
-              <div className="grid gap-3 sm:grid-cols-[1.2fr_0.7fr_1fr]">
-                <input
-                  value={tax.name}
-                  onChange={(event) => updateTax(index, { name: event.target.value })}
-                  className={compactInputClass}
-                  placeholder="Sales Tax"
-                />
-                <input
-                  inputMode="decimal"
-                  value={tax.rate}
-                  onChange={(event) => updateTax(index, { rate: sanitizeNumber(event.target.value) })}
-                  className={compactInputClass}
-                  placeholder="Rate %"
-                />
-                <select
-                  value={tax.applies_to}
-                  onChange={(event) => updateTax(index, { applies_to: event.target.value as TaxRateData['applies_to'] })}
-                  className={compactInputClass}
-                >
-                  {taxAppliesToOptions(tax.applies_to).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <ToggleButton active={tax.is_default} onClick={() => updateTax(index, { is_default: true })}>Default tax</ToggleButton>
-                <ToggleButton active={tax.is_inclusive} onClick={() => updateTax(index, { is_inclusive: !tax.is_inclusive })}>Tax included in price</ToggleButton>
-                <button
-                  type="button"
-                  onClick={() => removeTax(index)}
-                  className="rounded-lg border border-red-500/20 px-3 py-2 text-xs font-semibold text-red-300 transition hover:border-red-400/50"
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          ))}
+        <div className="rounded-lg border border-[rgba(201,169,98,0.24)] bg-[rgba(201,169,98,0.06)] p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[rgb(var(--gold))]">Restaurant location</p>
+          <p className="mt-2 text-sm text-[rgb(var(--text-primary))]">
+            {[data.address, [data.city, data.state].filter(Boolean).join(', '), data.postal_code].filter(Boolean).join(' · ') || 'Complete Restaurant Basics to resolve taxes.'}
+          </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => updateData({ tax_rates: [...taxRates, { ...defaultTaxRate(), name: 'Additional Tax', is_default: false }] })}
-          className="rounded-lg border border-[rgba(255,255,255,0.1)] px-3 py-2 text-sm text-[rgb(var(--text-secondary))] transition-colors hover:border-[rgba(201,169,98,0.45)] hover:text-[rgb(var(--text-primary))]"
-        >
-          + Add tax rate
-        </button>
+        {taxRates.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.02)] p-4 text-sm text-[rgb(var(--text-secondary))]">
+            Tax rates are pending platform-support verification for this location.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {taxRates.map((tax, index) => (
+              <div key={tax.id || `tax:${index}`} className="rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-[rgb(var(--text-primary))]">{tax.name}</p>
+                    <p className="mt-1 text-xs text-[rgb(var(--text-tertiary))]">
+                      {taxAppliesToOptions(tax.applies_to).find(option => option.value === tax.applies_to)?.label || tax.applies_to}
+                      {tax.is_default ? ' · Default' : ''}
+                      {tax.is_inclusive ? ' · Included in price' : ' · Added at checkout'}
+                    </p>
+                  </div>
+                  <p className="text-lg font-semibold tabular-nums text-[rgb(var(--gold))]">{Number(tax.rate || 0)}%</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="space-y-4">

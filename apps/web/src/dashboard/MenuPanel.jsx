@@ -792,7 +792,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const [allergyExclusions, setAllergyExclusions] = useState([])
   const [pillDraft, setPillDraft] = useState('')
 
-  const [modifierDraft, setModifierDraft] = useState({ name: '', price_delta: '', category: '', tax_rate_id: '', reporting_category_id: '', group_id: '', new_question_name: '', print_on_kitchen_ticket: true, kitchen_display_role: '', item_ids: new Set() })
+  const [modifierDraft, setModifierDraft] = useState({ name: '', price_delta: '', category: '', reporting_category_id: '', group_id: '', new_question_name: '', print_on_kitchen_ticket: true, kitchen_display_role: '', item_ids: new Set() })
   const [showModifierDrawer, setShowModifierDrawer] = useState(false)
   const [groupDraft, setGroupDraft] = useState(() => defaultGroupDraft())
   const [specialDraft, setSpecialDraft] = useState(() => defaultSpecialDraft())
@@ -1784,16 +1784,15 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   }, [mergedItems, groups, categoriesByName, modifiersById])
   // ── Categories ───────────────────────────────────────────────────────────
 
-  // Per-store ids (category, tax rate, station) never travel to OTHER stores —
-  // they'd reference rows that don't exist there. Names do; the target backend
-  // re-links stations by name and leaves tax overrides unset.
+  // Per-store ids (category, station) never travel to OTHER stores — they'd
+  // reference rows that don't exist there. Tax assignment is support-owned and
+  // therefore never submitted from this browser surface.
   const categoriesBodyFor = (targetId, nextCategories) => ({
     categories: nextCategories
       .filter(category => category.name && category.name.trim())
       .map(category => ({
         id: targetId === restaurantId ? (category.id || undefined) : undefined,
         name: category.name.trim(),
-        tax_rate_id: targetId === restaurantId ? (category.tax_rate_id || null) : null,
         routing_station_id: targetId === restaurantId ? (category.routing_station_id || null) : null,
         routing_station_name: category.routing_station_name || stationsById[category.routing_station_id]?.name || null,
         default_course_type: category.default_course_type || null,
@@ -1867,7 +1866,6 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
   const categoryDraft = (name = '') => ({
     client_key: `category-draft-${categoryDraftKeyRef.current++}`,
     name,
-    tax_rate_id: '',
     routing_station_id: '',
     routing_station_name: '',
     default_course_type: '',
@@ -1955,7 +1953,6 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
           price_delta: modifierDraft.price_delta === '' ? 0 : Number(modifierDraft.price_delta),
           group_name: modifierDraft.category.trim() || 'Add-ons',
           is_active: true,
-          tax_rate_id: modifierDraft.tax_rate_id || null,
           reporting_category_id: modifierDraft.reporting_category_id || null,
           print_on_kitchen_ticket: modifierDraft.print_on_kitchen_ticket !== false,
           kitchen_display_role: modifierDraft.kitchen_display_role || null,
@@ -1991,7 +1988,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
         await addGroupOption(targetGroup.id, created.id, { display_order: targetGroup.options.length })
         await loadGroups()
       }
-      setModifierDraft(prev => ({ name: '', price_delta: '', category: prev.category, tax_rate_id: '', reporting_category_id: '', group_id: prev.group_id === '__new__' ? '' : prev.group_id, new_question_name: '', print_on_kitchen_ticket: true, kitchen_display_role: '', item_ids: new Set() }))
+      setModifierDraft(prev => ({ name: '', price_delta: '', category: prev.category, reporting_category_id: '', group_id: prev.group_id === '__new__' ? '' : prev.group_id, new_question_name: '', print_on_kitchen_ticket: true, kitchen_display_role: '', item_ids: new Set() }))
       setShowModifierDrawer(false)
       await loadModifiers()
     }, wantsNewQuestion
@@ -2491,7 +2488,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       <button
                         type="button"
                         onClick={() => jumpToCategory(categoryName)}
-                        title="Color, tax rate, station, and course for this category"
+                        title="Color, production station, and course for this category"
                         className="text-xs font-semibold text-dash-gold/80 transition hover:text-dash-gold"
                       >
                         Category settings →
@@ -2575,7 +2572,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
       {contentReady && activeTab === 'categories' && (
         <SectionShell
           title="Categories"
-          description="How the menu is organized on the POS. Each category card shows exactly how its button will look on the device, and sets the tax rate, prep station, and course its items inherit. Click an item count to see what's inside."
+          description="How the menu is organized on the POS. Each category card shows exactly how its button will look on the device, plus its support-managed tax, prep station, and course defaults. Click an item count to see what's inside."
           actions={(
             <div className="flex flex-wrap gap-2">
               <SmallButton onClick={() => { setCategories(structuredClone(savedCategories)); setError(''); setNotice('Changes discarded.') }} disabled={busy}>Cancel</SmallButton>
@@ -2682,16 +2679,12 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                           />
                         </Field>
                         <Field label="Tax rate">
-                          <SelectInput
-                            title="Every item in this category is taxed at this rate on the POS"
-                            value={category.tax_rate_id || ''}
-                            onChange={event => updateCategory(index, { tax_rate_id: event.target.value || null })}
-                          >
-                            <option value="">Store default rate</option>
-                            {taxRates.map(rate => (
-                              <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
-                            ))}
-                          </SelectInput>
+                          <div className="flex min-h-10 items-center rounded-lg border border-white/10 bg-white/[0.025] px-3 py-2 text-sm text-dash-secondary">
+                            {(() => {
+                              const rate = taxRates.find(row => row.id === category.tax_rate_id)
+                              return rate ? `${rate.name} · ${Number(rate.rate)}%` : 'Store default rate'
+                            })()}
+                          </div>
                         </Field>
                         <Field label="Fire timing">
                           <SelectInput
@@ -3013,19 +3006,7 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       <option value="side">Side / non-ingredient</option>
                     </SelectInput>
                   </Field>
-                  <div className="grid grid-cols-2 gap-3">
-                  <Field label="Tax rate">
-              <SelectInput
-                title="Tax this modifier's charge at its own rate — e.g. liquor in a Jack & Coke"
-                value={modifierDraft.tax_rate_id}
-                onChange={event => setModifierDraft(prev => ({ ...prev, tax_rate_id: event.target.value }))}
-              >
-                <option value="">Follows item</option>
-                {taxRates.map(rate => (
-                  <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
-                ))}
-              </SelectInput>
-            </Field>
+                  <div className="grid grid-cols-1 gap-3">
             <Field label="Sales category">
               <SelectInput
                 title="Report this modifier's charged amount under its own sales category"
@@ -3128,7 +3109,6 @@ export function MenuPanel({ restaurantId, initialTab = 'items', onlyTab = null, 
                       onRename={next => void updateModifier(modifier.id, { name: next }, localSave(`modifier:${modifier.id}:name`))}
                       onReprice={next => void updateModifier(modifier.id, { price_delta: next }, localSave(`modifier:${modifier.id}:price`))}
                       onRecategorize={next => void recategorizeModifier(modifier, next)}
-                      onSetTaxRate={next => void updateModifier(modifier.id, { tax_rate_id: next }, localSave(`modifier:${modifier.id}:tax`))}
                       onSetReportingCategory={next => void updateModifier(modifier.id, { reporting_category_id: next }, localSave(`modifier:${modifier.id}:sales`))}
                       onSetPrint={shouldPrint => void updateModifier(modifier.id, { print_on_kitchen_ticket: shouldPrint }, localSave(`modifier:${modifier.id}:print`))}
                       onSetKitchenRole={next => void setModifierKitchenRole(modifier.id, next, localSave(`modifier:${modifier.id}:kitchen`))}
@@ -3701,7 +3681,7 @@ function ModifierRowField({ label, children, status }) {
   )
 }
 
-function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitchenAlias, askedByGroups = [], allGroups = [], onAddToQuestion = null, busy, statusFor = () => '', onRename, onReprice, onRecategorize, onSetTaxRate, onSetReportingCategory, onSetPrint, onSetKitchenRole, onReplaceItems, onDelete }) {
+function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitchenAlias, askedByGroups = [], allGroups = [], onAddToQuestion = null, busy, statusFor = () => '', onRename, onReprice, onRecategorize, onSetReportingCategory, onSetPrint, onSetKitchenRole, onReplaceItems, onDelete }) {
   const [expanded, setExpanded] = useState(false)
   const selectedIds = useMemo(() => new Set(modifier.item_ids || []), [modifier])
   const neverPrints = modifier.print_on_kitchen_ticket === false
@@ -3748,18 +3728,12 @@ function ModifierRow({ modifier, menuItems, taxRates, reportingCategories, kitch
           />
         </ModifierRowField>
         <ModifierRowField label="Tax rate" status={statusFor('tax')}>
-          <SelectInput
-            aria-label="Modifier tax rate"
-            className="min-w-0"
-            title="Tax this modifier's charge at its own rate instead of the item's"
-            value={modifier.tax_rate_id || ''}
-            onChange={event => onSetTaxRate(event.target.value || null)}
-          >
-            <option value="">Follows item</option>
-            {taxRates.map(rate => (
-              <option key={rate.id} value={rate.id}>{rate.name} · {Number(rate.rate)}%</option>
-            ))}
-          </SelectInput>
+          <div className="flex min-h-10 items-center rounded-lg border border-white/10 bg-white/[0.025] px-3 py-2 text-sm text-dash-secondary">
+            {(() => {
+              const rate = taxRates.find(row => row.id === modifier.tax_rate_id)
+              return rate ? `${rate.name} · ${Number(rate.rate)}%` : 'Follows item'
+            })()}
+          </div>
         </ModifierRowField>
         <ModifierRowField label="Sales category" status={statusFor('sales')}>
           <SelectInput

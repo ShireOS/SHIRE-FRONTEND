@@ -108,11 +108,13 @@ export function BasicsStep({ onboarding }: BasicsStepProps) {
       {/* Address */}
       <div className="space-y-4">
         <label className="label-mono block text-[rgb(var(--gold))]">
-          Location <span className="text-[rgb(var(--text-tertiary))]">(optional)</span>
+          Restaurant Location *
         </label>
+        <p className="text-sm text-[rgb(var(--text-secondary))]">This is the canonical address used for taxes, receipts, reservations, and POS setup.</p>
 
         <input
           type="text"
+          required
           value={data.address}
           onChange={(e) => updateData({ address: e.target.value })}
           className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] focus:border-transparent transition-all"
@@ -122,6 +124,7 @@ export function BasicsStep({ onboarding }: BasicsStepProps) {
         <div className="grid grid-cols-2 gap-4">
           <input
             type="text"
+            required
             value={data.city}
             onChange={(e) => updateData({ city: e.target.value })}
             className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] focus:border-transparent transition-all"
@@ -129,6 +132,7 @@ export function BasicsStep({ onboarding }: BasicsStepProps) {
           />
           <input
             type="text"
+            required
             value={data.state}
             onChange={(e) => updateData({ state: e.target.value })}
             className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] focus:border-transparent transition-all"
@@ -139,6 +143,7 @@ export function BasicsStep({ onboarding }: BasicsStepProps) {
         <div className="grid grid-cols-2 gap-4">
           <input
             type="text"
+            required
             value={data.postal_code}
             onChange={(e) => updateData({ postal_code: e.target.value })}
             className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] focus:border-transparent transition-all"

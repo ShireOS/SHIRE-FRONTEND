@@ -350,8 +350,14 @@ gate; the bell remains disabled while access is unresolved or denied.
   `menu.edit_items`. Taxes & Charges is visible from Store Settings to owners,
   authorized managers, and authorized resellers through `settings.edit`;
   service charges and large-party auto-gratuity tiers are editable there, while
-  tax rates/category assignments are address-derived, read-only for non-admins,
-  and guarded the same way by the ML backend. POS applies the largest
+  tax rates/category assignments are support-owned and read-only in every
+  restaurant-facing surface, including platform-admin store setup. The canonical
+  `restaurants.address/city/state/postal_code/country` record drives the displayed
+  location and pricing jurisdiction; browser saves never send tax rows or category
+  assignments. An address change preserves the last configured rates, marks them
+  pending support verification for the new address fingerprint, and synchronizes
+  pricing jurisdiction instead of guessing a legally sensitive rate. The ML backend
+  enforces the same boundary; support-only tax writes require a reason. POS applies the largest
   restaurant-wide auto-gratuity tier whose minimum party size is met, unless a
   section/table service-charge rule overrides it.
   Setup -> Basics also owns the restaurant's Workweek Start Day under existing

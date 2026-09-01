@@ -164,8 +164,10 @@ export function PaymentsStep({ onboarding }: PaymentsStepProps) {
               <option value="electronic_first">Electronic</option>
             </select>
           </Field>
-          <Field label="State">
-            <input value={data.pricing_policy.jurisdiction_state} onChange={(event) => updatePricingPolicy({ jurisdiction_state: event.target.value.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2) })} className={inputClass} placeholder="SC" />
+          <Field label="Pricing Jurisdiction">
+            <div className={`${inputClass} cursor-default text-[rgb(var(--text-secondary))]`}>
+              {data.state || 'Complete Restaurant Basics'}
+            </div>
           </Field>
           <Field label="Receipt Label">
             <input value={data.pricing_policy.label} onChange={(event) => updatePricingPolicy({ label: event.target.value.slice(0, 120) })} className={inputClass} placeholder="Dual pricing" />

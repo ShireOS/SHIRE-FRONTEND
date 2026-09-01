@@ -29,7 +29,6 @@ function blankCategory(index: number): MenuCategoryData {
 export function MenuCategoriesStep({ onboarding }: MenuCategoriesStepProps) {
   const { data, updateData, saveMenuCategories, nextStep, isLoading, error } = onboarding
   const categories = data.menu_categories
-  const taxRates = data.tax_rates
 
   const updateCategory = (index: number, patch: Partial<MenuCategoryData>) => {
     updateData({
@@ -63,14 +62,14 @@ export function MenuCategoriesStep({ onboarding }: MenuCategoriesStepProps) {
 
       <div className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-4">
         <p className="text-sm text-[rgb(var(--text-secondary))]">
-          Create the menu categories your restaurant actually uses, like appetizers, entrees, desserts, cocktails, happy hour, or custom groups. Tax, prep station, fire timing, and KDS group are defaults for new items in that category.
+          Create the menu categories your restaurant actually uses, like appetizers, entrees, desserts, cocktails, happy hour, or custom groups. Prep station, fire timing, and KDS group are defaults for new items in that category. Taxes follow the verified restaurant location.
         </p>
       </div>
 
       <div className="space-y-3">
         {categories.map((category, index) => (
           <div key={category.id || `menu-category-${index}`} className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-4">
-            <div className="grid gap-3 md:grid-cols-[1.2fr_1fr_auto]">
+            <div className="grid gap-3 md:grid-cols-[1fr_auto]">
               <label className="space-y-1">
                 <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">Category name</span>
                 <input
@@ -79,17 +78,6 @@ export function MenuCategoriesStep({ onboarding }: MenuCategoriesStepProps) {
                   className={inputClass}
                   placeholder="Appetizers"
                 />
-              </label>
-              <label className="space-y-1">
-                <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">Tax override</span>
-                <select value={category.tax_rate_id} onChange={(event) => updateCategory(index, { tax_rate_id: event.target.value })} className={inputClass}>
-                  <option value="" className="bg-[#1a1a1a]">Use default tax</option>
-                  {taxRates.map(rate => (
-                    <option key={rate.id || rate.name} value={rate.id || ''} className="bg-[#1a1a1a]">
-                      {rate.name}{rate.rate ? ` · ${rate.rate}%` : ''}
-                    </option>
-                  ))}
-                </select>
               </label>
               <button
                 type="button"

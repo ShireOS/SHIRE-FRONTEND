@@ -27,7 +27,6 @@ test('editable modifier values have explicit accessible names', () => {
     'Modifier name',
     'Price adjustment',
     'Modifier category',
-    'Modifier tax rate',
     'Modifier sales category',
     'Modifier kitchen hierarchy',
   ]) {
