@@ -11,6 +11,7 @@ const onboardingCategories = read('../onboarding/pages/steps/MenuCategoriesStep.
 const onboardingPayments = read('../onboarding/pages/steps/PaymentsStep.tsx')
 const onboardingHook = read('../onboarding/hooks/useOnboarding.ts')
 const taxJurisdiction = read('./components/TaxJurisdictionPanel.tsx')
+const dashboardShell = read('./shell/DashboardShell.jsx')
 
 test('restaurant tax percentages stay address-derived except for the audited reseller override', () => {
   for (const source of [setup, onboardingTaxes]) {
@@ -23,6 +24,7 @@ test('restaurant tax percentages stay address-derived except for the audited res
   assert.match(taxJurisdiction, /can_override/)
   assert.match(taxJurisdiction, /Save audited tax override/)
   assert.match(taxJurisdiction, /tax_change_reason/)
+  assert.match(dashboardShell, /\['reseller', 'reseller_employee', 'admin'\]\.includes\(accountType\)/)
 })
 
 test('menu editors cannot directly select a percentage-bearing tax row', () => {

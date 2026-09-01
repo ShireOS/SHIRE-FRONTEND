@@ -501,7 +501,11 @@ export default function DashboardShell({
         : item
     ))
     .filter((item) => {
-      if (item.resellerOnly && !allowedStoreTabs) return false
+      if (
+        item.resellerOnly
+        && !allowedStoreTabs
+        && !['reseller', 'reseller_employee', 'admin'].includes(accountType)
+      ) return false
       return item.children ? item.children.length > 0 : tabVisible(item.id)
     })
 

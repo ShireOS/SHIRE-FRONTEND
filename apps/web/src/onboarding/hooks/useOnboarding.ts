@@ -1687,16 +1687,37 @@ export function useOnboarding() {
     user,
   ])
 
-  // Cancel closes the wizard and discards only its browser draft. Any steps
-  // already published to a restaurant remain safely available from Setup;
-  // deleting a restaurant stays behind the existing owner-confirmed lifecycle.
-  const cancelOnboarding = useCallback(() => {
-    if (user) {
-      clearDraft(user.id)
-    }
+  // Cancel permanently removes only a never-operational onboarding restaurant.
+  // The backend repeats the owner, lifecycle, completion, and operational-
+  // history checks under lock; active stores remain behind the recoverable
+  // Store Settings lifecycle.
+  const cancelOnboarding = useCallback(async () => {
+    setIsLoading(true)
     setError(null)
-    navigate('/enterprise/stores', { replace: true })
-  }, [navigate, user])
+    try {
+      if (activeRestaurantId) {
+        await runWithTimeout(
+          () => fetchWithSupabaseAuth(
+            `/restaurants/${activeRestaurantId}/onboarding-cancellation`,
+            { method: 'POST' },
+          ),
+          'Canceling restaurant setup timed out. Please retry.',
+        )
+      }
+      if (user) {
+        clearDraft(user.id)
+      }
+      setRestaurantId(null)
+      await refreshRestaurants()
+      navigate('/enterprise/stores', { replace: true })
+    } catch (err) {
+      const message = toErrorMessage(err, 'Could not cancel restaurant setup')
+      setError(message)
+      throw err instanceof Error ? err : new Error(message)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [activeRestaurantId, navigate, refreshRestaurants, runWithTimeout, user])
 
   // Save goals & priorities (after step 1)
   const saveLegal = useCallback(async () => {

@@ -63,9 +63,13 @@ export function OnboardingPage() {
     }
   }, [onboarding.exitToBackOffice])
 
-  const handleCancel = useCallback(() => {
-    setShowCancelConfirmation(false)
-    onboarding.cancelOnboarding()
+  const handleCancel = useCallback(async () => {
+    try {
+      await onboarding.cancelOnboarding()
+      setShowCancelConfirmation(false)
+    } catch {
+      // The hook owns the visible error and leaves the confirmation open.
+    }
   }, [onboarding.cancelOnboarding])
 
   // Loading state
@@ -194,22 +198,29 @@ export function OnboardingPage() {
               Cancel guided setup?
             </h2>
             <p className="mt-3 text-sm leading-6 text-[rgb(var(--text-secondary))]">
-              Unsaved changes on this page will be discarded. Any setup you already saved will stay with the restaurant and can be resumed later from Setup.
+              This permanently deletes the incomplete restaurant and all setup data saved for it. This cannot be undone. Active or operational restaurants cannot be canceled here.
             </p>
+            {onboarding.error && (
+              <p className="mt-3 rounded-lg border border-red-400/25 bg-red-400/[0.07] p-3 text-sm text-red-200">
+                {onboarding.error}
+              </p>
+            )}
             <div className="mt-6 flex justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setShowCancelConfirmation(false)}
+                disabled={isLoading}
                 className="rounded-lg border border-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/5"
               >
                 Keep setting up
               </button>
               <button
                 type="button"
-                onClick={handleCancel}
-                className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-gray-100"
+                onClick={() => void handleCancel()}
+                disabled={isLoading}
+                className="rounded-lg bg-red-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Cancel setup
+                {isLoading ? 'Deleting…' : 'Delete draft restaurant'}
               </button>
             </div>
           </section>

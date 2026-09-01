@@ -171,6 +171,13 @@
   through to a hidden child surface.
 
 ### Recoverable restaurant lifecycle (2026-08-24)
+- Cancel in guided onboarding is a distinct immediate draft cleanup. Only the
+  primary owner may permanently remove a restaurant that remains `onboarding`,
+  has never completed, has an active lifecycle, and has no operational order,
+  payment, business-day, cash, time-clock, gift-card, tip-pool, visit,
+  reservation, or webhook history. ML rechecks those conditions under lock and
+  deletes all tenant setup rows atomically. Completed or operational stores must
+  use the recoverable Danger Zone lifecycle; clearing browser state is not Cancel.
 - Store deletion is a service-owned lifecycle, never a browser DELETE. The
   Danger Zone accepts only the exact case-sensitive store name plus the primary
   owner's Supabase password and performs a final POS-owned readiness recheck
@@ -361,7 +368,10 @@ gate; the bell remains disabled while access is unresolved or denied.
   class in Menu Categories; that selector never exposes a percentage.
   Any assigned reseller principal or employee, plus platform admins, has a
   dedicated restaurant-scoped Taxes route and may make a reasoned audited manual
-  percentage override regardless of the broader reseller Setup grant. Initial and
+  percentage override regardless of the broader reseller Setup grant. A reseller
+  or reseller-employee account keeps this tax-only classification when it owns
+  the onboarding restaurant, so the same editor appears during initial setup and
+  later configuration without granting access to unrelated stores. Initial and
   existing Basics use the same structured location search: the no-key U.S. Census
   geocoder supplies ordinary state/county/place geography; retained official SST
   rows supply nationwide special/product boundaries and a full fallback only for

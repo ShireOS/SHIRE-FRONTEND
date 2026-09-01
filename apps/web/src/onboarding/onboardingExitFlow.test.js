@@ -20,10 +20,12 @@ test('exit keeps onboarding incomplete and opens the canonical Setup recovery pa
   assert.doesNotMatch(exitFlow, /onboarding_completed_at|status:\s*'active'/)
 })
 
-test('cancel is confirmed and clears only the guided-flow draft', () => {
+test('cancel is confirmed and permanently removes only the onboarding draft restaurant', () => {
   assert.match(page, /showCancelConfirmation/)
   assert.match(page, /Cancel guided setup\?/)
-  assert.match(hook, /const cancelOnboarding = useCallback[\s\S]*clearDraft\(user\.id\)[\s\S]*navigate\('\/enterprise\/stores'/)
+  assert.match(page, /Delete draft restaurant/)
+  assert.match(hook, /onboarding-cancellation/)
+  assert.match(hook, /const cancelOnboarding = useCallback[\s\S]*clearDraft\(user\.id\)[\s\S]*refreshRestaurants\(\)[\s\S]*navigate\('\/enterprise\/stores'/)
 })
 
 test('onboarding actions wrap on narrow headers and lock while saving', () => {
