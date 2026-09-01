@@ -351,19 +351,30 @@ gate; the bell remains disabled while access is unresolved or denied.
   Team (members/roles and Manager Controls), UI Editor (appearance, sections,
   floor plan), and Payroll & Tips. All of these pages reuse the Setup editor's
   canonical save contracts. Discount reads require `menu.view`; writes require
-  `menu.edit_items`. Taxes & Charges is visible from Store Settings to owners,
-  authorized managers, and authorized resellers through `settings.edit`;
-  service charges and large-party auto-gratuity tiers are editable there. Tax
-  percentages remain address-derived and read-only: restaurant users select
-  semantic sales classes and explicitly classify every menu category when multiple
-  classes are enabled. The `settings.edit`-guarded ML resolver validates a
-  deliverable address and obtains product-level AvaTax jurisdiction details before
+  `menu.edit_items`. Taxes & Charges is visible from Store Settings to owners and
+  authorized managers through `settings.edit`; service charges and large-party
+  auto-gratuity tiers are editable there. Tax percentages remain address-derived
+  and read-only for restaurant users: they select semantic sales classes and
+  explicitly classify every menu category when multiple classes are enabled.
+  Because onboarding creates menu categories after its tax stage, a sole class
+  is assigned automatically while mixed-class restaurants choose a semantic
+  class in Menu Categories; that selector never exposes a percentage.
+  Any assigned reseller principal or employee, plus platform admins, has a
+  dedicated restaurant-scoped Taxes route and may make a reasoned audited manual
+  percentage override regardless of the broader reseller Setup grant. Initial and
+  existing Basics use the same structured location search: exact SST street or
+  ZIP jurisdiction records normalize into the restaurant schema, while no match
+  preserves explicit manual entry and leaves tax coverage unresolved. The
+  `settings.edit`/reseller-aware ML resolver uses SHIRE's versioned official SST
+  catalog first and AvaTax only as a configured fallback before
   atomically updating `tax_rates`, category assignments, the POS default rate,
   normalized location, pricing jurisdiction, and an audited jurisdiction snapshot.
   It rechecks address/category state under lock; provider, precision, mapping, or
   stale-state failures change nothing. An unverified 0% bootstrap row is never valid
-  setup. Manual percentage overrides remain platform-admin-only with a reason, and
-  POS continues to consume the existing shared tax tables and snapshots. POS applies the largest
+  setup. Missing official product classes stay blank, never 0. POS continues to
+  consume the shared tables and snapshots, selecting on/off-premise contextual
+  category rates from fulfillment while retaining its manager-editable fallback.
+  POS applies the largest
   restaurant-wide auto-gratuity tier whose minimum party size is met, unless a
   section/table service-charge rule overrides it.
   Setup -> Basics also owns the restaurant's Workweek Start Day under existing
@@ -375,7 +386,11 @@ gate; the bell remains disabled while access is unresolved or denied.
 - Migrations (manual run): ML `supabase/migrations/0055_team_hub_access.sql`
   (restaurant_members + back_office_permissions + invitations alter) and
   `supabase/migrations/20260831143000_waiter_forget_audit.sql` (audited employee
-  privacy scrub marker); POS repo `0022_pos_timeclock_breaks_v1.sql`
+  privacy scrub marker), plus
+  `supabase/migrations/20260901163000_tax_jurisdiction_catalog.sql` (official tax
+  catalog, semantic category profiles, and contextual POS tax metadata) and
+  `supabase/migrations/20260901174500_tax_catalog_preserve_official_duplicate_rows.sql`
+  (lossless SST source ingestion); POS repo `0022_pos_timeclock_breaks_v1.sql`
   (pos_timeclock_breaks).
 - POS backend: portal Supabase-JWT auth for `/manager/timeclock*` validates
   sessions through Supabase Auth (including asymmetric signing keys; legacy

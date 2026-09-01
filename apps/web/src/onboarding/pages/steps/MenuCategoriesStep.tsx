@@ -14,6 +14,21 @@ const FIRE_MODES = [
   ['by_course', 'By course'],
 ] as const
 
+const TAX_CLASS_LABELS: Record<string, string> = {
+  prepared_food: 'Prepared food',
+  merchandise: 'Merchandise',
+  beer_on_premise: 'Beer — on premise',
+  wine_on_premise: 'Wine — on premise',
+  cider_on_premise: 'Cider — on premise',
+  spirits_on_premise: 'Spirits — on premise',
+  mixed_drink_on_premise: 'Mixed drinks — on premise',
+  beer_off_premise: 'Beer — off premise',
+  wine_off_premise: 'Wine — off premise',
+  cider_off_premise: 'Cider — off premise',
+  spirits_off_premise: 'Spirits — off premise',
+  mixed_drink_off_premise: 'Mixed drinks — off premise',
+}
+
 function blankCategory(index: number): MenuCategoryData {
   return {
     name: `Custom Category ${index + 1}`,
@@ -29,6 +44,11 @@ function blankCategory(index: number): MenuCategoryData {
 export function MenuCategoriesStep({ onboarding }: MenuCategoriesStepProps) {
   const { data, updateData, saveMenuCategories, nextStep, isLoading, error } = onboarding
   const categories = data.menu_categories
+  const enabledTaxClasses = data.enabled_tax_classes || []
+  const requiresTaxClassification = enabledTaxClasses.length > 1
+  const classificationsComplete = !requiresTaxClassification || categories.every(category => (
+    enabledTaxClasses.includes(category.tax_class || '')
+  ))
 
   const updateCategory = (index: number, patch: Partial<MenuCategoryData>) => {
     updateData({
@@ -87,7 +107,25 @@ export function MenuCategoriesStep({ onboarding }: MenuCategoriesStepProps) {
                 Remove
               </button>
             </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <div className={`mt-3 grid gap-3 ${requiresTaxClassification ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
+              {requiresTaxClassification && (
+                <label className="space-y-1">
+                  <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">Sales tax class</span>
+                  <select
+                    value={category.tax_class || ''}
+                    onChange={(event) => updateCategory(index, { tax_class: event.target.value })}
+                    className={inputClass}
+                    required
+                  >
+                    <option value="">Choose class</option>
+                    {enabledTaxClasses.map(taxClass => (
+                      <option key={taxClass} value={taxClass} className="bg-[#1a1a1a]">
+                        {TAX_CLASS_LABELS[taxClass] || taxClass}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="space-y-1">
                 <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">Default prep station</span>
                 <input
@@ -132,12 +170,15 @@ export function MenuCategoriesStep({ onboarding }: MenuCategoriesStepProps) {
         </button>
         <button
           type="submit"
-          disabled={isLoading}
+          disabled={isLoading || !classificationsComplete}
           className="rounded-lg bg-white px-6 py-3 font-medium text-black transition-colors hover:bg-gray-100 disabled:opacity-50"
         >
           {isLoading ? 'Saving...' : 'Continue'}
         </button>
       </div>
+      {!classificationsComplete && (
+        <p className="text-sm text-amber-200">Choose a sales tax class for every menu category. You are classifying what is sold—not entering a percentage.</p>
+      )}
     </form>
   )
 }

@@ -146,6 +146,7 @@ const STORE_NAV = [
   { id: 'ui', label: 'UI Editor', icon: Palette },
   { id: 'menu-workspace', label: 'POS Menus', icon: SlidersHorizontal },
   { id: 'menu', label: 'Menu', icon: UtensilsCrossed },
+  { id: 'taxes', label: 'Taxes', icon: Percent, resellerOnly: true },
   { id: 'integrations', label: 'Integrations', icon: SlidersHorizontal },
   { id: 'reservations', label: 'Reservations', icon: PhoneCall },
   { id: 'feedback', label: 'Complaints', icon: MessageSquareWarning },
@@ -500,6 +501,7 @@ export default function DashboardShell({
         : item
     ))
     .filter((item) => {
+      if (item.resellerOnly && !allowedStoreTabs) return false
       return item.children ? item.children.length > 0 : tabVisible(item.id)
     })
 

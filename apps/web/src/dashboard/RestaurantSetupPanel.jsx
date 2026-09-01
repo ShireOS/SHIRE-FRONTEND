@@ -78,6 +78,7 @@ import { PublishControls } from '../shared/components/PublishControls'
 import { SmartTimeInput } from '../shared/components/SmartTimeInput'
 import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
 import { TaxJurisdictionPanel } from './components/TaxJurisdictionPanel'
+import { RestaurantLocationFields } from '../shared/components/RestaurantLocationFields'
 import { scheduleChange } from '../shared/api/scheduledChanges'
 import { cashDrawerRoleSummary } from './utils/cashDrawerPermissions'
 import StoreDangerZone from './components/StoreDangerZone'
@@ -2988,13 +2989,11 @@ export default function RestaurantSetupPanel({
             </Field>
             <div className="space-y-4">
               <span className="label-mono block">Location</span>
-              <TextInput placeholder="123 Main Street" value={profile.address} onChange={event => setProfile(prev => ({ ...prev, address: event.target.value }))} />
-              <div className="grid gap-4 md:grid-cols-2">
-                <TextInput placeholder="City" value={profile.city} onChange={event => setProfile(prev => ({ ...prev, city: event.target.value }))} />
-                <TextInput placeholder="State" value={profile.state} onChange={event => setProfile(prev => ({ ...prev, state: event.target.value }))} />
-                <TextInput placeholder="Zip Code" value={profile.postal_code} onChange={event => setProfile(prev => ({ ...prev, postal_code: event.target.value }))} />
-                <TextInput placeholder="Phone" value={profile.phone} onChange={event => setProfile(prev => ({ ...prev, phone: event.target.value }))} />
-              </div>
+              <RestaurantLocationFields
+                value={{ address: profile.address, city: profile.city, state: profile.state, postal_code: profile.postal_code, country: 'US' }}
+                onChange={patch => setProfile(prev => ({ ...prev, ...patch }))}
+              />
+              <TextInput placeholder="Phone" value={profile.phone} onChange={event => setProfile(prev => ({ ...prev, phone: event.target.value }))} />
             </div>
             <Field label="Restaurant Type">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

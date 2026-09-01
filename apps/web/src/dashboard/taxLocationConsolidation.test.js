@@ -12,7 +12,7 @@ const onboardingPayments = read('../onboarding/pages/steps/PaymentsStep.tsx')
 const onboardingHook = read('../onboarding/hooks/useOnboarding.ts')
 const taxJurisdiction = read('./components/TaxJurisdictionPanel.tsx')
 
-test('restaurant-facing tax configuration is read-only and address-derived', () => {
+test('restaurant tax percentages stay address-derived except for the audited reseller override', () => {
   for (const source of [setup, onboardingTaxes]) {
     assert.doesNotMatch(source, /Use Myrtle Beach/)
     assert.doesNotMatch(source, /Add tax rate|New tax/)
@@ -20,7 +20,9 @@ test('restaurant-facing tax configuration is read-only and address-derived', () 
   }
   assert.match(setup, /canonical restaurant location/)
   assert.match(onboardingTaxes, /never type or override a percentage/)
-  assert.doesNotMatch(taxJurisdiction, /onChange=.*tax\.rate/)
+  assert.match(taxJurisdiction, /can_override/)
+  assert.match(taxJurisdiction, /Save audited tax override/)
+  assert.match(taxJurisdiction, /tax_change_reason/)
 })
 
 test('menu editors cannot directly select a percentage-bearing tax row', () => {
@@ -36,6 +38,9 @@ test('provider resolution sends semantic classes and requires explicit mixed-cat
   assert.match(taxJurisdiction, /Classify every active menu category/)
   assert.doesNotMatch(taxJurisdiction, /\btax_rate\s*:/)
   assert.match(taxJurisdiction, /placeholder 0% rate is not treated as valid/)
+  assert.match(onboardingCategories, /Sales tax class/)
+  assert.match(onboardingCategories, /classifying what is sold—not entering a percentage/)
+  assert.doesNotMatch(onboardingCategories, /tax\.rate|Rate %/)
 })
 
 test('address and pricing jurisdiction use the canonical restaurant profile', () => {

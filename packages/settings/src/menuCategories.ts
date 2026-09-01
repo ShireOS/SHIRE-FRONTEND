@@ -26,6 +26,7 @@ export function normalizeMenuCategories(value: unknown): MenuCategoryData[] {
       id: asNullableString(row.id),
       name: asString(row.name).trim(),
       tax_rate_id: asString(row.tax_rate_id),
+      tax_class: asString(row.tax_class),
       routing_station_id: asString(row.routing_station_id),
       routing_station_name: asString(row.routing_station_name),
       default_course_type: (row.default_course_type || null) as MenuCategoryData['default_course_type'],
@@ -45,6 +46,7 @@ export function menuCategoriesPayload(categories: unknown) {
     categories: normalizeMenuCategories(categories).map(row => ({
       id: row.id || undefined,
       name: row.name,
+      ...(row.tax_class ? { tax_class: row.tax_class } : {}),
       routing_station_id: row.routing_station_id || null,
       routing_station_name: row.routing_station_name || null,
       default_course_type: row.default_course_type || null,

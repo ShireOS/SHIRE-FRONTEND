@@ -19,6 +19,7 @@ import ModernRestaurantSetupPanel, {
   buildSetupWarnings as buildModernSetupWarnings,
   warningCount as modernWarningCount,
 } from './RestaurantSetupPanel'
+import { TaxJurisdictionPanel } from './components/TaxJurisdictionPanel'
 import { SmartTimeInput } from '../shared/components/SmartTimeInput'
 import DashboardShell from './shell/DashboardShell'
 import { normalizeReportingScope, WHOLE_RESTAURANT_SCOPE } from './components/homepageWidgetMath'
@@ -5610,7 +5611,19 @@ export function RestaurantWorkspace({
             onNavigateToOrganization={() => navigate(`${restaurantBase}/${restaurantId}/menu#organization`)}
           />
         )}
-        {activeTab === 'taxes' && <Navigate to={`${restaurantBase}/${restaurantId}/menu`} replace />}
+        {activeTab === 'taxes' && (
+          <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-6">
+            <TaxJurisdictionPanel
+              restaurantId={restaurantId}
+              locationDisplay={[
+                restaurant?.address,
+                [restaurant?.city, restaurant?.state].filter(Boolean).join(', '),
+                restaurant?.postal_code,
+              ].filter(Boolean).join(' · ')}
+              onResolved={handleSetupChanged}
+            />
+          </div>
+        )}
         {activeTab === 'feedback' && <GuestFeedbackPanel restaurantId={restaurantId} />}
         {activeTab === 'team' && (
           <ConfigurationHub tabs={[

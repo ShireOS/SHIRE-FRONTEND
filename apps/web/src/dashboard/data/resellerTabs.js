@@ -31,6 +31,10 @@ const MANDATORY_STORE_TABS = [
   'checks',
   'labor-cost',
   'tip-pooling',
+  // Tax override authority follows reseller classification itself, not the
+  // owner's broader Setup grant. The API still verifies this restaurant is in
+  // the reseller's assigned scope.
+  'taxes',
 ]
 
 const GRANT_ROUTES = {

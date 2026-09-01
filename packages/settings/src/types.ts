@@ -13,6 +13,9 @@ export interface TaxRateData {
   is_default: boolean
   is_inclusive: boolean
   is_active?: boolean
+  tax_class?: string | null
+  fulfillment_context?: 'any' | 'on_premise' | 'off_premise'
+  source_type?: string | null
 }
 
 export interface CategoryTaxAssignmentData {
@@ -64,6 +67,8 @@ export interface MenuCategoryData {
   id?: string | null
   name: string
   tax_rate_id: string
+  /** Semantic product class; percentages remain address/reseller managed. */
+  tax_class?: string
   routing_station_id: string
   routing_station_name: string
   default_course_type?: 'none' | 'appetizer' | 'entree' | 'dessert' | 'drink' | 'side' | 'other' | null

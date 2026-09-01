@@ -90,6 +90,10 @@ export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
         <TaxJurisdictionPanel
           restaurantId={restaurantId}
           locationDisplay={[data.address, [data.city, data.state].filter(Boolean).join(', '), data.postal_code].filter(Boolean).join(' · ')}
+          onResolved={payload => updateData({
+            tax_rates: payload.tax_rates as typeof data.tax_rates,
+            enabled_tax_classes: payload.tax_profile?.enabled_tax_classes || data.enabled_tax_classes,
+          })}
         />
       </section>
 

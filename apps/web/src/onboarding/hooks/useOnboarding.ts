@@ -123,6 +123,7 @@ export interface OnboardingData {
 
   // Step 3: Taxes & Charges
   tax_rates: TaxRateData[]
+  enabled_tax_classes: string[]
   service_charges: ServiceChargeData[]
   auto_gratuity: AutoGratuityData
   tax_category_assignments?: CategoryTaxAssignmentData[]
@@ -331,6 +332,7 @@ const INITIAL_DATA: OnboardingData = {
       is_active: true,
     },
   ],
+  enabled_tax_classes: ['prepared_food'],
   service_charges: [],
   auto_gratuity: defaultAutoGratuity(),
   tax_category_assignments: undefined,
@@ -546,6 +548,9 @@ const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): On
     refund_approval_threshold: asString(input.refund_approval_threshold),
     pricing_policy: normalizePricingPolicy(input.pricing_policy),
     tax_rates: normalizeTaxRates(input.tax_rates),
+    enabled_tax_classes: asStringArray(input.enabled_tax_classes).length
+      ? asStringArray(input.enabled_tax_classes)
+      : INITIAL_DATA.enabled_tax_classes,
     service_charges: normalizeServiceCharges(input.service_charges),
     auto_gratuity: normalizeAutoGratuity(input.auto_gratuity),
     tax_category_assignments: Array.isArray(input.tax_category_assignments)
@@ -1241,6 +1246,13 @@ export function useOnboarding() {
       sections: sectionNames.length > 0 ? sectionNames : INITIAL_DATA.sections,
       section_behaviors: normalizeSectionProfiles(sectionRows, sectionNames),
       tax_rates: normalizeTaxRates(isRecord(taxesChargesResult) ? taxesChargesResult.tax_rates : []),
+      enabled_tax_classes: asStringArray(
+        isRecord(taxesChargesResult) && isRecord(taxesChargesResult.tax_profile)
+          ? taxesChargesResult.tax_profile.enabled_tax_classes
+          : [],
+      ).length
+        ? asStringArray((taxesChargesResult as Record<string, any>).tax_profile?.enabled_tax_classes)
+        : INITIAL_DATA.enabled_tax_classes,
       service_charges: normalizeServiceCharges(isRecord(taxesChargesResult) ? taxesChargesResult.service_charges : []),
       auto_gratuity: normalizeAutoGratuity(isRecord(taxesChargesResult) ? taxesChargesResult.auto_gratuity : null),
       pricing_policy: normalizePricingPolicy(pricingPolicyResult),
@@ -1810,6 +1822,11 @@ export function useOnboarding() {
       const saved = await response.json().catch(() => ({}))
       setData(prev => mergeOnboardingData(prev, {
         tax_rates: normalizeTaxRates(isRecord(saved) ? saved.tax_rates : []),
+        enabled_tax_classes: asStringArray(
+          isRecord(saved) && isRecord(saved.tax_profile) ? saved.tax_profile.enabled_tax_classes : [],
+        ).length
+          ? asStringArray((saved as Record<string, any>).tax_profile?.enabled_tax_classes)
+          : data.enabled_tax_classes,
         service_charges: normalizeServiceCharges(isRecord(saved) ? saved.service_charges : []),
         auto_gratuity: normalizeAutoGratuity(isRecord(saved) ? saved.auto_gratuity : null),
         tax_category_assignments: data.tax_category_assignments,

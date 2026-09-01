@@ -85,6 +85,11 @@ export function normalizeTaxRates(rows: unknown): TaxRateData[] {
       is_default: Boolean(row?.is_default),
       is_inclusive: Boolean(row?.is_inclusive),
       is_active: row?.is_active !== false,
+      tax_class: row?.tax_class == null ? null : String(row.tax_class),
+      fulfillment_context: (['any', 'on_premise', 'off_premise'].includes(row?.fulfillment_context)
+        ? row.fulfillment_context
+        : 'any') as TaxRateData['fulfillment_context'],
+      source_type: row?.source_type == null ? null : String(row.source_type),
     }))
     .filter(row => row.name && row.is_active)
   if (normalized.length === 0) return [defaultTaxRate()]

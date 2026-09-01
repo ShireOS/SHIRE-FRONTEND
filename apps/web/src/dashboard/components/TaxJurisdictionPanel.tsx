@@ -9,10 +9,14 @@ type TaxRate = {
   applies_to: string
   is_default?: boolean
   is_inclusive?: boolean
+  tax_class?: string | null
+  fulfillment_context?: 'any' | 'on_premise' | 'off_premise'
+  source_type?: string | null
 }
 type CategoryAssignment = {
   category_id: string
   category_name: string
+  tax_name?: string | null
 }
 type TaxPayload = {
   tax_rates?: TaxRate[]
@@ -32,6 +36,13 @@ type TaxPayload = {
   tax_profile?: {
     enabled_tax_classes?: string[]
     category_assignments?: Record<string, string>
+    missing_tax_classes?: string[]
+  }
+  tax_access?: {
+    can_configure?: boolean
+    can_override?: boolean
+    is_reseller?: boolean
+    is_admin?: boolean
   }
 }
 
@@ -43,6 +54,8 @@ interface Props {
 
 const statusLabel = (status?: string) => {
   if (status === 'verified') return 'Verified'
+  if (status === 'partial') return 'Partially resolved'
+  if (status === 'category_review_required') return 'Category review required'
   if (status === 'incomplete') return 'Address incomplete'
   return 'Verification required'
 }
@@ -58,10 +71,24 @@ const errorMessage = (error: unknown) => {
   return error.message
 }
 
+const contextFor = (taxClass: string): TaxRate['fulfillment_context'] => taxClass.endsWith('_on_premise')
+  ? 'on_premise'
+  : taxClass.endsWith('_off_premise')
+    ? 'off_premise'
+    : 'any'
+
+const appliesToFor = (taxClass: string) => {
+  if (taxClass === 'prepared_food') return 'food'
+  if (taxClass === 'merchandise') return 'merchandise'
+  if (taxClass.includes('beer') || taxClass.includes('wine') || taxClass.includes('cider')) return 'beer_wine'
+  return 'liquor'
+}
+
 export function TaxJurisdictionPanel({ restaurantId, locationDisplay, onResolved }: Props) {
   const [payload, setPayload] = useState<TaxPayload | null>(null)
   const [enabledClasses, setEnabledClasses] = useState<string[]>([])
   const [classifications, setClassifications] = useState<Record<string, string>>({})
+  const [rateDrafts, setRateDrafts] = useState<Record<string, string>>({})
   const [reason, setReason] = useState('Verified restaurant address and sales profile')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -92,6 +119,11 @@ export function TaxJurisdictionPanel({ restaurantId, locationDisplay, onResolved
               : []
         setEnabledClasses(defaults)
         setClassifications(next.tax_profile?.category_assignments || {})
+        setRateDrafts(Object.fromEntries(
+          (next.tax_rates || [])
+            .filter(row => row.tax_class)
+            .map(row => [String(row.tax_class), String(row.rate)]),
+        ))
       })
       .catch((err) => {
         if (active) setError(errorMessage(err))
@@ -145,6 +177,70 @@ export function TaxJurisdictionPanel({ restaurantId, locationDisplay, onResolved
       )
       setPayload(next)
       setClassifications(next.tax_profile?.category_assignments || {})
+      setRateDrafts(Object.fromEntries(
+        (next.tax_rates || [])
+          .filter(row => row.tax_class)
+          .map(row => [String(row.tax_class), String(row.rate)]),
+      ))
+      onResolved?.(next)
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveManualRates = async () => {
+    if (!restaurantId) return
+    const invalidClass = enabledClasses.find(key => {
+      const value = rateDrafts[key]
+      const parsed = Number(value)
+      return value == null || value.trim() === '' || !Number.isFinite(parsed) || parsed < 0 || parsed > 100
+    })
+    if (invalidClass) {
+      setError(`Enter a tax percentage from 0 to 100 for ${availableClasses.find(option => option.key === invalidClass)?.label || invalidClass}.`)
+      return
+    }
+    if (reason.trim().length < 3) {
+      setError('Provide an audit reason for the manual tax override.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      const existingByClass = new Map(
+        (payload?.tax_rates || []).filter(row => row.tax_class).map(row => [row.tax_class as string, row]),
+      )
+      const labelByClass = new Map(availableClasses.map(option => [option.key, option.label]))
+      const next = await fetchWithSupabaseAuth<TaxPayload>(
+        `/restaurants/${restaurantId}/taxes-charges`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            tax_rates: enabledClasses.map((taxClass, index) => ({
+              id: existingByClass.get(taxClass)?.id,
+              name: labelByClass.get(taxClass) || taxClass,
+              rate: Number(rateDrafts[taxClass]),
+              applies_to: appliesToFor(taxClass),
+              is_default: taxClass === 'prepared_food' || (index === 0 && !enabledClasses.includes('prepared_food')),
+              is_inclusive: existingByClass.get(taxClass)?.is_inclusive || false,
+              is_active: true,
+              tax_class: taxClass,
+              fulfillment_context: contextFor(taxClass),
+            })),
+            category_assignments: categories.map(category => {
+              const taxClass = classifications[category.category_id] || enabledClasses[0]
+              return { category_name: category.category_name, tax_name: labelByClass.get(taxClass) || taxClass }
+            }),
+            tax_change_reason: reason.trim(),
+          }),
+        },
+      )
+      setPayload(next)
+      setClassifications(next.tax_profile?.category_assignments || classifications)
+      setRateDrafts(Object.fromEntries(
+        (next.tax_rates || []).filter(row => row.tax_class).map(row => [String(row.tax_class), String(row.rate)]),
+      ))
       onResolved?.(next)
     } catch (err) {
       setError(errorMessage(err))
@@ -154,6 +250,7 @@ export function TaxJurisdictionPanel({ restaurantId, locationDisplay, onResolved
   }
 
   const providerConfigured = Boolean(payload?.tax_provider?.configured)
+  const canOverride = Boolean(payload?.tax_access?.can_override)
   const canResolve = Boolean(
     providerConfigured
     && enabledClasses.length
@@ -185,7 +282,7 @@ export function TaxJurisdictionPanel({ restaurantId, locationDisplay, onResolved
 
       {loading ? (
         <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4 text-sm text-[rgb(var(--text-secondary))]">Loading tax jurisdictions…</div>
-      ) : !providerConfigured ? (
+      ) : !providerConfigured && !canOverride ? (
         <div className="rounded-xl border border-amber-400/25 bg-amber-400/[0.07] p-4 text-sm leading-6 text-amber-100">
           Automatic address and tax verification is awaiting platform provider setup. A placeholder 0% rate is not treated as valid and POS tax settings will not be changed.
         </div>
@@ -252,6 +349,40 @@ export function TaxJurisdictionPanel({ restaurantId, locationDisplay, onResolved
           >
             {saving ? 'Validating address and taxes…' : 'Validate address & refresh taxes'}
           </button>
+
+          {canOverride && (
+            <div className="rounded-xl border border-sky-400/25 bg-sky-400/[0.06] p-4">
+              <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">Reseller / platform tax override</p>
+              <p className="mt-1 text-xs leading-5 text-[rgb(var(--text-tertiary))]">
+                Official values are prefilled. Enter every blank class before saving; all manual changes are restaurant-scoped and audited.
+              </p>
+              <div className="mt-3 space-y-2">
+                {enabledClasses.map(taxClass => (
+                  <label key={taxClass} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_150px] sm:items-center">
+                    <span className="text-sm text-[rgb(var(--text-primary))]">{availableClasses.find(option => option.key === taxClass)?.label || taxClass}</span>
+                    <span className="relative">
+                      <input
+                        inputMode="decimal"
+                        value={rateDrafts[taxClass] ?? ''}
+                        onChange={event => setRateDrafts(current => ({ ...current, [taxClass]: event.target.value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1').slice(0, 8) }))}
+                        placeholder="Required"
+                        className="w-full rounded-lg border border-white/10 bg-[#171613] px-3 py-2.5 pr-8 text-right text-sm tabular-nums text-[rgb(var(--text-primary))]"
+                      />
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[rgb(var(--text-tertiary))]">%</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => void saveManualRates()}
+                disabled={saving || !categoriesComplete || !enabledClasses.length}
+                className="mt-4 rounded-lg border border-sky-300/35 bg-sky-300/10 px-4 py-2.5 text-sm font-semibold text-sky-100 transition hover:bg-sky-300/15 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {saving ? 'Saving audited override…' : 'Save audited tax override'}
+              </button>
+            </div>
+          )}
         </>
       )}
 
