@@ -27,9 +27,16 @@ function assertLifecycleSafeInsert(source, idDeclaration, label) {
   assert.match(readStatement, /\.single\s*\(\)/)
 }
 
-test('restaurant creation reads the row only after the lifecycle trigger commits', () => {
+test('draft restaurant creation reads the row only after the lifecycle trigger commits', () => {
   assertLifecycleSafeInsert(boarding, 'const restaurantId = crypto.randomUUID()', 'draft boarding')
-  assertLifecycleSafeInsert(onboarding, 'const newRestaurantId = crypto.randomUUID()', 'owner onboarding')
+})
+
+test('owner onboarding uses the lifecycle-owned restaurant creation endpoint', () => {
+  assert.match(onboarding, /fetchWithSupabaseAuth<Restaurant>\('\/restaurants',\s*\{[\s\S]*method: 'POST'/)
+  assert.doesNotMatch(
+    onboarding,
+    /const newRestaurantId = crypto\.randomUUID\(\)[\s\S]{0,1200}\.from\('restaurants'\)\s*\.insert/,
+  )
 })
 
 test('draft boarding reads the seeded pricing version before replacing the rate plan', () => {

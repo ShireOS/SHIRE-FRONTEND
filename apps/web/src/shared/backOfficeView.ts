@@ -222,6 +222,7 @@ const PRESET_OVERRIDES: Record<BackOfficeViewLevel, Record<string, BackOfficeVie
     'nav.device-updates': 'hidden', 'nav.pos-settings': 'hidden', 'nav.printing-routing': 'hidden',
     'home.widgets': 'hidden', 'home.discount_review': 'summary',
     'home.analytics': 'standard', 'home.check_ledger': 'standard',
+    'store.basics': 'standard',
     'reports.viewer': 'standard', 'checks.active': 'standard',
     'reports.scope': 'hidden', 'reports.profiles': 'hidden', 'reports.schedules': 'hidden',
     'reports.receipt_template': 'hidden', 'reports.activity': 'hidden',

@@ -148,6 +148,8 @@
   surface must never suppress its server permission check or alter POS data.
 - Existing accounts without an assignment resolve to Advanced for compatibility;
   newly created restaurant owners receive an explicit Simple assignment.
+  Restaurant Basics remains Standard in Simple view so authorized users can
+  always update the restaurant name and core contact information.
 - Printing & Routing uses stable child capabilities for Overview, Routing, KDS,
   Receipts, and advanced ticket layout. `printing.kds` gates both the Kitchen
   Displays sidebar section and direct `#kds` rendering; presentation never

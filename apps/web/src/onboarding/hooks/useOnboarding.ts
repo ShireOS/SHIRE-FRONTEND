@@ -1629,6 +1629,55 @@ export function useOnboarding() {
     seedCurrentRestaurant,
   ])
 
+  // Leave the guided flow without manufacturing a completed setup state.
+  // The dashboard derives Setup visibility from canonical restaurant data, so
+  // an incomplete restaurant remains recoverable from its normal workspace.
+  const exitToBackOffice = useCallback(async () => {
+    setError(null)
+
+    try {
+      const restaurant = activeRestaurantId
+        ? null
+        : await createRestaurant()
+      const targetRestaurantId = restaurant?.id || activeRestaurantId
+
+      if (!targetRestaurantId) {
+        throw new Error('Save restaurant basics before exiting setup.')
+      }
+
+      if (user) {
+        clearDraft(user.id)
+      }
+      // Creation already seeds and refreshes the restaurant. A resumed flow
+      // still refreshes once so its normal workspace receives the latest row.
+      if (!restaurant) {
+        await refreshRestaurants(targetRestaurantId)
+      }
+      navigate(`/restaurants/${targetRestaurantId}/setup`, { replace: true })
+    } catch (err) {
+      const message = toErrorMessage(err, 'Could not exit restaurant setup')
+      setError(message)
+      throw err instanceof Error ? err : new Error(message)
+    }
+  }, [
+    activeRestaurantId,
+    createRestaurant,
+    navigate,
+    refreshRestaurants,
+    user,
+  ])
+
+  // Cancel closes the wizard and discards only its browser draft. Any steps
+  // already published to a restaurant remain safely available from Setup;
+  // deleting a restaurant stays behind the existing owner-confirmed lifecycle.
+  const cancelOnboarding = useCallback(() => {
+    if (user) {
+      clearDraft(user.id)
+    }
+    setError(null)
+    navigate('/enterprise/stores', { replace: true })
+  }, [navigate, user])
+
   // Save goals & priorities (after step 1)
   const saveLegal = useCallback(async () => {
     setIsLoading(true)
@@ -2604,6 +2653,8 @@ export function useOnboarding() {
     prevStep,
     goToStep,
     createRestaurant,
+    exitToBackOffice,
+    cancelOnboarding,
     saveLegal,
     savePayments,
     saveTaxesCharges,

@@ -2132,8 +2132,13 @@ export default function RestaurantSetupPanel({
   }
 
   const saveBasics = async (publication) => {
+    const restaurantName = profile.name.trim()
+    if (!restaurantName) {
+      setSetupError('Restaurant name is required.')
+      return
+    }
     const payload = {
-      name: profile.name.trim(),
+      name: restaurantName,
       address: profile.address.trim() || null,
       city: profile.city.trim() || null,
       state: profile.state.trim() || null,

@@ -43,6 +43,9 @@ interface OnboardingLayoutProps {
   onSwitchAccount?: () => void
   isSwitchingAccount?: boolean
   switchAccountError?: string | null
+  onCancel?: () => void
+  onExit?: () => void
+  isFlowActionPending?: boolean
 }
 
 export function OnboardingLayout({
@@ -57,6 +60,9 @@ export function OnboardingLayout({
   onSwitchAccount,
   isSwitchingAccount = false,
   switchAccountError,
+  onCancel,
+  onExit,
+  isFlowActionPending = false,
 }: OnboardingLayoutProps) {
   useEffect(() => {
     const root = document.documentElement
@@ -71,7 +77,7 @@ export function OnboardingLayout({
 
       {/* Header */}
       <header className="sticky top-0 z-20 border-b border-[rgba(255,255,255,0.08)] bg-[rgba(10,10,10,0.8)] backdrop-blur-xl">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-4xl mx-auto px-4 py-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
             {canGoBack && (
               <button
@@ -89,7 +95,27 @@ export function OnboardingLayout({
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+            {onCancel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                disabled={isFlowActionPending || isSwitchingAccount}
+                className="label-mono text-[rgb(var(--text-tertiary))] hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50 transition-colors tracking-[0.1em]"
+              >
+                CANCEL
+              </button>
+            )}
+            {onExit && (
+              <button
+                type="button"
+                onClick={onExit}
+                disabled={isFlowActionPending || isSwitchingAccount}
+                className="label-mono rounded-lg border border-[rgba(212,168,84,0.35)] px-3 py-2 text-[rgb(var(--gold))] hover:border-[rgb(var(--gold))] hover:text-[rgb(var(--text-primary))] disabled:cursor-not-allowed disabled:opacity-50 transition-colors tracking-[0.1em]"
+              >
+                {isFlowActionPending ? 'SAVING...' : 'EXIT'}
+              </button>
+            )}
             {onSwitchAccount && (
               <button
                 onClick={onSwitchAccount}
