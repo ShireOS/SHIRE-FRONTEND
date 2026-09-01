@@ -198,7 +198,7 @@ export function useRequireOnboarding() {
     }
 
     if (auth.accountType === 'reseller_employee') {
-      navigate('/reseller', { replace: true })
+      navigate('/enterprise/stores', { replace: true })
       return
     }
 
@@ -284,7 +284,7 @@ export function useRedirectIfAuthenticated(redirectTo = '/') {
       }
 
       if (auth.accountType === 'reseller_employee') {
-        navigate('/reseller', { replace: true })
+        navigate('/enterprise/stores', { replace: true })
         return
       }
 

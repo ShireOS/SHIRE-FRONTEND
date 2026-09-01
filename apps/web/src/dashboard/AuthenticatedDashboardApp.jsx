@@ -143,12 +143,8 @@ function OwnerGate() {
 
   const prefs = auth.profile?.dashboard_prefs
   const landing = prefs && typeof prefs === 'object' ? prefs.default_landing : null
-  if (auth.accountType === 'reseller') {
-    return <Navigate to="/reseller" replace />
-  }
-
-  if (auth.accountType === 'reseller_employee' || landing === 'reseller') {
-    return <Navigate to="/reseller" replace />
+  if (auth.accountType === 'reseller' || auth.accountType === 'reseller_employee' || landing === 'reseller') {
+    return <Navigate to="/enterprise/stores" replace />
   }
   return <Navigate to={landing === 'overview' ? '/enterprise/overview' : '/enterprise/stores'} replace />
 }
@@ -172,6 +168,18 @@ function ProtectedRoute({ children }) {
 function EnterprisePage({ item, title, children }) {
   const auth = useAuth()
   const restaurants = auth.restaurant.restaurants || []
+  const resellerShellRoutes = ['reseller', 'reseller_employee'].includes(auth.accountType)
+    ? {
+        brand: '/enterprise/stores',
+        overview: '/reseller/overview',
+        stores: '/enterprise/stores',
+        rates: '/reseller/rates',
+        devices: '/reseller/devices',
+        users: '/reseller/users',
+        settings: '/reseller/profile',
+        restaurants: '/reseller/restaurants',
+      }
+    : {}
 
   useEffect(() => {
     if (item !== 'stores' || restaurants.length === 0) return
@@ -183,6 +191,7 @@ function EnterprisePage({ item, title, children }) {
       <DashboardShell
         context="enterprise"
         activeItem={item}
+        routes={resellerShellRoutes}
         breadcrumb={[
           { label: 'Home', to: '/' },
           { label: 'Enterprise' },

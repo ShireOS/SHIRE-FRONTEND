@@ -62,6 +62,9 @@
 - **Dashboard-side auth:** Supabase auth (owner account today). Dynamic role
   permissions live in ML backend migration `0049_dynamic_role_permissions.sql`,
   surfaced in `apps/web/src/dashboard/components/team/RolePermissionsPanel.jsx`.
+  Local dashboard requests carrying a real asymmetric Supabase session must be
+  validated by the ML backend through Supabase JWKS even when the legacy
+  `SUPABASE_JWT_SECRET` is absent; development fallback is only for HS256 tokens.
 - **Role-management authority is hierarchical:** staff < manager < owner <
   platform admin. A caller may create, assign, edit, or remove only parallel or
   lower roles. Platform admins may delegate admin, but `profiles.is_superuser`
@@ -86,9 +89,26 @@
   non-development deployment defaults to `https://app.shireintelligence.com`
   and replaces accidental loopback configuration with that canonical origin.
   Accepting a restaurant invitation returns to the invite after authentication
-  and opens the existing restaurant; only New Restaurant starts onboarding.
+  and opens the existing restaurant in the portal for the accepting account
+  type (`/restaurants` for owner/employee accounts and `/reseller/restaurants`
+  for reseller, reseller-employee, and admin accounts); only New Restaurant
+  starts onboarding. The cross-account invite error must offer both sign-in and
+  account creation for the invited email, and the invite token must survive the
+  signup/email-verification callback rather than relying only on browser-local
+  storage. The canonical portfolio/store overview is `/enterprise/stores` for
+  every account type; `/reseller` is compatibility/onboarding only, while
+  reseller store-detail workspaces remain under `/reseller/restaurants/:id/*`.
   Store-owner claims remain in `store_invites`, are also email-bound, and use the
   same mail provider. Temporary-password account creation is not a supported UI path.
+- **Permanent employee deletion is an audited privacy scrub, not a historical
+  cascade.** Team may offer Delete permanently only after the employee is
+  deactivated and under existing `team.edit_employees` hierarchy checks. The
+  request requires the normalized full current name (case and repeated
+  surrounding whitespace are ignored) and a manager reason, blocks the
+  primary owner and unauthorized self-removal, revokes linked restaurant access
+  and pending invites, erases personal/PIN/login/current-pay data, and hides the
+  employee from Team. The anonymous waiter UUID remains solely so checks,
+  timecards, payroll, cash, and audit history continue to reconcile.
 - **Time clock adjustments** are manager/owner actions. POS backend already has
   the manager CRUD (`/manager/timeclock/entries` GET/POST/PATCH + `/void`) and
   records `manager_id`, `manager_name`, `reason` as the audit trail. The dashboard
@@ -297,7 +317,11 @@ gate; the bell remains disabled while access is unresolved or denied.
   token failure. Signing out clears restaurant-scoped query state.
   After account type resolves, auth hydration loads independent owned-store,
   membership, and reseller-portfolio scopes concurrently; each query keeps its
-  existing RLS boundary and error handling before results are deduplicated.
+  existing RLS boundary and error handling before results are deduplicated. It
+  also merges the ML-owned `/account/restaurants` canonical scope so a newly
+  accepted membership is immediately available even when a nested Data API
+  relationship is stale or unavailable; the service response may add access but
+  never remove the direct RLS fallbacks.
   Admin hydration excludes closed restaurants so the visible operational
   portfolio matches the ML portfolio resolver and batched store metrics never
   request an unauthorized historical store.
@@ -335,8 +359,10 @@ gate; the bell remains disabled while access is unresolved or denied.
   read-only week-to-date total; changing it must never rewrite time entries,
   payroll results, or historical hours.
 - Migrations (manual run): ML `supabase/migrations/0055_team_hub_access.sql`
-  (restaurant_members + back_office_permissions + invitations alter), POS repo
-  `0022_pos_timeclock_breaks_v1.sql` (pos_time_clock_breaks).
+  (restaurant_members + back_office_permissions + invitations alter) and
+  `supabase/migrations/20260831143000_waiter_forget_audit.sql` (audited employee
+  privacy scrub marker); POS repo `0022_pos_timeclock_breaks_v1.sql`
+  (pos_timeclock_breaks).
 - POS backend: portal Supabase-JWT auth for `/manager/timeclock*` validates
   sessions through Supabase Auth (including asymmetric signing keys; legacy
   `SUPABASE_JWT_SECRET` fallback), breaks on entries. All portal-owned POS

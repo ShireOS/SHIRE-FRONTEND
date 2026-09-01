@@ -119,7 +119,7 @@ export default function DevicesPage() {
     && ['reseller', 'reseller_employee'].includes(auth.accountType)
     && accessibleRestaurants.length === 0
   ) {
-    return <Navigate to="/reseller" replace />
+    return <Navigate to="/enterprise/stores" replace />
   }
 
   return (
