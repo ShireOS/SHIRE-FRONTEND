@@ -19,7 +19,9 @@
   is already assigned to another active employee rather than relying on a shared
   default that makes PIN identification ambiguous. POS authentication rejects
   legacy duplicates instead of selecting an arbitrary employee; Team marks those
-  rows so an authorized manager can assign distinct PINs.
+  rows so an authorized manager can assign distinct PINs. The creation lock uses
+  a string-normalized restaurant UUID so the typed database bind cannot crash
+  employee creation before the duplicate-PIN check runs.
 - **Pay is per employee-position assignment.** `job_codes.default_hourly_rate`
   is the restaurant default and `employee_job_codes.hourly_rate_override` is an
   optional employee-specific rate for that one position. Team -> Employees ->
@@ -80,6 +82,9 @@
   the acceptance transaction. `restaurant_members`, `reseller_restaurants`, and
   `reseller_employees` remain operational truth. Raw links are returned only when
   created/resend so local deployments without Resend can share them manually.
+  The ML service resolves invite links to localhost only in development; every
+  non-development deployment defaults to `https://app.shireintelligence.com`
+  and replaces accidental loopback configuration with that canonical origin.
   Accepting a restaurant invitation returns to the invite after authentication
   and opens the existing restaurant; only New Restaurant starts onboarding.
   Store-owner claims remain in `store_invites`, are also email-bound, and use the
