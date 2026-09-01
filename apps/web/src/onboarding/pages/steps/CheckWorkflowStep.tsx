@@ -1,4 +1,5 @@
 import type { CheckWorkflowSettingsData, UseOnboardingReturn } from '../../hooks/useOnboarding'
+import { sanitizeMoneyInput } from '@shire/settings'
 
 interface CheckWorkflowStepProps {
   onboarding: UseOnboardingReturn
@@ -6,7 +7,6 @@ interface CheckWorkflowStepProps {
 
 const inputClass = 'w-full min-w-0 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-4 py-3 text-sm text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]'
 const labelClass = 'mb-1.5 block text-xs font-medium text-[rgb(var(--text-secondary))]'
-const sanitizeNumber = (value: string) => value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1').slice(0, 10)
 
 const FIRE_MODES: Array<{ value: CheckWorkflowSettingsData['default_order_fire_mode']; label: string }> = [
   { value: 'manual', label: 'Manual fire' },
@@ -118,7 +118,7 @@ export function CheckWorkflowStep({ onboarding }: CheckWorkflowStepProps) {
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Default preauth amount">
-            <input value={settings.default_preauth_amount} onChange={(event) => update({ default_preauth_amount: sanitizeNumber(event.target.value) })} className={inputClass} inputMode="decimal" placeholder="Optional" />
+            <input value={settings.default_preauth_amount} onChange={(event) => update({ default_preauth_amount: sanitizeMoneyInput(event.target.value) })} className={inputClass} inputMode="decimal" placeholder="Optional" />
           </Field>
           <Field label="Tab name">
             <select value={settings.tab_name_required ? 'required' : 'optional'} onChange={(event) => update({ tab_name_required: event.target.value === 'required' })} className={inputClass}>

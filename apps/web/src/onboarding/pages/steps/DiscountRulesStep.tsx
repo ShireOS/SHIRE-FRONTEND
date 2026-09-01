@@ -1,4 +1,5 @@
 import type { DiscountRuleData, UseOnboardingReturn } from '../../hooks/useOnboarding'
+import { sanitizeMoneyInput, sanitizePercentInput } from '@shire/settings'
 
 interface DiscountRulesStepProps {
   onboarding: UseOnboardingReturn
@@ -64,8 +65,6 @@ const SERVICE_MODES = [
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 const inputClass = 'w-full min-w-0 px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]'
-const sanitizeNumber = (value: string) => value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1').slice(0, 10)
-
 const newRule = (index: number, template?: Partial<DiscountRuleData>): DiscountRuleData => ({
   name: template?.name || (index === 0 ? 'Manager Comp' : `Discount ${index + 1}`),
   discount_type: template?.discount_type || 'discount',
@@ -197,7 +196,7 @@ export function DiscountRulesStep({ onboarding }: DiscountRulesStepProps) {
                 inputMode="decimal"
                 value={rule.default_value}
                 disabled={rule.value_type === 'open'}
-                onChange={(event) => updateRule(index, { default_value: sanitizeNumber(event.target.value) })}
+                onChange={(event) => updateRule(index, { default_value: rule.value_type === 'percent' ? sanitizePercentInput(event.target.value) : sanitizeMoneyInput(event.target.value) })}
                 className={inputClass}
                 placeholder={rule.value_type === 'open' ? 'Staff enters the amount' : rule.value_type === 'fixed' ? 'Default $' : 'Default %'}
               />
@@ -228,14 +227,14 @@ export function DiscountRulesStep({ onboarding }: DiscountRulesStepProps) {
                 <input
                   inputMode="decimal"
                   value={rule.min_value}
-                  onChange={(event) => updateRule(index, { min_value: sanitizeNumber(event.target.value) })}
+                  onChange={(event) => updateRule(index, { min_value: rule.value_type === 'percent' ? sanitizePercentInput(event.target.value) : sanitizeMoneyInput(event.target.value) })}
                   className={inputClass}
                   placeholder={rule.value_type === 'fixed' ? 'Minimum $' : 'Minimum %'}
                 />
                 <input
                   inputMode="decimal"
                   value={rule.max_value}
-                  onChange={(event) => updateRule(index, { max_value: sanitizeNumber(event.target.value) })}
+                  onChange={(event) => updateRule(index, { max_value: rule.value_type === 'percent' ? sanitizePercentInput(event.target.value) : sanitizeMoneyInput(event.target.value) })}
                   className={inputClass}
                   placeholder={`${rule.value_type === 'fixed' ? 'Maximum $' : 'Maximum %'}${rule.value_type === 'open' ? ' (required)' : ''}`}
                 />

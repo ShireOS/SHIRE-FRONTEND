@@ -1,4 +1,5 @@
 import type { TipPayrollSettingsData, TipRoleRuleData, UseOnboardingReturn } from '../../hooks/useOnboarding'
+import { sanitizeDecimalInput, sanitizePercentInput } from '@shire/settings'
 
 interface TipPayrollStepProps {
   onboarding: UseOnboardingReturn
@@ -207,7 +208,7 @@ export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
         {settings.payroll_export_frequency === 'semimonthly' ? (
           <div>
             <label className={labelClass}>First period ends on</label>
-            <input type="number" min={1} max={27} value={settings.payroll_semimonthly_cutoff_day} onChange={(event) => update({ payroll_semimonthly_cutoff_day: Math.max(1, Math.min(27, Number(event.target.value) || 15)) })} className={inputClass} />
+          <input type="number" min={1} max={27} value={settings.payroll_semimonthly_cutoff_day} onChange={(event) => update({ payroll_semimonthly_cutoff_day: Number(event.target.value) })} className={inputClass} />
           </div>
         ) : null}
         <div>
@@ -216,7 +217,7 @@ export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
         </div>
         <div>
           <label className={labelClass}>Credit card fee %</label>
-          <input inputMode="decimal" value={settings.credit_card_fee_percent} onChange={(event) => update({ credit_card_fee_percent: event.target.value.replace(/[^\d.]/g, '').slice(0, 6) })} placeholder="Optional" className={inputClass} />
+          <input inputMode="decimal" value={settings.credit_card_fee_percent} onChange={(event) => update({ credit_card_fee_percent: sanitizePercentInput(event.target.value) })} placeholder="Optional" className={inputClass} />
         </div>
       </div>
 
@@ -300,7 +301,7 @@ export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
                 {isPooled && rule.contributes_to_pool ? (
                   <div>
                     <label className={labelClass}>% of tips into pool</label>
-                    <input inputMode="decimal" value={rule.pool_contribution_percent} onChange={(event) => updateRule(index, { pool_contribution_percent: event.target.value.replace(/[^\d.]/g, '').slice(0, 6) })} placeholder="100" className={inputClass} />
+                    <input inputMode="decimal" value={rule.pool_contribution_percent} onChange={(event) => updateRule(index, { pool_contribution_percent: sanitizePercentInput(event.target.value) })} placeholder="100" className={inputClass} />
                   </div>
                 ) : null}
                 {usesPoolWeight ? (
@@ -309,7 +310,7 @@ export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
                     <input
                       inputMode="decimal"
                       value={rule.pool_points}
-                      onChange={(event) => updateRule(index, { pool_points: event.target.value.replace(/[^\d.]/g, '').slice(0, 6) })}
+                      onChange={(event) => updateRule(index, { pool_points: sanitizeDecimalInput(event.target.value, { decimalPlaces: 2, wholeDigits: 4 }) })}
                       placeholder={isHoursMode ? '1.0' : 'e.g. 10'}
                       className={inputClass}
                     />
@@ -317,7 +318,7 @@ export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
                 ) : null}
                 <div>
                   <label className={labelClass}>Tipout amount</label>
-                  <input inputMode="decimal" value={rule.tipout_percent} onChange={(event) => updateRule(index, { tipout_percent: event.target.value.replace(/[^\d.]/g, '').slice(0, 6) })} placeholder="Optional" className={inputClass} />
+                  <input inputMode="decimal" value={rule.tipout_percent} onChange={(event) => updateRule(index, { tipout_percent: sanitizePercentInput(event.target.value) })} placeholder="Optional" className={inputClass} />
                 </div>
                 <div>
                   <label className={labelClass}>Tipout goes to</label>

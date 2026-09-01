@@ -1,4 +1,5 @@
 import { supabase } from '../../shared/lib/supabase'
+import { modifierGroupRuleError } from '@shire/settings'
 import {
   clonedModifierGroupRow,
   isMissingColumnError,
@@ -132,6 +133,8 @@ export async function fetchModifierGroups(restaurantId) {
 }
 
 export async function createModifierGroup(restaurantId, draft) {
+  const ruleError = modifierGroupRuleError(draft)
+  if (ruleError) throw new Error(ruleError)
   return insertModifierGroupRow({
     restaurant_id: restaurantId,
     name: draft.name,
@@ -175,6 +178,29 @@ async function insertModifierGroupRow(row) {
 }
 
 export async function updateModifierGroup(groupId, patch) {
+  const ruleKeys = ['is_required', 'min_selections', 'max_selections', 'included_count', 'overage_price']
+  if (ruleKeys.some(key => Object.prototype.hasOwnProperty.call(patch, key))) {
+    const { data: existing, error: readError } = await supabase
+      .from('menu_modifier_groups')
+      .select('is_required, min_selections, max_selections, included_count, overage_price')
+      .eq('id', groupId)
+      .single()
+    if (readError) throw readError
+    const nextRules = { ...existing, ...patch }
+    const ruleError = modifierGroupRuleError(nextRules)
+    if (ruleError) throw new Error(ruleError)
+    if (nextRules.max_selections != null) {
+      const { count, error: countError } = await supabase
+        .from('menu_modifier_group_options')
+        .select('modifier_id', { count: 'exact', head: true })
+        .eq('group_id', groupId)
+        .eq('is_default', true)
+      if (countError) throw countError
+      if (Number(count || 0) > Number(nextRules.max_selections)) {
+        throw new Error('Maximum selections cannot be below the number of default answers.')
+      }
+    }
+  }
   const timestamped = { ...patch, updated_at: new Date().toISOString() }
   const { result } = await runWithMissingColumnFallbacks([
     () => supabase.from('menu_modifier_groups').update(timestamped).eq('id', groupId).select('*').single(),
@@ -329,6 +355,21 @@ const overrideIsEmpty = (row) =>
 // defaults), opted_out, display_order. Rows that end up carrying nothing are
 // deleted so "no override" stays the common case.
 export async function setItemGroupOverride(groupId, itemId, patch) {
+  if (Array.isArray(patch.default_modifier_ids)) {
+    const defaults = [...new Set(patch.default_modifier_ids.filter(Boolean))]
+    if (defaults.length !== patch.default_modifier_ids.length) {
+      throw new Error('Default answers cannot contain duplicates.')
+    }
+    const { data: group, error: groupError } = await supabase
+      .from('menu_modifier_groups')
+      .select('max_selections')
+      .eq('id', groupId)
+      .single()
+    if (groupError) throw groupError
+    if (group.max_selections != null && defaults.length > Number(group.max_selections)) {
+      throw new Error('This item has more default answers than the question maximum.')
+    }
+  }
   const { result: existingResult, fallbackIndex } = await runWithMissingColumnFallbacks([
     () => supabase
       .from('menu_item_modifier_group_overrides')
@@ -601,6 +642,7 @@ export async function cloneGroupChainForItem(restaurantId, groups, groupId, item
 }
 
 export async function addGroupOption(groupId, modifierId, extra = {}) {
+  if (extra.is_default === true) await assertGroupDefaultCapacity(groupId, modifierId)
   const row = {
     group_id: groupId,
     modifier_id: modifierId,
@@ -622,6 +664,7 @@ export async function addGroupOption(groupId, modifierId, extra = {}) {
 }
 
 export async function updateGroupOption(groupId, modifierId, patch) {
+  if (patch.is_default === true) await assertGroupDefaultCapacity(groupId, modifierId)
   let { error } = await supabase
     .from('menu_modifier_group_options')
     .update(patch)
@@ -637,6 +680,20 @@ export async function updateGroupOption(groupId, modifierId, patch) {
       .eq('modifier_id', modifierId))
   }
   if (error) throw error
+}
+
+async function assertGroupDefaultCapacity(groupId, modifierId) {
+  const [{ data: group, error: groupError }, { data: defaults, error: defaultsError }] = await Promise.all([
+    supabase.from('menu_modifier_groups').select('max_selections').eq('id', groupId).single(),
+    supabase.from('menu_modifier_group_options').select('modifier_id').eq('group_id', groupId).eq('is_default', true),
+  ])
+  if (groupError) throw groupError
+  if (defaultsError) throw defaultsError
+  if (group.max_selections == null) return
+  const alreadyDefault = (defaults || []).some(option => option.modifier_id === modifierId)
+  if (!alreadyDefault && (defaults || []).length >= Number(group.max_selections)) {
+    throw new Error('Default answers cannot exceed the question maximum.')
+  }
 }
 
 export async function removeGroupOption(groupId, modifierId) {

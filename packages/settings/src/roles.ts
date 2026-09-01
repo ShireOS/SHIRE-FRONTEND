@@ -1,5 +1,6 @@
 import { DEFAULT_ROLE_PERMISSION_OPTIONS, PERMISSION_TIER_OPTIONS, isOptionValue } from './options'
 import { sanitizeNumber, slugRoleCode } from './helpers'
+import { numberRangeError } from './entry'
 import type { JobCodeData, JobCodeLike, RolePermissionData } from './types'
 
 export function normalizeJobCodes(rows: unknown): JobCodeData[] {
@@ -115,6 +116,12 @@ export function normalizeRolePermissions(rows: unknown, jobCodes: JobCodeLike[] 
 
 /** PUT /restaurants/:id/manager-controls body. */
 export function managerControlsPayload(rolePermissions: unknown, jobCodes: JobCodeLike[] = []) {
+  for (const row of Array.isArray(rolePermissions) ? rolePermissions : []) {
+    const label = String(row?.role_key || 'Role').replace(/_/g, ' ')
+    const refundError = numberRangeError(row?.refund_limit, `${label} refund limit`, { min: 0 })
+    const discountError = numberRangeError(row?.discount_limit_percent, `${label} discount limit`, { min: 0, max: 100 })
+    if (refundError || discountError) throw new Error(refundError || discountError)
+  }
   return {
     role_permissions: normalizeRolePermissions(rolePermissions, jobCodes).map(row => ({
       ...row,

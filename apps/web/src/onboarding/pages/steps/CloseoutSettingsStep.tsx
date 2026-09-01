@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { emailListError, parseEmailList, sanitizeMoneyInput } from '@shire/settings'
 import type { CloseoutSettingsData, UseOnboardingReturn } from '../../hooks/useOnboarding'
 
 interface CloseoutSettingsStepProps {
@@ -35,8 +36,6 @@ const REPORTS = [
 ] as const
 
 const inputClass = 'w-full min-w-0 px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]'
-const sanitizeNumber = (value: string) => value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1').slice(0, 10)
-
 function Toggle({
   active,
   children,
@@ -96,7 +95,7 @@ function MoneyField({
       <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))]">{label}</span>
       <input
         value={value}
-        onChange={(event) => onChange(sanitizeNumber(event.target.value))}
+        onChange={(event) => onChange(sanitizeMoneyInput(event.target.value))}
         className={inputClass}
         inputMode="decimal"
         placeholder="Blank for none"
@@ -110,6 +109,7 @@ export function CloseoutSettingsStep({ onboarding }: CloseoutSettingsStepProps) 
   const { data, updateData, saveCloseoutSettings, nextStep, isLoading, error } = onboarding
   const settings = data.closeout_settings
   const [reportRecipientsText, setReportRecipientsText] = useState(settings.eod_report_recipients.join(', '))
+  const [formError, setFormError] = useState('')
 
   useEffect(() => {
     setReportRecipientsText(settings.eod_report_recipients.join(', '))
@@ -120,7 +120,7 @@ export function CloseoutSettingsStep({ onboarding }: CloseoutSettingsStepProps) 
   }
 
   const commitReportRecipients = (value = reportRecipientsText) => {
-    update({ eod_report_recipients: value.split(',').map(email => email.trim()).filter(Boolean) })
+    update({ eod_report_recipients: parseEmailList(value) })
   }
 
   const toggleReport = (report: string) => {
@@ -132,6 +132,12 @@ export function CloseoutSettingsStep({ onboarding }: CloseoutSettingsStepProps) 
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
+    const recipientsError = emailListError(reportRecipientsText)
+    if (recipientsError) {
+      setFormError(recipientsError)
+      return
+    }
+    setFormError('')
     try {
       await saveCloseoutSettings()
       nextStep()
@@ -142,9 +148,9 @@ export function CloseoutSettingsStep({ onboarding }: CloseoutSettingsStepProps) 
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {error && (
+      {(formError || error) && (
         <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-red-300">
-          {error}
+          {formError || error}
         </div>
       )}
 
@@ -227,8 +233,15 @@ export function CloseoutSettingsStep({ onboarding }: CloseoutSettingsStepProps) 
           </select>
           <input
             value={reportRecipientsText}
-            onChange={(event) => setReportRecipientsText(event.target.value)}
+            onChange={(event) => {
+              setReportRecipientsText(event.target.value)
+              commitReportRecipients(event.target.value)
+            }}
             onBlur={(event) => commitReportRecipients(event.target.value)}
+            type="email"
+            multiple
+            inputMode="email"
+            autoComplete="email"
             className={inputClass}
             placeholder="Report emails, comma-separated"
           />

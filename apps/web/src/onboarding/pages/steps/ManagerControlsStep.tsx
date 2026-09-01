@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchPosApi } from '../../../shared/api/posClient'
 import type { JobCodeData, RolePermissionData, UseOnboardingReturn } from '../../hooks/useOnboarding'
-import { defaultRolePermission as defaultPermissionForRole, sanitizeNumber, slugRoleCode } from '@shire/settings'
+import { defaultRolePermission as defaultPermissionForRole, sanitizeMoneyInput, sanitizeNumber, sanitizePercentInput, slugRoleCode } from '@shire/settings'
 import { cashDrawerRoleSummary } from '../../../dashboard/utils/cashDrawerPermissions'
 
 interface ManagerControlsStepProps {
@@ -386,14 +386,14 @@ export function ManagerControlsStep({ onboarding }: ManagerControlsStepProps) {
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <input
                 value={role.refund_limit}
-                onChange={(event) => updateRolePermission(role.role_key, { refund_limit: sanitizeNumber(event.target.value) })}
+                onChange={(event) => updateRolePermission(role.role_key, { refund_limit: sanitizeMoneyInput(event.target.value) })}
                 className={inputClass}
                 inputMode="decimal"
                 placeholder="Refund limit, blank for unlimited"
               />
               <input
                 value={role.discount_limit_percent}
-                onChange={(event) => updateRolePermission(role.role_key, { discount_limit_percent: sanitizeNumber(event.target.value) })}
+                onChange={(event) => updateRolePermission(role.role_key, { discount_limit_percent: sanitizePercentInput(event.target.value) })}
                 className={inputClass}
                 inputMode="decimal"
                 placeholder="Discount % limit, blank for unlimited"

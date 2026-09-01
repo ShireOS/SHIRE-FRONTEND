@@ -1,5 +1,14 @@
+import { useState } from 'react'
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
 import { SmartTimeInput } from '../../../shared/components/SmartTimeInput'
+import {
+  bankAccountError,
+  collapseEntryWhitespace,
+  digitsOnly,
+  numberRangeError,
+  routingNumberError,
+  sanitizeMoneyInput,
+} from '@shire/settings'
 
 interface PaymentsStepProps {
   onboarding: UseOnboardingReturn
@@ -34,12 +43,38 @@ const PRICING_TENDER_OPTIONS = [
 
 export function PaymentsStep({ onboarding }: PaymentsStepProps) {
   const { data, updateData, savePayments, nextStep, isLoading, error } = onboarding
+  const [accountConfirmation, setAccountConfirmation] = useState(data.bank_account_number)
+  const [localError, setLocalError] = useState<string | null>(null)
   const updatePricingPolicy = (patch: Partial<typeof data.pricing_policy>) => updateData({
     pricing_policy: { ...data.pricing_policy, ...patch },
   })
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
+    setLocalError(null)
+    if (!collapseEntryWhitespace(data.bank_account_holder)) {
+      setLocalError('Account holder is required.')
+      return
+    }
+    const routingIssue = routingNumberError(data.bank_routing_number, true)
+    if (routingIssue) {
+      setLocalError(routingIssue)
+      return
+    }
+    const accountIssue = bankAccountError(data.bank_account_number, true)
+    if (accountIssue) {
+      setLocalError(accountIssue)
+      return
+    }
+    if (digitsOnly(accountConfirmation) !== digitsOnly(data.bank_account_number)) {
+      setLocalError('Account numbers do not match.')
+      return
+    }
+    const thresholdIssue = numberRangeError(data.refund_approval_threshold, 'Refund approval threshold', { min: 0 })
+    if (thresholdIssue) {
+      setLocalError(thresholdIssue)
+      return
+    }
     try {
       await savePayments()
       nextStep()
@@ -50,9 +85,9 @@ export function PaymentsStep({ onboarding }: PaymentsStepProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
-      {error && (
+      {(localError || error) && (
         <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400">
-          {error}
+          {localError || error}
         </div>
       )}
 
@@ -71,10 +106,14 @@ export function PaymentsStep({ onboarding }: PaymentsStepProps) {
             <input value={data.bank_name} onChange={(event) => updateData({ bank_name: event.target.value })} className={inputClass} placeholder="Bank name" />
           </Field>
           <Field label="Routing Number">
-            <input inputMode="numeric" value={data.bank_routing_number} onChange={(event) => updateData({ bank_routing_number: event.target.value.replace(/\D/g, '').slice(0, 9) })} className={inputClass} placeholder="9 digits" />
+            <input inputMode="numeric" autoComplete="off" value={data.bank_routing_number} onChange={(event) => updateData({ bank_routing_number: digitsOnly(event.target.value, 9) })} className={inputClass} placeholder="9 digits" />
           </Field>
           <Field label="Account Number">
-            <input inputMode="numeric" value={data.bank_account_number} onChange={(event) => updateData({ bank_account_number: event.target.value.replace(/\D/g, '').slice(0, 17) })} className={inputClass} placeholder="Account number" />
+            <input type="password" inputMode="numeric" autoComplete="new-password" value={data.bank_account_number} onChange={(event) => updateData({ bank_account_number: digitsOnly(event.target.value, 17) })} className={inputClass} placeholder="Account number" />
+            {data.bank_account_number.length >= 4 && <span className="block text-xs text-[rgb(var(--text-tertiary))]">Account ending in {data.bank_account_number.slice(-4)}</span>}
+          </Field>
+          <Field label="Confirm Account Number">
+            <input type="password" inputMode="numeric" autoComplete="new-password" value={accountConfirmation} onChange={(event) => setAccountConfirmation(digitsOnly(event.target.value, 17))} className={inputClass} placeholder="Re-enter account number" />
           </Field>
         </div>
       </section>
@@ -116,7 +155,7 @@ export function PaymentsStep({ onboarding }: PaymentsStepProps) {
             </select>
           </Field>
           <Field label="Refund Approval Threshold">
-            <input inputMode="decimal" value={data.refund_approval_threshold} onChange={(event) => updateData({ refund_approval_threshold: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) })} className={inputClass} placeholder="Manager approval over $..." />
+            <input inputMode="decimal" value={data.refund_approval_threshold} onChange={(event) => updateData({ refund_approval_threshold: sanitizeMoneyInput(event.target.value) })} className={inputClass} placeholder="Manager approval over $..." />
           </Field>
         </div>
       </section>

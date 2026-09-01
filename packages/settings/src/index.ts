@@ -8,6 +8,7 @@
 
 export * from './types'
 export * from './helpers'
+export * from './entry'
 export * from './options'
 export * from './sections'
 export * from './discounts'

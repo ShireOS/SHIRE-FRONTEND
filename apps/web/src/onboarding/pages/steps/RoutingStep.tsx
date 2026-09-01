@@ -3,6 +3,7 @@ import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
 import { supabase } from '../../../shared/lib/supabase'
 import { API_CONFIG } from '../../../shared/api/config'
 import { fetchPosApi } from '../../../shared/api/posClient'
+import { collapseEntryWhitespace, duplicateName, printerHostError } from '@shire/settings'
 import {
   ROUTE_INHERIT_VALUE,
   ROUTE_MULTI_VALUE,
@@ -148,16 +149,25 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
   }, [restaurantId])
 
   const createStation = async () => {
-    if (!restaurantId || !stationName.trim()) return
+    if (!restaurantId) return
+    const name = collapseEntryWhitespace(stationName)
+    if (!name) {
+      setError('Station name is required.')
+      return
+    }
+    if (duplicateName(config?.stations.map(station => station.name) || [], name)) {
+      setError('That station already exists.')
+      return
+    }
     setError(null)
     setActionMessage(null)
     setWorkingAction('station')
     try {
       await routingFetch(restaurantId, '/stations', {
         method: 'POST',
-        body: JSON.stringify({ name: stationName.trim(), is_active: true }),
+        body: JSON.stringify({ name, is_active: true }),
       })
-      setActionMessage(`Added station "${stationName.trim()}".`)
+      setActionMessage(`Added station "${name}".`)
       setStationName('')
       await load()
     } catch (err) {
@@ -169,7 +179,16 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
 
   const createTarget = async () => {
     if (!restaurantId) return
-    const name = targetName.trim() || 'Kitchen Printer'
+    const name = collapseEntryWhitespace(targetName) || 'Kitchen Printer'
+    if (duplicateName(config?.targets.map(target => target.name) || [], name)) {
+      setError('That output target already exists.')
+      return
+    }
+    const hostError = printerHostError(targetHost)
+    if (hostError) {
+      setError(hostError)
+      return
+    }
     setError(null)
     setActionMessage(null)
     setWorkingAction('target')
@@ -180,7 +199,7 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
           name,
           target_type: 'printer',
           connection_type: targetHost.trim() ? 'network' : 'dummy',
-          config: targetHost.trim() ? { host: targetHost.trim(), port: 9100, profile: 'TM-T88V' } : {},
+          config: targetHost.trim() ? { host: targetHost.trim().toLowerCase(), port: 9100, profile: 'TM-T88V' } : {},
           is_active: true,
         }),
       })

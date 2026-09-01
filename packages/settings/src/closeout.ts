@@ -6,6 +6,7 @@ import {
   isOptionValue,
 } from './options'
 import { sanitizeNumber } from './helpers'
+import { emailListError, numberRangeError, parseEmailList } from './entry'
 import type { CloseoutSettingsData } from './types'
 
 export function defaultCloseoutSettings(): CloseoutSettingsData {
@@ -71,7 +72,7 @@ export function normalizeCloseoutSettings(row: unknown): CloseoutSettingsData {
     // Cash-tip declaration lives in tips & payroll now; never resurrect the
     // old checkout blocker from stale rows.
     server_require_cash_tips_declared: false,
-    eod_report_recipients: Array.isArray(source.eod_report_recipients) ? source.eod_report_recipients.map(String).filter(Boolean) : [],
+    eod_report_recipients: parseEmailList(source.eod_report_recipients),
     eod_email_on_close: source.eod_email_on_close === true,
     eod_email_formats: Array.isArray(source.eod_email_formats) && source.eod_email_formats.length ? source.eod_email_formats.filter((format: unknown) => format === 'pdf' || format === 'xlsx') : ['pdf'],
     eod_reports: Array.isArray(source.eod_reports) && source.eod_reports.length > 0
@@ -82,6 +83,8 @@ export function normalizeCloseoutSettings(row: unknown): CloseoutSettingsData {
 
 /** PUT /restaurants/:id/closeout-settings body. */
 export function closeoutSettingsPayload(closeoutSettings: unknown) {
+  const validationError = closeoutSettingsEntryError(closeoutSettings)
+  if (validationError) throw new Error(validationError)
   const settings = normalizeCloseoutSettings(closeoutSettings)
   return {
     ...settings,
@@ -90,4 +93,22 @@ export function closeoutSettingsPayload(closeoutSettings: unknown) {
     cash_variance_threshold: settings.cash_variance_threshold === '' ? null : Number(settings.cash_variance_threshold),
     opening_bank_default: settings.opening_bank_source === 'none' || settings.opening_bank_default === '' ? 0 : Number(settings.opening_bank_default),
   }
+}
+
+export function closeoutSettingsEntryError(closeoutSettings: unknown): string {
+  const source: any = closeoutSettings && typeof closeoutSettings === 'object' ? closeoutSettings : {}
+  const recipientsError = emailListError(source.eod_report_recipients)
+  if (recipientsError) return recipientsError
+  for (const [value, label] of [
+    [source.cash_drop_threshold, 'Cash drop threshold'],
+    [source.cash_variance_threshold, 'Cash variance threshold'],
+    [source.opening_bank_default, 'Opening bank amount'],
+  ] as Array<[unknown, string]>) {
+    const error = numberRangeError(value, label, { min: 0 })
+    if (error) return error
+  }
+  if (source.opening_bank_source === 'fixed' && String(source.opening_bank_default ?? '').trim() === '') {
+    return 'Fixed opening bank amount is required.'
+  }
+  return ''
 }

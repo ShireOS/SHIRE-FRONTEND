@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../shared/lib/supabase'
 import { API_CONFIG } from '../../shared/api/config'
+import { collapseEntryWhitespace, duplicateName, sanitizeCountInput } from '@shire/settings'
 import type { FloorPlanSection, FloorPlanTable } from './FloorPlanCanvas'
 
 interface FloorPlanTableSetupProps {
@@ -16,7 +17,10 @@ const getToken = async (): Promise<string> => {
 }
 
 const hasRequiredTableFields = (table: FloorPlanTable) =>
-  Boolean(table.table_number?.trim()) && Number(table.capacity) > 0
+  Boolean(table.table_number?.trim())
+  && Number.isInteger(Number(table.capacity))
+  && Number(table.capacity) >= 1
+  && Number(table.capacity) <= 20
 
 const isTableComplete = (table: FloorPlanTable) =>
   hasRequiredTableFields(table)
@@ -38,6 +42,17 @@ const normalizeTable = (table: FloorPlanTable): FloorPlanTable => ({
 
 export function floorPlanIncompleteCount(tables: FloorPlanTable[]) {
   return tables.filter(table => !isTableComplete(table)).length
+}
+
+export function floorPlanEntryError(tables: FloorPlanTable[]) {
+  const names = tables.map(table => collapseEntryWhitespace(table.table_number))
+  const duplicateIndex = names.findIndex((name, index) => name && duplicateName(names, name, index))
+  if (duplicateIndex >= 0) return `Table “${names[duplicateIndex]}” appears more than once.`
+  const longName = names.find(name => name.length > 20)
+  if (longName) return 'Table numbers can contain at most 20 characters.'
+  const invalidCapacity = tables.find(table => table.capacity && !hasRequiredTableFields({ ...table, table_number: table.table_number || 'table' }))
+  if (invalidCapacity) return 'Table seats must be a whole number from 1 to 20.'
+  return ''
 }
 
 export function FloorPlanTableSetup({ restaurantId, tables, onTablesChange, onSaved }: FloorPlanTableSetupProps) {
@@ -92,6 +107,8 @@ export function FloorPlanTableSetup({ restaurantId, tables, onTablesChange, onSa
     setMessage('Saving table setup...')
     try {
       const prepared = tables.map(normalizeTable)
+      const entryError = floorPlanEntryError(prepared)
+      if (entryError) throw new Error(entryError)
       const token = await getToken()
       const response = await fetch(`${API_CONFIG.baseUrl}/restaurants/${restaurantId}/floor-plan/save`, {
         method: 'POST',
@@ -193,6 +210,7 @@ export function FloorPlanTableSetup({ restaurantId, tables, onTablesChange, onSa
                 value={table.table_number || ''}
                 onFocus={() => setSelectedId(table.id)}
                 onChange={event => updateTable(table.id, { table_number: event.target.value })}
+                maxLength={20}
                 placeholder={`Table ${index + 1}`}
                 className="min-h-[40px] rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 text-sm text-[rgb(var(--text-primary))] outline-none"
               />
@@ -210,8 +228,10 @@ export function FloorPlanTableSetup({ restaurantId, tables, onTablesChange, onSa
               <input
                 value={Number(table.capacity) > 0 ? String(table.capacity) : ''}
                 onFocus={() => setSelectedId(table.id)}
-                onChange={event => updateTable(table.id, { capacity: Number(event.target.value || 0) })}
+                onChange={event => updateTable(table.id, { capacity: Number(sanitizeCountInput(event.target.value, 2) || 0) })}
                 inputMode="numeric"
+                min={1}
+                max={20}
                 placeholder="Seats"
                 className="min-h-[40px] rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 text-sm text-[rgb(var(--text-primary))] outline-none"
               />

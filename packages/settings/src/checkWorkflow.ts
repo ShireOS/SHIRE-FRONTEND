@@ -1,5 +1,6 @@
 import { ORDER_FIRE_MODE_OPTIONS, isOptionValue } from './options'
 import { sanitizeNumber } from './helpers'
+import { numberRangeError } from './entry'
 import type { CheckWorkflowSettingsData } from './types'
 
 // Only fields the POS actually enforces. The old form also collected split
@@ -53,6 +54,8 @@ export function normalizeCheckWorkflowSettings(row: unknown): CheckWorkflowSetti
 
 /** PUT /restaurants/:id/check-workflow-settings body (proxied to the POS). */
 export function checkWorkflowSettingsPayload(checkWorkflowSettings: unknown) {
+  const validationError = checkWorkflowSettingsEntryError(checkWorkflowSettings)
+  if (validationError) throw new Error(validationError)
   const settings = normalizeCheckWorkflowSettings(checkWorkflowSettings)
   const holdPresetMinutes = Array.from(new Set(settings.hold_preset_minutes.map(Number).filter(minutes => Number.isFinite(minutes) && minutes > 0))).slice(0, 8)
   return {
@@ -62,4 +65,17 @@ export function checkWorkflowSettingsPayload(checkWorkflowSettings: unknown) {
     sent_item_correction_window_minutes: Math.max(0, Math.min(15, Number(settings.sent_item_correction_window_minutes || 0))),
     hold_preset_minutes: holdPresetMinutes.length > 0 ? holdPresetMinutes : defaultCheckWorkflowSettings().hold_preset_minutes,
   }
+}
+
+export function checkWorkflowSettingsEntryError(checkWorkflowSettings: unknown): string {
+  const source: any = checkWorkflowSettings && typeof checkWorkflowSettings === 'object' ? checkWorkflowSettings : {}
+  const preauthError = numberRangeError(source.default_preauth_amount, 'Default preauthorization amount', { min: 0 })
+  const holdError = numberRangeError(source.default_hold_minutes ?? 10, 'Default hold minutes', { required: true, min: 1, max: 360, integer: true })
+  const correctionError = numberRangeError(source.sent_item_correction_window_minutes ?? 0, 'Sent-item correction window', { required: true, min: 0, max: 15, integer: true })
+  if (preauthError || holdError || correctionError) return preauthError || holdError || correctionError
+  for (const value of Array.isArray(source.hold_preset_minutes) ? source.hold_preset_minutes : []) {
+    const presetError = numberRangeError(value, 'Hold preset', { required: true, min: 1, max: 360, integer: true })
+    if (presetError) return presetError
+  }
+  return ''
 }

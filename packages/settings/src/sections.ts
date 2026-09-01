@@ -1,5 +1,6 @@
 import { isOptionValue, TAX_APPLIES_TO_VALUES, CHARGE_APPLIES_TO_OPTIONS } from './options'
 import { sanitizeInteger, sanitizeNumber, asEnum } from './helpers'
+import { collapseEntryWhitespace, duplicateName, numberRangeError } from './entry'
 import type { AutoGratuityData, AutoGratuityRuleData, CategoryTaxAssignmentData, SectionBehaviorData, ServiceChargeData, TaxRateData } from './types'
 
 /**
@@ -43,7 +44,7 @@ export function defaultSectionProfile(name: string): SectionBehaviorData {
 export function normalizeSectionProfiles(rows: unknown, names: string[] = []): SectionBehaviorData[] {
   const source: any[] = Array.isArray(rows) ? rows : []
   const sectionNames = normalizeSectionNames(names.length ? names : source.map(row => row?.name))
-  const byName = new Map(source.map(row => [String(row?.name || '').trim().toLowerCase(), row]))
+  const byName = new Map(source.map(row => [collapseEntryWhitespace(row?.name).toLowerCase(), row]))
   return sectionNames.map(name => {
     const row = byName.get(name.toLowerCase())
     const fallback = defaultSectionProfile(name)
@@ -188,18 +189,20 @@ export function taxesChargesPayload(
   autoGratuity: unknown,
   categoryAssignments?: unknown,
 ) {
+  const validationError = taxesChargesEntryError(serviceCharges, autoGratuity)
+  if (validationError) throw new Error(validationError)
   const gratuity = normalizeAutoGratuity(autoGratuity)
   const [primaryRule] = gratuity.rules
   return {
     auto_gratuity: {
       enabled: gratuity.enabled,
       party_threshold: Math.max(1, Number(primaryRule?.party_threshold ?? gratuity.party_threshold) || 6),
-      percent: Math.min(100, Number(primaryRule?.percent ?? gratuity.percent) || 0),
+      percent: Number(primaryRule?.percent ?? gratuity.percent),
       label: gratuity.label,
       assigned_to_employee: gratuity.assigned_to_employee,
       rules: gratuity.rules.map(row => ({
         party_threshold: Math.max(1, Number(row.party_threshold) || 1),
-        percent: Math.min(100, Number(row.percent) || 0),
+        percent: Number(row.percent),
       })),
     },
     tax_rates: normalizeTaxRates(taxRates).map(row => ({
@@ -226,4 +229,37 @@ export function taxesChargesPayload(
       ? { category_assignments: normalizeCategoryTaxAssignments(categoryAssignments) }
       : {}),
   }
+}
+
+export function taxesChargesEntryError(serviceCharges: unknown, autoGratuity: unknown): string {
+  const chargeRows: any[] = Array.isArray(serviceCharges) ? serviceCharges.filter(row => row?.is_active !== false) : []
+  const chargeNames = chargeRows.map(row => collapseEntryWhitespace(row?.name))
+  const blankCharge = chargeNames.findIndex(name => !name)
+  if (blankCharge >= 0) return `Service charge ${blankCharge + 1} needs a name.`
+  const duplicateCharge = chargeNames.findIndex((name, index) => duplicateName(chargeNames, name, index))
+  if (duplicateCharge >= 0) return `“${chargeNames[duplicateCharge]}” appears more than once in service charges.`
+  for (let index = 0; index < chargeRows.length; index += 1) {
+    const row = chargeRows[index]
+    const amountError = numberRangeError(row?.amount, `${chargeNames[index]} amount`, {
+      required: true,
+      min: 0,
+      max: row?.charge_type === 'percentage' ? 100 : undefined,
+    })
+    if (amountError) return amountError
+  }
+
+  const gratuity: any = autoGratuity && typeof autoGratuity === 'object' ? autoGratuity : defaultAutoGratuity()
+  if (gratuity.enabled === false) return ''
+  const rawRules: any[] = Array.isArray(gratuity.rules) && gratuity.rules.length
+    ? gratuity.rules
+    : [{ party_threshold: gratuity.party_threshold, percent: gratuity.percent }]
+  const thresholds = rawRules.map(row => String(row?.party_threshold ?? '').trim())
+  const duplicateThreshold = thresholds.findIndex((threshold, index) => threshold && duplicateName(thresholds, threshold, index))
+  if (duplicateThreshold >= 0) return `Party-size threshold ${thresholds[duplicateThreshold]} appears more than once.`
+  for (const row of rawRules) {
+    const thresholdError = numberRangeError(row?.party_threshold, 'Auto-gratuity party size', { required: true, min: 1, max: 99, integer: true })
+    const percentError = numberRangeError(row?.percent, 'Auto-gratuity percent', { required: true, min: 0, max: 100 })
+    if (thresholdError || percentError) return thresholdError || percentError
+  }
+  return ''
 }

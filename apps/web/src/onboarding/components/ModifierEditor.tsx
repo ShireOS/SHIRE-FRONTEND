@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { supabase } from '../../shared/lib/supabase'
 import { API_CONFIG } from '../../shared/api/config'
 import type { MenuEditorItem } from './MenuItemsTable'
+import { collapseEntryWhitespace, duplicateName, numberRangeError, sanitizeMoneyInput } from '@shire/settings'
 import {
   addGroupOption,
   archiveModifierGroup,
@@ -87,11 +88,7 @@ const blankQuestion = (): EditorQuestion => ({
 })
 
 const digits = (value: string) => value.replace(/\D/g, '').slice(0, 2)
-const decimal = (value: string) => {
-  const cleaned = value.replace(/[^\d.]/g, '')
-  const [whole, ...rest] = cleaned.split('.')
-  return rest.length ? `${whole}.${rest.join('').slice(0, 2)}` : whole
-}
+const decimal = sanitizeMoneyInput
 
 const responseError = async (response: Response, fallback: string) => {
   let detail = ''
@@ -207,7 +204,64 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
   }, [])
 
   const handleSave = async () => {
-    const valid = questions.filter(q => q.name.trim() !== '' && q.options.some(o => o.name.trim() !== ''))
+    const drafted = questions.filter(question => (
+      question.name.trim()
+      || question.options.some(option => option.name.trim())
+      || question.groupId
+    ))
+    const names = drafted.map(question => collapseEntryWhitespace(question.name))
+    const blankQuestionIndex = names.findIndex(name => !name)
+    if (blankQuestionIndex >= 0) {
+      setError(`Question ${blankQuestionIndex + 1} needs a name.`)
+      return
+    }
+    const duplicateQuestionIndex = names.findIndex((name, index) => duplicateName(names, name, index))
+    if (duplicateQuestionIndex >= 0) {
+      setError(`“${names[duplicateQuestionIndex]}” is already in the question list.`)
+      return
+    }
+    for (const question of drafted) {
+      const answerNames = question.options.map(option => collapseEntryWhitespace(option.name)).filter(Boolean)
+      if (answerNames.length === 0) {
+        setError(`“${question.name}” needs at least one answer.`)
+        return
+      }
+      const duplicateAnswerIndex = answerNames.findIndex((name, index) => duplicateName(answerNames, name, index))
+      if (duplicateAnswerIndex >= 0) {
+        setError(`“${duplicateAnswerIndex >= 0 ? answerNames[duplicateAnswerIndex] : ''}” appears more than once in “${question.name}”.`)
+        return
+      }
+      const minError = numberRangeError(question.minSelections, `${question.name} minimum selections`, { required: true, min: question.isRequired ? 1 : 0, max: 99, integer: true })
+      const maxError = numberRangeError(question.maxSelections, `${question.name} maximum selections`, { min: 0, max: 99, integer: true })
+      const includedError = numberRangeError(question.includedCount, `${question.name} included selections`, { required: true, min: 0, max: 99, integer: true })
+      const overageError = numberRangeError(question.overagePrice, `${question.name} overage price`, { min: 0 })
+      if (minError || maxError || includedError || overageError) {
+        setError(minError || maxError || includedError || overageError)
+        return
+      }
+      const min = Number(question.minSelections)
+      const max = question.maxSelections === '' ? null : Number(question.maxSelections)
+      const included = Number(question.includedCount)
+      if (max != null && max < min) {
+        setError(`${question.name} maximum selections cannot be below its minimum.`)
+        return
+      }
+      if (max != null && included > max) {
+        setError(`${question.name} cannot include more free selections than its maximum.`)
+        return
+      }
+      const defaultCount = question.options.filter(option => option.name.trim() && option.isDefault).length
+      if (max != null && defaultCount > max) {
+        setError(`${question.name} has more default answers than its maximum selections.`)
+        return
+      }
+      const invalidPrice = question.options.find(option => option.name.trim() && numberRangeError(option.priceDelta, `${option.name} price`, { min: 0 }))
+      if (invalidPrice) {
+        setError(numberRangeError(invalidPrice.priceDelta, `${invalidPrice.name} price`, { min: 0 }))
+        return
+      }
+    }
+    const valid = drafted
     setSaving(true)
     setError(null)
     try {
@@ -215,11 +269,11 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
       const headers = { 'Content-Type': 'application/json', Authorization: token }
 
       for (const [index, question] of valid.entries()) {
-        const minSelections = Math.max(question.isRequired ? 1 : 0, Number(question.minSelections) || 0)
+        const minSelections = Number(question.minSelections)
         const groupDraft = {
           name: question.name.trim(),
           min_selections: minSelections,
-          max_selections: question.maxSelections === '' ? null : Math.max(minSelections, Number(question.maxSelections) || 0),
+          max_selections: question.maxSelections === '' ? null : Number(question.maxSelections),
           is_required: question.isRequired,
           prompt_on_order: true,
           included_count: Number(question.includedCount) || 0,

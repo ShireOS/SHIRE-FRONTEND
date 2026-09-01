@@ -344,8 +344,8 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
   ), [answerSortMode, group.options, modifiersById])
 
   const saveFields = () => {
-    const minSelections = Math.max(draft.is_required ? 1 : 0, Number(draft.min_selections) || 0)
-    const maxSelections = draft.max_selections === '' ? null : Math.max(minSelections, Number(draft.max_selections) || 0)
+    const minSelections = Number(draft.min_selections) || 0
+    const maxSelections = draft.max_selections === '' ? null : Number(draft.max_selections)
     onSave(group.id, {
       name: draft.name.trim() || group.name,
       min_selections: minSelections,
@@ -2144,11 +2144,11 @@ export function MenuPanel({
       return
     }
     return run(async () => {
-      const minSelections = Math.max(groupDraft.is_required ? 1 : 0, Number(groupDraft.min_selections) || 0)
+      const minSelections = Number(groupDraft.min_selections) || 0
       await createModifierGroup(restaurantId, {
         name: groupDraft.name.trim(),
         min_selections: minSelections,
-        max_selections: groupDraft.max_selections === '' ? null : Math.max(minSelections, Number(groupDraft.max_selections) || 0),
+        max_selections: groupDraft.max_selections === '' ? null : Number(groupDraft.max_selections),
         is_required: groupDraft.is_required,
         prompt_on_order: groupDraft.prompt_on_order,
         included_count: Number(groupDraft.included_count) || 0,

@@ -557,7 +557,7 @@ function QuestionEditor({
           defaultValue={String(group.min_selections ?? 0)}
           onBlur={event => {
             const next = Number(cleanDigits(event.target.value)) || 0
-            if (next !== group.min_selections) void patchGroup({ min_selections: group.is_required ? Math.max(1, next) : next }, localSave('rules'))
+            if (next !== group.min_selections) void patchGroup({ min_selections: next }, localSave('rules'))
           }}
         />
         <span>and at most</span>
@@ -568,7 +568,7 @@ function QuestionEditor({
           defaultValue={group.max_selections == null ? '' : String(group.max_selections)}
           onBlur={event => {
             const raw = cleanDigits(event.target.value)
-            const next = raw === '' ? null : Math.max(Number(raw), group.min_selections || 0)
+            const next = raw === '' ? null : Number(raw)
             if (next !== group.max_selections) void patchGroup({ max_selections: next }, localSave('rules'))
           }}
         />

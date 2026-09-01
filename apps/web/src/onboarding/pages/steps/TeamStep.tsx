@@ -3,7 +3,17 @@ import { supabase } from '../../../shared/lib/supabase'
 import { API_CONFIG } from '../../../shared/api/config'
 import { fetchPosApi } from '../../../shared/api/posClient'
 import type { JobCodeData, RolePermissionData, UseOnboardingReturn } from '../../hooks/useOnboarding'
-import { defaultRolePermission } from '@shire/settings'
+import {
+  collapseEntryWhitespace,
+  defaultRolePermission,
+  duplicateName,
+  emailError,
+  normalizeEmailInput,
+  numberRangeError,
+  sanitizeCountInput,
+  sanitizeMoneyInput,
+  slugRoleCode,
+} from '@shire/settings'
 import { cashDrawerRoleSummary } from '../../../dashboard/utils/cashDrawerPermissions'
 
 interface TeamStepProps {
@@ -110,6 +120,31 @@ export function TeamStep({ onboarding }: TeamStepProps) {
 
   const saveRoles = async () => {
     if (!restaurantId) return
+    const activeDrafts = roleDrafts.filter(draft => draft.is_active !== false)
+    const labels = activeDrafts.map(draft => collapseEntryWhitespace(draft.label || draft.code))
+    const blankIndex = labels.findIndex(label => !label)
+    if (blankIndex >= 0) {
+      setFormError(`Role ${blankIndex + 1} needs a name.`)
+      return
+    }
+    const duplicateIndex = labels.findIndex((label, index) => duplicateName(labels, label, index))
+    if (duplicateIndex >= 0) {
+      setFormError(`“${labels[duplicateIndex]}” is already in the role list.`)
+      return
+    }
+    const codes = activeDrafts.map(draft => slugRoleCode(draft.code || draft.label))
+    const duplicateCodeIndex = codes.findIndex((code, index) => code && duplicateName(codes, code, index))
+    if (duplicateCodeIndex >= 0) {
+      setFormError(`“${labels[duplicateCodeIndex]}” resolves to the same role ID as another role.`)
+      return
+    }
+    for (const draft of activeDrafts) {
+      const rateError = numberRangeError(draft.default_hourly_rate, `${draft.label || 'Role'} default wage`, { min: 0 })
+      if (rateError) {
+        setFormError(rateError)
+        return
+      }
+    }
     setIsSavingRoles(true)
     setFormError(null)
     try {
@@ -189,6 +224,31 @@ export function TeamStep({ onboarding }: TeamStepProps) {
       setFormError('POS passcode must be exactly 4 digits')
       return
     }
+    const normalizedEmail = normalizeEmailInput(email)
+    const contactError = emailError(normalizedEmail)
+    if (contactError) {
+      setFormError(contactError)
+      return
+    }
+    const loginId = employeeLoginId.trim() || defaultEmployeeId(name)
+    if (!/^[a-z0-9_]+$/.test(loginId)) {
+      setFormError('Employee ID can use lowercase letters, numbers, and underscores only.')
+      return
+    }
+    if (staffList.some(staff => String(staff.employee_login_id || '').toLowerCase() === loginId.toLowerCase())) {
+      setFormError('That employee ID is already in use.')
+      return
+    }
+    if (staffList.some(staff => staff.pos_passcode === passcode)) {
+      setFormError('That POS passcode is already assigned to another employee.')
+      return
+    }
+    const hoursError = numberRangeError(suggestedWeeklyHours, 'Suggested weekly hours', { min: 0, max: 168 })
+    const rateError = numberRangeError(hourlyRate, 'Hourly override', { min: 0 })
+    if (hoursError || rateError) {
+      setFormError(hoursError || rateError)
+      return
+    }
 
     setFormError(null)
     setIsAdding(true)
@@ -211,12 +271,12 @@ export function TeamStep({ onboarding }: TeamStepProps) {
           },
           body: JSON.stringify({
             name: name.trim(),
-            email: email.trim() || null,
+            email: normalizedEmail || null,
             role,
             job_code_id: selectedJobCode?.id || null,
             hourly_rate: hourlyRate === '' ? null : Number(hourlyRate),
             pos_passcode: passcode,
-            employee_login_id: employeeLoginId.trim() || defaultEmployeeId(name),
+            employee_login_id: loginId,
             suggested_weekly_hours: suggestedWeeklyHours === '' ? null : Number(suggestedWeeklyHours),
           }),
         }
@@ -244,12 +304,12 @@ export function TeamStep({ onboarding }: TeamStepProps) {
         {
           id: created.id || String(Date.now()),
           name: created.name || name.trim(),
-          email: created.email || email.trim() || null,
+          email: created.email || normalizedEmail || null,
           role: created.role || role,
           job_code_id: created.job_code_id || selectedJobCode?.id || null,
           hourly_rate: created.hourly_rate ?? (hourlyRate === '' ? null : Number(hourlyRate)),
           pos_passcode: created.pos_passcode || passcode,
-          employee_login_id: created.employee_login_id || employeeLoginId.trim() || defaultEmployeeId(name),
+          employee_login_id: created.employee_login_id || loginId,
           suggested_weekly_hours: created.suggested_weekly_hours ?? (suggestedWeeklyHours === '' ? null : Number(suggestedWeeklyHours)),
         },
       ])
@@ -314,7 +374,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
               <span className="block text-xs font-medium text-[rgb(var(--text-secondary))] md:hidden">Default wage</span>
               <input
                 value={code.default_hourly_rate}
-                onChange={event => updateRoleDraft(index, { default_hourly_rate: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) })}
+                onChange={event => updateRoleDraft(index, { default_hourly_rate: sanitizeMoneyInput(event.target.value) })}
                 inputMode="decimal"
                 placeholder="$/hr"
                 className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))]"
@@ -443,6 +503,8 @@ export function TeamStep({ onboarding }: TeamStepProps) {
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
+                onBlur={() => setEmail(normalizeEmailInput(email))}
+                autoComplete="email"
                 placeholder="alice@restaurant.com"
                 className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
               />
@@ -502,10 +564,10 @@ export function TeamStep({ onboarding }: TeamStepProps) {
               <input
                 type="number"
                 min={0}
-                max={60}
+                max={168}
                 step={1}
                 value={suggestedWeeklyHours}
-                onChange={e => setSuggestedWeeklyHours(e.target.value)}
+                onChange={e => setSuggestedWeeklyHours(sanitizeCountInput(e.target.value, 3))}
                 placeholder="28"
                 className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
               />
@@ -518,7 +580,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
             <input
               inputMode="decimal"
               value={hourlyRate}
-              onChange={e => setHourlyRate(e.target.value.replace(/[^\d.]/g, '').slice(0, 8))}
+              onChange={e => setHourlyRate(sanitizeMoneyInput(e.target.value))}
               placeholder={selectedJobCode?.default_hourly_rate || 'Role rate'}
               className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
             />

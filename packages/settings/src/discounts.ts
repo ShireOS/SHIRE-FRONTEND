@@ -8,6 +8,7 @@ import {
   isOptionValue,
 } from './options'
 import { sanitizeNumber } from './helpers'
+import { collapseEntryWhitespace, duplicateName } from './entry'
 import type { DiscountRuleData } from './types'
 
 export function normalizeDiscountRules(rows: unknown): DiscountRuleData[] {
@@ -47,17 +48,40 @@ export function discountRuleWarning(rule: DiscountRuleData): string {
   if (rule.value_type !== 'open' && !String(rule.default_value ?? '').trim()) {
     return 'Set a default value, or switch it to a custom amount.'
   }
+  const defaultValue = String(rule.default_value ?? '').trim()
   const min = String(rule.min_value ?? '').trim()
   const max = String(rule.max_value ?? '').trim()
+  if ([defaultValue, min, max].some(value => value && (!Number.isFinite(Number(value)) || Number(value) < 0))) {
+    return 'Discount values must be nonnegative numbers.'
+  }
   if (min && max && Number(min) > Number(max)) return 'Minimum cannot exceed maximum.'
-  if (rule.value_type === 'percent' && Number(rule.default_value || 0) > 100) {
+  if (defaultValue && min && Number(defaultValue) < Number(min)) return 'Default cannot be below the minimum.'
+  if (defaultValue && max && Number(defaultValue) > Number(max)) return 'Default cannot exceed the maximum.'
+  if (rule.value_type === 'percent' && [defaultValue, min, max].some(value => value && Number(value) > 100)) {
     return 'A percent discount cannot exceed 100%.'
+  }
+  return ''
+}
+
+export function discountRulesEntryError(discountRules: unknown): string {
+  const rows: any[] = (Array.isArray(discountRules) ? discountRules : []).filter(row => row?.is_active !== false)
+  const names = rows.map(row => collapseEntryWhitespace(row?.name))
+  const blankIndex = names.findIndex(name => !name)
+  if (blankIndex >= 0) return `Discount ${blankIndex + 1} needs a name before saving.`
+  const duplicateIndex = names.findIndex((name, index) => duplicateName(names, name, index))
+  if (duplicateIndex >= 0) return `“${names[duplicateIndex]}” appears more than once in discounts.`
+  const normalized = normalizeDiscountRules(rows)
+  for (const rule of normalized) {
+    const warning = discountRuleWarning(rule)
+    if (warning) return `${rule.name}: ${warning}`
   }
   return ''
 }
 
 /** PUT /restaurants/:id/discount-rules body. */
 export function discountRulesPayload(discountRules: unknown, { includeIds = true }: { includeIds?: boolean } = {}) {
+  const validationError = discountRulesEntryError(discountRules)
+  if (validationError) throw new Error(validationError)
   return {
     discount_rules: normalizeDiscountRules(discountRules).map(row => ({
       id: includeIds && row.id ? row.id : undefined,

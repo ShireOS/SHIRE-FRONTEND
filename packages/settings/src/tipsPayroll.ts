@@ -7,7 +7,8 @@ import {
   isOptionValue,
 } from './options'
 import { sanitizeNumber, slugRoleCode } from './helpers'
-import { serializeTipRoleRules, serializeWeekdayTipoutOverrides } from './tipsPolicy'
+import { isValidIsoDate, numberRangeError } from './entry'
+import { serializeTipRoleRules, serializeWeekdayTipoutOverrides, validateTipoutPolicy } from './tipsPolicy'
 import type {
   CategoryTipProfileData,
   HeadcountPolicyData,
@@ -243,6 +244,8 @@ export function normalizeTipPayrollSettings(row: unknown, jobCodes: RoleSource[]
 
 /** PUT /restaurants/:id/tips-payroll-settings body. */
 export function tipPayrollPayload(settings: unknown, jobCodes: RoleSource[] = []) {
+  const validationError = tipPayrollEntryError(settings)
+  if (validationError) throw new Error(validationError)
   const normalized = normalizeTipPayrollSettings(settings, jobCodes)
   return {
     ...normalized,
@@ -261,4 +264,70 @@ export function tipPayrollPayload(settings: unknown, jobCodes: RoleSource[] = []
     })),
     weekday_tipout_overrides: serializeWeekdayTipoutOverrides(normalized.weekday_tipout_overrides),
   }
+}
+
+export function tipPayrollEntryError(settings: unknown): string {
+  const source: any = settings && typeof settings === 'object' ? settings : {}
+  const feeError = numberRangeError(source.credit_card_fee_percent, 'Credit-card fee percent', { min: 0, max: 100 })
+  if (feeError) return feeError
+  const weekdayError = numberRangeError(source.payroll_period_start_weekday ?? 0, 'Payroll week start', { required: true, min: 0, max: 6, integer: true })
+  if (weekdayError) return weekdayError
+  const cutoffError = numberRangeError(source.payroll_semimonthly_cutoff_day ?? 15, 'Semimonthly cutoff day', { required: true, min: 1, max: 27, integer: true })
+  if (cutoffError) return cutoffError
+  if (source.payroll_period_anchor_date) {
+    const anchor = String(source.payroll_period_anchor_date)
+    if (!isValidIsoDate(anchor)) {
+      return 'Payroll anchor must be a valid date.'
+    }
+  }
+
+  const validateRules = (rules: any[], context: string): string => {
+    for (const rule of rules || []) {
+      const label = String(rule?.role_key || context || 'Role').replace(/_/g, ' ')
+      const fields: Array<[unknown, string, number | undefined]> = [
+        [rule?.pool_points, `${label} pool points`, undefined],
+        [rule?.pool_contribution_percent, `${label} pool contribution`, 100],
+        [rule?.pool_share_percent, `${label} pool share`, 100],
+      ]
+      for (const [value, fieldLabel, max] of fields) {
+        const error = numberRangeError(value, fieldLabel, { min: 0, max })
+        if (error) return error
+      }
+      for (const tipout of Array.isArray(rule?.tipouts) ? rule.tipouts : []) {
+        const error = numberRangeError(tipout?.percent, `${label} tipout percent`, { required: true, min: 0, max: 100 })
+        if (error) return error
+        for (const tier of Array.isArray(tipout?.headcount?.tiers) ? tipout.headcount.tiers : []) {
+          const minError = numberRangeError(tier?.min_count, 'Headcount minimum', { required: true, min: 0, integer: true })
+          const maxError = numberRangeError(tier?.max_count, 'Headcount maximum', { min: 0, integer: true })
+          if (minError || maxError) return minError || maxError
+          if (tier?.max_count != null && Number(tier.max_count) < Number(tier.min_count)) return 'Headcount maximum cannot be below its minimum.'
+          for (const allocation of Array.isArray(tier?.allocations) ? tier.allocations : []) {
+            const allocationError = numberRangeError(allocation?.percent, 'Headcount allocation percent', { required: true, min: 0, max: 100 })
+            if (allocationError) return allocationError
+          }
+        }
+      }
+    }
+    return ''
+  }
+
+  const directError = validateRules(source.role_tip_rules, 'Role')
+  if (directError) return directError
+  for (const profile of Array.isArray(source.category_tip_profiles) ? source.category_tip_profiles : []) {
+    const profileError = validateRules(profile?.role_tip_rules, profile?.name || 'Category')
+    if (profileError) return profileError
+    for (const override of Array.isArray(profile?.item_overrides) ? profile.item_overrides : []) {
+      const overrideError = validateRules(override?.role_tip_rules, override?.menu_item_name || 'Item')
+      if (overrideError) return overrideError
+    }
+  }
+  for (const override of Object.values(source.weekday_tipout_overrides || {}) as any[]) {
+    if (override?.mode === 'custom') {
+      const overrideError = validateRules(override.role_tip_rules, 'Weekday')
+      if (overrideError) return overrideError
+    }
+  }
+  const policyError = validateTipoutPolicy(source)[0]
+  if (policyError) return policyError
+  return ''
 }

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
 import { FloorPlanEditor } from '../../components/FloorPlanEditor'
 import { normalizeFloorPlanTablesForEditor, type FloorPlanTable } from '../../components/FloorPlanCanvas'
-import { FloorPlanTableSetup, floorPlanIncompleteCount } from '../../components/FloorPlanTableSetup'
+import { FloorPlanTableSetup, floorPlanEntryError, floorPlanIncompleteCount } from '../../components/FloorPlanTableSetup'
 import { supabase } from '../../../shared/lib/supabase'
 import { API_CONFIG } from '../../../shared/api/config'
 
@@ -66,6 +66,11 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
     try {
       if (savedTables.length > 0 && floorPlanIncompleteCount(savedTables) > 0) {
         setSetupError('Finish table numbers and seat counts before continuing.')
+        return
+      }
+      const tableError = floorPlanEntryError(savedTables)
+      if (tableError) {
+        setSetupError(tableError)
         return
       }
       setSetupError('')
@@ -134,8 +139,10 @@ export function CapacityStep({ onboarding }: CapacityStepProps) {
         <div className="mt-3">
           <input
             type="number"
+            min={1}
+            step={1}
             value={data.seating_capacity || ''}
-            onChange={(e) => updateData({ seating_capacity: parseInt(e.target.value) || null })}
+            onChange={(e) => updateData({ seating_capacity: e.target.value === '' ? null : Number.parseInt(e.target.value, 10) })}
             className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
             placeholder="Or enter exact number..."
           />

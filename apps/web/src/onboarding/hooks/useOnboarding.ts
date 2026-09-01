@@ -31,6 +31,11 @@ import {
   closeoutSettingsPayload,
   checkWorkflowSettingsPayload,
   tipPayrollPayload,
+  collapseEntryWhitespace,
+  normalizeEmailInput,
+  normalizeUsPhoneE164,
+  numberRangeError,
+  reservationTimingError,
 } from '@shire/settings'
 import type {
   TaxRateData,
@@ -727,6 +732,8 @@ const clampInteger = (value: string, fallback: number, min: number, max: number)
 }
 
 const reservationTimingPatch = (data: OnboardingData) => {
+  const validationError = reservationTimingError(data)
+  if (validationError) throw new Error(validationError)
   const slotIntervalMinutes = clampInteger(data.reservation_slot_interval_minutes, 15, 5, 180)
   const minPartySize = clampInteger(data.reservation_min_party_size, 1, 1, 99)
   const requestedMaxPartySize = clampInteger(data.reservation_max_party_size, 10, 1, 99)
@@ -1521,7 +1528,7 @@ export function useOnboarding() {
         timezone: data.timezone,
         type: data.type || 'casual',
         cuisine_types: data.cuisine_types,
-        phone: data.phone.trim() || null,
+        phone: normalizeUsPhoneE164(data.phone),
       }
 
       // If a restaurant already exists, update instead of creating a duplicate.
@@ -1698,33 +1705,30 @@ export function useOnboarding() {
 
     try {
       const activeRestaurantId = getActiveRestaurantId()
-      const existingConfig = await fetchRestaurantConfig(activeRestaurantId)
-
-      const { error: updateError } = await runWithTimeout(
-        () =>
-          supabase
-            .from('restaurants')
-            .update({
-              config: {
-                ...existingConfig,
-                legal_business_name: data.legal_business_name,
-                dba_name: data.dba_name,
-                ein: data.ein,
-                legal_contact_name: data.legal_contact_name,
-                legal_contact_title: data.legal_contact_title,
-                legal_contact_email: data.legal_contact_email,
-                legal_contact_phone: data.legal_contact_phone,
-                tos_signature_data_url: data.tos_signature_data_url,
-                tos_signed_at: data.tos_signed_at,
-                tos_version: 'shire-placeholder-tos-v1',
-              },
-              ...onboardingProgressPatch(2),
-            })
-            .eq('id', activeRestaurantId),
+      const legalPatch = {
+        legal_business_name: collapseEntryWhitespace(data.legal_business_name),
+        dba_name: collapseEntryWhitespace(data.dba_name),
+        ein: data.ein,
+        legal_contact_name: collapseEntryWhitespace(data.legal_contact_name),
+        legal_contact_title: collapseEntryWhitespace(data.legal_contact_title),
+        legal_contact_email: normalizeEmailInput(data.legal_contact_email),
+        legal_contact_phone: normalizeUsPhoneE164(data.legal_contact_phone) || '',
+        tos_signature_data_url: data.tos_signature_data_url,
+        tos_signed_at: data.tos_signed_at,
+        tos_version: 'shire-placeholder-tos-v1',
+      }
+      await runWithTimeout(
+        () => fetchWithSupabaseAuth(`/restaurants/${activeRestaurantId}/setup-config`, {
+          method: 'PATCH',
+          body: JSON.stringify({ patch: legalPatch }),
+        }),
         'Saving legal setup timed out. Please retry.'
       )
-
-      if (updateError) throw updateError
+      if (!isSetupEditor) {
+        const { error: stepError } = await supabase.from('restaurants').update(onboardingProgressPatch(2)).eq('id', activeRestaurantId)
+        if (stepError) throw stepError
+      }
+      setData(prev => mergeOnboardingData(prev, legalPatch))
 
       setRestaurantId(activeRestaurantId)
     } catch (err) {
@@ -1734,7 +1738,7 @@ export function useOnboarding() {
     } finally {
       setIsLoading(false)
     }
-  }, [data, getActiveRestaurantId, fetchRestaurantConfig, onboardingProgressPatch, runWithTimeout])
+  }, [data, getActiveRestaurantId, isSetupEditor, onboardingProgressPatch, runWithTimeout])
 
   const savePayments = useCallback(async () => {
     setIsLoading(true)
@@ -1742,33 +1746,30 @@ export function useOnboarding() {
 
     try {
       const activeRestaurantId = getActiveRestaurantId()
-      const existingConfig = await fetchRestaurantConfig(activeRestaurantId)
-
-      const { error: updateError } = await runWithTimeout(
-        () =>
-          supabase
-            .from('restaurants')
-            .update({
-              config: {
-                ...existingConfig,
-                bank_account_holder: data.bank_account_holder,
-                bank_name: data.bank_name,
-                bank_routing_number: data.bank_routing_number,
-                bank_account_number: data.bank_account_number,
-                payout_schedule: data.payout_schedule,
-                refund_funding_source: data.refund_funding_source,
-                batch_close_mode: data.batch_close_mode,
-                batch_close_time: data.batch_close_time,
-                credit_card_tip_payout: data.credit_card_tip_payout,
-                refund_approval_threshold: data.refund_approval_threshold,
-              },
-              ...onboardingProgressPatch(3),
-            })
-            .eq('id', activeRestaurantId),
+      const paymentsPatch = {
+        bank_account_holder: collapseEntryWhitespace(data.bank_account_holder),
+        bank_name: collapseEntryWhitespace(data.bank_name),
+        bank_routing_number: data.bank_routing_number,
+        bank_account_number: data.bank_account_number,
+        payout_schedule: data.payout_schedule,
+        refund_funding_source: data.refund_funding_source,
+        batch_close_mode: data.batch_close_mode,
+        batch_close_time: data.batch_close_time,
+        credit_card_tip_payout: data.credit_card_tip_payout,
+        refund_approval_threshold: data.refund_approval_threshold,
+      }
+      await runWithTimeout(
+        () => fetchWithSupabaseAuth(`/restaurants/${activeRestaurantId}/setup-config`, {
+          method: 'PATCH',
+          body: JSON.stringify({ patch: paymentsPatch }),
+        }),
         'Saving payment setup timed out. Please retry.'
       )
-
-      if (updateError) throw updateError
+      if (!isSetupEditor) {
+        const { error: stepError } = await supabase.from('restaurants').update(onboardingProgressPatch(3)).eq('id', activeRestaurantId)
+        if (stepError) throw stepError
+      }
+      setData(prev => mergeOnboardingData(prev, paymentsPatch))
 
       const pricingPayload: Record<string, unknown> = {
         ...data.pricing_policy,
@@ -1797,7 +1798,7 @@ export function useOnboarding() {
     } finally {
       setIsLoading(false)
     }
-  }, [data, getActiveRestaurantId, fetchRestaurantConfig, onboardingProgressPatch, runWithTimeout])
+  }, [data, getActiveRestaurantId, isSetupEditor, onboardingProgressPatch, runWithTimeout])
 
   const saveTaxesCharges = useCallback(async () => {
     setIsLoading(true)
@@ -2369,6 +2370,9 @@ export function useOnboarding() {
 
     try {
       const activeRestaurantId = getActiveRestaurantId()
+      const capacityError = numberRangeError(data.seating_capacity, 'Seating capacity', { required: true, min: 1, integer: true })
+      const tableCountError = numberRangeError(data.table_count, 'Table count', { min: 0, integer: true })
+      if (capacityError || tableCountError) throw new Error(capacityError || tableCountError)
 
       // Update restaurant
       const { error: updateError } = await runWithTimeout(

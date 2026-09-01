@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
+import {
+  collapseEntryWhitespace,
+  emailError,
+  formatEinInput,
+  formatUsPhoneInput,
+  normalizeEmailInput,
+  usPhoneError,
+  einError,
+} from '@shire/settings'
 
 interface LegalStepProps {
   onboarding: UseOnboardingReturn
@@ -97,10 +106,33 @@ export function LegalStep({ onboarding }: LegalStepProps) {
       setLocalError('Authorized signer name is required.')
       return
     }
-    if (!data.tos_signature_data_url) {
+    const einIssue = einError(data.ein)
+    if (einIssue) {
+      setLocalError(einIssue)
+      return
+    }
+    const emailIssue = emailError(data.legal_contact_email)
+    if (emailIssue) {
+      setLocalError(emailIssue)
+      return
+    }
+    const phoneIssue = usPhoneError(data.legal_contact_phone)
+    if (phoneIssue) {
+      setLocalError(phoneIssue)
+      return
+    }
+    if (!data.tos_signature_data_url || !data.tos_signed_at) {
       setLocalError('Please sign the terms before continuing.')
       return
     }
+
+    updateData({
+      legal_business_name: collapseEntryWhitespace(data.legal_business_name),
+      dba_name: collapseEntryWhitespace(data.dba_name),
+      legal_contact_name: collapseEntryWhitespace(data.legal_contact_name),
+      legal_contact_title: collapseEntryWhitespace(data.legal_contact_title),
+      legal_contact_email: normalizeEmailInput(data.legal_contact_email),
+    })
 
     try {
       await saveLegal()
@@ -125,6 +157,7 @@ export function LegalStep({ onboarding }: LegalStepProps) {
           <span className="label-mono text-[rgb(var(--gold))]">Legal Business Name *</span>
           <input
             value={data.legal_business_name}
+            maxLength={240}
             onChange={(event) => updateData({ legal_business_name: event.target.value })}
             className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
             placeholder="The Golden Fork LLC"
@@ -134,6 +167,7 @@ export function LegalStep({ onboarding }: LegalStepProps) {
           <span className="label-mono text-[rgb(var(--gold))]">DBA / Trade Name</span>
           <input
             value={data.dba_name}
+            maxLength={240}
             onChange={(event) => updateData({ dba_name: event.target.value })}
             className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
             placeholder="The Golden Fork"
@@ -143,7 +177,9 @@ export function LegalStep({ onboarding }: LegalStepProps) {
           <span className="label-mono text-[rgb(var(--gold))]">EIN</span>
           <input
             value={data.ein}
-            onChange={(event) => updateData({ ein: event.target.value })}
+            inputMode="numeric"
+            autoComplete="off"
+            onChange={(event) => updateData({ ein: formatEinInput(event.target.value) })}
             className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
             placeholder="12-3456789"
           />
@@ -152,6 +188,7 @@ export function LegalStep({ onboarding }: LegalStepProps) {
           <span className="label-mono text-[rgb(var(--gold))]">Authorized Signer *</span>
           <input
             value={data.legal_contact_name}
+            maxLength={160}
             onChange={(event) => updateData({ legal_contact_name: event.target.value })}
             className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
             placeholder="Owner or officer name"
@@ -161,6 +198,7 @@ export function LegalStep({ onboarding }: LegalStepProps) {
           <span className="label-mono text-[rgb(var(--gold))]">Signer Title</span>
           <input
             value={data.legal_contact_title}
+            maxLength={120}
             onChange={(event) => updateData({ legal_contact_title: event.target.value })}
             className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
             placeholder="Owner"
@@ -170,8 +208,11 @@ export function LegalStep({ onboarding }: LegalStepProps) {
           <span className="label-mono text-[rgb(var(--gold))]">Legal Contact Email</span>
           <input
             type="email"
+            inputMode="email"
+            autoComplete="email"
             value={data.legal_contact_email}
             onChange={(event) => updateData({ legal_contact_email: event.target.value })}
+            onBlur={() => updateData({ legal_contact_email: normalizeEmailInput(data.legal_contact_email) })}
             className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
             placeholder="owner@restaurant.com"
           />
@@ -180,8 +221,10 @@ export function LegalStep({ onboarding }: LegalStepProps) {
           <span className="label-mono text-[rgb(var(--gold))]">Legal Contact Phone</span>
           <input
             type="tel"
+            inputMode="tel"
+            autoComplete="tel"
             value={data.legal_contact_phone}
-            onChange={(event) => updateData({ legal_contact_phone: event.target.value })}
+            onChange={(event) => updateData({ legal_contact_phone: formatUsPhoneInput(event.target.value) })}
             className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
             placeholder="(555) 123-4567"
           />

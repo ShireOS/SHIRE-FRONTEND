@@ -73,6 +73,7 @@ import {
   menuCategoriesPayload,
   normalizeDiscountRules,
   discountRulesPayload,
+  discountRulesEntryError,
   normalizeRolePermissions,
   managerControlsPayload,
   normalizeCloseoutSettings,
@@ -85,6 +86,23 @@ import {
   MYRTLE_BEACH_CITY_LIMITS_TAX_PRESET,
   taxAppliesToOptions,
   taxPresetDraft,
+  bankAccountError,
+  collapseEntryWhitespace,
+  digitsOnly,
+  duplicateName,
+  einError,
+  emailError,
+  emailListError,
+  formatEinInput,
+  formatUsPhoneInput,
+  normalizeEmailInput,
+  numberRangeError,
+  parseEmailList,
+  routingNumberError,
+  sanitizeMoneyInput,
+  sanitizePercentInput,
+  sanitizeDecimalInput,
+  usPhoneError,
 } from '@shire/settings'
 
 // Mobile-named wrappers over the canonical payload builders. Mobile has no
@@ -355,12 +373,9 @@ function textValue(value: unknown) {
 }
 
 function validateDiscountRules(discountRules: DiscountRule[]) {
-  const rows = normalizeDiscountRules(discountRules);
-  const blankIndex = rows.findIndex((row) => !row.name);
-  if (blankIndex >= 0) {
-    throw new Error(`Discount ${blankIndex + 1} needs a name before saving.`);
-  }
-  return rows;
+  const validationError = discountRulesEntryError(discountRules);
+  if (validationError) throw new Error(validationError);
+  return normalizeDiscountRules(discountRules);
 }
 
 function hasRequiredFloorTableFields(table: FloorPlanTable) {
@@ -418,11 +433,11 @@ function normalizeSetupConfig(config: RestaurantSetupConfig) {
     legal: {
       legal_business_name: textValue(config.legal_business_name),
       dba_name: textValue(config.dba_name),
-      ein: textValue(config.ein),
+      ein: formatEinInput(config.ein),
       legal_contact_name: textValue(config.legal_contact_name),
       legal_contact_title: textValue(config.legal_contact_title),
-      legal_contact_email: textValue(config.legal_contact_email),
-      legal_contact_phone: textValue(config.legal_contact_phone),
+      legal_contact_email: normalizeEmailInput(config.legal_contact_email),
+      legal_contact_phone: formatUsPhoneInput(config.legal_contact_phone),
       tos_signature_data_url: textValue(config.tos_signature_data_url),
       tos_signed_at: textValue(config.tos_signed_at),
     },
@@ -463,6 +478,7 @@ export default function OwnerSettings() {
   const [floorTables, setFloorTables] = useState<FloorPlanTable[]>([]);
   const [legalEdits, setLegalEdits] = useState(DEFAULT_LEGAL);
   const [paymentEdits, setPaymentEdits] = useState(DEFAULT_PAYMENTS);
+  const [paymentAccountConfirmation, setPaymentAccountConfirmation] = useState('');
   const [serviceModelEdits, setServiceModelEdits] = useState(DEFAULT_SERVICE_MODEL);
   const [taxRateEdits, setTaxRateEdits] = useState<TaxRate[]>([defaultTaxRate()]);
   const [taxCategoryAssignments, setTaxCategoryAssignments] = useState<TaxesChargesPayload['category_assignments']>();
@@ -568,6 +584,7 @@ export default function OwnerSettings() {
         setFloorTables(normalizeFloorTables(floorPlan.tables));
         setLegalEdits(normalizedSetup.legal);
         setPaymentEdits(normalizedSetup.payments);
+        setPaymentAccountConfirmation(normalizedSetup.payments.bank_account_number);
         setServiceModelEdits(normalizedSetup.serviceModel);
         setTaxRateEdits(normalizeTaxRates(taxesCharges.tax_rates));
         setTaxCategoryAssignments(undefined);
@@ -654,19 +671,31 @@ export default function OwnerSettings() {
       setLegalMessage('Legal business name and authorized signer are required.');
       return;
     }
+    const validationError = einError(legalEdits.ein)
+      || emailError(legalEdits.legal_contact_email)
+      || usPhoneError(legalEdits.legal_contact_phone);
+    if (validationError) {
+      setLegalMessage(validationError);
+      return;
+    }
+    if (!legalEdits.tos_signature_data_url || !legalEdits.tos_signed_at) {
+      setLegalMessage('Sign the terms before saving legal setup.');
+      return;
+    }
     setIsSavingLegal(true);
     setLegalMessage('Saving legal setup...');
     try {
-      const signedAt = legalEdits.tos_signed_at || new Date().toISOString();
-      const signature = legalEdits.tos_signature_data_url || buildSignatureDataUrl(legalEdits.legal_contact_name);
-      const patch = { ...legalEdits, tos_signature_data_url: signature, tos_signed_at: signedAt, tos_version: 'shire-placeholder-tos-v1' };
-      if (await scheduleRestaurantSave(publication, 'Legal setup', { method: 'PATCH', path: `/restaurants/${restaurantId}/setup-config`, body: { patch } }, setLegalMessage)) return;
-      const saved = await saveRestaurantSetupConfig(restaurantId, {
+      const patch = {
         ...legalEdits,
-        tos_signature_data_url: signature,
-        tos_signed_at: signedAt,
+        legal_business_name: collapseEntryWhitespace(legalEdits.legal_business_name),
+        dba_name: collapseEntryWhitespace(legalEdits.dba_name),
+        legal_contact_name: collapseEntryWhitespace(legalEdits.legal_contact_name),
+        legal_contact_title: collapseEntryWhitespace(legalEdits.legal_contact_title),
+        legal_contact_email: normalizeEmailInput(legalEdits.legal_contact_email),
         tos_version: 'shire-placeholder-tos-v1',
-      });
+      };
+      if (await scheduleRestaurantSave(publication, 'Legal setup', { method: 'PATCH', path: `/restaurants/${restaurantId}/setup-config`, body: { patch } }, setLegalMessage)) return;
+      const saved = await saveRestaurantSetupConfig(restaurantId, patch);
       setLegalEdits(normalizeSetupConfig(saved).legal);
       setLegalMessage('Legal setup saved.');
     } catch (err) {
@@ -688,12 +717,36 @@ export default function OwnerSettings() {
 
   const savePayments = async (publication?: Publication) => {
     if (!restaurantId) return;
+    if (!collapseEntryWhitespace(paymentEdits.bank_account_holder)) {
+      setPaymentsMessage('Account holder is required.');
+      return;
+    }
+    const validationError = routingNumberError(paymentEdits.bank_routing_number, true)
+      || bankAccountError(paymentEdits.bank_account_number, true)
+      || numberRangeError(paymentEdits.refund_approval_threshold, 'Refund approval threshold', { min: 0 });
+    if (validationError) {
+      setPaymentsMessage(validationError);
+      return;
+    }
+    if (digitsOnly(paymentEdits.bank_account_number) !== digitsOnly(paymentAccountConfirmation)) {
+      setPaymentsMessage('Account numbers do not match.');
+      return;
+    }
     setIsSavingPayments(true);
     setPaymentsMessage('Saving payment setup...');
     try {
-      if (await scheduleRestaurantSave(publication, 'Payment setup', { method: 'PATCH', path: `/restaurants/${restaurantId}/setup-config`, body: { patch: paymentEdits } }, setPaymentsMessage)) return;
-      const saved = await saveRestaurantSetupConfig(restaurantId, paymentEdits);
-      setPaymentEdits(normalizeSetupConfig(saved).payments);
+      const patch = {
+        ...paymentEdits,
+        bank_account_holder: collapseEntryWhitespace(paymentEdits.bank_account_holder),
+        bank_name: collapseEntryWhitespace(paymentEdits.bank_name),
+        bank_routing_number: digitsOnly(paymentEdits.bank_routing_number, 9),
+        bank_account_number: digitsOnly(paymentEdits.bank_account_number, 17),
+      };
+      if (await scheduleRestaurantSave(publication, 'Payment setup', { method: 'PATCH', path: `/restaurants/${restaurantId}/setup-config`, body: { patch } }, setPaymentsMessage)) return;
+      const saved = await saveRestaurantSetupConfig(restaurantId, patch);
+      const normalized = normalizeSetupConfig(saved).payments;
+      setPaymentEdits(normalized);
+      setPaymentAccountConfirmation(normalized.bank_account_number);
       setPaymentsMessage('Payment setup saved.');
     } catch (err) {
       setPaymentsMessage(err instanceof Error ? err.message : 'Could not save payment setup.');
@@ -868,6 +921,11 @@ export default function OwnerSettings() {
 
   const saveCloseoutSettings = async (publication?: Publication) => {
     if (!restaurantId) return;
+    const recipientsError = emailListError(closeoutEdits.eod_report_recipients);
+    if (recipientsError) {
+      setCloseoutMessage(recipientsError);
+      return;
+    }
     setIsSavingCloseout(true);
     setCloseoutMessage('Saving closeout settings...');
     try {
@@ -943,6 +1001,20 @@ export default function OwnerSettings() {
 
   const saveRoleRate = async (jobCode: JobCode, publication?: Publication) => {
     if (!restaurantId) return;
+    const roleLabel = collapseEntryWhitespace(jobCode.label || jobCode.code);
+    if (!roleLabel) {
+      setMessage('Role name is required.');
+      return;
+    }
+    if (duplicateName(jobCodes.filter((code) => code.id !== jobCode.id).map((code) => code.label || code.code), roleLabel)) {
+      setMessage('That role name is already in use.');
+      return;
+    }
+    const normalizedRoleCode = roleCode(jobCode.code || roleLabel);
+    if (jobCodes.some((code) => code.id !== jobCode.id && roleCode(code.code || code.label) === normalizedRoleCode)) {
+      setMessage('That role ID is already in use.');
+      return;
+    }
     const rawRate = String(jobCode.default_hourly_rate ?? rateEdits[jobCode.id ?? ''] ?? '');
     const parsed = Number(rawRate);
     if (!Number.isFinite(parsed) || parsed < 0) {
@@ -953,8 +1025,8 @@ export default function OwnerSettings() {
     setMessage(`Saving ${jobCode.label || jobCode.code} role...`);
     try {
       const payload = {
-        code: roleCode(jobCode.code || jobCode.label),
-        label: jobCode.label || jobCode.code,
+        code: normalizedRoleCode,
+        label: roleLabel,
         permission_tier: jobCode.permission_tier || 'normal',
         default_hourly_rate: parsed.toFixed(2),
         is_tipped: Boolean(jobCode.is_tipped),
@@ -1023,8 +1095,9 @@ export default function OwnerSettings() {
       setMessage('Enter a valid employee hourly rate.');
       return;
     }
-    if (parsedHours !== null && (!Number.isFinite(parsedHours) || parsedHours < 0)) {
-      setMessage('Enter valid weekly hours.');
+    const hoursError = numberRangeError(rawHours, 'Suggested weekly hours', { min: 0, max: 168 })
+    if (hoursError) {
+      setMessage(hoursError);
       return;
     }
     setSavingStaffId(person.id);
@@ -1202,7 +1275,7 @@ export default function OwnerSettings() {
               <TextInput
                 value={String(rule.default_value ?? '')}
                 editable={rule.value_type !== 'open'}
-                onChangeText={(value) => updateDiscountRule(index, { default_value: sanitizeMoney(value).slice(0, 10) })}
+                onChangeText={(value) => updateDiscountRule(index, { default_value: rule.value_type === 'percent' ? sanitizePercentInput(value) : sanitizeMoneyInput(value) })}
                 placeholder={rule.value_type === 'fixed' ? 'Default $' : 'Default %'}
                 keyboardType="decimal-pad"
                 placeholderTextColor={palette.ink[400]}
@@ -1240,7 +1313,7 @@ export default function OwnerSettings() {
               <View style={styles.twoColumnFields}>
                 <TextInput
                   value={String(rule.min_value ?? '')}
-                  onChangeText={(value) => updateDiscountRule(index, { min_value: sanitizeMoney(value).slice(0, 10) })}
+                  onChangeText={(value) => updateDiscountRule(index, { min_value: rule.value_type === 'percent' ? sanitizePercentInput(value) : sanitizeMoneyInput(value) })}
                   placeholder="Minimum"
                   keyboardType="decimal-pad"
                   placeholderTextColor={palette.ink[400]}
@@ -1248,7 +1321,7 @@ export default function OwnerSettings() {
                 />
                 <TextInput
                   value={String(rule.max_value ?? '')}
-                  onChangeText={(value) => updateDiscountRule(index, { max_value: sanitizeMoney(value).slice(0, 10) })}
+                  onChangeText={(value) => updateDiscountRule(index, { max_value: rule.value_type === 'percent' ? sanitizePercentInput(value) : sanitizeMoneyInput(value) })}
                   placeholder="Maximum"
                   keyboardType="decimal-pad"
                   placeholderTextColor={palette.ink[400]}
@@ -1370,7 +1443,7 @@ export default function OwnerSettings() {
             <View style={styles.twoColumnFields}>
               <TextInput
                 value={String(role.refund_limit ?? '')}
-                onChangeText={(value) => updateRolePermission(index, { refund_limit: sanitizeMoney(value).slice(0, 10) })}
+                onChangeText={(value) => updateRolePermission(index, { refund_limit: sanitizeMoneyInput(value) })}
                 placeholder="Refund limit"
                 keyboardType="decimal-pad"
                 placeholderTextColor={palette.ink[400]}
@@ -1378,7 +1451,7 @@ export default function OwnerSettings() {
               />
               <TextInput
                 value={String(role.discount_limit_percent ?? '')}
-                onChangeText={(value) => updateRolePermission(index, { discount_limit_percent: sanitizeMoney(value).slice(0, 10) })}
+                onChangeText={(value) => updateRolePermission(index, { discount_limit_percent: sanitizePercentInput(value) })}
                 placeholder="Discount % limit"
                 keyboardType="decimal-pad"
                 placeholderTextColor={palette.ink[400]}
@@ -1413,7 +1486,7 @@ export default function OwnerSettings() {
         <View style={styles.twoColumnFields}>
           <TextInput
             value={String(closeoutEdits.cash_drop_threshold ?? '')}
-            onChangeText={(value) => updateCloseout({ cash_drop_threshold: sanitizeMoney(value).slice(0, 10) })}
+            onChangeText={(value) => updateCloseout({ cash_drop_threshold: sanitizeMoneyInput(value) })}
             placeholder="Cash drop threshold"
             keyboardType="decimal-pad"
             placeholderTextColor={palette.ink[400]}
@@ -1421,7 +1494,7 @@ export default function OwnerSettings() {
           />
           <TextInput
             value={String(closeoutEdits.cash_variance_threshold ?? '')}
-            onChangeText={(value) => updateCloseout({ cash_variance_threshold: sanitizeMoney(value).slice(0, 10) })}
+            onChangeText={(value) => updateCloseout({ cash_variance_threshold: sanitizeMoneyInput(value) })}
             placeholder="Variance threshold"
             keyboardType="decimal-pad"
             placeholderTextColor={palette.ink[400]}
@@ -1481,8 +1554,9 @@ export default function OwnerSettings() {
           onChange={(value) => updateCloseout({ eod_batch_close_mode: value as CloseoutSettings['eod_batch_close_mode'] })}
         />
         <TextInput
-          value={closeoutEdits.eod_report_recipients.join(', ')}
-          onChangeText={(value) => updateCloseout({ eod_report_recipients: value.split(',').map((email) => email.trim()).filter(Boolean) })}
+          value={closeoutEdits.eod_report_recipients.join(',')}
+          onChangeText={(value) => updateCloseout({ eod_report_recipients: value.split(',') })}
+          onBlur={() => updateCloseout({ eod_report_recipients: parseEmailList(closeoutEdits.eod_report_recipients) })}
           placeholder="EOD report emails"
           keyboardType="email-address"
           autoCapitalize="none"
@@ -1579,7 +1653,7 @@ export default function OwnerSettings() {
           />
           <TextInput
             value={String(checkWorkflowEdits.default_preauth_amount ?? '')}
-            onChangeText={(value) => updateCheckWorkflow({ default_preauth_amount: sanitizeMoney(value).slice(0, 10) })}
+            onChangeText={(value) => updateCheckWorkflow({ default_preauth_amount: sanitizeMoneyInput(value) })}
             placeholder="Preauth amount"
             keyboardType="decimal-pad"
             placeholderTextColor={palette.ink[400]}
@@ -1677,7 +1751,7 @@ export default function OwnerSettings() {
           />
           <TextInput
             value={String(tipPayrollEdits.credit_card_fee_percent ?? '')}
-            onChangeText={(value) => updateTipPayroll({ credit_card_fee_percent: sanitizeMoney(value).slice(0, 6) })}
+            onChangeText={(value) => updateTipPayroll({ credit_card_fee_percent: sanitizePercentInput(value) })}
             placeholder="Card fee %"
             keyboardType="decimal-pad"
             placeholderTextColor={palette.ink[400]}
@@ -1748,7 +1822,7 @@ export default function OwnerSettings() {
             <View style={styles.twoColumnFields}>
               <TextInput
                 value={String(rule.pool_points ?? '')}
-                onChangeText={(value) => updateTipRule(index, { pool_points: sanitizeMoney(value).slice(0, 6) })}
+                onChangeText={(value) => updateTipRule(index, { pool_points: sanitizeDecimalInput(value, { decimalPlaces: 2, wholeDigits: 4 }) })}
                 placeholder="Pool points"
                 keyboardType="decimal-pad"
                 placeholderTextColor={palette.ink[400]}
@@ -1756,7 +1830,7 @@ export default function OwnerSettings() {
               />
               <TextInput
                 value={String(rule.tipout_percent ?? '')}
-                onChangeText={(value) => updateTipRule(index, { tipout_percent: sanitizeMoney(value).slice(0, 6) })}
+                onChangeText={(value) => updateTipRule(index, { tipout_percent: sanitizePercentInput(value) })}
                 placeholder="Tipout %"
                 keyboardType="decimal-pad"
                 placeholderTextColor={palette.ink[400]}
@@ -1821,7 +1895,7 @@ export default function OwnerSettings() {
         <View style={styles.twoColumnFields}>
           <TextInput
             value={legalEdits.ein}
-            onChangeText={(value) => setLegalEdits((current) => ({ ...current, ein: value }))}
+            onChangeText={(value) => setLegalEdits((current) => ({ ...current, ein: formatEinInput(value) }))}
             placeholder="EIN"
             placeholderTextColor={palette.ink[400]}
             style={[styles.setupInput, styles.twoColumnInput]}
@@ -1845,6 +1919,7 @@ export default function OwnerSettings() {
           <TextInput
             value={legalEdits.legal_contact_email}
             onChangeText={(value) => setLegalEdits((current) => ({ ...current, legal_contact_email: value }))}
+            onBlur={() => setLegalEdits((current) => ({ ...current, legal_contact_email: normalizeEmailInput(current.legal_contact_email) }))}
             placeholder="Legal email"
             keyboardType="email-address"
             autoCapitalize="none"
@@ -1853,7 +1928,7 @@ export default function OwnerSettings() {
           />
           <TextInput
             value={legalEdits.legal_contact_phone}
-            onChangeText={(value) => setLegalEdits((current) => ({ ...current, legal_contact_phone: value }))}
+            onChangeText={(value) => setLegalEdits((current) => ({ ...current, legal_contact_phone: formatUsPhoneInput(value) }))}
             placeholder="Legal phone"
             keyboardType="phone-pad"
             placeholderTextColor={palette.ink[400]}
@@ -1912,7 +1987,7 @@ export default function OwnerSettings() {
         <View style={styles.twoColumnFields}>
           <TextInput
             value={paymentEdits.bank_routing_number}
-            onChangeText={(value) => setPaymentEdits((current) => ({ ...current, bank_routing_number: value.replace(/\D/g, '').slice(0, 9) }))}
+            onChangeText={(value) => setPaymentEdits((current) => ({ ...current, bank_routing_number: digitsOnly(value, 9) }))}
             placeholder="Routing number"
             keyboardType="number-pad"
             placeholderTextColor={palette.ink[400]}
@@ -1920,13 +1995,26 @@ export default function OwnerSettings() {
           />
           <TextInput
             value={paymentEdits.bank_account_number}
-            onChangeText={(value) => setPaymentEdits((current) => ({ ...current, bank_account_number: value.replace(/\D/g, '').slice(0, 17) }))}
+            onChangeText={(value) => setPaymentEdits((current) => ({ ...current, bank_account_number: digitsOnly(value, 17) }))}
             placeholder="Account number"
             keyboardType="number-pad"
+            secureTextEntry
             placeholderTextColor={palette.ink[400]}
             style={[styles.setupInput, styles.twoColumnInput]}
           />
         </View>
+        <TextInput
+          value={paymentAccountConfirmation}
+          onChangeText={(value) => setPaymentAccountConfirmation(digitsOnly(value, 17))}
+          placeholder="Confirm account number"
+          keyboardType="number-pad"
+          secureTextEntry
+          placeholderTextColor={palette.ink[400]}
+          style={styles.setupInput}
+        />
+        {paymentEdits.bank_account_number ? (
+          <UiText variant="caption" tone="muted">Account ending in {paymentEdits.bank_account_number.slice(-4)}</UiText>
+        ) : null}
         <ChoiceGroup
           label="Payout schedule"
           value={paymentEdits.payout_schedule}
@@ -1955,7 +2043,7 @@ export default function OwnerSettings() {
           />
           <TextInput
             value={paymentEdits.refund_approval_threshold}
-            onChangeText={(value) => setPaymentEdits((current) => ({ ...current, refund_approval_threshold: sanitizeMoney(value) }))}
+            onChangeText={(value) => setPaymentEdits((current) => ({ ...current, refund_approval_threshold: sanitizeMoneyInput(value) }))}
             placeholder="Refund approval over $"
             keyboardType="decimal-pad"
             placeholderTextColor={palette.ink[400]}
@@ -2106,7 +2194,7 @@ export default function OwnerSettings() {
               />
               <TextInput
                 value={String(charge.amount ?? '')}
-                onChangeText={(value) => updateServiceCharge(index, { amount: sanitizeMoney(value).slice(0, 10) })}
+                onChangeText={(value) => updateServiceCharge(index, { amount: charge.charge_type === 'percentage' ? sanitizePercentInput(value) : sanitizeMoneyInput(value) })}
                 placeholder={charge.charge_type === 'fixed' ? 'Amount' : 'Rate %'}
                 keyboardType="decimal-pad"
                 placeholderTextColor={palette.ink[400]}
@@ -2374,7 +2462,7 @@ export default function OwnerSettings() {
                 <TextInput
                   value={String(code.default_hourly_rate ?? rateEdits[code.id ?? ''] ?? '')}
                   onChangeText={(value) => {
-                    const clean = sanitizeMoney(value);
+                    const clean = sanitizeMoneyInput(value);
                     setRateEdits((current) => ({ ...current, [code.id ?? '']: clean }));
                     setJobCodes((current) => current.map((row) => (row.id === code.id ? { ...row, default_hourly_rate: clean } : row)));
                   }}
@@ -2426,7 +2514,7 @@ export default function OwnerSettings() {
           </Pressable>
           <TextInput
             value={String(jobCodeDraft.default_hourly_rate ?? '')}
-            onChangeText={(value) => setJobCodeDraft((current) => ({ ...current, default_hourly_rate: sanitizeMoney(value) }))}
+            onChangeText={(value) => setJobCodeDraft((current) => ({ ...current, default_hourly_rate: sanitizeMoneyInput(value) }))}
             keyboardType="decimal-pad"
             editable={!savingRateId}
             placeholder="Default hourly rate"
@@ -2491,7 +2579,7 @@ export default function OwnerSettings() {
                   <UiText variant="caption" tone="muted">Hourly override</UiText>
                   <TextInput
                     value={staffPayEdits[person.id] ?? ''}
-                    onChangeText={(value) => setStaffPayEdits((current) => ({ ...current, [person.id]: sanitizeMoney(value) }))}
+                    onChangeText={(value) => setStaffPayEdits((current) => ({ ...current, [person.id]: sanitizeMoneyInput(value) }))}
                     keyboardType="decimal-pad"
                     editable={savingStaffId !== person.id}
                     placeholder={roleRateForPerson(person, jobCodes) || 'Role rate'}
@@ -2503,7 +2591,7 @@ export default function OwnerSettings() {
                   <UiText variant="caption" tone="muted">Target hrs/wk</UiText>
                   <TextInput
                     value={staffHoursEdits[person.id] ?? ''}
-                    onChangeText={(value) => setStaffHoursEdits((current) => ({ ...current, [person.id]: sanitizeMoney(value).slice(0, 5) }))}
+                    onChangeText={(value) => setStaffHoursEdits((current) => ({ ...current, [person.id]: sanitizeDecimalInput(value, { decimalPlaces: 2, wholeDigits: 3 }) }))}
                     keyboardType="decimal-pad"
                     editable={savingStaffId !== person.id}
                     placeholder="Unset"

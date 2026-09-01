@@ -1,4 +1,4 @@
-import { CHARGE_APPLIES_TO_OPTIONS } from '@shire/settings'
+import { CHARGE_APPLIES_TO_OPTIONS, sanitizeCountInput, sanitizeMoneyInput, sanitizePercentInput } from '@shire/settings'
 import type { ServiceChargeData, UseOnboardingReturn } from '../../hooks/useOnboarding'
 import { TaxJurisdictionPanel } from '../../../dashboard/components/TaxJurisdictionPanel'
 
@@ -12,8 +12,6 @@ const CHARGE_APPLIES_TO: Array<{ value: ServiceChargeData['applies_to']; label: 
 
 const inputClass = 'w-full min-w-0 px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]'
 const compactInputClass = `${inputClass} text-sm`
-
-const sanitizeNumber = (value: string) => value.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1').slice(0, 10)
 
 const defaultServiceCharge = (index: number): ServiceChargeData => ({
   name: index === 0 ? 'Service Charge' : `Service Charge ${index + 1}`,
@@ -83,7 +81,7 @@ export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
         <div>
           <p className="label-mono text-[rgb(var(--gold))]">Tax Rates</p>
           <p className="mt-2 text-sm leading-6 text-[rgb(var(--text-secondary))]">
-            SHIRE validates the restaurant address and resolves product-specific jurisdictions. Choose what the store sells; restaurant users never type or override a percentage.
+            SHIRE matches the restaurant address to official geography and resolves product-specific jurisdictions. Choose what the store sells; restaurant users never type or override a percentage.
           </p>
         </div>
 
@@ -132,7 +130,7 @@ export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
                 <input
                   inputMode="decimal"
                   value={charge.amount}
-                  onChange={(event) => updateCharge(index, { amount: sanitizeNumber(event.target.value) })}
+                  onChange={(event) => updateCharge(index, { amount: charge.charge_type === 'percentage' ? sanitizePercentInput(event.target.value) : sanitizeMoneyInput(event.target.value) })}
                   className={compactInputClass}
                   placeholder={charge.charge_type === 'fixed' ? 'Amount' : 'Rate %'}
                 />
@@ -180,8 +178,8 @@ export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
         </label>
         {data.auto_gratuity.enabled && (
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block space-y-2"><span className="label-mono text-[rgb(var(--gold))]">Minimum Party Size</span><input inputMode="numeric" value={data.auto_gratuity.party_threshold} onChange={(event) => updateData({ auto_gratuity: { ...data.auto_gratuity, party_threshold: event.target.value.replace(/\D/g, '') } })} className={inputClass} placeholder="6" /></label>
-            <label className="block space-y-2"><span className="label-mono text-[rgb(var(--gold))]">Gratuity Rate %</span><input inputMode="decimal" value={data.auto_gratuity.percent} onChange={(event) => updateData({ auto_gratuity: { ...data.auto_gratuity, percent: sanitizeNumber(event.target.value) } })} className={inputClass} placeholder="18" /></label>
+            <label className="block space-y-2"><span className="label-mono text-[rgb(var(--gold))]">Minimum Party Size</span><input inputMode="numeric" value={data.auto_gratuity.party_threshold} onChange={(event) => updateData({ auto_gratuity: { ...data.auto_gratuity, party_threshold: sanitizeCountInput(event.target.value, 2) } })} className={inputClass} placeholder="6" /></label>
+            <label className="block space-y-2"><span className="label-mono text-[rgb(var(--gold))]">Gratuity Rate %</span><input inputMode="decimal" value={data.auto_gratuity.percent} onChange={(event) => updateData({ auto_gratuity: { ...data.auto_gratuity, percent: sanitizePercentInput(event.target.value) } })} className={inputClass} placeholder="18" /></label>
             <label className="block space-y-2"><span className="label-mono text-[rgb(var(--gold))]">Receipt Label</span><input value={data.auto_gratuity.label} onChange={(event) => updateData({ auto_gratuity: { ...data.auto_gratuity, label: event.target.value.slice(0, 40) } })} className={inputClass} placeholder="Gratuity" /></label>
             <label className="block space-y-2"><span className="label-mono text-[rgb(var(--gold))]">Who Receives It</span><select value={data.auto_gratuity.assigned_to_employee ? 'employee' : 'restaurant'} onChange={(event) => updateData({ auto_gratuity: { ...data.auto_gratuity, assigned_to_employee: event.target.value === 'employee' } })} className={inputClass}><option value="employee">Employee tip earnings</option><option value="restaurant">Restaurant service-charge revenue</option></select></label>
           </div>

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { RestaurantType, UseOnboardingReturn } from '../../hooks/useOnboarding'
 import { supabase } from '../../../shared/lib/supabase'
 import { RestaurantLocationFields } from '../../../shared/components/RestaurantLocationFields'
+import { formatUsPhoneInput, usPhoneError } from '@shire/settings'
 
 interface BasicsStepProps {
   onboarding: UseOnboardingReturn
@@ -43,6 +44,11 @@ export function BasicsStep({ onboarding }: BasicsStepProps) {
     // Validate
     if (!data.name.trim()) {
       setLocalError('Restaurant name is required')
+      return
+    }
+    const phoneIssue = usPhoneError(data.phone)
+    if (phoneIssue) {
+      setLocalError(phoneIssue)
       return
     }
     try {
@@ -121,8 +127,10 @@ export function BasicsStep({ onboarding }: BasicsStepProps) {
         <div>
           <input
             type="tel"
+            inputMode="tel"
+            autoComplete="tel"
             value={data.phone}
-            onChange={(e) => updateData({ phone: e.target.value })}
+            onChange={(e) => updateData({ phone: formatUsPhoneInput(e.target.value) })}
             className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] focus:border-transparent transition-all"
             placeholder="Phone (optional)"
           />

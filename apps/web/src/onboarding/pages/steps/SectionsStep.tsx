@@ -1,4 +1,13 @@
+import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
+import {
+  collapseEntryWhitespace,
+  duplicateName,
+  numberRangeError,
+  sanitizeCountInput,
+  sanitizeMoneyInput,
+  sanitizePercentInput,
+} from '@shire/settings'
 import type { SectionBehaviorData, UseOnboardingReturn } from '../../hooks/useOnboarding'
 
 interface SectionsStepProps {
@@ -6,20 +15,6 @@ interface SectionsStepProps {
 }
 
 const STARTER_SECTIONS = ['Hibachi', 'Main Dining', 'Bar', 'Patio', 'Outdoor']
-
-const normalizeRows = (sections: string[]) => {
-  const seen = new Set<string>()
-  const rows: string[] = []
-  for (const section of ['Table', ...sections]) {
-    const name = section.trim().replace(/\s+/g, ' ')
-    if (!name) continue
-    const key = name.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    rows.push(key === 'table' ? 'Table' : name)
-  }
-  return rows
-}
 
 const defaultBehavior = (name: string): SectionBehaviorData => ({
   name,
@@ -36,7 +31,10 @@ const defaultBehavior = (name: string): SectionBehaviorData => ({
 
 export function SectionsStep({ onboarding }: SectionsStepProps) {
   const { data, updateData, saveSections, nextStep, isLoading, error } = onboarding
-  const sections = normalizeRows(data.sections)
+  const [formError, setFormError] = useState('')
+  const sections = data.sections.length > 0
+    ? (data.sections[0].trim().toLowerCase() === 'table' ? data.sections : ['Table', ...data.sections])
+    : ['Table']
   const behaviorFor = (name: string) => data.section_behaviors.find(item => item.name.toLowerCase() === name.toLowerCase()) || defaultBehavior(name)
 
   const updateSection = (index: number, value: string) => {
@@ -71,6 +69,37 @@ export function SectionsStep({ onboarding }: SectionsStepProps) {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
+    const normalizedNames = sections.map(collapseEntryWhitespace)
+    const blankIndex = normalizedNames.findIndex(name => !name)
+    if (blankIndex >= 0) {
+      setFormError(`Section ${blankIndex + 1} needs a name.`)
+      return
+    }
+    const duplicateIndex = normalizedNames.findIndex((name, index) => duplicateName(normalizedNames, name, index))
+    if (duplicateIndex >= 0) {
+      setFormError(`“${normalizedNames[duplicateIndex]}” is already in the section list.`)
+      return
+    }
+    for (let index = 0; index < sections.length; index += 1) {
+      const name = normalizedNames[index]
+      const behavior = behaviorFor(sections[index])
+      if (!behavior.auto_gratuity_enabled) continue
+      const amountError = numberRangeError(behavior.auto_gratuity_value, `${name} service charge`, {
+        required: true,
+        min: 0,
+        max: behavior.auto_gratuity_type === 'percentage' ? 100 : undefined,
+      })
+      if (amountError) {
+        setFormError(amountError)
+        return
+      }
+      const partyError = numberRangeError(behavior.minimum_party_size, `${name} minimum party size`, { min: 1, max: 99, integer: true })
+      if (partyError) {
+        setFormError(partyError)
+        return
+      }
+    }
+    setFormError('')
     try {
       await saveSections()
       nextStep()
@@ -81,7 +110,7 @@ export function SectionsStep({ onboarding }: SectionsStepProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {error && <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-red-400">{error}</div>}
+      {(formError || error) && <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4 text-red-400">{formError || error}</div>}
 
       <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
         <p className="text-sm leading-6 text-[rgb(var(--text-secondary))]">
@@ -94,12 +123,13 @@ export function SectionsStep({ onboarding }: SectionsStepProps) {
         {sections.map((section, index) => {
           const behavior = behaviorFor(section)
           return (
-            <div key={behavior.id || `${index}:${section}`} className="space-y-4 rounded-lg border border-white/10 bg-white/[0.025] p-4">
+            <div key={`${behavior.id || 'draft'}:${index}:${section}`} className="space-y-4 rounded-lg border border-white/10 bg-white/[0.025] p-4">
               <div className="flex gap-2">
                 <input
                   value={section}
                   disabled={index === 0}
                   onChange={event => updateSection(index, event.target.value)}
+                  maxLength={100}
                   placeholder="Bar, Patio, Hibachi..."
                   className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-[rgb(var(--text-primary))] placeholder:text-[rgb(var(--text-tertiary))] disabled:bg-white/[0.025] disabled:text-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
                 />
@@ -131,7 +161,7 @@ export function SectionsStep({ onboarding }: SectionsStepProps) {
                   <label className="space-y-2 text-sm text-[rgb(var(--text-secondary))]">
                     <span>Charge</span>
                     <div className="grid grid-cols-[1fr_7rem] gap-2">
-                      <input inputMode="decimal" value={behavior.auto_gratuity_value} onChange={event => updateBehavior(section, { auto_gratuity_value: event.target.value.replace(/[^\d.]/g, '') })} className="min-w-0 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-[rgb(var(--text-primary))]" />
+                      <input inputMode="decimal" value={behavior.auto_gratuity_value} onChange={event => updateBehavior(section, { auto_gratuity_value: behavior.auto_gratuity_type === 'percentage' ? sanitizePercentInput(event.target.value) : sanitizeMoneyInput(event.target.value) })} className="min-w-0 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-[rgb(var(--text-primary))]" />
                       <select value={behavior.auto_gratuity_type} onChange={event => updateBehavior(section, { auto_gratuity_type: event.target.value as SectionBehaviorData['auto_gratuity_type'] })} className="rounded-lg border border-white/10 bg-[#161616] px-3 py-2.5 text-[rgb(var(--text-primary))]">
                         <option value="percentage">Percent</option>
                         <option value="fixed">Fixed</option>
@@ -144,7 +174,7 @@ export function SectionsStep({ onboarding }: SectionsStepProps) {
                   </label>
                   <label className="space-y-2 text-sm text-[rgb(var(--text-secondary))]">
                     <span>Minimum party size</span>
-                    <input inputMode="numeric" value={behavior.minimum_party_size} placeholder="Any party size" onChange={event => updateBehavior(section, { minimum_party_size: event.target.value.replace(/\D/g, '') })} className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-[rgb(var(--text-primary))] placeholder:text-[rgb(var(--text-tertiary))]" />
+                    <input inputMode="numeric" value={behavior.minimum_party_size} placeholder="Any party size" onChange={event => updateBehavior(section, { minimum_party_size: sanitizeCountInput(event.target.value, 2) })} className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-[rgb(var(--text-primary))] placeholder:text-[rgb(var(--text-tertiary))]" />
                   </label>
                   <label className="space-y-2 text-sm text-[rgb(var(--text-secondary))]">
                     <span>Tip prompt</span>

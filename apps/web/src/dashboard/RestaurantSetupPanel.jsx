@@ -24,6 +24,7 @@ import {
   DEFAULT_HOURS,
   discountRuleNeedsBounds,
   discountRuleWarning,
+  discountRulesEntryError,
   sanitizeNumber,
   clampInteger,
   normalizeSectionNames,
@@ -50,6 +51,26 @@ import {
   normalizeTipPayrollSettings,
   defaultTipPayrollSettings,
   tipPayrollPayload,
+  bankAccountError,
+  collapseEntryWhitespace,
+  digitsOnly,
+  duplicateName,
+  einError,
+  emailError,
+  emailListError,
+  formatEinInput,
+  formatUsPhoneInput,
+  normalizeEmailInput,
+  normalizeUsPhoneE164,
+  numberRangeError,
+  parseEmailList,
+  printerHostError,
+  reservationTimingError,
+  routingNumberError,
+  sanitizeMoneyInput,
+  sanitizeCountInput,
+  sanitizePercentInput,
+  usPhoneError,
 } from '@shire/settings'
 export {
   defaultTipPayrollSettings,
@@ -196,7 +217,7 @@ const initialLegal = (restaurant) => {
     legal_contact_name: config.legal_contact_name || '',
     legal_contact_title: config.legal_contact_title || '',
     legal_contact_email: config.legal_contact_email || '',
-    legal_contact_phone: config.legal_contact_phone || '',
+    legal_contact_phone: formatUsPhoneInput(config.legal_contact_phone || ''),
     tos_signature_data_url: config.tos_signature_data_url || '',
     tos_signed_at: config.tos_signed_at || '',
   }
@@ -668,28 +689,54 @@ function KitchenRoutingSetup({ restaurantId }) {
   }, [restaurantId])
 
   const createStation = async () => {
-    if (!stationName.trim()) return
-    await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing/stations`, {
-      method: 'POST',
-      body: JSON.stringify({ name: stationName.trim(), is_active: true }),
-    })
-    setStationName('')
-    await load(true)
+    const name = collapseEntryWhitespace(stationName)
+    if (!name) {
+      setError('Station name is required.')
+      return
+    }
+    if (duplicateName(stations.map(station => station.name), name)) {
+      setError('That station already exists.')
+      return
+    }
+    try {
+      await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing/stations`, {
+        method: 'POST',
+        body: JSON.stringify({ name, is_active: true }),
+      })
+      setStationName('')
+      await load(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create station.')
+    }
   }
 
   const createTarget = async () => {
-    await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing/targets`, {
-      method: 'POST',
-      body: JSON.stringify({
-        name: targetName.trim() || 'Kitchen Printer',
-        target_type: 'printer',
-        connection_type: targetHost.trim() ? 'network' : 'dummy',
-        config: targetHost.trim() ? { host: targetHost.trim(), port: 9100, profile: 'TM-T88V' } : {},
-        is_active: true,
-      }),
-    })
-    setTargetHost('')
-    await load(true)
+    const name = collapseEntryWhitespace(targetName) || 'Kitchen Printer'
+    if (duplicateName(targets.map(target => target.name), name)) {
+      setError('That output target already exists.')
+      return
+    }
+    const hostError = printerHostError(targetHost)
+    if (hostError) {
+      setError(hostError)
+      return
+    }
+    try {
+      await fetchPosApi(restaurantId, `/restaurants/${restaurantId}/kitchen-routing/targets`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          target_type: 'printer',
+          connection_type: targetHost.trim() ? 'network' : 'dummy',
+          config: targetHost.trim() ? { host: targetHost.trim().toLowerCase(), port: 9100, profile: 'TM-T88V' } : {},
+          is_active: true,
+        }),
+      })
+      setTargetHost('')
+      await load(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create output target.')
+    }
   }
 
   const assignTarget = async (stationId, targetId) => {
@@ -895,6 +942,8 @@ function normalizeReservationTiming(raw = {}) {
 }
 
 function reservationTimingPayload(data) {
+  const validationError = reservationTimingError(data)
+  if (validationError) throw new Error(validationError)
   const slotIntervalMinutes = clampInteger(data.reservation_slot_interval_minutes, 15, 5, 180)
   const minPartySize = clampInteger(data.reservation_min_party_size, 1, 1, 99)
   const maxPartySize = Math.max(minPartySize, clampInteger(data.reservation_max_party_size, 10, 1, 99))
@@ -926,6 +975,12 @@ function reservationTimingPayload(data) {
     reservation_windows_follow_operating_hours: data.reservation_windows_follow_operating_hours,
     timingPolicies: { online, staff },
   }
+}
+
+function editableSectionNames(values) {
+  const source = Array.isArray(values) ? values.map(value => String(value ?? '')) : []
+  if (source.length === 0) return ['Table']
+  return source[0].trim().toLowerCase() === 'table' ? source : ['Table', ...source]
 }
 
 const reservationDayOfWeek = (operatingDayOfWeek) => (Number(operatingDayOfWeek) + 6) % 7
@@ -1053,12 +1108,9 @@ function defaultDiscountRule(index = 0) {
 }
 
 function validateDiscountRules(discountRules) {
-  const rows = normalizeDiscountRules(discountRules)
-  const blankIndex = rows.findIndex(row => !row.name)
-  if (blankIndex >= 0) {
-    throw new Error(`Discount ${blankIndex + 1} needs a name before saving.`)
-  }
-  return rows
+  const validationError = discountRulesEntryError(discountRules)
+  if (validationError) throw new Error(validationError)
+  return normalizeDiscountRules(discountRules)
 }
 
 // Pool methods, presented as cards. Each one sets BOTH tip_distribution_mode
@@ -1188,7 +1240,7 @@ export function TipRulesFields({
                     <TextInput
                       value={rule.pool_contribution_percent}
                       inputMode="decimal"
-                      onChange={event => onUpdateRoleRule(index, { pool_contribution_percent: sanitizeNumber(event.target.value).slice(0, 6) })}
+                      onChange={event => onUpdateRoleRule(index, { pool_contribution_percent: sanitizePercentInput(event.target.value) })}
                       placeholder="100"
                     />
                   </Field>
@@ -1243,7 +1295,7 @@ export function TipRulesFields({
                       value={tipout.percent}
                       inputMode="decimal"
                       onChange={event => onUpdateRoleRule(index, {
-                        tipouts: rule.tipouts.map((item, i) => i === tipoutIndex ? { ...item, percent: sanitizeNumber(event.target.value).slice(0, 6) } : item),
+                        tipouts: rule.tipouts.map((item, i) => i === tipoutIndex ? { ...item, percent: sanitizePercentInput(event.target.value) } : item),
                       })}
                       placeholder="%"
                     />
@@ -1367,7 +1419,7 @@ export function PayrollSetupFields({ settings, onUpdateSettings, payPeriodCalend
           </SelectInput>
         </Field>
         <Field label="Card Fee %">
-          <TextInput value={settings.credit_card_fee_percent} inputMode="decimal" onChange={event => onUpdateSettings({ credit_card_fee_percent: sanitizeNumber(event.target.value).slice(0, 6) })} placeholder="Optional" />
+          <TextInput value={settings.credit_card_fee_percent} inputMode="decimal" onChange={event => onUpdateSettings({ credit_card_fee_percent: sanitizePercentInput(event.target.value) })} placeholder="Optional" />
         </Field>
         <div>
           <Field label="Cash Tips">
@@ -1533,7 +1585,7 @@ export default function RestaurantSetupPanel({
     city: restaurant.city || '',
     state: restaurant.state || '',
     postal_code: restaurant.postal_code || '',
-    phone: restaurant.phone || '',
+    phone: formatUsPhoneInput(restaurant.phone || ''),
     type: restaurant.type || 'casual',
     cuisine_types: Array.isArray(restaurant.cuisine_types) ? restaurant.cuisine_types : [],
     seating_capacity: restaurant.seating_capacity || '',
@@ -1542,6 +1594,7 @@ export default function RestaurantSetupPanel({
   }))
   const [legal, setLegal] = useState(() => initialLegal(restaurant))
   const [payments, setPayments] = useState(() => initialPayments(restaurant))
+  const [paymentsAccountConfirmation, setPaymentsAccountConfirmation] = useState(() => initialPayments(restaurant).bank_account_number)
   const [pricingPolicy, setPricingPolicy] = useState(() => normalizePricingPolicy({ jurisdiction_state: restaurant.state || 'SC' }))
   const [serviceModel, setServiceModel] = useState(() => initialServiceModel(restaurant))
   const [goals, setGoals] = useState(() => initialGoals(restaurant))
@@ -1567,7 +1620,7 @@ export default function RestaurantSetupPanel({
   const [jobCodeDraft, setJobCodeDraft] = useState({ code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 100, is_active: true })
   const [rateEdits, setRateEdits] = useState({})
   const [savingRateId, setSavingRateId] = useState('')
-  const [staffForm, setStaffForm] = useState({ name: '', email: '', role: '', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
+  const [staffForm, setStaffForm] = useState({ name: '', email: '', role: '', hourly_rate: '', pin: '', employee_login_id: '', suggested_weekly_hours: '' })
   const [pinEdits, setPinEdits] = useState({})
   const [pinSaving, setPinSaving] = useState({})
   const [pinSaved, setPinSaved] = useState({})
@@ -1604,7 +1657,10 @@ export default function RestaurantSetupPanel({
       case 'service_model': setServiceModel(baseline); break
       case 'branding': setPendingCoverFile(null); break
       case 'legal': setLegal(baseline); break
-      case 'payments': setPayments(baseline); break
+      case 'payments':
+        setPayments(baseline)
+        setPaymentsAccountConfirmation(baseline.bank_account_number || '')
+        break
       case 'pricing_policy': setPricingPolicy(baseline); break
       case 'taxes_charges':
         setTaxRates(baseline.taxRates)
@@ -1914,7 +1970,7 @@ export default function RestaurantSetupPanel({
       city: restaurant.city || '',
       state: restaurant.state || '',
       postal_code: restaurant.postal_code || '',
-      phone: restaurant.phone || '',
+      phone: formatUsPhoneInput(restaurant.phone || ''),
       type: restaurant.type || 'casual',
       cuisine_types: Array.isArray(restaurant.cuisine_types) ? restaurant.cuisine_types : [],
       seating_capacity: restaurant.seating_capacity || '',
@@ -1930,6 +1986,7 @@ export default function RestaurantSetupPanel({
     setProfile(nextProfile)
     setLegal(nextLegal)
     setPayments(nextPayments)
+    setPaymentsAccountConfirmation(nextPayments.bank_account_number || '')
     setPricingPolicy(prev => normalizePricingPolicy({ ...prev, jurisdiction_state: prev.jurisdiction_state || restaurant.state || 'SC' }))
     setServiceModel(nextServiceModel)
     setGoals(nextGoals)
@@ -2075,7 +2132,7 @@ export default function RestaurantSetupPanel({
         jobCodes: normalizedJobCodes,
         rateEdits: nextRateEdits,
         jobCodeDraft: { code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 100, is_active: true },
-        staffForm: { name: '', email: '', role: '', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' },
+        staffForm: { name: '', email: '', role: '', hourly_rate: '', pin: '', employee_login_id: '', suggested_weekly_hours: '' },
       })
       {
         const configReservationTiming = normalizeReservationTiming(restaurant.config)
@@ -2132,13 +2189,18 @@ export default function RestaurantSetupPanel({
       setSetupError('Restaurant name is required.')
       return
     }
+    const phoneIssue = usPhoneError(profile.phone)
+    if (phoneIssue) {
+      setSetupError(phoneIssue)
+      return
+    }
     const payload = {
       name: restaurantName,
       address: profile.address.trim() || null,
       city: profile.city.trim() || null,
       state: profile.state.trim() || null,
       postal_code: profile.postal_code.trim() || null,
-      phone: profile.phone.trim() || null,
+      phone: normalizeUsPhoneE164(profile.phone),
       type: profile.type || 'casual',
       cuisine_types: profile.cuisine_types,
       workweek_start_weekday: normalizeWorkweekStartWeekday(profile.workweek_start_weekday),
@@ -2216,9 +2278,23 @@ export default function RestaurantSetupPanel({
       setSetupError('Authorized signer name is required.')
       return
     }
-    if (!legal.tos_signature_data_url) {
+    const legalIssue = einError(legal.ein) || emailError(legal.legal_contact_email) || usPhoneError(legal.legal_contact_phone)
+    if (legalIssue) {
+      setSetupError(legalIssue)
+      return
+    }
+    if (!legal.tos_signature_data_url || !legal.tos_signed_at) {
       setSetupError('Signature is required.')
       return
+    }
+    const normalizedLegal = {
+      ...legal,
+      legal_business_name: collapseEntryWhitespace(legal.legal_business_name),
+      dba_name: collapseEntryWhitespace(legal.dba_name),
+      legal_contact_name: collapseEntryWhitespace(legal.legal_contact_name),
+      legal_contact_title: collapseEntryWhitespace(legal.legal_contact_title),
+      legal_contact_email: normalizeEmailInput(legal.legal_contact_email),
+      legal_contact_phone: normalizeUsPhoneE164(legal.legal_contact_phone) || '',
     }
     await saveWithPropagation({
       sectionId: 'legal',
@@ -2226,30 +2302,57 @@ export default function RestaurantSetupPanel({
       propagation: SETUP_PROPAGATION.legal,
       successMessage: 'Saved legal setup.',
       saveSource: (targetId) => mergeRestaurantConfig(targetId, {
-        ...legal,
+        ...normalizedLegal,
         tos_version: 'shire-placeholder-tos-v1',
       }),
       saveTarget: (targetId) => mergeRestaurantConfig(targetId, {
-        ...legal,
+        ...normalizedLegal,
         tos_version: 'shire-placeholder-tos-v1',
       }),
-      onSourceSaved: () => rememberSavedDraft('legal', legal),
+      onSourceSaved: () => {
+        setLegal(prev => ({ ...prev, ...normalizedLegal, legal_contact_phone: formatUsPhoneInput(normalizedLegal.legal_contact_phone) }))
+        rememberSavedDraft('legal', { ...normalizedLegal, legal_contact_phone: formatUsPhoneInput(normalizedLegal.legal_contact_phone) })
+      },
       publication,
-      buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: { ...legal, tos_version: 'shire-placeholder-tos-v1' } }, target_type: 'restaurant', target_id: targetId }),
+      buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: { ...normalizedLegal, tos_version: 'shire-placeholder-tos-v1' } }, target_type: 'restaurant', target_id: targetId }),
     })
   }
 
   const savePayments = async (publication) => {
+    if (!collapseEntryWhitespace(payments.bank_account_holder)) {
+      setSetupError('Account holder is required.')
+      return
+    }
+    const paymentIssue = routingNumberError(payments.bank_routing_number, true)
+      || bankAccountError(payments.bank_account_number, true)
+      || numberRangeError(payments.refund_approval_threshold, 'Refund approval threshold', { min: 0 })
+    if (paymentIssue) {
+      setSetupError(paymentIssue)
+      return
+    }
+    if (digitsOnly(paymentsAccountConfirmation) !== digitsOnly(payments.bank_account_number)) {
+      setSetupError('Account numbers do not match.')
+      return
+    }
+    const normalizedPayments = {
+      ...payments,
+      bank_account_holder: collapseEntryWhitespace(payments.bank_account_holder),
+      bank_name: collapseEntryWhitespace(payments.bank_name),
+    }
     await saveWithPropagation({
       sectionId: 'payments',
       label: 'Payments & Payouts',
       propagation: SETUP_PROPAGATION.payments,
       successMessage: 'Saved payment setup.',
-      saveSource: (targetId) => mergeRestaurantConfig(targetId, payments),
-      saveTarget: (targetId) => mergeRestaurantConfig(targetId, payments),
-      onSourceSaved: () => rememberSavedDraft('payments', payments),
+      saveSource: (targetId) => mergeRestaurantConfig(targetId, normalizedPayments),
+      saveTarget: (targetId) => mergeRestaurantConfig(targetId, normalizedPayments),
+      onSourceSaved: () => {
+        setPayments(normalizedPayments)
+        setPaymentsAccountConfirmation(normalizedPayments.bank_account_number)
+        rememberSavedDraft('payments', normalizedPayments)
+      },
       publication,
-      buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: payments }, target_type: 'restaurant', target_id: targetId }),
+      buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: normalizedPayments }, target_type: 'restaurant', target_id: targetId }),
     })
   }
 
@@ -2411,7 +2514,13 @@ export default function RestaurantSetupPanel({
   }
 
   const saveManagerControls = async (publication) => {
-    const payload = managerControlsPayload(rolePermissions, jobCodes)
+    let payload
+    try {
+      payload = managerControlsPayload(rolePermissions, jobCodes)
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : 'Check manager limits before saving.')
+      return
+    }
     await saveWithPropagation({
       sectionId: 'manager_controls',
       label: 'Manager Controls',
@@ -2439,6 +2548,11 @@ export default function RestaurantSetupPanel({
   }
 
   const saveCloseoutSettings = async (publication) => {
+    const recipientsError = emailListError(closeoutSettings.eod_report_recipients)
+    if (recipientsError) {
+      setSetupError(recipientsError)
+      return
+    }
     const payload = closeoutSettingsPayload(closeoutSettings)
     await saveWithPropagation({
       sectionId: 'closeout',
@@ -2514,6 +2628,9 @@ export default function RestaurantSetupPanel({
     setSetupError('')
     try {
       const payload = jobCodePayload(jobCode)
+      if (!collapseEntryWhitespace(payload.label)) throw new Error('Role name is required.')
+      const rateError = numberRangeError(jobCode.default_hourly_rate, `${payload.label} default wage`, { min: 0 })
+      if (rateError) throw new Error(rateError)
       const canonicalCode = normalizeRoleCode(payload.code)
       const duplicate = jobCodes.find(code => (
         code.id !== jobCode.id
@@ -2606,9 +2723,34 @@ export default function RestaurantSetupPanel({
   }
 
   const saveSections = async (publication) => {
-    const sectionNames = normalizeSectionNames(sections)
+    const rawSectionNames = editableSectionNames(sections)
+    const sectionNames = rawSectionNames.map(collapseEntryWhitespace)
+    const blankIndex = sectionNames.findIndex(name => !name)
+    if (blankIndex >= 0) {
+      setSetupError(`Section ${blankIndex + 1} needs a name.`)
+      return
+    }
+    const duplicateIndex = sectionNames.findIndex((name, index) => duplicateName(sectionNames, name, index))
+    if (duplicateIndex >= 0) {
+      setSetupError(`“${sectionNames[duplicateIndex]}” is already in the section list.`)
+      return
+    }
+    const normalizedProfiles = normalizeSectionProfiles(sectionProfiles, sectionNames)
+    for (const section of normalizedProfiles) {
+      if (!section.auto_gratuity_enabled) continue
+      const amountError = numberRangeError(section.auto_gratuity_value, `${section.name} service charge`, {
+        required: true,
+        min: 0,
+        max: section.auto_gratuity_type === 'percentage' ? 100 : undefined,
+      })
+      const partyError = numberRangeError(section.minimum_party_size, `${section.name} minimum party size`, { min: 1, max: 99, integer: true })
+      if (amountError || partyError) {
+        setSetupError(amountError || partyError)
+        return
+      }
+    }
     const payload = {
-      sections: normalizeSectionProfiles(sectionProfiles, sectionNames).map(section => ({
+      sections: normalizedProfiles.map(section => ({
         ...section,
         id: section.id || undefined,
         auto_gratuity_value: Number(section.auto_gratuity_value || 0),
@@ -2726,6 +2868,12 @@ export default function RestaurantSetupPanel({
   const saveCapacity = async (patch = {}, publication) => {
     const nextCapacity = patch.seating_capacity ?? profile.seating_capacity
     const nextCount = patch.table_count ?? profile.table_count
+    const capacityError = numberRangeError(nextCapacity, 'Seating capacity', { required: true, min: 1, integer: true })
+    const tableCountError = numberRangeError(nextCount, 'Table count', { min: 0, integer: true })
+    if (capacityError || tableCountError) {
+      setSetupError(capacityError || tableCountError)
+      return
+    }
     const payload = {
       seating_capacity: nextCapacity === '' ? null : Number(nextCapacity),
       table_count: nextCount === '' ? null : Number(nextCount),
@@ -2764,31 +2912,88 @@ export default function RestaurantSetupPanel({
       setSetupError('Choose an employee role.')
       return
     }
+    const normalizedEmail = normalizeEmailInput(staffForm.email)
+    const contactError = emailError(normalizedEmail)
+    if (contactError) {
+      setSetupError(contactError)
+      return
+    }
+    if (!/^\d{4}$/.test(staffForm.pin)) {
+      setSetupError('POS PIN must be exactly 4 digits.')
+      return
+    }
+    const loginId = staffForm.employee_login_id.trim() || defaultEmployeeId(staffForm.name)
+    if (!/^[a-z0-9_]+$/.test(loginId)) {
+      setSetupError('Employee ID can use lowercase letters, numbers, and underscores only.')
+      return
+    }
+    if (waiters.some(waiter => String(waiter.employee_login_id || '').toLowerCase() === loginId.toLowerCase())) {
+      setSetupError('That employee ID is already in use.')
+      return
+    }
+    const hoursError = numberRangeError(staffForm.suggested_weekly_hours, 'Suggested weekly hours', { min: 0, max: 168 })
+    const rateError = numberRangeError(staffForm.hourly_rate, 'Hourly override', { min: 0 })
+    if (hoursError || rateError) {
+      setSetupError(hoursError || rateError)
+      return
+    }
     setSetupError('')
     const roleUpdate = buildStaffRoleUpdate(staffForm.role, [staffForm.role], jobCodes)
     const created = await fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters`, {
       method: 'POST',
       body: JSON.stringify({
         name: staffForm.name.trim(),
-        email: staffForm.email.trim() || null,
+        email: normalizedEmail || null,
         ...roleUpdate,
         hourly_rate: staffForm.hourly_rate === '' ? null : Number(staffForm.hourly_rate),
         pin: staffForm.pin,
-        employee_login_id: staffForm.employee_login_id.trim() || defaultEmployeeId(staffForm.name),
+        employee_login_id: loginId,
         suggested_weekly_hours: staffForm.suggested_weekly_hours === '' ? null : Number(staffForm.suggested_weekly_hours),
       }),
     })
     setWaiters(prev => [...prev, created])
     queryClient.setQueryData(queryKeys.waiters(restaurantId), prev => Array.isArray(prev) ? [...prev, created] : prev)
-    setStaffForm({ name: '', email: '', role: '', hourly_rate: '', pin: '1111', employee_login_id: '', suggested_weekly_hours: '' })
+    setStaffForm({ name: '', email: '', role: '', hourly_rate: '', pin: '', employee_login_id: '', suggested_weekly_hours: '' })
     onSetupChanged?.()
   }
 
   const updateStaff = async (waiterId, updates) => {
     setSetupError('')
+    const normalizedUpdates = { ...updates }
+    if (Object.prototype.hasOwnProperty.call(normalizedUpdates, 'email')) {
+      const normalizedEmail = normalizeEmailInput(normalizedUpdates.email)
+      const contactError = emailError(normalizedEmail)
+      if (contactError) {
+        setSetupError(contactError)
+        return
+      }
+      normalizedUpdates.email = normalizedEmail || null
+    }
+    if (Object.prototype.hasOwnProperty.call(normalizedUpdates, 'employee_login_id')) {
+      const loginId = String(normalizedUpdates.employee_login_id || '').trim().toLowerCase()
+      if (!/^[a-z0-9_]+$/.test(loginId)) {
+        setSetupError('Employee ID can use lowercase letters, numbers, and underscores only.')
+        return
+      }
+      if (waiters.some(waiter => waiter.id !== waiterId && String(waiter.employee_login_id || '').toLowerCase() === loginId)) {
+        setSetupError('That employee ID is already in use.')
+        return
+      }
+      normalizedUpdates.employee_login_id = loginId
+    }
+    const hoursError = Object.prototype.hasOwnProperty.call(normalizedUpdates, 'suggested_weekly_hours')
+      ? numberRangeError(normalizedUpdates.suggested_weekly_hours, 'Suggested weekly hours', { min: 0, max: 168 })
+      : ''
+    const rateError = Object.prototype.hasOwnProperty.call(normalizedUpdates, 'hourly_rate')
+      ? numberRangeError(normalizedUpdates.hourly_rate, 'Hourly override', { min: 0 })
+      : ''
+    if (hoursError || rateError) {
+      setSetupError(hoursError || rateError)
+      return
+    }
     const updated = await fetchWithSupabaseAuth(`/waiters/${waiterId}`, {
       method: 'PATCH',
-      body: JSON.stringify(updates),
+      body: JSON.stringify(normalizedUpdates),
     })
     setWaiters(prev => prev.map(item => item.id === waiterId ? updated : item))
     queryClient.setQueryData(queryKeys.waiters(restaurantId), prev => Array.isArray(prev) ? prev.map(item => item.id === waiterId ? updated : item) : prev)
@@ -2840,8 +3045,12 @@ export default function RestaurantSetupPanel({
 
   const saveEditedPin = async (waiterId) => {
     const pin = pinEdits[waiterId]?.trim()
-    if (!pin) {
-      setSetupError('Enter a new PIN before saving.')
+    if (!/^\d{4}$/.test(pin || '')) {
+      setSetupError('POS PIN must be exactly 4 digits.')
+      return
+    }
+    if (waiters.some(waiter => waiter.id !== waiterId && String(waiter.pos_passcode || waiter.pin || '') === pin)) {
+      setSetupError('That POS PIN is already assigned to another employee.')
       return
     }
     setPinSaving(prev => ({ ...prev, [waiterId]: true }))
@@ -2993,7 +3202,7 @@ export default function RestaurantSetupPanel({
                 value={{ address: profile.address, city: profile.city, state: profile.state, postal_code: profile.postal_code, country: 'US' }}
                 onChange={patch => setProfile(prev => ({ ...prev, ...patch }))}
               />
-              <TextInput placeholder="Phone" value={profile.phone} onChange={event => setProfile(prev => ({ ...prev, phone: event.target.value }))} />
+              <TextInput type="tel" inputMode="tel" autoComplete="tel" placeholder="Phone" value={profile.phone} onChange={event => setProfile(prev => ({ ...prev, phone: formatUsPhoneInput(event.target.value) }))} />
             </div>
             <Field label="Restaurant Type">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -3210,25 +3419,25 @@ export default function RestaurantSetupPanel({
           )}
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Legal Business Name">
-              <TextInput value={legal.legal_business_name} onChange={event => setLegal(prev => ({ ...prev, legal_business_name: event.target.value }))} placeholder="The Golden Fork LLC" />
+              <TextInput maxLength={240} value={legal.legal_business_name} onChange={event => setLegal(prev => ({ ...prev, legal_business_name: event.target.value }))} placeholder="The Golden Fork LLC" />
             </Field>
             <Field label="DBA / Trade Name">
-              <TextInput value={legal.dba_name} onChange={event => setLegal(prev => ({ ...prev, dba_name: event.target.value }))} placeholder="The Golden Fork" />
+              <TextInput maxLength={240} value={legal.dba_name} onChange={event => setLegal(prev => ({ ...prev, dba_name: event.target.value }))} placeholder="The Golden Fork" />
             </Field>
             <Field label="EIN">
-              <TextInput value={legal.ein} onChange={event => setLegal(prev => ({ ...prev, ein: event.target.value }))} placeholder="12-3456789" />
+              <TextInput inputMode="numeric" autoComplete="off" value={legal.ein} onChange={event => setLegal(prev => ({ ...prev, ein: formatEinInput(event.target.value) }))} placeholder="12-3456789" />
             </Field>
             <Field label="Authorized Signer">
-              <TextInput value={legal.legal_contact_name} onChange={event => setLegal(prev => ({ ...prev, legal_contact_name: event.target.value }))} placeholder="Owner or officer name" />
+              <TextInput maxLength={160} value={legal.legal_contact_name} onChange={event => setLegal(prev => ({ ...prev, legal_contact_name: event.target.value }))} placeholder="Owner or officer name" />
             </Field>
             <Field label="Signer Title">
-              <TextInput value={legal.legal_contact_title} onChange={event => setLegal(prev => ({ ...prev, legal_contact_title: event.target.value }))} placeholder="Owner" />
+              <TextInput maxLength={120} value={legal.legal_contact_title} onChange={event => setLegal(prev => ({ ...prev, legal_contact_title: event.target.value }))} placeholder="Owner" />
             </Field>
             <Field label="Legal Contact Email">
-              <TextInput type="email" value={legal.legal_contact_email} onChange={event => setLegal(prev => ({ ...prev, legal_contact_email: event.target.value }))} placeholder="owner@restaurant.com" />
+              <TextInput type="email" inputMode="email" autoComplete="email" value={legal.legal_contact_email} onChange={event => setLegal(prev => ({ ...prev, legal_contact_email: event.target.value }))} onBlur={() => setLegal(prev => ({ ...prev, legal_contact_email: normalizeEmailInput(prev.legal_contact_email) }))} placeholder="owner@restaurant.com" />
             </Field>
             <Field label="Legal Contact Phone">
-              <TextInput value={legal.legal_contact_phone} onChange={event => setLegal(prev => ({ ...prev, legal_contact_phone: event.target.value }))} placeholder="(555) 123-4567" />
+              <TextInput type="tel" inputMode="tel" autoComplete="tel" value={formatUsPhoneInput(legal.legal_contact_phone)} onChange={event => setLegal(prev => ({ ...prev, legal_contact_phone: formatUsPhoneInput(event.target.value) }))} placeholder="(555) 123-4567" />
             </Field>
           </div>
           <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.025] p-4">
@@ -3266,10 +3475,14 @@ export default function RestaurantSetupPanel({
               <TextInput value={payments.bank_name} onChange={event => setPayments(prev => ({ ...prev, bank_name: event.target.value }))} placeholder="Bank name" />
             </Field>
             <Field label="Routing Number">
-              <TextInput inputMode="numeric" value={payments.bank_routing_number} onChange={event => setPayments(prev => ({ ...prev, bank_routing_number: event.target.value.replace(/\D/g, '').slice(0, 9) }))} placeholder="9 digits" />
+              <TextInput inputMode="numeric" autoComplete="off" value={payments.bank_routing_number} onChange={event => setPayments(prev => ({ ...prev, bank_routing_number: digitsOnly(event.target.value, 9) }))} placeholder="9 digits" />
             </Field>
             <Field label="Account Number">
-              <TextInput inputMode="numeric" value={payments.bank_account_number} onChange={event => setPayments(prev => ({ ...prev, bank_account_number: event.target.value.replace(/\D/g, '').slice(0, 17) }))} placeholder="Account number" />
+              <TextInput type="password" inputMode="numeric" autoComplete="new-password" value={payments.bank_account_number} onChange={event => setPayments(prev => ({ ...prev, bank_account_number: digitsOnly(event.target.value, 17) }))} placeholder="Account number" />
+              {payments.bank_account_number.length >= 4 && <span className="mt-1 block text-xs text-dash-tertiary">Account ending in {payments.bank_account_number.slice(-4)}</span>}
+            </Field>
+            <Field label="Confirm Account Number">
+              <TextInput type="password" inputMode="numeric" autoComplete="new-password" value={paymentsAccountConfirmation} onChange={event => setPaymentsAccountConfirmation(digitsOnly(event.target.value, 17))} placeholder="Re-enter account number" />
             </Field>
             <Field label="Payout Schedule">
               <SelectInput value={payments.payout_schedule} onChange={event => setPayments(prev => ({ ...prev, payout_schedule: event.target.value }))}>
@@ -3300,7 +3513,7 @@ export default function RestaurantSetupPanel({
               </SelectInput>
             </Field>
             <Field label="Refund Approval Threshold">
-              <TextInput inputMode="decimal" value={payments.refund_approval_threshold} onChange={event => setPayments(prev => ({ ...prev, refund_approval_threshold: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))} placeholder="Manager approval over $..." />
+              <TextInput inputMode="decimal" value={payments.refund_approval_threshold} onChange={event => setPayments(prev => ({ ...prev, refund_approval_threshold: sanitizeMoneyInput(event.target.value) }))} placeholder="Manager approval over $..." />
             </Field>
           </div>
           <div className="mt-8 border-t border-white/10 pt-6">
@@ -3419,7 +3632,7 @@ export default function RestaurantSetupPanel({
               <div>
                 <p className="label-mono">Tax Rates</p>
                 <p className="mt-2 text-sm text-dash-secondary">
-                  SHIRE validates the canonical restaurant location and resolves product-specific jurisdictions. Choose what the store sells; restaurant users never type or override a percentage.
+                  SHIRE matches the canonical restaurant location to official geography and resolves product-specific jurisdictions. Choose what the store sells; restaurant users never type or override a percentage.
                 </p>
               </div>
               <TaxJurisdictionPanel
@@ -3457,7 +3670,7 @@ export default function RestaurantSetupPanel({
                       <option value="percentage">Percent</option>
                       <option value="fixed">Fixed $</option>
                     </SelectInput>
-                    <TextInput inputMode="decimal" value={charge.amount} onChange={event => updateServiceCharge(index, { amount: sanitizeNumber(event.target.value) })} placeholder={charge.charge_type === 'fixed' ? 'Amount' : 'Rate %'} />
+                    <TextInput inputMode="decimal" value={charge.amount} onChange={event => updateServiceCharge(index, { amount: charge.charge_type === 'percentage' ? sanitizePercentInput(event.target.value) : sanitizeMoneyInput(event.target.value) })} placeholder={charge.charge_type === 'fixed' ? 'Amount' : 'Rate %'} />
                     <SelectInput value={charge.applies_to} onChange={event => updateServiceCharge(index, { applies_to: event.target.value })}>
                       {CHARGE_APPLIES_TO_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </SelectInput>
@@ -3487,8 +3700,8 @@ export default function RestaurantSetupPanel({
                   <div className="space-y-3">
                     {(autoGratuity.rules || [{ party_threshold: autoGratuity.party_threshold || '6', percent: autoGratuity.percent || '18' }]).map((rule, index) => (
                       <div key={`auto-grat-rule:${index}`} className="grid gap-3 rounded-xl border border-white/10 bg-black/10 p-3 md:grid-cols-[1fr_1fr_auto]">
-                        <Field label="Minimum party size"><TextInput inputMode="numeric" value={rule.party_threshold} onChange={event => updateAutoGratuityRule(index, { party_threshold: event.target.value.replace(/\D/g, '') })} placeholder="6" /></Field>
-                        <Field label="Gratuity rate %"><TextInput inputMode="decimal" value={rule.percent} onChange={event => updateAutoGratuityRule(index, { percent: sanitizeNumber(event.target.value) })} placeholder="18" /></Field>
+                        <Field label="Minimum party size"><TextInput inputMode="numeric" value={rule.party_threshold} onChange={event => updateAutoGratuityRule(index, { party_threshold: sanitizeCountInput(event.target.value, 2) })} placeholder="6" /></Field>
+                        <Field label="Gratuity rate %"><TextInput inputMode="decimal" value={rule.percent} onChange={event => updateAutoGratuityRule(index, { percent: sanitizePercentInput(event.target.value) })} placeholder="18" /></Field>
                         <div className="flex items-end">
                           <SmallButton variant="danger" disabled={(autoGratuity.rules || []).length <= 1} onClick={() => removeAutoGratuityRule(index)}>Remove</SmallButton>
                         </div>
@@ -3541,7 +3754,7 @@ export default function RestaurantSetupPanel({
                     inputMode="decimal"
                     disabled={rule.value_type === 'open'}
                     value={rule.default_value}
-                    onChange={event => updateDiscountRule(index, { default_value: sanitizeNumber(event.target.value) })}
+                    onChange={event => updateDiscountRule(index, { default_value: rule.value_type === 'percent' ? sanitizePercentInput(event.target.value) : sanitizeMoneyInput(event.target.value) })}
                     placeholder={rule.value_type === 'open' ? 'Staff enters the amount' : rule.value_type === 'fixed' ? 'Default $' : 'Default %'}
                   />
                   <SelectInput value={rule.tax_behavior} onChange={event => updateDiscountRule(index, { tax_behavior: event.target.value })}>
@@ -3567,8 +3780,8 @@ export default function RestaurantSetupPanel({
 
                 {discountRuleNeedsBounds(rule) && (
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <TextInput inputMode="decimal" value={rule.min_value} onChange={event => updateDiscountRule(index, { min_value: sanitizeNumber(event.target.value) })} placeholder={rule.value_type === 'fixed' ? 'Minimum $' : 'Minimum %'} />
-                    <TextInput inputMode="decimal" value={rule.max_value} onChange={event => updateDiscountRule(index, { max_value: sanitizeNumber(event.target.value) })} placeholder={`${rule.value_type === 'fixed' ? 'Maximum $' : 'Maximum %'}${rule.value_type === 'open' ? ' (required)' : ''}`} />
+                    <TextInput inputMode="decimal" value={rule.min_value} onChange={event => updateDiscountRule(index, { min_value: rule.value_type === 'percent' ? sanitizePercentInput(event.target.value) : sanitizeMoneyInput(event.target.value) })} placeholder={rule.value_type === 'fixed' ? 'Minimum $' : 'Minimum %'} />
+                    <TextInput inputMode="decimal" value={rule.max_value} onChange={event => updateDiscountRule(index, { max_value: rule.value_type === 'percent' ? sanitizePercentInput(event.target.value) : sanitizeMoneyInput(event.target.value) })} placeholder={`${rule.value_type === 'fixed' ? 'Maximum $' : 'Maximum %'}${rule.value_type === 'open' ? ' (required)' : ''}`} />
                   </div>
                 )}
 
@@ -3677,8 +3890,8 @@ export default function RestaurantSetupPanel({
                   ))}
                 </div>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <TextInput value={role.refund_limit} inputMode="decimal" onChange={event => updateRolePermission(index, { refund_limit: sanitizeNumber(event.target.value) })} placeholder="Refund limit, blank for unlimited" />
-                  <TextInput value={role.discount_limit_percent} inputMode="decimal" onChange={event => updateRolePermission(index, { discount_limit_percent: sanitizeNumber(event.target.value) })} placeholder="Discount % limit, blank for unlimited" />
+                  <TextInput value={role.refund_limit} inputMode="decimal" onChange={event => updateRolePermission(index, { refund_limit: sanitizeMoneyInput(event.target.value) })} placeholder="Refund limit, blank for unlimited" />
+                  <TextInput value={role.discount_limit_percent} inputMode="decimal" onChange={event => updateRolePermission(index, { discount_limit_percent: sanitizePercentInput(event.target.value) })} placeholder="Discount % limit, blank for unlimited" />
                 </div>
               </div>
             ))}
@@ -3699,8 +3912,8 @@ export default function RestaurantSetupPanel({
                 <SelectInput value={closeoutSettings.cash_tracking_mode} onChange={event => updateCloseoutSettings({ cash_tracking_mode: event.target.value })}>
                   {CASH_TRACKING_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </SelectInput>
-                <TextInput value={closeoutSettings.cash_drop_threshold} inputMode="decimal" onChange={event => updateCloseoutSettings({ cash_drop_threshold: sanitizeNumber(event.target.value) })} placeholder="Cash drop threshold" />
-                <TextInput value={closeoutSettings.cash_variance_threshold} inputMode="decimal" onChange={event => updateCloseoutSettings({ cash_variance_threshold: sanitizeNumber(event.target.value) })} placeholder="Variance approval threshold" />
+                <TextInput value={closeoutSettings.cash_drop_threshold} inputMode="decimal" onChange={event => updateCloseoutSettings({ cash_drop_threshold: sanitizeMoneyInput(event.target.value) })} placeholder="Cash drop threshold" />
+                <TextInput value={closeoutSettings.cash_variance_threshold} inputMode="decimal" onChange={event => updateCloseoutSettings({ cash_variance_threshold: sanitizeMoneyInput(event.target.value) })} placeholder="Variance approval threshold" />
                 <SelectInput value={closeoutSettings.opening_bank_source} onChange={event => updateCloseoutSettings({ opening_bank_source: event.target.value, require_starting_bank: false })}>
                   <option value="none">Opening bank: $0 automatically</option>
                   <option value="fixed">Opening bank: fixed amount</option>
@@ -3710,7 +3923,7 @@ export default function RestaurantSetupPanel({
                   <TextInput
                     value={closeoutSettings.opening_bank_default}
                     inputMode="decimal"
-                    onChange={event => updateCloseoutSettings({ opening_bank_default: sanitizeNumber(event.target.value) })}
+                    onChange={event => updateCloseoutSettings({ opening_bank_default: sanitizeMoneyInput(event.target.value) })}
                     placeholder={closeoutSettings.opening_bank_source === 'fixed' ? 'Fixed opening bank' : 'Fallback if no prior close exists'}
                   />
                 )}
@@ -3758,7 +3971,7 @@ export default function RestaurantSetupPanel({
                 <SelectInput value={closeoutSettings.eod_batch_close_mode} onChange={event => updateCloseoutSettings({ eod_batch_close_mode: event.target.value })}>
                   {EOD_BATCH_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </SelectInput>
-                <TextInput value={closeoutSettings.eod_report_recipients.join(', ')} onChange={event => updateCloseoutSettings({ eod_report_recipients: event.target.value.split(',').map(email => email.trim()).filter(Boolean) })} placeholder="Report emails, comma-separated" />
+                <TextInput type="email" multiple inputMode="email" autoComplete="email" value={closeoutSettings.eod_report_recipients.join(',')} onChange={event => updateCloseoutSettings({ eod_report_recipients: event.target.value.split(',') })} onBlur={() => updateCloseoutSettings({ eod_report_recipients: parseEmailList(closeoutSettings.eod_report_recipients) })} placeholder="Report emails, separated by commas" />
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <SmallButton variant={closeoutSettings.eod_email_on_close ? 'primary' : 'secondary'} onClick={() => updateCloseoutSettings({ eod_email_on_close: !closeoutSettings.eod_email_on_close })}>Email report on close</SmallButton>
@@ -3853,7 +4066,7 @@ export default function RestaurantSetupPanel({
               <p className="mb-3 text-xs text-dash-secondary">The card is tapped once when the tab opens; the hold rises automatically as the tab grows and is captured with tip at close. Blank = $25 default.</p>
               <div className="grid gap-3 lg:grid-cols-3">
                 <Field label="Default Preauth Amount">
-                  <TextInput value={checkWorkflowSettings.default_preauth_amount} inputMode="decimal" onChange={event => updateCheckWorkflowSettings({ default_preauth_amount: sanitizeNumber(event.target.value) })} placeholder="Optional" />
+                  <TextInput value={checkWorkflowSettings.default_preauth_amount} inputMode="decimal" onChange={event => updateCheckWorkflowSettings({ default_preauth_amount: sanitizeMoneyInput(event.target.value) })} placeholder="Optional" />
                 </Field>
                 <Field label="Tab Name">
                   <SelectInput value={checkWorkflowSettings.tab_name_required ? 'required' : 'optional'} onChange={event => updateCheckWorkflowSettings({ tab_name_required: event.target.value === 'required' })}>
@@ -3903,24 +4116,24 @@ export default function RestaurantSetupPanel({
             </div>
           )}
           <div className="space-y-4">
-            {normalizeSectionNames(sections).map((section, index) => {
+            {editableSectionNames(sections).map((section, index) => {
               const profile = normalizeSectionProfiles(sectionProfiles, sections).find(item => item.name.toLowerCase() === section.toLowerCase()) || defaultSectionProfile(section)
               const patchProfile = (patch) => setSectionProfiles(prev => [
                 ...prev.filter(item => String(item.name).toLowerCase() !== section.toLowerCase()),
                 { ...profile, ...patch, name: section },
               ])
               return (
-              <div key={profile.id || `${index}:${section}`} className="space-y-4 rounded-xl border border-white/10 bg-white/[0.025] p-4">
+              <div key={`${profile.id || 'draft'}:${index}:${section}`} className="space-y-4 rounded-xl border border-white/10 bg-white/[0.025] p-4">
                 <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                   <TextInput value={section} disabled={index === 0} placeholder="Bar, Patio, Hibachi..." onChange={event => {
-                    const next = normalizeSectionNames(sections)
+                    const next = editableSectionNames(sections)
                     const oldName = next[index]
                     next[index] = index === 0 ? 'Table' : event.target.value
                     setSections(next)
                     setSectionProfiles(prev => prev.map(item => String(item.name).toLowerCase() === oldName.toLowerCase() ? { ...item, name: next[index] } : item))
                   }} />
                   <SmallButton variant={index === 0 ? 'secondary' : 'danger'} disabled={index === 0} onClick={() => {
-                    setSections(prev => normalizeSectionNames(prev).filter((_, currentIndex) => currentIndex !== index))
+                    setSections(prev => editableSectionNames(prev).filter((_, currentIndex) => currentIndex !== index))
                     setSectionProfiles(prev => prev.filter(item => String(item.name).toLowerCase() !== section.toLowerCase()))
                   }}>Remove</SmallButton>
                 </div>
@@ -3936,9 +4149,9 @@ export default function RestaurantSetupPanel({
                   </label>
                 </div>
                 {profile.auto_gratuity_enabled && <div className="grid gap-3 border-t border-white/10 pt-4 md:grid-cols-2 lg:grid-cols-3">
-                  <Field label="Charge amount"><div className="grid grid-cols-[1fr_7rem] gap-2"><TextInput inputMode="decimal" value={profile.auto_gratuity_value} onChange={event => patchProfile({ auto_gratuity_value: sanitizeNumber(event.target.value) })} /><SelectInput value={profile.auto_gratuity_type} onChange={event => patchProfile({ auto_gratuity_type: event.target.value })}><option value="percentage">Percent</option><option value="fixed">Fixed</option></SelectInput></div></Field>
+                  <Field label="Charge amount"><div className="grid grid-cols-[1fr_7rem] gap-2"><TextInput inputMode="decimal" value={profile.auto_gratuity_value} onChange={event => patchProfile({ auto_gratuity_value: profile.auto_gratuity_type === 'percentage' ? sanitizePercentInput(event.target.value) : sanitizeMoneyInput(event.target.value) })} /><SelectInput value={profile.auto_gratuity_type} onChange={event => patchProfile({ auto_gratuity_type: event.target.value })}><option value="percentage">Percent</option><option value="fixed">Fixed</option></SelectInput></div></Field>
                   <Field label="Receipt label"><TextInput value={profile.auto_gratuity_label} onChange={event => patchProfile({ auto_gratuity_label: event.target.value })} /></Field>
-                  <Field label="Minimum party size"><TextInput inputMode="numeric" placeholder="Any party size" value={profile.minimum_party_size} onChange={event => patchProfile({ minimum_party_size: event.target.value.replace(/\D/g, '') })} /></Field>
+                  <Field label="Minimum party size"><TextInput inputMode="numeric" placeholder="Any party size" value={profile.minimum_party_size} onChange={event => patchProfile({ minimum_party_size: sanitizeCountInput(event.target.value, 2) })} /></Field>
                   <Field label="Tip prompt"><SelectInput value={profile.tip_prompt_mode} onChange={event => patchProfile({ tip_prompt_mode: event.target.value })}><option value="additional">Offer additional tip</option><option value="normal">Standard tip prompt</option><option value="disabled">No tip prompt</option></SelectInput></Field>
                   <Field label="Who receives it"><SelectInput value={profile.assigned_to_employee ? 'employee' : 'restaurant'} onChange={event => patchProfile({ assigned_to_employee: event.target.value === 'employee' })}><option value="employee">Employee — tip earnings</option><option value="restaurant">Restaurant — service-charge revenue</option></SelectInput></Field>
                   <label className="flex items-center gap-3 self-end px-1 py-3 text-sm text-dash-primary"><input type="checkbox" checked={Boolean(profile.auto_gratuity_taxable)} onChange={event => patchProfile({ auto_gratuity_taxable: event.target.checked })} className="h-4 w-4 accent-dash-gold" />Charge is taxable</label>
@@ -3949,13 +4162,13 @@ export default function RestaurantSetupPanel({
             })}
             <div className="flex flex-wrap gap-2 pt-2">
               <SmallButton onClick={() => setSections(prev => {
-                const current = normalizeSectionNames(prev)
+                const current = editableSectionNames(prev)
                 const name = `New Section ${current.length}`
                 setSectionProfiles(profiles => [...profiles, defaultSectionProfile(name)])
                 return [...current, name]
               })}>Add section</SmallButton>
-              {['Main Dining', 'Bar', 'Patio', 'Outdoor'].filter(name => !normalizeSectionNames(sections).some(section => section.toLowerCase() === name.toLowerCase())).map(name => (
-                <SmallButton key={name} onClick={() => { setSections(prev => [...normalizeSectionNames(prev), name]); setSectionProfiles(prev => [...prev, defaultSectionProfile(name)]) }}>{name}</SmallButton>
+              {['Main Dining', 'Bar', 'Patio', 'Outdoor'].filter(name => !editableSectionNames(sections).some(section => section.toLowerCase() === name.toLowerCase())).map(name => (
+                <SmallButton key={name} onClick={() => { setSections(prev => [...editableSectionNames(prev), name]); setSectionProfiles(prev => [...prev, defaultSectionProfile(name)]) }}>{name}</SmallButton>
               ))}
             </div>
           </div>
@@ -4301,14 +4514,14 @@ export default function RestaurantSetupPanel({
           )}
           <div className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[1fr_1fr_140px_110px_110px_120px_130px_auto]">
             <TextInput placeholder="Name" value={staffForm.name} onChange={event => setStaffForm(prev => ({ ...prev, name: event.target.value, employee_login_id: prev.employee_login_id || defaultEmployeeId(event.target.value) }))} />
-            <TextInput placeholder="Email optional" value={staffForm.email} onChange={event => setStaffForm(prev => ({ ...prev, email: event.target.value }))} />
+            <TextInput type="email" inputMode="email" autoComplete="email" placeholder="Email optional" value={staffForm.email} onChange={event => setStaffForm(prev => ({ ...prev, email: event.target.value }))} onBlur={() => setStaffForm(prev => ({ ...prev, email: normalizeEmailInput(prev.email) }))} />
             <SelectInput value={staffForm.role} onChange={event => setStaffForm(prev => ({ ...prev, role: event.target.value }))}>
               <option value="">Choose role</option>
               {normalizeStaffRoleOptions(jobCodes).map(role => <option key={role.id || role.code} value={roleCodeFromJobCode(role)}>{staffRoleLabel(role)}</option>)}
             </SelectInput>
-            <TextInput placeholder="Hrs/week" value={staffForm.suggested_weekly_hours} onChange={event => setStaffForm(prev => ({ ...prev, suggested_weekly_hours: event.target.value.replace(/[^\d.]/g, '').slice(0, 5) }))} />
-            <TextInput placeholder="$/hr" value={staffForm.hourly_rate} onChange={event => setStaffForm(prev => ({ ...prev, hourly_rate: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))} />
-            <TextInput placeholder="PIN" value={staffForm.pin} onChange={event => setStaffForm(prev => ({ ...prev, pin: event.target.value.replace(/\D/g, '').slice(0, 8) }))} />
+            <TextInput inputMode="numeric" placeholder="Hrs/week" value={staffForm.suggested_weekly_hours} onChange={event => setStaffForm(prev => ({ ...prev, suggested_weekly_hours: sanitizeCountInput(event.target.value, 3) }))} />
+            <TextInput inputMode="decimal" placeholder="$/hr" value={staffForm.hourly_rate} onChange={event => setStaffForm(prev => ({ ...prev, hourly_rate: sanitizeMoneyInput(event.target.value) }))} />
+            <TextInput inputMode="numeric" autoComplete="off" placeholder="4-digit PIN" value={staffForm.pin} onChange={event => setStaffForm(prev => ({ ...prev, pin: digitsOnly(event.target.value, 4) }))} />
             <TextInput placeholder="ID" value={staffForm.employee_login_id} onChange={event => setStaffForm(prev => ({ ...prev, employee_login_id: event.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, '') }))} />
             <SmallButton variant="primary" onClick={() => void addStaff()}>Add</SmallButton>
           </div>
@@ -4334,7 +4547,7 @@ export default function RestaurantSetupPanel({
                     />
                     <TextInput
                       value={code.default_hourly_rate ?? rateEdits[code.id] ?? ''}
-                      onChange={event => setJobCodes(prev => prev.map(item => item.id === code.id ? { ...item, default_hourly_rate: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) } : item))}
+                      onChange={event => setJobCodes(prev => prev.map(item => item.id === code.id ? { ...item, default_hourly_rate: sanitizeMoneyInput(event.target.value) } : item))}
                       inputMode="decimal"
                       placeholder="0.00"
                     />
@@ -4357,7 +4570,7 @@ export default function RestaurantSetupPanel({
                 ))}
                 <div className="grid gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-3 lg:grid-cols-[1fr_110px_130px_auto_auto_auto]">
                   <TextInput value={jobCodeDraft.label} onChange={event => setJobCodeDraft(prev => ({ ...prev, label: event.target.value, code: slugRoleCode(event.target.value) }))} placeholder="New role" />
-                  <TextInput value={jobCodeDraft.default_hourly_rate} onChange={event => setJobCodeDraft(prev => ({ ...prev, default_hourly_rate: event.target.value.replace(/[^\d.]/g, '').slice(0, 8) }))} placeholder="0.00" />
+                  <TextInput value={jobCodeDraft.default_hourly_rate} onChange={event => setJobCodeDraft(prev => ({ ...prev, default_hourly_rate: sanitizeMoneyInput(event.target.value) }))} placeholder="0.00" />
                   <SelectInput value={jobCodeDraft.permission_tier} onChange={event => setJobCodeDraft(prev => ({ ...prev, permission_tier: event.target.value }))}>
                     {PERMISSION_TIER_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </SelectInput>
@@ -4384,7 +4597,7 @@ export default function RestaurantSetupPanel({
                       <TextInput defaultValue={waiter.name || ''} onBlur={event => void updateStaff(waiter.id, { name: event.target.value })} />
                     </Field>
                     <Field label="Email">
-                      <TextInput defaultValue={waiter.email || ''} placeholder="Email optional" onBlur={event => void updateStaff(waiter.id, { email: event.target.value || null })} />
+                      <TextInput type="email" inputMode="email" autoComplete="email" defaultValue={waiter.email || ''} placeholder="Email optional" onBlur={event => void updateStaff(waiter.id, { email: event.target.value || null })} />
                     </Field>
                     <Field label="Roles">
                       <StaffRoleAssignment
@@ -4411,7 +4624,7 @@ export default function RestaurantSetupPanel({
                         value={pinEdits[waiter.id] || ''}
                         onChange={event => {
                           setPinSaved(prev => ({ ...prev, [waiter.id]: false }))
-                          setPinEdits(prev => ({ ...prev, [waiter.id]: event.target.value.replace(/\D/g, '').slice(0, 8) }))
+                          setPinEdits(prev => ({ ...prev, [waiter.id]: digitsOnly(event.target.value, 4) }))
                         }}
                       />
                     </Field>
