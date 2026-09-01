@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   SERVICE_MODE_OPTIONS,
   GUEST_FLOW_OPTIONS,
-  taxAppliesToOptions,
   CHARGE_APPLIES_TO_OPTIONS,
   DISCOUNT_TYPE_OPTIONS,
   DISCOUNT_APPLIES_TO_OPTIONS,
@@ -78,6 +77,7 @@ import {
 import { PublishControls } from '../shared/components/PublishControls'
 import { SmartTimeInput } from '../shared/components/SmartTimeInput'
 import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
+import { TaxJurisdictionPanel } from './components/TaxJurisdictionPanel'
 import { scheduleChange } from '../shared/api/scheduledChanges'
 import { cashDrawerRoleSummary } from './utils/cashDrawerPermissions'
 import StoreDangerZone from './components/StoreDangerZone'
@@ -3420,35 +3420,24 @@ export default function RestaurantSetupPanel({
               <div>
                 <p className="label-mono">Tax Rates</p>
                 <p className="mt-2 text-sm text-dash-secondary">
-                  Tax rates are derived from the canonical restaurant location and shown here for review. Platform support verifies and updates them; restaurant users cannot override them.
+                  SHIRE validates the canonical restaurant location and resolves product-specific jurisdictions. Choose what the store sells; restaurant users never type or override a percentage.
                 </p>
               </div>
-              <div className="rounded-xl border border-dash-gold/25 bg-dash-gold/[0.06] p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-dash-gold">Restaurant location</p>
-                <p className="mt-2 text-sm text-dash-cream">
-                  {[profile.address, [profile.city, profile.state].filter(Boolean).join(', '), profile.postal_code].filter(Boolean).join(' · ') || 'Complete Store Information to resolve taxes.'}
-                </p>
-              </div>
-              {normalizeTaxRates(taxRates).length === 0 && (
-                <div className="rounded-xl border border-dashed border-white/15 bg-white/[0.02] p-4 text-sm text-dash-secondary">
-                  Tax rates are pending platform-support verification for this location.
-                </div>
-              )}
-              {normalizeTaxRates(taxRates).map((tax, index) => (
-                <div key={tax.id || `tax:${index}`} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="font-medium text-dash-cream">{tax.name}</p>
-                      <p className="mt-1 text-xs text-dash-tertiary">
-                        {taxAppliesToOptions(tax.applies_to).find(option => option.value === tax.applies_to)?.label || tax.applies_to}
-                        {tax.is_default ? ' · Default' : ''}
-                        {tax.is_inclusive ? ' · Included in price' : ' · Added at checkout'}
-                      </p>
-                    </div>
-                    <p className="text-lg font-semibold tabular-nums text-dash-gold">{Number(tax.rate || 0)}%</p>
-                  </div>
-                </div>
-              ))}
+              <TaxJurisdictionPanel
+                restaurantId={restaurantId}
+                locationDisplay={[profile.address, [profile.city, profile.state].filter(Boolean).join(', '), profile.postal_code].filter(Boolean).join(' · ')}
+                onResolved={(saved) => {
+                  const nextTaxRates = normalizeTaxRates(saved?.tax_rates)
+                  setTaxRates(nextTaxRates)
+                  queryClient.setQueryData(queryKeys.taxesCharges(restaurantId), saved)
+                  rememberSavedDraft('taxes_charges', {
+                    taxRates: nextTaxRates,
+                    taxCategoryAssignments: undefined,
+                    serviceCharges,
+                    autoGratuity,
+                  })
+                }}
+              />
             </div>
 
             <div className="space-y-4 border-t border-white/10 pt-6">

@@ -1,8 +1,6 @@
-import {
-  CHARGE_APPLIES_TO_OPTIONS,
-  taxAppliesToOptions,
-} from '@shire/settings'
+import { CHARGE_APPLIES_TO_OPTIONS } from '@shire/settings'
 import type { ServiceChargeData, UseOnboardingReturn } from '../../hooks/useOnboarding'
+import { TaxJurisdictionPanel } from '../../../dashboard/components/TaxJurisdictionPanel'
 
 interface TaxesChargesStepProps {
   onboarding: UseOnboardingReturn
@@ -54,8 +52,7 @@ function ToggleButton({
 }
 
 export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
-  const { data, updateData, saveTaxesCharges, nextStep, isLoading, error } = onboarding
-  const taxRates = data.tax_rates
+  const { data, restaurantId, updateData, saveTaxesCharges, nextStep, isLoading, error } = onboarding
   const serviceCharges = data.service_charges
 
   const updateCharge = (index: number, patch: Partial<ServiceChargeData>) => {
@@ -86,40 +83,14 @@ export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
         <div>
           <p className="label-mono text-[rgb(var(--gold))]">Tax Rates</p>
           <p className="mt-2 text-sm leading-6 text-[rgb(var(--text-secondary))]">
-            SHIRE derives these values from the restaurant location. Platform support verifies and updates the rates; restaurant users cannot override them.
+            SHIRE validates the restaurant address and resolves product-specific jurisdictions. Choose what the store sells; restaurant users never type or override a percentage.
           </p>
         </div>
 
-        <div className="rounded-lg border border-[rgba(201,169,98,0.24)] bg-[rgba(201,169,98,0.06)] p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[rgb(var(--gold))]">Restaurant location</p>
-          <p className="mt-2 text-sm text-[rgb(var(--text-primary))]">
-            {[data.address, [data.city, data.state].filter(Boolean).join(', '), data.postal_code].filter(Boolean).join(' · ') || 'Complete Restaurant Basics to resolve taxes.'}
-          </p>
-        </div>
-
-        {taxRates.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.02)] p-4 text-sm text-[rgb(var(--text-secondary))]">
-            Tax rates are pending platform-support verification for this location.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {taxRates.map((tax, index) => (
-              <div key={tax.id || `tax:${index}`} className="rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="font-medium text-[rgb(var(--text-primary))]">{tax.name}</p>
-                    <p className="mt-1 text-xs text-[rgb(var(--text-tertiary))]">
-                      {taxAppliesToOptions(tax.applies_to).find(option => option.value === tax.applies_to)?.label || tax.applies_to}
-                      {tax.is_default ? ' · Default' : ''}
-                      {tax.is_inclusive ? ' · Included in price' : ' · Added at checkout'}
-                    </p>
-                  </div>
-                  <p className="text-lg font-semibold tabular-nums text-[rgb(var(--gold))]">{Number(tax.rate || 0)}%</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <TaxJurisdictionPanel
+          restaurantId={restaurantId}
+          locationDisplay={[data.address, [data.city, data.state].filter(Boolean).join(', '), data.postal_code].filter(Boolean).join(' · ')}
+        />
       </section>
 
       <section className="space-y-4">

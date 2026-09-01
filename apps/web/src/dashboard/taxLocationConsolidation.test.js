@@ -10,6 +10,7 @@ const onboardingTaxes = read('../onboarding/pages/steps/TaxesChargesStep.tsx')
 const onboardingCategories = read('../onboarding/pages/steps/MenuCategoriesStep.tsx')
 const onboardingPayments = read('../onboarding/pages/steps/PaymentsStep.tsx')
 const onboardingHook = read('../onboarding/hooks/useOnboarding.ts')
+const taxJurisdiction = read('./components/TaxJurisdictionPanel.tsx')
 
 test('restaurant-facing tax configuration is read-only and address-derived', () => {
   for (const source of [setup, onboardingTaxes]) {
@@ -17,15 +18,24 @@ test('restaurant-facing tax configuration is read-only and address-derived', () 
     assert.doesNotMatch(source, /Add tax rate|New tax/)
     assert.doesNotMatch(source, /onChange=.*tax\.rate/)
   }
-  assert.match(setup, /Platform support verifies and updates them/)
-  assert.match(onboardingTaxes, /restaurant users cannot override them/)
+  assert.match(setup, /canonical restaurant location/)
+  assert.match(onboardingTaxes, /never type or override a percentage/)
+  assert.doesNotMatch(taxJurisdiction, /onChange=.*tax\.rate/)
 })
 
-test('menu tax assignments are displayed without restaurant-facing selectors', () => {
+test('menu editors cannot directly select a percentage-bearing tax row', () => {
   assert.doesNotMatch(menu, /onChange=\{event => updateCategory\(index, \{ tax_rate_id/)
   assert.doesNotMatch(menu, /onSetTaxRate=/)
   assert.doesNotMatch(onboardingCategories, /Tax override|tax_rate_id: event\.target\.value/)
   assert.match(menu, /support-managed tax/)
+})
+
+test('provider resolution sends semantic classes and requires explicit mixed-category mapping', () => {
+  assert.match(taxJurisdiction, /taxes-charges\/resolve/)
+  assert.match(taxJurisdiction, /enabled_tax_classes: enabledClasses/)
+  assert.match(taxJurisdiction, /Classify every active menu category/)
+  assert.doesNotMatch(taxJurisdiction, /\btax_rate\s*:/)
+  assert.match(taxJurisdiction, /placeholder 0% rate is not treated as valid/)
 })
 
 test('address and pricing jurisdiction use the canonical restaurant profile', () => {
