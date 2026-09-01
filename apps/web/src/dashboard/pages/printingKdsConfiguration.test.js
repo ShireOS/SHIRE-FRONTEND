@@ -41,6 +41,8 @@ test('profiles expose item, ticket, split, expo, rush, undo and device assignmen
   assert.match(card, /Active tickets/)
   assert.match(card, /KDS online/)
   assert.match(card, /profiles\.filter\(profile => profile\.is_active !== false\)/)
+  assert.match(card, /undo_window_seconds: 10/)
+  assert.match(card, /recently_completed_seconds: 3600/)
 })
 
 test('restaurant switches clear tenant state and fence stale responses', () => {

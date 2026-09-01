@@ -27,8 +27,8 @@ const blankProfile = stations => {
     show_all_day: true,
     show_station_rail: true,
     rush_after_seconds: 900,
-    undo_window_seconds: 8,
-    recently_completed_seconds: 21600,
+    undo_window_seconds: 10,
+    recently_completed_seconds: 3600,
     ticket_columns: 4,
     text_scale: 1,
     settings: {
@@ -51,8 +51,8 @@ const normalizeProfile = profile => ({
   ticket_columns: Number(profile.ticket_columns || 4),
   text_scale: Number(profile.text_scale || 1),
   rush_after_seconds: Number(profile.rush_after_seconds || 0),
-  undo_window_seconds: Number(profile.undo_window_seconds || 8),
-  recently_completed_seconds: Number(profile.recently_completed_seconds || 21600),
+  undo_window_seconds: Number(profile.undo_window_seconds || 10),
+  recently_completed_seconds: Number(profile.recently_completed_seconds || 3600),
   settings: profile.settings && typeof profile.settings === 'object' ? profile.settings : {},
   stations: (profile.stations || []).map((row, index) => ({
     station_id: row.station_id,
