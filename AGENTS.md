@@ -362,11 +362,13 @@ gate; the bell remains disabled while access is unresolved or denied.
   Any assigned reseller principal or employee, plus platform admins, has a
   dedicated restaurant-scoped Taxes route and may make a reasoned audited manual
   percentage override regardless of the broader reseller Setup grant. Initial and
-  existing Basics use the same structured location search: exact SST street or
-  ZIP jurisdiction records normalize into the restaurant schema, while no match
-  preserves explicit manual entry and leaves tax coverage unresolved. The
-  `settings.edit`/reseller-aware ML resolver uses SHIRE's versioned official SST
-  catalog first and AvaTax only as a configured fallback before
+  existing Basics use the same structured location search: the no-key U.S. Census
+  geocoder supplies ordinary state/county/place geography; retained official SST
+  rows supply nationwide special/product boundaries and a full fallback only for
+  explicitly proven Census gaps (currently Arkansas). No match preserves explicit
+  manual entry and leaves tax coverage unresolved. The `settings.edit`/reseller-
+  aware ML resolver uses SHIRE's versioned official SST catalog first and AvaTax
+  only as a configured fallback before
   atomically updating `tax_rates`, category assignments, the POS default rate,
   normalized location, pricing jurisdiction, and an audited jurisdiction snapshot.
   It rechecks address/category state under lock; provider, precision, mapping, or

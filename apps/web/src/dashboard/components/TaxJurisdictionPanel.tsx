@@ -291,7 +291,7 @@ export function TaxJurisdictionPanel({ restaurantId, locationDisplay, onResolved
           <div className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
             <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">What this location sells</p>
             <p className="mt-1 text-xs leading-5 text-[rgb(var(--text-tertiary))]">
-              Choose product classes, not percentages. The provider resolves state, county, city, district, and product-specific taxes from the verified address.
+              Choose product classes, not percentages. SHIRE resolves state, county, city, special-district, and product-specific taxes from the matched address.
             </p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {availableClasses.map(option => (

@@ -12,10 +12,11 @@ export type RestaurantLocation = {
 }
 
 type LocationMatch = RestaurantLocation & {
-  match_quality: 'exact_official_boundary' | 'official_zip4_jurisdiction' | 'official_zip5_jurisdiction'
-  source: 'sst_boundary'
+  match_quality: 'census_geography_match' | 'exact_official_boundary' | 'official_zip4_jurisdiction' | 'official_zip5_jurisdiction'
+  source: 'census_geocoder' | 'sst_compact_boundary' | 'sst_boundary'
   source_version: string
-  boundary_id: number
+  match_id: string
+  boundary_id?: number | null
 }
 
 type SearchResponse = {
@@ -42,14 +43,14 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
   const [searched, setSearched] = useState(false)
   const [searching, setSearching] = useState(false)
   const [stateResolvable, setStateResolvable] = useState<boolean | null>(null)
-  const [selectedBoundaryId, setSelectedBoundaryId] = useState<number | null>(null)
+  const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null)
   const [error, setError] = useState('')
 
   const patch = (next: Partial<RestaurantLocation>) => {
     setMatches([])
     setSearched(false)
     setStateResolvable(null)
-    setSelectedBoundaryId(null)
+    setSelectedMatchId(null)
     setError('')
     onChange(next)
   }
@@ -85,7 +86,7 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
   }
 
   const selectMatch = (match: LocationMatch) => {
-    setSelectedBoundaryId(match.boundary_id)
+    setSelectedMatchId(match.match_id)
     setError('')
     onChange({
       address: match.address,
@@ -131,14 +132,14 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
           <p className="text-xs font-semibold uppercase tracking-wide text-[rgb(var(--text-tertiary))]">Official location / jurisdiction matches</p>
           {matches.map(match => (
             <button
-              key={match.boundary_id}
+              key={match.match_id}
               type="button"
               onClick={() => selectMatch(match)}
-              className={`w-full rounded-lg border px-3 py-3 text-left text-sm transition ${selectedBoundaryId === match.boundary_id ? 'border-emerald-400/45 bg-emerald-400/10' : 'border-white/10 bg-white/[0.025] hover:border-white/20'}`}
+              className={`w-full rounded-lg border px-3 py-3 text-left text-sm transition ${selectedMatchId === match.match_id ? 'border-emerald-400/45 bg-emerald-400/10' : 'border-white/10 bg-white/[0.025] hover:border-white/20'}`}
             >
               <span className="block font-medium text-[rgb(var(--text-primary))]">{match.address}</span>
               <span className="mt-1 block text-xs text-[rgb(var(--text-tertiary))]">
-                {match.city}, {match.state} {match.postal_code} · {match.match_quality === 'exact_official_boundary' ? 'exact official address' : 'official ZIP jurisdiction'} · {match.source_version}
+                {match.city}, {match.state} {match.postal_code} · {match.match_quality === 'census_geography_match' ? 'official geographic match' : match.match_quality === 'exact_official_boundary' ? 'exact official address range' : 'official ZIP jurisdiction'} · {match.source_version}
               </span>
             </button>
           ))}
@@ -147,8 +148,8 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
       {searched && matches.length === 0 && (
         <div className="rounded-lg border border-amber-400/25 bg-amber-400/[0.07] p-3 text-sm leading-5 text-amber-100">
           {stateResolvable
-            ? 'No exact official boundary match was found. You may keep the typed address, but taxes remain unresolved until an assigned reseller or platform admin fills the missing values.'
-            : 'This state is not loaded in SHIRE’s official address catalog yet. You may keep the typed address; taxes remain unresolved and editable only by an assigned reseller or platform admin.'}
+            ? 'No authoritative geographic match was found. You may keep the typed address, but taxes remain unresolved until an assigned reseller or platform admin fills the missing values.'
+            : 'SHIRE does not yet have an authoritative tax source for this state. You may keep the typed address; taxes remain unresolved and editable only by an assigned reseller or platform admin.'}
         </div>
       )}
     </div>
