@@ -79,13 +79,14 @@ const toActionError = (err: unknown, fallback: string) => {
 export function RoutingStep({ onboarding }: RoutingStepProps) {
   const restaurantId = onboarding.restaurantId
   const [config, setConfig] = useState<RoutingConfig | null>(null)
-  const [stationName, setStationName] = useState('Expo')
-  const [targetName, setTargetName] = useState('Kitchen Printer')
+  const [stationName, setStationName] = useState('')
+  const [targetName, setTargetName] = useState('')
   const [targetHost, setTargetHost] = useState('')
   const [categories, setCategories] = useState<MenuCategoryRoute[]>([])
   const [itemRouteValues, setItemRouteValues] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
-  const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [recentlyAddedStation, setRecentlyAddedStation] = useState<{ id: string | null; name: string } | null>(null)
+  const [recentlyAddedTarget, setRecentlyAddedTarget] = useState<{ id: string | null; name: string } | null>(null)
   const [loading, setLoading] = useState(false)
   const [workingAction, setWorkingAction] = useState<string | null>(null)
   const [savingReview, setSavingReview] = useState(false)
@@ -148,6 +149,10 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
     void load()
   }, [restaurantId])
 
+  useEffect(() => {
+    if (error) window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [error])
+
   const createStation = async () => {
     if (!restaurantId) return
     const name = collapseEntryWhitespace(stationName)
@@ -160,14 +165,13 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
       return
     }
     setError(null)
-    setActionMessage(null)
     setWorkingAction('station')
     try {
-      await routingFetch(restaurantId, '/stations', {
+      const created = await routingFetch(restaurantId, '/stations', {
         method: 'POST',
         body: JSON.stringify({ name, is_active: true }),
       })
-      setActionMessage(`Added station "${name}".`)
+      setRecentlyAddedStation({ id: typeof created?.id === 'string' ? created.id : null, name })
       setStationName('')
       await load()
     } catch (err) {
@@ -179,7 +183,11 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
 
   const createTarget = async () => {
     if (!restaurantId) return
-    const name = collapseEntryWhitespace(targetName) || 'Kitchen Printer'
+    const name = collapseEntryWhitespace(targetName)
+    if (!name) {
+      setError('Output name is required.')
+      return
+    }
     if (duplicateName(config?.targets.map(target => target.name) || [], name)) {
       setError('That output target already exists.')
       return
@@ -190,10 +198,9 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
       return
     }
     setError(null)
-    setActionMessage(null)
     setWorkingAction('target')
     try {
-      await routingFetch(restaurantId, '/targets', {
+      const created = await routingFetch(restaurantId, '/targets', {
         method: 'POST',
         body: JSON.stringify({
           name,
@@ -203,7 +210,8 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
           is_active: true,
         }),
       })
-      setActionMessage(`Added target "${name}".`)
+      setRecentlyAddedTarget({ id: typeof created?.id === 'string' ? created.id : null, name })
+      setTargetName('')
       setTargetHost('')
       await load()
     } catch (err) {
@@ -235,15 +243,13 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
   const saveCategoryRoutes = async () => {
     if (!restaurantId) return
     setError(null)
-    setActionMessage(null)
     setWorkingAction('categoryRoutes')
     try {
       // Only send categories whose production rule changed; each save writes an
       // authoritative kitchen_routing_rules row on the POS backend (the old
       // menu-categories PUT only set a projection column that ticket routing
       // ignored).
-      const changedCount = await persistCategoryRoutes()
-      setActionMessage(changedCount ? 'Saved category printing rules.' : 'Category printing rules are already up to date.')
+      await persistCategoryRoutes()
       await load()
     } catch (err) {
       setError(toActionError(err, 'Could not save category routes.'))
@@ -271,11 +277,9 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
   const saveItemRoutes = async () => {
     if (!restaurantId || !config) return
     setError(null)
-    setActionMessage(null)
     setWorkingAction('itemRoutes')
     try {
-      const changedCount = await persistItemRoutes()
-      setActionMessage(changedCount ? 'Saved item printing rules.' : 'Item printing rules are already up to date.')
+      await persistItemRoutes()
       await load()
     } catch (err) {
       setError(toActionError(err, 'Could not save item printing rules.'))
@@ -287,7 +291,6 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
   const setStationOutput = async (stationId: string, targetId: string) => {
     if (!restaurantId || !config) return
     setError(null)
-    setActionMessage(null)
     setWorkingAction(`stationOutput:${stationId}`)
     try {
       const currentLinks = (config.station_targets || []).filter(link => link.station_id === stationId && link.is_active !== false)
@@ -296,7 +299,6 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
           method: 'POST',
           body: JSON.stringify({ station_id: stationId, target_id: link.target_id, priority: link.priority || 0, is_active: false }),
         })))
-        setActionMessage('Station output cleared.')
       } else {
         await Promise.all(currentLinks.filter(link => link.target_id !== targetId).map(link => routingFetch(restaurantId, '/station-targets', {
           method: 'POST',
@@ -306,9 +308,6 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
           method: 'POST',
           body: JSON.stringify({ station_id: stationId, target_id: targetId, priority: 0, is_active: true }),
         })
-        const stationNameForId = config.stations.find(station => station.id === stationId)?.name || 'Station'
-        const targetNameForId = config.targets.find(target => target.id === targetId)?.name || 'output'
-        setActionMessage(`${stationNameForId} now sends tickets to ${targetNameForId}.`)
       }
       await load()
     } catch (err) {
@@ -321,7 +320,6 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
   const setFallbackStation = async (stationId: string) => {
     if (!restaurantId) return
     setError(null)
-    setActionMessage(null)
     setWorkingAction('fallback')
     try {
       if (stationId) {
@@ -332,8 +330,6 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
       } else {
         await routingFetch(restaurantId, '/fallback', { method: 'DELETE' })
       }
-      const stationNameForId = config?.stations.find(station => station.id === stationId)?.name
-      setActionMessage(stationNameForId ? `Fallback station set to ${stationNameForId}.` : 'Fallback station cleared.')
       await load()
     } catch (err) {
       setError(toActionError(err, 'Could not set fallback station.'))
@@ -357,95 +353,100 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
     .map(item => item.category || 'Other')))
   const activeStationTargets = (config?.station_targets || []).filter(link => link.is_active !== false)
   const outputByStationId = new Map(activeStationTargets.map(link => [link.station_id, link.target_id]))
+  const connectedStationIds = new Set(activeStationTargets.map(link => link.station_id))
+  const fallbackOptions = stationOptions.filter(station => connectedStationIds.has(station.id))
+  const currentFallbackId = config?.fallback?.station?.id || ''
+  const currentFallbackNeedsOutput = Boolean(currentFallbackId) && !connectedStationIds.has(currentFallbackId)
   const primaryButtonClass = 'mt-3 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-gray-100 disabled:opacity-50'
+  const outputNamesForStation = (stationId: string) => activeStationTargets
+    .filter(link => link.station_id === stationId)
+    .map(link => link.target_name || targetOptions.find(target => target.id === link.target_id)?.name)
+    .filter((name): name is string => Boolean(name))
+  const stationRouteLabel = (stationId: string) => {
+    const station = stationOptions.find(row => row.id === stationId)
+    const outputNames = outputNamesForStation(stationId)
+    return `${station?.name || 'Unknown station'} → ${outputNames.length ? outputNames.join(' + ') : 'No output connected'}`
+  }
+  const categoryRouteLabel = (category: MenuCategoryRoute) => {
+    const routeValue = category.production_route_value || ROUTE_INHERIT_VALUE
+    if (routeValue === ROUTE_NO_PRODUCTION_VALUE) return `${category.name} → No kitchen ticket`
+    if (routeValue === ROUTE_MULTI_VALUE) return `${category.name} → Multiple prep stations`
+    if (routeValue) return `${category.name} → ${stationRouteLabel(routeValue)}`
+    if (currentFallbackId) return `${category.name} → Default: ${stationRouteLabel(currentFallbackId)}`
+    return `${category.name} → Default not configured`
+  }
   const inheritedRouteLabel = (item: RoutingConfig['menu_items'][number]) => {
     const category = categories.find(row => row.name.trim().toLowerCase() === (item.category || 'Other').trim().toLowerCase())
     const routeValue = category?.production_route_value || ROUTE_INHERIT_VALUE
     if (routeValue === ROUTE_NO_PRODUCTION_VALUE) return 'Category rule: no kitchen ticket'
     if (routeValue && routeValue !== ROUTE_MULTI_VALUE) {
-      const station = stationOptions.find(row => row.id === routeValue)
-      return `Category rule: ${station?.name || 'prep station'}`
+      return `Category: ${stationRouteLabel(routeValue)}`
     }
     if (routeValue === ROUTE_MULTI_VALUE) return 'Category rule: multiple prep stations'
-    return config?.fallback?.station?.name ? `Restaurant fallback: ${config.fallback.station.name}` : 'No automatic route'
+    return currentFallbackId ? `Default: ${stationRouteLabel(currentFallbackId)}` : 'No automatic route'
   }
 
   return (
     <div className="space-y-6">
       {error && <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{error}</div>}
-      {actionMessage && <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-200">{actionMessage}</div>}
       {loading && <p className="text-sm text-[rgb(var(--text-tertiary))]">Loading routing...</p>}
 
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-        <p className="label-mono text-[rgb(var(--gold))]">Production flow</p>
-        <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
-          <div><span className="font-semibold text-[rgb(var(--text-primary))]">1. Menu rules</span><p className="mt-1 text-[rgb(var(--text-secondary))]">Categories and item exceptions choose a prep station or No kitchen ticket.</p></div>
-          <div><span className="font-semibold text-[rgb(var(--text-primary))]">2. Prep stations</span><p className="mt-1 text-[rgb(var(--text-secondary))]">Kitchen, Bar, Expo, and other stations receive the routed items.</p></div>
-          <div><span className="font-semibold text-[rgb(var(--text-primary))]">3. Outputs</span><p className="mt-1 text-[rgb(var(--text-secondary))]">Each station sends its tickets to the printer or KDS display attached to it.</p></div>
+        <p className="label-mono text-[rgb(var(--gold))]">How ticket routing works</p>
+        <p className="mt-2 text-sm text-[rgb(var(--text-secondary))]">
+          Categories point to a prep station, and that station points to a printer or KDS display. If hardware changes, update the station once instead of remapping every menu category.
+        </p>
+        <div className="mt-4 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-center text-sm font-medium text-[rgb(var(--text-primary))]">
+          Menu category <span className="px-2 text-[rgb(var(--gold))]">→</span> Prep station <span className="px-2 text-[rgb(var(--gold))]">→</span> Printer or KDS
         </div>
-      </div>
-
-      <div className={`rounded-2xl border p-4 ${config?.fallback?.ok ? 'border-emerald-500/20 bg-emerald-500/10' : 'border-red-500/20 bg-red-500/10'}`}>
-        <div className="grid gap-3 md:grid-cols-[1fr_260px] md:items-end">
-          <div>
-            <p className="label-mono text-[rgb(var(--gold))]">Default Prep Station</p>
-            <p className="mt-2 text-sm text-[rgb(var(--text-secondary))]">
-              {config?.fallback?.ok
-                ? `Ready. Any item without a category route goes to ${config.fallback.station?.name || 'the fallback station'}.`
-                : config?.fallback?.reason || 'Choose a fallback station and assign that station an output.'}
-            </p>
-          </div>
-          <label className="space-y-1">
-            <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">Used when no category or item rule exists</span>
-            <select
-              className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white"
-              value={config?.fallback?.station?.id || ''}
-              onChange={event => void setFallbackStation(event.target.value)}
-              disabled={!stationOptions.length || workingAction !== null}
-            >
-              <option value="">No fallback selected</option>
-              {stationOptions.map(station => (
-                <option key={station.id} value={station.id}>{station.name}</option>
-              ))}
-            </select>
-          </label>
+        <div className="mt-4 grid gap-3 text-sm sm:grid-cols-4">
+          <div><span className="font-semibold text-[rgb(var(--text-primary))]">1. Stations</span><p className="mt-1 text-[rgb(var(--text-secondary))]">Create the places where food or drinks are prepared.</p></div>
+          <div><span className="font-semibold text-[rgb(var(--text-primary))]">2. Outputs</span><p className="mt-1 text-[rgb(var(--text-secondary))]">Add printers or displays that receive tickets.</p></div>
+          <div><span className="font-semibold text-[rgb(var(--text-primary))]">3. Connect</span><p className="mt-1 text-[rgb(var(--text-secondary))]">Connect each station, then choose the default.</p></div>
+          <div><span className="font-semibold text-[rgb(var(--text-primary))]">4. Menu</span><p className="mt-1 text-[rgb(var(--text-secondary))]">Route categories and any item exceptions.</p></div>
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-          <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">Prep Stations</p>
+          <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">1. Prep Stations</p>
           <p className="mt-1 text-sm text-[rgb(var(--text-secondary))]">Stations are where items are prepared, like Kitchen, Bar, Expo, or Dessert.</p>
-          <input className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white" value={stationName} onChange={event => setStationName(event.target.value)} />
-          <button data-onboarding-save disabled={workingAction !== null || !stationName.trim()} className={primaryButtonClass} onClick={() => void createStation()}>
+          <input aria-label="New prep station name" placeholder="e.g. Kitchen, Bar, Dessert" className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/35" value={stationName} onChange={event => setStationName(event.target.value)} />
+          <button type="button" disabled={workingAction !== null || !stationName.trim()} className={primaryButtonClass} onClick={() => void createStation()}>
             {workingAction === 'station' ? 'Adding...' : 'Add station'}
           </button>
           <div className="mt-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[rgb(var(--text-tertiary))]">Existing stations</p>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[rgb(var(--text-tertiary))]">Saved stations</p>
+            <div className="mt-2 grid gap-2">
               {config?.stations.length ? config.stations.map(station => (
-                <span key={station.id} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-[rgb(var(--text-secondary))]">
-                  {station.name}{station.is_fallback ? ' · fallback' : ''}
-                </span>
+                <div key={station.id} className={`rounded-lg border px-3 py-2 text-xs ${recentlyAddedStation && ((recentlyAddedStation.id && recentlyAddedStation.id === station.id) || recentlyAddedStation.name.toLowerCase() === station.name.toLowerCase()) ? 'border-emerald-400/40 bg-emerald-400/10' : 'border-white/10 bg-white/[0.04]'}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-[rgb(var(--text-primary))]">{station.name}</span>
+                    <span className="text-[rgb(var(--text-tertiary))]">{station.is_fallback ? 'Default' : recentlyAddedStation && ((recentlyAddedStation.id && recentlyAddedStation.id === station.id) || recentlyAddedStation.name.toLowerCase() === station.name.toLowerCase()) ? 'Just added' : 'Saved'}</span>
+                  </div>
+                  <p className="mt-1 text-[rgb(var(--text-tertiary))]">{outputNamesForStation(station.id).length ? `Output: ${outputNamesForStation(station.id).join(' + ')}` : 'Next: connect an output below'}</p>
+                </div>
               )) : <span className="text-xs text-[rgb(var(--text-tertiary))]">None yet</span>}
             </div>
           </div>
         </div>
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-          <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">Printers & Displays</p>
-          <p className="mt-1 text-sm text-[rgb(var(--text-secondary))]">Outputs are the printers or screens that receive tickets from a station.</p>
-          <input className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white" value={targetName} onChange={event => setTargetName(event.target.value)} />
-          <input className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white" placeholder="Printer host/IP, or blank for dummy" value={targetHost} onChange={event => setTargetHost(event.target.value)} />
-          <button data-onboarding-save disabled={workingAction !== null} className={primaryButtonClass} onClick={() => void createTarget()}>
-            {workingAction === 'target' ? 'Adding...' : 'Add target'}
+          <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">2. Printers & Displays</p>
+          <p className="mt-1 text-sm text-[rgb(var(--text-secondary))]">Outputs are the hardware or display destinations that receive tickets from a station.</p>
+          <input aria-label="New output name" placeholder="e.g. Kitchen Printer" className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/35" value={targetName} onChange={event => setTargetName(event.target.value)} />
+          <input aria-label="Printer host or IP" className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/35" placeholder="Printer IP (optional during setup)" value={targetHost} onChange={event => setTargetHost(event.target.value)} />
+          <p className="mt-2 text-xs text-[rgb(var(--text-tertiary))]">Leave the IP blank to connect the physical printer later in Printing & Routing.</p>
+          <button type="button" disabled={workingAction !== null || !targetName.trim()} className={primaryButtonClass} onClick={() => void createTarget()}>
+            {workingAction === 'target' ? 'Adding...' : 'Add output'}
           </button>
           <div className="mt-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[rgb(var(--text-tertiary))]">Existing targets</p>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[rgb(var(--text-tertiary))]">Saved outputs</p>
+            <div className="mt-2 grid gap-2">
               {config?.targets.length ? config.targets.map(target => (
-                <span key={target.id} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-[rgb(var(--text-secondary))]">
-                  {target.name} · {target.connection_type}
-                </span>
+                <div key={target.id} className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${recentlyAddedTarget && ((recentlyAddedTarget.id && recentlyAddedTarget.id === target.id) || recentlyAddedTarget.name.toLowerCase() === target.name.toLowerCase()) ? 'border-emerald-400/40 bg-emerald-400/10' : 'border-white/10 bg-white/[0.04]'}`}>
+                  <span className="font-medium text-[rgb(var(--text-primary))]">{target.name}</span>
+                  <span className="text-[rgb(var(--text-tertiary))]">{recentlyAddedTarget && ((recentlyAddedTarget.id && recentlyAddedTarget.id === target.id) || recentlyAddedTarget.name.toLowerCase() === target.name.toLowerCase()) ? 'Just added' : target.connection_type}</span>
+                </div>
               )) : <span className="text-xs text-[rgb(var(--text-tertiary))]">None yet</span>}
             </div>
           </div>
@@ -454,14 +455,16 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
 
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <div>
-          <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">Station Outputs</p>
+          <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">3. Connect Stations to Outputs</p>
           <p className="mt-1 text-sm text-[rgb(var(--text-secondary))]">
             Assign the printer or display each station should send tickets to.
           </p>
         </div>
         {(!stationOptions.length || !targetOptions.length) && (
           <p className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-100">
-            Add at least one station and one printer/display before assigning outputs.
+            {!stationOptions.length
+              ? 'Add a prep station above before connecting outputs.'
+              : 'Add a printer or display above before connecting it to a station.'}
           </p>
         )}
         <div className="mt-4 grid gap-3">
@@ -484,9 +487,9 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
                   onChange={event => void setStationOutput(station.id, event.target.value)}
                   disabled={!targetOptions.length || workingAction !== null}
                 >
-                  <option value="">{working ? 'Saving...' : 'No output assigned'}</option>
+                  <option value="">{working ? 'Saving...' : targetOptions.length ? 'Choose an output' : 'Add an output above first'}</option>
                   {targetOptions.map(target => (
-                    <option key={target.id} value={target.id}>{target.name}</option>
+                    <option key={target.id} value={target.id}>{target.name} · {target.target_type || 'output'}</option>
                   ))}
                 </select>
               </div>
@@ -497,16 +500,50 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
         </div>
       </div>
 
+      <div className={`rounded-2xl border p-4 ${config?.fallback?.ok ? 'border-emerald-500/20 bg-emerald-500/10' : 'border-amber-500/20 bg-amber-500/10'}`}>
+        <div className="grid gap-3 md:grid-cols-[1fr_260px] md:items-end">
+          <div>
+            <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">4. Choose the Default Prep Station</p>
+            <p className="mt-2 text-sm text-[rgb(var(--text-secondary))]">
+              {config?.fallback?.ok
+                ? `Ready. Unmapped items go to ${config.fallback.station?.name || 'the default station'} and then to ${currentFallbackId ? outputNamesForStation(currentFallbackId).join(' + ') : 'its output'}.`
+                : !stationOptions.length
+                  ? 'Create a prep station above first.'
+                  : !fallbackOptions.length
+                    ? 'Connect at least one station to an output above before choosing the default.'
+                    : currentFallbackNeedsOutput
+                      ? `${config?.fallback?.station?.name || 'The current default'} needs an output. Connect it above or choose another connected station.`
+                      : 'Choose where items should go when they have no category or item-specific route.'}
+            </p>
+          </div>
+          <label className="space-y-1">
+            <span className="text-xs font-medium text-[rgb(var(--text-tertiary))]">Used when no more specific route exists</span>
+            <select
+              aria-label="Default prep station"
+              className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+              value={currentFallbackId}
+              onChange={event => void setFallbackStation(event.target.value)}
+              disabled={!fallbackOptions.length || workingAction !== null}
+            >
+              <option value="">{!stationOptions.length ? 'Create a prep station first' : !fallbackOptions.length ? 'Connect a station to an output first' : 'Choose a default station'}</option>
+              {currentFallbackNeedsOutput && <option value={currentFallbackId} disabled>{config?.fallback?.station?.name || 'Current default'} — connect an output first</option>}
+              {fallbackOptions.map(station => (
+                <option key={station.id} value={station.id}>{station.name} → {outputNamesForStation(station.id).join(' + ')}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">Category Printing Rules</p>
+            <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">5. Route Menu Categories</p>
             <p className="mt-1 text-sm text-[rgb(var(--text-secondary))]">
               Choose the prep station for each category. Use No kitchen ticket for categories such as gift cards or retail merchandise.
             </p>
           </div>
           <button
-            data-onboarding-save
             type="button"
             disabled={workingAction !== null || !categories.length || !categoryRouteDirty}
             className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-gray-100 disabled:opacity-50"
@@ -531,11 +568,7 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
               <div>
                 <p className="text-sm font-medium text-[rgb(var(--text-primary))]">{category.name}</p>
                 <p className="mt-1 text-xs text-[rgb(var(--text-tertiary))]">
-                  {category.production_route_value === ROUTE_NO_PRODUCTION_VALUE
-                    ? 'No kitchen or bar ticket'
-                    : category.production_route_value
-                      ? `Prep station: ${stationOptions.find(station => station.id === category.production_route_value)?.name || category.routing_station_name || 'selected station'}`
-                      : 'Uses the default prep station'}
+                  {categoryRouteLabel(category)}
                 </p>
               </div>
               <select
@@ -562,7 +595,7 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
                 <option value={ROUTE_NO_PRODUCTION_VALUE}>No kitchen ticket</option>
                 {category.production_route_value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple prep stations (edit later)</option>}
                 {stationOptions.map(station => (
-                  <option key={station.id} value={station.id}>{station.name}</option>
+                  <option key={station.id} value={station.id}>{station.name} → {outputNamesForStation(station.id).length ? outputNamesForStation(station.id).join(' + ') : 'No output connected'}</option>
                 ))}
               </select>
             </div>
@@ -586,7 +619,6 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
             </p>
           </div>
           <button
-            data-onboarding-save
             type="button"
             disabled={workingAction !== null || !itemRouteDirty}
             className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-gray-100 disabled:opacity-50"
@@ -627,7 +659,7 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
                   <option value={ROUTE_INHERIT_VALUE}>Automatic · use category/default</option>
                   <option value={ROUTE_NO_PRODUCTION_VALUE}>No kitchen ticket</option>
                   {routeValue === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple prep stations (edit later)</option>}
-                  {stationOptions.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
+                  {stationOptions.map(station => <option key={station.id} value={station.id}>{station.name} → {outputNamesForStation(station.id).length ? outputNamesForStation(station.id).join(' + ') : 'No output connected'}</option>)}
                 </select>
               </div>
             )

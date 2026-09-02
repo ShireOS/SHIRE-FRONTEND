@@ -23,9 +23,14 @@ test('standalone onboarding save controls opt into the same scroll behavior', ()
   assert.match(menu, /data-onboarding-save[\s\S]*handleContinue/)
   assert.match(modifiers, /data-onboarding-save[\s\S]*Saving modifiers\.\.\.' : 'Continue'/)
   assert.match(tipPayroll, /data-onboarding-save[\s\S]*handleContinue/)
-  assert.match(routing, /data-onboarding-save[\s\S]*saveCategoryRoutes/)
-  assert.match(routing, /data-onboarding-save[\s\S]*saveItemRoutes/)
+  assert.match(routing, /data-onboarding-save[\s\S]*savingReview[\s\S]*'Continue'/)
   assert.match(team, /data-onboarding-save[\s\S]*completeOnboarding/)
+})
+
+test('routing setup keeps successful inline actions in place and scrolls only local failures', () => {
+  assert.equal((routing.match(/data-onboarding-save/g) || []).length, 1)
+  assert.doesNotMatch(routing, /actionMessage|setActionMessage/)
+  assert.match(routing, /if \(error\) window\.scrollTo\(\{ top: 0, left: 0, behavior: 'auto' \}\)/)
 })
 
 test('team mutations surface their local validation error at the page top', () => {
