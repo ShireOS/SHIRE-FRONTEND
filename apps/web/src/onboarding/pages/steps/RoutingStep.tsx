@@ -417,7 +417,7 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
           <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">Prep Stations</p>
           <p className="mt-1 text-sm text-[rgb(var(--text-secondary))]">Stations are where items are prepared, like Kitchen, Bar, Expo, or Dessert.</p>
           <input className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white" value={stationName} onChange={event => setStationName(event.target.value)} />
-          <button disabled={workingAction !== null || !stationName.trim()} className={primaryButtonClass} onClick={() => void createStation()}>
+          <button data-onboarding-save disabled={workingAction !== null || !stationName.trim()} className={primaryButtonClass} onClick={() => void createStation()}>
             {workingAction === 'station' ? 'Adding...' : 'Add station'}
           </button>
           <div className="mt-4">
@@ -436,7 +436,7 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
           <p className="mt-1 text-sm text-[rgb(var(--text-secondary))]">Outputs are the printers or screens that receive tickets from a station.</p>
           <input className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white" value={targetName} onChange={event => setTargetName(event.target.value)} />
           <input className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white" placeholder="Printer host/IP, or blank for dummy" value={targetHost} onChange={event => setTargetHost(event.target.value)} />
-          <button disabled={workingAction !== null} className={primaryButtonClass} onClick={() => void createTarget()}>
+          <button data-onboarding-save disabled={workingAction !== null} className={primaryButtonClass} onClick={() => void createTarget()}>
             {workingAction === 'target' ? 'Adding...' : 'Add target'}
           </button>
           <div className="mt-4">
@@ -506,6 +506,7 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
             </p>
           </div>
           <button
+            data-onboarding-save
             type="button"
             disabled={workingAction !== null || !categories.length || !categoryRouteDirty}
             className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-gray-100 disabled:opacity-50"
@@ -585,6 +586,7 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
             </p>
           </div>
           <button
+            data-onboarding-save
             type="button"
             disabled={workingAction !== null || !itemRouteDirty}
             className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-gray-100 disabled:opacity-50"
@@ -653,6 +655,7 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
       </div>
 
       <button
+        data-onboarding-save
         type="button"
         disabled={savingReview || workingAction !== null}
         onClick={() => {

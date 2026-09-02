@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useCallback, useEffect, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { OnboardingProgress } from './OnboardingProgress'
 
 export interface OnboardingStep {
@@ -46,6 +46,7 @@ interface OnboardingLayoutProps {
   onCancel?: () => void
   onExit?: () => void
   isFlowActionPending?: boolean
+  saveError?: string | null
 }
 
 export function OnboardingLayout({
@@ -63,12 +64,32 @@ export function OnboardingLayout({
   onCancel,
   onExit,
   isFlowActionPending = false,
+  saveError,
 }: OnboardingLayoutProps) {
+  const scrollToTop = useCallback(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [])
+
+  const handleSaveClickCapture = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    if (!(event.target instanceof Element)) return
+    const saveControl = event.target.closest<HTMLElement>('[data-onboarding-save]')
+    if (!saveControl || saveControl.matches(':disabled')) return
+    scrollToTop()
+  }, [scrollToTop])
+
   useEffect(() => {
     const root = document.documentElement
     root.classList.add('dark')
     root.classList.remove('light')
   }, [])
+
+  useEffect(() => {
+    scrollToTop()
+  }, [currentStep, scrollToTop])
+
+  useEffect(() => {
+    if (saveError) scrollToTop()
+  }, [saveError, scrollToTop])
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] relative">
@@ -150,7 +171,11 @@ export function OnboardingLayout({
       </div>
 
       {/* Main content */}
-      <main className="max-w-2xl mx-auto px-4 pb-12 relative z-10">
+      <main
+        className="max-w-2xl mx-auto px-4 pb-12 relative z-10"
+        onSubmitCapture={scrollToTop}
+        onClickCapture={handleSaveClickCapture}
+      >
         <div className="mb-8">
           <h2 className="auth-display text-2xl text-[rgb(var(--text-primary))]">{title}</h2>
           {subtitle && (

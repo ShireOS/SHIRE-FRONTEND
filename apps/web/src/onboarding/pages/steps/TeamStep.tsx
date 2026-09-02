@@ -341,6 +341,12 @@ export function TeamStep({ onboarding }: TeamStepProps) {
         </div>
       )}
 
+      {formError && (
+        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+          {formError}
+        </div>
+      )}
+
       {/* Staff list */}
       <div className="space-y-3 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] p-4">
         <div>
@@ -423,7 +429,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
         ))}
         <div className="grid gap-2 sm:grid-cols-2">
           <button type="button" onClick={addRoleDraft} className="rounded-lg border border-dashed border-[rgba(255,255,255,0.2)] px-4 py-2 text-sm text-[rgb(var(--text-tertiary))]">Add role</button>
-          <button type="button" onClick={() => void saveRoles()} disabled={isSavingRoles} className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50">
+          <button data-onboarding-save type="button" onClick={() => void saveRoles()} disabled={isSavingRoles} className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50">
             {isSavingRoles ? 'Saving roles...' : 'Save roles'}
           </button>
         </div>
@@ -470,10 +476,6 @@ export function TeamStep({ onboarding }: TeamStepProps) {
       {/* Inline add form */}
       {showForm ? (
         <div className="p-4 rounded-lg border border-[rgba(201,169,98,0.3)] bg-[rgba(201,169,98,0.04)] space-y-4">
-          {formError && (
-            <p className="text-sm text-red-400">{formError}</p>
-          )}
-
           <div>
             <label className="block text-xs font-medium text-[rgb(var(--text-secondary))] mb-1.5">
               Name <span className="text-red-400">*</span>
@@ -601,6 +603,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
 
           <div className="flex gap-2">
             <button
+              data-onboarding-save
               onClick={() => void handleAddEmployee()}
               disabled={isAdding}
               className="flex-1 py-2.5 px-4 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-medium rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
@@ -637,6 +640,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
       {/* Complete / Skip */}
       <div className="space-y-3 pt-2">
         <button
+          data-onboarding-save
           onClick={() => void completeOnboarding()}
           disabled={isLoading || cannotComplete}
           className="w-full py-4 px-6 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
@@ -657,6 +661,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
         </button>
 
         <button
+          data-onboarding-save
           onClick={() => void completeOnboarding()}
           disabled={isLoading || cannotComplete}
           className="w-full py-2 text-sm text-[rgb(var(--text-tertiary))] hover:text-[rgb(var(--text-primary))] transition-colors"

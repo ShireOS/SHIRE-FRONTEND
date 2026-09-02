@@ -394,6 +394,7 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
         </div>
 
         <button
+          data-onboarding-save
           onClick={() => void handleSave()}
           disabled={saving || Boolean(loadError)}
           className="px-4 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-gray-100 disabled:opacity-40 transition-colors"

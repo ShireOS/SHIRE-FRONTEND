@@ -348,6 +348,7 @@ export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
       <textarea value={settings.notes} onChange={(event) => update({ notes: event.target.value })} placeholder="Any payroll or tipout notes..." className={`${inputClass} min-h-24`} />
 
       <button
+        data-onboarding-save
         onClick={() => void handleContinue()}
         disabled={isLoading}
         className="w-full rounded-lg bg-white px-6 py-4 font-medium text-black transition-colors hover:bg-gray-100 disabled:opacity-50"

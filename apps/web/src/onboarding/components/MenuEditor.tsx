@@ -271,6 +271,7 @@ export function MenuEditor({ restaurantId, mode, initialItems, categories, onBac
 
         {phase === 'editing' && (
           <button
+            data-onboarding-save
             onClick={handleSave}
             className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-gray-100 disabled:opacity-50"
           >

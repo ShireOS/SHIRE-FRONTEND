@@ -168,6 +168,7 @@ export function OnboardingPage() {
       onCancel={() => setShowCancelConfirmation(true)}
       onExit={() => void handleExit()}
       isFlowActionPending={isLoading}
+      saveError={onboarding.error}
     >
       <AnimatePresence mode="wait" initial={false}>
         <motion.div

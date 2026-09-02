@@ -265,6 +265,7 @@ export function FloorPlanEditor({ restaurantId, mode, initialTables, initialSect
 
         {phase === 'editing' && (
           <button
+            data-onboarding-save
             onClick={handleSave}
             className="px-4 py-2 bg-[rgb(var(--gold))] text-black text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
           >

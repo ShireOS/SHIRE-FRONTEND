@@ -194,6 +194,7 @@ export function MenuStep({ onboarding }: MenuStepProps) {
           return (
             <button
               key={option.id}
+              {...(option.id === 'skip' ? { 'data-onboarding-save': true } : {})}
               onClick={() => {
                 if (option.comingSoon) return
                 if (option.id === 'upload') { setMenuMode('upload'); return }
@@ -234,6 +235,7 @@ export function MenuStep({ onboarding }: MenuStepProps) {
 
       {/* Continue button */}
       <button
+        data-onboarding-save
         onClick={() => { void handleContinue() }}
         disabled={isLoading}
         className="w-full py-4 px-6 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
