@@ -365,7 +365,11 @@ gate; the bell remains disabled while access is unresolved or denied.
   canonical restaurant, POS, menu, hours, floor, and staffing records. Setup is
   a recovery route and is shown only while a required domain is incomplete;
   `onboarding_completed_at` remains historical metadata and is not the source
-  of truth. Permanent configuration ownership is Store Information (Basics and
+  of truth. The Stores card itself opens normal configuration. Its Finish setup
+  action resumes guided onboarding only when the saved step precedes the final
+  guided step and more than two canonical setup domains remain incomplete;
+  otherwise it opens targeted Setup recovery for the isolated gaps. Permanent
+  configuration ownership is Store Information (Basics and
   Goals), Marketing (Branding), Store Settings (Legal, Payments, Taxes & Charges,
   Cash/Closeout, Check Workflow, Hours), Integrations (current tools/service model
   and provider connections), Reservations (booking page/timing and AI phone

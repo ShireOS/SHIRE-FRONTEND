@@ -11,7 +11,9 @@ import { fetchMyInvites, revokeInvite, claimUrl } from '../data/boarding'
 import { useAnalyticsSummary } from '../data/analyticsSummary'
 import { loadRestaurantHomepageBootstrap } from '../data/homepageBootstrap'
 import { backOfficeApi } from '../../shared/api/backOfficeApi'
+import { ONBOARDING_STEPS } from '../../onboarding/components/OnboardingLayout'
 import { storeLifecycleAction } from './storeLifecycleActions'
+import { setupResumeDestination } from './setupResumeDestination'
 
 const ORDER_OPTIONS = [
   { value: 'name', label: 'Name A–Z' },
@@ -201,7 +203,7 @@ function IncompleteStoreDeleteDialog({ restaurant, onClose, onDeleted }) {
   )
 }
 
-function StoreCard({ restaurant, layout, onOpen, onIntent, onFinishSetup, onDeleteIncomplete, onOpenDangerZone, lifecycleAction, claimInvite, onRevokeInvite, summaryState }) {
+function StoreCard({ restaurant, layout, onOpen, onIntent, onFinishSetup, isFinishingSetup, onDeleteIncomplete, onOpenDangerZone, lifecycleAction, claimInvite, onRevokeInvite, summaryState }) {
   const location = [restaurant.city, restaurant.state].filter(Boolean).join(', ')
   const isDraft = restaurant.status === 'draft'
   const isActive = Boolean(restaurant.onboarding_completed_at)
@@ -258,9 +260,10 @@ function StoreCard({ restaurant, layout, onOpen, onIntent, onFinishSetup, onDele
           <button
             type="button"
             onClick={onFinishSetup}
+            disabled={isFinishingSetup}
             className="flex h-8 items-center gap-1.5 rounded-full border border-dash-warning/40 bg-dash-warning/10 px-3 text-xs font-semibold text-dash-warning transition hover:bg-dash-warning/20 active:scale-[0.98]"
           >
-            Finish setup
+            {isFinishingSetup ? 'Opening…' : 'Finish setup'}
           </button>
           {lifecycleAction === 'delete-incomplete' && (
             <button type="button" onClick={onDeleteIncomplete} className="text-xs font-semibold text-red-300 transition hover:text-red-200">
@@ -293,6 +296,7 @@ export default function StoresPage() {
   const [invites, setInvites] = useState([])
   const [modal, setModal] = useState(null) // 'board' | 'groups' | 'apply'
   const [incompleteStoreToDelete, setIncompleteStoreToDelete] = useState(null)
+  const [finishingStoreId, setFinishingStoreId] = useState(null)
 
   const canBoard = auth.accountType === 'reseller' || auth.accountType === 'admin'
   const restaurantBase = ['reseller', 'reseller_employee'].includes(auth.accountType)
@@ -378,14 +382,24 @@ export default function StoresPage() {
     })
   }, [])
 
-  // Owners resume the onboarding flow; resellers/admins land on the store's
-  // Setup page, where payout and payment details live.
   const finishSetup = async (restaurant) => {
-    await auth.switchRestaurant(restaurant.id)
-    if (auth.accountType === 'owner') {
-      navigate('/onboarding')
-    } else {
-      navigate(`${restaurantBase}/${restaurant.id}/setup`)
+    if (finishingStoreId) return
+    setFinishingStoreId(restaurant.id)
+    try {
+      const setupStatus = await queryClient.fetchQuery({
+        queryKey: queryKeys.setupStatus(restaurant.id),
+        queryFn: () => fetchWithSupabaseAuth(`/restaurants/${restaurant.id}/setup-status`),
+        staleTime: STALE_TIMES.setup,
+      }).catch(() => null)
+      await auth.switchRestaurant(restaurant.id)
+      navigate(setupResumeDestination({
+        restaurant,
+        setupStatus,
+        restaurantBase,
+        finalGuidedStep: ONBOARDING_STEPS.length - 1,
+      }))
+    } finally {
+      setFinishingStoreId(null)
     }
   }
 
@@ -571,6 +585,7 @@ export default function StoresPage() {
               onOpen={() => void openStore(restaurant)}
               onIntent={() => prefetchStoreHome(restaurant.id)}
               onFinishSetup={() => void finishSetup(restaurant)}
+              isFinishingSetup={finishingStoreId === restaurant.id}
               onDeleteIncomplete={() => setIncompleteStoreToDelete(restaurant)}
               onOpenDangerZone={() => void openDangerZone(restaurant)}
               lifecycleAction={storeLifecycleAction(restaurant, auth.user?.id)}
