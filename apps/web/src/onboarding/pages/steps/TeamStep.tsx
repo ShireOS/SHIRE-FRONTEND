@@ -43,7 +43,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
   const [email, setEmail] = useState('')
   const [employeeLoginId, setEmployeeLoginId] = useState('')
   const [role, setRole] = useState('server')
-  const [passcode, setPasscode] = useState('1111')
+  const [passcode, setPasscode] = useState('')
   const [suggestedWeeklyHours, setSuggestedWeeklyHours] = useState('')
   const [hourlyRate, setHourlyRate] = useState('')
   const [roleDrafts, setRoleDrafts] = useState<JobCodeData[]>(data.job_codes)
@@ -62,7 +62,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
     setEmail('')
     setEmployeeLoginId('')
     setRole('server')
-    setPasscode('1111')
+    setPasscode('')
     setSuggestedWeeklyHours('')
     setHourlyRate('')
     setFormError(null)
@@ -373,7 +373,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
                   updateRoleDraft(index, { label, code: code.id ? code.code : roleCode(label) })
                 }}
                 placeholder="Server"
-                className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))]"
+                className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))] placeholder:text-white/35"
               />
             </label>
             <label className="space-y-1">
@@ -383,7 +383,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
                 onChange={event => updateRoleDraft(index, { default_hourly_rate: sanitizeMoneyInput(event.target.value) })}
                 inputMode="decimal"
                 placeholder="$/hr"
-                className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))]"
+                className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))] placeholder:text-white/35"
               />
             </label>
             <label className="space-y-1">
@@ -491,7 +491,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
               }}
               onKeyDown={e => e.key === 'Enter' && void handleAddEmployee()}
               placeholder="Alice"
-              className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
+              className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
               autoFocus
             />
           </div>
@@ -508,7 +508,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
                 onBlur={() => setEmail(normalizeEmailInput(email))}
                 autoComplete="email"
                 placeholder="alice@restaurant.com"
-                className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
+                className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
               />
             </div>
 
@@ -521,7 +521,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
                 value={employeeLoginId}
                 onChange={e => setEmployeeLoginId(e.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, ''))}
                 placeholder={defaultEmployeeId(name) || 'alice'}
-                className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm font-mono"
+                className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm font-mono"
               />
             </div>
           </div>
@@ -554,9 +554,9 @@ export function TeamStep({ onboarding }: TeamStepProps) {
                 inputMode="numeric"
                 value={passcode}
                 onChange={e => setPasscode(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                placeholder="1111"
+                placeholder="e.g. 4826"
                 maxLength={4}
-                className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm font-mono"
+                className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm font-mono"
               />
             </div>
             <div>
@@ -571,7 +571,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
                 value={suggestedWeeklyHours}
                 onChange={e => setSuggestedWeeklyHours(sanitizeCountInput(e.target.value, 3))}
                 placeholder="28"
-                className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
+                className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
               />
             </div>
           </div>
@@ -584,7 +584,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
               value={hourlyRate}
               onChange={e => setHourlyRate(sanitizeMoneyInput(e.target.value))}
               placeholder={selectedJobCode?.default_hourly_rate || 'Role rate'}
-              className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
+              className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
             />
           </div>
 
