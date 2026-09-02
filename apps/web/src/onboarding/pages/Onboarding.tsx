@@ -26,6 +26,7 @@ import { MenuStep } from './steps/MenuStep'
 import { ModifierStep } from './steps/ModifierStep'
 import { RoutingStep } from './steps/RoutingStep'
 import { TeamStep } from './steps/TeamStep'
+import { AccountAccessStep } from './steps/AccountAccessStep'
 
 export function OnboardingPage() {
   const { isReady } = useRequireOnboarding()
@@ -144,6 +145,8 @@ export function OnboardingPage() {
         return <RoutingStep onboarding={onboarding} />
       case 20:
         return <TeamStep onboarding={onboarding} />
+      case 21:
+        return <AccountAccessStep onboarding={onboarding} />
       default:
         return null
     }

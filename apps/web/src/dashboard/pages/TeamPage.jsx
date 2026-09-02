@@ -43,6 +43,15 @@ import {
   updateResellerPermissions,
 } from '../data/resellerAccess'
 import { employeeNameConfirmationMatches } from '../utils/employeeForget'
+import JobAssignmentsFields from '../components/team/JobAssignmentsFields'
+import {
+  accountMinimumPosAuthority,
+  highestPosAuthority,
+  POS_AUTHORITY_OPTIONS,
+  POS_AUTHORITY_RANK,
+  posAuthorityForTier,
+  posAuthorityLabel,
+} from '../utils/posAuthority'
 
 const RESELLER_PERMISSION_LABELS = {
   devices: 'Devices & peripherals',
@@ -66,36 +75,6 @@ const roleLabel = (key) =>
 
 const permissionTierLabel = (value) => (
   PERMISSION_TIER_OPTIONS.find(option => option.value === value)?.label || roleLabel(value)
-)
-
-const POS_AUTHORITY_OPTIONS = [
-  { value: 'normal', label: 'Clock-in only' },
-  { value: 'waiter', label: 'Service staff' },
-  { value: 'manager', label: 'Manager' },
-]
-
-const POS_AUTHORITY_RANK = { normal: 0, waiter: 1, manager: 2 }
-
-const posAuthorityForTier = (value) => {
-  const normalized = String(value || '').trim().toLowerCase()
-  if (['owner', 'manager', 'admin'].includes(normalized)) return 'manager'
-  if (['waiter', 'server'].includes(normalized)) return 'waiter'
-  return 'normal'
-}
-
-const highestPosAuthority = (...values) => values
-  .flat()
-  .map(posAuthorityForTier)
-  .reduce((highest, value) => (
-    POS_AUTHORITY_RANK[value] > POS_AUTHORITY_RANK[highest] ? value : highest
-  ), 'normal')
-
-const accountMinimumPosAuthority = (role) => (
-  ['manager', 'owner'].includes(role) ? 'manager' : 'normal'
-)
-
-const posAuthorityLabel = (value) => (
-  POS_AUTHORITY_OPTIONS.find(option => option.value === posAuthorityForTier(value))?.label || 'Clock-in only'
 )
 
 const memberTypeLabel = (role) => (
@@ -246,114 +225,6 @@ function PinInput({ value, onCommit, disabled = false }) {
   )
 }
 
-function JobAssignmentsFields({ rows, onChange, disabled = false }) {
-  const selectedCount = rows.filter(row => row.selected).length
-
-  const updateRow = (index, patch) => {
-    onChange(rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
-  }
-
-  const togglePosition = (index) => {
-    const target = rows[index]
-    if (target.selected && selectedCount === 1) return
-    const selecting = !target.selected
-    let next = rows.map((row, rowIndex) => rowIndex === index
-      ? { ...row, selected: selecting, is_primary: selecting ? row.is_primary : false }
-      : row)
-    const selected = next.filter(row => row.selected)
-    if (selected.length > 0 && !selected.some(row => row.is_primary)) {
-      const nextPrimary = selected[0].job_code_id
-      next = next.map(row => ({ ...row, is_primary: row.job_code_id === nextPrimary }))
-    }
-    onChange(next)
-  }
-
-  const makePrimary = (index) => {
-    onChange(rows.map((row, rowIndex) => ({
-      ...row,
-      selected: rowIndex === index ? true : row.selected,
-      is_primary: rowIndex === index,
-    })))
-  }
-
-  return (
-    <div className="divide-y divide-dash-border border-y border-dash-border">
-      {rows.map((row, index) => {
-        const effectiveRate = effectiveStaffPayRate(row)
-        const unavailable = row.is_active === false || !row.job_code_id
-        return (
-          <div key={row.job_code_id || row.code} className="grid gap-3 py-3 sm:grid-cols-[minmax(150px,1fr)_110px_minmax(190px,1.25fr)] sm:items-center">
-            <label className="flex min-w-0 items-center gap-3">
-              <input
-                type="checkbox"
-                checked={row.selected}
-                disabled={disabled || (unavailable && !row.selected) || (row.selected && selectedCount === 1)}
-                onChange={() => togglePosition(index)}
-                className="h-4 w-4 accent-shell-accent"
-              />
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-semibold text-dash-cream">{row.label}</span>
-                <span className="block text-[11px] text-dash-tertiary">
-                  Default {money(row.default_hourly_rate)}
-                  {row.is_active === false ? ' · archived' : !row.job_code_id ? ' · position setup required' : ''}
-                </span>
-              </span>
-            </label>
-
-            <label className={`flex items-center gap-2 text-xs font-semibold ${row.selected ? 'text-dash-secondary' : 'text-dash-tertiary'}`}>
-              <input
-                type="radio"
-                name="primary-position"
-                checked={row.selected && row.is_primary}
-                disabled={disabled || !row.selected}
-                onChange={() => makePrimary(index)}
-                className="h-4 w-4 accent-shell-accent"
-              />
-              Primary
-            </label>
-
-            <div className={`flex min-w-0 flex-wrap items-center gap-2 ${row.selected ? '' : 'opacity-45'}`}>
-              <label className="flex items-center gap-2 text-xs font-semibold text-dash-secondary">
-                <input
-                  type="checkbox"
-                  checked={row.use_custom_rate}
-                  disabled={disabled || !row.selected}
-                  onChange={(event) => updateRow(index, {
-                    use_custom_rate: event.target.checked,
-                    hourly_rate_override: event.target.checked ? row.hourly_rate_override : '',
-                  })}
-                  className="h-4 w-4 accent-shell-accent"
-                />
-                Custom rate
-              </label>
-              {row.use_custom_rate ? (
-                <span className="flex items-center gap-1">
-                  <span className="text-xs text-dash-tertiary">$</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={row.hourly_rate_override}
-                    disabled={disabled || !row.selected}
-                    onChange={(event) => updateRow(index, { hourly_rate_override: event.target.value })}
-                    aria-label={`${row.label} custom hourly rate`}
-                    className="w-24 rounded-lg border border-dash-border bg-[var(--glass-bg)] px-2 py-1.5 font-mono text-xs tabular-nums text-dash-cream outline-none focus:border-shell-accent/60"
-                  />
-                  <span className="text-xs text-dash-tertiary">/hr</span>
-                </span>
-              ) : (
-                <span className="text-xs text-dash-tertiary">
-                  Pays {effectiveRate === null ? 'no configured rate' : money(effectiveRate)}
-                </span>
-              )}
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
 function EmployeeJobsPayModal({ waiter, accountRole, jobCodes, onClose, onSave }) {
   const [rows, setRows] = useState(() => staffPayDrafts(waiter, jobCodes))
   const [posAuthority, setPosAuthority] = useState(() => posAuthorityForTier(waiter.pos_role))
@@ -436,7 +307,7 @@ const invitationRoleForWaiter = (waiter) => {
   return posAuthorityForTier(waiter?.pos_role) === 'manager' ? 'manager' : 'server'
 }
 
-function AddTeamMemberModal({ restaurantId, waiters, jobCodes, roleDefaultsForRole, grantCap, accountTypeOptions, cloneResellerAccess, templates, onCreateTemplate, initialWaiterId, initialRole, onClose, onAdded }) {
+export function AddTeamMemberModal({ restaurantId, waiters, jobCodes, roleDefaultsForRole, grantCap, accountTypeOptions, cloneResellerAccess, templates, onCreateTemplate, initialWaiterId, initialRole, onClose, onAdded }) {
   const initialWaiter = waiters.find((waiter) => waiter.id === initialWaiterId)
   const initialAccountRole = initialRole || invitationRoleForWaiter(initialWaiter)
   const initialRows = newStaffPayDrafts(jobCodes)
@@ -802,7 +673,7 @@ function AddTeamMemberModal({ restaurantId, waiters, jobCodes, roleDefaultsForRo
 
 // Per-member permission drawer. Edits the FULL effective map; only the keys
 // that differ from the role defaults are persisted as permission_overrides.
-function MemberPermissionsModal({ restaurantId, member, waiters, roleDefaultsForRole, accountTypeOptions, grantCap, templates, onCreateTemplate, onClose, onSaved }) {
+export function MemberPermissionsModal({ restaurantId, member, waiters, roleDefaultsForRole, accountTypeOptions, grantCap, templates, onCreateTemplate, onClose, onSaved }) {
   const [role, setRole] = useState(member.role)
   const [waiterId, setWaiterId] = useState(member.waiter_id || '')
   const linkedWaiter = waiters.find(waiter => waiter.id === waiterId) || null

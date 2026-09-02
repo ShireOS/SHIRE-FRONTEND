@@ -6,7 +6,7 @@ const team = await readFile(new URL('./pages/steps/TeamStep.tsx', import.meta.ur
 
 test('empty employee examples use an explicit faded placeholder style', () => {
   assert.doesNotMatch(team, /placeholder-\[rgb/)
-  assert.equal((team.match(/placeholder:text-white\/35/g) || []).length, 8)
+  assert.equal((team.match(/placeholder:text-white\/35/g) || []).length, 7)
   assert.match(team, /placeholder="Alice"[\s\S]*placeholder:text-white\/35/)
   assert.match(team, /placeholder="alice@restaurant\.com"[\s\S]*placeholder:text-white\/35/)
 })

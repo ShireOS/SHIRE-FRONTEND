@@ -100,6 +100,13 @@
   reseller store-detail workspaces remain under `/reseller/restaurants/:id/*`.
   Store-owner claims remain in `store_invites`, are also email-bound, and use the
   same mail provider. Temporary-password account creation is not a supported UI path.
+  Guided onboarding keeps POS staffing and account access explicit: POS Team
+  persists and reloads waiter profiles, structured position/pay assignments,
+  PINs, and person-level POS authority; the final Accounts & Access step reuses
+  Team's invitation composer for employee, manager, owner, and reseller access,
+  including permission caps, presentation policy, email delivery, manual links,
+  resend, revoke, and the same existing-member Account & View editor available
+  in Team. A POS-profile email by itself never sends an invitation.
 - **Permanent employee deletion is an audited privacy scrub, not a historical
   cascade.** Team may offer Delete permanently only after the employee is
   deactivated and under existing `team.edit_employees` hierarchy checks. The

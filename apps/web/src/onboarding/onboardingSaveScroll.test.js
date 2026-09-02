@@ -8,6 +8,7 @@ const menu = await readFile(new URL('./pages/steps/MenuStep.tsx', import.meta.ur
 const modifiers = await readFile(new URL('./components/ModifierEditor.tsx', import.meta.url), 'utf8')
 const routing = await readFile(new URL('./pages/steps/RoutingStep.tsx', import.meta.url), 'utf8')
 const team = await readFile(new URL('./pages/steps/TeamStep.tsx', import.meta.url), 'utf8')
+const accountAccess = await readFile(new URL('./pages/steps/AccountAccessStep.tsx', import.meta.url), 'utf8')
 const tipPayroll = await readFile(new URL('./pages/steps/TipPayrollStep.tsx', import.meta.url), 'utf8')
 
 test('onboarding form saves, step changes, and backend errors return to the top', () => {
@@ -24,7 +25,8 @@ test('standalone onboarding save controls opt into the same scroll behavior', ()
   assert.match(modifiers, /data-onboarding-save[\s\S]*Saving modifiers\.\.\.' : 'Continue'/)
   assert.match(tipPayroll, /data-onboarding-save[\s\S]*handleContinue/)
   assert.match(routing, /data-onboarding-save[\s\S]*savingReview[\s\S]*'Continue'/)
-  assert.match(team, /data-onboarding-save[\s\S]*completeOnboarding/)
+  assert.match(team, /data-onboarding-save[\s\S]*onClick=\{nextStep\}/)
+  assert.match(accountAccess, /data-onboarding-save[\s\S]*completeOnboarding/)
 })
 
 test('routing setup keeps successful inline actions in place and scrolls only local failures', () => {

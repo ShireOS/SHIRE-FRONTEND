@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../../../shared/lib/supabase'
 import { API_CONFIG } from '../../../shared/api/config'
 import { fetchPosApi } from '../../../shared/api/posClient'
+import { backOfficeApi } from '../../../shared/api/backOfficeApi'
 import type { JobCodeData, RolePermissionData, UseOnboardingReturn } from '../../hooks/useOnboarding'
 import {
   collapseEntryWhitespace,
@@ -15,6 +16,16 @@ import {
   slugRoleCode,
 } from '@shire/settings'
 import { cashDrawerRoleSummary } from '../../../dashboard/utils/cashDrawerPermissions'
+import {
+  newStaffPayDrafts,
+  staffPayPayload,
+  validateStaffPayDrafts,
+} from '../../../dashboard/utils/staffPay'
+import {
+  highestPosAuthority,
+  POS_AUTHORITY_OPTIONS,
+} from '../../../dashboard/utils/posAuthority'
+import JobAssignmentsFields from '../../../dashboard/components/team/JobAssignmentsFields'
 
 interface TeamStepProps {
   onboarding: UseOnboardingReturn
@@ -25,27 +36,36 @@ interface StaffMember {
   name: string
   email?: string | null
   role: string
+  roles?: string[]
   job_code_id?: string | null
   hourly_rate?: number | string | null
   pos_passcode: string
+  pos_role?: string | null
+  job_assignments?: Array<{
+    job_code_id?: string | null
+    code?: string | null
+    label?: string | null
+    is_primary?: boolean
+    hourly_rate_override?: number | string | null
+    default_hourly_rate?: number | string | null
+  }>
   employee_login_id?: string | null
   suggested_weekly_hours?: number | null
 }
 
 export function TeamStep({ onboarding }: TeamStepProps) {
-  const { restaurantId, data, updateData, completeOnboarding, isLoading, error, completionIssues } = onboarding
-  const completionError = completionIssues[0]?.message ?? null
-  const cannotComplete = completionIssues.length > 0
+  const { restaurantId, data, updateData, nextStep, isLoading, error } = onboarding
 
   const [staffList, setStaffList] = useState<StaffMember[]>([])
+  const [isLoadingStaff, setIsLoadingStaff] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [employeeLoginId, setEmployeeLoginId] = useState('')
-  const [role, setRole] = useState('server')
   const [passcode, setPasscode] = useState('')
   const [suggestedWeeklyHours, setSuggestedWeeklyHours] = useState('')
-  const [hourlyRate, setHourlyRate] = useState('')
+  const [assignmentRows, setAssignmentRows] = useState(() => newStaffPayDrafts(data.job_codes, 'server'))
+  const [posAuthority, setPosAuthority] = useState('waiter')
   const [roleDrafts, setRoleDrafts] = useState<JobCodeData[]>(data.job_codes)
   const [isSavingRoles, setIsSavingRoles] = useState(false)
   const [isAdding, setIsAdding] = useState(false)
@@ -56,17 +76,6 @@ export function TeamStep({ onboarding }: TeamStepProps) {
   const visibleRoleDrafts = roleDrafts
     .map((code, index) => ({ code, index }))
     .filter(({ code }) => code.is_active !== false)
-
-  const resetForm = () => {
-    setName('')
-    setEmail('')
-    setEmployeeLoginId('')
-    setRole('server')
-    setPasscode('')
-    setSuggestedWeeklyHours('')
-    setHourlyRate('')
-    setFormError(null)
-  }
 
   const defaultEmployeeId = (value: string) =>
     value.trim().split(/\s+/)[0]?.toLowerCase().replace(/[^a-z0-9_]+/g, '') || ''
@@ -79,11 +88,61 @@ export function TeamStep({ onboarding }: TeamStepProps) {
   const defaultPermissionForRole = (code: JobCodeData): RolePermissionData =>
     defaultRolePermission(roleCode(code.code || code.label), code.permission_tier)
 
-  const selectedJobCode = activeJobCodes.find(code => code.code === role)
-  const selectedRoleKey = roleCode(selectedJobCode?.code || selectedJobCode?.label || role)
+  const selectedAssignments = assignmentRows.filter(row => row.selected)
+  const minimumPosAuthority = highestPosAuthority(
+    selectedAssignments.map(row => row.permission_tier),
+  )
+  const effectivePosAuthority = highestPosAuthority(posAuthority, minimumPosAuthority)
+
+  const primaryAssignment = selectedAssignments.find(row => row.is_primary) || selectedAssignments[0]
+  const selectedRoleKey = roleCode(primaryAssignment?.code || 'server')
   const selectedRolePermission = data.role_permissions.find(row => row.role_key === selectedRoleKey)
-    || (selectedJobCode ? defaultPermissionForRole(selectedJobCode) : {})
+    || (activeJobCodes.find(code => roleCode(code.code) === selectedRoleKey)
+      ? defaultPermissionForRole(activeJobCodes.find(code => roleCode(code.code) === selectedRoleKey)!)
+      : {})
   const selectedRoleCashSummary = cashDrawerRoleSummary(selectedRolePermission, data.closeout_settings)
+
+  useEffect(() => {
+    if (!restaurantId) return
+    let cancelled = false
+    setIsLoadingStaff(true)
+    backOfficeApi.teamWorkspace(restaurantId)
+      .then(workspace => {
+        if (cancelled) return
+        const waiters = Array.isArray(workspace?.waiters) ? workspace.waiters as unknown as StaffMember[] : []
+        const workspaceJobCodes = Array.isArray(workspace?.job_codes) ? workspace.job_codes as unknown as JobCodeData[] : []
+        setStaffList(waiters.filter(waiter => Boolean(waiter?.id)))
+        if (workspaceJobCodes.length > 0) {
+          setRoleDrafts(workspaceJobCodes)
+          setAssignmentRows(newStaffPayDrafts(workspaceJobCodes, 'server'))
+        }
+      })
+      .catch(loadError => {
+        if (!cancelled) setFormError(loadError instanceof Error ? loadError.message : 'Could not load saved staff')
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingStaff(false)
+      })
+    return () => { cancelled = true }
+  }, [restaurantId])
+
+  const resetForm = () => {
+    setName('')
+    setEmail('')
+    setEmployeeLoginId('')
+    setPasscode('')
+    setSuggestedWeeklyHours('')
+    setAssignmentRows(newStaffPayDrafts(activeJobCodes, 'server'))
+    setPosAuthority('waiter')
+    setFormError(null)
+  }
+
+  const openEmployeeForm = () => {
+    setAssignmentRows(newStaffPayDrafts(activeJobCodes, 'server'))
+    setPosAuthority('waiter')
+    setShowForm(true)
+    setFormError(null)
+  }
 
   const updateRoleDraft = (index: number, patch: Partial<JobCodeData>) => {
     setRoleDrafts(current => current.map((row, currentIndex) => currentIndex === index ? { ...row, ...patch } : row))
@@ -112,8 +171,6 @@ export function TeamStep({ onboarding }: TeamStepProps) {
       const next = removed?.id
         ? current.map((row, currentIndex) => currentIndex === index ? { ...row, is_active: false } : row)
         : current.filter((_, currentIndex) => currentIndex !== index)
-      const nextActive = next.filter(code => code.is_active !== false)
-      if (removed?.code === role) setRole(nextActive[0]?.code || 'server')
       return next
     })
   }
@@ -179,7 +236,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
       }))
       const activeNormalized = normalized.filter(code => code.is_active !== false)
       setRoleDrafts(normalized)
-      if (!activeNormalized.some(code => code.code === role)) setRole(activeNormalized[0]?.code || 'server')
+      setAssignmentRows(newStaffPayDrafts(activeNormalized, 'server'))
       updateData({
         job_codes: activeNormalized,
         role_permissions: activeNormalized.map(code => {
@@ -244,9 +301,9 @@ export function TeamStep({ onboarding }: TeamStepProps) {
       return
     }
     const hoursError = numberRangeError(suggestedWeeklyHours, 'Suggested weekly hours', { min: 0, max: 168 })
-    const rateError = numberRangeError(hourlyRate, 'Hourly override', { min: 0 })
-    if (hoursError || rateError) {
-      setFormError(hoursError || rateError)
+    const assignmentError = validateStaffPayDrafts(assignmentRows)
+    if (hoursError || assignmentError) {
+      setFormError(hoursError || assignmentError)
       return
     }
 
@@ -272,10 +329,9 @@ export function TeamStep({ onboarding }: TeamStepProps) {
           body: JSON.stringify({
             name: name.trim(),
             email: normalizedEmail || null,
-            role,
-            job_code_id: selectedJobCode?.id || null,
-            hourly_rate: hourlyRate === '' ? null : Number(hourlyRate),
             pos_passcode: passcode,
+            pos_authority: effectivePosAuthority,
+            job_assignments: staffPayPayload(assignmentRows),
             employee_login_id: loginId,
             suggested_weekly_hours: suggestedWeeklyHours === '' ? null : Number(suggestedWeeklyHours),
           }),
@@ -292,9 +348,12 @@ export function TeamStep({ onboarding }: TeamStepProps) {
         name?: string
         email?: string | null
         role?: string
+        roles?: string[]
         job_code_id?: string | null
         hourly_rate?: number | string | null
         pos_passcode?: string
+        pos_role?: string | null
+        job_assignments?: StaffMember['job_assignments']
         employee_login_id?: string | null
         suggested_weekly_hours?: number | null
       }
@@ -305,10 +364,13 @@ export function TeamStep({ onboarding }: TeamStepProps) {
           id: created.id || String(Date.now()),
           name: created.name || name.trim(),
           email: created.email || normalizedEmail || null,
-          role: created.role || role,
-          job_code_id: created.job_code_id || selectedJobCode?.id || null,
-          hourly_rate: created.hourly_rate ?? (hourlyRate === '' ? null : Number(hourlyRate)),
+          role: created.role || primaryAssignment?.code || 'server',
+          roles: created.roles,
+          job_code_id: created.job_code_id || primaryAssignment?.job_code_id || null,
+          hourly_rate: created.hourly_rate ?? null,
           pos_passcode: created.pos_passcode || passcode,
+          pos_role: created.pos_role || effectivePosAuthority,
+          job_assignments: created.job_assignments,
           employee_login_id: created.employee_login_id || loginId,
           suggested_weekly_hours: created.suggested_weekly_hours ?? (suggestedWeeklyHours === '' ? null : Number(suggestedWeeklyHours)),
         },
@@ -323,21 +385,11 @@ export function TeamStep({ onboarding }: TeamStepProps) {
     }
   }
 
-  const handleRemove = (id: string) => {
-    setStaffList(prev => prev.filter(s => s.id !== id))
-  }
-
   return (
     <div className="space-y-6">
       {error && (
         <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
           {error}
-        </div>
-      )}
-
-      {completionError && (
-        <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm">
-          {completionError}
         </div>
       )}
 
@@ -436,7 +488,10 @@ export function TeamStep({ onboarding }: TeamStepProps) {
       </div>
 
       <div className="space-y-3">
-        {staffList.length === 0 && !showForm && (
+        {isLoadingStaff && (
+          <p className="py-4 text-center text-sm text-[rgb(var(--text-tertiary))]">Loading saved staff…</p>
+        )}
+        {!isLoadingStaff && staffList.length === 0 && !showForm && (
           <div className="py-8 rounded-lg border border-dashed border-[rgba(255,255,255,0.1)] text-center">
             <p className="text-[rgb(var(--text-tertiary))] text-sm">
               No staff added yet. Add employees so they can log into the POS.
@@ -447,30 +502,27 @@ export function TeamStep({ onboarding }: TeamStepProps) {
         {staffList.map(staff => (
           <div
             key={staff.id}
-            className="flex items-center justify-between p-4 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)]"
+            className="p-4 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)]"
           >
-            <div>
-              <p className="text-[rgb(var(--text-primary))] font-medium text-sm">{staff.name}</p>
-              <p className="text-xs text-[rgb(var(--text-tertiary))] mt-0.5 capitalize">
-                {staff.role} · ID:{' '}
-                <span className="font-mono normal-case">{staff.employee_login_id || 'auto'}</span>
-                {' '}· PIN: <span className="font-mono">{staff.pos_passcode}</span>
-                {staff.hourly_rate ? <span> · ${staff.hourly_rate}/hr</span> : null}
-                {staff.suggested_weekly_hours ? <span> · {staff.suggested_weekly_hours} hrs/week</span> : null}
-                {staff.email ? <span className="normal-case"> · {staff.email}</span> : null}
-              </p>
-            </div>
-            <button
-              onClick={() => handleRemove(staff.id)}
-              className="p-1.5 text-[rgb(var(--text-tertiary))] hover:text-red-400 transition-colors"
-              aria-label="Remove employee"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <p className="text-[rgb(var(--text-primary))] font-medium text-sm">{staff.name}</p>
+            <p className="text-xs text-[rgb(var(--text-tertiary))] mt-0.5">
+              {(staff.job_assignments || [])
+                .map(assignment => assignment.label || assignment.code)
+                .filter(Boolean)
+                .join(' · ') || staff.role}
+              {' '}· {staff.pos_role || 'normal'} POS · ID:{' '}
+              <span className="font-mono">{staff.employee_login_id || 'auto'}</span>
+              {' '}· PIN <span className="font-mono">{staff.pos_passcode}</span>
+              {staff.suggested_weekly_hours ? <span> · {staff.suggested_weekly_hours} hrs/week</span> : null}
+              {staff.email ? <span> · {staff.email}</span> : null}
+            </p>
           </div>
         ))}
+        {staffList.length > 0 && (
+          <p className="text-xs leading-5 text-[rgb(var(--text-tertiary))]">
+            These are saved POS profiles. Deactivation and permanent deletion remain in Team after setup so a local card can never hide a persisted employee.
+          </p>
+        )}
       </div>
 
       {/* Inline add form */}
@@ -526,24 +578,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <div>
-              <label className="block text-xs font-medium text-[rgb(var(--text-secondary))] mb-1.5">
-                Role
-              </label>
-              <select
-                value={role}
-                onChange={e => setRole(e.target.value)}
-                className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
-              >
-                {activeJobCodes.map(r => (
-                  <option key={r.code} value={r.code} className="bg-[#1a1a1a] capitalize">
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
               <label className="block text-xs font-medium text-[rgb(var(--text-secondary))] mb-1.5">
                 POS Passcode{' '}
@@ -575,21 +610,45 @@ export function TeamStep({ onboarding }: TeamStepProps) {
               />
             </div>
           </div>
+
+          <div className="space-y-2">
+            <div>
+              <p className="text-xs font-medium text-[rgb(var(--text-secondary))]">Positions &amp; pay</p>
+              <p className="mt-1 text-xs leading-5 text-[rgb(var(--text-tertiary))]">
+                Select every position they may clock in as, choose one primary position, and override pay only where needed.
+              </p>
+            </div>
+            <JobAssignmentsFields rows={assignmentRows} onChange={setAssignmentRows} disabled={isAdding} />
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-[rgb(var(--text-secondary))] mb-1.5">
-              Hourly override <span className="text-[rgb(var(--text-tertiary))] font-normal">(optional)</span>
+              POS authority
             </label>
-            <input
-              inputMode="decimal"
-              value={hourlyRate}
-              onChange={e => setHourlyRate(sanitizeMoneyInput(e.target.value))}
-              placeholder={selectedJobCode?.default_hourly_rate || 'Role rate'}
-              className="w-full px-3 py-2 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder:text-white/35 focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)] text-sm"
-            />
+            <select
+              value={effectivePosAuthority}
+              onChange={event => setPosAuthority(event.target.value)}
+              disabled={isAdding}
+              className="w-full rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.05)] px-3 py-2 text-sm text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
+            >
+              {POS_AUTHORITY_OPTIONS.map(option => (
+                <option
+                  key={option.value}
+                  value={option.value}
+                  disabled={highestPosAuthority(option.value, minimumPosAuthority) !== option.value}
+                  className="bg-[#1a1a1a]"
+                >
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs leading-5 text-[rgb(var(--text-tertiary))]">
+              Authority applies in every position. The selected position controls pay, tips, and shift duties.
+            </p>
           </div>
 
           <p className="text-xs text-amber-400/70">
-            Employees can sign in with email + PIN or employee ID + PIN after selecting the restaurant.
+            This creates a POS profile. Email account access and the invitation are configured on the next step.
           </p>
 
           <div className="flex flex-wrap gap-2 text-xs text-[rgb(var(--text-tertiary))]">
@@ -627,7 +686,7 @@ export function TeamStep({ onboarding }: TeamStepProps) {
         </div>
       ) : (
         <button
-          onClick={() => setShowForm(true)}
+          onClick={openEmployeeForm}
           className="w-full py-3 px-4 border border-dashed border-[rgba(255,255,255,0.2)] hover:border-[rgba(201,169,98,0.4)] rounded-lg text-[rgb(var(--text-tertiary))] hover:text-[rgb(var(--gold))] transition-all text-sm flex items-center justify-center gap-2"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -637,36 +696,18 @@ export function TeamStep({ onboarding }: TeamStepProps) {
         </button>
       )}
 
-      {/* Complete / Skip */}
+      {/* Continue to account access */}
       <div className="space-y-3 pt-2">
         <button
           data-onboarding-save
-          onClick={() => void completeOnboarding()}
-          disabled={isLoading || cannotComplete}
+          onClick={nextStep}
+          disabled={isLoading || isAdding || isSavingRoles}
           className="w-full py-4 px-6 bg-white text-black hover:bg-gray-100 disabled:opacity-50 font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
         >
-          {isLoading ? (
-            <>
-              <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-[#d4a854]" />
-              Finishing setup...
-            </>
-          ) : (
-            <>
-              Complete Setup
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </>
-          )}
-        </button>
-
-        <button
-          data-onboarding-save
-          onClick={() => void completeOnboarding()}
-          disabled={isLoading || cannotComplete}
-          className="w-full py-2 text-sm text-[rgb(var(--text-tertiary))] hover:text-[rgb(var(--text-primary))] transition-colors"
-        >
-          Skip for now
+          Continue to account access
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
         </button>
       </div>
     </div>

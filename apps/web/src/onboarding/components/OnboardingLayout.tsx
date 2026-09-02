@@ -28,7 +28,8 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   { id: 'menu', title: 'Menu Setup', description: 'Import your menu' },
   { id: 'modifiers', title: 'Menu Modifiers', description: 'Add-ons and customizations' },
   { id: 'routing', title: 'Kitchen Routing', description: 'Stations, targets, and fallback' },
-  { id: 'team', title: 'Add Your Staff', description: 'So waiters can log into the POS' },
+  { id: 'team', title: 'POS Team', description: 'Positions, pay, PINs, and in-store authority' },
+  { id: 'account_access', title: 'Accounts & Access', description: 'Email invitations, permissions, and Back Office views' },
 ]
 
 interface OnboardingLayoutProps {
