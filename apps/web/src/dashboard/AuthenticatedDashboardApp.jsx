@@ -5439,6 +5439,7 @@ export function RestaurantWorkspace({
             restaurantId={restaurantId}
             auth={auth}
             setupWarnings={setupWarnings}
+            setupStatus={setupStatusQuery.data}
             onSetupChanged={handleSetupChanged}
           />
         </DashboardShell>

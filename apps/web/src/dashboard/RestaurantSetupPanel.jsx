@@ -108,6 +108,7 @@ import {
   normalizeWorkweekStartWeekday,
   WORKWEEK_START_DAY_OPTIONS,
 } from './workweekSettings'
+import { setupTabWarnings as resolveSetupTabWarnings } from './setupTabWarnings'
 
 const SETUP_TABS = [
   { id: 'basics', label: 'Basics' },
@@ -374,8 +375,10 @@ function WarningTriangle({ className = '' }) {
     <span
       aria-label="Needs attention"
       title="Needs attention"
-      className={`inline-block h-0 w-0 border-x-[5px] border-b-[9px] border-x-transparent border-b-amber-300 ${className}`}
-    />
+      className={`inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-300 text-[10px] font-black leading-none text-black ${className}`}
+    >
+      !
+    </span>
   )
 }
 
@@ -1547,6 +1550,7 @@ export default function RestaurantSetupPanel({
   restaurantId,
   auth,
   setupWarnings = {},
+  setupStatus = null,
   onSetupChanged,
   propagationContext = null,
   allowedTabs = null,
@@ -1564,6 +1568,10 @@ export default function RestaurantSetupPanel({
   const visibleSetupTabIds = visibleSetupTabs.map(tab => tab.id).join(',')
   const [activeSetupTab, setActiveSetupTab] = useState(() => initialTab || visibleSetupTabs[0]?.id || 'basics')
   const activeTabIsSummary = summaryTabs.includes(activeSetupTab)
+  const tabWarnings = useMemo(
+    () => resolveSetupTabWarnings(setupWarnings, setupStatus),
+    [setupStatus, setupWarnings],
+  )
   const [coverImageUrl, setCoverImageUrl] = useState(restaurant.cover_image_url || '')
   const [pendingCoverFile, setPendingCoverFile] = useState(null)
   const [pendingCoverPreviewUrl, setPendingCoverPreviewUrl] = useState('')
@@ -3114,7 +3122,7 @@ export default function RestaurantSetupPanel({
               ].join(' ')}
             >
               {item.label}
-              {setupWarnings[item.id]?.length > 0 && <WarningTriangle className="ml-2 align-middle" />}
+              {tabWarnings[item.id]?.length > 0 && <WarningTriangle className="ml-2 align-middle" />}
             </button>
           ))}
         </nav>
@@ -3135,7 +3143,7 @@ export default function RestaurantSetupPanel({
               ].join(' ')}
             >
               {item.label}
-              {setupWarnings[item.id]?.length > 0 && <WarningTriangle className="ml-2 align-middle" />}
+              {tabWarnings[item.id]?.length > 0 && <WarningTriangle className="ml-2 align-middle" />}
             </button>
           ))}
         </nav>
@@ -3157,10 +3165,10 @@ export default function RestaurantSetupPanel({
           title={visibleSetupTabs.find((tab) => tab.id === activeSetupTab)?.label || 'Configuration'}
           description="Current configuration status"
         >
-          {setupWarnings[activeSetupTab]?.length > 0 ? (
+          {tabWarnings[activeSetupTab]?.length > 0 ? (
             <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-4">
               <p className="text-sm font-semibold text-amber-100">Needs attention</p>
-              <p className="mt-1 text-sm text-amber-100/80">{setupWarnings[activeSetupTab].join(', ')}</p>
+              <p className="mt-1 text-sm text-amber-100/80">{tabWarnings[activeSetupTab].join(', ')}</p>
             </div>
           ) : (
             <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/[0.06] p-4 text-sm font-semibold text-emerald-100">
@@ -3175,9 +3183,9 @@ export default function RestaurantSetupPanel({
           description="Restaurant profile, service modes, and default guest flow from Stage 1 onboarding."
           actions={publishControls('Save basics', saveBasics, 'basics')}
         >
-          {setupWarnings.basics?.length > 0 && (
+          {tabWarnings.basics?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
-              Missing: {setupWarnings.basics.join(', ')}
+              Missing: {tabWarnings.basics.join(', ')}
             </div>
           )}
           <div className="space-y-6">
@@ -3400,9 +3408,9 @@ export default function RestaurantSetupPanel({
           description="Legal entity details and the placeholder Shire agreement signature captured during Stage 1 onboarding."
           actions={publishControls('Save legal', saveLegal, 'legal')}
         >
-          {setupWarnings.legal?.length > 0 && (
+          {tabWarnings.legal?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
-              Missing: {setupWarnings.legal.join(', ')}
+              Missing: {tabWarnings.legal.join(', ')}
             </div>
           )}
           <div className="grid gap-4 md:grid-cols-2">
@@ -3450,9 +3458,9 @@ export default function RestaurantSetupPanel({
           description="Bank account readiness and default processing behavior for refunds, tips, and batch close."
           actions={publishControls('Save payments', savePayments, 'payments')}
         >
-          {setupWarnings.payments?.length > 0 && (
+          {tabWarnings.payments?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
-              Missing: {setupWarnings.payments.join(', ')}
+              Missing: {tabWarnings.payments.join(', ')}
             </div>
           )}
           <div className="grid gap-4 md:grid-cols-2">
@@ -4099,9 +4107,9 @@ export default function RestaurantSetupPanel({
           description="Sections are areas in your restaurant, such as Bar, Patio, Outdoor, or Main Dining. Tables in the floor plan are assigned to one of these categories, and unassigned tables default to Table."
           actions={publishControls('Save sections', saveSections, 'sections')}
         >
-          {setupWarnings.sections?.length > 0 && (
+          {tabWarnings.sections?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
-              Missing: {setupWarnings.sections.join(', ')}
+              Missing: {tabWarnings.sections.join(', ')}
             </div>
           )}
           <div className="space-y-4">
@@ -4371,9 +4379,9 @@ export default function RestaurantSetupPanel({
           description="Seating capacity plus the visual table editor from onboarding. Use this to add, move, resize, and edit table seats."
           actions={publishControls('Save capacity', (publication) => saveCapacity({}, publication), 'capacity')}
         >
-          {setupWarnings.capacity?.length > 0 && (
+          {tabWarnings.capacity?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
-              Missing: {setupWarnings.capacity.join(', ')}
+              Missing: {tabWarnings.capacity.join(', ')}
             </div>
           )}
           <div className="space-y-6">
@@ -4496,9 +4504,9 @@ export default function RestaurantSetupPanel({
           title="Employees"
           description="Employee records, roles, login IDs, emails, and PIN updates. This replaces the old separate Roles tab."
         >
-          {setupWarnings.employees?.length > 0 && (
+          {tabWarnings.employees?.length > 0 && (
             <div className="mb-5 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100">
-              Missing: {setupWarnings.employees.join(', ')}
+              Missing: {tabWarnings.employees.join(', ')}
             </div>
           )}
           <div className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-4 lg:grid-cols-[1fr_1fr_140px_110px_110px_120px_130px_auto]">

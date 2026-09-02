@@ -1308,6 +1308,7 @@ function ResellerSetupEditor() {
         restaurantId={restaurantId}
         auth={auth}
         setupWarnings={setupWarnings}
+        setupStatus={setupStatus}
         onSetupChanged={() => setSetupRefreshKey(key => key + 1)}
         propagationContext={{
           restaurants,
