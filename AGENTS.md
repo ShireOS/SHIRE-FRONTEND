@@ -185,6 +185,10 @@
   reservation, or webhook history. ML rechecks those conditions under lock and
   deletes all tenant setup rows atomically. Completed or operational stores must
   use the recoverable Danger Zone lifecycle; clearing browser state is not Cancel.
+  The canonical Stores overview exposes the same primary-owner-only distinction:
+  an eligible unfinished onboarding card opens an exact-name permanent-deletion
+  confirmation, while a completed store card links to Store Settings -> Danger
+  Zone and never bypasses readiness, password, recovery, or audit safeguards.
 - Store deletion is a service-owned lifecycle, never a browser DELETE. The
   Danger Zone accepts only the exact case-sensitive store name plus the primary
   owner's Supabase password and performs a final POS-owned readiness recheck

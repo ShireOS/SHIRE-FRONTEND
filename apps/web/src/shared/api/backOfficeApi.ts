@@ -177,6 +177,12 @@ export interface RestaurantLifecycleMutation {
 }
 
 export const backOfficeApi = {
+  cancelOnboardingRestaurant: (restaurantId: string): Promise<{ restaurant_id: string; deleted: true }> =>
+    fetchWithSupabaseAuth(`/restaurants/${restaurantId}/onboarding-cancellation`, {
+      method: 'POST',
+      timeoutMs: LIFECYCLE_MUTATION_TIMEOUT_MS,
+    }),
+
   deletionReadiness: (restaurantId: string): Promise<RestaurantDeletionReadiness> =>
     fetchWithSupabaseAuth(`/restaurants/${restaurantId}/deletion-readiness`, {
       timeoutMs: LIFECYCLE_READ_TIMEOUT_MS,

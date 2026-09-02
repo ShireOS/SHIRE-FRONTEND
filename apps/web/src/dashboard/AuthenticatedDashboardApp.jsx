@@ -5511,7 +5511,7 @@ export function RestaurantWorkspace({
           <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['branding']} showHeader={false} />
         )}
         {activeTab === 'settings' && (
-          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[
+          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} initialTab={activeSection === 'lifecycle' ? 'lifecycle' : null} allowedTabs={[
             ...(backOfficeAccess.viewVisible('settings.legal') ? ['legal'] : []),
             ...(backOfficeAccess.viewVisible('settings.payments') ? ['payments'] : []),
             ...(backOfficeAccess.viewVisible('settings.taxes') || backOfficeAccess.viewVisible('settings.charges') ? ['taxes_charges'] : []),

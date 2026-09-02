@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Check, ChevronDown, Copy, FolderKanban, LayoutGrid, List, Plus, Search, Send, Store } from 'lucide-react'
+import { AlertTriangle, Check, ChevronDown, Copy, FolderKanban, LayoutGrid, List, Plus, Search, Send, Store, Trash2 } from 'lucide-react'
 import { useAuth } from '../../auth'
 import { queryClient, queryKeys, fetchWithSupabaseAuth, STALE_TIMES } from '../../shared/query'
 import BoardRestaurantModal from './BoardRestaurantModal'
@@ -10,6 +10,8 @@ import { fetchStoreGroups } from '../data/storeGroups'
 import { fetchMyInvites, revokeInvite, claimUrl } from '../data/boarding'
 import { useAnalyticsSummary } from '../data/analyticsSummary'
 import { loadRestaurantHomepageBootstrap } from '../data/homepageBootstrap'
+import { backOfficeApi } from '../../shared/api/backOfficeApi'
+import { storeLifecycleAction } from './storeLifecycleActions'
 
 const ORDER_OPTIONS = [
   { value: 'name', label: 'Name A–Z' },
@@ -116,7 +118,90 @@ function CopyLinkButton({ url }) {
   )
 }
 
-function StoreCard({ restaurant, layout, onOpen, onIntent, onFinishSetup, claimInvite, onRevokeInvite, summaryState }) {
+function deletionError(error) {
+  if (!(error instanceof Error)) return 'The restaurant could not be deleted.'
+  try {
+    const detail = JSON.parse(error.message)
+    const message = detail?.message || detail?.detail?.message || detail?.detail
+    return typeof message === 'string' ? message : 'The restaurant could not be deleted.'
+  } catch {
+    return error.message || 'The restaurant could not be deleted.'
+  }
+}
+
+function IncompleteStoreDeleteDialog({ restaurant, onClose, onDeleted }) {
+  const [confirmation, setConfirmation] = useState('')
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const restaurantName = restaurant.name || 'Untitled restaurant'
+  const exactNameMatches = confirmation === restaurantName
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    if (!exactNameMatches || submitting) return
+    setSubmitting(true)
+    setError('')
+    try {
+      await backOfficeApi.cancelOnboardingRestaurant(restaurant.id)
+      await onDeleted(restaurant.id)
+    } catch (nextError) {
+      setError(deletionError(nextError))
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (!submitting && event.currentTarget === event.target) onClose()
+      }}
+    >
+      <form
+        onSubmit={handleSubmit}
+        className="w-full max-w-lg rounded-2xl border border-red-400/30 bg-dash-base p-6 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-incomplete-store-title"
+      >
+        <div className="flex items-start gap-3">
+          <span className="rounded-lg bg-red-400/10 p-2 text-red-300">
+            <AlertTriangle size={18} aria-hidden="true" />
+          </span>
+          <div>
+            <p className="label-mono !text-red-300">Permanent deletion</p>
+            <h2 id="delete-incomplete-store-title" className="mt-1 text-2xl font-semibold text-dash-cream">Delete {restaurantName}?</h2>
+          </div>
+        </div>
+        <p className="mt-4 text-sm leading-6 text-dash-secondary">
+          This permanently deletes this unfinished restaurant and its setup data. It cannot be recovered. The server will refuse deletion if setup was completed or any operational activity exists.
+        </p>
+        <label className="mt-5 block text-xs font-semibold text-dash-secondary">
+          Type <span className="text-dash-cream">{restaurantName}</span> to confirm
+          <input
+            autoFocus
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+            disabled={submitting}
+            autoComplete="off"
+            className="mt-1.5 w-full rounded-lg border border-white/15 bg-black/20 px-3 py-2.5 text-sm text-dash-cream outline-none focus:border-red-300"
+          />
+        </label>
+        {confirmation && !exactNameMatches && <p className="mt-1 text-xs text-red-200">The name must match exactly.</p>}
+        {error && <p className="mt-3 rounded-lg border border-red-400/25 bg-red-400/10 p-3 text-sm text-red-200" role="alert">{error}</p>}
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={onClose} disabled={submitting} className="rounded-lg border border-white/15 px-4 py-2 text-sm font-semibold text-dash-secondary hover:text-dash-cream disabled:opacity-50">Keep restaurant</button>
+          <button type="submit" disabled={!exactNameMatches || submitting} className="inline-flex items-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-sm font-semibold text-white hover:bg-red-400 disabled:cursor-not-allowed disabled:opacity-40">
+            <Trash2 size={14} aria-hidden="true" /> {submitting ? 'Deleting…' : 'Delete permanently'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function StoreCard({ restaurant, layout, onOpen, onIntent, onFinishSetup, onDeleteIncomplete, onOpenDangerZone, lifecycleAction, claimInvite, onRevokeInvite, summaryState }) {
   const location = [restaurant.city, restaurant.state].filter(Boolean).join(', ')
   const isDraft = restaurant.status === 'draft'
   const isActive = Boolean(restaurant.onboarding_completed_at)
@@ -168,8 +253,8 @@ function StoreCard({ restaurant, layout, onOpen, onIntent, onFinishSetup, claimI
             </button>
           )}
         </div>
-      ) : !isActive && (
-        <div className="border-t border-dash-border px-4 py-2.5">
+      ) : !isActive ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-dash-border px-4 py-2.5">
           <button
             type="button"
             onClick={onFinishSetup}
@@ -177,8 +262,19 @@ function StoreCard({ restaurant, layout, onOpen, onIntent, onFinishSetup, claimI
           >
             Finish setup
           </button>
+          {lifecycleAction === 'delete-incomplete' && (
+            <button type="button" onClick={onDeleteIncomplete} className="text-xs font-semibold text-red-300 transition hover:text-red-200">
+              Delete permanently
+            </button>
+          )}
         </div>
-      )}
+      ) : lifecycleAction === 'manage-deletion' ? (
+        <div className="flex justify-end border-t border-dash-border px-4 py-2.5">
+          <button type="button" onClick={onOpenDangerZone} className="text-xs font-semibold text-dash-tertiary transition hover:text-red-300">
+            Delete store…
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -196,6 +292,7 @@ export default function StoresPage() {
   const [groups, setGroups] = useState([])
   const [invites, setInvites] = useState([])
   const [modal, setModal] = useState(null) // 'board' | 'groups' | 'apply'
+  const [incompleteStoreToDelete, setIncompleteStoreToDelete] = useState(null)
 
   const canBoard = auth.accountType === 'reseller' || auth.accountType === 'admin'
   const restaurantBase = ['reseller', 'reseller_employee'].includes(auth.accountType)
@@ -290,6 +387,17 @@ export default function StoresPage() {
     } else {
       navigate(`${restaurantBase}/${restaurant.id}/setup`)
     }
+  }
+
+  const openDangerZone = async (restaurant) => {
+    await auth.switchRestaurant(restaurant.id)
+    navigate(`${restaurantBase}/${restaurant.id}/settings#lifecycle`)
+  }
+
+  const handleIncompleteStoreDeleted = async (restaurantId) => {
+    setIncompleteStoreToDelete(null)
+    queryClient.removeQueries({ queryKey: queryKeys.restaurant(restaurantId) })
+    await auth.refreshRestaurants()
   }
 
   return (
@@ -463,6 +571,9 @@ export default function StoresPage() {
               onOpen={() => void openStore(restaurant)}
               onIntent={() => prefetchStoreHome(restaurant.id)}
               onFinishSetup={() => void finishSetup(restaurant)}
+              onDeleteIncomplete={() => setIncompleteStoreToDelete(restaurant)}
+              onOpenDangerZone={() => void openDangerZone(restaurant)}
+              lifecycleAction={storeLifecycleAction(restaurant, auth.user?.id)}
               claimInvite={inviteByDraftId[restaurant.id] || null}
               onRevokeInvite={(invite) => void handleRevoke(invite)}
               summaryState={kpiSummary.restaurantStates[restaurant.id]}
@@ -514,6 +625,13 @@ export default function StoresPage() {
           restaurants={restaurants.filter((restaurant) => restaurant.status !== 'draft')}
           groups={groups}
           onClose={() => setModal(null)}
+        />
+      )}
+      {incompleteStoreToDelete && (
+        <IncompleteStoreDeleteDialog
+          restaurant={incompleteStoreToDelete}
+          onClose={() => setIncompleteStoreToDelete(null)}
+          onDeleted={handleIncompleteStoreDeleted}
         />
       )}
     </div>
