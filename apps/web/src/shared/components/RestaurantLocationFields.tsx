@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fetchWithSupabaseAuth } from '../query/fetchWithSupabaseAuth'
 
 export type RestaurantLocation = {
@@ -13,8 +13,6 @@ export type RestaurantLocation = {
 
 type LocationMatch = RestaurantLocation & {
   match_quality: 'census_geography_match' | 'exact_official_boundary' | 'official_zip4_jurisdiction' | 'official_zip5_jurisdiction'
-  source: 'census_geocoder' | 'sst_compact_boundary' | 'sst_boundary'
-  source_version: string
   match_id: string
   boundary_id?: number | null
 }
@@ -38,6 +36,12 @@ const messageFor = (error: unknown) => error instanceof Error
   ? error.message
   : 'Could not search the official address catalog.'
 
+const matchDescription = (match: LocationMatch) => {
+  if (match.match_quality === 'census_geography_match') return 'Verified U.S. Census location'
+  if (match.match_quality === 'exact_official_boundary') return 'Exact official address match'
+  return 'Official ZIP tax jurisdiction match'
+}
+
 export function RestaurantLocationFields({ value, onChange, inputClassName = defaultInputClass }: Props) {
   const [matches, setMatches] = useState<LocationMatch[]>([])
   const [searched, setSearched] = useState(false)
@@ -45,8 +49,20 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
   const [stateResolvable, setStateResolvable] = useState<boolean | null>(null)
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const requestSequence = useRef(0)
+  const activeRequest = useRef<AbortController | null>(null)
+
+  useEffect(() => () => activeRequest.current?.abort(), [])
+
+  const cancelSearch = () => {
+    requestSequence.current += 1
+    activeRequest.current?.abort()
+    activeRequest.current = null
+    setSearching(false)
+  }
 
   const patch = (next: Partial<RestaurantLocation>) => {
+    cancelSearch()
     setMatches([])
     setSearched(false)
     setStateResolvable(null)
@@ -60,11 +76,18 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
       setError('Enter the street, city, state, and ZIP before searching.')
       return
     }
+    activeRequest.current?.abort()
+    const controller = new AbortController()
+    const sequence = requestSequence.current + 1
+    requestSequence.current = sequence
+    activeRequest.current = controller
     setSearching(true)
     setError('')
     try {
       const result = await fetchWithSupabaseAuth<SearchResponse>('/restaurant-locations/search', {
         method: 'POST',
+        signal: controller.signal,
+        timeoutMs: 12_000,
         body: JSON.stringify({
           address: value.address,
           city: value.city,
@@ -73,15 +96,20 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
           country: value.country || 'US',
         }),
       })
+      if (requestSequence.current !== sequence) return
       setMatches(result.matches || [])
       setStateResolvable(result.state_resolvable)
       setSearched(true)
     } catch (searchError) {
+      if (controller.signal.aborted || requestSequence.current !== sequence) return
       setError(messageFor(searchError))
       setMatches([])
       setSearched(false)
     } finally {
-      setSearching(false)
+      if (requestSequence.current === sequence) {
+        activeRequest.current = null
+        setSearching(false)
+      }
     }
   }
 
@@ -122,14 +150,14 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
           disabled={searching}
           className="rounded-lg border border-[rgba(201,169,98,0.45)] bg-[rgba(201,169,98,0.1)] px-4 py-3 text-sm font-semibold text-[rgb(var(--text-primary))] transition hover:bg-[rgba(201,169,98,0.16)] disabled:opacity-50"
         >
-          {searching ? 'Finding…' : 'Find exact address'}
+          {searching ? 'Verifying…' : 'Verify address'}
         </button>
       </div>
 
       {error && <p className="text-sm text-red-300">{error}</p>}
       {matches.length > 0 && (
         <div className="space-y-2 rounded-xl border border-white/10 bg-black/10 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[rgb(var(--text-tertiary))]">Official location / jurisdiction matches</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[rgb(var(--text-tertiary))]">Verified address matches</p>
           {matches.map(match => (
             <button
               key={match.match_id}
@@ -139,7 +167,7 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
             >
               <span className="block font-medium text-[rgb(var(--text-primary))]">{match.address}</span>
               <span className="mt-1 block text-xs text-[rgb(var(--text-tertiary))]">
-                {match.city}, {match.state} {match.postal_code} · {match.match_quality === 'census_geography_match' ? 'official geographic match' : match.match_quality === 'exact_official_boundary' ? 'exact official address range' : 'official ZIP jurisdiction'} · {match.source_version}
+                {match.city}, {match.state} {match.postal_code} · {matchDescription(match)}
               </span>
             </button>
           ))}

@@ -12,6 +12,7 @@ const onboardingPayments = read('../onboarding/pages/steps/PaymentsStep.tsx')
 const onboardingHook = read('../onboarding/hooks/useOnboarding.ts')
 const taxJurisdiction = read('./components/TaxJurisdictionPanel.tsx')
 const dashboardShell = read('./shell/DashboardShell.jsx')
+const locationFields = read('../shared/components/RestaurantLocationFields.tsx')
 
 test('restaurant tax percentages stay address-derived except for the audited reseller override', () => {
   for (const source of [setup, onboardingTaxes]) {
@@ -50,6 +51,13 @@ test('address and pricing jurisdiction use the canonical restaurant profile', ()
   assert.match(onboardingHook, /delete pricingPayload\.jurisdiction_state/)
   assert.doesNotMatch(onboardingPayments, /jurisdiction_state.*onChange/)
   assert.doesNotMatch(setup, /jurisdiction_state.*onChange/)
+})
+
+test('address lookup hides provider internals and ignores stale searches', () => {
+  assert.doesNotMatch(locationFields, /source_version/)
+  assert.match(locationFields, /Verified U\.S\. Census location/)
+  assert.match(locationFields, /activeRequest\.current\?\.abort\(\)/)
+  assert.match(locationFields, /requestSequence\.current !== sequence/)
 })
 
 test('restaurant saves omit support-owned tax rates and category assignments', () => {
