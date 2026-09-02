@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react'
 import { fetchReservationsApi } from '../../shared/api/reservationsClient'
 import { queryClient, queryKeys, STALE_TIMES } from '../../shared/query'
@@ -52,6 +53,9 @@ const STATUS_META = {
   action_required: ['Action required', 'danger'],
   failed: ['Setup failed', 'danger'],
   deactivated: ['Deactivated', 'neutral'],
+  releasing: ['Releasing number', 'warning'],
+  release_failed: ['Release needs attention', 'danger'],
+  released: ['Number released', 'neutral'],
 }
 
 function formatPhone(value) {
@@ -59,6 +63,11 @@ function formatPhone(value) {
   const national = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
   if (national.length !== 10) return value || 'Not assigned'
   return `(${national.slice(0, 3)}) ${national.slice(3, 6)}-${national.slice(6)}`
+}
+
+function nationalPhoneDigits(value) {
+  const digits = String(value || '').replace(/\D/g, '')
+  return digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
 }
 
 function StatusBadge({ status }) {
@@ -107,11 +116,14 @@ function SetupProgress({ setup }) {
 function ErrorNotice({ error }) {
   if (!error) return null
   const isBilling = error.code === 'TWILIO_ACCOUNT_UPGRADE_REQUIRED'
+  const isRelease = error.code === 'NUMBER_RELEASE_FAILED'
   return (
     <div className="flex gap-3 border-y border-dash-danger/40 bg-dash-danger/10 px-4 py-3 text-sm text-dash-danger">
       <AlertTriangle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
       <div>
-        <p className="font-semibold">{isBilling ? 'Platform billing action required' : 'Could not complete that action'}</p>
+        <p className="font-semibold">
+          {isBilling ? 'Platform billing action required' : isRelease ? 'Number release needs attention' : 'Could not complete that action'}
+        </p>
         <p className="mt-1 leading-6">{error.message}</p>
       </div>
     </div>
@@ -131,6 +143,8 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
   const [transferPhone, setTransferPhone] = useState('')
   const [purchaseOpen, setPurchaseOpen] = useState(false)
   const [purchaseConfirmed, setPurchaseConfirmed] = useState(false)
+  const [releaseOpen, setReleaseOpen] = useState(false)
+  const [releaseConfirmation, setReleaseConfirmation] = useState('')
   const requestContextRef = useRef({ restaurantId, generation: 0 })
   if (requestContextRef.current.restaurantId !== restaurantId) {
     requestContextRef.current = {
@@ -152,7 +166,13 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
     retry: false,
   })
   const setup = setupQuery.data
-  const provisioned = Boolean(setup?.voiceAgent?.vapiPhoneNumberId)
+  const releasePending = ['releasing', 'release_failed'].includes(setup?.status)
+  const provisioned = Boolean(
+    setup?.voiceAgent?.vapiPhoneNumberId
+    || setup?.voiceAgent?.twilioPhoneNumberSid
+    || setup?.voiceAgent?.phoneNumber,
+  )
+  const managedReleaseAvailable = Boolean(setup?.voiceAgent?.twilioPhoneNumberSid || releasePending)
   const selectedNumber = setup?.selectedPhoneNumber || setup?.voiceAgent?.phoneNumber || ''
 
   useEffect(() => {
@@ -168,6 +188,8 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
     setTransferPhone('')
     setPurchaseOpen(false)
     setPurchaseConfirmed(false)
+    setReleaseOpen(false)
+    setReleaseConfirmation('')
   }, [restaurantId])
 
   useEffect(() => {
@@ -318,9 +340,25 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
     }
   }
 
+  const releaseNumber = async () => {
+    try {
+      await runSetupAction('release', '/number', {
+        method: 'DELETE',
+        body: JSON.stringify({
+          confirmRelease: true,
+          phoneNumber: releaseConfirmation,
+        }),
+      }, 'The phone number was permanently released. Future Twilio monthly renewals have stopped.')
+      setReleaseOpen(false)
+      setReleaseConfirmation('')
+    } catch {
+      // The shared action notice already contains the provider/API error.
+    }
+  }
+
   const copyNumber = async () => {
     const request = captureRequestContext()
-    const phoneNumber = setup?.voiceAgent?.phoneNumber
+    const phoneNumber = selectedNumber
     if (!phoneNumber) return
     await navigator.clipboard.writeText(phoneNumber)
     if (requestIsCurrent(request)) setNotice('AI number copied.')
@@ -382,22 +420,26 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr),auto] lg:items-center">
             <div>
               <p className="label-mono">AI phone number</p>
-              <p className="mt-2 text-3xl font-semibold text-dash-cream">{formatPhone(setup.voiceAgent.phoneNumber)}</p>
+              <p className="mt-2 text-3xl font-semibold text-dash-cream">{formatPhone(selectedNumber)}</p>
               <p className="mt-2 text-sm text-dash-secondary">
-                Calls to this number are routed to this restaurant’s versioned Shire assistant.
+                {releasePending
+                  ? 'Permanent release needs to be retried before this phone setup can be used again.'
+                  : 'Calls to this number are routed to this restaurant’s versioned Shire assistant.'}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" icon={<Copy size={15} />} onClick={() => void copyNumber()}>
                 Copy
               </Button>
-              <a
-                href={`tel:${setup.voiceAgent.phoneNumber}`}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-dash-gold px-3 py-1.5 text-sm font-medium text-dash-base transition hover:bg-dash-gold/90"
-              >
-                <PhoneCall size={15} aria-hidden="true" />
-                Call
-              </a>
+              {setup.voiceAgent.phoneNumber && !releasePending && (
+                <a
+                  href={`tel:${setup.voiceAgent.phoneNumber}`}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-dash-gold px-3 py-1.5 text-sm font-medium text-dash-base transition hover:bg-dash-gold/90"
+                >
+                  <PhoneCall size={15} aria-hidden="true" />
+                  Call
+                </a>
+              )}
             </div>
           </div>
         </section>
@@ -551,7 +593,7 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
         </section>
       )}
 
-      {provisioned && setup.forwardingMode !== 'none' && (
+      {provisioned && !releasePending && setup.forwardingMode !== 'none' && (
         <section className="space-y-4 border-b border-dash-border pb-6">
           <div>
             <h3 className="text-base font-semibold text-dash-cream">Forward your existing line</h3>
@@ -593,8 +635,8 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
         </section>
       )}
 
-      {provisioned && (
-        <section className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      {provisioned && !releasePending && (
+        <section className="flex flex-col gap-4 border-b border-dash-border pb-6 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="text-base font-semibold text-dash-cream">Service control</h3>
             <p className="mt-1 text-sm text-dash-secondary">
@@ -612,6 +654,35 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
               {setup.voiceAgent.enabled ? 'Deactivate' : 'Activate'}
             </Button>
           )}
+        </section>
+      )}
+
+      {setup?.status === 'released' && setup.releasedPhoneNumber && (
+        <section className="border-y border-dash-border py-4">
+          <p className="text-sm font-semibold text-dash-cream">Previous number released</p>
+          <p className="mt-1 text-sm leading-6 text-dash-secondary">
+            {formatPhone(setup.releasedPhoneNumber)} no longer renews through Twilio. Select a new number above to set up another line.
+          </p>
+        </section>
+      )}
+
+      {provisioned && managedReleaseAvailable && !readOnly && (
+        <section className="flex flex-col gap-4 border-y border-dash-danger/35 py-5 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-dash-danger">Permanently release number</h3>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-dash-secondary">
+              Remove this number from Vapi and release it from Twilio. Calls stop immediately and future monthly number renewals end.
+            </p>
+          </div>
+          <Button
+            variant="danger"
+            size="sm"
+            disabled={Boolean(busyAction)}
+            icon={<Trash2 size={15} />}
+            onClick={() => setReleaseOpen(true)}
+          >
+            Permanently release
+          </Button>
         </section>
       )}
 
@@ -648,6 +719,44 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
               onClick={() => void purchase()}
             >
               Purchase and configure
+            </Button>
+          </ModalFooter>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={releaseOpen}
+        onClose={() => !busyAction && setReleaseOpen(false)}
+        title="Permanently release phone number"
+        size="sm"
+      >
+        <div className="space-y-5">
+          <div className="border-y border-dash-danger/40 bg-dash-danger/10 px-4 py-3">
+            <p className="text-sm font-semibold text-dash-danger">This cannot be undone in Shire.</p>
+            <p className="mt-1 text-sm leading-6 text-dash-secondary">
+              {formatPhone(selectedNumber)} will stop receiving calls and may be assigned to someone else. Twilio does not refund the current prepaid month.
+            </p>
+          </div>
+          <TextField
+            label={`Type ${formatPhone(selectedNumber)} to confirm`}
+            type="tel"
+            value={releaseConfirmation}
+            placeholder={formatPhone(selectedNumber)}
+            onChange={(event) => setReleaseConfirmation(event.target.value)}
+            disabled={busyAction === 'release'}
+          />
+          <ModalFooter>
+            <Button variant="ghost" onClick={() => setReleaseOpen(false)} disabled={busyAction === 'release'}>Keep number</Button>
+            <Button
+              variant="danger"
+              disabled={
+                busyAction === 'release'
+                || nationalPhoneDigits(releaseConfirmation) !== nationalPhoneDigits(selectedNumber)
+              }
+              icon={busyAction === 'release' ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+              onClick={() => void releaseNumber()}
+            >
+              Release and stop renewals
             </Button>
           </ModalFooter>
         </div>
