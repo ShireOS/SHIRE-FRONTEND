@@ -64,7 +64,9 @@ import { useAuth } from '../auth'
 import { PublishControls } from '../shared/components/PublishControls'
 import { SmartDateTimeInput } from '../shared/components/SmartDateTimeInput'
 import { SmartTimeInput } from '../shared/components/SmartTimeInput'
+import { CreatableCombobox } from '../shared/components/CreatableCombobox'
 import { formatTimeLabel } from '../shared/utils/timeInput.js'
+import { kdsDisplayGroupOptions, normalizeCategoryOptionLabel } from '../shared/menuCategoryOptions.js'
 import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
 import MenuWorkspaceEditor from '../shared/components/MenuWorkspaceEditor'
 import { PropagationModal } from '../shared/components/PropagationModal'
@@ -1346,6 +1348,14 @@ export function MenuPanel({
     () => stations.filter(station => routableStationIds.has(station.id)),
     [stations, routableStationIds],
   )
+  const availablePrepStations = useMemo(
+    () => stations.filter(station => station?.is_active !== false && !station?.archived_at),
+    [stations],
+  )
+  const kdsGroups = useMemo(
+    () => kdsDisplayGroupOptions(categories, menuItems),
+    [categories, menuItems],
+  )
   const activeRoutingRules = useMemo(
     () => (routing?.routing_rules || []).filter(rule => rule?.is_active !== false && !rule?.archived_at),
     [routing],
@@ -1880,10 +1890,26 @@ export function MenuPanel({
           body: JSON.stringify(categoriesBodyFor(targetId, categories)),
         })
         if (targetId === restaurantId) {
+          // Category metadata and live production routing are owned by two
+          // services. Promote any legacy station projection (and any route
+          // chosen on a new draft) into the POS backend's canonical rule in
+          // the same user save, so ticket delivery cannot silently disagree.
+          for (const category of categories) {
+            const canonical = categoryProductionRouting(category.name).value
+            const selected = Object.prototype.hasOwnProperty.call(category, 'production_route_value')
+              ? (category.production_route_value || ROUTE_INHERIT_VALUE)
+              : (canonical || category.routing_station_id || ROUTE_INHERIT_VALUE)
+            if (selected === canonical || selected === ROUTE_MULTI_VALUE) continue
+            await routingApi(`/restaurants/${restaurantId}/kitchen-routing/categories`, {
+              method: 'PUT',
+              body: JSON.stringify({ category: category.name.trim(), ...routeSelectionPayload(selected) }),
+            })
+          }
           const next = Array.isArray(saved) ? saved : (saved?.categories || [])
           setCategories(next)
           setSavedCategories(next)
           invalidateCategories()
+          await loadRouting(true)
         }
       }
       setNotice(targetIds.length > 1 ? `Categories saved to ${targetIds.length} restaurants.` : 'Categories saved.')
@@ -2310,6 +2336,23 @@ export function MenuPanel({
     await loadRouting(true)
   }, 'Station added.', 'Couldn’t add the station')
 
+  const createPrepStation = async (rawName) => {
+    const name = normalizeCategoryOptionLabel(rawName)
+    const existing = availablePrepStations.find(station => station.name.toLocaleLowerCase() === name.toLocaleLowerCase())
+    if (existing) return existing.id
+    let createdId = ''
+    const succeeded = await run(async () => {
+      const created = await routingApi(`/restaurants/${restaurantId}/kitchen-routing/stations`, {
+        method: 'POST',
+        body: JSON.stringify({ name, is_active: true, station_type: 'prep' }),
+      })
+      createdId = created?.id || ''
+      if (!createdId) throw new Error('The prep station was created without an ID. Refresh and try again.')
+      await loadRouting(true)
+    }, 'Prep station added.', 'Couldn’t add the prep station')
+    return succeeded ? createdId : undefined
+  }
+
   const createTarget = (name, host) => run(async () => {
     await routingApi(`/restaurants/${restaurantId}/kitchen-routing/targets`, {
       method: 'POST',
@@ -2648,7 +2691,17 @@ export function MenuPanel({
             {mergedCategories.map((category, index) => {
               const categoryItems = allItemsByCategoryKey[categoryKeyForCategory(category)] || []
               const isExpanded = Boolean(category.name) && expandedCategoryNames.has(category.name)
-              const productionRouting = categoryProductionRouting(category.name)
+              const canonicalProductionRouting = categoryProductionRouting(category.name)
+              const pendingProductionValue = Object.prototype.hasOwnProperty.call(category, 'production_route_value')
+                ? (category.production_route_value || ROUTE_INHERIT_VALUE)
+                : (canonicalProductionRouting.value || category.routing_station_id || ROUTE_INHERIT_VALUE)
+              const productionRouting = {
+                ...canonicalProductionRouting,
+                value: pendingProductionValue,
+                description: pendingProductionValue && canonicalProductionRouting.value === ROUTE_INHERIT_VALUE
+                  ? `Prep station: ${stationsById[pendingProductionValue]?.name || category.routing_station_name || 'selected station'}`
+                  : canonicalProductionRouting.description,
+              }
               const categoryCardId = category.id ? (category.name || category.id) : (category.client_key || `new-${index}`)
               const categoryEditorKey = category.id || category.client_key || `new-${index}`
               const isEditing = editingCategoryKey === categoryEditorKey
@@ -2707,20 +2760,42 @@ export function MenuPanel({
                     <div className="mt-4 border-t border-white/10 pt-4">
                       <p className="label-mono mb-3">Category defaults</p>
                       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                        <Field label="Production route">
-                          <SelectInput
+                        <Field as="div" label="Default prep station">
+                          <CreatableCombobox
+                            ariaLabel={`${category.name || 'New category'} default prep station`}
                             value={productionRouting.value}
-                            disabled={!category.id || busy}
-                            onChange={event => {
-                              if (event.target.value === ROUTE_MULTI_VALUE) return
-                              void routeCategory(category.name, event.target.value)
+                            inherited={productionRouting.value === ROUTE_INHERIT_VALUE}
+                            disabled={busy || !canEditMenuItems}
+                            createNoun="prep station"
+                            options={[
+                              {
+                                value: ROUTE_INHERIT_VALUE,
+                                label: `Use restaurant fallback — ${routing?.fallback?.station?.name || 'not configured yet'}`,
+                                description: routing?.fallback?.station && !routing?.fallback?.ok ? 'Its printer or display still needs configuration.' : 'No category-specific route is stored.',
+                              },
+                              { value: ROUTE_NO_PRODUCTION_VALUE, label: 'No kitchen ticket', description: 'For products that do not need a prep ticket.' },
+                              ...(productionRouting.value === ROUTE_MULTI_VALUE ? [{ value: ROUTE_MULTI_VALUE, label: 'Multiple prep stations', description: 'Edit this advanced route in Printing & Routing.', disabled: true }] : []),
+                              ...availablePrepStations.map(station => ({
+                                value: station.id,
+                                label: station.name,
+                                description: routableStationIds.has(station.id) ? 'Printer or KDS output connected.' : 'Output is assigned in Printing & Routing.',
+                              })),
+                            ]}
+                            onCreate={canEditPrinting ? createPrepStation : undefined}
+                            onChange={value => {
+                              if (value === ROUTE_MULTI_VALUE) return
+                              if (category.id) {
+                                void routeCategory(category.name, value)
+                                return
+                              }
+                              const station = availablePrepStations.find(candidate => candidate.id === value)
+                              updateCategory(index, {
+                                production_route_value: value,
+                                routing_station_id: station?.id || '',
+                                routing_station_name: station?.name || '',
+                              })
                             }}
-                          >
-                            <option value={ROUTE_INHERIT_VALUE}>Use restaurant fallback</option>
-                            <option value={ROUTE_NO_PRODUCTION_VALUE}>No kitchen ticket</option>
-                            {productionRouting.value === ROUTE_MULTI_VALUE && <option value={ROUTE_MULTI_VALUE}>Multiple stations</option>}
-                            {routableStations.map(station => <option key={station.id} value={station.id}>{station.name}</option>)}
-                          </SelectInput>
+                          />
                         </Field>
                         <Field label="Default course">
                           <SelectInput value={category.default_course_type || ''} onChange={event => updateCategory(index, { default_course_type: event.target.value })}>
@@ -2745,23 +2820,33 @@ export function MenuPanel({
                         <Field label="Fire timing">
                           <SelectInput
                             title="Default kitchen fire timing for new items in this category — individual items can override it"
-                            value={category.default_fire_mode || ''}
+                            value={category.default_fire_mode === 'inherit' ? '' : (category.default_fire_mode || '')}
+                            className={!category.default_fire_mode || category.default_fire_mode === 'inherit' ? '!text-dash-tertiary' : ''}
                             onChange={event => updateCategory(index, { default_fire_mode: event.target.value || null })}
                           >
                             <option value="">Use order default</option>
-                            <option value="inherit">Use order default</option>
                             <option value="immediate">Immediate</option>
                             <option value="hold">Hold</option>
                             <option value="manual">Manual</option>
                             <option value="by_course">By course</option>
                           </SelectInput>
                         </Field>
-                        <Field label="KDS group">
-                          <TextInput
-                            title="Kitchen display grouping label for this category's tickets"
+                        <Field as="div" label="KDS group">
+                          <CreatableCombobox
+                            ariaLabel={`${category.name || 'New category'} KDS display group`}
                             value={category.kds_display_group || ''}
-                            onChange={event => updateCategory(index, { kds_display_group: event.target.value })}
-                            placeholder="Apps, Entrees, Bar…"
+                            inherited={!category.kds_display_group}
+                            createNoun="KDS group"
+                            options={[
+                              { value: '', label: `Use category name — ${category.name || 'unnamed category'}`, description: 'The KDS groups these tickets under the category name.' },
+                              ...kdsGroups.map(group => ({ value: group, label: group })),
+                            ]}
+                            onChange={value => updateCategory(index, { kds_display_group: value })}
+                            onCreate={name => {
+                              const normalized = normalizeCategoryOptionLabel(name)
+                              updateCategory(index, { kds_display_group: normalized })
+                              return normalized
+                            }}
                           />
                         </Field>
                       </div>

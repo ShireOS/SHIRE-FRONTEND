@@ -506,10 +506,6 @@ const checkWorkflowSettingsToPayload = (data: OnboardingData) => checkWorkflowSe
 
 const tipPayrollToPayload = (data: OnboardingData) => tipPayrollPayload(data.tip_payroll_settings, data.job_codes)
 
-// The package builder also carries default_course_type/prep_time_minutes, so
-// an onboarding save no longer wipes course types set from the mobile editor.
-const menuCategoriesToPayload = (data: OnboardingData) => menuCategoriesPayload(data.menu_categories)
-
 const validateMenuCategories = (categories: MenuCategoryData[]) => {
   const blankIndex = normalizeMenuCategories(categories).findIndex(row => !row.name.trim())
   if (blankIndex >= 0) {
@@ -2422,18 +2418,18 @@ export function useOnboarding() {
   }, [data.seating_capacity, data.table_count, getActiveRestaurantId, onboardingProgressPatch, runWithTimeout])
 
   // Save menu step progress (after step 6)
-  const saveMenuCategories = useCallback(async () => {
+  const saveMenuCategories = useCallback(async (menuCategories: MenuCategoryData[] = data.menu_categories) => {
     setIsLoading(true)
     setError(null)
 
     try {
-      validateMenuCategories(data.menu_categories)
+      validateMenuCategories(menuCategories)
       const activeRestaurantId = getActiveRestaurantId()
       const response = await runWithTimeout(
         async () => fetch(`${API_CONFIG.baseUrl}/restaurants/${activeRestaurantId}/menu/categories`, {
           method: 'PUT',
           headers: await getApiHeaders(),
-          body: JSON.stringify(menuCategoriesToPayload(data)),
+          body: JSON.stringify(menuCategoriesPayload(menuCategories)),
         }),
         'Saving menu categories timed out. Please retry.'
       )
@@ -2469,7 +2465,7 @@ export function useOnboarding() {
     } finally {
       setIsLoading(false)
     }
-  }, [data, getActiveRestaurantId, isSetupEditor, runWithTimeout])
+  }, [data.menu_categories, getActiveRestaurantId, isSetupEditor, runWithTimeout])
 
   const saveMenuProgress = useCallback(async () => {
     setIsLoading(true)

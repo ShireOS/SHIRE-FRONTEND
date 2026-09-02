@@ -49,15 +49,16 @@ export function SaveStatus({ message }) {
   )
 }
 
-export function Field({ label, children, status }) {
+export function Field({ label, children, status, as = 'label' }) {
+  const Component = as
   return (
-    <label className="block space-y-2">
+    <Component className="block space-y-2">
       <span className="flex min-h-4 items-center justify-between gap-2">
         <span className="label-mono">{label}</span>
         {status !== undefined && <SaveStatus message={status} />}
       </span>
       {children}
-    </label>
+    </Component>
   )
 }
 

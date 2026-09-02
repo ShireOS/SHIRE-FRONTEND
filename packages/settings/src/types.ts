@@ -71,6 +71,8 @@ export interface MenuCategoryData {
   tax_class?: string
   routing_station_id: string
   routing_station_name: string
+  /** Draft-only canonical POS category route selection; omitted from menu-category payloads. */
+  production_route_value?: string
   default_course_type?: 'none' | 'appetizer' | 'entree' | 'dessert' | 'drink' | 'side' | 'other' | null
   default_fire_mode?: 'inherit' | 'immediate' | 'hold' | 'manual' | 'by_course' | ''
   prep_time_minutes?: string | null

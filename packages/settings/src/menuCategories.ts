@@ -6,15 +6,15 @@ import type { MenuCategoryData } from './types'
 // no longer wipes them.
 export function defaultMenuCategories(): MenuCategoryData[] {
   return [
-    { name: 'Appetizers', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'appetizer', default_fire_mode: 'by_course', prep_time_minutes: null, kds_display_group: 'Apps', is_active: true },
-    { name: 'Entrees', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'entree', default_fire_mode: 'by_course', prep_time_minutes: null, kds_display_group: 'Entrees', is_active: true },
-    { name: 'Desserts', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'dessert', default_fire_mode: 'by_course', prep_time_minutes: null, kds_display_group: 'Desserts', is_active: true },
-    { name: 'Sides', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'side', default_fire_mode: 'inherit', prep_time_minutes: null, kds_display_group: 'Sides', is_active: true },
-    { name: 'Drinks', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: null, kds_display_group: 'Drinks', is_active: true },
-    { name: 'Cocktails', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: null, kds_display_group: 'Bar', is_active: true },
-    { name: 'Beer & Wine', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Bar', default_course_type: 'drink', default_fire_mode: 'immediate', prep_time_minutes: null, kds_display_group: 'Bar', is_active: true },
-    { name: 'Specials', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Kitchen', default_course_type: 'other', default_fire_mode: 'inherit', prep_time_minutes: null, kds_display_group: 'Specials', is_active: true },
-    { name: 'Other', tax_rate_id: '', routing_station_id: '', routing_station_name: 'Expo', default_course_type: 'none', default_fire_mode: 'inherit', prep_time_minutes: null, kds_display_group: 'Other', is_active: true },
+    { name: 'Appetizers', tax_rate_id: '', routing_station_id: '', routing_station_name: '', default_course_type: 'appetizer', default_fire_mode: '', prep_time_minutes: null, kds_display_group: '', is_active: true },
+    { name: 'Entrees', tax_rate_id: '', routing_station_id: '', routing_station_name: '', default_course_type: 'entree', default_fire_mode: '', prep_time_minutes: null, kds_display_group: '', is_active: true },
+    { name: 'Desserts', tax_rate_id: '', routing_station_id: '', routing_station_name: '', default_course_type: 'dessert', default_fire_mode: '', prep_time_minutes: null, kds_display_group: '', is_active: true },
+    { name: 'Sides', tax_rate_id: '', routing_station_id: '', routing_station_name: '', default_course_type: 'side', default_fire_mode: '', prep_time_minutes: null, kds_display_group: '', is_active: true },
+    { name: 'Drinks', tax_rate_id: '', routing_station_id: '', routing_station_name: '', default_course_type: 'drink', default_fire_mode: '', prep_time_minutes: null, kds_display_group: '', is_active: true },
+    { name: 'Cocktails', tax_rate_id: '', routing_station_id: '', routing_station_name: '', default_course_type: 'drink', default_fire_mode: '', prep_time_minutes: null, kds_display_group: '', is_active: true },
+    { name: 'Beer & Wine', tax_rate_id: '', routing_station_id: '', routing_station_name: '', default_course_type: 'drink', default_fire_mode: '', prep_time_minutes: null, kds_display_group: '', is_active: true },
+    { name: 'Specials', tax_rate_id: '', routing_station_id: '', routing_station_name: '', default_course_type: 'other', default_fire_mode: '', prep_time_minutes: null, kds_display_group: '', is_active: true },
+    { name: 'Other', tax_rate_id: '', routing_station_id: '', routing_station_name: '', default_course_type: 'none', default_fire_mode: '', prep_time_minutes: null, kds_display_group: '', is_active: true },
   ]
 }
 
