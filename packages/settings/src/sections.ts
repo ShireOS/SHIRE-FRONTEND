@@ -114,6 +114,20 @@ export function normalizeServiceCharges(rows: unknown): ServiceChargeData[] {
     .filter(row => row.name && row.is_active)
 }
 
+/** A new charge starts blank so the example remains a faded prompt, not saved data. */
+export function defaultServiceCharge(): ServiceChargeData {
+  return {
+    name: '',
+    charge_type: 'percentage',
+    amount: '',
+    applies_to: 'all',
+    taxable: true,
+    auto_apply: false,
+    is_tip: false,
+    is_active: true,
+  }
+}
+
 export function defaultAutoGratuity(): AutoGratuityData {
   return {
     enabled: true,

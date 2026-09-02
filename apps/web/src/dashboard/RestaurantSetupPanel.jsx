@@ -34,6 +34,7 @@ import {
   defaultAutoGratuity,
   normalizeAutoGratuity,
   normalizeServiceCharges,
+  defaultServiceCharge,
   taxesChargesPayload,
   normalizeDiscountRules,
   discountRulesPayload,
@@ -1071,19 +1072,6 @@ async function saveReservationPublicSlug(restaurantId, slug) {
     method: 'PATCH',
     body: JSON.stringify({ public_slug: normalizePublicSlugDraft(slug) }),
   })
-}
-
-function defaultServiceCharge(index = 0) {
-  return {
-    name: index === 0 ? 'Service Charge' : `Service Charge ${index + 1}`,
-    charge_type: 'percentage',
-    amount: '',
-    applies_to: 'all',
-    taxable: true,
-    auto_apply: false,
-    is_tip: false,
-    is_active: true,
-  }
 }
 
 function defaultDiscountRule(index = 0) {
@@ -3665,16 +3653,17 @@ export default function RestaurantSetupPanel({
               {serviceCharges.map((charge, index) => (
                 <div key={charge.id || `charge:${index}`} className="rounded-xl border border-white/10 bg-white/[0.025] p-4">
                   <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr_0.7fr_1fr]">
-                    <TextInput value={charge.name} onChange={event => updateServiceCharge(index, { name: event.target.value })} placeholder="Service Charge" />
-                    <SelectInput value={charge.charge_type} onChange={event => updateServiceCharge(index, { charge_type: event.target.value })}>
-                      <option value="percentage">Percent</option>
-                      <option value="fixed">Fixed $</option>
-                    </SelectInput>
-                    <TextInput inputMode="decimal" value={charge.amount} onChange={event => updateServiceCharge(index, { amount: charge.charge_type === 'percentage' ? sanitizePercentInput(event.target.value) : sanitizeMoneyInput(event.target.value) })} placeholder={charge.charge_type === 'fixed' ? 'Amount' : 'Rate %'} />
-                    <SelectInput value={charge.applies_to} onChange={event => updateServiceCharge(index, { applies_to: event.target.value })}>
+                    <Field label="Charge name"><TextInput value={charge.name} onChange={event => updateServiceCharge(index, { name: event.target.value })} placeholder="e.g. Large-party gratuity" /></Field>
+                    <Field label="Calculated as"><SelectInput value={charge.charge_type} onChange={event => updateServiceCharge(index, { charge_type: event.target.value })}>
+                      <option value="percentage">Percentage</option>
+                      <option value="fixed">Fixed amount</option>
+                    </SelectInput></Field>
+                    <Field label={charge.charge_type === 'fixed' ? 'Amount ($)' : 'Rate (%)'}><TextInput inputMode="decimal" value={charge.amount} onChange={event => updateServiceCharge(index, { amount: charge.charge_type === 'percentage' ? sanitizePercentInput(event.target.value) : sanitizeMoneyInput(event.target.value) })} placeholder={charge.charge_type === 'fixed' ? 'e.g. 5.00' : 'e.g. 18'} /></Field>
+                    <Field label="Applies to"><SelectInput value={charge.applies_to} onChange={event => updateServiceCharge(index, { applies_to: event.target.value })}>
                       {CHARGE_APPLIES_TO_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </SelectInput>
+                    </SelectInput></Field>
                   </div>
+                  <p className="mt-2 text-xs leading-5 text-dash-tertiary">The charge name appears to staff and on receipts. New charges start taxable, manually applied, and retained by the restaurant.</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <SmallButton variant={charge.taxable ? 'primary' : 'secondary'} onClick={() => updateServiceCharge(index, { taxable: !charge.taxable })}>Taxable</SmallButton>
                     <SmallButton variant={charge.auto_apply ? 'primary' : 'secondary'} onClick={() => updateServiceCharge(index, { auto_apply: !charge.auto_apply })}>Auto apply</SmallButton>
@@ -3683,7 +3672,7 @@ export default function RestaurantSetupPanel({
                   </div>
                 </div>
               ))}
-              <SmallButton onClick={() => setServiceCharges(prev => [...prev, defaultServiceCharge(prev.length)])}>Add service charge</SmallButton>
+              <SmallButton onClick={() => setServiceCharges(prev => [...prev, defaultServiceCharge()])}>Add service charge</SmallButton>
             </div>
 
             <div className="space-y-4 border-t border-white/10 pt-6">

@@ -1,4 +1,4 @@
-import { CHARGE_APPLIES_TO_OPTIONS, sanitizeCountInput, sanitizeMoneyInput, sanitizePercentInput } from '@shire/settings'
+import { CHARGE_APPLIES_TO_OPTIONS, defaultServiceCharge, sanitizeCountInput, sanitizeMoneyInput, sanitizePercentInput } from '@shire/settings'
 import type { ServiceChargeData, UseOnboardingReturn } from '../../hooks/useOnboarding'
 import { TaxJurisdictionPanel } from '../../../dashboard/components/TaxJurisdictionPanel'
 
@@ -12,17 +12,6 @@ const CHARGE_APPLIES_TO: Array<{ value: ServiceChargeData['applies_to']; label: 
 
 const inputClass = 'w-full min-w-0 px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] placeholder-[rgb(var(--text-tertiary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]'
 const compactInputClass = `${inputClass} text-sm`
-
-const defaultServiceCharge = (index: number): ServiceChargeData => ({
-  name: index === 0 ? 'Service Charge' : `Service Charge ${index + 1}`,
-  charge_type: 'percentage',
-  amount: '',
-  applies_to: 'all',
-  taxable: true,
-  auto_apply: false,
-  is_tip: false,
-  is_active: true,
-})
 
 function ToggleButton({
   active,
@@ -113,35 +102,29 @@ export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
           {serviceCharges.map((charge, index) => (
             <div key={charge.id || `charge:${index}`} className="rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] p-4">
               <div className="grid gap-3 sm:grid-cols-[1.2fr_0.8fr_0.7fr_1fr]">
-                <input
-                  value={charge.name}
-                  onChange={(event) => updateCharge(index, { name: event.target.value })}
-                  className={compactInputClass}
-                  placeholder="Service Charge"
-                />
-                <select
-                  value={charge.charge_type}
-                  onChange={(event) => updateCharge(index, { charge_type: event.target.value as ServiceChargeData['charge_type'] })}
-                  className={compactInputClass}
-                >
-                  <option value="percentage">Percent</option>
-                  <option value="fixed">Fixed $</option>
-                </select>
-                <input
-                  inputMode="decimal"
-                  value={charge.amount}
-                  onChange={(event) => updateCharge(index, { amount: charge.charge_type === 'percentage' ? sanitizePercentInput(event.target.value) : sanitizeMoneyInput(event.target.value) })}
-                  className={compactInputClass}
-                  placeholder={charge.charge_type === 'fixed' ? 'Amount' : 'Rate %'}
-                />
-                <select
-                  value={charge.applies_to}
-                  onChange={(event) => updateCharge(index, { applies_to: event.target.value as ServiceChargeData['applies_to'] })}
-                  className={compactInputClass}
-                >
-                  {CHARGE_APPLIES_TO.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
+                <label className="space-y-1.5">
+                  <span className="block text-xs font-medium text-[rgb(var(--text-secondary))]">Charge name</span>
+                  <input value={charge.name} onChange={(event) => updateCharge(index, { name: event.target.value })} className={compactInputClass} placeholder="e.g. Large-party gratuity" />
+                </label>
+                <label className="space-y-1.5">
+                  <span className="block text-xs font-medium text-[rgb(var(--text-secondary))]">Calculated as</span>
+                  <select value={charge.charge_type} onChange={(event) => updateCharge(index, { charge_type: event.target.value as ServiceChargeData['charge_type'] })} className={compactInputClass}>
+                    <option value="percentage">Percentage</option>
+                    <option value="fixed">Fixed amount</option>
+                  </select>
+                </label>
+                <label className="space-y-1.5">
+                  <span className="block text-xs font-medium text-[rgb(var(--text-secondary))]">{charge.charge_type === 'fixed' ? 'Amount ($)' : 'Rate (%)'}</span>
+                  <input inputMode="decimal" value={charge.amount} onChange={(event) => updateCharge(index, { amount: charge.charge_type === 'percentage' ? sanitizePercentInput(event.target.value) : sanitizeMoneyInput(event.target.value) })} className={compactInputClass} placeholder={charge.charge_type === 'fixed' ? 'e.g. 5.00' : 'e.g. 18'} />
+                </label>
+                <label className="space-y-1.5">
+                  <span className="block text-xs font-medium text-[rgb(var(--text-secondary))]">Applies to</span>
+                  <select value={charge.applies_to} onChange={(event) => updateCharge(index, { applies_to: event.target.value as ServiceChargeData['applies_to'] })} className={compactInputClass}>
+                    {CHARGE_APPLIES_TO.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                </label>
               </div>
+              <p className="mt-2 text-xs leading-5 text-[rgb(var(--text-tertiary))]">The charge name appears to staff and on receipts. New charges start taxable, manually applied, and retained by the restaurant.</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <ToggleButton active={charge.taxable} onClick={() => updateCharge(index, { taxable: !charge.taxable })}>Taxable</ToggleButton>
                 <ToggleButton active={charge.auto_apply} onClick={() => updateCharge(index, { auto_apply: !charge.auto_apply })}>Auto apply</ToggleButton>
@@ -160,7 +143,7 @@ export function TaxesChargesStep({ onboarding }: TaxesChargesStepProps) {
 
         <button
           type="button"
-          onClick={() => updateData({ service_charges: [...serviceCharges, defaultServiceCharge(serviceCharges.length)] })}
+          onClick={() => updateData({ service_charges: [...serviceCharges, defaultServiceCharge()] })}
           className="rounded-lg border border-[rgba(255,255,255,0.1)] px-3 py-2 text-sm text-[rgb(var(--text-secondary))] transition-colors hover:border-[rgba(201,169,98,0.45)] hover:text-[rgb(var(--text-primary))]"
         >
           + Add service charge

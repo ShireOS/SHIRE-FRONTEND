@@ -345,6 +345,10 @@ gate; the bell remains disabled while access is unresolved or denied.
   Admin hydration excludes closed restaurants so the visible operational
   portfolio matches the ML portfolio resolver and batched store metrics never
   request an unauthorized historical store.
+  A reseller principal's owned onboarding restaurants remain valid portfolio
+  scope before a `reseller_restaurants` assignment exists; ML portfolio and
+  store-card analytics resolvers must include that `restaurants.owner_id` path
+  so legitimate draft stores do not appear as failed metrics.
   Account-scoped hydration is generation-guarded and aborts superseded requests,
   so an old account cannot repopulate restaurant or loading state after an
   account switch or sign-out. A direct user-to-user session replacement clears
