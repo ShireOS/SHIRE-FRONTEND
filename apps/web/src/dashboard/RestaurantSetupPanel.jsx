@@ -1371,11 +1371,11 @@ export function PayrollSetupFields({ settings, onUpdateSettings, payPeriodCalend
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-dash-cream">Apply employee payouts to expected drawer cash</p>
-            <p className="mt-1 max-w-2xl text-xs text-dash-secondary">Off preserves legacy drawer math. On subtracts only immediate or nightly payouts; payroll amounts remain in restaurant cash.</p>
+            <p className="mt-1 max-w-2xl text-xs text-dash-secondary">Disabled preserves legacy drawer math. Enabled subtracts only immediate or nightly payouts; payroll amounts remain in restaurant cash.</p>
           </div>
           <PayoutPills
             value={settings.expected_drawer_payouts_enabled ? 'on' : 'off'}
-            options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]}
+            options={[{ value: 'on', label: 'Enabled' }, { value: 'off', label: 'Disabled' }]}
             onChange={value => onUpdateSettings({ expected_drawer_payouts_enabled: value === 'on' })}
           />
         </div>

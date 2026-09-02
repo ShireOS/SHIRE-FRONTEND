@@ -81,10 +81,10 @@ function ChoicePills({ value, options, onChange }: {
             aria-pressed={selected}
             onClick={() => onChange(option.value)}
             className={[
-              'rounded-full px-3 py-1.5 text-xs font-semibold transition',
+              'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
               selected
-                ? 'bg-[rgb(var(--gold))] text-black shadow-sm'
-                : 'text-[rgb(var(--text-secondary))] hover:text-[rgb(var(--text-primary))]',
+                ? 'border-[#d4a854] bg-[#d4a854] text-[#111111] shadow-sm'
+                : 'border-transparent text-[rgb(var(--text-secondary))] hover:text-[rgb(var(--text-primary))]',
             ].join(' ')}
           >
             {option.label}
@@ -147,11 +147,11 @@ export function TipPayrollStep({ onboarding }: TipPayrollStepProps) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">Apply employee payouts to expected drawer cash</p>
-            <p className="mt-1 max-w-2xl text-xs leading-5 text-[rgb(var(--text-secondary))]">When on, Close Day subtracts only money employees receive now or nightly. Payroll amounts stay in the drawer.</p>
+            <p className="mt-1 max-w-2xl text-xs leading-5 text-[rgb(var(--text-secondary))]">When enabled, Close Day subtracts only money employees receive now or nightly. Payroll amounts stay in the drawer.</p>
           </div>
           <ChoicePills
             value={settings.expected_drawer_payouts_enabled ? 'on' : 'off'}
-            options={[{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }]}
+            options={[{ value: 'on', label: 'Enabled' }, { value: 'off', label: 'Disabled' }]}
             onChange={(value) => update({ expected_drawer_payouts_enabled: value === 'on' })}
           />
         </div>
