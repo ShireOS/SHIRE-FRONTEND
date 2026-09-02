@@ -5,6 +5,7 @@ import test from 'node:test'
 const layout = await readFile(new URL('./components/OnboardingLayout.tsx', import.meta.url), 'utf8')
 const page = await readFile(new URL('./pages/Onboarding.tsx', import.meta.url), 'utf8')
 const menu = await readFile(new URL('./pages/steps/MenuStep.tsx', import.meta.url), 'utf8')
+const modifiers = await readFile(new URL('./components/ModifierEditor.tsx', import.meta.url), 'utf8')
 const routing = await readFile(new URL('./pages/steps/RoutingStep.tsx', import.meta.url), 'utf8')
 const team = await readFile(new URL('./pages/steps/TeamStep.tsx', import.meta.url), 'utf8')
 const tipPayroll = await readFile(new URL('./pages/steps/TipPayrollStep.tsx', import.meta.url), 'utf8')
@@ -20,6 +21,7 @@ test('onboarding form saves, step changes, and backend errors return to the top'
 test('standalone onboarding save controls opt into the same scroll behavior', () => {
   assert.match(layout, /closest<HTMLElement>\('\[data-onboarding-save\]'\)/)
   assert.match(menu, /data-onboarding-save[\s\S]*handleContinue/)
+  assert.match(modifiers, /data-onboarding-save[\s\S]*Saving modifiers\.\.\.' : 'Continue'/)
   assert.match(tipPayroll, /data-onboarding-save[\s\S]*handleContinue/)
   assert.match(routing, /data-onboarding-save[\s\S]*saveCategoryRoutes/)
   assert.match(routing, /data-onboarding-save[\s\S]*saveItemRoutes/)

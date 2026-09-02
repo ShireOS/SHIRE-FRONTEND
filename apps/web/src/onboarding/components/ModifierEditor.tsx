@@ -554,6 +554,16 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
         </button>
       </div>
 
+      <button
+        data-onboarding-save
+        type="button"
+        onClick={() => void handleSave()}
+        disabled={saving || Boolean(loadError)}
+        className="mt-6 w-full rounded-xl bg-white px-4 py-4 text-sm font-semibold text-black transition-colors hover:bg-gray-100 disabled:opacity-40"
+      >
+        {saving ? 'Saving modifiers...' : 'Continue'}
+      </button>
+
       {/* Item assignment popup */}
       {popupFor && popupQuestion && (
         <ItemAssignmentPopup
