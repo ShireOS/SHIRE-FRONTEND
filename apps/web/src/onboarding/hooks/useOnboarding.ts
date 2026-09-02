@@ -76,6 +76,7 @@ import { fetchPosApi } from '../../shared/api/posClient'
 import { fetchReservationsApi } from '../../shared/api/reservationsClient'
 import { useAuth } from '../../auth'
 import type { Restaurant } from '@shire/db'
+import { isResumableOnboardingRestaurant } from '../onboardingRestaurantState.js'
 
 export type RestaurantType =
   | 'fine_dining'
@@ -1350,12 +1351,37 @@ export function useOnboarding() {
       let resolvedStep = 0
 
       const localDraft = isSetupEditor ? null : readDraft(user.id)
+      const newFlowCreatedRestaurant =
+        isNewRestaurantFlow &&
+        restaurantId &&
+        currentRestaurant?.id === restaurantId &&
+        isResumableOnboardingRestaurant(currentRestaurant)
+          ? currentRestaurant
+          : null
+      const fetchedNewFlowDraftRestaurant =
+        isNewRestaurantFlow &&
+        !newFlowCreatedRestaurant &&
+        localDraft?.restaurantId
+          ? await fetchDraftRestaurant(localDraft.restaurantId)
+          : null
+      const newFlowDraftRestaurant =
+        isResumableOnboardingRestaurant(fetchedNewFlowDraftRestaurant)
+          ? fetchedNewFlowDraftRestaurant
+          : null
+
+      const candidateRestaurant = shouldUseCurrentRestaurant
+        ? currentRestaurant
+        : newFlowCreatedRestaurant || newFlowDraftRestaurant
+      const onboardingRestaurant =
+        candidateRestaurant &&
+        (isSetupEditor || isResumableOnboardingRestaurant(candidateRestaurant))
+          ? candidateRestaurant
+          : null
       const shouldApplyLocalDraft = Boolean(
         localDraft &&
         (
-          !isNewRestaurantFlow ||
-          !restaurantId ||
-          (restaurantId && localDraft.restaurantId === restaurantId)
+          !localDraft.restaurantId ||
+          onboardingRestaurant?.id === localDraft.restaurantId
         )
       )
       if (localDraft && shouldApplyLocalDraft) {
@@ -1363,36 +1389,6 @@ export function useOnboarding() {
         resolvedRestaurantId = localDraft.restaurantId
         resolvedStep = localDraft.currentStep
       }
-
-      const newFlowCreatedRestaurant =
-        isNewRestaurantFlow &&
-        restaurantId &&
-        currentRestaurant?.id === restaurantId
-          ? currentRestaurant
-          : null
-      const newFlowDraftRestaurant =
-        isNewRestaurantFlow &&
-        !newFlowCreatedRestaurant &&
-        localDraft?.restaurantId
-          ? await fetchDraftRestaurant(localDraft.restaurantId)
-          : null
-      const newFlowSelectedRestaurant =
-        isNewRestaurantFlow &&
-        !newFlowCreatedRestaurant &&
-        !newFlowDraftRestaurant &&
-        currentRestaurant &&
-        !currentRestaurant.onboarding_completed_at
-          ? currentRestaurant
-          : null
-
-      const candidateRestaurant = shouldUseCurrentRestaurant
-        ? currentRestaurant
-        : newFlowCreatedRestaurant || newFlowDraftRestaurant || newFlowSelectedRestaurant
-      const onboardingRestaurant =
-        candidateRestaurant &&
-        (isSetupEditor || !candidateRestaurant.onboarding_completed_at)
-          ? candidateRestaurant
-          : null
 
       if (onboardingRestaurant) {
         const restaurantData = await hydrateFromRestaurant(onboardingRestaurant)

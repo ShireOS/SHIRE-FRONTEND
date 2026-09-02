@@ -423,7 +423,10 @@ gate; the bell remains disabled while access is unresolved or denied.
   `supabase/migrations/20260901163000_tax_jurisdiction_catalog.sql` (official tax
   catalog, semantic category profiles, and contextual POS tax metadata) and
   `supabase/migrations/20260901174500_tax_catalog_preserve_official_duplicate_rows.sql`
-  (lossless SST source ingestion); POS repo `0022_pos_timeclock_breaks_v1.sql`
+  (lossless SST source ingestion), plus
+  `supabase/migrations/20260902231500_expand_restaurant_onboarding_steps.sql`
+  (the 21-stage guided-onboarding lifecycle constraint); POS repo
+  `0022_pos_timeclock_breaks_v1.sql`
   (pos_timeclock_breaks).
 - POS backend: portal Supabase-JWT auth for `/manager/timeclock*` validates
   sessions through Supabase Auth (including asymmetric signing keys; legacy
