@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { setupResumeDestination } from './pages/setupResumeDestination.js'
+
+const onboardingGuard = await readFile(
+  new URL('../auth/hooks/useRequireAuth.ts', import.meta.url),
+  'utf8',
+)
 
 const restaurant = {
   id: 'restaurant-1',
@@ -17,7 +23,7 @@ const destination = (overrides = {}, missingCount = 7) => setupResumeDestination
 })
 
 test('unfinished stores with untouched later pages resume guided onboarding', () => {
-  assert.equal(destination(), '/onboarding')
+  assert.equal(destination(), '/onboarding?resume=1')
 })
 
 test('stores with only one or two isolated gaps open targeted configuration', () => {
@@ -44,6 +50,18 @@ test('a transient setup-status failure still honors saved guided progress', () =
       restaurantBase: '/restaurants',
       finalGuidedStep: 21,
     }),
-    '/onboarding',
+    '/onboarding?resume=1',
+  )
+})
+
+test('the explicit restaurant resume survives reseller account routing', () => {
+  assert.match(onboardingGuard, /get\('resume'\) === '1'/)
+  assert.match(
+    onboardingGuard,
+    /accountType === 'reseller'[\s\S]*!isRestaurantSetupResume/,
+  )
+  assert.match(
+    onboardingGuard,
+    /completedRestaurant[\s\S]*!isRestaurantSetupResume/,
   )
 })

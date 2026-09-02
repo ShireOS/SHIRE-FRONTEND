@@ -173,6 +173,9 @@ export function useRequireOnboarding() {
   const isNewRestaurantFlow =
     location.pathname === '/onboarding' &&
     new URLSearchParams(location.search).get('new') === '1'
+  const isRestaurantSetupResume =
+    location.pathname === '/onboarding' &&
+    new URLSearchParams(location.search).get('resume') === '1'
   const onboardingRestaurant = getOnboardingRestaurant(
     auth.restaurant.currentRestaurant,
     auth.restaurant.restaurants
@@ -192,17 +195,22 @@ export function useRequireOnboarding() {
       return
     }
 
-    if (auth.accountType === 'reseller' && !isNewRestaurantFlow) {
+    if (auth.accountType === 'reseller' && !isNewRestaurantFlow && !isRestaurantSetupResume) {
       navigate('/reseller/onboarding', { replace: true })
       return
     }
 
-    if (auth.accountType === 'reseller_employee') {
+    if (auth.accountType === 'reseller_employee' && !isRestaurantSetupResume) {
       navigate('/enterprise/stores', { replace: true })
       return
     }
 
-    if (completedRestaurant && !isSetupEditor && !isNewRestaurantFlow) {
+    if (
+      completedRestaurant &&
+      !isSetupEditor &&
+      !isNewRestaurantFlow &&
+      !isRestaurantSetupResume
+    ) {
       if (auth.restaurant.currentRestaurant?.id !== completedRestaurant.id) {
         void auth.switchRestaurant(completedRestaurant.id)
       }
@@ -228,6 +236,7 @@ export function useRequireOnboarding() {
     completedRestaurant,
     isSetupEditor,
     isNewRestaurantFlow,
+    isRestaurantSetupResume,
     navigate,
   ])
 

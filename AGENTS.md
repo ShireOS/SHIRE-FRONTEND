@@ -368,7 +368,9 @@ gate; the bell remains disabled while access is unresolved or denied.
   of truth. The Stores card itself opens normal configuration. Its Finish setup
   action resumes guided onboarding only when the saved step precedes the final
   guided step and more than two canonical setup domains remain incomplete;
-  otherwise it opens targeted Setup recovery for the isolated gaps. Permanent
+  its explicit resume route bypasses reseller-profile onboarding redirects while
+  continuing to use the selected restaurant and normal server authorization.
+  Otherwise it opens targeted Setup recovery for the isolated gaps. Permanent
   configuration ownership is Store Information (Basics and
   Goals), Marketing (Branding), Store Settings (Legal, Payments, Taxes & Charges,
   Cash/Closeout, Check Workflow, Hours), Integrations (current tools/service model

@@ -18,6 +18,6 @@ export function setupResumeDestination({
     && hasSubstantialSetupRemaining
 
   return canResumeGuidedSetup
-    ? '/onboarding'
+    ? '/onboarding?resume=1'
     : `${restaurantBase}/${restaurant.id}/setup`
 }
