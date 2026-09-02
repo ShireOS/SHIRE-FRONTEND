@@ -101,7 +101,7 @@ export function CreatableCombobox({
         }}
         className="flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2 text-left text-sm outline-none transition focus:border-[rgba(212,168,84,0.7)] focus:ring-2 focus:ring-[rgba(212,168,84,0.35)] disabled:opacity-50"
       >
-        <span className={`min-w-0 truncate ${inherited ? 'text-[rgb(var(--text-tertiary))]' : 'text-[rgb(var(--text-primary))]'}`}>
+        <span className={`min-w-0 truncate ${inherited ? 'text-white/45' : 'text-white'}`}>
           {selected?.label || (value ? value : placeholder)}
         </span>
         <ChevronDown className={`h-4 w-4 shrink-0 text-[rgb(var(--text-tertiary))] transition ${open ? 'rotate-180' : ''}`} aria-hidden="true" />

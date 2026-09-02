@@ -5,6 +5,7 @@ import test from 'node:test'
 const step = await readFile(new URL('./pages/steps/MenuCategoriesStep.tsx', import.meta.url), 'utf8')
 const settings = await readFile(new URL('../../../../packages/settings/src/menuCategories.ts', import.meta.url), 'utf8')
 const dashboard = await readFile(new URL('../dashboard/MenuPanel.jsx', import.meta.url), 'utf8')
+const combobox = await readFile(new URL('../shared/components/CreatableCombobox.tsx', import.meta.url), 'utf8')
 
 test('new categories persist inherited defaults as empty values', () => {
   const defaults = settings.slice(settings.indexOf('export function defaultMenuCategories'), settings.indexOf('export function normalizeMenuCategories'))
@@ -25,4 +26,9 @@ test('existing category configuration shares the same explicit controls', () => 
   assert.match(dashboard, /<CreatableCombobox[\s\S]*createNoun="prep station"/)
   assert.match(dashboard, /<CreatableCombobox[\s\S]*createNoun="KDS group"/)
   assert.match(dashboard, /Promote any legacy station projection/)
+})
+
+test('inherited selector values use a concrete faded color across shells', () => {
+  assert.match(combobox, /inherited \? 'text-white\/45' : 'text-white'/)
+  assert.doesNotMatch(combobox, /inherited \? 'text-\[rgb\(var\(--text-tertiary\)\)\]'/)
 })

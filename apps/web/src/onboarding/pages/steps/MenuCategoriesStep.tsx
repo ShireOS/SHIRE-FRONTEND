@@ -329,7 +329,7 @@ export function MenuCategoriesStep({ onboarding }: MenuCategoriesStepProps) {
                 <select
                   value={category.default_fire_mode === 'inherit' ? '' : (category.default_fire_mode || '')}
                   onChange={(event) => updateCategory(index, { default_fire_mode: event.target.value as MenuCategoryData['default_fire_mode'] })}
-                  className={`${inputClass} ${!category.default_fire_mode || category.default_fire_mode === 'inherit' ? 'text-[rgb(var(--text-tertiary))]' : ''}`}
+                  className={`${inputClass} ${!category.default_fire_mode || category.default_fire_mode === 'inherit' ? 'text-white/45' : ''}`}
                 >
                   <option value="" className="bg-[#1a1a1a]">Use order default — {defaultFireLabel}</option>
                   {FIRE_MODES.map(([value, label]) => <option key={value} value={value} className="bg-[#1a1a1a]">{label}</option>)}
