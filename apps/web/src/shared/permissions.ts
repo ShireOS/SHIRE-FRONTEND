@@ -2,7 +2,7 @@
 //   role defaults  -> pos_role_permissions.back_office_permissions (jsonb {key: bool})
 //   member diffs   -> restaurant_members.permission_overrides (jsonb, only keys that differ)
 // Effective = merge(roleDefaults, overrides); owners implicitly hold every key.
-// Canonical key list lives here AND in CLAUDE.md "Permission keys registry" —
+// Canonical key list lives here AND in AGENTS.md "Permission keys registry" —
 // keep both in sync when adding keys (standing rule).
 
 export type PermissionMap = Record<string, boolean>
@@ -56,6 +56,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'operations.close_day', label: 'Review & close day', description: 'Review close-day exceptions, confirm staff clock-outs and finalize a business day' },
       { key: 'payments.refund', label: 'Issue payment refunds', description: 'Request and monitor processor-backed card refunds' },
       { key: 'settings.edit', label: 'Edit restaurant settings', description: 'Change setup, POS settings and devices' },
+      { key: 'devices.manage', label: 'Manage devices & updates', description: 'Configure terminals and control approved POS update rollouts' },
     ],
   },
 ]
@@ -96,19 +97,44 @@ export function allPermissions(value: boolean): PermissionMap {
   return Object.fromEntries(PERMISSION_KEYS.map((key) => [key, value]))
 }
 
+function hasOwnPermission(permissions: PermissionMap | null | undefined, key: string): boolean {
+  return Boolean(permissions && Object.prototype.hasOwnProperty.call(permissions, key))
+}
+
+function rawPermission(permissions: PermissionMap | null | undefined, key: string): boolean {
+  if (hasOwnPermission(permissions, key)) return permissions?.[key] === true
+  if (key === 'devices.manage') return permissions?.['settings.edit'] === true
+  return false
+}
+
 // Overrides win; only known keys are considered.
 export function mergePermissions(roleDefaults: PermissionMap | null | undefined, overrides: PermissionMap | null | undefined): PermissionMap {
   const merged: PermissionMap = {}
   for (const key of PERMISSION_KEYS) {
-    merged[key] = Boolean(
-      overrides && key in overrides ? overrides[key] : roleDefaults?.[key]
-    )
+    if (hasOwnPermission(overrides, key)) {
+      merged[key] = overrides?.[key] === true
+      continue
+    }
+    if (hasOwnPermission(roleDefaults, key)) {
+      merged[key] = roleDefaults?.[key] === true
+      continue
+    }
+
+    // Existing roles predate devices.manage. During the compatibility window,
+    // inherit the effective settings.edit value only when the new key is truly
+    // absent. An explicit false at either layer remains an authoritative deny.
+    merged[key] = key === 'devices.manage'
+      ? rawPermission(overrides, 'settings.edit') || (
+          !hasOwnPermission(overrides, 'settings.edit')
+          && rawPermission(roleDefaults, 'settings.edit')
+        )
+      : false
   }
   return merged
 }
 
 export function can(permissions: PermissionMap | null | undefined, key: string): boolean {
-  return Boolean(permissions?.[key])
+  return rawPermission(permissions, key)
 }
 
 // Which permission unlocks each store nav tab. Tabs absent from this map are
@@ -128,8 +154,8 @@ export const TAB_PERMISSIONS: Record<string, string> = {
   'menu-workspace': 'menu.view',
   taxes: 'settings.edit',
   feedback: 'reports.view',
-  devices: 'settings.edit',
-  'device-updates': 'settings.edit',
+  devices: 'devices.manage',
+  'device-updates': 'devices.manage',
   'pos-settings': 'settings.edit',
   'printing-routing': 'settings.edit',
   'tip-pooling': 'payroll.view',

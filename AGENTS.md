@@ -275,6 +275,8 @@ list must stay in sync.
 - `operations.close_day`
 - `payments.refund`
 - `settings.edit`
+- `devices.manage` (legacy fallback to `settings.edit` only when this key is absent;
+  an explicit `false` always denies device and update management)
 
 ### POS-owned tip domain (2026-07-28)
 
@@ -523,8 +525,10 @@ gate; the bell remains disabled while access is unresolved or denied.
   through an assigned group (migration
   `20260718140717_reseller_employee_device_assignment_visibility.sql`).
 - The per-store `Device Updates` tab is a lazy Back Office workspace beside
-  Devices and POS Settings. It uses existing `settings.edit`; assigned resellers
-  receive it through the owner-controlled `devices` grant. The browser calls only
+  Devices and POS Settings. It uses `devices.manage`, with `settings.edit` only
+  as a compatibility fallback when the new key is absent; an explicit
+  `devices.manage: false` always denies access. Assigned resellers receive it
+  through the owner-controlled `devices` grant. The browser calls only
   the audited POS-backend update APIs and never writes update tables directly.
   Owners/resellers may deploy approved releases with ASAP-safe, one hour after
   successful Close Day, scheduled, next-launch, or download-only policies; only

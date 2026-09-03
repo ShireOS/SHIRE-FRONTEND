@@ -5,6 +5,7 @@ import {
   PERMISSION_KEYS,
   PERMISSION_PRESETS,
   TAB_PERMISSIONS,
+  can,
 } from '../../../shared/permissions'
 
 // ── Value contract ───────────────────────────────────────────────────────────
@@ -22,8 +23,8 @@ import {
 export function diffOverrides(effective, roleDefaults) {
   const overrides = {}
   for (const key of PERMISSION_KEYS) {
-    const next = Boolean(effective?.[key])
-    if (next !== Boolean(roleDefaults?.[key])) overrides[key] = next
+    const next = can(effective, key)
+    if (next !== can(roleDefaults, key)) overrides[key] = next
   }
   return overrides
 }
@@ -86,8 +87,8 @@ function NavPreview({ effective }) {
         {NAV_PREVIEW.map((item) => {
           const required = TAB_PERMISSIONS[item.id]
           const visible = item.anyOf
-            ? item.anyOf.some((permission) => Boolean(effective[permission]))
-            : !required || Boolean(effective[required])
+            ? item.anyOf.some((permission) => can(effective, permission))
+            : !required || can(effective, required)
           return (
             <li
               key={item.id}
@@ -118,12 +119,12 @@ export default function PermissionEditor({
 }) {
   const effective = useMemo(() => {
     const map = {}
-    for (const key of PERMISSION_KEYS) map[key] = Boolean(value?.[key])
+    for (const key of PERMISSION_KEYS) map[key] = can(value, key)
     return map
   }, [value])
 
   const hasRoleDefaults = roleDefaults != null
-  const isLocked = (key) => Boolean(grantCap) && grantCap[key] !== true
+  const isLocked = (key) => Boolean(grantCap) && !can(grantCap, key)
 
   const emit = (next) => {
     if (!disabled && typeof onChange === 'function') onChange(next)
@@ -145,14 +146,14 @@ export default function PermissionEditor({
   }
 
   const hasOverrides = useMemo(
-    () => hasRoleDefaults && PERMISSION_KEYS.some((key) => effective[key] !== Boolean(roleDefaults?.[key])),
+    () => hasRoleDefaults && PERMISSION_KEYS.some((key) => effective[key] !== can(roleDefaults, key)),
     [hasRoleDefaults, roleDefaults, effective]
   )
 
   const resetToRole = () => {
     const next = {}
     for (const key of PERMISSION_KEYS) {
-      next[key] = isLocked(key) ? effective[key] : Boolean(roleDefaults?.[key])
+      next[key] = isLocked(key) ? effective[key] : can(roleDefaults, key)
     }
     emit(next)
   }

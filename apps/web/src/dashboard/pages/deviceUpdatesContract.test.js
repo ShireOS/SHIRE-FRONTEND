@@ -16,7 +16,7 @@ test('Device Updates is reachable through every workspace registry', () => {
   assert.match(app, /activeTab === 'device-updates'.*<DeviceUpdatesPage/s)
   assert.match(loaders, /loadDeviceUpdates = \(\) => import\('\.\/pages\/DeviceUpdatesPage'\)/)
   assert.match(loaders, /'device-updates': loadDeviceUpdates/)
-  assert.match(permissions, /'device-updates': 'settings\.edit'/)
+  assert.match(permissions, /'device-updates': 'devices\.manage'/)
   assert.match(views, /'device-updates': 'nav\.device-updates'/)
 })
 
