@@ -62,6 +62,46 @@ function Toggle({
   )
 }
 
+function TipParticipationControl({
+  isTipped,
+  onChange,
+}: {
+  isTipped: boolean
+  onChange: (isTipped: boolean) => void
+}) {
+  return (
+    <fieldset className="min-w-0 space-y-1">
+      <legend className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))]">
+        Tip participation
+      </legend>
+      <div className="grid grid-cols-2 gap-1 rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(0,0,0,0.14)] p-1">
+        {[
+          { value: false, label: 'Not tipped' },
+          { value: true, label: 'Tipped' },
+        ].map(option => {
+          const selected = isTipped === option.value
+          return (
+            <button
+              key={option.label}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => onChange(option.value)}
+              className={[
+                'min-h-[34px] rounded-md px-2 py-1.5 text-xs font-semibold transition',
+                selected
+                  ? 'bg-[rgb(var(--gold))] text-black shadow-sm'
+                  : 'text-[rgb(var(--text-tertiary))] hover:bg-white/5 hover:text-[rgb(var(--text-primary))]',
+              ].join(' ')}
+            >
+              {option.label}
+            </button>
+          )
+        })}
+      </div>
+    </fieldset>
+  )
+}
+
 export function ManagerControlsStep({ onboarding }: ManagerControlsStepProps) {
   const { restaurantId, data, updateData, saveManagerControls, nextStep, isLoading, error } = onboarding
   const [roleDrafts, setRoleDrafts] = useState<JobCodeData[]>(data.job_codes)
@@ -237,111 +277,115 @@ export function ManagerControlsStep({ onboarding }: ManagerControlsStepProps) {
       <div className="rounded-lg border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.03)] p-4">
         <div className="mb-4">
           <h3 className="text-base font-semibold text-[rgb(var(--text-primary))]">Restaurant roles</h3>
+          <p className="mt-1 text-xs leading-5 text-[rgb(var(--text-tertiary))]">
+            Each role sets a starting wage, POS authority tier, and whether it participates in tipped payroll.
+          </p>
         </div>
         <div className="space-y-3">
-          <div className="hidden px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[rgb(var(--text-tertiary))] lg:grid lg:grid-cols-[minmax(180px,1fr)_140px_130px_110px_96px] lg:gap-3">
-            <span>Role</span>
-            <span>Tier</span>
-            <span>Base $/hr</span>
-            <span>Pay type</span>
-            <span></span>
-          </div>
           {roleDrafts.map((role, index) => role.is_active === false ? null : (
-            <div key={role.id || `${role.code}-${index}`} className="grid gap-3 rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.025)] p-3 lg:grid-cols-[minmax(180px,1fr)_140px_130px_110px_96px]">
-              <label className="space-y-1">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))] lg:hidden">Role</span>
+            <div key={role.id || `${role.code}-${index}`} className="rounded-lg border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.025)] p-3">
+              <div className="mb-3 flex min-w-0 items-center justify-between gap-3">
+                <p className="truncate text-xs font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))]">
+                  {role.label.trim() || `Role ${index + 1}`}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => removeRoleDraft(index)}
+                  className="shrink-0 rounded-md border border-red-400/25 px-2.5 py-1.5 text-xs font-semibold text-red-200 transition hover:border-red-300/60 hover:bg-red-500/10 disabled:opacity-40"
+                  disabled={activeRoles.length <= 1 || isSavingRoles}
+                >
+                  Remove
+                </button>
+              </div>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                <label className="min-w-0 space-y-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))]">Role name</span>
+                  <input
+                    value={role.label}
+                    onChange={(event) => updateRoleDraft(index, { label: event.target.value })}
+                    className={inputClass}
+                    placeholder="Role name"
+                  />
+                </label>
+                <label className="min-w-0 space-y-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))]">POS authority tier</span>
+                  <select
+                    value={role.permission_tier}
+                    onChange={(event) => updateRoleDraft(index, { permission_tier: event.target.value as JobCodeData['permission_tier'] })}
+                    className={inputClass}
+                  >
+                    <option value="owner" className="bg-[#1a1a1a]">Owner</option>
+                    <option value="manager" className="bg-[#1a1a1a]">Manager</option>
+                    <option value="waiter" className="bg-[#1a1a1a]">Server</option>
+                    <option value="normal" className="bg-[#1a1a1a]">Standard</option>
+                    <option value="limited" className="bg-[#1a1a1a]">Limited</option>
+                  </select>
+                </label>
+                <label className="min-w-0 space-y-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))]">Base hourly wage</span>
+                  <input
+                    value={displayRate(role.default_hourly_rate)}
+                    onChange={(event) => updateRoleDraft(index, { default_hourly_rate: sanitizeNumber(event.target.value) })}
+                    className={inputClass}
+                    inputMode="decimal"
+                    placeholder="0.00"
+                  />
+                </label>
+                <TipParticipationControl
+                  isTipped={role.is_tipped}
+                  onChange={(isTipped) => updateRoleDraft(index, {
+                    is_tipped: isTipped,
+                    tipout_role: isTipped ? slugRoleCode(role.code || role.label) : '',
+                  })}
+                />
+              </div>
+            </div>
+          ))}
+          <div className="rounded-lg border border-dashed border-[rgba(255,255,255,0.14)] p-3">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))]">Add another role</p>
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+              <label className="min-w-0 space-y-1">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))]">Role name</span>
                 <input
-                  value={role.label}
-                  onChange={(event) => updateRoleDraft(index, { label: event.target.value })}
+                  value={newRoleLabel}
+                  onChange={(event) => setNewRoleLabel(event.target.value)}
                   className={inputClass}
-                  placeholder="Role name"
+                  placeholder="New role"
                 />
               </label>
-              <label className="space-y-1">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))] lg:hidden">Tier</span>
+              <label className="min-w-0 space-y-1">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))]">POS authority tier</span>
                 <select
-                  value={role.permission_tier}
-                  onChange={(event) => updateRoleDraft(index, { permission_tier: event.target.value as JobCodeData['permission_tier'] })}
-                  className={inputClass}
+                  value="normal"
+                  disabled
+                  className={`${inputClass} disabled:text-[rgb(var(--text-secondary))] disabled:opacity-80`}
                 >
-                  <option value="owner" className="bg-[#1a1a1a]">Owner</option>
-                  <option value="manager" className="bg-[#1a1a1a]">Manager</option>
-                  <option value="waiter" className="bg-[#1a1a1a]">Waiter</option>
-                  <option value="normal" className="bg-[#1a1a1a]">Normal</option>
-                  <option value="limited" className="bg-[#1a1a1a]">Limited</option>
+                  <option value="normal" className="bg-[#1a1a1a]">Standard</option>
                 </select>
               </label>
-              <label className="space-y-1">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))] lg:hidden">Base $/hr</span>
+              <label className="min-w-0 space-y-1">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))]">Base hourly wage</span>
                 <input
-                  value={displayRate(role.default_hourly_rate)}
-                  onChange={(event) => updateRoleDraft(index, { default_hourly_rate: sanitizeNumber(event.target.value) })}
+                  value={newRoleRate}
+                  onChange={(event) => setNewRoleRate(sanitizeNumber(event.target.value))}
                   className={inputClass}
                   inputMode="decimal"
                   placeholder="0.00"
                 />
               </label>
-              <Toggle
-                active={role.is_tipped}
-                label={role.is_tipped ? 'Tipped' : 'Hourly'}
-                onClick={() => updateRoleDraft(index, {
-                  is_tipped: !role.is_tipped,
-                  tipout_role: !role.is_tipped ? slugRoleCode(role.code || role.label) : '',
-                })}
+              <TipParticipationControl
+                isTipped={newRoleIsTipped}
+                onChange={setNewRoleIsTipped}
               />
               <button
                 type="button"
-                onClick={() => removeRoleDraft(index)}
-                className="min-h-[40px] rounded-lg border border-red-400/30 px-3 py-2 text-sm font-semibold text-red-200 transition hover:border-red-300/60 disabled:opacity-40"
-                disabled={activeRoles.length <= 1 || isSavingRoles}
+                onClick={addRoleDraft}
+                disabled={!newRoleLabel.trim() || isSavingRoles}
+                className="min-h-[40px] rounded-lg border border-[#d4a854] bg-[#d4a854] px-3 py-2 text-sm font-semibold text-black transition hover:brightness-110 disabled:border-[rgba(255,255,255,0.18)] disabled:bg-[rgba(255,255,255,0.08)] disabled:text-[rgb(var(--text-secondary))] sm:col-span-2"
               >
-                Remove
+                Add role
               </button>
             </div>
-          ))}
-          <div className="grid gap-3 rounded-lg border border-dashed border-[rgba(255,255,255,0.14)] p-3 lg:grid-cols-[minmax(180px,1fr)_140px_130px_110px_96px]">
-            <label className="space-y-1">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))] lg:hidden">Role</span>
-              <input
-                value={newRoleLabel}
-                onChange={(event) => setNewRoleLabel(event.target.value)}
-                className={inputClass}
-                placeholder="New role"
-              />
-            </label>
-            <label className="space-y-1">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))] lg:hidden">Tier</span>
-              <select
-                value="normal"
-                disabled
-                className={`${inputClass} disabled:text-[rgb(var(--text-secondary))] disabled:opacity-80`}
-              >
-                <option value="normal" className="bg-[#1a1a1a]">Normal</option>
-              </select>
-            </label>
-            <label className="space-y-1">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[rgb(var(--text-tertiary))] lg:hidden">Base $/hr</span>
-              <input
-                value={newRoleRate}
-                onChange={(event) => setNewRoleRate(sanitizeNumber(event.target.value))}
-                className={inputClass}
-                inputMode="decimal"
-                placeholder="0.00"
-              />
-            </label>
-            <Toggle
-              active={newRoleIsTipped}
-              label={newRoleIsTipped ? 'Tipped' : 'Hourly'}
-              onClick={() => setNewRoleIsTipped(current => !current)}
-            />
-            <button
-              type="button"
-              onClick={addRoleDraft}
-              disabled={!newRoleLabel.trim() || isSavingRoles}
-              className="min-h-[40px] rounded-lg border border-[#d4a854] bg-[#d4a854] px-3 py-2 text-sm font-semibold text-black transition hover:brightness-110 disabled:border-[rgba(255,255,255,0.18)] disabled:bg-[rgba(255,255,255,0.08)] disabled:text-[rgb(var(--text-secondary))]"
-            >
-              Add role
-            </button>
           </div>
         </div>
       </div>

@@ -106,7 +106,11 @@
   Team's invitation composer for employee, manager, owner, and reseller access,
   including permission caps, presentation policy, email delivery, manual links,
   resend, revoke, and the same existing-member Account & View editor available
-  in Team. A POS-profile email by itself never sends an invitation.
+  in Team. Manager Controls presents each position as a responsive card, labels
+  the legacy `waiter` authority tier as Server, and makes tipped-payroll
+  participation an explicit Tipped/Not tipped choice without changing the
+  persisted tier or `is_tipped` contracts. A POS-profile email by itself never
+  sends an invitation.
 - **Permanent employee deletion is an audited privacy scrub, not a historical
   cascade.** Team may offer Delete permanently only after the employee is
   deactivated and under existing `team.edit_employees` hierarchy checks. The
