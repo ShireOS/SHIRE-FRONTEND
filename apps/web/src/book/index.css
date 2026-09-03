@@ -144,6 +144,28 @@ input:focus {
   box-shadow: 0 0 0 3px rgba(31, 111, 99, 0.12);
 }
 
+.sms-consent {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.sms-consent input {
+  width: 18px;
+  min-height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--book-accent);
+}
+
+.sms-consent span {
+  display: block;
+  color: var(--book-muted);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
 .slots-section {
   display: grid;
   gap: 12px;

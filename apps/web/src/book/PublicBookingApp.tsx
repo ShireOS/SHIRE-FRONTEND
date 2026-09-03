@@ -128,6 +128,7 @@ export function PublicBookingApp() {
   const [guestName, setGuestName] = useState('')
   const [guestPhone, setGuestPhone] = useState('')
   const [guestEmail, setGuestEmail] = useState('')
+  const [smsConsent, setSmsConsent] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -241,8 +242,8 @@ export function PublicBookingApp() {
       event.preventDefault()
       if (!locationId) return
 
-      if (!guestName.trim() || !guestPhone.trim() || !selectedTime) {
-        setError('Add your name, phone number, and a reservation time before confirming.')
+      if (!guestName.trim() || !guestPhone.trim() || !selectedTime || !smsConsent) {
+        setError('Add your name, phone number, reservation time, and SMS consent before confirming.')
         return
       }
 
@@ -262,6 +263,8 @@ export function PublicBookingApp() {
               serviceDate,
               reservationTime: selectedTime,
               source: source === 'google' ? 'google_business_profile' : 'public_web',
+              smsTransactionalConsent: true,
+              smsTransactionalConsentSource: 'public_booking_checkbox',
             }),
           }
         )
@@ -272,7 +275,7 @@ export function PublicBookingApp() {
         setSubmitting(false)
       }
     },
-    [guestEmail, guestName, guestPhone, locationId, partySize, selectedTime, serviceDate, source]
+    [guestEmail, guestName, guestPhone, locationId, partySize, selectedTime, serviceDate, smsConsent, source]
   )
 
   if (initialLoading) {
@@ -388,6 +391,9 @@ export function PublicBookingApp() {
               <span>Phone</span>
               <input
                 type="tel"
+                autoComplete="tel"
+                inputMode="tel"
+                placeholder="(555) 555-0123"
                 value={guestPhone}
                 onChange={(event) => setGuestPhone(event.target.value)}
                 required
@@ -404,9 +410,22 @@ export function PublicBookingApp() {
             />
           </label>
 
+          <label className="sms-consent">
+            <input
+              type="checkbox"
+              checked={smsConsent}
+              onChange={(event) => setSmsConsent(event.target.checked)}
+              required
+            />
+            <span>
+              I agree to receive SMS confirmations and reservation updates. Message frequency varies.
+              Reply STOP to opt out.
+            </span>
+          </label>
+
           {error && <p className="error">{error}</p>}
 
-          <button className="confirm-button" type="submit" disabled={submitting || !selectedTime}>
+          <button className="confirm-button" type="submit" disabled={submitting || !selectedTime || !smsConsent}>
             {submitting ? <Loader2 className="spin" size={18} /> : <PartyPopper size={18} />}
             Request reservation
           </button>
