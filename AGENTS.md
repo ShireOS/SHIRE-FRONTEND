@@ -378,8 +378,8 @@ gate; the bell remains disabled while access is unresolved or denied.
   configuration ownership is Store Information (Basics and
   Goals), Marketing (Branding), Store Settings (Legal, Payments, Taxes & Charges,
   Cash/Closeout, Check Workflow, Hours), Integrations (current tools/service model
-  and provider connections), Reservations (booking page/timing and AI phone
-  provisioning), Menu (menu data, discounts, routing),
+  and provider connections), Reservations (booking page/timing, restaurant-level
+  guest SMS timing, and AI phone provisioning), Menu (menu data, discounts, routing),
   Team (members/roles and Manager Controls), UI Editor (appearance, sections,
   floor plan), and Payroll & Tips. All of these pages reuse the Setup editor's
   canonical save contracts. Discount reads require `menu.view`; writes require

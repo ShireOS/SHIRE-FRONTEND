@@ -5,9 +5,10 @@ import test from 'node:test'
 const page = await readFile(new URL('./VoiceReservationsPage.jsx', import.meta.url), 'utf8')
 
 test('AI phone local state resets on every restaurant change', () => {
+  const resetStart = page.indexOf("setSearchMode('zip')")
   const resetEffect = page.slice(
-    page.indexOf("setSearchMode('zip')"),
-    page.indexOf('}, [restaurantId])') + '}, [restaurantId])'.length,
+    resetStart,
+    page.indexOf('}, [restaurantId])', resetStart) + '}, [restaurantId])'.length,
   )
   for (const reset of [
     "setSearchValue('')",

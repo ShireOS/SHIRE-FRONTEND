@@ -4,6 +4,7 @@ import test from 'node:test'
 
 const workspace = await readFile(new URL('./AuthenticatedDashboardApp.jsx', import.meta.url), 'utf8')
 const setupPanel = await readFile(new URL('./RestaurantSetupPanel.jsx', import.meta.url), 'utf8')
+const reservationsPage = await readFile(new URL('./pages/VoiceReservationsPage.jsx', import.meta.url), 'utf8')
 
 test('an empty reservations tab set never falls through to the AI phone child', () => {
   const hub = workspace.slice(
@@ -18,4 +19,12 @@ test('an empty reservations tab set never falls through to the AI phone child', 
 test('the setup tab list itself excludes Danger Zone for non-primary owners', () => {
   assert.match(setupPanel, /const isPrimaryOwner = Boolean\(auth\?\.user\?\.id && restaurant\?\.owner_id === auth\.user\.id\)/)
   assert.match(setupPanel, /SETUP_TABS\.filter\(\(tab\) => tab\.id !== 'lifecycle' \|\| isPrimaryOwner\)/)
+})
+
+test('reservation text timing is restaurant-scoped and uses the authorized API', () => {
+  assert.match(reservationsPage, /reservation-notification-settings/)
+  assert.match(reservationsPage, /activeRestaurantRef\.current !== requestRestaurantId/)
+  assert.match(reservationsPage, /confirmationSmsEnabled/)
+  assert.match(reservationsPage, /sameDayReminderHoursBefore/)
+  assert.match(reservationsPage, /readOnly \|\| !draft\.sameDayReminderEnabled/)
 })
