@@ -89,7 +89,7 @@ function TipParticipationControl({
               className={[
                 'min-h-[34px] rounded-md px-2 py-1.5 text-xs font-semibold transition',
                 selected
-                  ? 'bg-[rgb(var(--gold))] text-black shadow-sm'
+                  ? 'bg-[#d4a854] text-[#111111] shadow-sm'
                   : 'text-[rgb(var(--text-tertiary))] hover:bg-white/5 hover:text-[rgb(var(--text-primary))]',
               ].join(' ')}
             >

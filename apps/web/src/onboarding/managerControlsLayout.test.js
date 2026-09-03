@@ -14,6 +14,7 @@ test('tip participation presents both states and exposes the selected state', ()
   assert.match(managerControls, /\{ value: false, label: 'Not tipped' \}/)
   assert.match(managerControls, /\{ value: true, label: 'Tipped' \}/)
   assert.match(managerControls, /aria-pressed=\{selected\}/)
+  assert.match(managerControls, /bg-\[#d4a854\] text-\[#111111\]/)
 })
 
 test('legacy waiter and normal tiers use current user-facing labels', () => {
