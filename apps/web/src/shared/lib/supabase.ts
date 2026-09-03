@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { normalizeSupabaseUrl } from './supabaseConfig'
 
 const PLACEHOLDER_SUPABASE_URL = 'https://your-project.supabase.co'
 const PLACEHOLDER_SUPABASE_KEY = 'your-publishable-key-here'
@@ -15,8 +16,8 @@ const isPlaceholderValue = (value: string | null, placeholder: string): boolean 
   value === placeholder
 
 const supabaseUrl =
-  normalizeEnvValue(import.meta.env.VITE_SUPABASE_URL) ??
-  normalizeEnvValue(__SHIRE_SUPABASE_URL__)
+  normalizeSupabaseUrl(import.meta.env.VITE_SUPABASE_URL) ??
+  normalizeSupabaseUrl(__SHIRE_SUPABASE_URL__)
 const supabasePublishableKey =
   normalizeEnvValue(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) ??
   normalizeEnvValue(__SHIRE_SUPABASE_PUBLISHABLE_KEY__)
