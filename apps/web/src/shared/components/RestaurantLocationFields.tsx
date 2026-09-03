@@ -48,6 +48,7 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
   const [searching, setSearching] = useState(false)
   const [stateResolvable, setStateResolvable] = useState<boolean | null>(null)
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null)
+  const [usingTypedAddress, setUsingTypedAddress] = useState(false)
   const [error, setError] = useState('')
   const requestSequence = useRef(0)
   const activeRequest = useRef<AbortController | null>(null)
@@ -67,13 +68,40 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
     setSearched(false)
     setStateResolvable(null)
     setSelectedMatchId(null)
+    setUsingTypedAddress(false)
     setError('')
     onChange(next)
   }
 
+  const missingAddressFields = () => {
+    const missing = [
+      !value.address.trim() && 'street address',
+      !value.city.trim() && 'city',
+      !value.state.trim() && 'state',
+      !value.postal_code.trim() && 'ZIP code',
+    ].filter(Boolean) as string[]
+    return missing
+  }
+
+  const useTypedAddress = () => {
+    const missing = missingAddressFields()
+    if (missing.length > 0) {
+      setError(`Enter the ${missing.join(', ')} before using a manually entered address.`)
+      return
+    }
+    cancelSearch()
+    setMatches([])
+    setSearched(true)
+    setStateResolvable(null)
+    setSelectedMatchId(null)
+    setUsingTypedAddress(true)
+    setError('')
+  }
+
   const search = async () => {
-    if (!value.address.trim() || !value.city.trim() || !value.state.trim() || !value.postal_code.trim()) {
-      setError('Enter the street, city, state, and ZIP before searching.')
+    const missing = missingAddressFields()
+    if (missing.length > 0) {
+      setError(`Enter the ${missing.join(', ')} before verifying the address.`)
       return
     }
     activeRequest.current?.abort()
@@ -82,6 +110,7 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
     requestSequence.current = sequence
     activeRequest.current = controller
     setSearching(true)
+    setUsingTypedAddress(false)
     setError('')
     try {
       const result = await fetchWithSupabaseAuth<SearchResponse>('/restaurant-locations/search', {
@@ -99,12 +128,13 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
       if (requestSequence.current !== sequence) return
       setMatches(result.matches || [])
       setStateResolvable(result.state_resolvable)
+      setUsingTypedAddress(false)
       setSearched(true)
     } catch (searchError) {
       if (controller.signal.aborted || requestSequence.current !== sequence) return
       setError(messageFor(searchError))
       setMatches([])
-      setSearched(false)
+      setSearched(true)
     } finally {
       if (requestSequence.current === sequence) {
         activeRequest.current = null
@@ -115,6 +145,7 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
 
   const selectMatch = (match: LocationMatch) => {
     setSelectedMatchId(match.match_id)
+    setUsingTypedAddress(false)
     setError('')
     onChange({
       address: match.address,
@@ -154,7 +185,25 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
         </button>
       </div>
 
-      {error && <p className="text-sm text-red-300">{error}</p>}
+      <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/[0.025] p-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs leading-5 text-[rgb(var(--text-tertiary))]">
+          Can't find the address? Keep the complete address exactly as entered and continue setup manually.
+        </p>
+        <button
+          type="button"
+          onClick={useTypedAddress}
+          className="shrink-0 rounded-lg border border-white/15 px-3 py-2 text-xs font-semibold text-[rgb(var(--text-primary))] transition hover:border-white/30 hover:bg-white/5"
+        >
+          {searching ? 'Stop and use typed address' : 'Use typed address'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-400/25 bg-red-400/[0.07] p-3 text-sm text-red-200" role="alert">
+          <p>{error}</p>
+          <p className="mt-1 text-xs text-red-100/75">You can correct the fields and retry, or use the complete typed address manually.</p>
+        </div>
+      )}
       {matches.length > 0 && (
         <div className="space-y-2 rounded-xl border border-white/10 bg-black/10 p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-[rgb(var(--text-tertiary))]">Verified address matches</p>
@@ -173,11 +222,16 @@ export function RestaurantLocationFields({ value, onChange, inputClassName = def
           ))}
         </div>
       )}
-      {searched && matches.length === 0 && (
+      {usingTypedAddress && (
+        <div className="rounded-lg border border-emerald-400/25 bg-emerald-400/[0.07] p-3 text-sm leading-5 text-emerald-100" role="status">
+          Using the address exactly as entered. You can continue setup; tax coverage will remain unresolved until this location can be matched or reviewed.
+        </div>
+      )}
+      {searched && matches.length === 0 && !usingTypedAddress && !error && (
         <div className="rounded-lg border border-amber-400/25 bg-amber-400/[0.07] p-3 text-sm leading-5 text-amber-100">
           {stateResolvable
-            ? 'No authoritative geographic match was found. You may keep the typed address, but taxes remain unresolved until an assigned reseller or platform admin fills the missing values.'
-            : 'SHIRE does not yet have an authoritative tax source for this state. You may keep the typed address; taxes remain unresolved and editable only by an assigned reseller or platform admin.'}
+            ? 'No authoritative geographic match was found. Choose Use typed address to continue manually; taxes will remain unresolved until an assigned reseller or platform admin fills the missing values.'
+            : 'SHIRE does not yet have an authoritative tax source for this state. Choose Use typed address to continue manually; taxes remain unresolved and editable only by an assigned reseller or platform admin.'}
         </div>
       )}
     </div>

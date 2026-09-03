@@ -60,6 +60,15 @@ test('address lookup hides provider internals and ignores stale searches', () =>
   assert.match(locationFields, /requestSequence\.current !== sequence/)
 })
 
+test('address lookup always exposes an explicit manual-entry escape hatch', () => {
+  assert.match(locationFields, /const useTypedAddress = \(\) =>/)
+  assert.match(locationFields, /Stop and use typed address/)
+  assert.match(locationFields, /Use typed address/)
+  assert.match(locationFields, /cancelSearch\(\)[\s\S]*setUsingTypedAddress\(true\)/)
+  assert.match(locationFields, /Using the address exactly as entered/)
+  assert.match(locationFields, /correct the fields and retry, or use the complete typed address manually/)
+})
+
 test('restaurant saves omit support-owned tax rates and category assignments', () => {
   assert.match(onboardingHook, /tax_rates: _taxRates, category_assignments: _assignments/)
   assert.match(setup, /tax_rates, category_assignments, \.\.\.chargesOnlyPayload/)
