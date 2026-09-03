@@ -77,6 +77,11 @@ import { fetchReservationsApi } from '../../shared/api/reservationsClient'
 import { useAuth } from '../../auth'
 import type { Restaurant } from '@shire/db'
 import { isResumableOnboardingRestaurant } from '../onboardingRestaurantState.js'
+import {
+  onboardingResumePath,
+  readOnboardingRoute,
+  resolveOnboardingTargetId,
+} from '../onboardingRoute.js'
 
 export type RestaurantType =
   | 'fine_dining'
@@ -1090,12 +1095,27 @@ export function useOnboarding() {
   const navigate = useNavigate()
   const location = useLocation()
   const isSetupEditor = /^\/(?:reseller\/)?restaurants\/[^/]+\/setup\/?$/.test(location.pathname)
-  const isNewRestaurantFlow =
-    location.pathname === '/onboarding' &&
-    new URLSearchParams(location.search).get('new') === '1'
-  const shouldUseCurrentRestaurant = !isNewRestaurantFlow
-  const currentRestaurantStep = isSetupEditor ? null : currentRestaurant?.onboarding_step
-  const currentRestaurantUpdatedAt = isSetupEditor ? null : currentRestaurant?.updated_at
+  const {
+    isNewRestaurantFlow,
+    isRestaurantSetupResume,
+    requestedRestaurantId,
+  } = readOnboardingRoute(location.pathname, location.search)
+  const requestedResumeRestaurant = isRestaurantSetupResume && requestedRestaurantId
+    ? auth.restaurant.restaurants.find(restaurant => restaurant.id === requestedRestaurantId) ?? null
+    : null
+  const resumeRestaurant = isResumableOnboardingRestaurant(requestedResumeRestaurant)
+    ? requestedResumeRestaurant
+    : null
+  const shouldUseCurrentRestaurant = !isNewRestaurantFlow && !isRestaurantSetupResume
+  const selectedOnboardingRestaurant =
+    (isSetupEditor || isResumableOnboardingRestaurant(currentRestaurant))
+      ? currentRestaurant
+      : null
+  const routeRestaurant = isRestaurantSetupResume
+    ? resumeRestaurant
+    : selectedOnboardingRestaurant
+  const currentRestaurantStep = isSetupEditor ? null : routeRestaurant?.onboarding_step
+  const currentRestaurantUpdatedAt = isSetupEditor ? null : routeRestaurant?.updated_at
 
   const [currentStep, setCurrentStep] = useState(0)
   const [data, setData] = useState<OnboardingData>(toOnboardingData(INITIAL_DATA))
@@ -1105,7 +1125,14 @@ export function useOnboarding() {
   const [showLaunchScreen, setShowLaunchScreen] = useState(false)
   const [isHydrating, setIsHydrating] = useState(true)
 
-  const activeRestaurantId = restaurantId || (shouldUseCurrentRestaurant ? currentRestaurant?.id : null) || null
+  const activeRestaurantId = resolveOnboardingTargetId({
+    isNewRestaurantFlow,
+    isRestaurantSetupResume,
+    requestedRestaurantId,
+    validatedResumeRestaurantId: resumeRestaurant?.id || null,
+    stateRestaurantId: restaurantId,
+    currentRestaurantId: shouldUseCurrentRestaurant ? selectedOnboardingRestaurant?.id || null : null,
+  })
   const completionIssues = getCompletionIssues(data, activeRestaurantId)
 
   const getActiveRestaurantId = useCallback((): string => {
@@ -1272,25 +1299,6 @@ export function useOnboarding() {
     }
   }, [runWithTimeout])
 
-  const fetchDraftRestaurant = useCallback(async (draftRestaurantId: string): Promise<Restaurant | null> => {
-    const { data: restaurantRow, error: fetchError } = await runWithTimeout(
-      () =>
-        supabase
-          .from('restaurants')
-          .select('*')
-          .eq('id', draftRestaurantId)
-          .maybeSingle(),
-      'Loading saved onboarding restaurant timed out. Please retry.'
-    )
-
-    if (fetchError) {
-      console.warn('[Onboarding] Could not load saved onboarding restaurant:', fetchError.message)
-      return null
-    }
-
-    return restaurantRow as Restaurant | null
-  }, [runWithTimeout])
-
   const fetchRestaurantConfig = useCallback(async (activeRestaurantId: string): Promise<Record<string, unknown>> => {
     const { data: restaurantRow, error: fetchError } = await runWithTimeout(
       () =>
@@ -1358,20 +1366,12 @@ export function useOnboarding() {
         isResumableOnboardingRestaurant(currentRestaurant)
           ? currentRestaurant
           : null
-      const fetchedNewFlowDraftRestaurant =
-        isNewRestaurantFlow &&
-        !newFlowCreatedRestaurant &&
-        localDraft?.restaurantId
-          ? await fetchDraftRestaurant(localDraft.restaurantId)
-          : null
-      const newFlowDraftRestaurant =
-        isResumableOnboardingRestaurant(fetchedNewFlowDraftRestaurant)
-          ? fetchedNewFlowDraftRestaurant
-          : null
 
-      const candidateRestaurant = shouldUseCurrentRestaurant
-        ? currentRestaurant
-        : newFlowCreatedRestaurant || newFlowDraftRestaurant
+      const candidateRestaurant = isRestaurantSetupResume
+        ? resumeRestaurant
+        : shouldUseCurrentRestaurant
+          ? selectedOnboardingRestaurant
+          : newFlowCreatedRestaurant
       const onboardingRestaurant =
         candidateRestaurant &&
         (isSetupEditor || isResumableOnboardingRestaurant(candidateRestaurant))
@@ -1379,10 +1379,9 @@ export function useOnboarding() {
           : null
       const shouldApplyLocalDraft = Boolean(
         localDraft &&
-        (
-          !localDraft.restaurantId ||
-          onboardingRestaurant?.id === localDraft.restaurantId
-        )
+        (isNewRestaurantFlow
+          ? !localDraft.restaurantId
+          : Boolean(onboardingRestaurant && onboardingRestaurant.id === localDraft.restaurantId))
       )
       if (localDraft && shouldApplyLocalDraft) {
         mergedData = mergeOnboardingData(mergedData, localDraft.data)
@@ -1420,16 +1419,18 @@ export function useOnboarding() {
     user?.id,
     isAuthLoading,
     isRestaurantLoading,
-    currentRestaurant?.id,
+    routeRestaurant?.id,
     currentRestaurantStep,
     currentRestaurantUpdatedAt,
-    currentRestaurant?.onboarding_completed_at,
+    routeRestaurant?.onboarding_completed_at,
     restaurantId,
     shouldUseCurrentRestaurant,
     isSetupEditor,
     isNewRestaurantFlow,
+    isRestaurantSetupResume,
+    requestedRestaurantId,
+    resumeRestaurant,
     hydrateFromRestaurant,
-    fetchDraftRestaurant,
   ])
 
   // Persist in-progress onboarding draft for refresh resilience.
@@ -1466,11 +1467,18 @@ export function useOnboarding() {
 
   // Persist visible step so onboarding resumes across browsers, not just localStorage.
   useEffect(() => {
-    const activeRestaurantId = restaurantId || (shouldUseCurrentRestaurant ? currentRestaurant?.id : null)
+    const activeRestaurantId = resolveOnboardingTargetId({
+      isNewRestaurantFlow,
+      isRestaurantSetupResume,
+      requestedRestaurantId,
+      validatedResumeRestaurantId: resumeRestaurant?.id || null,
+      stateRestaurantId: restaurantId,
+      currentRestaurantId: shouldUseCurrentRestaurant ? selectedOnboardingRestaurant?.id || null : null,
+    })
     if (isSetupEditor) return
     if (!activeRestaurantId) return
     if (isHydrating || showLaunchScreen) return
-    if (currentRestaurant?.onboarding_completed_at && !isSetupEditor) return
+    if (routeRestaurant?.onboarding_completed_at && !isSetupEditor) return
 
     // Step 0 is the "create restaurant" screen. Once a restaurant exists,
     // never persist 0 back to the DB or we can reset users to the first screen
@@ -1491,9 +1499,13 @@ export function useOnboarding() {
   }, [
     currentStep,
     restaurantId,
-    currentRestaurant?.id,
-    currentRestaurant?.onboarding_completed_at,
+    routeRestaurant?.id,
+    routeRestaurant?.onboarding_completed_at,
     shouldUseCurrentRestaurant,
+    isRestaurantSetupResume,
+    isNewRestaurantFlow,
+    requestedRestaurantId,
+    resumeRestaurant?.id,
     isSetupEditor,
     isHydrating,
     showLaunchScreen,
@@ -1523,9 +1535,16 @@ export function useOnboarding() {
         phone: normalizeUsPhoneE164(data.phone),
       }
 
-      // If a restaurant already exists, update instead of creating a duplicate.
-      const existingRestaurantId =
-        restaurantId || (shouldUseCurrentRestaurant ? currentRestaurant?.id : null) || null
+      // Resume and legacy onboarding may update only their explicitly resolved
+      // target. New Store never inherits the dashboard's selected restaurant.
+      const existingRestaurantId = resolveOnboardingTargetId({
+        isNewRestaurantFlow,
+        isRestaurantSetupResume,
+        requestedRestaurantId,
+        validatedResumeRestaurantId: resumeRestaurant?.id || null,
+        stateRestaurantId: restaurantId,
+        currentRestaurantId: shouldUseCurrentRestaurant ? selectedOnboardingRestaurant?.id || null : null,
+      })
       if (existingRestaurantId) {
         const profilePatch = {
           name: basePayload.name,
@@ -1539,7 +1558,7 @@ export function useOnboarding() {
           phone: basePayload.phone,
         }
         const updatedRestaurant = await runWithTimeout(
-          () => fetchWithSupabaseAuth<Restaurant>(`/restaurants/${existingRestaurantId}/setup-profile`, {
+          () => fetchWithSupabaseAuth<Restaurant>(`/restaurants/${existingRestaurantId}/onboarding-profile`, {
             method: 'PATCH',
             body: JSON.stringify({ patch: profilePatch }),
           }),
@@ -1620,6 +1639,7 @@ export function useOnboarding() {
           updatedAt: new Date().toISOString(),
         })
       }
+      navigate(onboardingResumePath(createdRestaurant.id), { replace: true })
       await refreshRestaurants(createdRestaurant.id)
       return createdRestaurant
     } catch (err) {
@@ -1635,7 +1655,12 @@ export function useOnboarding() {
     restaurantId,
     currentRestaurant?.id,
     isSetupEditor,
+    isNewRestaurantFlow,
+    isRestaurantSetupResume,
+    requestedRestaurantId,
+    resumeRestaurant?.id,
     shouldUseCurrentRestaurant,
+    navigate,
     refreshRestaurants,
     runWithTimeout,
     seedCurrentRestaurant,

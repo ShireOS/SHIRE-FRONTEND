@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext'
 import { backOfficeApi } from '../../shared/api/backOfficeApi'
 import type { Restaurant } from '@shire/db'
 import { routeForOwnerWithoutOperationalStores } from './deletedStoreRouting'
+import { readOnboardingRoute } from '../../onboarding/onboardingRoute.js'
+import { isResumableOnboardingRestaurant } from '../../onboarding/onboardingRestaurantState.js'
 
 const getCompletedRestaurant = (
   currentRestaurant: Restaurant | null,
@@ -21,11 +23,11 @@ const getOnboardingRestaurant = (
   currentRestaurant: Restaurant | null,
   restaurants: Restaurant[]
 ): Restaurant | null => {
-  if (currentRestaurant && !currentRestaurant.onboarding_completed_at) {
+  if (isResumableOnboardingRestaurant(currentRestaurant)) {
     return currentRestaurant
   }
 
-  return restaurants.find(restaurant => !restaurant.onboarding_completed_at) ?? null
+  return restaurants.find(isResumableOnboardingRestaurant) ?? null
 }
 
 interface UseRequireAuthOptions {
@@ -170,12 +172,17 @@ export function useRequireOnboarding() {
   const navigate = useNavigate()
   const location = useLocation()
   const isSetupEditor = /^\/(?:reseller\/)?restaurants\/[^/]+\/setup\/?$/.test(location.pathname)
-  const isNewRestaurantFlow =
-    location.pathname === '/onboarding' &&
-    new URLSearchParams(location.search).get('new') === '1'
-  const isRestaurantSetupResume =
-    location.pathname === '/onboarding' &&
-    new URLSearchParams(location.search).get('resume') === '1'
+  const {
+    isNewRestaurantFlow,
+    isRestaurantSetupResume,
+    requestedRestaurantId,
+  } = readOnboardingRoute(location.pathname, location.search)
+  const requestedResumeRestaurant = isRestaurantSetupResume && requestedRestaurantId
+    ? auth.restaurant.restaurants.find(restaurant => restaurant.id === requestedRestaurantId) ?? null
+    : null
+  const validResumeRestaurant = isResumableOnboardingRestaurant(requestedResumeRestaurant)
+    ? requestedResumeRestaurant
+    : null
   const onboardingRestaurant = getOnboardingRestaurant(
     auth.restaurant.currentRestaurant,
     auth.restaurant.restaurants
@@ -195,12 +202,25 @@ export function useRequireOnboarding() {
       return
     }
 
-    if (auth.accountType === 'reseller' && !isNewRestaurantFlow && !isRestaurantSetupResume) {
+    // A guided resume is tenant-bound. Never infer its write target from the
+    // currently selected restaurant or silently substitute another store.
+    if (isRestaurantSetupResume) {
+      if (!validResumeRestaurant) {
+        navigate('/enterprise/stores', { replace: true })
+        return
+      }
+      if (auth.restaurant.currentRestaurant?.id !== validResumeRestaurant.id) {
+        void auth.switchRestaurant(validResumeRestaurant.id)
+      }
+      return
+    }
+
+    if (auth.accountType === 'reseller' && !isNewRestaurantFlow) {
       navigate('/reseller/onboarding', { replace: true })
       return
     }
 
-    if (auth.accountType === 'reseller_employee' && !isRestaurantSetupResume) {
+    if (auth.accountType === 'reseller_employee') {
       navigate('/enterprise/stores', { replace: true })
       return
     }
@@ -208,8 +228,7 @@ export function useRequireOnboarding() {
     if (
       completedRestaurant &&
       !isSetupEditor &&
-      !isNewRestaurantFlow &&
-      !isRestaurantSetupResume
+      !isNewRestaurantFlow
     ) {
       if (auth.restaurant.currentRestaurant?.id !== completedRestaurant.id) {
         void auth.switchRestaurant(completedRestaurant.id)
@@ -237,14 +256,20 @@ export function useRequireOnboarding() {
     isSetupEditor,
     isNewRestaurantFlow,
     isRestaurantSetupResume,
+    requestedRestaurantId,
+    validResumeRestaurant,
     navigate,
   ])
 
   return {
-    isReady: !auth.isLoading && !auth.restaurant.isLoading && auth.isAuthenticated,
+    isReady:
+      !auth.isLoading &&
+      !auth.restaurant.isLoading &&
+      auth.isAuthenticated &&
+      (!isRestaurantSetupResume || Boolean(validResumeRestaurant)),
     user: auth.user,
     profile: auth.profile,
-    restaurant: auth.restaurant.currentRestaurant,
+    restaurant: validResumeRestaurant || auth.restaurant.currentRestaurant,
     auth,
   }
 }

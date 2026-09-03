@@ -54,7 +54,7 @@ test('authorized manual-tax editors can attempt verification before entering fal
 })
 
 test('address and pricing jurisdiction use the canonical restaurant profile', () => {
-  assert.match(onboardingHook, /\/restaurants\/\$\{existingRestaurantId\}\/setup-profile/)
+  assert.match(onboardingHook, /\/restaurants\/\$\{existingRestaurantId\}\/onboarding-profile/)
   assert.match(onboardingHook, /delete pricingPayload\.jurisdiction_state/)
   assert.doesNotMatch(onboardingPayments, /jurisdiction_state.*onChange/)
   assert.doesNotMatch(setup, /jurisdiction_state.*onChange/)

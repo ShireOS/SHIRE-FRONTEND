@@ -23,7 +23,7 @@ const destination = (overrides = {}, missingCount = 7) => setupResumeDestination
 })
 
 test('unfinished stores with untouched later pages resume guided onboarding', () => {
-  assert.equal(destination(), '/onboarding?resume=1')
+  assert.equal(destination(), '/onboarding?resume=1&restaurantId=restaurant-1')
 })
 
 test('stores with only one or two isolated gaps open targeted configuration', () => {
@@ -50,18 +50,16 @@ test('a transient setup-status failure still honors saved guided progress', () =
       restaurantBase: '/restaurants',
       finalGuidedStep: 21,
     }),
-    '/onboarding?resume=1',
+    '/onboarding?resume=1&restaurantId=restaurant-1',
   )
 })
 
 test('the explicit restaurant resume survives reseller account routing', () => {
-  assert.match(onboardingGuard, /get\('resume'\) === '1'/)
+  assert.match(onboardingGuard, /readOnboardingRoute/)
+  assert.match(onboardingGuard, /requestedRestaurantId/)
+  assert.match(onboardingGuard, /validResumeRestaurant/)
   assert.match(
     onboardingGuard,
-    /accountType === 'reseller'[\s\S]*!isRestaurantSetupResume/,
-  )
-  assert.match(
-    onboardingGuard,
-    /completedRestaurant[\s\S]*!isRestaurantSetupResume/,
+    /if \(isRestaurantSetupResume\)[\s\S]*switchRestaurant\(validResumeRestaurant\.id\)/,
   )
 })

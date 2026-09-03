@@ -13,9 +13,11 @@ test('only unfinished draft and onboarding restaurants can resume guided setup',
   assert.equal(isResumableOnboardingRestaurant(null), false)
 })
 
-test('new-store hydration validates stored restaurant identity before restoring its draft', () => {
+test('new-store and resume flows cannot inherit another restaurant identity', () => {
   assert.match(hook, /isResumableOnboardingRestaurant\(currentRestaurant\)/)
-  assert.match(hook, /isResumableOnboardingRestaurant\(fetchedNewFlowDraftRestaurant\)/)
-  assert.match(hook, /onboardingRestaurant\?\.id === localDraft\.restaurantId/)
+  assert.match(hook, /isNewRestaurantFlow[\s\S]*\? !localDraft\.restaurantId/)
+  assert.match(hook, /isRestaurantSetupResume[\s\S]*\? resumeRestaurant/)
+  assert.match(hook, /isNewRestaurantFlow[\s\S]*\? null[\s\S]*isRestaurantSetupResume/)
+  assert.doesNotMatch(hook, /fetchDraftRestaurant/)
   assert.doesNotMatch(hook, /newFlowSelectedRestaurant/)
 })

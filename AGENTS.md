@@ -372,8 +372,17 @@ gate; the bell remains disabled while access is unresolved or denied.
   of truth. The Stores card itself opens normal configuration. Its Finish setup
   action resumes guided onboarding only when the saved step precedes the final
   guided step and more than two canonical setup domains remain incomplete;
-  its explicit resume route bypasses reseller-profile onboarding redirects while
-  continuing to use the selected restaurant and normal server authorization.
+  its resume route carries the exact restaurant ID, bypasses reseller-profile
+  onboarding redirects only after that restaurant is found in the authorized
+  portfolio, and never derives a mutation target from the dashboard's selected
+  restaurant. New Store has no existing mutation target and always creates
+  through `POST /restaurants`; after creation it resumes through the new row's
+  explicit ID. Browser drafts are accepted only when they are unbound new-store
+  drafts or match that exact resumable restaurant. Guided Basics updates use the
+  ML backend's `/restaurants/:id/onboarding-profile` endpoint, which rejects
+  completed or active restaurants before changing any profile field. Ordinary
+  Store Information continues to use `setup-profile` so intentional edits to an
+  existing restaurant remain supported.
   Otherwise it opens targeted Setup recovery for the isolated gaps. Permanent
   configuration ownership is Store Information (Basics and
   Goals), Marketing (Branding), Store Settings (Legal, Payments, Taxes & Charges,

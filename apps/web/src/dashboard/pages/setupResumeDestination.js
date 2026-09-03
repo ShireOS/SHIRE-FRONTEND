@@ -1,3 +1,5 @@
+import { onboardingResumePath } from '../../onboarding/onboardingRoute.js'
+
 export function setupResumeDestination({
   restaurant,
   setupStatus,
@@ -18,6 +20,6 @@ export function setupResumeDestination({
     && hasSubstantialSetupRemaining
 
   return canResumeGuidedSetup
-    ? '/onboarding?resume=1'
+    ? onboardingResumePath(restaurant.id)
     : `${restaurantBase}/${restaurant.id}/setup`
 }
