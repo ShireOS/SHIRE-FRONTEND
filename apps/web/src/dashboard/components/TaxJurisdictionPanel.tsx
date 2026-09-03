@@ -251,8 +251,10 @@ export function TaxJurisdictionPanel({ restaurantId, locationDisplay, onResolved
 
   const providerConfigured = Boolean(payload?.tax_provider?.configured)
   const canOverride = Boolean(payload?.tax_access?.can_override)
+  const verificationAvailable = providerConfigured || canOverride
   const canResolve = Boolean(
-    providerConfigured
+    restaurantId
+    && verificationAvailable
     && enabledClasses.length
     && categoriesComplete
     && reason.trim().length >= 3
@@ -341,6 +343,11 @@ export function TaxJurisdictionPanel({ restaurantId, locationDisplay, onResolved
             />
           </label>
           {!categoriesComplete && <p className="text-sm text-amber-200">Classify every active menu category before verification.</p>}
+          {!providerConfigured && canOverride && (
+            <div className="rounded-lg border border-amber-400/25 bg-amber-400/[0.07] p-3 text-sm leading-5 text-amber-100">
+              Automatic tax coverage may not be available for this location. Try validation first; if SHIRE cannot resolve the selected taxes, enter the missing percentages in the manual override below.
+            </div>
+          )}
           <button
             type="button"
             disabled={!canResolve}
@@ -349,6 +356,17 @@ export function TaxJurisdictionPanel({ restaurantId, locationDisplay, onResolved
           >
             {saving ? 'Validating address and taxes…' : 'Validate address & refresh taxes'}
           </button>
+
+          {error && (
+            <div className="rounded-xl border border-red-400/25 bg-red-400/[0.07] p-4 text-sm text-red-200" role="alert">
+              <p>{error}</p>
+              {canOverride && (
+                <p className="mt-1 text-xs leading-5 text-red-100/75">
+                  If automatic validation cannot resolve this location, enter every required tax percentage in the manual override below.
+                </p>
+              )}
+            </div>
+          )}
 
           {canOverride && (
             <div className="rounded-xl border border-sky-400/25 bg-sky-400/[0.06] p-4">
@@ -386,7 +404,9 @@ export function TaxJurisdictionPanel({ restaurantId, locationDisplay, onResolved
         </>
       )}
 
-      {error && <div className="rounded-xl border border-red-400/25 bg-red-400/[0.07] p-4 text-sm text-red-200">{error}</div>}
+      {error && !verificationAvailable && (
+        <div className="rounded-xl border border-red-400/25 bg-red-400/[0.07] p-4 text-sm text-red-200" role="alert">{error}</div>
+      )}
 
       {visibleRates.length > 0 ? (
         <div className="space-y-3">

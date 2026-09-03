@@ -46,6 +46,13 @@ test('provider resolution sends semantic classes and requires explicit mixed-cat
   assert.doesNotMatch(onboardingCategories, /tax\.rate|Rate %/)
 })
 
+test('authorized manual-tax editors can attempt verification before entering fallback rates', () => {
+  assert.match(taxJurisdiction, /const verificationAvailable = providerConfigured \|\| canOverride/)
+  assert.match(taxJurisdiction, /restaurantId[\s\S]*&& verificationAvailable[\s\S]*&& enabledClasses\.length/)
+  assert.match(taxJurisdiction, /Try validation first; if SHIRE cannot resolve the selected taxes/)
+  assert.match(taxJurisdiction, /enter every required tax percentage in the manual override below/)
+})
+
 test('address and pricing jurisdiction use the canonical restaurant profile', () => {
   assert.match(onboardingHook, /\/restaurants\/\$\{existingRestaurantId\}\/setup-profile/)
   assert.match(onboardingHook, /delete pricingPayload\.jurisdiction_state/)
