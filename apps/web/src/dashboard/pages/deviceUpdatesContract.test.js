@@ -132,6 +132,11 @@ test('rollout detail exposes preparation, manual waves, rollback, and target con
     /queryKey: \['device-updates-v2', 'rollout', restaurantId, rolloutId\]/,
   )
   assert.match(page, /setReason\(''\).*setDeferredUntil\(''\)/s)
+  assert.match(page, /\['blocked', countStates\('waiting_safe_point'\)\]/)
+  assert.match(
+    page,
+    /state === 'active'[\s\S]*'Running update ID:'[\s\S]*'Last acknowledged update ID:'/,
+  )
 })
 
 test('release administration separates approval, revocation, LKG proof, and native installers', () => {

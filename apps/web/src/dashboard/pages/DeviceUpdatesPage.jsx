@@ -1008,6 +1008,31 @@ function RolloutDetail({ restaurantId, rolloutId, onChanged }) {
       </p>
     )
   const rollout = query.data
+  const countStates = (...states) =>
+    states.reduce(
+      (total, state) => total + Number(rollout.state_counts?.[state] || 0),
+      0,
+    )
+  const rolloutStats = [
+    ['active', countStates('active')],
+    [
+      'waiting',
+      countStates(
+        'eligible',
+        'released',
+        'queued',
+        'seen',
+        'downloading',
+        'downloaded',
+        'waiting_close_day',
+        'activating',
+      ),
+    ],
+    ['blocked', countStates('waiting_safe_point')],
+    ['failed', countStates('failed', 'incompatible', 'expired')],
+    ['deferred', countStates('deferred')],
+    ['cancelled', countStates('cancelled')],
+  ]
   const controls = []
   if (rollout.status === 'preparing')
     controls.push({
@@ -1094,21 +1119,15 @@ function RolloutDetail({ restaurantId, rolloutId, onChanged }) {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-7">
             <Stat label="Wave" value={`${rollout.current_wave}/4`} />
-            {[
-              'active',
-              'waiting_safe_point',
-              'failed',
-              'deferred',
-              'cancelled',
-            ].map((state) => (
+            {rolloutStats.map(([state, count]) => (
               <Stat
                 key={state}
                 label={humanizeUpdateCode(state)}
-                value={rollout.state_counts?.[state] || 0}
+                value={count}
                 tone={
-                  state === 'failed' && rollout.state_counts?.[state]
+                  state === 'failed' && count
                     ? 'text-red-300'
                     : 'text-dash-cream'
                 }
@@ -1243,7 +1262,9 @@ function RolloutDetail({ restaurantId, rolloutId, onChanged }) {
                   </div>
                   <div className="text-xs text-dash-secondary">
                     <p className="break-all">
-                      Running:{' '}
+                      {state === 'active'
+                        ? 'Running update ID:'
+                        : 'Last acknowledged update ID:'}{' '}
                       <span className="font-mono">
                         {target.reported_update_id || 'not reported'}
                       </span>
