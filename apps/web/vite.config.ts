@@ -1,7 +1,8 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
-import { existsSync } from 'fs'
 import { resolve } from 'path'
+
+const PUBLIC_BOOKING_BASE_URL = 'https://shire-reservations.vercel.app'
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 
@@ -45,11 +46,17 @@ function ownerConsoleFallback() {
         const url = req.url || ''
         const accept = req.headers.accept || ''
 
-        if (url === '/book') {
-          req.url = '/book/index.html'
-        } else if (url.startsWith('/book/') && accept.includes('text/html') && !url.includes('.')) {
-          req.url = '/book/index.html'
-        } else if (accept.includes('text/html') && !url.includes('.') && url !== '/') {
+        if (url === '/book' || url.startsWith('/book?')) {
+          _res.writeHead(302, { Location: `${PUBLIC_BOOKING_BASE_URL}/reserve` })
+          _res.end()
+          return
+        }
+        if (url.startsWith('/book/') && accept.includes('text/html') && !url.includes('.')) {
+          _res.writeHead(302, { Location: `${PUBLIC_BOOKING_BASE_URL}${url}` })
+          _res.end()
+          return
+        }
+        if (accept.includes('text/html') && !url.includes('.') && url !== '/') {
           req.url = '/index.html'
         }
         next()
@@ -92,7 +99,6 @@ function apiConfigLogger() {
 
 export default defineConfig(({ mode }) => {
   const rootEnvDir = resolve(__dirname, '../..')
-  const bookEntry = resolve(__dirname, 'book/index.html')
   const env = loadEnv(mode, rootEnvDir, '')
   assertSafeSandboxEnv(env)
   const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL || ''
@@ -137,7 +143,6 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           main: resolve(__dirname, 'index.html'),
-          ...(existsSync(bookEntry) ? { book: bookEntry } : {}),
         },
       },
     },

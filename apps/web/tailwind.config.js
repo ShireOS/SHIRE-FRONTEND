@@ -2,7 +2,6 @@
 export default {
   content: [
     "./index.html",
-    "./book/index.html",
     "./host/index.html",
     "./dashboard/index.html",
     "./src/**/*.{js,ts,jsx,tsx}",

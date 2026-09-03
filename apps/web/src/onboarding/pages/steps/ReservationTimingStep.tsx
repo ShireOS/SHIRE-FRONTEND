@@ -1,4 +1,5 @@
 import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
+import { buildPublicBookingUrl } from '@shared/publicBookingUrl'
 
 interface ReservationTimingStepProps {
   onboarding: UseOnboardingReturn
@@ -57,15 +58,15 @@ function TimingInput({
 
 export function ReservationTimingStep({ onboarding }: ReservationTimingStepProps) {
   const { data, updateData, saveReservationTiming, nextStep, isLoading, error } = onboarding
-  const publicBookingBaseUrl = (
-    import.meta.env.VITE_RESERVATIONS_PUBLIC_BASE_URL ||
-    import.meta.env.VITE_RESERVATIONS_WEB_BASE_URL ||
-    window.location.origin
-  ).replace(/\/+$/, '')
   const publicSlug = data.public_slug || normalizeSlugDraft(data.name) || 'restaurant'
-  const publicBookingUrl = data.canonical_booking_url?.startsWith('http')
-    ? data.canonical_booking_url
-    : `${publicBookingBaseUrl}${data.canonical_booking_url || `/book/${publicSlug}`}`
+  const publicBookingUrl = buildPublicBookingUrl({
+    slug: publicSlug,
+    canonicalBookingUrl: data.canonical_booking_url,
+    configuredBaseUrl:
+      import.meta.env.VITE_RESERVATIONS_PUBLIC_BASE_URL ||
+      import.meta.env.VITE_RESERVATIONS_WEB_BASE_URL,
+    production: import.meta.env.PROD,
+  })
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()

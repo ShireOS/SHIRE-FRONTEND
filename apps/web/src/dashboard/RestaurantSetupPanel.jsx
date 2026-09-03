@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { buildPublicBookingUrl } from '@shared/publicBookingUrl'
 import {
   SERVICE_MODE_OPTIONS,
   GUEST_FLOW_OPTIONS,
@@ -195,12 +196,6 @@ const DEFAULT_RESERVATION_TIMING = {
   reservation_default_duration_minutes: '90',
   reservation_windows_follow_operating_hours: true,
 }
-
-const publicBookingBaseUrl = (
-  import.meta.env.VITE_RESERVATIONS_PUBLIC_BASE_URL ||
-  import.meta.env.VITE_RESERVATIONS_WEB_BASE_URL ||
-  window.location.origin
-).replace(/\/+$/, '')
 
 const normalizePublicSlugDraft = (value) =>
   String(value || '')
@@ -1628,7 +1623,13 @@ export default function RestaurantSetupPanel({
   const isPropagationEnabled = Boolean(propagationContext?.requestTargets)
   const reservationPublicUrl = useMemo(() => {
     const slug = normalizePublicSlugDraft(reservationPublicSlug) || normalizePublicSlugDraft(profile.name) || 'restaurant'
-    return `${publicBookingBaseUrl}/book/${slug}`
+    return buildPublicBookingUrl({
+      slug,
+      configuredBaseUrl:
+        import.meta.env.VITE_RESERVATIONS_PUBLIC_BASE_URL ||
+        import.meta.env.VITE_RESERVATIONS_WEB_BASE_URL,
+      production: import.meta.env.PROD,
+    })
   }, [profile.name, reservationPublicSlug])
 
   const rememberSavedDraft = (sectionId, value) => {
