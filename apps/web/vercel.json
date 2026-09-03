@@ -5,7 +5,9 @@
   "outputDirectory": "dist",
   "redirects": [
     { "source": "/book", "destination": "https://shire-reservations.vercel.app/reserve", "permanent": true },
-    { "source": "/book/:slug", "destination": "https://shire-reservations.vercel.app/book/:slug", "permanent": true }
+    { "source": "/book/", "destination": "https://shire-reservations.vercel.app/reserve", "permanent": true },
+    { "source": "/book/:slug", "destination": "https://shire-reservations.vercel.app/book/:slug", "permanent": true },
+    { "source": "/book/:slug/", "destination": "https://shire-reservations.vercel.app/book/:slug", "permanent": true }
   ],
   "rewrites": [
     { "source": "/ml-api/(.*)", "destination": "https://web-production-5c5b4.up.railway.app/api/v1/$1" },

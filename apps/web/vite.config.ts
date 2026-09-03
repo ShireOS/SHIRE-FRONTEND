@@ -45,14 +45,18 @@ function ownerConsoleFallback() {
       server.middlewares.use((req: any, _res: any, next: any) => {
         const url = req.url || ''
         const accept = req.headers.accept || ''
+        const [pathname, query = ''] = url.split('?')
+        const querySuffix = query ? `?${query}` : ''
 
-        if (url === '/book' || url.startsWith('/book?')) {
-          _res.writeHead(302, { Location: `${PUBLIC_BOOKING_BASE_URL}/reserve` })
+        if (pathname === '/book' || pathname === '/book/') {
+          _res.writeHead(302, { Location: `${PUBLIC_BOOKING_BASE_URL}/reserve${querySuffix}` })
           _res.end()
           return
         }
-        if (url.startsWith('/book/') && accept.includes('text/html') && !url.includes('.')) {
-          _res.writeHead(302, { Location: `${PUBLIC_BOOKING_BASE_URL}${url}` })
+        if (/^\/book\/[^/]+\/?$/.test(pathname) && accept.includes('text/html')) {
+          _res.writeHead(302, {
+            Location: `${PUBLIC_BOOKING_BASE_URL}${pathname.replace(/\/$/, '')}${querySuffix}`,
+          })
           _res.end()
           return
         }
