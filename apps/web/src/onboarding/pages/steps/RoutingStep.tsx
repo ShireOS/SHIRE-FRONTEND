@@ -3,6 +3,10 @@ import type { UseOnboardingReturn } from '../../hooks/useOnboarding'
 import { supabase } from '../../../shared/lib/supabase'
 import { API_CONFIG } from '../../../shared/api/config'
 import { fetchPosApi } from '../../../shared/api/posClient'
+import { createKdsProfile, fetchKdsConfiguration, updateKdsProfile } from '../../../shared/api/kds'
+import KdsTimingEditor from '../../../shared/KdsTimingEditor'
+import { ticketTimingError } from '../../../shared/kdsPresentation'
+import { blankKdsProfile, kdsProfilePayload, normalizeKdsProfile } from '../../../shared/kdsProfileDraft'
 import { collapseEntryWhitespace, duplicateName, printerHostError } from '@shire/settings'
 import {
   ROUTE_INHERIT_VALUE,
@@ -18,7 +22,7 @@ interface RoutingStepProps {
 
 type RoutingConfig = {
   fallback: { ok: boolean; reason?: string | null; station?: { id: string; name: string } | null }
-  stations: Array<{ id: string; name: string; is_fallback?: boolean; target_count?: number }>
+  stations: Array<{ id: string; name: string; description?: string | null; display_order?: number; is_active?: boolean; is_fallback?: boolean; target_count?: number; station_type?: string; kds_enabled?: boolean }>
   targets: Array<{ id: string; name: string; connection_type: string; target_type?: string }>
   station_targets: Array<{ station_id: string; target_id: string; target_name?: string; target_type?: string; is_active?: boolean; priority?: number }>
   routing_rules: Array<{ source_type: string; source_id?: string | null; category?: string | null; station_id?: string | null; is_active?: boolean; archived_at?: string | null }>
@@ -82,6 +86,9 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
   const [stationName, setStationName] = useState('')
   const [targetName, setTargetName] = useState('')
   const [targetHost, setTargetHost] = useState('')
+  const [targetType, setTargetType] = useState<'printer' | 'display'>('printer')
+  const [kdsDraft, setKdsDraft] = useState<any>(null)
+  const [kdsError, setKdsError] = useState('')
   const [categories, setCategories] = useState<MenuCategoryRoute[]>([])
   const [itemRouteValues, setItemRouteValues] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
@@ -98,9 +105,10 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
     setLoading(true)
     setError(null)
     try {
-      const [routingData, categoryData] = await Promise.all([
+      const [routingData, categoryData, kdsData] = await Promise.all([
         routingFetch(restaurantId),
         menuCategoriesFetch(restaurantId),
+        fetchKdsConfiguration(restaurantId),
       ])
       const loadedConfig: RoutingConfig = {
         ...routingData,
@@ -112,6 +120,11 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
         menu_items: Array.isArray(routingData?.menu_items) ? routingData.menu_items : [],
       }
       setConfig(loadedConfig)
+      const prepProfile = (Array.isArray(kdsData?.profiles) ? kdsData.profiles : []).find((profile: any) => profile.role === 'prep' && profile.is_active !== false)
+      setKdsDraft(prepProfile
+        ? normalizeKdsProfile(prepProfile, kdsData?.profile_defaults)
+        : blankKdsProfile(loadedConfig.stations, kdsData?.profile_defaults))
+      setKdsError('')
       const loadedCategories: MenuCategoryRoute[] = Array.isArray(categoryData?.categories) ? categoryData.categories : []
       const categoriesWithRoutes = loadedCategories.map(category => ({
         ...category,
@@ -169,7 +182,7 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
     try {
       const created = await routingFetch(restaurantId, '/stations', {
         method: 'POST',
-        body: JSON.stringify({ name, is_active: true }),
+        body: JSON.stringify({ name, station_type: 'prep', kds_enabled: true, is_active: true }),
       })
       setRecentlyAddedStation({ id: typeof created?.id === 'string' ? created.id : null, name })
       setStationName('')
@@ -192,7 +205,7 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
       setError('That output target already exists.')
       return
     }
-    const hostError = printerHostError(targetHost)
+    const hostError = targetType === 'printer' ? printerHostError(targetHost) : ''
     if (hostError) {
       setError(hostError)
       return
@@ -204,9 +217,9 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
         method: 'POST',
         body: JSON.stringify({
           name,
-          target_type: 'printer',
-          connection_type: targetHost.trim() ? 'network' : 'dummy',
-          config: targetHost.trim() ? { host: targetHost.trim().toLowerCase(), port: 9100, profile: 'TM-T88V' } : {},
+          target_type: targetType,
+          connection_type: targetType === 'display' ? 'display_queue' : targetHost.trim() ? 'network' : 'dummy',
+          config: targetType === 'printer' && targetHost.trim() ? { host: targetHost.trim().toLowerCase(), port: 9100, profile: 'TM-T88V' } : {},
           is_active: true,
         }),
       })
@@ -308,6 +321,21 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
           method: 'POST',
           body: JSON.stringify({ station_id: stationId, target_id: targetId, priority: 0, is_active: true }),
         })
+        const selectedTarget = config.targets.find(target => target.id === targetId)
+        const selectedStation = config.stations.find(station => station.id === stationId)
+        if (selectedTarget?.target_type === 'display' && selectedStation && selectedStation.kds_enabled !== true) {
+          await routingFetch(restaurantId, `/stations/${stationId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              name: selectedStation.name,
+              description: selectedStation.description || null,
+              display_order: Number(selectedStation.display_order || 0),
+              is_active: selectedStation.is_active !== false,
+              station_type: selectedStation.station_type || 'prep',
+              kds_enabled: true,
+            }),
+          })
+        }
       }
       await load()
     } catch (err) {
@@ -336,6 +364,26 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
     } finally {
       setWorkingAction(null)
     }
+  }
+
+  const persistKdsTiming = async () => {
+    if (!restaurantId) return
+    if (!kdsDraft) throw new Error('Create at least one prep station before saving KDS timing.')
+    const validation = ticketTimingError(kdsDraft.settings?.ticket_age_colors, Number(kdsDraft.rush_after_seconds))
+    if (validation) {
+      setKdsError(validation)
+      throw new Error(validation)
+    }
+    setKdsError('')
+    const payload = kdsProfilePayload(kdsDraft, 'Initial KDS timing configured during onboarding')
+    const result = kdsDraft.id
+      ? await updateKdsProfile(restaurantId, kdsDraft.id, payload)
+      : await createKdsProfile(restaurantId, payload)
+    const saved = kdsDraft.id
+      ? result.profiles?.find((profile: any) => profile.id === kdsDraft.id)
+      : [...(result.profiles || [])].sort((left: any, right: any) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())[0]
+    if (!saved) throw new Error('KDS timing saved, but the profile could not be reloaded.')
+    setKdsDraft(normalizeKdsProfile(saved, result.profile_defaults))
   }
 
   const blockedItems = (config?.menu_items || []).filter(item => !item.routing_publishable).length
@@ -433,9 +481,12 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
           <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">2. Printers & Displays</p>
           <p className="mt-1 text-sm text-[rgb(var(--text-secondary))]">Outputs are the hardware or display destinations that receive tickets from a station.</p>
+          <select aria-label="Output type" className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white" value={targetType} onChange={event => setTargetType(event.target.value as 'printer' | 'display')}>
+            <option value="printer">Kitchen printer</option>
+            <option value="display">KDS display</option>
+          </select>
           <input aria-label="New output name" placeholder="e.g. Kitchen Printer" className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/35" value={targetName} onChange={event => setTargetName(event.target.value)} />
-          <input aria-label="Printer host or IP" className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/35" placeholder="Printer IP (optional during setup)" value={targetHost} onChange={event => setTargetHost(event.target.value)} />
-          <p className="mt-2 text-xs text-[rgb(var(--text-tertiary))]">Leave the IP blank to connect the physical printer later in Printing & Routing.</p>
+          {targetType === 'printer' ? <><input aria-label="Printer host or IP" className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/35" placeholder="Printer IP (optional during setup)" value={targetHost} onChange={event => setTargetHost(event.target.value)} /><p className="mt-2 text-xs text-[rgb(var(--text-tertiary))]">Leave the IP blank to connect the physical printer later in Printing & Routing.</p></> : <p className="mt-2 rounded-lg border border-white/10 bg-black/15 px-3 py-2 text-xs text-[rgb(var(--text-tertiary))]">The KDS display uses Shire's durable display queue. Pair and assign the physical iPad later; no address is needed now.</p>}
           <button type="button" disabled={workingAction !== null || !targetName.trim()} className={primaryButtonClass} onClick={() => void createTarget()}>
             {workingAction === 'target' ? 'Adding...' : 'Add output'}
           </button>
@@ -686,6 +737,13 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
         )}
       </div>
 
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+        <p className="text-sm font-semibold text-[rgb(var(--text-primary))]">Initial KDS timing</p>
+        <p className="mt-1 text-sm text-[rgb(var(--text-secondary))]">Choose the ticket-header timeline now. Ticket size remains at its deliberate default and can be adjusted later in Printing & Routing → Kitchen Displays.</p>
+        {kdsDraft ? <div className="mt-4"><KdsTimingEditor colors={kdsDraft.settings?.ticket_age_colors} rushAfterSeconds={Number(kdsDraft.rush_after_seconds)} onColorsChange={(ticket_age_colors: any) => setKdsDraft((current: any) => ({ ...current, settings: { ...current.settings, ticket_age_colors } }))} onRushAfterChange={(rush_after_seconds: number) => setKdsDraft((current: any) => ({ ...current, rush_after_seconds }))} title="Initial ticket age colors" /></div> : <p className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/10 p-3 text-sm text-amber-100">Create a prep station above to establish the initial KDS profile. No printer or paired iPad is required.</p>}
+        {kdsError && <p role="alert" className="mt-3 text-sm text-red-300">{kdsError}</p>}
+      </div>
+
       <button
         data-onboarding-save
         type="button"
@@ -698,6 +756,7 @@ export function RoutingStep({ onboarding }: RoutingStepProps) {
             try {
               await persistCategoryRoutes()
               await persistItemRoutes()
+              await persistKdsTiming()
               await onboarding.saveRoutingProgress()
               onboarding.nextStep()
             } catch (err) {

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-10T19:08:03Z",
+  "generated_at": "2026-09-03T16:53:44Z",
   "exports": {
     "pos": {
       "base_path": "/previews/pos",
@@ -10,6 +10,11 @@
       "base_path": "/previews/host",
       "source_commit": "c30401f",
       "expo_version": "54.0.33"
+    },
+    "kds": {
+      "base_path": "/previews/kds",
+      "source_commit": "93986fbdfe5542ac1e747d09d081c7e23aae8a73",
+      "expo_version": "57.0.19"
     }
   }
 }

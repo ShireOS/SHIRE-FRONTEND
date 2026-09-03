@@ -39,3 +39,20 @@ test('category and item summaries show the full station-to-output path', () => {
   assert.match(routing, /categoryRouteLabel\(category\)/)
   assert.match(routing, /Default: \$\{stationRouteLabel\(currentFallbackId\)\}/)
 })
+
+test('onboarding creates real display outputs and persists initial KDS colors without ticket sizing', () => {
+  assert.match(routing, /targetType === 'display' \? 'display_queue'/)
+  assert.match(routing, /target_type: targetType/)
+  assert.match(routing, /kds_enabled: true/)
+  assert.match(routing, /Initial KDS timing/)
+  assert.match(routing, /<KdsTimingEditor/)
+  assert.match(routing, /await persistKdsTiming\(\)/)
+  assert.match(routing, /Initial KDS timing configured during onboarding/)
+  assert.doesNotMatch(routing, /Whole-ticket size/)
+})
+
+test('assigning an existing station to a display enables it for KDS station catalogs', () => {
+  assert.match(routing, /selectedTarget\?\.target_type === 'display'/)
+  assert.match(routing, /selectedStation\.kds_enabled !== true/)
+  assert.match(routing, /method: 'PATCH'[\s\S]*kds_enabled: true/)
+})

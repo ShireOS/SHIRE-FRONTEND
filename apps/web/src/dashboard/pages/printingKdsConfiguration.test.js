@@ -5,6 +5,9 @@ import test from 'node:test'
 const page = await readFile(new URL('./PrintingRoutingPage.jsx', import.meta.url), 'utf8')
 const shell = await readFile(new URL('../shell/DashboardShell.jsx', import.meta.url), 'utf8')
 const card = await readFile(new URL('../components/printing/KdsConfigurationCard.jsx', import.meta.url), 'utf8')
+const profileDraft = await readFile(new URL('../../shared/kdsProfileDraft.js', import.meta.url), 'utf8')
+const timing = await readFile(new URL('../../shared/KdsTimingEditor.jsx', import.meta.url), 'utf8')
+const preview = await readFile(new URL('../components/printing/KdsAppPreview.jsx', import.meta.url), 'utf8')
 const api = await readFile(new URL('../../shared/api/kds.js', import.meta.url), 'utf8')
 const view = await readFile(new URL('../../shared/backOfficeView.ts', import.meta.url), 'utf8')
 
@@ -34,22 +37,22 @@ test('Back Office distinguishes station routing from left-side display grouping'
 
 test('profiles expose item, ticket, split, expo, rush, undo and device assignment controls', () => {
   for (const token of ['display_mode', "value=\"item\"", "value=\"split\"", "role === 'expo'", 'rush_after_seconds', 'undo_window_seconds', 'recently_completed_seconds', 'allow_cancel_from_kds', 'expo_ready_first', 'Profile active', 'device.is_online', 'assignKdsDevice']) {
-    assert.ok(card.includes(token), `missing ${token}`)
+    assert.ok(`${card}\n${profileDraft}`.includes(token), `missing ${token}`)
   }
   assert.match(api, /\/kds\/devices\/assignment/)
   assert.match(card, /Off by default.*canceled items and checks must originate from POS/)
   assert.match(card, /Active tickets/)
   assert.match(card, /KDS online/)
   assert.match(card, /profiles\.filter\(profile => profile\.is_active !== false\)/)
-  assert.match(card, /undo_window_seconds: 10/)
-  assert.match(card, /recently_completed_seconds: 3600/)
+  assert.match(profileDraft, /undo_window_seconds: Number\(defaults\.undo_window_seconds \|\| 10\)/)
+  assert.match(profileDraft, /recently_completed_seconds: Number\(defaults\.recently_completed_seconds \|\| 3600\)/)
 })
 
 test('restaurant switches clear tenant state and fence stale responses', () => {
   for (const token of [
     'restaurantRef.current = String(restaurantId)',
     'loadRequestRef.current += 1',
-    'setConfiguration(emptyConfiguration())',
+    'setConfiguration(emptyKdsConfiguration())',
     'setDraft(null)',
     "setReason('')",
     "setMessage('')",
@@ -64,18 +67,29 @@ test('restaurant switches clear tenant state and fence stale responses', () => {
 test('KDS mutations require one reason and carry it through both API contracts', () => {
   assert.match(card, /Manager reason/)
   assert.match(card, /Enter a reason for this KDS configuration change/)
-  assert.match(card, /reason: reason\.trim\(\)/)
+  assert.match(profileDraft, /reason: reason\.trim\(\)/)
   assert.match(card, /assignKdsDevice\(restaurantId, deviceId, profileId, reason\.trim\(\)\)/)
   assert.match(api, /assignKdsDevice = \(restaurantId, deviceId, profileId, reason\)/)
   assert.match(api, /platform: 'ios', reason/)
 })
 
 test('new profiles require prep topology instead of treating Expo as prep', () => {
-  assert.match(card, /const first = stations\.find\(station => station\.station_type !== 'expo'\)/)
-  assert.match(card, /if \(!first\) return null/)
-  assert.doesNotMatch(card, /\|\| stations\[0\]/)
+  assert.match(profileDraft, /const first = stations\.find\(station => station\.station_type !== 'expo'\)/)
+  assert.match(profileDraft, /if \(!first\) return null/)
+  assert.doesNotMatch(profileDraft, /\|\| stations\[0\]/)
   assert.match(card, /disabled=\{!canCreateProfile\}/)
   assert.match(card, /Create at least one active non-Expo production station/)
+})
+
+test('ticket age colors, whole-ticket scale, and the bundled real preview are profile settings', () => {
+  assert.match(card, /Whole-ticket size/)
+  assert.match(card, /<KdsTimingEditor/)
+  assert.match(card, /<KdsAppPreview profile=\{draft\}/)
+  assert.match(timing, /Only the ticket header changes color/)
+  assert.match(timing, /Rush · flashing/)
+  assert.match(preview, /\/previews\/kds\/index\.html/)
+  assert.match(preview, /forty identical fake checks/)
+  assert.match(preview, /shire-kds-preview-capacity/)
 })
 
 test('health and ticket metrics refresh without overwriting an active draft', () => {
