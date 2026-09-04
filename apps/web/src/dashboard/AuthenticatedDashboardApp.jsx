@@ -96,6 +96,10 @@ function PageLoading() {
   )
 }
 
+function RestaurantScopedSetupPanel(props) {
+  return <ModernRestaurantSetupPanel key={String(props.restaurantId || '')} {...props} />
+}
+
 function OwnerGate() {
   const auth = useAuth()
   const emptyOwnerPortfolio = Boolean(
@@ -5434,7 +5438,7 @@ export function RestaurantWorkspace({
           allowedStoreTabs={allowedStoreTabs}
           routes={shellRoutes}
         >
-          <ModernRestaurantSetupPanel
+          <RestaurantScopedSetupPanel
             restaurant={restaurant}
             restaurantId={restaurantId}
             auth={auth}
@@ -5500,7 +5504,7 @@ export function RestaurantWorkspace({
         {activeTab === 'reports' && <RestaurantReportsPage key={restaurantId} restaurantId={restaurantId} restaurantName={restaurant?.name} canConfigureServerReceipt={backOfficeAccess.can('settings.edit')} viewPolicy={backOfficeAccess.viewPolicy} />}
         {activeTab === 'close-day' && <CloseDayPage key={restaurantId} restaurantId={restaurantId} restaurantName={restaurant?.name} />}
         {activeTab === 'store-information' && (
-          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[
+          <RestaurantScopedSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[
             ...(backOfficeAccess.viewVisible('store.basics') ? ['basics'] : []),
             ...(backOfficeAccess.viewVisible('store.goals') ? ['goals'] : []),
           ]} summaryTabs={[
@@ -5509,10 +5513,10 @@ export function RestaurantWorkspace({
           ]} showHeader={false} />
         )}
         {activeTab === 'marketing' && (
-          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['branding']} showHeader={false} />
+          <RestaurantScopedSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['branding']} showHeader={false} />
         )}
         {activeTab === 'settings' && (
-          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} initialTab={activeSection === 'lifecycle' ? 'lifecycle' : null} allowedTabs={[
+          <RestaurantScopedSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} initialTab={activeSection === 'lifecycle' ? 'lifecycle' : null} allowedTabs={[
             ...(backOfficeAccess.viewVisible('settings.legal') ? ['legal'] : []),
             ...(backOfficeAccess.viewVisible('settings.payments') ? ['payments'] : []),
             ...(backOfficeAccess.viewVisible('settings.taxes') || backOfficeAccess.viewVisible('settings.charges') ? ['taxes_charges'] : []),
@@ -5530,7 +5534,7 @@ export function RestaurantWorkspace({
           ]} showHeader={false} />
         )}
         {activeTab === 'integrations' && (
-          <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[
+          <RestaurantScopedSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[
             ...(backOfficeAccess.viewVisible('integrations.service_model') ? ['service_model'] : []),
             ...(backOfficeAccess.viewVisible('integrations.providers') ? ['integrations'] : []),
           ]} summaryTabs={[
@@ -5544,7 +5548,7 @@ export function RestaurantWorkspace({
             ...(backOfficeAccess.viewVisible('reservations.phone') ? [{ id: 'phone', label: 'AI Phone' }] : []),
           ]} initialTab={backOfficeAccess.viewVisible('reservations.booking') ? 'booking' : 'phone'}>
             {(section) => section === 'booking' ? (
-              <ModernRestaurantSetupPanel
+              <RestaurantScopedSetupPanel
                 restaurant={restaurant}
                 restaurantId={restaurantId}
                 auth={auth}
@@ -5580,7 +5584,7 @@ export function RestaurantWorkspace({
                 initialRestaurantId={restaurantId}
               />
             ) : (
-              <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[section === 'sections' ? 'sections' : 'capacity']} summaryTabs={backOfficeAccess.viewMode(section === 'sections' ? 'ui.sections' : 'ui.floor_plan') === 'summary' ? [section === 'sections' ? 'sections' : 'capacity'] : []} showHeader={false} />
+              <RestaurantScopedSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[section === 'sections' ? 'sections' : 'capacity']} summaryTabs={backOfficeAccess.viewMode(section === 'sections' ? 'ui.sections' : 'ui.floor_plan') === 'summary' ? [section === 'sections' ? 'sections' : 'capacity'] : []} showHeader={false} />
             )}
           </ConfigurationHub>
         )}
@@ -5600,7 +5604,7 @@ export function RestaurantWorkspace({
                 viewPolicy={backOfficeAccess.viewPolicy}
               />
             ) : (
-              <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[section === 'taxes' ? 'taxes_charges' : section]} summaryTabs={backOfficeAccess.viewMode(section === 'discounts' ? 'menu.discounts' : 'menu.routing') === 'summary' ? [section] : []} showHeader={false} />
+              <RestaurantScopedSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={[section === 'taxes' ? 'taxes_charges' : section]} summaryTabs={backOfficeAccess.viewMode(section === 'discounts' ? 'menu.discounts' : 'menu.routing') === 'summary' ? [section] : []} showHeader={false} />
             )}
           </ConfigurationHub>
         )}
@@ -5631,7 +5635,7 @@ export function RestaurantWorkspace({
             ...(backOfficeAccess.viewVisible('team.employees') || backOfficeAccess.viewVisible('team.access') ? [{ id: 'members', label: 'Team & Access' }] : []),
             ...(backOfficeAccess.can('settings.edit') && backOfficeAccess.viewVisible('team.manager_controls') ? [{ id: 'manager-controls', label: 'Manager Controls' }] : []),
           ]} initialTab={backOfficeAccess.viewVisible('team.employees') || backOfficeAccess.viewVisible('team.access') ? 'members' : 'manager-controls'}>
-            {(section) => section === 'members' ? <TeamPage restaurantId={restaurantId} /> : <ModernRestaurantSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['manager_controls']} summaryTabs={backOfficeAccess.viewMode('team.manager_controls') === 'summary' ? ['manager_controls'] : []} showHeader={false} />}
+            {(section) => section === 'members' ? <TeamPage restaurantId={restaurantId} /> : <RestaurantScopedSetupPanel restaurant={restaurant} restaurantId={restaurantId} auth={auth} setupWarnings={setupWarnings} onSetupChanged={handleSetupChanged} allowedTabs={['manager_controls']} summaryTabs={backOfficeAccess.viewMode('team.manager_controls') === 'summary' ? ['manager_controls'] : []} showHeader={false} />}
           </ConfigurationHub>
         )}
         {activeTab === 'time-clock' && <Navigate to={`${restaurantBase}/${restaurantId}/tip-pooling#timecards`} replace />}

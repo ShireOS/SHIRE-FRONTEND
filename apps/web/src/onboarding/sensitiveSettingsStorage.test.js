@@ -37,7 +37,7 @@ test('completed onboarding no longer writes secrets into restaurant config', () 
 })
 
 test('permanent setup and rates use the guarded sensitive-settings contract', () => {
-  assert.match(setupPanel, /fetchRestaurantSensitiveSettings\(restaurantId\)/)
+  assert.match(setupPanel, /fetchRestaurantSensitiveSettings\(targetRestaurantId, \{ signal \}\)/)
   assert.match(setupPanel, /saveGuardedSetupConfig/)
   assert.match(ratesPage, /fetchRestaurantSensitiveSettings\(restaurant\.id\)/)
 })

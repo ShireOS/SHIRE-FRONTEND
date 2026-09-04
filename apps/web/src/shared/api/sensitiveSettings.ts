@@ -13,8 +13,13 @@ export type RestaurantSensitiveSettings = {
   bank_account_last4: string | null
 }
 
-export const fetchRestaurantSensitiveSettings = (restaurantId: string) =>
-  fetchWithSupabaseAuth<RestaurantSensitiveSettings>(`/restaurants/${restaurantId}/sensitive-settings`)
+export const fetchRestaurantSensitiveSettings = (
+  restaurantId: string,
+  options: RequestInit = {},
+) => fetchWithSupabaseAuth<RestaurantSensitiveSettings>(
+  `/restaurants/${restaurantId}/sensitive-settings`,
+  options,
+)
 
 export const saveRestaurantSensitiveSettings = (
   restaurantId: string,

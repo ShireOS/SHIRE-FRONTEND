@@ -87,6 +87,12 @@
   payload to `PUT /restaurants/:id/operating-hours`. Browser code must never delete,
   insert, or upsert `operating_hours` directly. Empty or incomplete copy sources are
   failures, never successful no-ops.
+- **Back Office setup state is restaurant-scoped:** every setup-panel instance is
+  keyed by restaurant ID, async reads carry both that ID and a load generation,
+  and only the current generation may populate editor state or saved baselines.
+  A failed section read must preserve existing state, lock every mutation for that
+  section, and require a successful retry; it must never become editable defaults.
+  Same-restaurant portfolio object refreshes must not reset unsaved setup drafts.
 - **Role-management authority is hierarchical:** staff < manager < owner <
   platform admin. A caller may create, assign, edit, or remove only parallel or
   lower roles. Platform admins may delegate admin, but `profiles.is_superuser`

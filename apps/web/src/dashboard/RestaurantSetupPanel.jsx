@@ -112,6 +112,13 @@ import {
   WORKWEEK_START_DAY_OPTIONS,
 } from './workweekSettings'
 import { setupTabWarnings as resolveSetupTabWarnings } from './setupTabWarnings'
+import {
+  initialSetupSectionStates,
+  isCurrentSetupLoad,
+  nextSetupLoadScope,
+  setupReadOutcomeStates,
+  setupSaveBlockReason,
+} from './setupLoadSafety'
 
 const SETUP_TABS = [
   { id: 'basics', label: 'Basics' },
@@ -1622,7 +1629,12 @@ export default function RestaurantSetupPanel({
   const [setupError, setSetupError] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [setupReloadGeneration, setSetupReloadGeneration] = useState(0)
+  const [setupSectionStates, setSetupSectionStates] = useState(() => (
+    initialSetupSectionStates(restaurantId, visibleSetupTabs.map(tab => tab.id))
+  ))
   const savedDraftsRef = useRef({})
+  const setupLoadScopeRef = useRef({ restaurantId: String(restaurantId || ''), generation: 0 })
 
   const isPropagationEnabled = Boolean(propagationContext?.requestTargets)
   const reservationPublicUrl = useMemo(() => {
@@ -1833,11 +1845,12 @@ export default function RestaurantSetupPanel({
       body: JSON.stringify(body),
     })
 
-  const fetchReservationSettings = async (targetRestaurantId) => {
+  const fetchReservationSettings = async (targetRestaurantId, options = {}) => {
     try {
-      return await fetchReservationsApi(`/locations/${targetRestaurantId}/reservation-settings`)
-    } catch {
-      return null
+      return await fetchReservationsApi(`/locations/${targetRestaurantId}/reservation-settings`, options)
+    } catch (error) {
+      if (error?.status === 404) return null
+      throw error
     }
   }
 
@@ -1872,6 +1885,23 @@ export default function RestaurantSetupPanel({
     )
   }
 
+  const sectionSaveBlockReason = (sectionId) => (
+    setupSaveBlockReason(setupSectionStates, sectionId, restaurantId)
+  )
+
+  const requireReadySetupSection = (sectionId) => {
+    const blocked = sectionSaveBlockReason(sectionId)
+    if (blocked) {
+      setSetupError(blocked)
+      return false
+    }
+    if (setupLoadScopeRef.current.restaurantId !== String(restaurantId || '')) {
+      setSetupError('The selected restaurant changed. Review the current restaurant before saving.')
+      return false
+    }
+    return true
+  }
+
   const saveWithPropagation = async ({
     sectionId,
     label,
@@ -1884,19 +1914,28 @@ export default function RestaurantSetupPanel({
     publication,
     buildCommand,
   }) => {
+    if (!requireReadySetupSection(sectionId)) return null
+    const sourceRestaurantId = String(restaurantId || '')
+    const requireCurrentRestaurant = () => {
+      if (setupLoadScopeRef.current.restaurantId !== sourceRestaurantId) {
+        throw new Error('The selected restaurant changed before this save began. Nothing was saved; review the current restaurant and try again.')
+      }
+    }
+    requireCurrentRestaurant()
     const requestedTargets = isPropagationEnabled
       ? await propagationContext.requestTargets({
           sectionId,
           label,
           propagation,
-          sourceRestaurantId: restaurantId,
+          sourceRestaurantId,
         })
-      : [restaurantId]
+      : [sourceRestaurantId]
 
     if (requestedTargets === null) return null
+    requireCurrentRestaurant()
 
     const targetIds = [...new Set((requestedTargets || []).filter(Boolean))]
-      .sort((a, b) => (a === restaurantId ? -1 : b === restaurantId ? 1 : 0))
+      .sort((a, b) => (a === sourceRestaurantId ? -1 : b === sourceRestaurantId ? 1 : 0))
 
     if (targetIds.length === 0) {
       setSetupError('Select at least one restaurant.')
@@ -1925,16 +1964,19 @@ export default function RestaurantSetupPanel({
         return scheduled
       }
       for (const targetId of targetIds) {
-        if (targetId === restaurantId) {
+        requireCurrentRestaurant()
+        if (targetId === sourceRestaurantId) {
           sourceResult = await saveSource(targetId)
           sourceWasSaved = true
         } else {
           await saveTarget(targetId)
         }
       }
+      requireCurrentRestaurant()
       if (sourceWasSaved && onSourceSaved) onSourceSaved(sourceResult)
       if (sourceResult) auth.seedCurrentRestaurant?.(sourceResult)
-      await auth.refreshRestaurants?.(restaurantId)
+      await auth.refreshRestaurants?.(sourceRestaurantId)
+      requireCurrentRestaurant()
       afterSave?.(sourceResult, targetIds)
       onSetupChanged?.()
       setSaveMessage(targetIds.length > 1 ? `${successMessage} Applied to ${targetIds.length} restaurants.` : successMessage)
@@ -1953,7 +1995,7 @@ export default function RestaurantSetupPanel({
       <PublishControls
         label={label}
         busy={isSaving}
-        disabled={isSaving}
+        disabled={isSaving || Boolean(sectionSaveBlockReason(sectionId))}
         onPublishNow={() => handler()}
         onSchedule={(scheduledFor, timezone) => handler({ scheduledFor, timezone })}
       />
@@ -1961,6 +2003,7 @@ export default function RestaurantSetupPanel({
   )
 
   useEffect(() => {
+    savedDraftsRef.current = {}
     const nextProfile = {
       name: restaurant.name || '',
       address: restaurant.address || '',
@@ -1984,13 +2027,36 @@ export default function RestaurantSetupPanel({
     setLegal(nextLegal)
     setPayments(nextPayments)
     setPaymentsAccountConfirmation(nextPayments.bank_account_number || '')
-    setPricingPolicy(prev => normalizePricingPolicy({ ...prev, jurisdiction_state: prev.jurisdiction_state || restaurant.state || 'SC' }))
+    setPricingPolicy(normalizePricingPolicy({ jurisdiction_state: restaurant.state || 'SC' }))
     setServiceModel(nextServiceModel)
     setGoals(nextGoals)
     setReservationTiming(nextReservationTiming)
     setReservationPublicSlug(nextReservationPublicSlug)
     setCoverImageUrl(restaurant.cover_image_url || '')
     setPendingCoverFile(null)
+    setTaxRates([])
+    setTaxCategoryAssignments(undefined)
+    setServiceCharges([])
+    setAutoGratuity(defaultAutoGratuity())
+    setDiscountRules([])
+    setRolePermissions(defaultRolePermissions())
+    setCloseoutSettings(defaultCloseoutSettings())
+    setCheckWorkflowSettings(defaultCheckWorkflowSettings())
+    setTipPayrollSettings(defaultTipPayrollSettings())
+    setSections(['Table'])
+    setSectionProfiles([])
+    setHours(DEFAULT_HOURS.map(day => ({ ...day })))
+    setSameHours(true)
+    setFloorTables([])
+    setFloorPlanMode(null)
+    setWaiters([])
+    setJobCodes([])
+    setJobCodeDraft({ code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 100, is_active: true })
+    setRateEdits({})
+    setStaffForm({ name: '', email: '', role: '', hourly_rate: '', pin: '', employee_login_id: '', suggested_weekly_hours: '' })
+    setPinEdits({})
+    setPinSaving({})
+    setPinSaved({})
     setSaveMessage('')
     rememberSavedDraft('basics', {
       name: nextProfile.name,
@@ -2013,7 +2079,7 @@ export default function RestaurantSetupPanel({
     rememberSavedDraft('goals', nextGoals)
     rememberSavedDraft('reservation_timing', { timing: nextReservationTiming, publicSlug: nextReservationPublicSlug })
     rememberSavedDraft('branding', { coverImageUrl: restaurant.cover_image_url || '' })
-  }, [restaurant])
+  }, [restaurantId])
 
   useEffect(() => {
     if (!pendingCoverFile) {
@@ -2027,100 +2093,138 @@ export default function RestaurantSetupPanel({
 
   // Reads go through the shared query cache: returning to this tab within the
   // stale window renders instantly from memory with zero network requests.
-  const loadSetupData = async () => {
-    if (!restaurantId) return
-    setSetupError('')
+  const loadSetupData = async ({ scope, signal, targetRestaurant, visibleSectionIds }) => {
+    const targetRestaurantId = scope.restaurantId
+    const isCurrent = () => !signal.aborted && isCurrentSetupLoad(setupLoadScopeRef.current, scope)
+    if (!targetRestaurantId) return
+    if (isCurrent()) setSetupError('')
     const cached = (key, fn) => fetchCached(key, fn, STALE_TIMES.setup)
-    const scoped = async (label, read, fallback) => {
+    const scoped = async (key, sectionIds, label, read) => {
       try {
-        return { label, value: await read(), error: null }
+        return { key, sectionIds, label, requested: true, value: await read(), error: null }
       } catch (err) {
-        return { label, value: fallback, error: err }
+        return { key, sectionIds, label, requested: true, value: undefined, error: err }
       }
     }
-    const scopedFor = (tabIds, label, read, fallback) => (
-      tabIds.some(tabId => visibleSetupTabs.some(tab => tab.id === tabId))
-        ? scoped(label, read, fallback)
-        : Promise.resolve({ label, value: fallback, error: null })
+    const scopedFor = (tabIds, key, sectionIds, label, read) => (
+      tabIds.some(tabId => visibleSectionIds.includes(tabId))
+        ? scoped(key, sectionIds, label, read)
+        : Promise.resolve({ key, sectionIds, label, requested: false, value: undefined, error: null })
     )
     try {
       const results = await Promise.all([
-        scopedFor(['employees'], 'Employees', () => fetchCached(queryKeys.waiters(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/waiters?include_inactive=false`), 0), []),
-        scopedFor(['employees', 'manager_controls', 'tips_payroll'], 'Roles', () => fetchCached(queryKeys.jobCodes(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/job-codes`), 0), []),
-        scopedFor(['hours'], 'Hours', () => cached(queryKeys.operatingHours(restaurantId), async () => {
-          const { data, error } = await supabase
+        scopedFor(['employees'], 'staff', ['employees'], 'Employees', () => fetchCached(queryKeys.waiters(targetRestaurantId), () => fetchWithSupabaseAuth(`/restaurants/${targetRestaurantId}/waiters?include_inactive=false`), 0)),
+        scopedFor(['employees', 'manager_controls', 'tips_payroll'], 'jobCodes', ['employees', 'manager_controls', 'tips_payroll'], 'Roles', () => fetchCached(queryKeys.jobCodes(targetRestaurantId), () => fetchWithSupabaseAuth(`/restaurants/${targetRestaurantId}/job-codes`), 0)),
+        scopedFor(['hours', 'reservation_timing'], 'hours', ['hours', 'reservation_timing'], 'Hours', () => cached(queryKeys.operatingHours(targetRestaurantId), async () => {
+          const query = supabase
             .from('operating_hours')
             .select('day_of_week, open_time, close_time, is_closed')
-            .eq('restaurant_id', restaurantId)
+            .eq('restaurant_id', targetRestaurantId)
             .order('day_of_week')
+          const { data, error } = await query
           if (error) throw error
           return data
-        }), []),
-        scopedFor(['sections'], 'Sections', () => cached(queryKeys.sections(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/sections`)), []),
-        scopedFor(['capacity'], 'Floor plan', () => cached(queryKeys.floorPlan(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/floor-plan`)), null),
-        scopedFor(['taxes_charges'], 'Taxes and charges', () => cached(queryKeys.taxesCharges(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/taxes-charges`)), null),
-        scopedFor(['discounts'], 'Discounts', () => cached(queryKeys.discountRules(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/discount-rules`)), null),
-        scopedFor(['manager_controls'], 'Manager controls', () => cached(queryKeys.managerControls(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/manager-controls`)), null),
-        scopedFor(['closeout'], 'Closeout', () => cached(queryKeys.closeoutSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/closeout-settings`)), null),
-        scopedFor(['check_workflow'], 'Check workflow', () => cached(queryKeys.checkWorkflowSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/check-workflow-settings`)), null),
-        scopedFor(['tips_payroll'], 'Tips and payroll', () => cached(queryKeys.tipsPayrollSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`)), null),
-        scopedFor(['payments'], 'Pricing policy', () => cached(queryKeys.pricingPolicy(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pricing-policy`)), null),
-        scopedFor(['legal', 'payments'], 'Sensitive settings', () => fetchRestaurantSensitiveSettings(restaurantId), null),
-        scopedFor(['reservation_timing'], 'Reservation timing', () => fetchReservationSettings(restaurantId), null),
+        })),
+        scopedFor(['sections'], 'sections', ['sections'], 'Sections', () => cached(queryKeys.sections(targetRestaurantId), () => fetchWithSupabaseAuth(`/restaurants/${targetRestaurantId}/sections`))),
+        scopedFor(['capacity'], 'floorPlan', ['capacity'], 'Floor plan', () => cached(queryKeys.floorPlan(targetRestaurantId), () => fetchWithSupabaseAuth(`/restaurants/${targetRestaurantId}/floor-plan`))),
+        scopedFor(['taxes_charges'], 'taxesCharges', ['taxes_charges'], 'Taxes and charges', () => cached(queryKeys.taxesCharges(targetRestaurantId), () => fetchWithSupabaseAuth(`/restaurants/${targetRestaurantId}/taxes-charges`))),
+        scopedFor(['discounts'], 'discounts', ['discounts'], 'Discounts', () => cached(queryKeys.discountRules(targetRestaurantId), () => fetchWithSupabaseAuth(`/restaurants/${targetRestaurantId}/discount-rules`))),
+        scopedFor(['manager_controls'], 'managerControls', ['manager_controls'], 'Manager controls', () => cached(queryKeys.managerControls(targetRestaurantId), () => fetchWithSupabaseAuth(`/restaurants/${targetRestaurantId}/manager-controls`))),
+        scopedFor(['closeout'], 'closeout', ['closeout'], 'Closeout', () => cached(queryKeys.closeoutSettings(targetRestaurantId), () => fetchWithSupabaseAuth(`/restaurants/${targetRestaurantId}/closeout-settings`))),
+        scopedFor(['check_workflow'], 'checkWorkflow', ['check_workflow'], 'Check workflow', () => cached(queryKeys.checkWorkflowSettings(targetRestaurantId), () => fetchWithSupabaseAuth(`/restaurants/${targetRestaurantId}/check-workflow-settings`))),
+        scopedFor(['tips_payroll'], 'tipPayroll', ['tips_payroll'], 'Tips and payroll', () => cached(queryKeys.tipsPayrollSettings(targetRestaurantId), () => fetchWithSupabaseAuth(`/restaurants/${targetRestaurantId}/tips-payroll-settings`))),
+        scopedFor(['payments'], 'pricingPolicy', ['pricing_policy'], 'Pricing policy', () => cached(queryKeys.pricingPolicy(targetRestaurantId), () => fetchWithSupabaseAuth(`/restaurants/${targetRestaurantId}/pricing-policy`))),
+        scopedFor(['legal', 'payments'], 'sensitiveSettings', ['legal', 'payments'], 'Sensitive settings', () => fetchRestaurantSensitiveSettings(targetRestaurantId, { signal })),
+        scopedFor(['reservation_timing'], 'reservationSettings', ['reservation_timing'], 'Reservation timing', () => fetchReservationSettings(targetRestaurantId, { signal })),
       ])
-      const [
-        staffRows,
-        jobCodeRows,
-        hoursRows,
-        sectionRows,
-        floorPlan,
-        taxesCharges,
-        discountData,
-        managerControls,
-        closeoutData,
-        checkWorkflowData,
-        tipPayrollData,
-        pricingPolicyData,
-        sensitiveSettings,
-        reservationSettingsData,
-      ] = results.map(result => result.value)
+      if (!isCurrent()) return
 
-      const normalized = normalizeHours(hoursRows)
-      const nextSameHours = deriveSameHours(normalized)
-      setHours(normalized)
-      setSameHours(nextSameHours)
-      setWaiters(Array.isArray(staffRows) ? staffRows : [])
-      const normalizedJobCodes = normalizeJobCodes(jobCodeRows)
-      const nextRateEdits = Object.fromEntries(normalizedJobCodes.map(code => [code.id, String(code.default_hourly_rate ?? '')]))
-      setJobCodes(normalizedJobCodes)
-      setRateEdits(nextRateEdits)
-      const sectionNames = normalizeSectionNames((Array.isArray(sectionRows) ? sectionRows : []).map(section => section.name))
-      const nextSectionProfiles = normalizeSectionProfiles(sectionRows, sectionNames)
-      setSections(sectionNames)
-      setSectionProfiles(nextSectionProfiles)
-      setFloorTables(mapFloorPlanTables(floorPlan))
-      const nextTaxRates = normalizeTaxRates(taxesCharges?.tax_rates)
-      const nextServiceCharges = normalizeServiceCharges(taxesCharges?.service_charges)
-      const nextAutoGratuity = normalizeAutoGratuity(taxesCharges?.auto_gratuity)
-      const nextDiscountRules = normalizeDiscountRules(discountData?.discount_rules)
-      const nextRolePermissions = normalizeRolePermissions(managerControls?.role_permissions, normalizedJobCodes)
-      const nextCloseoutSettings = normalizeCloseoutSettings(closeoutData)
-      const nextCheckWorkflowSettings = normalizeCheckWorkflowSettings(checkWorkflowData)
-      const nextTipPayrollSettings = normalizeTipPayrollSettings(tipPayrollData, normalizedJobCodes)
-      const nextPricingPolicy = normalizePricingPolicy(pricingPolicyData || { jurisdiction_state: restaurant.state || 'SC' })
-      setTaxRates(nextTaxRates)
-      setTaxCategoryAssignments(undefined)
-      setServiceCharges(nextServiceCharges)
-      setAutoGratuity(nextAutoGratuity)
-      setDiscountRules(nextDiscountRules)
-      setRolePermissions(nextRolePermissions)
-      setCloseoutSettings(nextCloseoutSettings)
-      setCheckWorkflowSettings(nextCheckWorkflowSettings)
-      setTipPayrollSettings(nextTipPayrollSettings)
-      setPricingPolicy(nextPricingPolicy)
-      if (sensitiveSettings) {
+      const byKey = Object.fromEntries(results.map(result => [result.key, result]))
+      const succeeded = (key) => byKey[key]?.requested && !byKey[key]?.error
+
+      let normalizedJobCodes = null
+      let nextRateEdits = null
+      if (succeeded('jobCodes')) {
+        normalizedJobCodes = normalizeJobCodes(byKey.jobCodes.value)
+        nextRateEdits = Object.fromEntries(normalizedJobCodes.map(code => [code.id, String(code.default_hourly_rate ?? '')]))
+        setJobCodes(normalizedJobCodes)
+        setRateEdits(nextRateEdits)
+      }
+      if (succeeded('staff')) {
+        setWaiters(Array.isArray(byKey.staff.value) ? byKey.staff.value : [])
+      }
+      if (succeeded('staff') && normalizedJobCodes) {
+        rememberSavedDraft('employees', {
+          jobCodes: normalizedJobCodes,
+          rateEdits: nextRateEdits,
+          jobCodeDraft: { code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 100, is_active: true },
+          staffForm: { name: '', email: '', role: '', hourly_rate: '', pin: '', employee_login_id: '', suggested_weekly_hours: '' },
+        })
+      }
+
+      if (succeeded('hours')) {
+        const normalizedHours = normalizeHours(byKey.hours.value)
+        const nextSameHours = deriveSameHours(normalizedHours)
+        setHours(normalizedHours)
+        setSameHours(nextSameHours)
+        rememberSavedDraft('hours', { hours: normalizedHours, sameHours: nextSameHours })
+      }
+      if (succeeded('sections')) {
+        const sectionRows = byKey.sections.value
+        const sectionNames = normalizeSectionNames((Array.isArray(sectionRows) ? sectionRows : []).map(section => section.name))
+        const nextSectionProfiles = normalizeSectionProfiles(sectionRows, sectionNames)
+        setSections(sectionNames)
+        setSectionProfiles(nextSectionProfiles)
+        rememberSavedDraft('sections', { sections: sectionNames, sectionProfiles: nextSectionProfiles })
+      }
+      if (succeeded('floorPlan')) {
+        setFloorTables(mapFloorPlanTables(byKey.floorPlan.value))
+      }
+      if (succeeded('taxesCharges')) {
+        const taxesCharges = byKey.taxesCharges.value
+        const nextTaxRates = normalizeTaxRates(taxesCharges?.tax_rates)
+        const nextServiceCharges = normalizeServiceCharges(taxesCharges?.service_charges)
+        const nextAutoGratuity = normalizeAutoGratuity(taxesCharges?.auto_gratuity)
+        setTaxRates(nextTaxRates)
+        setTaxCategoryAssignments(undefined)
+        setServiceCharges(nextServiceCharges)
+        setAutoGratuity(nextAutoGratuity)
+        rememberSavedDraft('taxes_charges', { taxRates: nextTaxRates, taxCategoryAssignments: undefined, serviceCharges: nextServiceCharges, autoGratuity: nextAutoGratuity })
+      }
+      if (succeeded('discounts')) {
+        const nextDiscountRules = normalizeDiscountRules(byKey.discounts.value?.discount_rules)
+        setDiscountRules(nextDiscountRules)
+        rememberSavedDraft('discounts', nextDiscountRules)
+      }
+      if (succeeded('managerControls') && normalizedJobCodes) {
+        const nextRolePermissions = normalizeRolePermissions(byKey.managerControls.value?.role_permissions, normalizedJobCodes)
+        setRolePermissions(nextRolePermissions)
+        rememberSavedDraft('manager_controls', nextRolePermissions)
+      }
+      if (succeeded('closeout')) {
+        const nextCloseoutSettings = normalizeCloseoutSettings(byKey.closeout.value)
+        setCloseoutSettings(nextCloseoutSettings)
+        rememberSavedDraft('closeout', nextCloseoutSettings)
+      }
+      if (succeeded('checkWorkflow')) {
+        const nextCheckWorkflowSettings = normalizeCheckWorkflowSettings(byKey.checkWorkflow.value)
+        setCheckWorkflowSettings(nextCheckWorkflowSettings)
+        rememberSavedDraft('check_workflow', nextCheckWorkflowSettings)
+      }
+      if (succeeded('tipPayroll') && normalizedJobCodes) {
+        const nextTipPayrollSettings = normalizeTipPayrollSettings(byKey.tipPayroll.value, normalizedJobCodes)
+        setTipPayrollSettings(nextTipPayrollSettings)
+        rememberSavedDraft('tips_payroll', nextTipPayrollSettings)
+      }
+      if (succeeded('pricingPolicy')) {
+        const nextPricingPolicy = normalizePricingPolicy(byKey.pricingPolicy.value || { jurisdiction_state: targetRestaurant.state || 'SC' })
+        setPricingPolicy(nextPricingPolicy)
+        rememberSavedDraft('pricing_policy', nextPricingPolicy)
+      }
+      if (succeeded('sensitiveSettings') && byKey.sensitiveSettings.value) {
+        const sensitiveSettings = byKey.sensitiveSettings.value
         const nextLegal = {
-          ...initialLegal(restaurant),
+          ...initialLegal(targetRestaurant),
           ein: '',
           ein_configured: Boolean(sensitiveSettings.ein_configured),
           ein_last4: sensitiveSettings.ein_last4 || null,
@@ -2129,7 +2233,7 @@ export default function RestaurantSetupPanel({
           signature_configured: Boolean(sensitiveSettings.signature_configured),
         }
         const nextPayments = {
-          ...initialPayments(restaurant),
+          ...initialPayments(targetRestaurant),
           bank_account_holder: sensitiveSettings.bank_account_holder || '',
           bank_name: sensitiveSettings.bank_name || '',
           bank_routing_number: '',
@@ -2145,40 +2249,42 @@ export default function RestaurantSetupPanel({
         rememberSavedDraft('legal', nextLegal)
         rememberSavedDraft('payments', nextPayments)
       }
-      rememberSavedDraft('hours', { hours: normalized, sameHours: nextSameHours })
-      rememberSavedDraft('sections', { sections: sectionNames, sectionProfiles: nextSectionProfiles })
-      rememberSavedDraft('taxes_charges', { taxRates: nextTaxRates, taxCategoryAssignments: undefined, serviceCharges: nextServiceCharges, autoGratuity: nextAutoGratuity })
-      rememberSavedDraft('discounts', nextDiscountRules)
-      rememberSavedDraft('manager_controls', nextRolePermissions)
-      rememberSavedDraft('closeout', nextCloseoutSettings)
-      rememberSavedDraft('check_workflow', nextCheckWorkflowSettings)
-      rememberSavedDraft('tips_payroll', nextTipPayrollSettings)
-      rememberSavedDraft('pricing_policy', nextPricingPolicy)
-      rememberSavedDraft('employees', {
-        jobCodes: normalizedJobCodes,
-        rateEdits: nextRateEdits,
-        jobCodeDraft: { code: '', label: '', permission_tier: 'normal', default_hourly_rate: '', is_tipped: false, tipout_role: '', sort_order: 100, is_active: true },
-        staffForm: { name: '', email: '', role: '', hourly_rate: '', pin: '', employee_login_id: '', suggested_weekly_hours: '' },
-      })
-      {
-        const configReservationTiming = normalizeReservationTiming(restaurant.config)
-        const serviceReservationTiming = reservationTimingFromSettings(reservationSettingsData)
+      if (succeeded('reservationSettings')) {
+        const configReservationTiming = normalizeReservationTiming(targetRestaurant.config)
+        const serviceReservationTiming = reservationTimingFromSettings(byKey.reservationSettings.value)
         const nextReservationTiming = serviceReservationTiming ? { ...configReservationTiming, ...serviceReservationTiming } : configReservationTiming
         setReservationTiming(nextReservationTiming)
-        rememberSavedDraft('reservation_timing', { timing: nextReservationTiming, publicSlug: restaurant.public_slug || restaurant.slug || '' })
+        rememberSavedDraft('reservation_timing', { timing: nextReservationTiming, publicSlug: targetRestaurant.public_slug || targetRestaurant.slug || '' })
       }
+      setSetupSectionStates(previous => ({
+        ...previous,
+        ...setupReadOutcomeStates(targetRestaurantId, results),
+      }))
       const failedLabels = results.filter(result => result.error).map(result => result.label)
       if (failedLabels.length > 0) {
-        setSetupError(`${failedLabels.join(', ')} failed to load. Other setup sections are still editable.`)
+        setSetupError(`${failedLabels.join(', ')} failed to load. Affected sections are locked until Retry succeeds.`)
+      } else {
+        setSetupError('')
       }
     } catch (err) {
-      setSetupError(err instanceof Error ? err.message : 'Could not load setup data.')
+      if (isCurrent()) setSetupError(err instanceof Error ? err.message : 'Could not load setup data.')
     }
   }
 
   useEffect(() => {
-    void loadSetupData()
-  }, [restaurantId, visibleSetupTabIds])
+    const controller = new AbortController()
+    const scope = nextSetupLoadScope(setupLoadScopeRef.current, restaurantId)
+    setupLoadScopeRef.current = scope
+    const visibleSectionIds = visibleSetupTabs.map(tab => tab.id)
+    setSetupSectionStates(initialSetupSectionStates(restaurantId, visibleSectionIds))
+    void loadSetupData({ scope, signal: controller.signal, targetRestaurant: restaurant, visibleSectionIds })
+    return () => {
+      controller.abort()
+      if (isCurrentSetupLoad(setupLoadScopeRef.current, scope)) {
+        setupLoadScopeRef.current = nextSetupLoadScope(setupLoadScopeRef.current, restaurantId)
+      }
+    }
+  }, [restaurantId, visibleSetupTabIds, setupReloadGeneration])
 
   const referenceHours = useMemo(() => hours.find(day => !day.is_closed) || hours[1] || DEFAULT_HOURS[1], [hours])
 
@@ -2690,6 +2796,7 @@ export default function RestaurantSetupPanel({
   }
 
   const saveJobCode = async (jobCode, publication) => {
+    if (!requireReadySetupSection('employees')) return
     setSavingRateId(jobCode.id || 'new')
     setSetupError('')
     try {
@@ -2759,6 +2866,7 @@ export default function RestaurantSetupPanel({
   }
 
   const removeJobCode = async (jobCode) => {
+    if (!requireReadySetupSection('employees')) return
     if (!jobCode?.id) return
     setSavingRateId(jobCode.id)
     setSetupError('')
@@ -2970,6 +3078,7 @@ export default function RestaurantSetupPanel({
   }
 
   const addStaff = async () => {
+    if (!requireReadySetupSection('employees')) return
     if (!staffForm.name.trim()) {
       setSetupError('Employee name is required.')
       return
@@ -3024,6 +3133,7 @@ export default function RestaurantSetupPanel({
   }
 
   const updateStaff = async (waiterId, updates) => {
+    if (!requireReadySetupSection('employees')) return
     setSetupError('')
     const normalizedUpdates = { ...updates }
     if (Object.prototype.hasOwnProperty.call(normalizedUpdates, 'email')) {
@@ -3067,6 +3177,7 @@ export default function RestaurantSetupPanel({
   }
 
   const removeStaff = async (waiterId) => {
+    if (!requireReadySetupSection('employees')) return
     await fetchWithSupabaseAuth(`/waiters/${waiterId}`, { method: 'DELETE' })
     setWaiters(prev => prev.filter(item => item.id !== waiterId))
     queryClient.setQueryData(queryKeys.waiters(restaurantId), prev => Array.isArray(prev) ? prev.filter(item => item.id !== waiterId) : prev)
@@ -3074,6 +3185,7 @@ export default function RestaurantSetupPanel({
   }
 
   const saveRoleRate = async (jobCode) => {
+    if (!requireReadySetupSection('employees')) return
     const rawRate = rateEdits[jobCode.id] ?? ''
     const parsed = Number(rawRate)
     if (!Number.isFinite(parsed) || parsed < 0) {
@@ -3110,6 +3222,7 @@ export default function RestaurantSetupPanel({
   }
 
   const saveEditedPin = async (waiterId) => {
+    if (!requireReadySetupSection('employees')) return
     const pin = pinEdits[waiterId]?.trim()
     if (!/^\d{4}$/.test(pin || '')) {
       setSetupError('POS PIN must be exactly 4 digits.')
@@ -3135,6 +3248,9 @@ export default function RestaurantSetupPanel({
       setPinSaving(prev => ({ ...prev, [waiterId]: false }))
     }
   }
+
+  const activeSetupSectionState = setupSectionStates[activeSetupTab]
+  const activeSetupSectionBlockReason = sectionSaveBlockReason(activeSetupTab)
 
   if (floorPlanMode) {
     return (
@@ -3224,6 +3340,17 @@ export default function RestaurantSetupPanel({
           {setupError}
         </div>
       )}
+      {activeSetupSectionState?.status === 'loading' && (
+        <div className="rounded-xl border border-amber-300/20 bg-amber-300/10 p-3 text-sm text-amber-100" role="status">
+          Loading this section for {restaurant.name}. Saving is disabled until it finishes.
+        </div>
+      )}
+      {activeSetupSectionState?.status === 'error' && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200" role="alert">
+          <span>{activeSetupSectionBlockReason}</span>
+          <SmallButton onClick={() => setSetupReloadGeneration(value => value + 1)}>Retry</SmallButton>
+        </div>
+      )}
       {saveMessage && (
         <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/10 p-3 text-sm text-emerald-100">
           {saveMessage}
@@ -3246,7 +3373,7 @@ export default function RestaurantSetupPanel({
             </div>
           )}
         </SectionShell>
-      ) : <>
+      ) : <fieldset disabled={Boolean(activeSetupSectionBlockReason)} className="contents">
       {activeSetupTab === 'basics' && (
         <SectionShell
           title="Basics"
@@ -3595,7 +3722,7 @@ export default function RestaurantSetupPanel({
               </div>
               <div className="flex shrink-0 flex-wrap gap-2">
                 <SmallButton onClick={() => discardSetupChanges('pricing_policy')} disabled={isSaving}>Cancel</SmallButton>
-                <SmallButton variant="primary" onClick={() => void savePricingPolicy()} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save pricing policy'}</SmallButton>
+                <SmallButton variant="primary" onClick={() => void savePricingPolicy()} disabled={isSaving || Boolean(sectionSaveBlockReason('pricing_policy'))}>{isSaving ? 'Saving...' : 'Save pricing policy'}</SmallButton>
               </div>
             </div>
 
@@ -4725,7 +4852,7 @@ export default function RestaurantSetupPanel({
       {activeSetupTab === 'lifecycle' && (
         <StoreDangerZone restaurant={restaurant} restaurantId={restaurantId} auth={auth} />
       )}
-      </>}
+      </fieldset>}
     </div>
   )
 }
