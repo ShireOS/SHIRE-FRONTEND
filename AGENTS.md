@@ -87,6 +87,15 @@
   payload to `PUT /restaurants/:id/operating-hours`. Browser code must never delete,
   insert, or upsert `operating_hours` directly. Empty or incomplete copy sources are
   failures, never successful no-ops.
+- **Schedules have one active row per restaurant-week:** Back Office schedule lists
+  explicitly exclude archived history. Manual generation may atomically replace a
+  draft, but it must never replace a published schedule; the ML backend serializes
+  all writers and the database partial unique index is authoritative.
+- **Scheduled existing-role edits remain restaurant-scoped:** the queued command is
+  exactly `PATCH /restaurants/:restaurantId/job-codes/:jobCodeId`, and the same
+  captured restaurant ID is used in its path and audit target. The backend
+  allowlists only this PATCH shape and reauthorizes store access at queue and run
+  time. Immediate role edits keep their existing endpoint and behavior.
 - **Back Office setup state is restaurant-scoped:** every setup-panel instance is
   keyed by restaurant ID, async reads carry both that ID and a load generation,
   and only the current generation may populate editor state or saved baselines.
