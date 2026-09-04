@@ -82,6 +82,11 @@
   floor-plan previews and menu-item photos. The ML backend validates and
   normalizes bytes, owns storage names, enforces tenant binding and quotas, and
   never follows an arbitrary image URL.
+- **Operating-hours replacement is atomic and backend-owned:** Back Office setup,
+  onboarding, scheduled publication, and multi-store copy send a complete seven-day
+  payload to `PUT /restaurants/:id/operating-hours`. Browser code must never delete,
+  insert, or upsert `operating_hours` directly. Empty or incomplete copy sources are
+  failures, never successful no-ops.
 - **Role-management authority is hierarchical:** staff < manager < owner <
   platform admin. A caller may create, assign, edit, or remove only parallel or
   lower roles. Platform admins may delegate admin, but `profiles.is_superuser`

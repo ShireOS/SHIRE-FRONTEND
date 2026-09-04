@@ -85,6 +85,7 @@ import { supabase } from '../shared/lib/supabase'
 import { queryClient, queryKeys, fetchCached, fetchWithSupabaseAuth, STALE_TIMES } from '../shared/query'
 import { fetchPosApi } from '../shared/api/posClient'
 import { fetchReservationsApi } from '../shared/api/reservationsClient'
+import { operatingHoursReplacementPayload } from '../shared/operatingHours'
 import { FloorPlanEditor } from '../onboarding/components/FloorPlanEditor'
 import { normalizeFloorPlanTablesForEditor } from '../onboarding/components/FloorPlanCanvas'
 import { FloorPlanTableSetup } from '../onboarding/components/FloorPlanTableSetup'
@@ -1864,21 +1865,11 @@ export default function RestaurantSetupPanel({
   }
 
   const saveHoursForRestaurant = async (targetRestaurantId, nextHours) => {
-    const { error: deleteError } = await supabase
-      .from('operating_hours')
-      .delete()
-      .eq('restaurant_id', targetRestaurantId)
-    if (deleteError) throw deleteError
-    const { error: insertError } = await supabase
-      .from('operating_hours')
-      .insert(nextHours.map(day => ({
-        restaurant_id: targetRestaurantId,
-        day_of_week: day.day_of_week,
-        open_time: day.open_time,
-        close_time: day.close_time,
-        is_closed: day.is_closed,
-      })))
-    if (insertError) throw insertError
+    return putRestaurantEndpoint(
+      targetRestaurantId,
+      '/operating-hours',
+      operatingHoursReplacementPayload(nextHours),
+    )
   }
 
   const saveWithPropagation = async ({

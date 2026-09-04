@@ -1,5 +1,6 @@
 import { supabase } from '../../shared/lib/supabase'
 import { fetchWithSupabaseAuth, queryClient } from '../../shared/query'
+import { operatingHoursReplacementPayload } from '../../shared/operatingHours'
 
 // Areas that round-trip as whole settings payloads (GET source → PUT target).
 // One-time copy: targets stay independently editable afterward.
@@ -33,14 +34,13 @@ async function copyHours(sourceId, targetId) {
     .select('day_of_week, open_time, close_time, is_closed')
     .eq('restaurant_id', sourceId)
   if (error) throw error
-  if (!rows?.length) return
-  const { error: upsertError } = await supabase
-    .from('operating_hours')
-    .upsert(
-      rows.map((row) => ({ ...row, restaurant_id: targetId })),
-      { onConflict: 'restaurant_id,day_of_week' }
-    )
-  if (upsertError) throw upsertError
+  if (!rows?.length) {
+    throw new Error('The source restaurant has no operating hours to copy.')
+  }
+  await fetchWithSupabaseAuth(`/restaurants/${targetId}/operating-hours`, {
+    method: 'PUT',
+    body: JSON.stringify(operatingHoursReplacementPayload(rows)),
+  })
 }
 
 async function copyEndpointArea(area, sourceId, targetId, sourceCache) {

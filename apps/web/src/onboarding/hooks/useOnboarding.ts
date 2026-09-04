@@ -74,6 +74,7 @@ import { API_CONFIG } from '../../shared/api/config'
 import { fetchWithSupabaseAuth } from '../../shared/query/fetchWithSupabaseAuth'
 import { fetchPosApi } from '../../shared/api/posClient'
 import { fetchReservationsApi } from '../../shared/api/reservationsClient'
+import { operatingHoursReplacementPayload } from '../../shared/operatingHours'
 import { useAuth } from '../../auth'
 import type { Restaurant } from '@shire/db'
 import { isResumableOnboardingRestaurant } from '../onboardingRestaurantState.js'
@@ -2355,36 +2356,13 @@ export function useOnboarding() {
     try {
       const activeRestaurantId = getActiveRestaurantId()
 
-      // Delete existing hours
-      const { error: deleteError } = await runWithTimeout(
-        () =>
-          supabase
-            .from('operating_hours')
-            .delete()
-            .eq('restaurant_id', activeRestaurantId),
-        'Clearing previous operating hours timed out. Please retry.'
-      )
-
-      if (deleteError) throw deleteError
-
-      // Insert new hours
-      const { error: insertError } = await runWithTimeout(
-        () =>
-          supabase
-            .from('operating_hours')
-            .insert(
-              data.operating_hours.map(h => ({
-                restaurant_id: activeRestaurantId,
-                day_of_week: h.day_of_week,
-                open_time: h.open_time,
-                close_time: h.close_time,
-                is_closed: h.is_closed,
-              }))
-            ),
+      await runWithTimeout(
+        () => fetchWithSupabaseAuth(`/restaurants/${activeRestaurantId}/operating-hours`, {
+          method: 'PUT',
+          body: JSON.stringify(operatingHoursReplacementPayload(data.operating_hours)),
+        }),
         'Saving operating hours timed out. Please retry.'
       )
-
-      if (insertError) throw insertError
 
       const { error: stepError } = isSetupEditor
         ? { error: null }
