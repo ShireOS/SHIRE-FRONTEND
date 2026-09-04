@@ -542,25 +542,30 @@ gate; the bell remains disabled while access is unresolved or denied.
   exists. A mandatory rollout never bypasses the POS-local payment, order,
   printing, or unsynced-work safety gates, and activation is complete only after
   the restarted device acknowledges the exact approved update ID.
-- POS installation identity is a pre-schema compatibility rollout. The native
+- POS installation identity is a compatibility-first rollout. The native
   app owns a versioned UUID plus 256-bit secret that survives staff logout and
   POS unpair; it is distinct from the restaurant-bound `pos_devices.id`, the
   rotating device credential, and a staff or browser session. The POS pairing
-  API currently validates and redacts the optional claim but intentionally does
-  not persist or use it, so re-pair still follows the legacy insert behavior
-  until an explicitly approved database phase.
+  API verifies known claims after account/store authorization and preserves
+  same-store device bindings while rotating the access token. New enrollment
+  is controlled by `POS_INSTALLATION_IDENTITY_ENROLLMENT_ENABLED` (default off).
+  Existing paired devices are not converted; clients without claims retain
+  legacy behavior. Pausing enrollment never bypasses a known proof check.
   Back Office Devices and Device Updates must continue to address
   `pos_devices.id`: existing OTA targets/history, printer assignments, layout,
   and operational attribution must never be re-keyed to the installation UUID.
-  Same-installation pairing to another restaurant will eventually select a
+  Same-installation pairing to another restaurant selects a
   separate restaurant binding rather than updating a historically referenced
   row's `restaurant_id`. All future claim/re-pair/retire mutations use the POS
   backend, existing `devices.manage`, a manager reason, and append-only audit;
   the browser must never write installation or credential tables directly.
-  No installation migration has been created or applied. It must be sequenced
-  after the pending managed OTA V2 migration only after a live catalog and full
-  migration-ledger review; SaaS limits and browser session inventory are
-  deliberately deferred.
+  Managed bindings reject the legacy cross-store switch shortcut: finish work,
+  unpair safely, then pair to the other restaurant. POS migration
+  `20260904204500` adds a global installation root, nullable device link, and
+  tenant identity audit without backfilling old devices. ML classifies the root
+  as global and audit as purge-at-expiry; SaaS limits and browser session
+  inventory remain deferred. No new Back Office permission or direct DB write
+  is introduced in this phase.
 - Operational pricing uses one versioned `pos_restaurant_configs.pricing_policy`
   record per store. Setup and enterprise Rates both read/write it through the ML
   backend under existing `settings.edit`/reseller authorization; the browser must
