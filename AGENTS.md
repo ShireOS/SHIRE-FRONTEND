@@ -75,6 +75,13 @@
   direct `reseller_restaurants.reseller_id` principal may cross this boundary.
   Ordinary admins, restaurant members (even membership-role owners), and
   reseller employees remain denied regardless of configurable permissions.
+- **Back Office image ingestion is server-owned:** menu uploads/extraction require
+  `menu.edit_items`; floor-plan uploads/analysis require `settings.edit`.
+  Onboarding sends the authenticated upload's opaque `asset_id` to analysis,
+  never a caller-selected URL. Public `image_url` values remain display-only for
+  floor-plan previews and menu-item photos. The ML backend validates and
+  normalizes bytes, owns storage names, enforces tenant binding and quotas, and
+  never follows an arbitrary image URL.
 - **Role-management authority is hierarchical:** staff < manager < owner <
   platform admin. A caller may create, assign, edit, or remove only parallel or
   lower roles. Platform admins may delegate admin, but `profiles.is_superuser`

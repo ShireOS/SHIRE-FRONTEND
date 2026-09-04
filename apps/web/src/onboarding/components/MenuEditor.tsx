@@ -117,14 +117,15 @@ export function MenuEditor({ restaurantId, mode, initialItems, categories, onBac
         throw new Error(err.detail || `Upload failed (${uploadRes.status})`)
       }
 
-      const { image_url } = await uploadRes.json()
+      const { asset_id } = await uploadRes.json()
+      if (!asset_id) throw new Error('Upload did not return a secure image reference')
 
       // 2. Extract menu items
       setPhase('extracting')
       const extractRes = await fetch(`${baseUrl(restaurantId)}/extract`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: token },
-        body: JSON.stringify({ image_url }),
+        body: JSON.stringify({ asset_id }),
       })
 
       if (!extractRes.ok) {
