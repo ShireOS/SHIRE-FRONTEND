@@ -10,18 +10,17 @@ import {
   fetchRatePlans,
   upsertRatePlan,
 } from '../data/ratePlans'
+import { fetchRestaurantSensitiveSettings } from '../../shared/api/sensitiveSettings'
 
-const maskAccount = (value) => (value ? `···${String(value).slice(-4)}` : null)
-
-function payoutSnapshot(restaurant) {
+function payoutSnapshot(restaurant, sensitive) {
   const config = restaurant?.config && typeof restaurant.config === 'object' ? restaurant.config : {}
   const fields = [
-    { label: 'Account holder', value: config.bank_account_holder || null },
-    { label: 'Bank', value: config.bank_name || null },
-    { label: 'Account', value: maskAccount(config.bank_account_number) },
+    { label: 'Account holder', value: sensitive?.bank_account_holder || null },
+    { label: 'Bank', value: sensitive?.bank_name || null },
+    { label: 'Account', value: sensitive?.bank_account_configured ? `···${sensitive.bank_account_last4 || '••••'}` : null },
     { label: 'Payout schedule', value: config.payout_schedule || null },
   ]
-  const ready = Boolean(config.bank_account_holder && config.bank_routing_number && config.bank_account_number)
+  const ready = Boolean(sensitive?.bank_account_holder && sensitive?.bank_routing_configured && sensitive?.bank_account_configured)
   return { fields, ready }
 }
 
@@ -84,14 +83,23 @@ function RatePlanCard({ restaurant, plan, userId, onSaved, restaurantBase }) {
   const [form, setForm] = useState(() => planToForm(plan))
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState(null)
+  const [sensitiveSettings, setSensitiveSettings] = useState(null)
 
   useEffect(() => {
     setForm(planToForm(plan))
   }, [plan])
 
+  useEffect(() => {
+    let cancelled = false
+    fetchRestaurantSensitiveSettings(restaurant.id)
+      .then((value) => { if (!cancelled) setSensitiveSettings(value) })
+      .catch(() => { if (!cancelled) setSensitiveSettings(null) })
+    return () => { cancelled = true }
+  }, [restaurant.id])
+
   const currentRate = plan ? Number(plan.card_rate) : null
   const modeLabel = PRICING_MODES.find((mode) => mode.value === (plan?.pricing_mode || form.pricing_mode))?.label
-  const payout = payoutSnapshot(restaurant)
+  const payout = payoutSnapshot(restaurant, sensitiveSettings)
 
   const toggleTender = (tender) => {
     setForm((prev) => ({

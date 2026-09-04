@@ -56,17 +56,17 @@ export function PaymentsStep({ onboarding }: PaymentsStepProps) {
       setLocalError('Account holder is required.')
       return
     }
-    const routingIssue = routingNumberError(data.bank_routing_number, true)
+    const routingIssue = routingNumberError(data.bank_routing_number, !data.bank_routing_configured)
     if (routingIssue) {
       setLocalError(routingIssue)
       return
     }
-    const accountIssue = bankAccountError(data.bank_account_number, true)
+    const accountIssue = bankAccountError(data.bank_account_number, !data.bank_account_configured)
     if (accountIssue) {
       setLocalError(accountIssue)
       return
     }
-    if (digitsOnly(accountConfirmation) !== digitsOnly(data.bank_account_number)) {
+    if (data.bank_account_number && digitsOnly(accountConfirmation) !== digitsOnly(data.bank_account_number)) {
       setLocalError('Account numbers do not match.')
       return
     }
@@ -106,11 +106,11 @@ export function PaymentsStep({ onboarding }: PaymentsStepProps) {
             <input value={data.bank_name} onChange={(event) => updateData({ bank_name: event.target.value })} className={inputClass} placeholder="Bank name" />
           </Field>
           <Field label="Routing Number">
-            <input inputMode="numeric" autoComplete="off" value={data.bank_routing_number} onChange={(event) => updateData({ bank_routing_number: digitsOnly(event.target.value, 9) })} className={inputClass} placeholder="9 digits" />
+            <input inputMode="numeric" autoComplete="off" value={data.bank_routing_number} onChange={(event) => updateData({ bank_routing_number: digitsOnly(event.target.value, 9) })} className={inputClass} placeholder={data.bank_routing_configured ? `Stored ending in ${data.bank_routing_last4 || '••••'} — enter to replace` : '9 digits'} />
           </Field>
           <Field label="Account Number">
-            <input type="password" inputMode="numeric" autoComplete="new-password" value={data.bank_account_number} onChange={(event) => updateData({ bank_account_number: digitsOnly(event.target.value, 17) })} className={inputClass} placeholder="Account number" />
-            {data.bank_account_number.length >= 4 && <span className="block text-xs text-[rgb(var(--text-tertiary))]">Account ending in {data.bank_account_number.slice(-4)}</span>}
+            <input type="password" inputMode="numeric" autoComplete="new-password" value={data.bank_account_number} onChange={(event) => updateData({ bank_account_number: digitsOnly(event.target.value, 17) })} className={inputClass} placeholder={data.bank_account_configured ? `Stored ending in ${data.bank_account_last4 || '••••'} — enter to replace` : 'Account number'} />
+            {(data.bank_account_number.length >= 4 || data.bank_account_configured) && <span className="block text-xs text-[rgb(var(--text-tertiary))]">Account ending in {data.bank_account_number ? data.bank_account_number.slice(-4) : data.bank_account_last4}</span>}
           </Field>
           <Field label="Confirm Account Number">
             <input type="password" inputMode="numeric" autoComplete="new-password" value={accountConfirmation} onChange={(event) => setAccountConfirmation(digitsOnly(event.target.value, 17))} className={inputClass} placeholder="Re-enter account number" />

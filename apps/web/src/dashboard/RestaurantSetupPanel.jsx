@@ -103,6 +103,7 @@ import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPane
 import { TaxJurisdictionPanel } from './components/TaxJurisdictionPanel'
 import { RestaurantLocationFields } from '../shared/components/RestaurantLocationFields'
 import { scheduleChange } from '../shared/api/scheduledChanges'
+import { fetchRestaurantSensitiveSettings } from '../shared/api/sensitiveSettings'
 import { cashDrawerRoleSummary } from './utils/cashDrawerPermissions'
 import StoreDangerZone from './components/StoreDangerZone'
 import {
@@ -211,12 +212,15 @@ const initialLegal = (restaurant) => {
     legal_business_name: config.legal_business_name || '',
     dba_name: config.dba_name || '',
     ein: config.ein || '',
+    ein_configured: Boolean(config.ein),
+    ein_last4: config.ein ? digitsOnly(config.ein).slice(-4) : null,
     legal_contact_name: config.legal_contact_name || '',
     legal_contact_title: config.legal_contact_title || '',
     legal_contact_email: config.legal_contact_email || '',
     legal_contact_phone: formatUsPhoneInput(config.legal_contact_phone || ''),
     tos_signature_data_url: config.tos_signature_data_url || '',
     tos_signed_at: config.tos_signed_at || '',
+    signature_configured: Boolean(config.tos_signature_data_url),
   }
 }
 
@@ -226,7 +230,11 @@ const initialPayments = (restaurant) => {
     bank_account_holder: config.bank_account_holder || '',
     bank_name: config.bank_name || '',
     bank_routing_number: config.bank_routing_number || '',
+    bank_routing_configured: Boolean(config.bank_routing_number),
+    bank_routing_last4: config.bank_routing_number ? digitsOnly(config.bank_routing_number).slice(-4) : null,
     bank_account_number: config.bank_account_number || '',
+    bank_account_configured: Boolean(config.bank_account_number),
+    bank_account_last4: config.bank_account_number ? digitsOnly(config.bank_account_number).slice(-4) : null,
     payout_schedule: config.payout_schedule || 'daily',
     refund_funding_source: config.refund_funding_source || 'processor_balance',
     batch_close_mode: config.batch_close_mode || 'automatic',
@@ -1515,11 +1523,6 @@ export function buildSetupWarnings(restaurant, waiterCount = null, floorPlanStat
   const config = restaurant.config && typeof restaurant.config === 'object' ? restaurant.config : {}
   if (!config.legal_business_name) warnings.legal.push('Legal business name')
   if (!config.legal_contact_name) warnings.legal.push('Authorized signer')
-  if (!config.tos_signature_data_url) warnings.legal.push('Signed terms')
-  if (!config.bank_account_holder) warnings.payments.push('Account holder')
-  if (!config.bank_name) warnings.payments.push('Bank name')
-  if (!config.bank_routing_number) warnings.payments.push('Routing number')
-  if (!config.bank_account_number) warnings.payments.push('Account number')
   // Missing service_modes means the saved setup should use the onboarding default.
   // Do not show an unfinished badge just because the owner accepted that default.
   warnings.taxes_charges = []
@@ -1817,6 +1820,12 @@ export default function RestaurantSetupPanel({
     return updateRestaurantRow(targetRestaurantId, { config: { ...currentConfig, ...patch } })
   }
 
+  const saveGuardedSetupConfig = (targetRestaurantId, patch) =>
+    fetchWithSupabaseAuth(`/restaurants/${targetRestaurantId}/setup-config`, {
+      method: 'PATCH',
+      body: JSON.stringify({ patch }),
+    })
+
   const putRestaurantEndpoint = (targetRestaurantId, path, body) =>
     fetchWithSupabaseAuth(`/restaurants/${targetRestaurantId}${path}`, {
       method: 'PUT',
@@ -2065,6 +2074,7 @@ export default function RestaurantSetupPanel({
         scopedFor(['check_workflow'], 'Check workflow', () => cached(queryKeys.checkWorkflowSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/check-workflow-settings`)), null),
         scopedFor(['tips_payroll'], 'Tips and payroll', () => cached(queryKeys.tipsPayrollSettings(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/tips-payroll-settings`)), null),
         scopedFor(['payments'], 'Pricing policy', () => cached(queryKeys.pricingPolicy(restaurantId), () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/pricing-policy`)), null),
+        scopedFor(['legal', 'payments'], 'Sensitive settings', () => fetchRestaurantSensitiveSettings(restaurantId), null),
         scopedFor(['reservation_timing'], 'Reservation timing', () => fetchReservationSettings(restaurantId), null),
       ])
       const [
@@ -2080,6 +2090,7 @@ export default function RestaurantSetupPanel({
         checkWorkflowData,
         tipPayrollData,
         pricingPolicyData,
+        sensitiveSettings,
         reservationSettingsData,
       ] = results.map(result => result.value)
 
@@ -2116,6 +2127,33 @@ export default function RestaurantSetupPanel({
       setCheckWorkflowSettings(nextCheckWorkflowSettings)
       setTipPayrollSettings(nextTipPayrollSettings)
       setPricingPolicy(nextPricingPolicy)
+      if (sensitiveSettings) {
+        const nextLegal = {
+          ...initialLegal(restaurant),
+          ein: '',
+          ein_configured: Boolean(sensitiveSettings.ein_configured),
+          ein_last4: sensitiveSettings.ein_last4 || null,
+          tos_signature_data_url: '',
+          tos_signed_at: sensitiveSettings.tos_signed_at || '',
+          signature_configured: Boolean(sensitiveSettings.signature_configured),
+        }
+        const nextPayments = {
+          ...initialPayments(restaurant),
+          bank_account_holder: sensitiveSettings.bank_account_holder || '',
+          bank_name: sensitiveSettings.bank_name || '',
+          bank_routing_number: '',
+          bank_routing_configured: Boolean(sensitiveSettings.bank_routing_configured),
+          bank_routing_last4: sensitiveSettings.bank_routing_last4 || null,
+          bank_account_number: '',
+          bank_account_configured: Boolean(sensitiveSettings.bank_account_configured),
+          bank_account_last4: sensitiveSettings.bank_account_last4 || null,
+        }
+        setLegal(nextLegal)
+        setPayments(nextPayments)
+        setPaymentsAccountConfirmation('')
+        rememberSavedDraft('legal', nextLegal)
+        rememberSavedDraft('payments', nextPayments)
+      }
       rememberSavedDraft('hours', { hours: normalized, sameHours: nextSameHours })
       rememberSavedDraft('sections', { sections: sectionNames, sectionProfiles: nextSectionProfiles })
       rememberSavedDraft('taxes_charges', { taxRates: nextTaxRates, taxCategoryAssignments: undefined, serviceCharges: nextServiceCharges, autoGratuity: nextAutoGratuity })
@@ -2280,7 +2318,7 @@ export default function RestaurantSetupPanel({
       setSetupError(legalIssue)
       return
     }
-    if (!legal.tos_signature_data_url || !legal.tos_signed_at) {
+    if ((!legal.tos_signature_data_url || !legal.tos_signed_at) && !legal.signature_configured) {
       setSetupError('Signature is required.')
       return
     }
@@ -2293,25 +2331,44 @@ export default function RestaurantSetupPanel({
       legal_contact_email: normalizeEmailInput(legal.legal_contact_email),
       legal_contact_phone: normalizeUsPhoneE164(legal.legal_contact_phone) || '',
     }
+    const legalPatch = {
+      legal_business_name: normalizedLegal.legal_business_name,
+      dba_name: normalizedLegal.dba_name,
+      legal_contact_name: normalizedLegal.legal_contact_name,
+      legal_contact_title: normalizedLegal.legal_contact_title,
+      legal_contact_email: normalizedLegal.legal_contact_email,
+      legal_contact_phone: normalizedLegal.legal_contact_phone,
+      tos_version: 'shire-placeholder-tos-v1',
+      ...(normalizedLegal.ein ? { ein: normalizedLegal.ein } : {}),
+      ...(normalizedLegal.tos_signature_data_url
+        ? {
+            tos_signature_data_url: normalizedLegal.tos_signature_data_url,
+            tos_signed_at: normalizedLegal.tos_signed_at,
+          }
+        : {}),
+    }
     await saveWithPropagation({
       sectionId: 'legal',
       label: 'Business & Legal',
       propagation: SETUP_PROPAGATION.legal,
       successMessage: 'Saved legal setup.',
-      saveSource: (targetId) => mergeRestaurantConfig(targetId, {
-        ...normalizedLegal,
-        tos_version: 'shire-placeholder-tos-v1',
-      }),
-      saveTarget: (targetId) => mergeRestaurantConfig(targetId, {
-        ...normalizedLegal,
-        tos_version: 'shire-placeholder-tos-v1',
-      }),
+      saveSource: (targetId) => saveGuardedSetupConfig(targetId, legalPatch),
+      saveTarget: (targetId) => saveGuardedSetupConfig(targetId, legalPatch),
       onSourceSaved: () => {
-        setLegal(prev => ({ ...prev, ...normalizedLegal, legal_contact_phone: formatUsPhoneInput(normalizedLegal.legal_contact_phone) }))
-        rememberSavedDraft('legal', { ...normalizedLegal, legal_contact_phone: formatUsPhoneInput(normalizedLegal.legal_contact_phone) })
+        const savedLegal = {
+          ...normalizedLegal,
+          ein: '',
+          ein_configured: normalizedLegal.ein_configured || Boolean(normalizedLegal.ein),
+          ein_last4: normalizedLegal.ein ? digitsOnly(normalizedLegal.ein).slice(-4) : normalizedLegal.ein_last4,
+          tos_signature_data_url: '',
+          signature_configured: normalizedLegal.signature_configured || Boolean(normalizedLegal.tos_signature_data_url),
+          legal_contact_phone: formatUsPhoneInput(normalizedLegal.legal_contact_phone),
+        }
+        setLegal(savedLegal)
+        rememberSavedDraft('legal', savedLegal)
       },
       publication,
-      buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: { ...normalizedLegal, tos_version: 'shire-placeholder-tos-v1' } }, target_type: 'restaurant', target_id: targetId }),
+      buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: legalPatch }, target_type: 'restaurant', target_id: targetId }),
     })
   }
 
@@ -2320,14 +2377,14 @@ export default function RestaurantSetupPanel({
       setSetupError('Account holder is required.')
       return
     }
-    const paymentIssue = routingNumberError(payments.bank_routing_number, true)
-      || bankAccountError(payments.bank_account_number, true)
+    const paymentIssue = routingNumberError(payments.bank_routing_number, !payments.bank_routing_configured)
+      || bankAccountError(payments.bank_account_number, !payments.bank_account_configured)
       || numberRangeError(payments.refund_approval_threshold, 'Refund approval threshold', { min: 0 })
     if (paymentIssue) {
       setSetupError(paymentIssue)
       return
     }
-    if (digitsOnly(paymentsAccountConfirmation) !== digitsOnly(payments.bank_account_number)) {
+    if (payments.bank_account_number && digitsOnly(paymentsAccountConfirmation) !== digitsOnly(payments.bank_account_number)) {
       setSetupError('Account numbers do not match.')
       return
     }
@@ -2336,20 +2393,41 @@ export default function RestaurantSetupPanel({
       bank_account_holder: collapseEntryWhitespace(payments.bank_account_holder),
       bank_name: collapseEntryWhitespace(payments.bank_name),
     }
+    const paymentsPatch = {
+      bank_account_holder: normalizedPayments.bank_account_holder,
+      bank_name: normalizedPayments.bank_name,
+      payout_schedule: normalizedPayments.payout_schedule,
+      refund_funding_source: normalizedPayments.refund_funding_source,
+      batch_close_mode: normalizedPayments.batch_close_mode,
+      batch_close_time: normalizedPayments.batch_close_time,
+      credit_card_tip_payout: normalizedPayments.credit_card_tip_payout,
+      refund_approval_threshold: normalizedPayments.refund_approval_threshold,
+      ...(normalizedPayments.bank_routing_number ? { bank_routing_number: normalizedPayments.bank_routing_number } : {}),
+      ...(normalizedPayments.bank_account_number ? { bank_account_number: normalizedPayments.bank_account_number } : {}),
+    }
     await saveWithPropagation({
       sectionId: 'payments',
       label: 'Payments & Payouts',
       propagation: SETUP_PROPAGATION.payments,
       successMessage: 'Saved payment setup.',
-      saveSource: (targetId) => mergeRestaurantConfig(targetId, normalizedPayments),
-      saveTarget: (targetId) => mergeRestaurantConfig(targetId, normalizedPayments),
+      saveSource: (targetId) => saveGuardedSetupConfig(targetId, paymentsPatch),
+      saveTarget: (targetId) => saveGuardedSetupConfig(targetId, paymentsPatch),
       onSourceSaved: () => {
-        setPayments(normalizedPayments)
-        setPaymentsAccountConfirmation(normalizedPayments.bank_account_number)
-        rememberSavedDraft('payments', normalizedPayments)
+        const savedPayments = {
+          ...normalizedPayments,
+          bank_routing_number: '',
+          bank_routing_configured: normalizedPayments.bank_routing_configured || Boolean(normalizedPayments.bank_routing_number),
+          bank_routing_last4: normalizedPayments.bank_routing_number ? digitsOnly(normalizedPayments.bank_routing_number).slice(-4) : normalizedPayments.bank_routing_last4,
+          bank_account_number: '',
+          bank_account_configured: normalizedPayments.bank_account_configured || Boolean(normalizedPayments.bank_account_number),
+          bank_account_last4: normalizedPayments.bank_account_number ? digitsOnly(normalizedPayments.bank_account_number).slice(-4) : normalizedPayments.bank_account_last4,
+        }
+        setPayments(savedPayments)
+        setPaymentsAccountConfirmation('')
+        rememberSavedDraft('payments', savedPayments)
       },
       publication,
-      buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: normalizedPayments }, target_type: 'restaurant', target_id: targetId }),
+      buildCommand: (targetId) => ({ method: 'PATCH', path: `/restaurants/${targetId}/setup-config`, body: { patch: paymentsPatch }, target_type: 'restaurant', target_id: targetId }),
     })
   }
 
@@ -3422,7 +3500,7 @@ export default function RestaurantSetupPanel({
               <TextInput maxLength={240} value={legal.dba_name} onChange={event => setLegal(prev => ({ ...prev, dba_name: event.target.value }))} placeholder="The Golden Fork" />
             </Field>
             <Field label="EIN">
-              <TextInput inputMode="numeric" autoComplete="off" value={legal.ein} onChange={event => setLegal(prev => ({ ...prev, ein: formatEinInput(event.target.value) }))} placeholder="12-3456789" />
+              <TextInput inputMode="numeric" autoComplete="off" value={legal.ein} onChange={event => setLegal(prev => ({ ...prev, ein: formatEinInput(event.target.value) }))} placeholder={legal.ein_configured ? `Stored ending in ${legal.ein_last4 || '••••'} — enter to replace` : '12-3456789'} />
             </Field>
             <Field label="Authorized Signer">
               <TextInput maxLength={160} value={legal.legal_contact_name} onChange={event => setLegal(prev => ({ ...prev, legal_contact_name: event.target.value }))} placeholder="Owner or officer name" />
@@ -3448,6 +3526,9 @@ export default function RestaurantSetupPanel({
                 signedAt={legal.tos_signed_at}
                 onChange={patch => setLegal(prev => ({ ...prev, ...patch }))}
               />
+              {legal.signature_configured && !legal.tos_signature_data_url && (
+                <p className="mt-2 text-xs text-dash-tertiary">Encrypted signature on file. Draw a new signature only to replace it.</p>
+              )}
             </div>
           </div>
         </SectionShell>
@@ -3472,11 +3553,11 @@ export default function RestaurantSetupPanel({
               <TextInput value={payments.bank_name} onChange={event => setPayments(prev => ({ ...prev, bank_name: event.target.value }))} placeholder="Bank name" />
             </Field>
             <Field label="Routing Number">
-              <TextInput inputMode="numeric" autoComplete="off" value={payments.bank_routing_number} onChange={event => setPayments(prev => ({ ...prev, bank_routing_number: digitsOnly(event.target.value, 9) }))} placeholder="9 digits" />
+              <TextInput inputMode="numeric" autoComplete="off" value={payments.bank_routing_number} onChange={event => setPayments(prev => ({ ...prev, bank_routing_number: digitsOnly(event.target.value, 9) }))} placeholder={payments.bank_routing_configured ? `Stored ending in ${payments.bank_routing_last4 || '••••'} — enter to replace` : '9 digits'} />
             </Field>
             <Field label="Account Number">
-              <TextInput type="password" inputMode="numeric" autoComplete="new-password" value={payments.bank_account_number} onChange={event => setPayments(prev => ({ ...prev, bank_account_number: digitsOnly(event.target.value, 17) }))} placeholder="Account number" />
-              {payments.bank_account_number.length >= 4 && <span className="mt-1 block text-xs text-dash-tertiary">Account ending in {payments.bank_account_number.slice(-4)}</span>}
+              <TextInput type="password" inputMode="numeric" autoComplete="new-password" value={payments.bank_account_number} onChange={event => setPayments(prev => ({ ...prev, bank_account_number: digitsOnly(event.target.value, 17) }))} placeholder={payments.bank_account_configured ? `Stored ending in ${payments.bank_account_last4 || '••••'} — enter to replace` : 'Account number'} />
+              {(payments.bank_account_number.length >= 4 || payments.bank_account_configured) && <span className="mt-1 block text-xs text-dash-tertiary">Account ending in {payments.bank_account_number ? payments.bank_account_number.slice(-4) : payments.bank_account_last4}</span>}
             </Field>
             <Field label="Confirm Account Number">
               <TextInput type="password" inputMode="numeric" autoComplete="new-password" value={paymentsAccountConfirmation} onChange={event => setPaymentsAccountConfirmation(digitsOnly(event.target.value, 17))} placeholder="Re-enter account number" />

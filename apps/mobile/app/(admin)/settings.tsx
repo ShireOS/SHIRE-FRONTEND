@@ -18,6 +18,7 @@ import {
   fetchManagerControls,
   fetchMenuCategories,
   fetchRestaurantSetupConfig,
+  fetchRestaurantSensitiveSettings,
   fetchRestaurantSections,
   fetchTaxesCharges,
   fetchTipPayrollSettings,
@@ -300,13 +301,21 @@ type LegalEdits = Required<Pick<
   | 'legal_contact_phone'
   | 'tos_signature_data_url'
   | 'tos_signed_at'
->>;
+>> & {
+  ein_configured: boolean;
+  ein_last4: string | null;
+  signature_configured: boolean;
+};
 
 type PaymentEdits = {
   bank_account_holder: string;
   bank_name: string;
   bank_routing_number: string;
+  bank_routing_configured: boolean;
+  bank_routing_last4: string | null;
   bank_account_number: string;
+  bank_account_configured: boolean;
+  bank_account_last4: string | null;
   payout_schedule: NonNullable<RestaurantSetupConfig['payout_schedule']>;
   refund_funding_source: NonNullable<RestaurantSetupConfig['refund_funding_source']>;
   batch_close_mode: NonNullable<RestaurantSetupConfig['batch_close_mode']>;
@@ -324,19 +333,26 @@ const DEFAULT_LEGAL: LegalEdits = {
   legal_business_name: '',
   dba_name: '',
   ein: '',
+  ein_configured: false,
+  ein_last4: null,
   legal_contact_name: '',
   legal_contact_title: '',
   legal_contact_email: '',
   legal_contact_phone: '',
   tos_signature_data_url: '',
   tos_signed_at: '',
+  signature_configured: false,
 };
 
 const DEFAULT_PAYMENTS: PaymentEdits = {
   bank_account_holder: '',
   bank_name: '',
   bank_routing_number: '',
+  bank_routing_configured: false,
+  bank_routing_last4: null,
   bank_account_number: '',
+  bank_account_configured: false,
+  bank_account_last4: null,
   payout_schedule: 'daily',
   refund_funding_source: 'processor_balance',
   batch_close_mode: 'automatic',
@@ -428,24 +444,31 @@ function defaultDiscountRule(index: number): DiscountRule {
   };
 }
 
-function normalizeSetupConfig(config: RestaurantSetupConfig) {
+function normalizeSetupConfig(config: RestaurantSetupConfig, sensitive?: Awaited<ReturnType<typeof fetchRestaurantSensitiveSettings>>) {
   return {
     legal: {
       legal_business_name: textValue(config.legal_business_name),
       dba_name: textValue(config.dba_name),
-      ein: formatEinInput(config.ein),
+      ein: '',
+      ein_configured: Boolean(sensitive?.ein_configured || config.ein),
+      ein_last4: sensitive?.ein_last4 || (config.ein ? digitsOnly(config.ein).slice(-4) : null),
       legal_contact_name: textValue(config.legal_contact_name),
       legal_contact_title: textValue(config.legal_contact_title),
       legal_contact_email: normalizeEmailInput(config.legal_contact_email),
       legal_contact_phone: formatUsPhoneInput(config.legal_contact_phone),
-      tos_signature_data_url: textValue(config.tos_signature_data_url),
-      tos_signed_at: textValue(config.tos_signed_at),
+      tos_signature_data_url: '',
+      tos_signed_at: textValue(sensitive?.tos_signed_at || config.tos_signed_at),
+      signature_configured: Boolean(sensitive?.signature_configured || config.tos_signature_data_url),
     },
     payments: {
-      bank_account_holder: textValue(config.bank_account_holder),
-      bank_name: textValue(config.bank_name),
-      bank_routing_number: textValue(config.bank_routing_number),
-      bank_account_number: textValue(config.bank_account_number),
+      bank_account_holder: textValue(sensitive?.bank_account_holder || config.bank_account_holder),
+      bank_name: textValue(sensitive?.bank_name || config.bank_name),
+      bank_routing_number: '',
+      bank_routing_configured: Boolean(sensitive?.bank_routing_configured || config.bank_routing_number),
+      bank_routing_last4: sensitive?.bank_routing_last4 || (config.bank_routing_number ? digitsOnly(config.bank_routing_number).slice(-4) : null),
+      bank_account_number: '',
+      bank_account_configured: Boolean(sensitive?.bank_account_configured || config.bank_account_number),
+      bank_account_last4: sensitive?.bank_account_last4 || (config.bank_account_number ? digitsOnly(config.bank_account_number).slice(-4) : null),
       payout_schedule: config.payout_schedule || DEFAULT_PAYMENTS.payout_schedule,
       refund_funding_source: config.refund_funding_source || DEFAULT_PAYMENTS.refund_funding_source,
       batch_close_mode: config.batch_close_mode || DEFAULT_PAYMENTS.batch_close_mode,
@@ -560,12 +583,13 @@ export default function OwnerSettings() {
         if (cancelled) return;
         setRestaurant(ownerRestaurant);
         if (!ownerRestaurant?.id) return;
-        const [codes, staffRows, sectionRows, floorPlan, setupConfig, taxesCharges, menuCategoryData, discountData, managerControls, closeoutSettings, checkWorkflowSettings, tipPayrollSettings] = await Promise.all([
+        const [codes, staffRows, sectionRows, floorPlan, setupConfig, sensitiveSettings, taxesCharges, menuCategoryData, discountData, managerControls, closeoutSettings, checkWorkflowSettings, tipPayrollSettings] = await Promise.all([
           fetchRestaurantJobCodes(ownerRestaurant.id).catch(() => []),
           fetchManagerStaff(ownerRestaurant.id),
           fetchRestaurantSections(ownerRestaurant.id).catch(() => []),
           fetchFloorPlan(ownerRestaurant.id).catch(() => ({ has_floor_plan: false, tables: [], total_tables: 0, total_capacity: 0 })),
           fetchRestaurantSetupConfig(ownerRestaurant.id).catch(() => ({})),
+          fetchRestaurantSensitiveSettings(ownerRestaurant.id).catch(() => undefined),
           fetchTaxesCharges(ownerRestaurant.id).catch(() => ({ tax_rates: [], service_charges: [] })),
           fetchMenuCategories(ownerRestaurant.id).catch(() => ({ categories: [] })),
           fetchDiscountRules(ownerRestaurant.id).catch(() => ({ discount_rules: [] })),
@@ -575,7 +599,7 @@ export default function OwnerSettings() {
           fetchTipPayrollSettings(ownerRestaurant.id).catch(() => defaultTipPayrollSettings()),
         ]);
         if (cancelled) return;
-        const normalizedSetup = normalizeSetupConfig(setupConfig);
+        const normalizedSetup = normalizeSetupConfig(setupConfig, sensitiveSettings);
         const normalizedCodes = normalizeJobCodes(codes);
         setJobCodes(normalizedCodes);
         setStaff(staffRows);
@@ -678,7 +702,7 @@ export default function OwnerSettings() {
       setLegalMessage(validationError);
       return;
     }
-    if (!legalEdits.tos_signature_data_url || !legalEdits.tos_signed_at) {
+    if ((!legalEdits.tos_signature_data_url || !legalEdits.tos_signed_at) && !legalEdits.signature_configured) {
       setLegalMessage('Sign the terms before saving legal setup.');
       return;
     }
@@ -686,17 +710,30 @@ export default function OwnerSettings() {
     setLegalMessage('Saving legal setup...');
     try {
       const patch = {
-        ...legalEdits,
         legal_business_name: collapseEntryWhitespace(legalEdits.legal_business_name),
         dba_name: collapseEntryWhitespace(legalEdits.dba_name),
         legal_contact_name: collapseEntryWhitespace(legalEdits.legal_contact_name),
         legal_contact_title: collapseEntryWhitespace(legalEdits.legal_contact_title),
         legal_contact_email: normalizeEmailInput(legalEdits.legal_contact_email),
+        legal_contact_phone: legalEdits.legal_contact_phone,
         tos_version: 'shire-placeholder-tos-v1',
+        ...(legalEdits.ein ? { ein: legalEdits.ein } : {}),
+        ...(legalEdits.tos_signature_data_url ? {
+          tos_signature_data_url: legalEdits.tos_signature_data_url,
+          tos_signed_at: legalEdits.tos_signed_at,
+        } : {}),
       };
       if (await scheduleRestaurantSave(publication, 'Legal setup', { method: 'PATCH', path: `/restaurants/${restaurantId}/setup-config`, body: { patch } }, setLegalMessage)) return;
-      const saved = await saveRestaurantSetupConfig(restaurantId, patch);
-      setLegalEdits(normalizeSetupConfig(saved).legal);
+      await saveRestaurantSetupConfig(restaurantId, patch);
+      setLegalEdits((current) => ({
+        ...current,
+        ...patch,
+        ein: '',
+        ein_configured: current.ein_configured || Boolean(legalEdits.ein),
+        ein_last4: legalEdits.ein ? digitsOnly(legalEdits.ein).slice(-4) : current.ein_last4,
+        tos_signature_data_url: '',
+        signature_configured: current.signature_configured || Boolean(legalEdits.tos_signature_data_url),
+      }));
       setLegalMessage('Legal setup saved.');
     } catch (err) {
       setLegalMessage(err instanceof Error ? err.message : 'Could not save legal setup.');
@@ -721,14 +758,14 @@ export default function OwnerSettings() {
       setPaymentsMessage('Account holder is required.');
       return;
     }
-    const validationError = routingNumberError(paymentEdits.bank_routing_number, true)
-      || bankAccountError(paymentEdits.bank_account_number, true)
+    const validationError = routingNumberError(paymentEdits.bank_routing_number, !paymentEdits.bank_routing_configured)
+      || bankAccountError(paymentEdits.bank_account_number, !paymentEdits.bank_account_configured)
       || numberRangeError(paymentEdits.refund_approval_threshold, 'Refund approval threshold', { min: 0 });
     if (validationError) {
       setPaymentsMessage(validationError);
       return;
     }
-    if (digitsOnly(paymentEdits.bank_account_number) !== digitsOnly(paymentAccountConfirmation)) {
+    if (paymentEdits.bank_account_number && digitsOnly(paymentEdits.bank_account_number) !== digitsOnly(paymentAccountConfirmation)) {
       setPaymentsMessage('Account numbers do not match.');
       return;
     }
@@ -736,17 +773,30 @@ export default function OwnerSettings() {
     setPaymentsMessage('Saving payment setup...');
     try {
       const patch = {
-        ...paymentEdits,
         bank_account_holder: collapseEntryWhitespace(paymentEdits.bank_account_holder),
         bank_name: collapseEntryWhitespace(paymentEdits.bank_name),
-        bank_routing_number: digitsOnly(paymentEdits.bank_routing_number, 9),
-        bank_account_number: digitsOnly(paymentEdits.bank_account_number, 17),
+        payout_schedule: paymentEdits.payout_schedule,
+        refund_funding_source: paymentEdits.refund_funding_source,
+        batch_close_mode: paymentEdits.batch_close_mode,
+        batch_close_time: paymentEdits.batch_close_time,
+        credit_card_tip_payout: paymentEdits.credit_card_tip_payout,
+        refund_approval_threshold: paymentEdits.refund_approval_threshold,
+        ...(paymentEdits.bank_routing_number ? { bank_routing_number: digitsOnly(paymentEdits.bank_routing_number, 9) } : {}),
+        ...(paymentEdits.bank_account_number ? { bank_account_number: digitsOnly(paymentEdits.bank_account_number, 17) } : {}),
       };
       if (await scheduleRestaurantSave(publication, 'Payment setup', { method: 'PATCH', path: `/restaurants/${restaurantId}/setup-config`, body: { patch } }, setPaymentsMessage)) return;
-      const saved = await saveRestaurantSetupConfig(restaurantId, patch);
-      const normalized = normalizeSetupConfig(saved).payments;
-      setPaymentEdits(normalized);
-      setPaymentAccountConfirmation(normalized.bank_account_number);
+      await saveRestaurantSetupConfig(restaurantId, patch);
+      setPaymentEdits((current) => ({
+        ...current,
+        ...patch,
+        bank_routing_number: '',
+        bank_routing_configured: current.bank_routing_configured || Boolean(paymentEdits.bank_routing_number),
+        bank_routing_last4: paymentEdits.bank_routing_number ? paymentEdits.bank_routing_number.slice(-4) : current.bank_routing_last4,
+        bank_account_number: '',
+        bank_account_configured: current.bank_account_configured || Boolean(paymentEdits.bank_account_number),
+        bank_account_last4: paymentEdits.bank_account_number ? paymentEdits.bank_account_number.slice(-4) : current.bank_account_last4,
+      }));
+      setPaymentAccountConfirmation('');
       setPaymentsMessage('Payment setup saved.');
     } catch (err) {
       setPaymentsMessage(err instanceof Error ? err.message : 'Could not save payment setup.');
@@ -1896,7 +1946,7 @@ export default function OwnerSettings() {
           <TextInput
             value={legalEdits.ein}
             onChangeText={(value) => setLegalEdits((current) => ({ ...current, ein: formatEinInput(value) }))}
-            placeholder="EIN"
+            placeholder={legalEdits.ein_configured ? `EIN stored ···${legalEdits.ein_last4 || '••••'}` : 'EIN'}
             placeholderTextColor={palette.ink[400]}
             style={[styles.setupInput, styles.twoColumnInput]}
           />
@@ -1941,7 +1991,9 @@ export default function OwnerSettings() {
             By signing, the authorized representative confirms the setup information is accurate and authorizes Shire to configure restaurant operations before final production terms replace this placeholder.
           </UiText>
           <UiText variant="caption" tone={legalEdits.tos_signed_at ? 'success' : 'warning'} style={{ marginTop: spacing[2] }}>
-            {legalEdits.tos_signed_at ? `Signed ${new Date(legalEdits.tos_signed_at).toLocaleString()}` : 'Not signed yet'}
+            {legalEdits.signature_configured && !legalEdits.tos_signature_data_url
+              ? `Encrypted signature on file${legalEdits.tos_signed_at ? ` · ${new Date(legalEdits.tos_signed_at).toLocaleString()}` : ''}`
+              : legalEdits.tos_signed_at ? `Signed ${new Date(legalEdits.tos_signed_at).toLocaleString()}` : 'Not signed yet'}
           </UiText>
         </View>
         <View style={styles.sectionActions}>
@@ -1988,7 +2040,7 @@ export default function OwnerSettings() {
           <TextInput
             value={paymentEdits.bank_routing_number}
             onChangeText={(value) => setPaymentEdits((current) => ({ ...current, bank_routing_number: digitsOnly(value, 9) }))}
-            placeholder="Routing number"
+            placeholder={paymentEdits.bank_routing_configured ? `Routing stored ···${paymentEdits.bank_routing_last4 || '••••'}` : 'Routing number'}
             keyboardType="number-pad"
             placeholderTextColor={palette.ink[400]}
             style={[styles.setupInput, styles.twoColumnInput]}
@@ -1996,7 +2048,7 @@ export default function OwnerSettings() {
           <TextInput
             value={paymentEdits.bank_account_number}
             onChangeText={(value) => setPaymentEdits((current) => ({ ...current, bank_account_number: digitsOnly(value, 17) }))}
-            placeholder="Account number"
+            placeholder={paymentEdits.bank_account_configured ? `Account stored ···${paymentEdits.bank_account_last4 || '••••'}` : 'Account number'}
             keyboardType="number-pad"
             secureTextEntry
             placeholderTextColor={palette.ink[400]}
@@ -2012,8 +2064,8 @@ export default function OwnerSettings() {
           placeholderTextColor={palette.ink[400]}
           style={styles.setupInput}
         />
-        {paymentEdits.bank_account_number ? (
-          <UiText variant="caption" tone="muted">Account ending in {paymentEdits.bank_account_number.slice(-4)}</UiText>
+        {paymentEdits.bank_account_number || paymentEdits.bank_account_configured ? (
+          <UiText variant="caption" tone="muted">Account ending in {paymentEdits.bank_account_number ? paymentEdits.bank_account_number.slice(-4) : paymentEdits.bank_account_last4}</UiText>
         ) : null}
         <ChoiceGroup
           label="Payout schedule"

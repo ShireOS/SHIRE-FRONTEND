@@ -1,5 +1,4 @@
 import { apiRequest, posApiRequest } from './mobileApi';
-import { getSBClient } from '../../packages/supabase';
 
 export type RestaurantSection = {
   id: string;
@@ -392,34 +391,38 @@ export type RestaurantSetupConfig = {
   default_guest_flow?: string;
 };
 
+export type RestaurantSensitiveSettings = {
+  ein_configured: boolean;
+  ein_last4: string | null;
+  signature_configured: boolean;
+  tos_signed_at: string | null;
+  bank_account_holder: string;
+  bank_name: string;
+  bank_routing_configured: boolean;
+  bank_routing_last4: string | null;
+  bank_account_configured: boolean;
+  bank_account_last4: string | null;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export async function fetchRestaurantSetupConfig(restaurantId: string): Promise<RestaurantSetupConfig> {
-  const client = getSBClient();
-  const { data, error } = await client
-    .from('restaurants')
-    .select('config')
-    .eq('id', restaurantId)
-    .single();
-  if (error) throw error;
-  return isRecord(data?.config) ? data.config as RestaurantSetupConfig : {};
+  const data = await apiRequest<{ raw_config?: unknown }>(`/restaurants/${restaurantId}/config`);
+  return isRecord(data.raw_config) ? data.raw_config as RestaurantSetupConfig : {};
 }
 
 export async function saveRestaurantSetupConfig(
   restaurantId: string,
   patch: RestaurantSetupConfig,
 ): Promise<RestaurantSetupConfig> {
-  const client = getSBClient();
-  const current = await fetchRestaurantSetupConfig(restaurantId);
-  const nextConfig = { ...current, ...patch };
-  const { data, error } = await client
-    .from('restaurants')
-    .update({ config: nextConfig, updated_at: new Date().toISOString() })
-    .eq('id', restaurantId)
-    .select('config')
-    .single();
-  if (error) throw error;
-  return isRecord(data?.config) ? data.config as RestaurantSetupConfig : nextConfig;
+  return apiRequest<RestaurantSetupConfig>(`/restaurants/${restaurantId}/setup-config`, {
+    method: 'PATCH',
+    body: { patch },
+  });
+}
+
+export async function fetchRestaurantSensitiveSettings(restaurantId: string) {
+  return apiRequest<RestaurantSensitiveSettings>(`/restaurants/${restaurantId}/sensitive-settings`);
 }

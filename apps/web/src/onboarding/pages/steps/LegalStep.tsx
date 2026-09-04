@@ -121,7 +121,7 @@ export function LegalStep({ onboarding }: LegalStepProps) {
       setLocalError(phoneIssue)
       return
     }
-    if (!data.tos_signature_data_url || !data.tos_signed_at) {
+    if ((!data.tos_signature_data_url || !data.tos_signed_at) && !data.signature_configured) {
       setLocalError('Please sign the terms before continuing.')
       return
     }
@@ -181,7 +181,7 @@ export function LegalStep({ onboarding }: LegalStepProps) {
             autoComplete="off"
             onChange={(event) => updateData({ ein: formatEinInput(event.target.value) })}
             className="w-full px-4 py-3 bg-[rgba(255,255,255,0.05)] border border-[rgba(255,255,255,0.1)] rounded-lg text-[rgb(var(--text-primary))] focus:outline-none focus:ring-2 focus:ring-[rgba(212,168,84,0.5)]"
-            placeholder="12-3456789"
+            placeholder={data.ein_configured ? `Stored ending in ${data.ein_last4 || '••••'} — enter to replace` : '12-3456789'}
           />
         </label>
         <label className="block space-y-2">
@@ -247,7 +247,9 @@ export function LegalStep({ onboarding }: LegalStepProps) {
           />
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-[rgb(var(--text-tertiary))]">
-              {data.tos_signed_at ? `Signed ${new Date(data.tos_signed_at).toLocaleString()}` : 'Draw your signature above.'}
+              {data.signature_configured && !data.tos_signature_data_url
+                ? `Encrypted signature on file${data.tos_signed_at ? ` · signed ${new Date(data.tos_signed_at).toLocaleString()}` : ''}. Draw again only to replace it.`
+                : data.tos_signed_at ? `Signed ${new Date(data.tos_signed_at).toLocaleString()}` : 'Draw your signature above.'}
             </p>
             <button
               type="button"

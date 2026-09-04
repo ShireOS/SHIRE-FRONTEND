@@ -112,18 +112,25 @@ export interface OnboardingData {
   legal_business_name: string
   dba_name: string
   ein: string
+  ein_configured: boolean
+  ein_last4: string | null
   legal_contact_name: string
   legal_contact_title: string
   legal_contact_email: string
   legal_contact_phone: string
   tos_signature_data_url: string | null
   tos_signed_at: string | null
+  signature_configured: boolean
 
   // Step 2: Payments & Processing
   bank_account_holder: string
   bank_name: string
   bank_routing_number: string
+  bank_routing_configured: boolean
+  bank_routing_last4: string | null
   bank_account_number: string
+  bank_account_configured: boolean
+  bank_account_last4: string | null
   payout_schedule: 'daily' | 'weekly' | 'manual'
   refund_funding_source: 'processor_balance' | 'bank_account'
   batch_close_mode: 'automatic' | 'manual'
@@ -314,17 +321,24 @@ const INITIAL_DATA: OnboardingData = {
   legal_business_name: '',
   dba_name: '',
   ein: '',
+  ein_configured: false,
+  ein_last4: null,
   legal_contact_name: '',
   legal_contact_title: '',
   legal_contact_email: '',
   legal_contact_phone: '',
   tos_signature_data_url: null,
   tos_signed_at: null,
+  signature_configured: false,
 
   bank_account_holder: '',
   bank_name: '',
   bank_routing_number: '',
+  bank_routing_configured: false,
+  bank_routing_last4: null,
   bank_account_number: '',
+  bank_account_configured: false,
+  bank_account_last4: null,
   payout_schedule: 'daily',
   refund_funding_source: 'processor_balance',
   batch_close_mode: 'automatic',
@@ -537,16 +551,23 @@ const toOnboardingData = (value: Partial<OnboardingData> | null | undefined): On
     legal_business_name: asString(input.legal_business_name),
     dba_name: asString(input.dba_name),
     ein: asString(input.ein),
+    ein_configured: Boolean(input.ein_configured),
+    ein_last4: asNullableString(input.ein_last4),
     legal_contact_name: asString(input.legal_contact_name),
     legal_contact_title: asString(input.legal_contact_title),
     legal_contact_email: asString(input.legal_contact_email),
     legal_contact_phone: asString(input.legal_contact_phone),
     tos_signature_data_url: asNullableString(input.tos_signature_data_url),
     tos_signed_at: asNullableString(input.tos_signed_at),
+    signature_configured: Boolean(input.signature_configured),
     bank_account_holder: asString(input.bank_account_holder),
     bank_name: asString(input.bank_name),
     bank_routing_number: asString(input.bank_routing_number),
+    bank_routing_configured: Boolean(input.bank_routing_configured),
+    bank_routing_last4: asNullableString(input.bank_routing_last4),
     bank_account_number: asString(input.bank_account_number),
+    bank_account_configured: Boolean(input.bank_account_configured),
+    bank_account_last4: asNullableString(input.bank_account_last4),
     payout_schedule: asEnum(input.payout_schedule, PAYOUT_SCHEDULES, INITIAL_DATA.payout_schedule),
     refund_funding_source: asEnum(input.refund_funding_source, REFUND_FUNDING_SOURCES, INITIAL_DATA.refund_funding_source),
     batch_close_mode: asEnum(input.batch_close_mode, BATCH_CLOSE_MODES, INITIAL_DATA.batch_close_mode),
@@ -626,6 +647,16 @@ const mapDbStepToUiStep = (step: number | null | undefined): number => clampStep
 
 const getDraftStorageKey = (userId: string): string => `shire_onboarding_draft:${userId}`
 
+const withoutSensitiveDraftValues = (data: Partial<OnboardingData>): Partial<OnboardingData> => ({
+  ...data,
+  ein: '',
+  tos_signature_data_url: null,
+  bank_account_holder: '',
+  bank_name: '',
+  bank_routing_number: '',
+  bank_account_number: '',
+})
+
 const readDraft = (userId: string): OnboardingDraft | null => {
   try {
     const raw = localStorage.getItem(getDraftStorageKey(userId))
@@ -638,7 +669,9 @@ const readDraft = (userId: string): OnboardingDraft | null => {
       version: ONBOARDING_DRAFT_VERSION,
       currentStep: clampStep(typeof parsed.currentStep === 'number' ? parsed.currentStep : 0),
       restaurantId: typeof parsed.restaurantId === 'string' ? parsed.restaurantId : null,
-      data: isRecord(parsed.data) ? parsed.data as Partial<OnboardingData> : {},
+      data: withoutSensitiveDraftValues(
+        isRecord(parsed.data) ? parsed.data as Partial<OnboardingData> : {},
+      ),
       updatedAt: asString(parsed.updatedAt, new Date(0).toISOString()),
     }
   } catch {
@@ -648,7 +681,10 @@ const readDraft = (userId: string): OnboardingDraft | null => {
 
 const writeDraft = (userId: string, draft: OnboardingDraft) => {
   try {
-    localStorage.setItem(getDraftStorageKey(userId), JSON.stringify(draft))
+    localStorage.setItem(getDraftStorageKey(userId), JSON.stringify({
+      ...draft,
+      data: withoutSensitiveDraftValues(draft.data),
+    }))
   } catch (err) {
     console.warn('[Onboarding] Could not persist onboarding draft:', err)
   }
@@ -669,16 +705,23 @@ const parseConfig = (value: unknown): Partial<OnboardingData> => {
     legal_business_name: asString(value.legal_business_name),
     dba_name: asString(value.dba_name),
     ein: asString(value.ein),
+    ein_configured: Boolean(value.ein),
+    ein_last4: asString(value.ein).replace(/\D/g, '').slice(-4) || null,
     legal_contact_name: asString(value.legal_contact_name),
     legal_contact_title: asString(value.legal_contact_title),
     legal_contact_email: asString(value.legal_contact_email),
     legal_contact_phone: asString(value.legal_contact_phone),
     tos_signature_data_url: asNullableString(value.tos_signature_data_url),
     tos_signed_at: asNullableString(value.tos_signed_at),
+    signature_configured: Boolean(value.tos_signature_data_url),
     bank_account_holder: asString(value.bank_account_holder),
     bank_name: asString(value.bank_name),
     bank_routing_number: asString(value.bank_routing_number),
+    bank_routing_configured: Boolean(value.bank_routing_number),
+    bank_routing_last4: asString(value.bank_routing_number).replace(/\D/g, '').slice(-4) || null,
     bank_account_number: asString(value.bank_account_number),
+    bank_account_configured: Boolean(value.bank_account_number),
+    bank_account_last4: asString(value.bank_account_number).replace(/\D/g, '').slice(-4) || null,
     payout_schedule: asEnum(value.payout_schedule, PAYOUT_SCHEDULES, INITIAL_DATA.payout_schedule),
     refund_funding_source: asEnum(value.refund_funding_source, REFUND_FUNDING_SOURCES, INITIAL_DATA.refund_funding_source),
     batch_close_mode: asEnum(value.batch_close_mode, BATCH_CLOSE_MODES, INITIAL_DATA.batch_close_mode),
@@ -1162,7 +1205,7 @@ export function useOnboarding() {
   }, [])
 
   const hydrateFromRestaurant = useCallback(async (restaurant: Restaurant): Promise<Partial<OnboardingData>> => {
-    const [hoursResult, sectionsResult, taxesChargesResult, pricingPolicyResult, discountRulesResult, menuCategoriesResult, managerControlsResult, closeoutSettingsResult, checkWorkflowResult, jobCodesResult, tipPayrollResult, reservationSettingsResult] = await Promise.all([
+    const [hoursResult, sectionsResult, taxesChargesResult, pricingPolicyResult, discountRulesResult, menuCategoriesResult, managerControlsResult, closeoutSettingsResult, checkWorkflowResult, jobCodesResult, tipPayrollResult, sensitiveSettingsResult, reservationSettingsResult] = await Promise.all([
       runWithTimeout(
         () =>
           supabase
@@ -1242,6 +1285,13 @@ export function useOnboarding() {
         return null
       }),
       runWithTimeout(
+        () => fetchWithSupabaseAuth<Record<string, unknown>>(`/restaurants/${restaurant.id}/sensitive-settings`),
+        'Loading protected legal and bank settings timed out.'
+      ).catch(err => {
+        console.warn('[Onboarding] Could not hydrate protected legal and bank settings:', err)
+        return null
+      }),
+      runWithTimeout(
         () => fetchReservationSettings(restaurant.id),
         'Loading reservation timing timed out.'
       ).catch(err => {
@@ -1256,6 +1306,22 @@ export function useOnboarding() {
     const sectionRows = Array.isArray(sectionsResult) ? sectionsResult : []
     const sectionNames = normalizeSectionNames(asStringArray(sectionRows.map(section => isRecord(section) ? section.name : null)))
     const configData = parseConfig(restaurant.config)
+    const sensitiveData: Partial<OnboardingData> = isRecord(sensitiveSettingsResult) ? {
+      ein: '',
+      ein_configured: Boolean(sensitiveSettingsResult.ein_configured),
+      ein_last4: asNullableString(sensitiveSettingsResult.ein_last4),
+      tos_signature_data_url: null,
+      tos_signed_at: asNullableString(sensitiveSettingsResult.tos_signed_at),
+      signature_configured: Boolean(sensitiveSettingsResult.signature_configured),
+      bank_account_holder: asString(sensitiveSettingsResult.bank_account_holder),
+      bank_name: asString(sensitiveSettingsResult.bank_name),
+      bank_routing_number: '',
+      bank_routing_configured: Boolean(sensitiveSettingsResult.bank_routing_configured),
+      bank_routing_last4: asNullableString(sensitiveSettingsResult.bank_routing_last4),
+      bank_account_number: '',
+      bank_account_configured: Boolean(sensitiveSettingsResult.bank_account_configured),
+      bank_account_last4: asNullableString(sensitiveSettingsResult.bank_account_last4),
+    } : {}
     const jobCodes = normalizeJobCodes(jobCodesResult)
 
     return {
@@ -1294,6 +1360,7 @@ export function useOnboarding() {
       check_workflow_settings: normalizeCheckWorkflowSettings(checkWorkflowResult),
       job_codes: jobCodes,
       ...configData,
+      ...sensitiveData,
       tip_payroll_settings: normalizeTipPayrollSettings(tipPayrollResult, jobCodes),
       ...reservationTimingFromSettings(reservationSettingsResult),
     }
@@ -1746,14 +1813,16 @@ export function useOnboarding() {
       const legalPatch = {
         legal_business_name: collapseEntryWhitespace(data.legal_business_name),
         dba_name: collapseEntryWhitespace(data.dba_name),
-        ein: data.ein,
         legal_contact_name: collapseEntryWhitespace(data.legal_contact_name),
         legal_contact_title: collapseEntryWhitespace(data.legal_contact_title),
         legal_contact_email: normalizeEmailInput(data.legal_contact_email),
         legal_contact_phone: normalizeUsPhoneE164(data.legal_contact_phone) || '',
-        tos_signature_data_url: data.tos_signature_data_url,
-        tos_signed_at: data.tos_signed_at,
         tos_version: 'shire-placeholder-tos-v1',
+        ...(data.ein ? { ein: data.ein } : {}),
+        ...(data.tos_signature_data_url ? {
+          tos_signature_data_url: data.tos_signature_data_url,
+          tos_signed_at: data.tos_signed_at,
+        } : {}),
       }
       await runWithTimeout(
         () => fetchWithSupabaseAuth(`/restaurants/${activeRestaurantId}/setup-config`, {
@@ -1766,7 +1835,14 @@ export function useOnboarding() {
         const { error: stepError } = await supabase.from('restaurants').update(onboardingProgressPatch(2)).eq('id', activeRestaurantId)
         if (stepError) throw stepError
       }
-      setData(prev => mergeOnboardingData(prev, legalPatch))
+      setData(prev => mergeOnboardingData(prev, {
+        ...legalPatch,
+        ein: '',
+        ein_configured: prev.ein_configured || Boolean(data.ein),
+        ein_last4: data.ein ? data.ein.replace(/\D/g, '').slice(-4) : prev.ein_last4,
+        tos_signature_data_url: null,
+        signature_configured: prev.signature_configured || Boolean(data.tos_signature_data_url),
+      }))
 
       setRestaurantId(activeRestaurantId)
     } catch (err) {
@@ -1787,8 +1863,8 @@ export function useOnboarding() {
       const paymentsPatch = {
         bank_account_holder: collapseEntryWhitespace(data.bank_account_holder),
         bank_name: collapseEntryWhitespace(data.bank_name),
-        bank_routing_number: data.bank_routing_number,
-        bank_account_number: data.bank_account_number,
+        ...(data.bank_routing_number ? { bank_routing_number: data.bank_routing_number } : {}),
+        ...(data.bank_account_number ? { bank_account_number: data.bank_account_number } : {}),
         payout_schedule: data.payout_schedule,
         refund_funding_source: data.refund_funding_source,
         batch_close_mode: data.batch_close_mode,
@@ -1807,7 +1883,15 @@ export function useOnboarding() {
         const { error: stepError } = await supabase.from('restaurants').update(onboardingProgressPatch(3)).eq('id', activeRestaurantId)
         if (stepError) throw stepError
       }
-      setData(prev => mergeOnboardingData(prev, paymentsPatch))
+      setData(prev => mergeOnboardingData(prev, {
+        ...paymentsPatch,
+        bank_routing_number: '',
+        bank_routing_configured: prev.bank_routing_configured || Boolean(data.bank_routing_number),
+        bank_routing_last4: data.bank_routing_number ? data.bank_routing_number.slice(-4) : prev.bank_routing_last4,
+        bank_account_number: '',
+        bank_account_configured: prev.bank_account_configured || Boolean(data.bank_account_number),
+        bank_account_last4: data.bank_account_number ? data.bank_account_number.slice(-4) : prev.bank_account_last4,
+      }))
 
       const pricingPayload: Record<string, unknown> = {
         ...data.pricing_policy,
@@ -2590,18 +2674,12 @@ export function useOnboarding() {
                 invites: data.invites,
                 legal_business_name: data.legal_business_name,
                 dba_name: data.dba_name,
-                ein: data.ein,
                 legal_contact_name: data.legal_contact_name,
                 legal_contact_title: data.legal_contact_title,
                 legal_contact_email: data.legal_contact_email,
                 legal_contact_phone: data.legal_contact_phone,
-                tos_signature_data_url: data.tos_signature_data_url,
                 tos_signed_at: data.tos_signed_at,
                 tos_version: 'shire-placeholder-tos-v1',
-                bank_account_holder: data.bank_account_holder,
-                bank_name: data.bank_name,
-                bank_routing_number: data.bank_routing_number,
-                bank_account_number: data.bank_account_number,
                 payout_schedule: data.payout_schedule,
                 refund_funding_source: data.refund_funding_source,
                 batch_close_mode: data.batch_close_mode,

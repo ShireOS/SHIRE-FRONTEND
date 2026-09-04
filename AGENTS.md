@@ -65,6 +65,16 @@
   Local dashboard requests carrying a real asymmetric Supabase session must be
   validated by the ML backend through Supabase JWKS even when the legacy
   `SUPABASE_JWT_SECRET` is absent; development fallback is only for HS256 tokens.
+- **EIN/bank/signature data is a separate non-delegable boundary:** complete
+  EIN, routing/account numbers, and signatures are write-only after save and
+  never belong in `restaurants.config`, browser-local onboarding drafts, or
+  generic restaurant responses. Back Office reads masked metadata from
+  `/restaurants/:id/sensitive-settings`; writes use guarded service endpoints
+  (the compatibility `/setup-config` route securely extracts the same fields).
+  Only the primary `restaurants.owner_id`, `profiles.is_superuser`, or active
+  direct `reseller_restaurants.reseller_id` principal may cross this boundary.
+  Ordinary admins, restaurant members (even membership-role owners), and
+  reseller employees remain denied regardless of configurable permissions.
 - **Role-management authority is hierarchical:** staff < manager < owner <
   platform admin. A caller may create, assign, edit, or remove only parallel or
   lower roles. Platform admins may delegate admin, but `profiles.is_superuser`
