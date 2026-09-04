@@ -536,6 +536,25 @@ gate; the bell remains disabled while access is unresolved or denied.
   exists. A mandatory rollout never bypasses the POS-local payment, order,
   printing, or unsynced-work safety gates, and activation is complete only after
   the restarted device acknowledges the exact approved update ID.
+- POS installation identity is a pre-schema compatibility rollout. The native
+  app owns a versioned UUID plus 256-bit secret that survives staff logout and
+  POS unpair; it is distinct from the restaurant-bound `pos_devices.id`, the
+  rotating device credential, and a staff or browser session. The POS pairing
+  API currently validates and redacts the optional claim but intentionally does
+  not persist or use it, so re-pair still follows the legacy insert behavior
+  until an explicitly approved database phase.
+  Back Office Devices and Device Updates must continue to address
+  `pos_devices.id`: existing OTA targets/history, printer assignments, layout,
+  and operational attribution must never be re-keyed to the installation UUID.
+  Same-installation pairing to another restaurant will eventually select a
+  separate restaurant binding rather than updating a historically referenced
+  row's `restaurant_id`. All future claim/re-pair/retire mutations use the POS
+  backend, existing `devices.manage`, a manager reason, and append-only audit;
+  the browser must never write installation or credential tables directly.
+  No installation migration has been created or applied. It must be sequenced
+  after the pending managed OTA V2 migration only after a live catalog and full
+  migration-ledger review; SaaS limits and browser session inventory are
+  deliberately deferred.
 - Operational pricing uses one versioned `pos_restaurant_configs.pricing_policy`
   record per store. Setup and enterprise Rates both read/write it through the ML
   backend under existing `settings.edit`/reseller authorization; the browser must
