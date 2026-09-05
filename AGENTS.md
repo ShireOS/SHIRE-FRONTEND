@@ -781,3 +781,17 @@ gate; the bell remains disabled while access is unresolved or denied.
   are created by the POS timeclock and may change queue scope during the active
   shift, but they never replace item/section routing or employee production
   behavior overrides.
+
+### POS report additions (2026-09-05)
+- Manager reports show combined item/check void dollars; Server Reports attribute
+  them to the employee assigned to the check, never the approving manager.
+  Retained item prices include quantity/modifiers and are counted once; itemless
+  legacy voided checks fall back to subtotal. Tax, tips and payment refunds are
+  excluded. Business-date reports retain their selected date scope.
+- The optional `labor_hours` / Labor Report reuses finalized payroll timecard
+  minutes, grouped by employee across positions, and prints two-decimal hours.
+  Unpaid breaks are deducted; open/voided entries do not contribute. Existing
+  labor/payroll and detailed timecard reports keep their formats and calculations.
+- Back Office reads, exports and thermal prints use the existing `reports.view`
+  guard and Reports presentation; native POS keeps manager authorization. No new
+  permission key, time-clock mutation, payroll write or schema change is added.

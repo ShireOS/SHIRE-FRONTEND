@@ -67,6 +67,7 @@ const RECEIPT_GROUP_CATALOG = [
   { id: 'discounts_voids', label: 'Discounts, voids & refunds', description: 'Discount totals and types, refunds, voided items, and voided checks.' },
   { id: 'employee_performance', label: 'Employee performance', description: 'Employee sales, checks, average check, table-turn time, and tip percentage.' },
   { id: 'labor_payroll', label: 'Labor & payroll', description: 'Paid and overtime hours, recorded wages, missing pay rates, and labor percentage.' },
+  { id: 'labor_hours', label: 'Labor Report', description: 'Finalized worked hours per employee in decimal format.' },
   { id: 'punch_log', label: 'Punch log', description: 'Clock entries, missed clock-outs, manager edits, voids, and edit reasons.' },
   { id: 'tax', label: 'Tax', description: 'Taxable and non-taxable sales, tax liability, service-charge tax, and rate details.' },
   { id: 'cash_closeout', label: 'Cash & closeout', description: 'Paid in/out, cash drops, expected and counted cash, variance, and daily closes.', employee_scope: 'unsupported' },
@@ -81,6 +82,7 @@ const DEFAULT_PROFILES = [
   { id: 'short', name: 'Short', built_in: true, group_ids: ['revenue', 'tender_mix', 'daily_sales', 'key_metrics', 'category_sales', 'item_sales', 'discounts_voids', 'tax'] },
   { id: 'compact', name: 'Compact', built_in: true, group_ids: ['revenue', 'tender_mix', 'key_metrics'] },
   { id: 'activity', name: 'Activity', built_in: true, group_ids: ACTIVITY_GROUP_IDS },
+  { id: 'labor', name: 'Labor Report', built_in: true, group_ids: ['labor_hours'] },
 ]
 
 function withRequiredBuiltInProfiles(savedProfiles, defaults = DEFAULT_PROFILES) {
