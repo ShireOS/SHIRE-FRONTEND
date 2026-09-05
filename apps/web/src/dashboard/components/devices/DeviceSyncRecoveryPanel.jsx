@@ -159,7 +159,7 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
             onClick={() => void controllerRef.current?.retryPending()}>Check request result</Button>}
         </div>}
         {state.overview && !enabled && <p className="rounded-lg border border-dash-border p-3 text-sm text-dash-secondary">
-          Sync recovery is not enabled for this store yet. Existing run status remains available.
+          Sync recovery is temporarily unavailable. Existing run status remains available.
         </p>}
         {summary && <p className="text-xs text-dash-tertiary">To start recovery, change this section’s view to Standard or Full.</p>}
         {!canRecover && <p className="text-xs text-dash-tertiary">Starting recovery requires the Recover device sync permission.</p>}

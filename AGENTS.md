@@ -312,6 +312,9 @@ list must stay in sync.
   requiring `devices.manage`; no fallback or Manager-preset grant)
 
 ### Device sync recovery (2026-09-05)
+- Recovery is available with the deployed feature without per-store activation.
+  Its permission and device-readiness checks remain mandatory; an operator's
+  emergency shutdown is shown as temporary unavailability, never store onboarding.
 - Sync recovery is a POS-owned Back Office operation under both `devices.manage`
   and `devices.force_sync`. Existing owner/platform-admin bypasses remain; ordinary
   manager presets and absent permission keys never grant recovery. Member role
