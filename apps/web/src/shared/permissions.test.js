@@ -46,6 +46,28 @@ test('devices.manage is canonical and gates device workspaces', () => {
   assert.equal(TAB_PERMISSIONS['device-updates'], 'devices.manage')
 })
 
+test('scheduling permissions are canonical and gate the scheduling workspace', () => {
+  assert.ok(PERMISSION_KEYS.includes('scheduling.view'))
+  assert.ok(PERMISSION_KEYS.includes('scheduling.edit'))
+  assert.equal(TAB_PERMISSIONS.scheduling, 'scheduling.view')
+})
+
+test('legacy team grants retain scheduling access only while new keys are absent', () => {
+  assert.equal(can({ 'team.view': true }, 'scheduling.view'), true)
+  assert.equal(can({ 'team.edit_employees': true }, 'scheduling.edit'), true)
+  assert.equal(can({ 'team.view': true, 'scheduling.view': false }, 'scheduling.view'), false)
+  assert.equal(can({ 'team.edit_employees': false, 'scheduling.edit': true }, 'scheduling.edit'), true)
+})
+
+test('scheduling merge preserves legacy member denials during rollout', () => {
+  const merged = mergePermissions(
+    { 'team.view': true, 'team.edit_employees': true, 'scheduling.view': true, 'scheduling.edit': true },
+    { 'team.view': false, 'team.edit_employees': false },
+  )
+  assert.equal(merged['scheduling.view'], false)
+  assert.equal(merged['scheduling.edit'], false)
+})
+
 test('legacy settings.edit grants device management only while the key is absent', () => {
   assert.equal(can({ 'settings.edit': true }, 'devices.manage'), true)
   assert.equal(can({ 'settings.edit': false }, 'devices.manage'), false)

@@ -301,6 +301,9 @@ Canonical definitions live in `apps/web/src/shared/permissions.ts`
 list must stay in sync.
 - `menu.view` / `menu.edit_items` / `menu.edit_prices`
 - `team.view` / `team.edit_employees` / `team.adjust_timeclock`
+- `scheduling.view` / `scheduling.edit` (legacy fallback to `team.view` /
+  `team.edit_employees` only while the matching scheduling key is absent; an
+  explicit `false` always wins)
 - `payroll.view` / `payroll.run` / `payroll.adjust_tips` / `payroll.export`
 - `reports.view`
 - `operations.close_day`

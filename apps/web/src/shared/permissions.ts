@@ -33,9 +33,17 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     id: 'team',
     label: 'Team',
     keys: [
-      { key: 'team.view', label: 'View members & schedule', description: 'See the staff list, roles and schedules' },
+      { key: 'team.view', label: 'View members', description: 'See the staff list and roles' },
       { key: 'team.edit_employees', label: 'Edit employees & roles', description: 'Add or edit staff, roles and back-office access' },
       { key: 'team.adjust_timeclock', label: 'Adjust time clock', description: 'Fix, create or void clock-in/out punches' },
+    ],
+  },
+  {
+    id: 'scheduling',
+    label: 'Scheduling',
+    keys: [
+      { key: 'scheduling.view', label: 'View schedules', description: 'See schedules, availability, requests and coverage rules' },
+      { key: 'scheduling.edit', label: 'Edit schedules', description: 'Create, edit, generate and publish schedules and coverage rules' },
     ],
   },
   {
@@ -80,6 +88,7 @@ export const PERMISSION_PRESETS: { id: string; label: string; permissions: Permi
       'menu.view': true,
       'team.view': true,
       'team.adjust_timeclock': true,
+      'scheduling.view': true,
       'reports.view': true,
     },
   },
@@ -89,6 +98,7 @@ export const PERMISSION_PRESETS: { id: string; label: string; permissions: Permi
     permissions: {
       'menu.view': true,
       'team.view': true,
+      'scheduling.view': true,
       'payroll.view': true,
       'reports.view': true,
     },
@@ -106,6 +116,8 @@ function hasOwnPermission(permissions: PermissionMap | null | undefined, key: st
 function rawPermission(permissions: PermissionMap | null | undefined, key: string): boolean {
   if (hasOwnPermission(permissions, key)) return permissions?.[key] === true
   if (key === 'devices.manage') return permissions?.['settings.edit'] === true
+  if (key === 'scheduling.view') return permissions?.['team.view'] === true
+  if (key === 'scheduling.edit') return permissions?.['team.edit_employees'] === true
   return false
 }
 
@@ -117,20 +129,34 @@ export function mergePermissions(roleDefaults: PermissionMap | null | undefined,
       merged[key] = overrides?.[key] === true
       continue
     }
+    const schedulingLegacyKey = key === 'scheduling.view'
+      ? 'team.view'
+      : key === 'scheduling.edit'
+        ? 'team.edit_employees'
+        : null
+    if (schedulingLegacyKey && hasOwnPermission(overrides, schedulingLegacyKey)) {
+      merged[key] = overrides?.[schedulingLegacyKey] === true
+      continue
+    }
     if (hasOwnPermission(roleDefaults, key)) {
       merged[key] = roleDefaults?.[key] === true
       continue
     }
 
-    // Existing roles predate devices.manage. During the compatibility window,
-    // inherit the effective settings.edit value only when the new key is truly
-    // absent. An explicit false at either layer remains an authoritative deny.
-    merged[key] = key === 'devices.manage'
-      ? rawPermission(overrides, 'settings.edit') || (
-          !hasOwnPermission(overrides, 'settings.edit')
-          && rawPermission(roleDefaults, 'settings.edit')
-        )
-      : false
+    const legacyKey = key === 'devices.manage'
+      ? 'settings.edit'
+      : key === 'scheduling.view'
+        ? 'team.view'
+        : key === 'scheduling.edit'
+          ? 'team.edit_employees'
+          : null
+    if (legacyKey && hasOwnPermission(overrides, legacyKey)) {
+      merged[key] = overrides?.[legacyKey] === true
+    } else if (legacyKey && hasOwnPermission(roleDefaults, legacyKey)) {
+      merged[key] = roleDefaults?.[legacyKey] === true
+    } else {
+      merged[key] = false
+    }
   }
   return merged
 }
@@ -180,7 +206,7 @@ export const TAB_PERMISSIONS: Record<string, string> = {
   'labor-cost': 'payroll.view',
   team: 'team.view',
   'time-clock': 'team.view',
-  scheduling: 'team.view',
+  scheduling: 'scheduling.view',
   alerts: 'team.view',
   messaging: 'team.view',
   payments: 'settings.edit',
