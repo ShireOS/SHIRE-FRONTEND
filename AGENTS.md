@@ -96,6 +96,22 @@
   captured restaurant ID is used in its path and audit target. The backend
   allowlists only this PATCH shape and reauthorizes store access at queue and run
   time. Immediate role edits keep their existing endpoint and behavior.
+- **Multi-store setup publication is service-owned:** the browser must never loop
+  selected restaurants and leave a partially applied configuration. Immediate
+  ML-owned commands use authenticated `POST /scheduled-changes/apply-now`, which
+  validates and authorizes every target before executing canonical handlers in
+  one PostgreSQL transaction. POS-owned commands use the same encrypted,
+  idempotent operation ledger and retry only unapplied targets through a
+  body/path/time-bound HMAC; POS resolves the recorded actor's current permission
+  before every write. Canonical reservation timing uses the Reservations
+  service's authenticated batch endpoint and one database transaction.
+- **Employee-request policy reads are pure and tenant-authorized:** authenticated
+  `GET /restaurants/:id/employee-request-policy` requires `team.view`, returns
+  in-memory database-default values when no row exists, and never inserts or
+  touches `updated_at`. `PUT` requires `team.edit_employees`, validates the full
+  supported payload, ignores legacy extra fields for compatibility, and avoids
+  an update for a no-op save. The legacy unscoped
+  `default` restaurant alias is not accepted.
 - **Back Office setup state is restaurant-scoped:** every setup-panel instance is
   keyed by restaurant ID, async reads carry both that ID and a load generation,
   and only the current generation may populate editor state or saved baselines.
