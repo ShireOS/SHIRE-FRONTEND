@@ -1515,7 +1515,9 @@ function SchedulingPanel({ restaurantId }) {
   }
 
   const loadSchedules = async (targetWeekStart = weekStart, force = false) => {
-    const query = targetWeekStart ? `?week_start=${targetWeekStart}&limit=5` : '?limit=5'
+    const params = new URLSearchParams({ include_archived: 'false', limit: '5' })
+    if (targetWeekStart) params.set('week_start', targetWeekStart)
+    const query = `?${params.toString()}`
     const data = await schedulingRead(
       queryKeys.schedules(restaurantId, query),
       () => fetchWithSupabaseAuth(`/restaurants/${restaurantId}/schedules${query}`),

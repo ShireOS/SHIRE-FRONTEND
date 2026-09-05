@@ -104,6 +104,7 @@ import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPane
 import { TaxJurisdictionPanel } from './components/TaxJurisdictionPanel'
 import { RestaurantLocationFields } from '../shared/components/RestaurantLocationFields'
 import { scheduleChange } from '../shared/api/scheduledChanges'
+import { buildScheduledJobCodeUpdate } from './jobCodeScheduling'
 import { fetchRestaurantSensitiveSettings } from '../shared/api/sensitiveSettings'
 import { cashDrawerRoleSummary } from './utils/cashDrawerPermissions'
 import StoreDangerZone from './components/StoreDangerZone'
@@ -2816,17 +2817,16 @@ export default function RestaurantSetupPanel({
           : 'That role already exists.')
       }
       if (publication?.scheduledFor && jobCode.id) {
+        const command = buildScheduledJobCodeUpdate({
+          restaurantId,
+          jobCodeId: jobCode.id,
+          payload,
+        })
         const scheduled = await scheduleChange({
           label: `${jobCode.label || jobCode.code} role`,
           scheduledFor: publication.scheduledFor,
           timezone: publication.timezone,
-          commands: [{
-            method: 'PATCH',
-            path: `/restaurants/${targetId}/job-codes/${jobCode.id}`,
-            body: payload,
-            target_type: 'restaurant',
-            target_id: restaurantId,
-          }],
+          commands: [command],
         })
         setSaveMessage(`${jobCode.label || jobCode.code} role scheduled for ${new Date(scheduled.scheduled_for).toLocaleString()}.`)
         return
