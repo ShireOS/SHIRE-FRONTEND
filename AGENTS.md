@@ -310,6 +310,19 @@ list must stay in sync.
   server authorization. Devices remain addressed by restaurant-bound
   `pos_devices.id`; the browser never copies terminal databases or writes
   operational order/payment rows.
+- Back Office uses only `/restaurants/:id/device-sync/*` on the POS API. Inspect
+  collects fresh device reports without pausing work. Confirm binds the exact
+  server preview and requires a reason plus explicit review of participating
+  and excluded devices. Only the server may choose which Ready devices proceed;
+  a stale preview requires a new review. Per-device outcomes remain visible when
+  a run is partial, cancelled, or failed, and retry starts a fresh inspection.
+- Recovery state is keyed by both account and restaurant, with aborted reads and
+  generation checks on replacement. An ambiguous create/confirm/cancel preserves
+  its exact pending request in session storage and replays that same request;
+  accepted runs also restore from the server's active-run/history contract.
+  Read failures preserve the last report, disable confirmation, and retain
+  authentication/permission status. Recovery loads independently of printer
+  configuration so an unrelated load failure cannot hide a running recovery.
   Member override diffs must preserve the requested effective device permission
   after settings overrides are applied; changing `settings.edit` must never
   silently flip an independently selected device grant or denial.

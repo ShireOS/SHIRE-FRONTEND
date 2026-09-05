@@ -5,6 +5,7 @@ import { Button } from '../shared/Button'
 import { Badge } from '../shared/Badge'
 import { Modal } from '../shared/Modal'
 import DeviceSessionPolicySection from './DeviceSessionPolicySection'
+import DeviceSyncRecoveryPanel from './DeviceSyncRecoveryPanel'
 import HardwareChainGuide from '../printing/HardwareChainGuide'
 import PrinterEndpointEditModal from '../printing/PrinterEndpointEditModal'
 import { useAuth } from '../../../auth'
@@ -515,6 +516,23 @@ function PairingModal({ restaurantId, isOpen, onClose }) {
 export default function StoreDevicesPanel({ restaurantId }) {
   const auth = useAuth()
   const access = useBackOfficeAccess(auth, restaurantId)
+  return (
+    <div className="space-y-6">
+      {!access.loading && access.can('devices.manage') && access.can('devices.force_sync') && access.viewVisible('devices.sync_recovery') && <DeviceSyncRecoveryPanel
+        key={`${auth.user?.id}:${restaurantId}`}
+        restaurantId={restaurantId}
+        userId={auth.user?.id}
+        canRecover={access.can('devices.manage') && access.can('devices.force_sync')}
+        summary={access.viewMode('devices.sync_recovery') === 'summary'}
+      />}
+      <StoreDevicesConfiguration key={`${auth.user?.id}:${restaurantId}`} restaurantId={restaurantId} access={access} />
+    </div>
+  )
+}
+
+// Recovery loads independently so a printer/configuration failure cannot hide
+// the active run or prevent its safe cancellation.
+function StoreDevicesConfiguration({ restaurantId, access }) {
   const [config, setConfig] = useState(null)
   const [failoverStatus, setFailoverStatus] = useState(null)
   const [legacyConfig, setLegacyConfig] = useState(null)
