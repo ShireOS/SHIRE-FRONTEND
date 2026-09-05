@@ -325,6 +325,8 @@ list must stay in sync.
   it never receives raw device databases or writes operational rows. A changed
   comparison requires a fresh review, and ambiguous requests replay their exact
   mode/token rather than upgrading a normal refresh into source recovery.
+  Normal refresh omits the new mode field for compatibility with an older POS
+  service during deployment; only an explicit source inspection sends it.
 - Recovery is available with the deployed feature without per-store activation.
   Its permission and device-readiness checks remain mandatory; an operator's
   emergency shutdown is shown as temporary unavailability, never store onboarding.

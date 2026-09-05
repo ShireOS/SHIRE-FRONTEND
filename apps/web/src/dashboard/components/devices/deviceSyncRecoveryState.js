@@ -165,7 +165,10 @@ export function createRecoveryController({ restaurantId, userId, api, storage, u
       if (recoveryMode === 'reference' && (state.overview.reference_recovery_available !== true
         || !state.overview.devices?.some((device) => device.id === referenceDeviceId
           && !referenceDeviceBlocker(device, Date.now(), recoveryMode)))) return
-      return execute({ kind: 'inspect', body: { request_id: uuid(), reference_device_id: referenceDeviceId, recovery_mode: recoveryMode } })
+      // Original servers reject extra request fields. Omitting the default mode
+      // lets ordinary refresh keep working during a staggered deployment.
+      return execute({ kind: 'inspect', body: { request_id: uuid(), reference_device_id: referenceDeviceId,
+        ...(recoveryMode === 'reference' ? { recovery_mode: recoveryMode } : {}) } })
     },
     async confirm(previewToken, reason) {
       if (state.pending || state.readError || !recoverySelection(state.run).canConfirm || !reason?.trim()
