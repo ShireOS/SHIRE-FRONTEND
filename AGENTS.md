@@ -314,6 +314,8 @@ list must stay in sync.
 ### Device sync recovery (2026-09-05)
 - Each inspection defaults to server refresh. The per-run **Use this device as
   recovery source** option also uses `devices.manage` plus `devices.force_sync`;
+  its review includes recovered item notes/seats and keeps inspection-readiness
+  messaging distinct from the accepted preparation/apply progress.
   it requires a current protocol-2 source terminal and the deployed comparison
   service. It never persists as a restaurant setting or grants extra role access.
   Before confirmation, the POS API supplies the exact check comparison and binds

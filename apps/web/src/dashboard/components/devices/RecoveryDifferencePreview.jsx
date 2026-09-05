@@ -17,11 +17,13 @@ function Value({ field, value }) {
   if (typeof value === 'object') return <span>
     {value.name || value.label || 'Item'}{value.quantity !== undefined ? ` × ${value.quantity}` : ''}
     {value.total_cents !== undefined && <> · <Value field="total_cents" value={value.total_cents} /></>}
+    {value.seat_number != null && <span className="ml-1 text-dash-tertiary">· Seat {value.seat_number}</span>}
+    {value.notes && <span className="block text-dash-tertiary">{value.notes}</span>}
   </span>
   return String(value)
 }
 
-export default function RecoveryDifferencePreview({ preview, referenceName = 'Selected device' }) {
+export default function RecoveryDifferencePreview({ preview, referenceName = 'Selected device', checkingReadiness = true }) {
   if (!preview) return <p className="text-sm text-dash-secondary">Waiting for the source device and server comparison before changes can be reviewed.</p>
   const summary = preview.summary || {}
   const rows = preview.checks || []
@@ -41,7 +43,7 @@ export default function RecoveryDifferencePreview({ preview, referenceName = 'Se
         <dt className="text-xs text-dash-tertiary">{name}</dt><dd className="mt-1 font-semibold text-dash-cream">{count ?? 0}</dd>
       </div>)}
     </dl>
-    {preview.can_apply !== true && <p role="status" className="rounded-lg border border-dash-warning/30 bg-dash-warning/10 p-3 text-sm text-dash-warning">
+    {checkingReadiness && preview.can_apply !== true && <p role="status" className="rounded-lg border border-dash-warning/30 bg-dash-warning/10 p-3 text-sm text-dash-warning">
       Recovery cannot proceed yet. All POS terminals must be online and ready, and the comparison must have no blocked check changes.
     </p>}
     <div className="max-h-[28rem] space-y-2 overflow-y-auto">

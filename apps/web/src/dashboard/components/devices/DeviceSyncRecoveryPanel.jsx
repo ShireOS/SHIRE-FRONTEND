@@ -223,7 +223,7 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
           {state.run.status === 'partial' && <p className="text-sm text-dash-warning">Only the devices marked Verified completed recovery. Review the remaining devices before starting a fresh inspection.</p>}
           {state.run.blocker_code && <p className="text-sm text-dash-warning">{issueLabel(state.run.blocker_code)}</p>}
           {state.run.reason && <p className="text-xs text-dash-secondary">Reason: {state.run.reason}</p>}
-          {sourceRecovery && <RecoveryDifferencePreview preview={state.run.reconciliation_preview} referenceName={referenceName} />}
+          {sourceRecovery && <RecoveryDifferencePreview preview={state.run.reconciliation_preview} referenceName={referenceName} checkingReadiness={state.run.status === 'inspecting'} />}
           <TargetTable run={state.run} />
           {editable && active && !hasPending && <div className="flex flex-wrap gap-2">
             {state.run.status === 'inspecting' && <Button type="button"
