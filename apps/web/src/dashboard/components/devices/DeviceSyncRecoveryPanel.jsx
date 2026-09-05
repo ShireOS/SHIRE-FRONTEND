@@ -194,7 +194,7 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
                 onChange={(event) => setRecoveryMode(event.target.checked ? 'reference' : 'refresh')}
                 disabled={busy || !enabled || !sourceRecoveryAvailable || Boolean(state.readError)} className="mt-1" />
               <span><span className="block font-medium text-dash-cream">Use this device as recovery source</span>
-                <span className="mt-1 block text-xs leading-5 text-dash-tertiary">Allow eligible open, unpaid checks on this device to update the server even when they differ. You will review the proposed changes before anything is applied. Recorded payments and checks found only on the server are kept.</span>
+                <span className="mt-1 block text-xs leading-5 text-dash-tertiary">Allow eligible open, unpaid checks on this device to update the server even when they differ. You will review the proposed changes before anything is applied. All POS terminals must be online and ready. Recorded payments and checks found only on the server are kept.</span>
               </span>
             </label>
             {!sourceRecoveryAvailable && <p className="text-xs text-dash-tertiary">A service update is required to use a device as the recovery source. Standard server refresh remains available.</p>}
@@ -214,7 +214,7 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
           </div>
           <p className="text-xs text-dash-secondary">{sourceRecovery ? `Recovery source: ${referenceName}` : 'Recovery source: confirmed server checks'}</p>
           {state.run.status === 'inspecting' && <p className="text-sm text-dash-secondary">
-            Keep terminals online with the POS app open. Inspection expires {timeLabel(state.run.expires_at)}.
+            {sourceRecovery ? 'Keep every POS terminal online with the app open. Source recovery requires all POS terminals to be ready.' : 'Keep terminals online with the POS app open.'} Inspection expires {timeLabel(state.run.expires_at)}.
           </p>}
           {['preparing', 'applying'].includes(state.run.status) && <p className="text-sm text-dash-secondary">
             Participating terminals pause new check edits at a safe point while their checks refresh. Device status updates as each terminal responds.
@@ -233,7 +233,7 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
           </div>}
           {state.run.status === 'inspecting' && !selection.canConfirm && <p className="text-xs text-dash-tertiary">
             {sourceRecovery && state.run.reconciliation_preview?.can_apply !== true
-              ? 'A complete, eligible comparison is required before recovery can start.'
+              ? 'All POS terminals must be online and ready, and the comparison must have no blocked check changes.'
               : 'The reference device and at least one other terminal must provide fresh Ready reports before recovery can start.'}
           </p>}
         </div>}
@@ -254,15 +254,15 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
         {dialog && <div className="space-y-4">
           {dialog.kind === 'confirm' ? <>
             <p className="text-sm leading-6 text-dash-secondary">{dialog.recoveryMode === 'reference'
-              ? 'Approve the check changes below. Participating devices briefly pause new check edits, the server applies eligible unpaid check changes from your source device, and the devices refresh from that reconciled state. Pending work and recorded payments are protected.'
+              ? 'Approve the check changes below. All POS terminals must be online and ready. They briefly pause new check edits, the server applies eligible unpaid check changes from your source device, and the terminals refresh from that reconciled state. Pending work and recorded payments are protected.'
               : 'These devices will briefly pause new check edits at a safe point, preserve pending work, and refresh their confirmed checks from the server. The reference device does not overwrite another terminal’s transactions.'}</p>
             {dialog.recoveryMode === 'reference' && <RecoveryDifferencePreview preview={dialog.reconciliationPreview} referenceName={dialog.referenceName} />}
             <div><p className="text-sm font-semibold text-dash-cream">Devices to recover</p><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-dash-secondary">
               {(dialog.targets || []).filter((target) => target.state === 'ready').map((target) => <li key={target.device_id}>{target.device_name || 'Unnamed device'}</li>)}
             </ul></div>
             {(dialog.targets || []).some((target) => target.state !== 'ready') && <div className="rounded-lg border border-dash-warning/30 bg-dash-warning/10 p-3">
-              <p className="flex items-center gap-2 text-sm font-semibold text-dash-warning"><AlertTriangle size={15} aria-hidden="true" />This will recover part of the fleet</p>
-              <p className="mt-1 text-xs text-dash-secondary">These devices will remain unchanged and need a later inspection:</p>
+              <p className="flex items-center gap-2 text-sm font-semibold text-dash-warning"><AlertTriangle size={15} aria-hidden="true" />{dialog.recoveryMode === 'reference' ? 'Other devices' : 'This will recover part of the fleet'}</p>
+              <p className="mt-1 text-xs text-dash-secondary">{dialog.recoveryMode === 'reference' ? 'These devices are outside this check recovery:' : 'These devices will remain unchanged and need a later inspection:'}</p>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-dash-secondary">{(dialog.targets || []).filter((target) => target.state !== 'ready').map((target) => <li key={target.device_id}>{target.device_name || 'Unnamed device'} — {label(target.state)}</li>)}</ul>
             </div>}
           </> : <p className="text-sm leading-6 text-dash-secondary">Stop remaining recovery work. Devices that already refreshed keep their verified state. Cancellation does not undo checks or payments.</p>}

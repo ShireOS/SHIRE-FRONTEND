@@ -42,7 +42,7 @@ export default function RecoveryDifferencePreview({ preview, referenceName = 'Se
       </div>)}
     </dl>
     {preview.can_apply !== true && <p role="status" className="rounded-lg border border-dash-warning/30 bg-dash-warning/10 p-3 text-sm text-dash-warning">
-      Recovery cannot proceed with this comparison. Resolve the listed issues and start a fresh inspection.
+      Recovery cannot proceed yet. All POS terminals must be online and ready, and the comparison must have no blocked check changes.
     </p>}
     <div className="max-h-[28rem] space-y-2 overflow-y-auto">
       {rows.map((check, index) => <details key={check.order_id || index} open={check.action === 'blocked'} className="rounded-lg border border-dash-border p-3">

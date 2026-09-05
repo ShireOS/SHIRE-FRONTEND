@@ -320,6 +320,10 @@ list must stay in sync.
   it to the preview token. Back Office shows missing/changed checks, before/after
   values, preserved server-only checks, and blockers. Only eligible open, unpaid
   check changes may be applied; any blocked source difference stops the run.
+  Source recovery requires fresh Ready reports and preparation from every active
+  POS terminal before server changes; offline or blocked terminals cannot be
+  skipped because they may hold unreported payment or check work. Kitchen
+  displays and other devices outside POS check workflows are not source targets.
   Recorded payments, queued work, and server-only checks remain protected. The
   browser sends only the mode, reference ID, reviewed token, and manager reason;
   it never receives raw device databases or writes operational rows. A changed
