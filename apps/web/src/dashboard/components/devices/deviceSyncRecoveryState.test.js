@@ -41,12 +41,15 @@ function harness(overrides = {}, storage = memoryStorage()) {
 
 test('reference candidates require current compatible devices while queue counts remain advisory', () => {
   const now = Date.parse('2026-09-05T12:00:00Z')
-  const device = { status: 'active', protocol_version: 1, last_seen_at: '2026-09-05T11:59:00Z', capability_reported_at: '2026-09-05T11:59:00Z', pending_mutation_count: 4 }
+  const device = { status: 'active', device_type: 'fixed_terminal', protocol_version: 1, last_seen_at: '2026-09-05T11:59:00Z', capability_reported_at: '2026-09-05T11:59:00Z', pending_mutation_count: 4 }
   assert.equal(referenceDeviceBlocker(device, now), null)
   for (const patch of [
-    { status: 'revoked' }, { protocol_version: null }, { protocol_version: 2 },
+    { status: 'revoked' }, { device_type: 'kitchen_display' }, { device_type: null }, { protocol_version: null }, { protocol_version: 2 },
     { last_seen_at: null }, { capability_reported_at: '2026-09-05T11:57:59Z' },
   ]) assert.equal(typeof referenceDeviceBlocker({ ...device, ...patch }, now), 'string')
+  for (const device_type of ['android_tablet', 'waiter_handheld', 'fixed_terminal', 'desktop']) {
+    assert.equal(referenceDeviceBlocker({ ...device, device_type }, now), null)
+  }
 })
 
 test('confirm requires an explicit preview and fresh ready reference plus peer', () => {

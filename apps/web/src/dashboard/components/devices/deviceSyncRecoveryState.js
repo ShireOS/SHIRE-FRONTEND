@@ -3,6 +3,7 @@ export const isRecoveryActive = (run) => ACTIVE_RECOVERY_STATES.has(run?.status)
 
 export function referenceDeviceBlocker(device, now = Date.now()) {
   if (device.status !== 'active') return 'Deactivated'
+  if (!['android_tablet', 'waiter_handheld', 'fixed_terminal', 'desktop'].includes(device.device_type)) return 'Choose a POS check terminal'
   if (device.protocol_version !== 1) return 'App update required'
   const recent = (value) => Number.isFinite(Date.parse(value)) && now - Date.parse(value) <= 120_000
   if (!recent(device.last_seen_at)) return 'Offline or not recently seen'

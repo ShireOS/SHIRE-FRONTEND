@@ -316,6 +316,9 @@ list must stay in sync.
   and excluded devices. Only the server may choose which Ready devices proceed;
   a stale preview requires a new review. Per-device outcomes remain visible when
   a run is partial, cancelled, or failed, and retry starts a fresh inspection.
+  Reference selection uses the same POS terminal types as the server; kitchen
+  displays and other non-check devices cannot become the reference even when
+  they report a recent compatible app version.
 - Recovery state is keyed by both account and restaurant, with aborted reads and
   generation checks on replacement. An ambiguous create/confirm/cancel preserves
   its exact pending request in session storage and replays that same request;
