@@ -137,6 +137,22 @@ export function can(permissions: PermissionMap | null | undefined, key: string):
   return rawPermission(permissions, key)
 }
 
+export function diffPermissionOverrides(effective: PermissionMap, roleDefaults: PermissionMap | null | undefined): PermissionMap {
+  const overrides: PermissionMap = {}
+  for (const key of PERMISSION_KEYS) {
+    const next = can(effective, key)
+    if (next !== can(roleDefaults, key)) overrides[key] = next
+  }
+  // A settings override can change the inherited device permission even when
+  // the device toggle still matches the role. Preserve the requested effective
+  // map after applying those overrides, including explicit device denials.
+  const inherited = mergePermissions(roleDefaults, overrides)
+  for (const key of PERMISSION_KEYS) {
+    if (can(inherited, key) !== can(effective, key)) overrides[key] = can(effective, key)
+  }
+  return overrides
+}
+
 // Which permission unlocks each store nav tab. Tabs absent from this map are
 // always visible (Home). Owners bypass this entirely.
 export const TAB_PERMISSIONS: Record<string, string> = {

@@ -20,14 +20,7 @@ import {
 // Keys locked by `grantCap` (any key not true in the cap) keep their current
 // value in every emitted map — presets and "Reset to role" included.
 
-export function diffOverrides(effective, roleDefaults) {
-  const overrides = {}
-  for (const key of PERMISSION_KEYS) {
-    const next = can(effective, key)
-    if (next !== can(roleDefaults, key)) overrides[key] = next
-  }
-  return overrides
-}
+export { diffPermissionOverrides as diffOverrides } from '../../../shared/permissions'
 
 // Mirrors the store sidebar. Tabs missing from TAB_PERMISSIONS (Home) are
 // always visible.

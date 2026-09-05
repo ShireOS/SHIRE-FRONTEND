@@ -283,6 +283,9 @@ list must stay in sync.
 - `settings.edit`
 - `devices.manage` (legacy fallback to `settings.edit` only when this key is absent;
   an explicit `false` always denies device and update management)
+  Member override diffs must preserve the requested effective device permission
+  after settings overrides are applied; changing `settings.edit` must never
+  silently flip an independently selected device grant or denial.
 
 ### POS-owned tip domain (2026-07-28)
 

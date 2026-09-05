@@ -6,8 +6,38 @@ import {
   TAB_PERMISSIONS,
   allowedTabsFor,
   can,
+  diffPermissionOverrides,
   mergePermissions,
 } from './permissions.ts'
+
+test('member saves preserve independently chosen settings and device access', () => {
+  for (const roleSettings of [false, true]) {
+    for (const roleDevices of [undefined, false, true]) {
+      const defaults = { 'settings.edit': roleSettings }
+      if (roleDevices !== undefined) defaults['devices.manage'] = roleDevices
+      for (const settings of [false, true]) {
+        for (const devices of [false, true]) {
+          const requested = { 'settings.edit': settings, 'devices.manage': devices }
+          const saved = diffPermissionOverrides(requested, defaults)
+          const reloaded = mergePermissions(defaults, saved)
+          assert.equal(reloaded['settings.edit'], settings)
+          assert.equal(reloaded['devices.manage'], devices)
+        }
+      }
+    }
+  }
+})
+
+test('legacy settings grants retain an explicit device denial in member overrides', () => {
+  assert.deepEqual(diffPermissionOverrides(
+    { 'settings.edit': true, 'devices.manage': false },
+    { 'settings.edit': false },
+  ), { 'settings.edit': true, 'devices.manage': false })
+  assert.deepEqual(diffPermissionOverrides(
+    { 'settings.edit': false, 'devices.manage': true },
+    { 'settings.edit': true },
+  ), { 'settings.edit': false, 'devices.manage': true })
+})
 
 test('devices.manage is canonical and gates device workspaces', () => {
   assert.ok(PERMISSION_KEYS.includes('devices.manage'))
