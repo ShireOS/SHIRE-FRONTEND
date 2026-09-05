@@ -16,6 +16,19 @@ export type ScheduledChange = {
   scheduled_for: string
   display_timezone: string
   created_at: string
+  targets?: ScheduledChangeTarget[]
+}
+
+export type ScheduledChangeTarget = {
+  id: string
+  target_id: string | null
+  status: 'pending' | 'processing' | 'applied' | 'failed' | 'cancelled'
+  last_error?: string | null
+}
+
+function webIdempotencyKey(prefix: string) {
+  const randomId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`
+  return `${prefix}-${randomId}`
 }
 
 export async function scheduleChange(input: {
@@ -24,7 +37,6 @@ export async function scheduleChange(input: {
   timezone: string
   commands: ScheduledCommand[]
 }) {
-  const randomId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`
   return fetchWithSupabaseAuth<ScheduledChange>('/scheduled-changes', {
     method: 'POST',
     body: JSON.stringify({
@@ -32,7 +44,21 @@ export async function scheduleChange(input: {
       scheduled_for: input.scheduledFor,
       display_timezone: input.timezone,
       commands: input.commands,
-      idempotency_key: `web-${randomId}`,
+      idempotency_key: webIdempotencyKey('web-scheduled'),
+    }),
+  })
+}
+
+export function applyChangeNow(input: {
+  label: string
+  commands: ScheduledCommand[]
+}) {
+  return fetchWithSupabaseAuth<ScheduledChange>('/scheduled-changes/apply-now', {
+    method: 'POST',
+    body: JSON.stringify({
+      label: input.label,
+      commands: input.commands,
+      idempotency_key: webIdempotencyKey('web-immediate'),
     }),
   })
 }

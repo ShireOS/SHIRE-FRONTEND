@@ -103,7 +103,7 @@ import { SmartTimeInput } from '../shared/components/SmartTimeInput'
 import { ScheduledChangesPanel } from '../shared/components/ScheduledChangesPanel'
 import { TaxJurisdictionPanel } from './components/TaxJurisdictionPanel'
 import { RestaurantLocationFields } from '../shared/components/RestaurantLocationFields'
-import { scheduleChange } from '../shared/api/scheduledChanges'
+import { applyChangeNow, scheduleChange } from '../shared/api/scheduledChanges'
 import { buildScheduledJobCodeUpdate } from './jobCodeScheduling'
 import { fetchRestaurantSensitiveSettings } from '../shared/api/sensitiveSettings'
 import { cashDrawerRoleSummary } from './utils/cashDrawerPermissions'
@@ -1855,7 +1855,7 @@ export default function RestaurantSetupPanel({
     }
   }
 
-  const saveReservationSettings = async (targetRestaurantId, timing, operatingHours) => {
+  const reservationSettingsForRestaurant = async (targetRestaurantId, timing, operatingHours) => {
     const currentSettings = await fetchReservationSettings(targetRestaurantId)
     const existingPeriods = Array.isArray(currentSettings?.servicePeriods)
       ? currentSettings.servicePeriods.filter(period => period && typeof period === 'object')
@@ -1866,15 +1866,33 @@ export default function RestaurantSetupPanel({
       : existingPeriods.length > 0
         ? reservationPeriodsWithDefaults(timing, existingPeriods)
         : reservationPeriodsFromHours(timing, operatingHours, existingPeriods)
+    const settings = {
+      bookingHorizonDays: Number(payload.reservation_online_booking_horizon_days),
+      gracePeriodMinutes: Number(payload.reservation_online_grace_period_minutes),
+      defaultSlotIntervalMinutes: Number(payload.reservation_slot_interval_minutes),
+      servicePeriods,
+      timingPolicies: payload.timingPolicies,
+    }
+    return settings
+  }
+
+  const saveReservationSettings = async (targetRestaurantId, timing, operatingHours) => {
+    const settings = await reservationSettingsForRestaurant(targetRestaurantId, timing, operatingHours)
     await fetchReservationsApi(`/locations/${targetRestaurantId}/reservation-settings`, {
       method: 'PUT',
-      body: JSON.stringify({
-        bookingHorizonDays: Number(payload.reservation_online_booking_horizon_days),
-        gracePeriodMinutes: Number(payload.reservation_online_grace_period_minutes),
-        defaultSlotIntervalMinutes: Number(payload.reservation_slot_interval_minutes),
-        servicePeriods,
-        timingPolicies: payload.timingPolicies,
-      }),
+      body: JSON.stringify(settings),
+    })
+    return settings
+  }
+
+  const saveReservationSettingsBatch = async (targetRestaurantIds, timing, operatingHours) => {
+    const updates = await Promise.all(targetRestaurantIds.map(async targetRestaurantId => ({
+      locationId: targetRestaurantId,
+      settings: await reservationSettingsForRestaurant(targetRestaurantId, timing, operatingHours),
+    })))
+    return fetchReservationsApi('/locations/reservation-settings/batch', {
+      method: 'PUT',
+      body: JSON.stringify({ updates }),
     })
   }
 
@@ -1912,6 +1930,7 @@ export default function RestaurantSetupPanel({
     saveTarget,
     onSourceSaved,
     afterSave,
+    saveBatch,
     publication,
     buildCommand,
   }) => {
@@ -1964,14 +1983,52 @@ export default function RestaurantSetupPanel({
         setSaveMessage(`${label} scheduled for ${new Date(scheduled.scheduled_for).toLocaleString()}.`)
         return scheduled
       }
-      for (const targetId of targetIds) {
+      if (targetIds.length > 1 && saveBatch) {
+        const operation = await saveBatch(targetIds)
+        await auth.refreshRestaurants?.(sourceRestaurantId)
         requireCurrentRestaurant()
-        if (targetId === sourceRestaurantId) {
-          sourceResult = await saveSource(targetId)
-          sourceWasSaved = true
-        } else {
-          await saveTarget(targetId)
+        for (const targetId of targetIds) {
+          void queryClient.invalidateQueries({ queryKey: ['restaurant', targetId] })
         }
+        setSetupReloadGeneration(generation => generation + 1)
+        onSetupChanged?.()
+        setSaveMessage(`${successMessage} Applied atomically to ${targetIds.length} restaurants.`)
+        if (operation?.warning) setSetupError(operation.warning)
+        return operation
+      }
+      if (targetIds.length > 1 && buildCommand) {
+        const commands = targetIds.flatMap(targetId => {
+          const command = buildCommand(targetId)
+          return Array.isArray(command) ? command : [command]
+        })
+        const operation = await applyChangeNow({ label, commands })
+        const targets = Array.isArray(operation?.targets) ? operation.targets : []
+        const appliedCount = targets.filter(target => target.status === 'applied').length
+        const pendingCount = Math.max(commands.length - appliedCount, 0)
+        await auth.refreshRestaurants?.(sourceRestaurantId)
+        requireCurrentRestaurant()
+        for (const targetId of targetIds) {
+          void queryClient.invalidateQueries({ queryKey: ['restaurant', targetId] })
+        }
+        setSetupReloadGeneration(generation => generation + 1)
+        onSetupChanged?.()
+        if (operation.status === 'applied' && pendingCount === 0) {
+          setSaveMessage(`${successMessage} Applied atomically to ${targetIds.length} restaurants.`)
+        } else {
+          setSaveMessage(`${label} accepted: ${appliedCount} of ${commands.length} changes applied; ${pendingCount} queued for automatic retry.`)
+        }
+        return operation
+      }
+      if (targetIds.length > 1) {
+        throw new Error(`${label} cannot be safely applied to multiple restaurants by this build.`)
+      }
+      const targetId = targetIds[0]
+      requireCurrentRestaurant()
+      if (targetId === sourceRestaurantId) {
+        sourceResult = await saveSource(targetId)
+        sourceWasSaved = true
+      } else {
+        await saveTarget(targetId)
       }
       requireCurrentRestaurant()
       if (sourceWasSaved && onSourceSaved) onSourceSaved(sourceResult)
@@ -2571,6 +2628,13 @@ export default function RestaurantSetupPanel({
         rememberSavedDraft('pricing_policy', normalized)
         queryClient.setQueryData(queryKeys.pricingPolicy(restaurantId), saved)
       },
+      buildCommand: (targetId) => ({
+        method: 'PUT',
+        path: `/restaurants/${targetId}/pricing-policy`,
+        body: targetId === restaurantId ? payload : { ...payload, expected_version: undefined },
+        target_type: 'restaurant',
+        target_id: targetId,
+      }),
     })
   }
 
@@ -3027,6 +3091,22 @@ export default function RestaurantSetupPanel({
       saveTarget: async (targetId) => {
         await saveReservationSettings(targetId, payload, hours)
         return mergeRestaurantConfig(targetId, configPatch)
+      },
+      saveBatch: async (targetIds) => {
+        // The Reservations service owns these settings and commits the entire
+        // selected-store batch in one transaction. restaurants.config is only
+        // a legacy loading fallback, so a multi-store save must not introduce
+        // a second cross-service write that can disagree with the canonical rows.
+        const saved = await saveReservationSettingsBatch(targetIds, payload, hours)
+        let warning = ''
+        if (targetIds.includes(restaurantId)) {
+          try {
+            await saveReservationPublicSlug(restaurantId, reservationPublicSlug || profile.name)
+          } catch (error) {
+            warning = `Reservation timing was saved to every selected restaurant, but the public booking URL was not updated: ${error instanceof Error ? error.message : 'unknown error'}`
+          }
+        }
+        return { ...saved, warning }
       },
       onSourceSaved: () => {
         const normalized = normalizeReservationTiming(configPatch)
