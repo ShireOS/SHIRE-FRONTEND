@@ -116,6 +116,7 @@ export const BACK_OFFICE_VIEW_CATALOG: ViewCapability[] = [
   node('nav.feedback', 'Complaints', [node('feedback.inbox', 'Guest complaint inbox')]),
   node('nav.devices', 'Devices', [
     node('devices.health', 'Device and printer health'),
+    node('devices.sync_recovery', 'Device sync recovery'),
     node('devices.pairing', 'Pair and replace terminals'),
     node('devices.assignments', 'Receipt printer assignments'),
     node('devices.failover', 'Printer outage protection'),
@@ -213,7 +214,7 @@ const PRESET_OVERRIDES: Record<BackOfficeViewLevel, Record<string, BackOfficeVie
   medium: {
     'reports.activity': 'summary', 'reports.receipt_template': 'summary',
     'settings.taxes': 'summary', 'ui.appearance': 'hidden',
-    'menu.pricing': 'standard', 'devices.sessions': 'summary',
+    'menu.pricing': 'standard', 'devices.sessions': 'summary', 'devices.sync_recovery': 'summary',
     'devices.network': 'hidden', 'devices.hardware': 'hidden',
     'pos_settings.terminal_home': 'hidden', 'printing.ticket_layout': 'hidden',
     'team.permissions': 'summary', 'payroll.advanced_rules': 'summary',

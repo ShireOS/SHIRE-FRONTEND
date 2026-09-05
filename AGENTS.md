@@ -292,6 +292,24 @@ list must stay in sync.
 - `settings.edit`
 - `devices.manage` (legacy fallback to `settings.edit` only when this key is absent;
   an explicit `false` always denies device and update management)
+- `devices.force_sync` (explicit opt-in for Back Office sync recovery, also
+  requiring `devices.manage`; no fallback or Manager-preset grant)
+
+### Device sync recovery (2026-09-05)
+- Sync recovery is a POS-owned Back Office operation under both `devices.manage`
+  and `devices.force_sync`. Existing owner/platform-admin bypasses remain; ordinary
+  manager presets and absent permission keys never grant recovery. Member role
+  defaults and per-person overrides use the canonical `devices.force_sync` key.
+- Reseller connections use the separate owner-granted `permissions.force_sync`
+  flag, default false, alongside their existing Devices grant. Reseller employees
+  also require their own `permissions.force_sync`, default false, and active
+  restaurant/group scope. Team's invitation and connection controls and reseller
+  employee invitations expose these deliberate grants.
+- `devices.sync_recovery` is the presentation capability inside Devices. Summary
+  presentation may show health and history; it never grants or hides required
+  server authorization. Devices remain addressed by restaurant-bound
+  `pos_devices.id`; the browser never copies terminal databases or writes
+  operational order/payment rows.
   Member override diffs must preserve the requested effective device permission
   after settings overrides are applied; changing `settings.edit` must never
   silently flip an independently selected device grant or denial.

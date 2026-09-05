@@ -61,6 +61,7 @@ const RESELLER_PERMISSION_LABELS = {
   messaging: 'Messaging',
   payments: 'Payments / Plan',
   close_day: 'Close Day',
+  force_sync: 'Recover device sync',
 }
 
 const money = (value) =>

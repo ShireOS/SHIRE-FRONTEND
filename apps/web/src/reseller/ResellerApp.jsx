@@ -844,6 +844,7 @@ function ResellerProfileEditor({ onboarding = false }) {
                   ['propagate_changes', 'Propagate'],
                   ['manage_groups', 'Manage groups'],
                   ['close_day', 'Close day'],
+                  ['force_sync', 'Recover device sync'],
                 ].map(([key, label]) => (
                   <SmallButton
                     key={key}

@@ -20,6 +20,7 @@ export const DEFAULT_RESELLER_PERMISSIONS = {
   propagate_changes: false,
   manage_groups: false,
   close_day: false,
+  force_sync: false,
 }
 
 export function normalizeResellerProfile(profile) {

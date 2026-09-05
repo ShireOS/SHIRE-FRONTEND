@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   PERMISSION_KEYS,
+  PERMISSION_PRESETS,
   TAB_PERMISSIONS,
   allowedTabsFor,
   can,
@@ -76,4 +77,25 @@ test('device tabs honor the compatibility fallback and explicit deny', () => {
     allowedTabsFor({ 'settings.edit': true, 'devices.manage': false }, false, tabs),
     ['home'],
   )
+})
+
+test('sync recovery is an explicit opt-in permission with no legacy inheritance', () => {
+  assert.ok(PERMISSION_KEYS.includes('devices.force_sync'))
+  const ordinaryDeviceAccess = { 'settings.edit': true, 'devices.manage': true }
+  assert.equal(can(ordinaryDeviceAccess, 'devices.force_sync'), false)
+  assert.equal(mergePermissions(ordinaryDeviceAccess, {})['devices.force_sync'], false)
+  assert.equal(mergePermissions(ordinaryDeviceAccess, { 'devices.force_sync': true })['devices.force_sync'], true)
+  assert.equal(mergePermissions({ 'devices.force_sync': true }, { 'devices.force_sync': false })['devices.force_sync'], false)
+  for (const preset of PERMISSION_PRESETS) assert.equal(can(preset.permissions, 'devices.force_sync'), false)
+})
+
+test('member recovery grants and denials survive save and reload', () => {
+  for (const granted of [false, true]) {
+    for (const roleGranted of [false, true]) {
+      const defaults = { 'devices.manage': true, 'devices.force_sync': roleGranted }
+      const requested = { ...defaults, 'devices.force_sync': granted }
+      const saved = diffPermissionOverrides(requested, defaults)
+      assert.equal(mergePermissions(defaults, saved)['devices.force_sync'], granted)
+    }
+  }
 })

@@ -3,6 +3,7 @@
 // and tests all share the same contract.
 export const RESELLER_TOGGLEABLE_TABS = [
   'devices',
+  'force_sync',
   'setup',
   'menu',
   'feedback',
@@ -15,6 +16,7 @@ export const RESELLER_TOGGLEABLE_TABS = [
 
 export const DEFAULT_RESELLER_PERMISSIONS = {
   devices: true,
+  force_sync: false,
   setup: true,
   menu: true,
   feedback: true,
@@ -39,6 +41,8 @@ const MANDATORY_STORE_TABS = [
 
 const GRANT_ROUTES = {
   devices: ['devices', 'device-updates'],
+  // Recovery is an explicit action grant inside Devices, never a new route.
+  force_sync: [],
   setup: ['setup', 'store-information', 'marketing', 'settings', 'integrations', 'reservations', 'ui', 'pos-settings', 'printing-routing'],
   menu: ['menu', 'menu-workspace'],
   feedback: ['feedback'],

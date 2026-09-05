@@ -57,6 +57,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'payments.refund', label: 'Issue payment refunds', description: 'Request and monitor processor-backed card refunds' },
       { key: 'settings.edit', label: 'Edit restaurant settings', description: 'Change setup, POS settings and devices' },
       { key: 'devices.manage', label: 'Manage devices & updates', description: 'Configure terminals and control approved POS update rollouts' },
+      { key: 'devices.force_sync', label: 'Recover device sync', description: 'Inspect and start an audited sync recovery from Back Office; also requires Manage devices & updates' },
     ],
   },
 ]
@@ -69,7 +70,8 @@ export const PERMISSION_PRESETS: { id: string; label: string; permissions: Permi
   {
     id: 'manager',
     label: 'Manager',
-    permissions: Object.fromEntries(PERMISSION_KEYS.map((key) => [key, true])),
+    // Recovery requires a deliberate grant, including when applying a preset.
+    permissions: Object.fromEntries(PERMISSION_KEYS.map((key) => [key, key !== 'devices.force_sync'])),
   },
   {
     id: 'shift_lead',
