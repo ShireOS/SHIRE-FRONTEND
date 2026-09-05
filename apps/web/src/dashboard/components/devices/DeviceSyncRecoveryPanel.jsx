@@ -6,6 +6,7 @@ import { Button } from '../shared/Button'
 import { Modal, ModalFooter } from '../shared/Modal'
 import { deviceSyncApi } from '../../data/deviceSync'
 import { createRecoveryController, isRecoveryActive, recoverySelection, referenceDeviceBlocker } from './deviceSyncRecoveryState'
+import RecoveryDifferencePreview from './RecoveryDifferencePreview'
 
 const STATE_LABELS = {
   inspecting: 'Inspecting', preparing: 'Preparing', applying: 'Refreshing checks',
@@ -57,6 +58,7 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
   const controllerRef = useRef(null)
   const [state, setState] = useState({ loading: true, overview: null, run: null, busy: null, error: null, readError: null, pending: null })
   const [referenceId, setReferenceId] = useState('')
+  const [recoveryMode, setRecoveryMode] = useState('refresh')
   const [dialog, setDialog] = useState(null)
   const [reason, setReason] = useState('')
   const [acknowledged, setAcknowledged] = useState(false)
@@ -69,6 +71,7 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
     controllerRef.current = controller
     setState(controller.getSnapshot())
     setReferenceId('')
+    setRecoveryMode('refresh')
     setDialog(null)
     setReason('')
     setAcknowledged(false)
@@ -92,6 +95,11 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
 
   const active = isRecoveryActive(state.run)
   useEffect(() => {
+    // Advanced recovery is an explicit choice for each new inspection, never a
+    // saved restaurant setting. The accepted run still shows its recorded mode.
+    if (state.run?.id) setRecoveryMode('refresh')
+  }, [state.run?.id, state.run?.status])
+  useEffect(() => {
     if (!active) return undefined
     const refresh = () => {
       if (document.visibilityState === 'hidden') return
@@ -109,21 +117,26 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
   const selection = useMemo(() => recoverySelection(state.run), [state.run])
   const devices = state.overview?.devices || []
   const selectedReference = devices.find((device) => device.id === referenceId)
-  const referenceIssue = selectedReference ? referenceDeviceBlocker(selectedReference, now) : null
+  const referenceIssue = selectedReference ? referenceDeviceBlocker(selectedReference, now, recoveryMode) : null
+  const sourceRecovery = state.run?.recovery_mode === 'reference'
+  const referenceName = state.run?.targets?.find((target) => target.device_id === state.run.reference_device_id)?.device_name || 'Selected device'
   const editable = canRecover && !summary
   const enabled = state.overview?.enabled === true
+  const sourceRecoveryAvailable = state.overview?.reference_recovery_available === true
   const busy = Boolean(state.busy)
   const hasPending = Boolean(state.pending)
   const openDialog = (kind) => {
     setReason('')
     setAcknowledged(false)
-    setDialog({ kind, runId: state.run.id, previewToken: state.run.preview_token, targets: state.run.targets })
+    setDialog({ kind, runId: state.run.id, previewToken: state.run.preview_token, targets: state.run.targets,
+      recoveryMode: state.run.recovery_mode, reconciliationPreview: state.run.reconciliation_preview, referenceName })
   }
   const dialogStale = dialog && (dialog.runId !== state.run?.id
     || (dialog.kind === 'confirm' && dialog.previewToken !== state.run?.preview_token))
   const closeDialog = () => { if (!busy) setDialog(null) }
   const submitDialog = async () => {
-    if (!editable || dialogStale || !acknowledged || reason.trim().length < 3 || reason.trim().length > 500) return
+    if (!editable || dialogStale || !acknowledged || reason.trim().length < 3 || reason.trim().length > 500
+      || (dialog.kind === 'confirm' && !selection.canConfirm)) return
     const controller = controllerRef.current
     if (!controller) return
     if (dialog.kind === 'confirm') await controller.confirm(dialog.previewToken, reason)
@@ -146,8 +159,7 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm leading-6 text-dash-secondary">
-          Bring terminals back to the restaurant’s confirmed check state. Choose a reference device to compare;
-          each device keeps its pending work, and the server remains the source for checks and balances.
+          Bring terminals back to a shared check state. Refresh from the server, or use a selected device to recover eligible unpaid check changes after reviewing the differences.
         </p>
         {state.loading && <p className="text-sm text-dash-secondary">Loading recovery status…</p>}
         {(state.error || state.readError) && <div role="alert" className="rounded-lg border border-dash-danger/30 bg-dash-danger/10 p-3 text-sm text-dash-danger">
@@ -172,15 +184,24 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
                 className="mt-2 block min-h-[40px] w-full rounded-lg border border-dash-border bg-dash-surface px-3 text-sm text-dash-cream disabled:opacity-50">
                 <option value="">Choose a recently connected terminal</option>
                 {devices.map((device) => {
-                  const issue = referenceDeviceBlocker(device, now)
+                  const issue = referenceDeviceBlocker(device, now, recoveryMode)
                   return <option key={device.id} value={device.id} disabled={Boolean(issue)}>{device.name || 'Unnamed device'}{issue ? ` — ${issue}` : ''}</option>
                 })}
               </select>
             </label>
+            <label className="flex items-start gap-2 rounded-lg border border-dash-border p-3 text-sm text-dash-secondary">
+              <input type="checkbox" checked={recoveryMode === 'reference'}
+                onChange={(event) => setRecoveryMode(event.target.checked ? 'reference' : 'refresh')}
+                disabled={busy || !enabled || !sourceRecoveryAvailable || Boolean(state.readError)} className="mt-1" />
+              <span><span className="block font-medium text-dash-cream">Use this device as recovery source</span>
+                <span className="mt-1 block text-xs leading-5 text-dash-tertiary">Allow eligible open, unpaid checks on this device to update the server even when they differ. You will review the proposed changes before anything is applied. Recorded payments and checks found only on the server are kept.</span>
+              </span>
+            </label>
+            {!sourceRecoveryAvailable && <p className="text-xs text-dash-tertiary">A service update is required to use a device as the recovery source. Standard server refresh remains available.</p>}
             {referenceIssue && <p className="text-xs text-dash-warning">{referenceIssue}. Refresh status before inspecting.</p>}
             <p className="text-xs leading-5 text-dash-tertiary">Inspection asks each terminal for a fresh safety report. Staff can keep working during inspection.</p>
-            <Button type="button" disabled={busy || !enabled || !selectedReference || Boolean(referenceIssue) || Boolean(state.readError)}
-              onClick={() => void controllerRef.current?.inspect(referenceId)}>
+            <Button type="button" disabled={busy || !enabled || !selectedReference || Boolean(referenceIssue) || Boolean(state.readError) || (recoveryMode === 'reference' && !sourceRecoveryAvailable)}
+              onClick={() => void controllerRef.current?.inspect(referenceId, recoveryMode)}>
               {state.run ? 'Start a fresh inspection' : 'Inspect devices'}
             </Button>
           </div>
@@ -191,6 +212,7 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
             <Badge variant={variant(state.run.status)}>{label(state.run.status)}</Badge>
             <span className="text-xs text-dash-tertiary">Started {timeLabel(state.run.created_at)}</span>
           </div>
+          <p className="text-xs text-dash-secondary">{sourceRecovery ? `Recovery source: ${referenceName}` : 'Recovery source: confirmed server checks'}</p>
           {state.run.status === 'inspecting' && <p className="text-sm text-dash-secondary">
             Keep terminals online with the POS app open. Inspection expires {timeLabel(state.run.expires_at)}.
           </p>}
@@ -201,6 +223,7 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
           {state.run.status === 'partial' && <p className="text-sm text-dash-warning">Only the devices marked Verified completed recovery. Review the remaining devices before starting a fresh inspection.</p>}
           {state.run.blocker_code && <p className="text-sm text-dash-warning">{issueLabel(state.run.blocker_code)}</p>}
           {state.run.reason && <p className="text-xs text-dash-secondary">Reason: {state.run.reason}</p>}
+          {sourceRecovery && <RecoveryDifferencePreview preview={state.run.reconciliation_preview} referenceName={referenceName} />}
           <TargetTable run={state.run} />
           {editable && active && !hasPending && <div className="flex flex-wrap gap-2">
             {state.run.status === 'inspecting' && <Button type="button"
@@ -209,7 +232,9 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
             <Button type="button" variant="secondary" disabled={busy} onClick={() => openDialog('cancel')}>Cancel recovery</Button>
           </div>}
           {state.run.status === 'inspecting' && !selection.canConfirm && <p className="text-xs text-dash-tertiary">
-            The reference device and at least one other terminal must provide fresh Ready reports before recovery can start.
+            {sourceRecovery && state.run.reconciliation_preview?.can_apply !== true
+              ? 'A complete, eligible comparison is required before recovery can start.'
+              : 'The reference device and at least one other terminal must provide fresh Ready reports before recovery can start.'}
           </p>}
         </div>}
 
@@ -228,7 +253,10 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
       <Modal isOpen={Boolean(dialog)} onClose={closeDialog} title={dialog?.kind === 'cancel' ? 'Cancel this recovery?' : 'Review device sync recovery'}>
         {dialog && <div className="space-y-4">
           {dialog.kind === 'confirm' ? <>
-            <p className="text-sm leading-6 text-dash-secondary">These devices will briefly pause new check edits at a safe point, preserve pending work, and refresh their confirmed checks from the server. The reference device does not overwrite another terminal’s transactions.</p>
+            <p className="text-sm leading-6 text-dash-secondary">{dialog.recoveryMode === 'reference'
+              ? 'Approve the check changes below. Participating devices briefly pause new check edits, the server applies eligible unpaid check changes from your source device, and the devices refresh from that reconciled state. Pending work and recorded payments are protected.'
+              : 'These devices will briefly pause new check edits at a safe point, preserve pending work, and refresh their confirmed checks from the server. The reference device does not overwrite another terminal’s transactions.'}</p>
+            {dialog.recoveryMode === 'reference' && <RecoveryDifferencePreview preview={dialog.reconciliationPreview} referenceName={dialog.referenceName} />}
             <div><p className="text-sm font-semibold text-dash-cream">Devices to recover</p><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-dash-secondary">
               {(dialog.targets || []).filter((target) => target.state === 'ready').map((target) => <li key={target.device_id}>{target.device_name || 'Unnamed device'}</li>)}
             </ul></div>
@@ -245,13 +273,17 @@ export default function DeviceSyncRecoveryPanel({ restaurantId, userId, canRecov
           </label>
           <label className="flex items-start gap-2 text-sm text-dash-secondary">
             <input type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} disabled={busy} className="mt-1" />
-            {dialog.kind === 'confirm' ? 'I have reviewed the participating and excluded devices and am ready for the brief pause.' : 'I understand that completed device recoveries will be kept.'}
+            {dialog.kind === 'confirm'
+              ? dialog.recoveryMode === 'reference'
+                ? 'I approve the listed check changes, have reviewed participating and excluded devices, and am ready for the brief pause.'
+                : 'I have reviewed the participating and excluded devices and am ready for the brief pause.'
+              : 'I understand that completed device recoveries will be kept.'}
           </label>
-          {dialogStale && <p role="alert" className="text-sm text-dash-warning">Device readiness changed. Close this review and review the latest inspection before confirming.</p>}
+          {dialogStale && <p role="alert" className="text-sm text-dash-warning">Device readiness or proposed check changes changed. Close this review and review the latest inspection before confirming.</p>}
           {state.error && <p role="alert" className="text-sm text-dash-danger">{state.error}</p>}
           <ModalFooter>
             <Button type="button" variant="secondary" disabled={busy} onClick={closeDialog}>Back</Button>
-            <Button type="button" disabled={!editable || busy || hasPending || Boolean(dialogStale) || (dialog.kind === 'confirm' && Boolean(state.readError)) || !acknowledged || reason.trim().length < 3}
+            <Button type="button" disabled={!editable || busy || hasPending || Boolean(dialogStale) || (dialog.kind === 'confirm' && (Boolean(state.readError) || !selection.canConfirm)) || !acknowledged || reason.trim().length < 3}
               onClick={() => void submitDialog()}>{busy ? 'Sending…' : dialog.kind === 'cancel' ? 'Cancel recovery' : 'Start recovery'}</Button>
           </ModalFooter>
         </div>}

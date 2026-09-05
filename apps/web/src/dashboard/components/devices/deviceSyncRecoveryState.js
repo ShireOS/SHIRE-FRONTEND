@@ -1,10 +1,11 @@
 export const ACTIVE_RECOVERY_STATES = new Set(['inspecting', 'preparing', 'applying'])
 export const isRecoveryActive = (run) => ACTIVE_RECOVERY_STATES.has(run?.status)
 
-export function referenceDeviceBlocker(device, now = Date.now()) {
+export function referenceDeviceBlocker(device, now = Date.now(), recoveryMode = 'refresh') {
   if (device.status !== 'active') return 'Deactivated'
   if (!['android_tablet', 'waiter_handheld', 'fixed_terminal', 'desktop'].includes(device.device_type)) return 'Choose a POS check terminal'
-  if (device.protocol_version !== 1) return 'App update required'
+  if (![1, 2].includes(device.protocol_version)) return 'App update required'
+  if (recoveryMode === 'reference' && device.protocol_version !== 2) return 'App update required to use as recovery source'
   const recent = (value) => Number.isFinite(Date.parse(value)) && now - Date.parse(value) <= 120_000
   if (!recent(device.last_seen_at)) return 'Offline or not recently seen'
   if (!recent(device.capability_reported_at)) return 'Waiting for current app capabilities'
@@ -19,6 +20,8 @@ export function recoverySelection(run) {
     excluded: targets.filter((target) => target.state !== 'ready'),
     canConfirm: run?.status === 'inspecting'
       && Boolean(run.preview_token)
+      && (run.recovery_mode !== 'reference'
+        || (run.reconciliation_preview?.can_apply === true && Boolean(run.reconciliation_preview.plan_digest)))
       && ready.some((target) => target.device_id === run.reference_device_id)
       && ready.some((target) => target.device_id !== run.reference_device_id),
   }
@@ -156,9 +159,13 @@ export function createRecoveryController({ restaurantId, userId, api, storage, u
     getSnapshot: () => state,
     load,
     refreshRun,
-    async inspect(referenceDeviceId) {
+    async inspect(referenceDeviceId, recoveryMode = 'refresh') {
       if (!referenceDeviceId || isRecoveryActive(state.run) || state.pending || state.readError || state.overview?.enabled !== true) return
-      return execute({ kind: 'inspect', body: { request_id: uuid(), reference_device_id: referenceDeviceId } })
+      if (!['refresh', 'reference'].includes(recoveryMode)) return
+      if (recoveryMode === 'reference' && (state.overview.reference_recovery_available !== true
+        || !state.overview.devices?.some((device) => device.id === referenceDeviceId
+          && !referenceDeviceBlocker(device, Date.now(), recoveryMode)))) return
+      return execute({ kind: 'inspect', body: { request_id: uuid(), reference_device_id: referenceDeviceId, recovery_mode: recoveryMode } })
     },
     async confirm(previewToken, reason) {
       if (state.pending || state.readError || !recoverySelection(state.run).canConfirm || !reason?.trim()

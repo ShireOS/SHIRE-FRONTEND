@@ -28,7 +28,10 @@ function inspection(patch = {}) {
 function harness(overrides = {}, storage = memoryStorage()) {
   const calls = []
   const api = {
-    overview: async () => ({ enabled: true, devices: [], active_run: null, recent_runs: [] }),
+    overview: async () => ({ enabled: true, reference_recovery_available: true, devices: [{
+      id: 'reference', status: 'active', device_type: 'fixed_terminal', protocol_version: 2,
+      last_seen_at: new Date().toISOString(), capability_reported_at: new Date().toISOString(),
+    }], active_run: null, recent_runs: [] }),
     run: async () => inspection(),
     inspect: async (store, body) => { calls.push({ store, body }); return inspection() },
     confirm: async (_store, _run, body) => { calls.push(body); return inspection({ status: 'preparing', preview_token: null }) },
@@ -44,12 +47,15 @@ test('reference candidates require current compatible devices while queue counts
   const device = { status: 'active', device_type: 'fixed_terminal', protocol_version: 1, last_seen_at: '2026-09-05T11:59:00Z', capability_reported_at: '2026-09-05T11:59:00Z', pending_mutation_count: 4 }
   assert.equal(referenceDeviceBlocker(device, now), null)
   for (const patch of [
-    { status: 'revoked' }, { device_type: 'kitchen_display' }, { device_type: null }, { protocol_version: null }, { protocol_version: 2 },
+    { status: 'revoked' }, { device_type: 'kitchen_display' }, { device_type: null }, { protocol_version: null }, { protocol_version: 3 },
     { last_seen_at: null }, { capability_reported_at: '2026-09-05T11:57:59Z' },
   ]) assert.equal(typeof referenceDeviceBlocker({ ...device, ...patch }, now), 'string')
   for (const device_type of ['android_tablet', 'waiter_handheld', 'fixed_terminal', 'desktop']) {
     assert.equal(referenceDeviceBlocker({ ...device, device_type }, now), null)
   }
+  assert.equal(referenceDeviceBlocker({ ...device, protocol_version: 2 }, now), null)
+  assert.match(referenceDeviceBlocker(device, now, 'reference'), /App update required/)
+  assert.equal(referenceDeviceBlocker({ ...device, protocol_version: 2 }, now, 'reference'), null)
 })
 
 test('confirm requires an explicit preview and fresh ready reference plus peer', () => {
@@ -77,7 +83,7 @@ test('inspection creates no confirm command or overlapping run', async () => {
   const { controller, calls } = harness()
   await controller.load()
   await controller.inspect('reference')
-  assert.deepEqual(calls, [{ store: 'store-1', body: { request_id: 'stable-request-1', reference_device_id: 'reference' } }])
+  assert.deepEqual(calls, [{ store: 'store-1', body: { request_id: 'stable-request-1', reference_device_id: 'reference', recovery_mode: 'refresh' } }])
   await controller.inspect('peer')
   assert.equal(calls.length, 1, 'Cannot create a second inspection while the current run is active')
   assert.equal(controller.getSnapshot().run.status, 'inspecting')
@@ -171,7 +177,7 @@ test('ambiguous creation survives reload and repeats the original request ID', a
   await second.controller.inspect('peer')
   assert.equal(second.calls.length, 0, 'New intent cannot supersede an ambiguous request')
   await second.controller.retryPending()
-  assert.deepEqual(second.calls[0], { store: 'store-1', body: { request_id: 'stable-request-1', reference_device_id: 'reference' } })
+  assert.deepEqual(second.calls[0], { store: 'store-1', body: { request_id: 'stable-request-1', reference_device_id: 'reference', recovery_mode: 'refresh' } })
   assert.equal(second.controller.getSnapshot().pending, null)
   second.controller.dispose()
 })
@@ -250,4 +256,87 @@ test('auth errors retain their meaning and presentation is independently configu
   assert.equal(viewMode(defaultViewPolicy('medium'), 'devices.sync_recovery'), 'summary')
   assert.equal(viewMode(defaultViewPolicy('advanced'), 'devices.sync_recovery'), 'full')
   assert.equal(viewMode({ ...defaultViewPolicy(), overrides: { 'devices.sync_recovery': 'hidden' } }, 'devices.sync_recovery'), 'hidden')
+})
+
+test('source recovery cannot confirm without an eligible bound comparison', async () => {
+  const preview = {
+    plan_digest: 'bound-plan', can_apply: true,
+    summary: { recover_checks: 1, update_checks: 0, preserved_checks: 1, blocked_checks: 0 },
+    checks: [{ order_id: 'unpaid', action: 'recover', blockers: [], changes: [] }],
+  }
+  const run = inspection({ recovery_mode: 'reference', reconciliation_preview: preview })
+  assert.equal(recoverySelection(run).canConfirm, true)
+  for (const reconciliation_preview of [null, {}, { ...preview, can_apply: false }, { ...preview, plan_digest: null }]) {
+    assert.equal(recoverySelection({ ...run, reconciliation_preview }).canConfirm, false)
+    const { controller, calls } = harness({ overview: async () => ({ enabled: true, active_run: { ...run, reconciliation_preview } }) })
+    await controller.load()
+    await controller.confirm('fresh-preview', 'Recover unpaid check')
+    assert.equal(calls.length, 0)
+    controller.dispose()
+  }
+})
+
+test('source inspection is explicit per request and a later inspection defaults to refresh', async () => {
+  const { controller, calls } = harness()
+  await controller.load()
+  await controller.inspect('reference', 'unknown')
+  assert.equal(calls.length, 0)
+  await controller.inspect('reference', 'reference')
+  assert.equal(calls[0].body.recovery_mode, 'reference')
+  await controller.cancel('Restart inspection')
+  await controller.inspect('reference')
+  assert.equal(calls[1].body.recovery_mode, 'refresh')
+  controller.dispose()
+})
+
+test('source inspection requires available service and a current protocol two source terminal', async () => {
+  const baseline = { enabled: true, reference_recovery_available: true, devices: [{
+    id: 'reference', status: 'active', device_type: 'fixed_terminal', protocol_version: 2,
+    last_seen_at: new Date().toISOString(), capability_reported_at: new Date().toISOString(),
+  }] }
+  for (const overview of [
+    { ...baseline, reference_recovery_available: false },
+    { ...baseline, reference_recovery_available: undefined },
+    { ...baseline, devices: [] },
+    { ...baseline, devices: [{ ...baseline.devices[0], protocol_version: 1 }] },
+    { ...baseline, devices: [{ ...baseline.devices[0], capability_reported_at: null }] },
+  ]) {
+    const { controller, calls } = harness({ overview: async () => overview })
+    await controller.load()
+    await controller.inspect('reference', 'reference')
+    assert.equal(calls.length, 0)
+    controller.dispose()
+  }
+})
+
+test('ambiguous source creation replays the exact mode after reload without copying financial state to storage', async () => {
+  const storage = memoryStorage()
+  const first = harness({ inspect: async () => { throw new TypeError('Network failure') } }, storage)
+  await first.controller.load()
+  await first.controller.inspect('reference', 'reference')
+  first.controller.dispose()
+  const second = harness({}, storage)
+  await second.controller.load()
+  await second.controller.retryPending()
+  assert.deepEqual(second.calls[0].body, {
+    request_id: 'stable-request-1', reference_device_id: 'reference', recovery_mode: 'reference',
+  })
+  const saved = JSON.parse(storage.getItem(recoverySessionKey('user-1', 'store-1')))
+  assert.deepEqual(saved, { pending: null, runId: 'run-1' })
+  second.controller.dispose()
+})
+
+test('source confirmation rejects an old review after its comparison changes', async () => {
+  const preview = { plan_digest: 'initial-plan', can_apply: true, checks: [] }
+  const { controller, calls } = harness({
+    overview: async () => ({ enabled: true, active_run: inspection({ recovery_mode: 'reference', reconciliation_preview: preview }) }),
+    run: async () => inspection({ recovery_mode: 'reference', preview_token: 'updated-preview', reconciliation_preview: { ...preview, plan_digest: 'changed-plan' } }),
+  })
+  await controller.load()
+  await controller.refreshRun()
+  await controller.confirm('fresh-preview', 'Recover unpaid check')
+  assert.equal(calls.length, 0)
+  await controller.confirm('updated-preview', 'Recover unpaid check')
+  assert.deepEqual(calls, [{ preview_token: 'updated-preview', reason: 'Recover unpaid check' }])
+  controller.dispose()
 })

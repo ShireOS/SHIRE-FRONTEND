@@ -312,6 +312,19 @@ list must stay in sync.
   requiring `devices.manage`; no fallback or Manager-preset grant)
 
 ### Device sync recovery (2026-09-05)
+- Each inspection defaults to server refresh. The per-run **Use this device as
+  recovery source** option also uses `devices.manage` plus `devices.force_sync`;
+  it requires a current protocol-2 source terminal and the deployed comparison
+  service. It never persists as a restaurant setting or grants extra role access.
+  Before confirmation, the POS API supplies the exact check comparison and binds
+  it to the preview token. Back Office shows missing/changed checks, before/after
+  values, preserved server-only checks, and blockers. Only eligible open, unpaid
+  check changes may be applied; any blocked source difference stops the run.
+  Recorded payments, queued work, and server-only checks remain protected. The
+  browser sends only the mode, reference ID, reviewed token, and manager reason;
+  it never receives raw device databases or writes operational rows. A changed
+  comparison requires a fresh review, and ambiguous requests replay their exact
+  mode/token rather than upgrading a normal refresh into source recovery.
 - Recovery is available with the deployed feature without per-store activation.
   Its permission and device-readiness checks remain mandatory; an operator's
   emergency shutdown is shown as temporary unavailability, never store onboarding.
