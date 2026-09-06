@@ -82,6 +82,15 @@
   floor-plan previews and menu-item photos. The ML backend validates and
   normalizes bytes, owns storage names, enforces tenant binding and quotas, and
   never follows an arbitrary image URL.
+- **Restaurant, menu, and floor-plan writes are backend-authoritative:** generic
+  `PATCH /restaurants/:id` accepts only typed Basics fields under `settings.edit`;
+  configuration, lifecycle, ownership, and secrets use dedicated endpoints.
+  Menu reads require `menu.view`, item/modifier mutations require
+  `menu.edit_items`, and price-bearing changes additionally require
+  `menu.edit_prices`, with the same effective grants enforced by database RLS.
+  Floor-plan save uses `settings.edit` for owners, authorized members, assigned
+  resellers, and reseller employees; the browser must not impose an owner-only
+  requirement after the canonical permission check.
 - **Operating-hours replacement is atomic and backend-owned:** Back Office setup,
   onboarding, scheduled publication, and multi-store copy send a complete seven-day
   payload to `PUT /restaurants/:id/operating-hours`. Browser code must never delete,
