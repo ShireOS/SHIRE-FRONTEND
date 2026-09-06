@@ -91,6 +91,14 @@
   Floor-plan save uses `settings.edit` for owners, authorized members, assigned
   resellers, and reseller employees; the browser must not impose an owner-only
   requirement after the canonical permission check.
+- **Multi-row menu writes are transactional and versioned:** daily-special
+  settings use `/restaurants/:id/menu/daily-special-settings` and send the last
+  read version so the backend can patch only `restaurants.config.daily_specials`.
+  Modifier item replacement and option/category-question reorder use the ML
+  `/menu/modifier-groups` and `/menu/categories` atomic endpoints with the last
+  read relationship state. Browser code must not implement delete-then-insert,
+  sequential reorder loops, or whole-config read/merge/write; a 409 reloads the
+  latest state for review.
 - **Operating-hours replacement is atomic and backend-owned:** Back Office setup,
   onboarding, scheduled publication, and multi-store copy send a complete seven-day
   payload to `PUT /restaurants/:id/operating-hours`. Browser code must never delete,

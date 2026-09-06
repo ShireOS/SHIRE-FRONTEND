@@ -1,4 +1,5 @@
 import { supabase } from '../../shared/lib/supabase'
+import { fetchWithSupabaseAuth } from '../../shared/query'
 import { modifierGroupRuleError } from '@shire/settings'
 import {
   clonedModifierGroupRow,
@@ -8,10 +9,9 @@ import {
 } from './menuGroupsPolicy'
 
 // Modifier groups ("questions") live in POS-owned tables (menu_modifier_groups
-// + junctions) that the portal reaches directly through Supabase RLS — see the
-// 20260702_menu_modifier_groups_portal_access.sql and
-// 20260712_menu_questions_overhaul.sql migrations. The POS reads the same rows
-// on its next bootstrap, so no POS-backend API is involved.
+// + junctions). Reads and single-row edits use Supabase RLS; relationship
+// replacement/reordering goes through RestaurantML so multi-row writes are
+// transactional and version checked. The POS reads the same rows on bootstrap.
 //
 // A question reaches an item two ways:
 //   * directly (menu_modifier_group_items), or
@@ -229,17 +229,11 @@ export async function archiveModifierGroup(groupId) {
   if (error) throw error
 }
 
-export async function replaceGroupItems(groupId, itemIds) {
-  const { error: deleteError } = await supabase
-    .from('menu_modifier_group_items')
-    .delete()
-    .eq('group_id', groupId)
-  if (deleteError) throw deleteError
-  if (itemIds.length === 0) return
-  const { error } = await supabase
-    .from('menu_modifier_group_items')
-    .insert(itemIds.map((itemId, index) => ({ group_id: groupId, item_id: itemId, display_order: index })))
-  if (error) throw error
+export async function replaceGroupItems(restaurantId, groupId, itemIds, expectedItemIds) {
+  return fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/modifier-groups/${groupId}/items`, {
+    method: 'PUT',
+    body: JSON.stringify({ item_ids: itemIds, expected_item_ids: expectedItemIds }),
+  })
 }
 
 export async function attachGroupToItem(groupId, itemId, displayOrder = 0) {
@@ -273,28 +267,41 @@ export const groupAnswerSortMode = (group) => (group?.modifier_sort_mode === 'al
 
 // Persist a hand-arranged answer order (display_order = array position). The
 // POS reads options ORDER BY display_order, so persisting here is all it takes.
-export async function reorderGroupOptions(groupId, orderedModifierIds) {
-  for (let index = 0; index < orderedModifierIds.length; index += 1) {
-    const { error } = await supabase
-      .from('menu_modifier_group_options')
-      .update({ display_order: index })
-      .eq('group_id', groupId)
-      .eq('modifier_id', orderedModifierIds[index])
-    if (error) throw error
-  }
+export async function reorderGroupOptions(
+  restaurantId,
+  groupId,
+  orderedModifierIds,
+  expectedOptions,
+  modifierSortMode = null,
+) {
+  return fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/modifier-groups/${groupId}/options/order`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      ordered_modifier_ids: orderedModifierIds,
+      expected_positions: expectedOptions.map(option => ({
+        id: option.modifier_id,
+        display_order: Number(option.display_order || 0),
+      })),
+      ...(modifierSortMode ? { modifier_sort_mode: modifierSortMode } : {}),
+    }),
+  })
 }
 
 // A–Z mode physically rewrites display_order alphabetically (by modifier
 // name) instead of sorting at read time, so the POS needs no changes. Re-run
 // after adding answers to an A–Z question.
-export async function applyAlphaOrderToGroup(groupId) {
+export async function applyAlphaOrderToGroup(restaurantId, group) {
+  const groupId = group.id
   const { data: options, error } = await supabase
     .from('menu_modifier_group_options')
-    .select('modifier_id')
+    .select('modifier_id, display_order')
     .eq('group_id', groupId)
   if (error) throw error
   const ids = (options || []).map(row => row.modifier_id)
-  if (ids.length < 2) return
+  if (ids.length < 2) {
+    await reorderGroupOptions(restaurantId, groupId, ids, options || [], 'alpha')
+    return
+  }
   const { data: mods, error: modError } = await supabase
     .from('menu_modifiers')
     .select('id, name')
@@ -302,27 +309,38 @@ export async function applyAlphaOrderToGroup(groupId) {
   if (modError) throw modError
   const nameById = Object.fromEntries((mods || []).map(mod => [mod.id, mod.name || '']))
   ids.sort((a, b) => (nameById[a] || '').localeCompare(nameById[b] || '', undefined, { sensitivity: 'base' }))
-  await reorderGroupOptions(groupId, ids)
+  await reorderGroupOptions(restaurantId, groupId, ids, options || [], 'alpha')
 }
 
-export async function setGroupAnswerSortMode(groupId, mode) {
-  await updateModifierGroup(groupId, { modifier_sort_mode: mode })
-  if (mode === 'alpha') await applyAlphaOrderToGroup(groupId)
+export async function setGroupAnswerSortMode(restaurantId, group, mode) {
+  if (mode === 'alpha') {
+    await applyAlphaOrderToGroup(restaurantId, group)
+    return
+  }
+  await reorderGroupOptions(
+    restaurantId,
+    group.id,
+    (group.options || []).map(option => option.modifier_id),
+    group.options || [],
+    'custom',
+  )
 }
 
 // ── Category inheritance ─────────────────────────────────────────────────────
 
 // Default question order for every item in a category (per-item overrides
 // still win — see effectiveItemQuestions).
-export async function reorderCategoryGroups(categoryId, orderedGroupIds) {
-  for (let index = 0; index < orderedGroupIds.length; index += 1) {
-    const { error } = await supabase
-      .from('menu_category_modifier_groups')
-      .update({ display_order: index })
-      .eq('category_id', categoryId)
-      .eq('group_id', orderedGroupIds[index])
-    if (error) throw error
-  }
+export async function reorderCategoryGroups(restaurantId, categoryId, orderedGroupIds, expectedLinks) {
+  return fetchWithSupabaseAuth(`/restaurants/${restaurantId}/menu/categories/${categoryId}/modifier-groups/order`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      ordered_group_ids: orderedGroupIds,
+      expected_positions: expectedLinks.map(link => ({
+        id: link.group_id,
+        display_order: Number(link.display_order || 0),
+      })),
+    }),
+  })
 }
 
 export async function attachGroupToCategory(restaurantId, groupId, categoryId, displayOrder = 0) {

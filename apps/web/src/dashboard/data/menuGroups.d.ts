@@ -49,7 +49,12 @@ export function fetchModifierGroups(restaurantId: string): Promise<ModifierGroup
 export function createModifierGroup(restaurantId: string, draft: ModifierGroupDraft): Promise<ModifierGroup>
 export function updateModifierGroup(groupId: string, patch: Partial<ModifierGroupDraft>): Promise<ModifierGroup>
 export function archiveModifierGroup(groupId: string): Promise<void>
-export function replaceGroupItems(groupId: string, itemIds: string[]): Promise<void>
+export function replaceGroupItems(
+  restaurantId: string,
+  groupId: string,
+  itemIds: string[],
+  expectedItemIds: string[],
+): Promise<void>
 export function addGroupOption(
   groupId: string,
   modifierId: string,

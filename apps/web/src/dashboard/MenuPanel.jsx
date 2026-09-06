@@ -320,7 +320,7 @@ const groupFieldsDraft = (group) => ({
   kitchen_display_role: group.kitchen_display_role || (group.type === 'side' ? 'side' : ''),
 })
 
-function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy, onSave, onArchive, onLink, onAddModifiers, onCreateModifier, onToggleCategory = null }) {
+function GroupCard({ restaurantId, group, groups, modifiers, menuItems, categories = [], busy, onSave, onArchive, onLink, onAddModifiers, onCreateModifier, onToggleCategory = null }) {
   const [expanded, setExpanded] = useState(false)
   const [draft, setDraft] = useState(() => groupFieldsDraft(group))
   useEffect(() => setDraft(groupFieldsDraft(group)), [group])
@@ -510,7 +510,7 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
                     variant={answerSortMode === 'alpha' ? 'primary' : 'secondary'}
                     title="Keep answers alphabetical — including ones added later"
                     disabled={busy}
-                    onClick={() => onLink(() => setGroupAnswerSortMode(group.id, 'alpha'))}
+                    onClick={() => onLink(() => setGroupAnswerSortMode(restaurantId, group, 'alpha'))}
                   >
                     A–Z
                   </SmallButton>
@@ -518,7 +518,7 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
                     variant={answerSortMode === 'custom' ? 'primary' : 'secondary'}
                     title="Arrange answers by hand — drag the ⠿ grip"
                     disabled={busy}
-                    onClick={() => onLink(() => setGroupAnswerSortMode(group.id, 'custom'))}
+                    onClick={() => onLink(() => setGroupAnswerSortMode(restaurantId, group, 'custom'))}
                   >
                     Custom
                   </SmallButton>
@@ -531,8 +531,13 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
               disabled={busy}
               onReorder={orderedIds => onLink(async () => {
                 // Dragging while A–Z is on switches to a custom order.
-                if (answerSortMode === 'alpha') await updateModifierGroup(group.id, { modifier_sort_mode: 'custom' })
-                await reorderGroupOptions(group.id, orderedIds)
+                await reorderGroupOptions(
+                  restaurantId,
+                  group.id,
+                  orderedIds,
+                  group.options,
+                  answerSortMode === 'alpha' ? 'custom' : null,
+                )
               })}
               renderRow={(modifierId, { handleProps }) => {
                 const option = orderedOptions.find(candidate => candidate.modifier_id === modifierId)
@@ -699,7 +704,7 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
                   const next = attachedIds.has(itemId)
                     ? group.item_ids.filter(id => id !== itemId)
                     : [...group.item_ids, itemId]
-                  onLink(() => replaceGroupItems(group.id, next))
+                  onLink(() => replaceGroupItems(restaurantId, group.id, next, group.item_ids))
                 }}
                 onBulk={(itemIds, shouldSelect) => {
                   const next = new Set(group.item_ids)
@@ -707,7 +712,7 @@ function GroupCard({ group, groups, modifiers, menuItems, categories = [], busy,
                     if (shouldSelect) next.add(itemId)
                     else next.delete(itemId)
                   }
-                  onLink(() => replaceGroupItems(group.id, Array.from(next)))
+                  onLink(() => replaceGroupItems(restaurantId, group.id, Array.from(next), group.item_ids))
                 }}
               />
             </div>
@@ -785,6 +790,7 @@ export function MenuPanel({
   // null | 'upload' (AI photo extraction) | 'manual' (bulk table editing)
   const [importing, setImporting] = useState(null)
   const [dailySpecialSettings, setDailySpecialSettings] = useState(null)
+  const dailySpecialSettingsVersionRef = useRef(null)
   // Multi-store propagation (reseller accounts): portfolio + pending modal request.
   const auth = useAuth()
   const [portfolio, setPortfolio] = useState(null)
@@ -1107,33 +1113,36 @@ export function MenuPanel({
   }, [restaurantId])
 
   const loadSpecialSettings = async (force = false) => {
-    const next = await fetchCached(
+    const response = await fetchCached(
       queryKeys.menuSpecialSettings(restaurantId),
-      async () => {
-        const { data, error } = await supabase.from('restaurants').select('config').eq('id', restaurantId).single()
-        if (error) throw error
-        const raw = data?.config?.daily_specials
-        return { ...DEFAULT_DAILY_SPECIAL_SETTINGS, ...(raw && typeof raw === 'object' ? raw : {}) }
-      },
+      () => api(`/restaurants/${restaurantId}/menu/daily-special-settings`),
       force ? 0 : STALE_TIMES.setup,
     )
-    setDailySpecialSettings(next)
+    dailySpecialSettingsVersionRef.current = response.version
+    setDailySpecialSettings({ ...DEFAULT_DAILY_SPECIAL_SETTINGS, ...(response.settings || {}) })
   }
 
-  // Read-merge-write on restaurants.config so unrelated config keys survive.
   const saveSpecialSettings = (patch) => run(async () => {
-    const { data, error } = await supabase.from('restaurants').select('config').eq('id', restaurantId).single()
-    if (error) throw error
-    const config = data?.config && typeof data.config === 'object' ? data.config : {}
-    const current = config.daily_specials && typeof config.daily_specials === 'object' ? config.daily_specials : {}
-    const next = { ...DEFAULT_DAILY_SPECIAL_SETTINGS, ...current, ...patch }
-    const update = await supabase
-      .from('restaurants')
-      .update({ config: { ...config, daily_specials: next } })
-      .eq('id', restaurantId)
-    if (update.error) throw update.error
-    setDailySpecialSettings(next)
-    queryClient.setQueryData(queryKeys.menuSpecialSettings(restaurantId), next)
+    if (!dailySpecialSettingsVersionRef.current) throw new Error('Specials settings are still loading.')
+    try {
+      const response = await api(`/restaurants/${restaurantId}/menu/daily-special-settings`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          expected_version: dailySpecialSettingsVersionRef.current,
+          patch,
+        }),
+      })
+      dailySpecialSettingsVersionRef.current = response.version
+      const next = { ...DEFAULT_DAILY_SPECIAL_SETTINGS, ...(response.settings || {}) }
+      setDailySpecialSettings(next)
+      queryClient.setQueryData(queryKeys.menuSpecialSettings(restaurantId), response)
+    } catch (saveError) {
+      if (saveError?.status === 409) {
+        await loadSpecialSettings(true)
+        throw new Error('These settings changed in another session. The latest values were reloaded; review and try again.')
+      }
+      throw saveError
+    }
   }, 'Specials settings saved.', 'Couldn’t save specials settings')
 
   const loadPrintingConfig = async (force = false) => {
@@ -1193,6 +1202,7 @@ export function MenuPanel({
     setItemModifierOverrides({})
     setSpecials([])
     setDailySpecialSettings(null)
+    dailySpecialSettingsVersionRef.current = null
     setRouting(null)
     setPrintingConfig({ aliases: { items: {}, modifiers: {} } })
     setAllergyGroup(null)
@@ -1639,7 +1649,7 @@ export function MenuPanel({
           const group = groups.find(candidate => candidate.id === pending.group_id)
           if (!group || group.options.some(option => option.modifier_id === pending.modifier_id)) continue
           await addGroupOption(pending.group_id, pending.modifier_id, { display_order: group.options.length })
-          if (groupAnswerSortMode(group) === 'alpha') await applyAlphaOrderToGroup(pending.group_id)
+          if (groupAnswerSortMode(group) === 'alpha') await applyAlphaOrderToGroup(restaurantId, group)
         }
         if ((draft.extra_modifier_ids || []).length > 0) {
           const extras = await createModifierGroup(restaurantId, {
@@ -1956,7 +1966,18 @@ export function MenuPanel({
     : `"${group.name}" is no longer inherited by ${category.name}.`, 'Couldn’t update the question')
 
   const reorderCategoryQuestions = (category, orderedGroupIds) => run(async () => {
-    await reorderCategoryGroups(category.id, orderedGroupIds)
+    const expectedLinks = groups.flatMap(group => (group.category_links || [])
+      .filter(link => link.category_id === category.id)
+      .map(link => ({ ...link, group_id: group.id })))
+    try {
+      await reorderCategoryGroups(restaurantId, category.id, orderedGroupIds, expectedLinks)
+    } catch (reorderError) {
+      if (reorderError?.status === 409) {
+        await loadGroups(true)
+        throw new Error('Category questions changed in another session. The latest order was reloaded; review and try again.')
+      }
+      throw reorderError
+    }
     await loadGroups()
   }, `Question order saved for ${category.name}.`, 'Couldn’t reorder the questions')
 
@@ -2065,7 +2086,7 @@ export function MenuPanel({
     }
     if (!group.options.some(option => option.modifier_id === modifier.id)) {
       await addGroupOption(group.id, modifier.id, { display_order: group.options.length })
-      if (groupAnswerSortMode(group) === 'alpha') await applyAlphaOrderToGroup(group.id)
+      if (groupAnswerSortMode(group) === 'alpha') await applyAlphaOrderToGroup(restaurantId, group)
     }
     await loadGroups()
   }, `"${modifier.name}" is now an answer in "${group.name}".`, 'Couldn’t attach the modifier')
@@ -2201,7 +2222,15 @@ export function MenuPanel({
   }, 'Question deleted.', 'Couldn’t delete the question')
 
   const runGroupLink = (work) => run(async () => {
-    await work()
+    try {
+      await work()
+    } catch (linkError) {
+      if (linkError?.status === 409) {
+        await loadGroups(true)
+        throw new Error('This question changed in another session. The latest values were reloaded; review and try again.')
+      }
+      throw linkError
+    }
     await loadGroups()
   }, 'Question links saved.', 'Couldn’t update the question')
 
@@ -2212,7 +2241,7 @@ export function MenuPanel({
       await addGroupOption(group.id, modifierId, { display_order: order })
       order += 1
     }
-    if (groupAnswerSortMode(group) === 'alpha') await applyAlphaOrderToGroup(group.id)
+    if (groupAnswerSortMode(group) === 'alpha') await applyAlphaOrderToGroup(restaurantId, group)
     await loadGroups()
   }, modifierIds.length > 1 ? 'Options added.' : 'Option added.', 'Couldn’t add the options')
 
@@ -2222,7 +2251,7 @@ export function MenuPanel({
       body: JSON.stringify({ ...draft, is_active: true }),
     })
     if (created?.id) await addGroupOption(group.id, created.id, { display_order: group.options.length })
-    if (groupAnswerSortMode(group) === 'alpha') await applyAlphaOrderToGroup(group.id)
+    if (groupAnswerSortMode(group) === 'alpha') await applyAlphaOrderToGroup(restaurantId, group)
     await loadModifiers()
     await loadGroups()
   }, 'Modifier created and added.', 'Couldn’t create the modifier')
@@ -3395,6 +3424,7 @@ export function MenuPanel({
             {groups.map(group => (
               <GroupCard
                 key={group.id}
+                restaurantId={restaurantId}
                 group={group}
                 groups={groups}
                 modifiers={modifiers}

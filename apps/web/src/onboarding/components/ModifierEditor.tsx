@@ -44,6 +44,7 @@ interface EditorQuestion {
   options: EditorOption[]
   removedOptionIds: string[]  // saved modifier ids detached on save
   itemIds: Set<string>
+  savedItemIds: Set<string>   // optimistic version for atomic relationship replacement
 }
 
 interface ModifierEditorProps {
@@ -85,6 +86,7 @@ const blankQuestion = (): EditorQuestion => ({
   options: [blankOption()],
   removedOptionIds: [],
   itemIds: new Set(),
+  savedItemIds: new Set(),
 })
 
 const digits = (value: string) => value.replace(/\D/g, '').slice(0, 2)
@@ -152,6 +154,7 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
             }),
             removedOptionIds: [],
             itemIds: new Set(group.item_ids),
+            savedItemIds: new Set(group.item_ids),
           })))
         setRemovedGroupIds(new Set())
     } catch (loadFailure) {
@@ -344,7 +347,16 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
           await removeGroupOption(group.id, modifierId)
         }
 
-        await replaceGroupItems(group.id, Array.from(question.itemIds))
+        const savedItemIds = Array.from(question.itemIds)
+        await replaceGroupItems(
+          restaurantId,
+          group.id,
+          savedItemIds,
+          Array.from(question.savedItemIds),
+        )
+        setQuestions(current => current.map(candidate => candidate.localId === question.localId
+          ? { ...candidate, savedItemIds: new Set(savedItemIds) }
+          : candidate))
       }
 
       for (const groupId of removedGroupIds) {
@@ -354,7 +366,12 @@ export function ModifierEditor({ restaurantId, menuItems, onBack, onDone }: Modi
       setRemovedGroupIds(new Set())
       onDone()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed')
+      if ((err as Error & { status?: number })?.status === 409) {
+        await load()
+        setError('Modifier questions changed in another session. The latest values were reloaded; review and save again.')
+      } else {
+        setError(err instanceof Error ? err.message : 'Save failed')
+      }
     } finally {
       setSaving(false)
     }

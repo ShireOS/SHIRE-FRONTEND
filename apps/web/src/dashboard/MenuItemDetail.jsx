@@ -331,7 +331,15 @@ function QuestionEditor({
   }, message)
 
   const linkWork = (work, message = localSave('question')) => run(async () => {
-    await work()
+    try {
+      await work()
+    } catch (linkError) {
+      if (linkError?.status === 409) {
+        await reloadGroups()
+        throw new Error('This question changed in another session. The latest values were reloaded; review and try again.')
+      }
+      throw linkError
+    }
     await reloadGroups()
   }, message)
 
@@ -362,7 +370,7 @@ function QuestionEditor({
       await addGroupOption(group.id, modifierId, { display_order: order })
       order += 1
     }
-    if (answerSortMode === 'alpha') await applyAlphaOrderToGroup(group.id)
+    if (answerSortMode === 'alpha') await applyAlphaOrderToGroup(restaurantId, group)
     await reloadGroups()
   }, modifierIds.length > 1 ? 'Modifiers added.' : 'Modifier added.')
 
@@ -379,7 +387,7 @@ function QuestionEditor({
         }).catch(() => null)
       }
       await addGroupOption(group.id, created.id, { display_order: group.options.length })
-      if (answerSortMode === 'alpha') await applyAlphaOrderToGroup(group.id)
+      if (answerSortMode === 'alpha') await applyAlphaOrderToGroup(restaurantId, group)
     }
     await reloadModifiers()
     await reloadGroups()
@@ -628,14 +636,14 @@ function QuestionEditor({
           <SmallButton
             variant={answerSortMode === 'alpha' ? 'primary' : 'secondary'}
             title="Keep answers alphabetical — including ones added later"
-            onClick={() => void linkWork(() => setGroupAnswerSortMode(group.id, 'alpha'), 'Answers now stay A–Z.')}
+            onClick={() => void linkWork(() => setGroupAnswerSortMode(restaurantId, group, 'alpha'), 'Answers now stay A–Z.')}
           >
             A–Z
           </SmallButton>
           <SmallButton
             variant={answerSortMode === 'custom' ? 'primary' : 'secondary'}
             title="Arrange answers by hand — drag the ⠿ grip"
-            onClick={() => void linkWork(() => setGroupAnswerSortMode(group.id, 'custom'), 'Answers keep your custom order.')}
+            onClick={() => void linkWork(() => setGroupAnswerSortMode(restaurantId, group, 'custom'), 'Answers keep your custom order.')}
           >
             Custom
           </SmallButton>
@@ -647,8 +655,13 @@ function QuestionEditor({
         className="mt-3 space-y-2"
         onReorder={orderedIds => linkWork(async () => {
           // Dragging while A–Z is on switches to a custom order.
-          if (answerSortMode === 'alpha') await updateModifierGroup(group.id, { modifier_sort_mode: 'custom' })
-          await reorderGroupOptions(group.id, orderedIds)
+          await reorderGroupOptions(
+            restaurantId,
+            group.id,
+            orderedIds,
+            group.options,
+            answerSortMode === 'alpha' ? 'custom' : null,
+          )
         }, 'Answer order saved.')}
         renderRow={(rowModifierId, { handleProps }) => {
           const option = orderedOptions.find(candidate => candidate.modifier_id === rowModifierId)
