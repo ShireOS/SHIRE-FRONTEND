@@ -78,6 +78,7 @@ const StoresPage = lazy(() => import('./pages/StoresPage'))
 const TeamPage = lazy(loadTeam)
 const WorkforcePayPage = lazy(loadWorkforcePay)
 const VoiceReservationsPage = lazy(loadVoiceReservations)
+const GuestTextUpdatesPage = lazy(() => import('./pages/GuestTextUpdatesPage'))
 const UsersPage = lazy(() => import('./pages/UsersPage'))
 
 function LoadingScreen() {
@@ -5605,9 +5606,10 @@ export function RestaurantWorkspace({
         )}
         {activeTab === 'reservations' && (
           <ConfigurationHub tabs={[
-            ...(backOfficeAccess.viewVisible('reservations.booking') ? [{ id: 'booking', label: 'Booking' }] : []),
             ...(backOfficeAccess.viewVisible('reservations.phone') ? [{ id: 'phone', label: 'AI Phone' }] : []),
-          ]} initialTab={backOfficeAccess.viewVisible('reservations.booking') ? 'booking' : 'phone'}>
+            ...(backOfficeAccess.viewVisible('reservations.booking') ? [{ id: 'booking', label: 'Booking' }] : []),
+            ...(backOfficeAccess.viewVisible('reservations.texts') ? [{ id: 'texts', label: 'Guest Texts' }] : []),
+          ]} initialTab={backOfficeAccess.viewVisible('reservations.phone') ? 'phone' : backOfficeAccess.viewVisible('reservations.booking') ? 'booking' : 'texts'}>
             {(section) => section === 'booking' ? (
               <RestaurantScopedSetupPanel
                 restaurant={restaurant}
@@ -5619,10 +5621,15 @@ export function RestaurantWorkspace({
                 summaryTabs={backOfficeAccess.viewMode('reservations.booking') === 'summary' ? ['reservation_timing'] : []}
                 showHeader={false}
               />
-            ) : (
+            ) : section === 'phone' ? (
               <VoiceReservationsPage
                 restaurantId={restaurantId}
                 readOnly={backOfficeAccess.viewMode('reservations.phone') === 'summary'}
+              />
+            ) : (
+              <GuestTextUpdatesPage
+                restaurantId={restaurantId}
+                readOnly={backOfficeAccess.viewMode('reservations.texts') === 'summary'}
               />
             )}
           </ConfigurationHub>

@@ -4,7 +4,7 @@ import test from 'node:test'
 
 const workspace = await readFile(new URL('./AuthenticatedDashboardApp.jsx', import.meta.url), 'utf8')
 const setupPanel = await readFile(new URL('./RestaurantSetupPanel.jsx', import.meta.url), 'utf8')
-const reservationsPage = await readFile(new URL('./pages/VoiceReservationsPage.jsx', import.meta.url), 'utf8')
+const guestTextsPage = await readFile(new URL('./pages/GuestTextUpdatesPage.jsx', import.meta.url), 'utf8')
 
 test('an empty reservations tab set never falls through to the AI phone child', () => {
   const hub = workspace.slice(
@@ -22,9 +22,20 @@ test('the setup tab list itself excludes Danger Zone for non-primary owners', ()
 })
 
 test('reservation text timing is restaurant-scoped and uses the authorized API', () => {
-  assert.match(reservationsPage, /reservation-notification-settings/)
-  assert.match(reservationsPage, /activeRestaurantRef\.current !== requestRestaurantId/)
-  assert.match(reservationsPage, /confirmationSmsEnabled/)
-  assert.match(reservationsPage, /sameDayReminderHoursBefore/)
-  assert.match(reservationsPage, /readOnly \|\| !draft\.sameDayReminderEnabled/)
+  assert.match(guestTextsPage, /reservation-notification-settings/)
+  assert.match(guestTextsPage, /activeRestaurantRef\.current !== requestRestaurantId/)
+  assert.match(guestTextsPage, /confirmationSmsEnabled/)
+  assert.match(guestTextsPage, /sameDayReminderHoursBefore/)
+  assert.match(guestTextsPage, /readOnly \|\| !draft\.sameDayReminderEnabled/)
+})
+
+test('reservations setup presents AI phone first and separates guest texts', () => {
+  const reservationsHub = workspace.slice(
+    workspace.indexOf("{activeTab === 'reservations' && ("),
+    workspace.indexOf("{activeTab === 'ui' && ("),
+  )
+  assert.ok(reservationsHub.indexOf("id: 'phone'") < reservationsHub.indexOf("id: 'booking'"))
+  assert.ok(reservationsHub.indexOf("id: 'booking'") < reservationsHub.indexOf("id: 'texts'"))
+  assert.match(reservationsHub, /initialTab=\{backOfficeAccess\.viewVisible\('reservations\.phone'\) \? 'phone'/)
+  assert.match(reservationsHub, /<GuestTextUpdatesPage/)
 })

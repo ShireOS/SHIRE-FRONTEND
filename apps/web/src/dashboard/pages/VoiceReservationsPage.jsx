@@ -9,7 +9,6 @@ import {
   ExternalLink,
   Loader2,
   MapPin,
-  MessageSquareText,
   Phone,
   PhoneCall,
   Power,
@@ -23,6 +22,7 @@ import { queryClient, queryKeys, STALE_TIMES } from '../../shared/query'
 import { Badge } from '../components/shared/Badge'
 import { Button } from '../components/shared/Button'
 import { Modal, ModalFooter } from '../components/shared/Modal'
+import { FORWARDING_PROVIDERS, forwardingProviderById } from './forwardingProviders'
 
 const FORWARDING_OPTIONS = [
   {
@@ -131,172 +131,6 @@ function ErrorNotice({ error }) {
   )
 }
 
-function SettingsSwitch({ checked, disabled, label, detail, onChange }) {
-  return (
-    <div className="flex min-h-16 items-center justify-between gap-5 border-b border-dash-border py-3 last:border-b-0">
-      <div>
-        <p className="text-sm font-semibold text-dash-cream">{label}</p>
-        <p className="mt-1 text-xs leading-5 text-dash-tertiary">{detail}</p>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border p-1 transition disabled:cursor-not-allowed disabled:opacity-50 ${checked ? 'border-shell-accent bg-shell-accent' : 'border-dash-border bg-[var(--glass-bg)]'}`}
-      >
-        <span className={`block h-4 w-4 rounded-full bg-white transition-transform ${checked ? 'translate-x-5' : ''}`} />
-      </button>
-    </div>
-  )
-}
-
-function GuestTextUpdatesSection({ restaurantId, readOnly }) {
-  const [draft, setDraft] = useState(null)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState(null)
-  const [notice, setNotice] = useState('')
-  const activeRestaurantRef = useRef(restaurantId)
-  activeRestaurantRef.current = restaurantId
-  const settingsQuery = useQuery({
-    queryKey: ['reservationNotificationSettings', restaurantId],
-    queryFn: () => fetchReservationsApi(`/locations/${restaurantId}/reservation-notification-settings`),
-    enabled: Boolean(restaurantId),
-    staleTime: STALE_TIMES.setup,
-    retry: false,
-  })
-
-  useEffect(() => {
-    setDraft(null)
-    setError(null)
-    setNotice('')
-  }, [restaurantId])
-
-  useEffect(() => {
-    if (!settingsQuery.data || activeRestaurantRef.current !== restaurantId) return
-    setDraft({
-      confirmationSmsEnabled: settingsQuery.data.confirmationSmsEnabled !== false,
-      reminderEnabled: settingsQuery.data.reminderEnabled !== false,
-      reminderHoursBefore: Number(settingsQuery.data.reminderHoursBefore || 24),
-      sameDayReminderEnabled: settingsQuery.data.sameDayReminderEnabled === true,
-      sameDayReminderHoursBefore: Number(settingsQuery.data.sameDayReminderHoursBefore || 3),
-    })
-  }, [restaurantId, settingsQuery.data])
-
-  const update = (key, value) => setDraft((current) => ({ ...current, [key]: value }))
-  const save = async () => {
-    const requestRestaurantId = restaurantId
-    setSaving(true)
-    setError(null)
-    setNotice('')
-    try {
-      const next = await fetchReservationsApi(`/locations/${requestRestaurantId}/reservation-notification-settings`, {
-        method: 'PUT',
-        body: JSON.stringify(draft),
-      })
-      if (activeRestaurantRef.current !== requestRestaurantId) return
-      queryClient.setQueryData(['reservationNotificationSettings', requestRestaurantId], next)
-      setNotice('Guest text timing saved.')
-    } catch (saveError) {
-      if (activeRestaurantRef.current === requestRestaurantId) setError(saveError)
-    } finally {
-      if (activeRestaurantRef.current === requestRestaurantId) setSaving(false)
-    }
-  }
-
-  return (
-    <section className="border-b border-dash-border pb-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="flex gap-3">
-          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-dash-border text-shell-accent">
-            <MessageSquareText size={17} aria-hidden="true" />
-          </span>
-          <div>
-            <p className="label-mono">Shared Shire number</p>
-            <h2 className="mt-2 text-xl font-semibold text-dash-cream">Guest text updates</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-dash-secondary">
-              Every message begins with this restaurant’s name. Guests can receive updates for several restaurants on the same phone without mixing reservations.
-            </p>
-          </div>
-        </div>
-        {!readOnly && draft && (
-          <Button
-            size="sm"
-            icon={saving ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
-            disabled={saving}
-            onClick={() => void save()}
-          >
-            Save text timing
-          </Button>
-        )}
-      </div>
-
-      {settingsQuery.isLoading && <div className="mt-5 h-28 animate-pulse rounded-lg bg-dash-cream/5" />}
-      {settingsQuery.error && (
-        <div className="mt-5 flex items-center justify-between gap-4 border-y border-dash-danger/40 py-3 text-sm text-dash-danger">
-          <span>{settingsQuery.error.message}</span>
-          <Button variant="outline" size="sm" icon={<RefreshCw size={14} />} onClick={() => settingsQuery.refetch()}>Retry</Button>
-        </div>
-      )}
-      {draft && (
-        <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr),minmax(260px,0.7fr)]">
-          <div className="border-y border-dash-border">
-            <SettingsSwitch
-              checked={draft.confirmationSmsEnabled}
-              disabled={readOnly}
-              label="Booking confirmations and changes"
-              detail="Send an immediate text when a reservation is booked, changed, confirmed, or canceled."
-              onChange={(value) => update('confirmationSmsEnabled', value)}
-            />
-            <SettingsSwitch
-              checked={draft.reminderEnabled}
-              disabled={readOnly}
-              label="Reservation reminder"
-              detail="Send the first reminder before the reservation time."
-              onChange={(value) => update('reminderEnabled', value)}
-            />
-            <SettingsSwitch
-              checked={draft.sameDayReminderEnabled}
-              disabled={readOnly}
-              label="Final reminder"
-              detail="Optionally send a second, closer reminder before arrival."
-              onChange={(value) => update('sameDayReminderEnabled', value)}
-            />
-          </div>
-          <div className="space-y-4">
-            <label className="block space-y-2">
-              <span className="label-mono block">First reminder</span>
-              <select
-                value={draft.reminderHoursBefore}
-                disabled={readOnly || !draft.reminderEnabled}
-                onChange={(event) => update('reminderHoursBefore', Number(event.target.value))}
-                className="min-h-11 w-full rounded-lg border border-dash-border bg-[var(--glass-bg)] px-3 text-sm text-dash-cream outline-none focus:border-shell-accent/60 disabled:opacity-50"
-              >
-                {[2, 3, 6, 12, 24, 48, 72, 168].map((hours) => <option key={hours} value={hours}>{hours < 24 ? `${hours} hours before` : `${hours / 24} ${hours === 24 ? 'day' : 'days'} before`}</option>)}
-              </select>
-            </label>
-            <label className="block space-y-2">
-              <span className="label-mono block">Final reminder</span>
-              <select
-                value={draft.sameDayReminderHoursBefore}
-                disabled={readOnly || !draft.sameDayReminderEnabled}
-                onChange={(event) => update('sameDayReminderHoursBefore', Number(event.target.value))}
-                className="min-h-11 w-full rounded-lg border border-dash-border bg-[var(--glass-bg)] px-3 text-sm text-dash-cream outline-none focus:border-shell-accent/60 disabled:opacity-50"
-              >
-                {[1, 2, 3, 4, 6, 8, 12].map((hours) => <option key={hours} value={hours}>{hours} {hours === 1 ? 'hour' : 'hours'} before</option>)}
-              </select>
-            </label>
-          </div>
-        </div>
-      )}
-      {error && <div className="mt-4"><ErrorNotice error={error} /></div>}
-      {notice && <p className="mt-4 text-sm text-dash-success">{notice}</p>}
-    </section>
-  )
-}
-
 export default function VoiceReservationsPage({ restaurantId, readOnly = false }) {
   const [searchMode, setSearchMode] = useState('zip')
   const [searchValue, setSearchValue] = useState('')
@@ -307,6 +141,7 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
   const [notice, setNotice] = useState('')
   const [forwardingMode, setForwardingMode] = useState('none')
   const [forwardingFrom, setForwardingFrom] = useState('')
+  const [forwardingProvider, setForwardingProvider] = useState('')
   const [transferPhone, setTransferPhone] = useState('')
   const [purchaseOpen, setPurchaseOpen] = useState(false)
   const [purchaseConfirmed, setPurchaseConfirmed] = useState(false)
@@ -334,13 +169,20 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
   })
   const setup = setupQuery.data
   const releasePending = ['releasing', 'release_failed'].includes(setup?.status)
-  const provisioned = Boolean(
+  const providerResourcesExist = Boolean(
     setup?.voiceAgent?.vapiPhoneNumberId
     || setup?.voiceAgent?.twilioPhoneNumberSid
     || setup?.voiceAgent?.phoneNumber,
   )
+  const aiLineReady = Boolean(setup?.voiceAgent?.vapiPhoneNumberId && setup?.voiceAgent?.phoneNumber)
+  const provisioningStarted = Boolean(setup?.voiceAgent?.twilioPhoneNumberSid && !aiLineReady)
   const managedReleaseAvailable = Boolean(setup?.voiceAgent?.twilioPhoneNumberSid || releasePending)
   const selectedNumber = setup?.selectedPhoneNumber || setup?.voiceAgent?.phoneNumber || ''
+  const selectedForwardingProvider = forwardingProviderById(forwardingProvider)
+  const forwardingSaved = forwardingMode !== 'none'
+    && setup?.forwardingMode === forwardingMode
+    && setup?.forwardingProvider === forwardingProvider
+    && nationalPhoneDigits(setup?.forwardingFrom) === nationalPhoneDigits(forwardingFrom)
 
   useEffect(() => {
     setSearchMode('zip')
@@ -352,6 +194,7 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
     setNotice('')
     setForwardingMode('none')
     setForwardingFrom('')
+    setForwardingProvider('')
     setTransferPhone('')
     setPurchaseOpen(false)
     setPurchaseConfirmed(false)
@@ -365,6 +208,7 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
     if (!requestIsCurrent(request) || request.restaurantId !== restaurantId) return
     setForwardingMode(setup.forwardingMode || 'none')
     setForwardingFrom(setup.forwardingFrom || '')
+    setForwardingProvider(setup.forwardingProvider || '')
     setTransferPhone(setup.voiceAgent?.transferPhone || '')
   }, [restaurantId, setup?.id, setup?.updatedAt])
 
@@ -443,6 +287,7 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
   const configurationPayload = () => ({
     forwardingMode,
     forwardingFrom: forwardingMode === 'none' ? null : forwardingFrom,
+    forwardingProvider: forwardingMode === 'none' ? null : forwardingProvider,
     transferPhone: transferPhone || null,
   })
 
@@ -459,16 +304,10 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
 
   const purchase = async () => {
     const request = captureRequestContext()
-    const payload = configurationPayload()
     setBusyAction('purchase')
     setActionError(null)
     setNotice('')
     try {
-      await fetchReservationsApi(`/locations/${request.restaurantId}/voice-provisioning/configuration`, {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      })
-      if (!requestIsCurrent(request)) return
       const next = await fetchReservationsApi(`/locations/${request.restaurantId}/voice-provisioning/provision`, {
         method: 'POST',
         body: JSON.stringify({ confirmPurchase: true }),
@@ -477,7 +316,7 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
       storeSetup(next, request)
       setPurchaseOpen(false)
       setPurchaseConfirmed(false)
-      setNotice('The AI number is configured. Complete forwarding below if you selected it.')
+      setNotice('The AI number is configured. You can now publish it directly or set up forwarding.')
     } catch (error) {
       if (requestIsCurrent(request)) {
         setActionError(error)
@@ -553,7 +392,6 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
 
   return (
     <div className="space-y-6">
-      <GuestTextUpdatesSection restaurantId={restaurantId} readOnly={readOnly} />
       <header className="flex flex-col gap-4 border-b border-dash-border pb-5 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="label-mono">AI reservations line</p>
@@ -583,7 +421,7 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
         </div>
       )}
 
-      {provisioned ? (
+      {providerResourcesExist ? (
         <section className="border-b border-dash-border pb-6">
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr),auto] lg:items-center">
             <div>
@@ -693,117 +531,172 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
         </section>
       )}
 
-      <section className="space-y-5 border-b border-dash-border pb-6">
-        <div>
-          <h3 className="text-base font-semibold text-dash-cream">Call routing</h3>
-          <p className="mt-1 text-sm text-dash-secondary">Choose how guests reach the AI and where it can transfer calls that need a person.</p>
-        </div>
-        <div className="grid gap-2 lg:grid-cols-3">
-          {FORWARDING_OPTIONS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              disabled={readOnly}
-              onClick={() => setForwardingMode(option.id)}
-              className={`min-h-28 rounded-lg border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${forwardingMode === option.id ? 'border-shell-accent/60 bg-shell-accent/10' : 'border-dash-border hover:border-dash-tertiary'}`}
-            >
-              <span className="block text-sm font-semibold text-dash-cream">{option.label}</span>
-              <span className="mt-2 block text-xs leading-5 text-dash-secondary">{option.description}</span>
-            </button>
-          ))}
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          {forwardingMode !== 'none' && (
-            <TextField
-              label="Existing restaurant number"
-              type="tel"
-              value={forwardingFrom}
-              placeholder="(412) 555-0100"
-              onChange={(event) => setForwardingFrom(event.target.value)}
-              disabled={readOnly}
-              hint="Configure this number with your current phone carrier after the AI line is provisioned."
-            />
-          )}
-          <TextField
-            label="Human transfer number"
-            type="tel"
-            value={transferPhone}
-            placeholder="Manager or host line"
-            onChange={(event) => setTransferPhone(event.target.value)}
-            disabled={readOnly}
-            hint={forwardingMode === 'none' ? 'Optional number for callers who need your team.' : 'Must differ from the forwarded restaurant number to prevent a call loop.'}
-          />
-        </div>
-        {!readOnly && (
-          <div className="flex justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={Boolean(busyAction)}
-              icon={busyAction === 'configuration' ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
-              onClick={() => void saveConfiguration()}
-            >
-              Save routing
-            </Button>
-          </div>
-        )}
-      </section>
-
-      {!provisioned && selectedNumber && !readOnly && (
+      {!aiLineReady && selectedNumber && !readOnly && !releasePending && (
         <section className="flex flex-col gap-4 border-b border-dash-border pb-6 md:flex-row md:items-center md:justify-between">
           <div>
-            <h3 className="text-base font-semibold text-dash-cream">Provision {formatPhone(selectedNumber)}</h3>
-            <p className="mt-1 text-sm text-dash-secondary">This purchases the number and creates the isolated Twilio and Vapi resources for this restaurant.</p>
+            <h3 className="text-base font-semibold text-dash-cream">{provisioningStarted ? 'Finish AI setup' : `Provision ${formatPhone(selectedNumber)}`}</h3>
+            <p className="mt-1 text-sm text-dash-secondary">
+              {provisioningStarted
+                ? 'The number was purchased, but assistant setup did not finish. Resume the idempotent setup to reconcile the Vapi resources.'
+                : 'This purchases the number and creates the isolated Twilio and Vapi resources for this restaurant.'}
+            </p>
           </div>
-          <Button icon={<ShieldCheck size={16} />} disabled={Boolean(busyAction)} onClick={() => setPurchaseOpen(true)}>
-            Review purchase
+          <Button
+            icon={busyAction === 'purchase' ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />}
+            disabled={Boolean(busyAction)}
+            onClick={() => provisioningStarted ? void purchase() : setPurchaseOpen(true)}
+          >
+            {provisioningStarted ? 'Resume setup' : 'Review purchase'}
           </Button>
         </section>
       )}
 
-      {provisioned && !releasePending && setup.forwardingMode !== 'none' && (
-        <section className="space-y-4 border-b border-dash-border pb-6">
+      {aiLineReady && !releasePending && (
+        <section className="space-y-5 border-b border-dash-border pb-6">
           <div>
-            <h3 className="text-base font-semibold text-dash-cream">Forward your existing line</h3>
-            <p className="mt-1 text-sm leading-6 text-dash-secondary">
-              In your current carrier’s call-forwarding settings, send {setup.forwardingMode === 'all_calls' ? 'all calls' : 'busy and unanswered calls'} from {formatPhone(setup.forwardingFrom)} to the AI number below. Carrier steps vary, so use the carrier’s own portal or support instructions.
-            </p>
+            <h3 className="text-base font-semibold text-dash-cream">Call routing</h3>
+            <p className="mt-1 text-sm text-dash-secondary">Choose how guests reach the AI and where it can transfer calls that need a person.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-3 border-y border-dash-border px-3 py-4">
-            <PhoneCall size={18} className="text-shell-accent" aria-hidden="true" />
-            <span className="text-sm text-dash-secondary">Forward to</span>
-            <strong className="text-lg text-dash-cream">{formatPhone(setup.voiceAgent.phoneNumber)}</strong>
-            <button type="button" title="Copy forwarding destination" onClick={() => void copyNumber()} className="ml-auto flex h-9 w-9 items-center justify-center rounded-lg text-dash-secondary transition hover:bg-dash-cream/5 hover:text-dash-cream">
-              <Copy size={15} aria-hidden="true" />
-            </button>
+          <div className="grid gap-2 lg:grid-cols-3">
+            {FORWARDING_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                disabled={readOnly}
+                onClick={() => setForwardingMode(option.id)}
+                className={`min-h-28 rounded-lg border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${forwardingMode === option.id ? 'border-shell-accent/60 bg-shell-accent/10' : 'border-dash-border hover:border-dash-tertiary'}`}
+              >
+                <span className="block text-sm font-semibold text-dash-cream">{option.label}</span>
+                <span className="mt-2 block text-xs leading-5 text-dash-secondary">{option.description}</span>
+              </button>
+            ))}
           </div>
-          {setup.verificationStatus === 'verified' ? (
-            <div className="flex items-center gap-2 text-sm text-dash-success">
-              <CheckCircle2 size={17} aria-hidden="true" />
-              Forwarding verified by an inbound call.
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <p className="max-w-2xl text-sm leading-6 text-dash-secondary">
-                Start verification, then call the existing restaurant number from another phone within 15 minutes. Answering on the AI line marks setup complete.
-              </p>
-              {!readOnly && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={Boolean(busyAction)}
-                  icon={busyAction === 'verification' ? <Loader2 size={15} className="animate-spin" /> : <PhoneCall size={15} />}
-                  onClick={() => void startVerification()}
+
+          <div className={`grid gap-4 ${forwardingMode === 'none' ? 'md:grid-cols-1' : 'md:grid-cols-3'}`}>
+            {forwardingMode !== 'none' && (
+              <label className="block min-w-0 space-y-2">
+                <span className="label-mono block">Phone service</span>
+                <select
+                  value={forwardingProvider}
+                  disabled={readOnly}
+                  onChange={(event) => setForwardingProvider(event.target.value)}
+                  className="min-h-11 w-full rounded-lg border border-dash-border bg-[var(--glass-bg)] px-3 text-sm text-dash-cream outline-none focus:border-shell-accent/60 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {setup.verificationStatus === 'pending' ? 'Restart verification' : 'Start verification'}
-                </Button>
+                  <option value="">Choose provider</option>
+                  {FORWARDING_PROVIDERS.map((provider) => (
+                    <option key={provider.id} value={provider.id}>{provider.label}</option>
+                  ))}
+                </select>
+                <span className="block text-xs leading-5 text-dash-tertiary">Select the service that currently owns your restaurant number.</span>
+              </label>
+            )}
+            {forwardingMode !== 'none' && (
+              <TextField
+                label="Existing restaurant number"
+                type="tel"
+                value={forwardingFrom}
+                placeholder="(412) 555-0100"
+                onChange={(event) => setForwardingFrom(event.target.value)}
+                disabled={readOnly}
+                hint="This number stays with your current provider."
+              />
+            )}
+            <TextField
+              label="Human transfer number"
+              type="tel"
+              value={transferPhone}
+              placeholder="Manager or host line"
+              onChange={(event) => setTransferPhone(event.target.value)}
+              disabled={readOnly}
+              hint={forwardingMode === 'none' ? 'Optional number for callers who need your team.' : 'Must differ from the forwarded restaurant number to prevent a call loop.'}
+            />
+          </div>
+
+          {!readOnly && (
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={Boolean(busyAction) || (forwardingMode !== 'none' && (!forwardingProvider || !forwardingFrom.trim()))}
+                icon={busyAction === 'configuration' ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+                onClick={() => void saveConfiguration()}
+              >
+                Save routing
+              </Button>
+            </div>
+          )}
+
+          {forwardingMode !== 'none' && selectedForwardingProvider && (
+            <div className="space-y-4 border-y border-dash-border py-5">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="label-mono">{selectedForwardingProvider.product}</p>
+                  <h4 className="mt-2 text-base font-semibold text-dash-cream">Set up {selectedForwardingProvider.label} forwarding</h4>
+                  <p className="mt-1 text-sm leading-6 text-dash-secondary">
+                    Configure {forwardingMode === 'all_calls' ? 'all calls' : 'busy and unanswered calls'} from {formatPhone(forwardingFrom)} to the Shire AI number.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {selectedForwardingProvider.accountUrl && (
+                    <a href={selectedForwardingProvider.accountUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-dash-gold px-3 text-sm font-medium text-dash-base transition hover:bg-dash-gold/90">
+                      <ExternalLink size={14} aria-hidden="true" />
+                      Open provider portal
+                    </a>
+                  )}
+                  {selectedForwardingProvider.instructionsUrl && (
+                    <a href={selectedForwardingProvider.instructionsUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-dash-border px-3 text-sm font-medium text-dash-secondary transition hover:border-dash-tertiary hover:text-dash-cream">
+                      Official instructions
+                    </a>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 border-y border-dash-border px-3 py-4">
+                <PhoneCall size={18} className="text-shell-accent" aria-hidden="true" />
+                <span className="text-sm text-dash-secondary">Forward to</span>
+                <strong className="text-lg text-dash-cream">{formatPhone(setup.voiceAgent.phoneNumber)}</strong>
+                <button type="button" title="Copy forwarding destination" onClick={() => void copyNumber()} className="ml-auto flex h-9 w-9 items-center justify-center rounded-lg text-dash-secondary transition hover:bg-dash-cream/5 hover:text-dash-cream">
+                  <Copy size={15} aria-hidden="true" />
+                </button>
+              </div>
+              <ol className="space-y-3">
+                {selectedForwardingProvider[forwardingMode === 'all_calls' ? 'allCalls' : 'missedCalls'].map((instruction, index) => (
+                  <li key={instruction} className="flex gap-3 text-sm leading-6 text-dash-secondary">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-dash-border text-xs font-semibold text-dash-cream">{index + 1}</span>
+                    <span>{instruction}</span>
+                  </li>
+                ))}
+              </ol>
+              {!forwardingSaved ? (
+                <p className="text-sm text-dash-warning">Save this routing setup before testing forwarding.</p>
+              ) : setup.verificationStatus === 'verified' ? (
+                <div className="flex items-center gap-2 text-sm text-dash-success">
+                  <CheckCircle2 size={17} aria-hidden="true" />
+                  Forwarding verified by an inbound call.
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <p className="max-w-2xl text-sm leading-6 text-dash-secondary">
+                    Start the 15-minute test, then call the existing restaurant number from another phone. If the AI answers, forwarding is connected.
+                  </p>
+                  {!readOnly && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={Boolean(busyAction)}
+                      icon={busyAction === 'verification' ? <Loader2 size={15} className="animate-spin" /> : <PhoneCall size={15} />}
+                      onClick={() => void startVerification()}
+                    >
+                      {setup.verificationStatus === 'pending' ? 'Restart test' : 'Test forwarding'}
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
           )}
         </section>
       )}
 
-      {provisioned && !releasePending && (
+      {aiLineReady && !releasePending && (
         <section className="flex flex-col gap-4 border-b border-dash-border pb-6 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="text-base font-semibold text-dash-cream">Service control</h3>
@@ -834,7 +727,7 @@ export default function VoiceReservationsPage({ restaurantId, readOnly = false }
         </section>
       )}
 
-      {provisioned && managedReleaseAvailable && !readOnly && (
+      {providerResourcesExist && managedReleaseAvailable && !readOnly && (
         <section className="flex flex-col gap-4 border-y border-dash-danger/35 py-5 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="text-base font-semibold text-dash-danger">Permanently release number</h3>

@@ -19,6 +19,7 @@ test('AI phone local state resets on every restaurant change', () => {
     "setNotice('')",
     "setForwardingMode('none')",
     "setForwardingFrom('')",
+    "setForwardingProvider('')",
     "setTransferPhone('')",
     'setPurchaseOpen(false)',
     'setPurchaseConfirmed(false)',
@@ -43,4 +44,11 @@ test('permanent number release is distinct from temporary deactivation', () => {
   assert.match(page, /Release and stop renewals/)
   assert.match(page, /Twilio does not refund the current prepaid month/)
   assert.match(page, /runSetupAction\('activation',[\s\S]*enabled/)
+})
+
+test('call routing is available only after an AI number is provisioned', () => {
+  assert.match(page, /const aiLineReady = Boolean\(setup\?\.voiceAgent\?\.vapiPhoneNumberId && setup\?\.voiceAgent\?\.phoneNumber\)/)
+  assert.match(page, /\{aiLineReady && !releasePending && \([\s\S]*Call routing/)
+  assert.match(page, /forwardingProvider: forwardingMode === 'none' \? null : forwardingProvider/)
+  assert.match(page, /Save this routing setup before testing forwarding/)
 })

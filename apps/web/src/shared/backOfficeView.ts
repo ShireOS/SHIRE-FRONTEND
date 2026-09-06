@@ -88,8 +88,9 @@ export const BACK_OFFICE_VIEW_CATALOG: ViewCapability[] = [
     node('integrations.providers', 'Provider connections'),
   ]),
   node('nav.reservations', 'Reservations', [
-    node('reservations.booking', 'Booking page and timing'),
     node('reservations.phone', 'AI phone'),
+    node('reservations.booking', 'Booking page and timing'),
+    node('reservations.texts', 'Guest text updates'),
   ]),
   node('nav.ui', 'UI Editor', [
     node('ui.appearance', 'Application appearance'),
@@ -234,7 +235,7 @@ const PRESET_OVERRIDES: Record<BackOfficeViewLevel, Record<string, BackOfficeVie
     'settings.charges': 'summary', 'settings.closeout': 'summary',
     'settings.check_workflow': 'summary', 'ui.appearance': 'hidden',
     'settings.lifecycle': 'standard',
-    'reservations.booking': 'standard', 'reservations.phone': 'standard',
+    'reservations.booking': 'standard', 'reservations.phone': 'standard', 'reservations.texts': 'standard',
     'menu.combos': 'standard', 'menu.allergies': 'hidden', 'menu.pricing': 'standard',
     'menu.discounts': 'hidden', 'menu.routing': 'hidden',
     'devices.health': 'full', 'devices.pairing': 'standard', 'devices.assignments': 'standard',
